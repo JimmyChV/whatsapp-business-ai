@@ -1,4 +1,17 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+
+const toTitleCaseLabel = (value = '') => {
+    const normalized = String(value || '').trim();
+    if (!normalized) return normalized;
+    return normalized
+        .toLocaleLowerCase('es')
+        .split(' ')
+        .map((word) => {
+            if (!word) return word;
+            return word.charAt(0).toLocaleUpperCase('es') + word.slice(1);
+        })
+        .join(' ');
+};
 
 export const SaasDetailPanelSection = ({
     title,
@@ -18,7 +31,7 @@ export const SaasDetailPanelSection = ({
                 onClick={() => setOpen((prev) => !prev)}
                 aria-expanded={open}
             >
-                <span className="saas-detail-panel__section-title">{title}</span>
+                <span className="saas-detail-panel__section-title">{toTitleCaseLabel(title)}</span>
                 <span className="saas-detail-panel__section-meta">
                     {actions}
                     <span className="saas-detail-panel__section-chevron">{open ? '-' : '+'}</span>
@@ -41,10 +54,38 @@ const SaasDetailPanel = ({
     bodyClassName = '',
     children
 }) => {
+    const [compactActions, setCompactActions] = useState(false);
+    const [overflowOpen, setOverflowOpen] = useState(false);
     const rootClassName = useMemo(
         () => ['saas-detail-panel', className].filter(Boolean).join(' '),
         [className]
     );
+    const actionItems = useMemo(() => React.Children.toArray(actions).filter(Boolean), [actions]);
+    const inlineActionItems = useMemo(
+        () => (compactActions ? actionItems.slice(0, 2) : actionItems),
+        [compactActions, actionItems]
+    );
+    const overflowActionItems = useMemo(
+        () => (compactActions ? actionItems.slice(2) : []),
+        [compactActions, actionItems]
+    );
+
+    useEffect(() => {
+        if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+        const mediaQuery = window.matchMedia('(max-width: 1440px)');
+        const sync = () => setCompactActions(mediaQuery.matches);
+        sync();
+        if (typeof mediaQuery.addEventListener === 'function') {
+            mediaQuery.addEventListener('change', sync);
+            return () => mediaQuery.removeEventListener('change', sync);
+        }
+        mediaQuery.addListener(sync);
+        return () => mediaQuery.removeListener(sync);
+    }, []);
+
+    useEffect(() => {
+        if (!compactActions) setOverflowOpen(false);
+    }, [compactActions]);
 
     return (
         <article className={rootClassName}>
@@ -53,8 +94,31 @@ const SaasDetailPanel = ({
                     <h3>{title}</h3>
                     {subtitle ? <p>{subtitle}</p> : null}
                 </div>
-                {actions ? (
-                    <div className="saas-detail-panel__actions">{actions}</div>
+                {actionItems.length > 0 ? (
+                    <div className="saas-detail-panel__actions">
+                        {inlineActionItems}
+                        {compactActions && overflowActionItems.length > 0 ? (
+                            <div className="saas-header-actions-overflow">
+                                <button
+                                    type="button"
+                                    className="saas-header-btn saas-header-btn--secondary"
+                                    onClick={() => setOverflowOpen((prev) => !prev)}
+                                    aria-expanded={overflowOpen}
+                                >
+                                    ...
+                                </button>
+                                {overflowOpen ? (
+                                    <div className="saas-header-actions-overflow__menu saas-header-actions-overflow__menu--detail">
+                                        {overflowActionItems.map((item, index) => (
+                                            <div key={`detail_action_${index}`} className="saas-header-actions-overflow__item">
+                                                {item}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : null}
+                            </div>
+                        ) : null}
+                    </div>
                 ) : null}
             </header>
             <div className={['saas-detail-panel__body', bodyClassName].filter(Boolean).join(' ')}>

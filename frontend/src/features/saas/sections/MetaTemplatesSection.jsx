@@ -34,10 +34,10 @@ const LANGUAGE_OPTIONS = [
 ];
 
 const USE_CASE_OPTIONS = [
-    { value: 'both', label: 'Campana e individual', description: 'Disponible tanto para campanas como para envios individuales.' },
-    { value: 'campaign', label: 'Solo campanas', description: 'Visible solo en Campaigns y audiencias masivas.' },
-    { value: 'individual', label: 'Solo individual', description: 'Visible solo para envio individual desde el chat.' },
-    { value: 'optin', label: 'Opt-in / alta', description: 'Template para consentimiento o activacion comercial; usa solo variables del cliente.' }
+    { value: 'both', label: 'Campaña e individual', description: 'Disponible tanto para campañas como para envíos individuales.' },
+    { value: 'campaign', label: 'Solo campañas', description: 'Visible solo en campañas y audiencias masivas.' },
+    { value: 'individual', label: 'Solo individual', description: 'Visible solo para envío individual desde el chat.' },
+    { value: 'optin', label: 'Opt-in / alta', description: 'Plantilla para consentimiento o activación comercial; usa solo variables del cliente.' }
 ];
 
 const HEADER_TYPE_OPTIONS = [
@@ -49,12 +49,15 @@ const HEADER_TYPE_OPTIONS = [
 ];
 
 const TEMPLATE_TABLE_COLUMNS = [
-    { key: 'templateName', label: 'Nombre', width: '280px', minWidth: '220px', maxWidth: '360px', type: 'text' },
-    { key: 'category', label: 'Categoria', width: '140px', minWidth: '120px', maxWidth: '180px', type: 'option' },
-    { key: 'templateLanguage', label: 'Idioma', width: '120px', minWidth: '100px', maxWidth: '150px', type: 'option' },
-    { key: 'statusLabel', label: 'Estado', width: '140px', minWidth: '120px', maxWidth: '180px', type: 'option' },
-    { key: 'moduleLabel', label: 'Modulo', width: '200px', minWidth: '160px', maxWidth: '280px', type: 'text' },
-    { key: 'updatedAt', label: 'Actualizado', width: '190px', minWidth: '160px', maxWidth: '230px', type: 'date' }
+    { key: 'templateName', label: 'Nombre', width: '280px', minWidth: '220px', maxWidth: '360px', type: 'text', filterable: true },
+    { key: 'category', label: 'Categoría', width: '140px', minWidth: '120px', maxWidth: '180px', type: 'option', filterable: true },
+    { key: 'templateLanguage', label: 'Idioma', width: '120px', minWidth: '100px', maxWidth: '150px', type: 'option', filterable: true },
+    { key: 'statusLabel', label: 'Estado', width: '140px', minWidth: '120px', maxWidth: '180px', type: 'option', filterable: true },
+    { key: 'moduleLabel', label: 'Módulo', width: '200px', minWidth: '160px', maxWidth: '280px', type: 'text', filterable: true },
+    { key: 'useCaseLabel', label: 'Caso De Uso', width: '180px', minWidth: '150px', maxWidth: '220px', type: 'option', filterable: true },
+    { key: 'qualityLabel', label: 'Calidad', width: '140px', minWidth: '120px', maxWidth: '180px', type: 'option', filterable: true },
+    { key: 'createdAt', label: 'Creado', width: '190px', minWidth: '160px', maxWidth: '230px', type: 'date', filterable: true },
+    { key: 'updatedAt', label: 'Actualizado', width: '190px', minWidth: '160px', maxWidth: '230px', type: 'date', filterable: true }
 ];
 
 const TEMPLATE_DEFAULT_COLUMN_KEYS = [
@@ -83,6 +86,19 @@ const EMPTY_CREATE_FORM = {
 const toText = (value = '') => String(value || '').trim();
 const toLower = (value = '') => toText(value).toLowerCase();
 const toUpper = (value = '') => toText(value).toUpperCase();
+const normalizeFilterValue = (value = '') => toText(value).toLowerCase();
+const matchesTextFilter = (actual = '', expected = '', operator = 'contains') => {
+    const left = normalizeFilterValue(actual);
+    const right = normalizeFilterValue(expected);
+    if (operator === 'is_empty') return !left;
+    if (operator === 'not_empty') return Boolean(left);
+    if (!right) return true;
+    if (operator === 'equals') return left === right;
+    if (operator === 'not_equals') return left !== right;
+    if (operator === 'starts_with') return left.startsWith(right);
+    if (operator === 'ends_with') return left.endsWith(right);
+    return left.includes(right);
+};
 const META_PLACEHOLDER_REGEX = /{{\s*(\d+)\s*}}/g;
 const TEMPLATE_TOKEN_REGEX = /{{\s*([^{}]+?)\s*}}/g;
 const SUPPORTED_LANGUAGES = Object.freeze(['es', 'en', 'pt']);
@@ -385,7 +401,7 @@ function WhatsAppTemplatePreview({
     footerText = '',
     buttons = [],
     timeLabel = '',
-    emptyBodyText = 'Escribe el contenido del template...'
+    emptyBodyText = 'Escribe el contenido de la plantilla...'
 }) {
     const cleanHeaderType = toLower(headerType || 'none');
     const isHeaderMediaType = ['image', 'video', 'document'].includes(cleanHeaderType);
@@ -461,8 +477,8 @@ function buildTemplatePayload(form = {}, {
     const footerText = toText(form.footerText);
     const buttons = mapButtonRowsToMeta(form.buttons);
 
-    if (!name) throw new Error('Nombre del template requerido.');
-    if (!bodyText) throw new Error('Body del template requerido.');
+    if (!name) throw new Error('Nombre de la plantilla requerido.');
+    if (!bodyText) throw new Error('Cuerpo de la plantilla requerido.');
 
     const headerVariableMap = buildSequentialPlaceholderMap(headerText);
     const bodyVariableMap = buildSequentialPlaceholderMap(bodyText);
@@ -610,6 +626,7 @@ function MetaTemplatesSection(props = {}) {
     const [panelMode, setPanelMode] = useState('view');
     const [selectedTemplateId, setSelectedTemplateId] = useState('');
     const [showColumnsPanel, setShowColumnsPanel] = useState(false);
+    const [headerFilter, setHeaderFilter] = useState({ columnKey: '', operator: 'contains', value: '' });
     const [syncModuleId, setSyncModuleId] = useState('');
     const [createForm, setCreateForm] = useState(() => buildInitialForm(''));
     const [templateVarCatalog, setTemplateVarCatalog] = useState([]);
@@ -721,7 +738,7 @@ function MetaTemplatesSection(props = {}) {
             });
             return payload;
         } catch (error) {
-            const message = String(error?.message || 'No se pudo cargar el catalogo de variables.');
+            const message = String(error?.message || 'No se pudo cargar el catálogo de variables.');
             setVarCatalogError(message);
             return null;
         } finally {
@@ -767,7 +784,7 @@ function MetaTemplatesSection(props = {}) {
         templatesLoadedOnEnterRef.current = true;
         clearErrors?.();
         loadTemplates().catch((error) => {
-            const message = String(error?.message || 'No se pudieron cargar templates Meta.');
+            const message = String(error?.message || 'No se pudieron cargar las plantillas Meta.');
             setError?.(message);
         });
     }, [isMetaTemplatesSection, settingsTenantId, loadTemplates, clearErrors, setError]);
@@ -796,11 +813,24 @@ function MetaTemplatesSection(props = {}) {
                     templateLanguage: toText(template?.templateLanguage).toUpperCase() || '-',
                     statusLabel: statusMeta.label,
                     moduleLabel: toText(template?.moduleId) || '-',
+                    useCaseLabel: USE_CASE_OPTIONS.find((option) => option.value === normalizeTemplateUseCase(template?.useCase || 'both'))?.label || 'Campaña e individual',
+                    qualityLabel: (() => {
+                        const value = Number(template?.qualityScore);
+                        if (!Number.isFinite(value) || value <= 0) return '-';
+                        return value >= 4 ? 'Alta' : value >= 2 ? 'Media' : 'Baja';
+                    })(),
+                    createdAt: toText(template?.createdAt) || '-',
                     updatedAt: toText(template?.updatedAt) || '-'
                 };
             })
             : [];
     }, [filteredItems]);
+
+    const filteredTableRows = useMemo(() => {
+        const columnKey = toText(headerFilter?.columnKey);
+        if (!columnKey) return tableRows;
+        return tableRows.filter((row) => matchesTextFilter(row?.[columnKey], headerFilter?.value, headerFilter?.operator));
+    }, [headerFilter, tableRows]);
 
     const tableColumns = useMemo(() => {
         const visibleSet = new Set((Array.isArray(visibleTableColumnKeys) ? visibleTableColumnKeys : [])
@@ -823,7 +853,7 @@ function MetaTemplatesSection(props = {}) {
 
     const reloadTemplates = useCallback(async (overrideFilters = null) => {
         if (typeof loadTemplates !== 'function') return;
-        await runActionSafe('Templates Meta recargados', async () => {
+        await runActionSafe('Plantillas Meta recargadas', async () => {
             await loadTemplates(overrideFilters);
         });
     }, [loadTemplates, runActionSafe]);
@@ -838,7 +868,7 @@ function MetaTemplatesSection(props = {}) {
     const handleCreateTemplate = useCallback(async () => {
         if (!canWrite || typeof createTemplate !== 'function') return;
         const moduleId = toText(createForm.moduleId);
-        if (!moduleId) throw new Error('Selecciona un modulo para crear el template.');
+        if (!moduleId) throw new Error('Selecciona un módulo para crear la plantilla.');
 
         const {
             metaPayload: templatePayload,
@@ -852,7 +882,7 @@ function MetaTemplatesSection(props = {}) {
             body: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} },
             footer: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} }
         };
-        await runActionSafe('Template Meta creado', async () => {
+        await runActionSafe('Plantilla Meta creada', async () => {
             await createTemplate({
                 moduleId,
                 templatePayload,
@@ -860,7 +890,7 @@ function MetaTemplatesSection(props = {}) {
                 variableMapJson: variableIndexMap,
                 reload: false
             });
-            notify({ type: 'info', message: 'Template creado correctamente.' });
+            notify({ type: 'info', message: 'Plantilla creada correctamente.' });
             setPanelMode('view');
             setCreateForm(buildInitialForm(moduleId));
             await loadTemplates?.({
@@ -875,21 +905,21 @@ function MetaTemplatesSection(props = {}) {
         if (!templateId || typeof removeTemplate !== 'function' || !canWrite) return;
         const templateName = toText(template?.templateName) || templateId;
         const ok = await confirm({
-            title: 'Eliminar template',
-            message: `Se eliminara \"${templateName}\" en Meta y en el registro local.`,
+            title: 'Eliminar plantilla',
+            message: `Se eliminará "${templateName}" en Meta y en el registro local.`,
             confirmText: 'Eliminar',
-            cancelText: 'Cancelar',
+            cancelText: 'CANCELAR',
             tone: 'danger'
         });
         if (!ok) return;
 
-        await runActionSafe('Template Meta eliminado', async () => {
+        await runActionSafe('Plantilla Meta eliminada', async () => {
             await removeTemplate({
                 templateId,
                 moduleId: toText(template?.moduleId),
                 reload: false
             });
-            notify({ type: 'warn', message: 'Template eliminado correctamente.' });
+            notify({ type: 'warn', message: 'Plantilla eliminada correctamente.' });
             if (selectedTemplateId === templateId) {
                 setSelectedTemplateId('');
             }
@@ -900,15 +930,15 @@ function MetaTemplatesSection(props = {}) {
     const handleSyncTemplates = useCallback(async () => {
         if (!canWrite || typeof syncTemplates !== 'function') return;
         const moduleId = toText(syncModuleId);
-        if (!moduleId) throw new Error('Selecciona un modulo para sincronizar.');
+        if (!moduleId) throw new Error('Selecciona un módulo para sincronizar.');
 
-        await runActionSafe('Templates Meta sincronizados', async () => {
+        await runActionSafe('Plantillas Meta sincronizadas', async () => {
             const response = await syncTemplates({
                 moduleId,
                 reload: false
             });
             const syncedCount = Number(response?.totalSynced || 0);
-            notify({ type: 'info', message: `Sincronizacion completada (${syncedCount} templates).` });
+            notify({ type: 'info', message: `Sincronización completada (${syncedCount} plantillas).` });
             await loadTemplates?.({
                 ...filters,
                 scopeModuleId: filters.scopeModuleId || moduleId
@@ -1286,7 +1316,7 @@ function MetaTemplatesSection(props = {}) {
 
     const headerElement = useMemo(() => (
         <SaasViewHeader
-            title="Templates Meta"
+            title="Plantillas Meta"
             count={tenantScopeLocked ? 0 : filteredItems.length}
             searchValue={filters.search || ''}
             onSearchChange={(value) => {
@@ -1296,22 +1326,35 @@ function MetaTemplatesSection(props = {}) {
                     offset: 0
                 }));
             }}
-            searchPlaceholder="Buscar template por nombre, categoria o idioma"
+            searchPlaceholder="Buscar plantilla por nombre, categoría o idioma..."
             searchDisabled={templatesBusy || tenantScopeLocked}
+            filters={{
+                columns: [
+                    { key: 'templateName', label: 'Nombre', type: 'text' },
+                    { key: 'category', label: 'Categoría', type: 'option', options: CATEGORY_OPTIONS.map((option) => ({ value: option.label, label: option.label })) },
+                    { key: 'templateLanguage', label: 'Idioma', type: 'option', options: LANGUAGE_OPTIONS.map((option) => ({ value: option.value.toUpperCase(), label: option.label })) },
+                    { key: 'statusLabel', label: 'Estado', type: 'option', options: statusOptions.filter(Boolean).map((option) => ({ value: resolveStatusMeta(option).label, label: resolveStatusMeta(option).label })) },
+                    { key: 'moduleLabel', label: 'Módulo', type: 'option', options: moduleOptions.map((moduleItem) => ({ value: moduleItem.label, label: moduleItem.label })) },
+                    { key: 'useCaseLabel', label: 'Caso De Uso', type: 'option', options: USE_CASE_OPTIONS.map((option) => ({ value: option.label, label: option.label })) }
+                ],
+                value: headerFilter,
+                onChange: setHeaderFilter,
+                onClear: () => setHeaderFilter({ columnKey: '', operator: 'contains', value: '' })
+            }}
             actions={[
                 {
                     key: 'reload',
                     label: 'Recargar',
                     onClick: () => reloadTemplates().catch((error) => {
-                        setError?.(String(error?.message || error || 'No se pudo recargar templates.'));
+                        setError?.(String(error?.message || error || 'No se pudieron recargar las plantillas.'));
                     }),
                     disabled: templatesBusy || !settingsTenantId
                 },
                 {
                     key: 'create',
-                    label: 'Crear template',
+                    label: 'Crear plantilla',
                     onClick: () => openCreateTemplatePanel().catch((error) => {
-                        const message = String(error?.message || error || 'No se pudo abrir el formulario de templates.');
+                        const message = String(error?.message || error || 'No se pudo abrir el formulario de plantillas.');
                         notify({ type: 'error', message });
                         setError?.(message);
                     }),
@@ -1320,7 +1363,7 @@ function MetaTemplatesSection(props = {}) {
             ]}
             actionsExtra={!tenantScopeLocked ? (
                 <div className="saas-entity-columns">
-                    <button type="button" onClick={() => setShowColumnsPanel((prev) => !prev)}>
+                    <button type="button" className="saas-header-btn saas-header-btn--secondary saas-btn-columns" onClick={() => setShowColumnsPanel((prev) => !prev)}>
                         Columnas
                     </button>
                     {showColumnsPanel ? (
@@ -1362,7 +1405,7 @@ function MetaTemplatesSection(props = {}) {
                             updateFilter({ scopeModuleId: nextScopeModuleId, offset: 0 });
                         }}
                     >
-                        <option value="">Todos los modulos</option>
+                        <option value="">Todos los módulos</option>
                         {moduleOptions.map((moduleItem) => (
                             <option key={`meta_template_scope_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
                                 {moduleItem.label}
@@ -1460,7 +1503,7 @@ function MetaTemplatesSection(props = {}) {
                     {tenantScopeLocked && (
                         <div className="saas-admin-empty-state">
                             <h4>Selecciona una empresa</h4>
-                            <p>Elige una empresa para gestionar templates Meta.</p>
+                            <p>Elige una empresa para gestionar plantillas Meta.</p>
                         </div>
                     )}
 
@@ -1468,10 +1511,10 @@ function MetaTemplatesSection(props = {}) {
                         <>
                             <SaasDataTable
                                 columns={tableColumns}
-                                rows={tableRows}
+                                rows={filteredTableRows}
                                 selectedId={selectedTemplateId}
                                 loading={loadingList}
-                                emptyText="No hay templates para los filtros seleccionados."
+                                emptyText="No hay plantillas para los filtros seleccionados."
                                 onSelect={(row) => {
                                     const nextTemplateId = toText(row?.templateId || row?.id);
                                     if (!nextTemplateId) return;
@@ -1497,7 +1540,7 @@ function MetaTemplatesSection(props = {}) {
 
                     {!tenantScopeLocked && panelMode !== 'create' && !selectedTemplate && (
                         <div className="saas-admin-empty-state saas-admin-empty-state--detail">
-                            <h4>Selecciona un template</h4>
+                            <h4>Selecciona una plantilla</h4>
                             <p>Visualiza su estado, componentes y detalles de sincronizacion.</p>
                         </div>
                     )}
@@ -1506,7 +1549,7 @@ function MetaTemplatesSection(props = {}) {
                         <div className="saas-template-builder-modal-overlay">
                         <div className="saas-template-builder-modal-shell" onClick={(event) => event.stopPropagation()}>
                         <SaasDetailPanel
-                            title="Crear template"
+                            title="Crear plantilla"
                             subtitle="Formulario inteligente con variables, ejemplos y preview en tiempo real."
                             className="saas-meta-templates-detail-panel saas-template-builder-modal-panel"
                             bodyClassName="saas-meta-templates-detail-panel__body saas-template-builder-modal-panel__body"
@@ -1520,18 +1563,18 @@ function MetaTemplatesSection(props = {}) {
                                             void handleRequestCloseTemplateBuilder();
                                         }}
                                     >
-                                        Cancelar
+                                        CANCELAR
                                     </button>
                                     <button
                                         type="button"
                                         disabled={templatesBusy || !canWrite}
                                         onClick={() => handleCreateTemplate().catch((error) => {
-                                            const message = String(error?.message || error || 'No se pudo crear template Meta.');
+                                                const message = String(error?.message || error || 'No se pudo crear la plantilla Meta.');
                                             notify({ type: 'error', message });
                                             setError?.(message);
                                         })}
                                     >
-                                        Guardar template
+                                            Guardar plantilla
                                     </button>
                                 </div>
                             )}
@@ -1548,7 +1591,7 @@ function MetaTemplatesSection(props = {}) {
                                                 onChange={(event) => setCreateForm((prev) => ({ ...prev, moduleId: toText(event.target.value) }))}
                                                 disabled={templatesBusy || !canWrite}
                                             >
-                                                <option value="">Selecciona modulo</option>
+                                                <option value="">Selecciona módulo</option>
                                                 {moduleOptions.map((moduleItem) => (
                                                     <option key={`meta_template_form_module_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
                                                         {moduleItem.label}
@@ -1557,7 +1600,7 @@ function MetaTemplatesSection(props = {}) {
                                             </select>
                                         </div>
                                         <div className="saas-meta-template-field">
-                                            <label htmlFor="meta_template_form_name">Nombre del template</label>
+                                            <label htmlFor="meta_template_form_name">Nombre de la plantilla</label>
                                             <input
                                                 id="meta_template_form_name"
                                                 value={createForm.name}
@@ -1588,11 +1631,11 @@ function MetaTemplatesSection(props = {}) {
                                             </select>
                                             <small className="saas-admin-field-help">
                                                 {USE_CASE_OPTIONS.find((option) => option.value === normalizeTemplateUseCase(createForm.useCase))?.description
-                                                    || 'Define donde podra usarse este template.'}
+                                                    || 'Define dónde podrá usarse esta plantilla.'}
                                             </small>
                                         </div>
                                         <div className="saas-meta-template-field">
-                                            <label htmlFor="meta_template_category">Categoria</label>
+                                            <label htmlFor="meta_template_category">Categoría</label>
                                             <select
                                                 id="meta_template_category"
                                                 value={createForm.category}
@@ -1648,7 +1691,7 @@ function MetaTemplatesSection(props = {}) {
                                         <div className="saas-meta-template-field">
                                             {activeHeaderType === 'text' && (
                                                 <>
-                                                    <label htmlFor="meta_template_header_text">Texto del header</label>
+                                            <label htmlFor="meta_template_header_text">Texto del encabezado</label>
                                                     <input
                                                         id="meta_template_header_text"
                                                         value={createForm.headerText}
@@ -1660,7 +1703,7 @@ function MetaTemplatesSection(props = {}) {
                                             )}
                                             {isHeaderMediaType && (
                                                 <>
-                                                    <label htmlFor="meta_template_header_media">Archivo del header</label>
+                                                    <label htmlFor="meta_template_header_media">Archivo del encabezado</label>
                                                     <div className="saas-meta-template-upload-row">
                                                         <input
                                                             ref={headerMediaInputRef}
@@ -1682,14 +1725,14 @@ function MetaTemplatesSection(props = {}) {
                                                 </>
                                             )}
                                             {!isHeaderMediaType && activeHeaderType !== 'text' && (
-                                                <small className="saas-meta-template-help">Puedes usar header de texto o multimedia.</small>
+                                                <small className="saas-meta-template-help">Puedes usar encabezado de texto o multimedia.</small>
                                             )}
                                         </div>
                                     </div>
 
                                     <div className="saas-meta-template-field">
                                         <div className="saas-meta-template-field-heading">
-                                            <label htmlFor="meta_template_body_text">Body del template</label>
+                                            <label htmlFor="meta_template_body_text">Cuerpo de la plantilla</label>
                                             <span className="saas-meta-template-body-hint">Inserta variables desde el panel derecho (+)</span>
                                         </div>
                                         <textarea
@@ -1701,7 +1744,7 @@ function MetaTemplatesSection(props = {}) {
                                             onSelect={updateBodyCursor}
                                             onClick={updateBodyCursor}
                                             onKeyUp={updateBodyCursor}
-                                            placeholder="Escribe el contenido principal del template..."
+                                            placeholder="Escribe el contenido principal de la plantilla..."
                                             rows={8}
                                             disabled={templatesBusy || !canWrite}
                                         />
@@ -1714,7 +1757,7 @@ function MetaTemplatesSection(props = {}) {
                                             id="meta_template_footer_text"
                                             value={createForm.footerText}
                                             onChange={(event) => setCreateForm((prev) => ({ ...prev, footerText: event.target.value }))}
-                                            placeholder="Texto corto al pie del template"
+                                            placeholder="Texto corto al pie de la plantilla"
                                             disabled={templatesBusy || !canWrite}
                                         />
                                     </div>
@@ -1743,7 +1786,7 @@ function MetaTemplatesSection(props = {}) {
                                                         >
                                                             <option value="quick_reply">Quick reply</option>
                                                             <option value="url">URL</option>
-                                                            <option value="phone">Telefono</option>
+                                                            <option value="phone">Teléfono</option>
                                                         </select>
                                                     </div>
                                                     <div className="saas-meta-template-field">
@@ -1818,12 +1861,12 @@ function MetaTemplatesSection(props = {}) {
                                             type="button"
                                             disabled={templatesBusy || !canWrite}
                                             onClick={() => handleCreateTemplate().catch((error) => {
-                                                const message = String(error?.message || error || 'No se pudo crear template Meta.');
+                                                const message = String(error?.message || error || 'No se pudo crear la plantilla Meta.');
                                                 notify({ type: 'error', message });
                                                 setError?.(message);
                                             })}
                                         >
-                                            Guardar template
+                                        Guardar plantilla
                                         </button>
                                         <button
                                             type="button"
@@ -1833,7 +1876,7 @@ function MetaTemplatesSection(props = {}) {
                                                 void handleRequestCloseTemplateBuilder();
                                             }}
                                         >
-                                            Cancelar
+                                            CANCELAR
                                         </button>
                                     </div>
                                 </section>
@@ -1841,7 +1884,7 @@ function MetaTemplatesSection(props = {}) {
                                 <aside className="saas-meta-template-builder__side">
                                     <section className="saas-meta-template-builder__variables">
                                         <div className="saas-admin-related-block saas-meta-template-pane">
-                                            <h4>Variables por categoria</h4>
+                                            <h4>Variables por categoría</h4>
                                             <div className="saas-meta-template-variables-toolbar">
                                                 <input
                                                     value={variableSearchQuery}
@@ -1850,7 +1893,7 @@ function MetaTemplatesSection(props = {}) {
                                                     disabled={templatesBusy}
                                                 />
                                             </div>
-                                            {loadingVarCatalog && <small className="saas-meta-template-help">Cargando catalogo de variables...</small>}
+                                            {loadingVarCatalog && <small className="saas-meta-template-help">Cargando catálogo de variables...</small>}
                                             {varCatalogError && <small className="saas-meta-template-error">{varCatalogError}</small>}
                                             {!loadingVarCatalog && !varCatalogError && filteredVarCategories.map((category) => {
                                                 const categoryKey = toText(category?.id);
@@ -1893,7 +1936,7 @@ function MetaTemplatesSection(props = {}) {
                                             );
                                         })}
                                             {!loadingVarCatalog && !varCatalogError && filteredVarCategories.length === 0 && (
-                                                <small className="saas-meta-template-help">Sin resultados para la busqueda.</small>
+                                                <small className="saas-meta-template-help">Sin resultados para la búsqueda.</small>
                                             )}
                                         </div>
 
@@ -1964,13 +2007,13 @@ function MetaTemplatesSection(props = {}) {
                                                     footerText={previewText.footer}
                                                     buttons={previewButtons}
                                                     timeLabel={previewTimeLabel}
-                                                    emptyBodyText="Escribe el contenido del template..."
+                                                    emptyBodyText="Escribe el contenido de la plantilla..."
                                                 />
                                             </>
                                         )}
                                         {previewMode === 'approval' && (
                                             <>
-                                                <small className="saas-meta-template-help">Vista del contenido de ejemplo para revision de Meta.</small>
+                                                <small className="saas-meta-template-help">Vista del contenido de ejemplo para revisión de Meta.</small>
                                                 <div className="saas-template-approval-preview">
                                                     <div className="saas-template-approval-preview__row">
                                                         <span>Header</span>
@@ -2001,7 +2044,7 @@ function MetaTemplatesSection(props = {}) {
                                                         <p>{previewButtons.length > 0 ? previewButtons.map((row) => toText(row.text)).join(' | ') : 'Sin botones'}</p>
                                                     </div>
                                                     <small className="saas-meta-template-help">
-                                                        Nota: este ejemplo se usa para la evaluacion del template. El contenido final puede variar por variables y media al momento de envio.
+                                                        Nota: este ejemplo se usa para la evaluación de la plantilla. El contenido final puede variar por variables y media al momento del envío.
                                                     </small>
                                                     <div className="saas-template-approval-preview__payload">
                                                         <span>Resumen tecnico (HEADER/BODY/BUTTONS)</span>
@@ -2039,7 +2082,7 @@ function MetaTemplatesSection(props = {}) {
                                         type="button"
                                         disabled={templatesBusy || !canWrite || Boolean(loadingDeleteById?.[selectedTemplate.templateId])}
                                         onClick={() => handleDeleteTemplate(selectedTemplate).catch((error) => {
-                                            const message = String(error?.message || error || 'No se pudo eliminar template Meta.');
+                                            const message = String(error?.message || error || 'No se pudo eliminar la plantilla Meta.');
                                             notify({ type: 'error', message });
                                             setError?.(message);
                                         })}
@@ -2050,12 +2093,12 @@ function MetaTemplatesSection(props = {}) {
                                         type="button"
                                         disabled={templatesBusy || !canWrite}
                                         onClick={() => openCreateTemplatePanel().catch((error) => {
-                                            const message = String(error?.message || error || 'No se pudo abrir el formulario de templates.');
+                                            const message = String(error?.message || error || 'No se pudo abrir el formulario de plantillas.');
                                             notify({ type: 'error', message });
                                             setError?.(message);
                                         })}
                                     >
-                                        Crear template
+                                        Crear plantilla
                                     </button>
                                 </div>
                             )}
@@ -2063,10 +2106,10 @@ function MetaTemplatesSection(props = {}) {
                             <SaasDetailPanelSection title="Metadata" defaultOpen>
                                 <div className="saas-admin-detail-grid">
                                     <div className="saas-admin-detail-field"><span>Estado</span><strong>{resolveStatusMeta(selectedTemplate?.status).label}</strong></div>
-                                    <div className="saas-admin-detail-field"><span>Modulo</span><strong>{toText(selectedTemplate?.moduleId) || '-'}</strong></div>
-                                    <div className="saas-admin-detail-field"><span>Uso</span><strong>{USE_CASE_OPTIONS.find((option) => option.value === normalizeTemplateUseCase(selectedTemplate?.useCase || 'both'))?.label || 'Campana e individual'}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>MÓDULO</span><strong>{toText(selectedTemplate?.moduleId) || '-'}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>Uso</span><strong>{USE_CASE_OPTIONS.find((option) => option.value === normalizeTemplateUseCase(selectedTemplate?.useCase || 'both'))?.label || 'Campaña e individual'}</strong></div>
                                     <div className="saas-admin-detail-field"><span>Idioma</span><strong>{toText(selectedTemplate?.templateLanguage).toUpperCase() || '-'}</strong></div>
-                                    <div className="saas-admin-detail-field"><span>Categoria</span><strong>{toText(selectedTemplate?.category) || '-'}</strong></div>
+                                    <div className="saas-admin-detail-field"><span>CATEGORÍA</span><strong>{toText(selectedTemplate?.category) || '-'}</strong></div>
                                     <div className="saas-admin-detail-field"><span>Quality</span><strong>{(() => {
                                         const q = selectedTemplate?.qualityScore;
                                         if (!q) return 'N/A';
@@ -2085,7 +2128,7 @@ function MetaTemplatesSection(props = {}) {
                                 <div className="saas-template-detail-layout">
                                     <div className="saas-admin-related-block saas-template-detail-preview-pane">
                                         <h4>Preview WhatsApp</h4>
-                                        <small className="saas-meta-template-help">Vista estimada del mensaje final para cliente usando examples del template.</small>
+                                        <small className="saas-meta-template-help">Vista estimada del mensaje final para el cliente usando ejemplos de la plantilla.</small>
                                         <WhatsAppTemplatePreview
                                             headerType={selectedTemplatePreview?.headerType}
                                             headerText={selectedTemplatePreview?.headerText}
@@ -2095,7 +2138,7 @@ function MetaTemplatesSection(props = {}) {
                                             footerText={selectedTemplatePreview?.footerText}
                                             buttons={selectedTemplatePreview?.buttons}
                                             timeLabel={new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}
-                                            emptyBodyText="Template sin body"
+                                            emptyBodyText="Plantilla sin cuerpo"
                                         />
                                     </div>
                                     <div className="saas-admin-related-block saas-template-detail-payload-pane">

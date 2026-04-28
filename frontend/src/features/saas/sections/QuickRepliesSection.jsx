@@ -68,18 +68,24 @@ export default function QuickRepliesSection(props = {}) {
     const rows = React.useMemo(() => visibleQuickReplyLibraries.map((library) => ({
         id: text(library?.libraryId).toUpperCase(),
         name: library?.name || library?.libraryId || '-',
-        scope: library?.isShared ? 'Compartida' : 'Por modulo',
+        textPreview: library?.description || '-',
+        sortOrder: String(library?.sortOrder ?? '-'),
+        scope: library?.isShared ? 'Compartida' : 'Por módulo',
         status: library?.isActive === false ? 'Inactiva' : 'Activa',
         modules: Array.isArray(library?.moduleIds) ? String(library.moduleIds.length) : '0',
+        updatedAt: formatDateTimeLabel(library?.updatedAt),
         raw: library
-    })), [visibleQuickReplyLibraries]);
+    })), [formatDateTimeLabel, visibleQuickReplyLibraries]);
 
     const columns = React.useMemo(() => [
-        { key: 'name', label: 'Biblioteca', width: '30%', sortable: true },
-        { key: 'scope', label: 'Alcance', width: '20%', sortable: true },
-        { key: 'modules', label: 'Modulos', width: '14%', sortable: true },
+        { key: 'name', label: 'Etiqueta', width: '24%', sortable: true },
+        { key: 'textPreview', label: 'Texto', width: '30%', sortable: true, hidden: true },
+        { key: 'sortOrder', label: 'Orden', width: '12%', sortable: true, hidden: true },
+        { key: 'updatedAt', label: 'Actualizado', width: '18%', sortable: true, hidden: true },
+        { key: 'scope', label: 'Alcance', width: '18%', sortable: true, hidden: true },
+        { key: 'modules', label: 'Módulos', width: '14%', sortable: true, hidden: true },
         { key: 'status', label: 'Estado', width: '16%', sortable: true },
-        { key: 'id', label: 'Codigo', width: '20%', sortable: true }
+        { key: 'id', label: 'Código', width: '20%', sortable: true, hidden: true }
     ], []);
 
     const filters = React.useMemo(() => [
@@ -89,7 +95,7 @@ export default function QuickRepliesSection(props = {}) {
             type: 'select',
             options: [
                 { value: 'Compartida', label: 'Compartida' },
-                { value: 'Por modulo', label: 'Por modulo' }
+                { value: 'Por módulo', label: 'Por módulo' }
             ]
         },
         {
@@ -143,7 +149,7 @@ export default function QuickRepliesSection(props = {}) {
         <div className="saas-admin-related-block">
             <div className="saas-admin-form-row">
                 <input value={quickReplyLibraryForm.name || ''} onChange={(event) => setQuickReplyLibraryForm?.((prev) => ({ ...prev, name: event.target.value }))} placeholder="Nombre de biblioteca" disabled={busy} />
-                <input value={quickReplyLibraryForm.description || ''} onChange={(event) => setQuickReplyLibraryForm?.((prev) => ({ ...prev, description: event.target.value }))} placeholder="Descripcion" disabled={busy} />
+                <input value={quickReplyLibraryForm.description || ''} onChange={(event) => setQuickReplyLibraryForm?.((prev) => ({ ...prev, description: event.target.value }))} placeholder="descripción" disabled={busy} />
             </div>
             <div className="saas-admin-modules">
                 <label className="saas-admin-module-toggle">
@@ -173,7 +179,7 @@ export default function QuickRepliesSection(props = {}) {
                 <button type="button" disabled={busy || !canManageQuickReplies || !text(quickReplyLibraryForm.name)} onClick={() => runAction?.(quickReplyLibraryPanelMode === 'create' ? 'Biblioteca creada' : 'Biblioteca actualizada', async () => saveQuickReplyLibrary?.())}>
                     {quickReplyLibraryPanelMode === 'create' ? 'Guardar biblioteca' : 'Actualizar biblioteca'}
                 </button>
-                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelQuickReplyLibraryEdit}>Cancelar</button>
+                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelQuickReplyLibraryEdit}>CANCELAR</button>
             </div>
         </div>
     ), [
@@ -248,7 +254,7 @@ export default function QuickRepliesSection(props = {}) {
                 >
                     {quickReplyItemPanelMode === 'create' ? 'Guardar respuesta' : 'Actualizar respuesta'}
                 </button>
-                <button type="button" className="saas-btn-cancel" disabled={busy || uploadingQuickReplyAssets} onClick={cancelQuickReplyItemEdit}>Cancelar</button>
+                <button type="button" className="saas-btn-cancel" disabled={busy || uploadingQuickReplyAssets} onClick={cancelQuickReplyItemEdit}>CANCELAR</button>
             </div>
         </div>
     ), [
@@ -278,7 +284,7 @@ export default function QuickRepliesSection(props = {}) {
             return (
                 <div className="saas-admin-empty-state saas-admin-empty-state--detail">
                     <h4>Selecciona una empresa</h4>
-                    <p>Elige una empresa para administrar bibliotecas y respuestas rapidas.</p>
+                    <p>Elige una empresa para administrar bibliotecas y respuestas rápidas.</p>
                 </div>
             );
         }
@@ -294,9 +300,9 @@ export default function QuickRepliesSection(props = {}) {
         return (
             <>
                 <div className="saas-admin-detail-grid">
-                    <div className="saas-admin-detail-field"><span>Codigo</span><strong>{selectedQuickReplyLibrary.libraryId}</strong></div>
+                    <div className="saas-admin-detail-field"><span>CÓDIGO</span><strong>{selectedQuickReplyLibrary.libraryId}</strong></div>
                     <div className="saas-admin-detail-field"><span>Nombre</span><strong>{selectedQuickReplyLibrary.name || '-'}</strong></div>
-                    <div className="saas-admin-detail-field"><span>Alcance</span><strong>{selectedQuickReplyLibrary.isShared ? 'Compartida' : 'Por modulo'}</strong></div>
+                    <div className="saas-admin-detail-field"><span>ALCANCE</span><strong>{selectedQuickReplyLibrary.isShared ? 'Compartida' : 'Por módulo'}</strong></div>
                     <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedQuickReplyLibrary.isActive === false ? 'Inactiva' : 'Activa'}</strong></div>
                 </div>
                 <div className="saas-admin-related-block">
@@ -322,8 +328,8 @@ export default function QuickRepliesSection(props = {}) {
                 {selectedQuickReplyItem && quickReplyItemPanelMode === 'view' ? (
                     <div className="saas-admin-related-block">
                         <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                            <button type="button" disabled={busy || !canManageQuickReplies} onClick={openQuickReplyItemEdit}>Editar respuesta</button>
-                            <button type="button" disabled={busy || !canManageQuickReplies} onClick={() => runAction?.('Respuesta rapida desactivada', async () => deactivateQuickReplyItem?.(selectedQuickReplyItem?.itemId))}>Desactivar</button>
+                            <button type="button" disabled={busy || !canManageQuickReplies} onClick={openQuickReplyItemEdit}>EDITAR</button>
+                            <button type="button" disabled={busy || !canManageQuickReplies} onClick={() => runAction?.('Respuesta rápida desactivada', async () => deactivateQuickReplyItem?.(selectedQuickReplyItem?.itemId))}>DESACTIVAR</button>
                         </div>
                         <div className="saas-admin-detail-grid">
                             <div className="saas-admin-detail-field"><span>Etiqueta</span><strong>{selectedQuickReplyItem.label || '-'}</strong></div>
@@ -390,8 +396,8 @@ export default function QuickRepliesSection(props = {}) {
         if (!selectedQuickReplyLibrary || isLibraryEditing || isItemEditing) return null;
         return (
             <>
-                <button type="button" disabled={busy || !canManageQuickReplies} onClick={openQuickReplyLibraryEdit}>Editar biblioteca</button>
-                <button type="button" disabled={busy || !canManageQuickReplies} onClick={() => runAction?.('Biblioteca desactivada', async () => deactivateQuickReplyLibrary?.(selectedQuickReplyLibrary?.libraryId))}>Desactivar</button>
+                <button type="button" disabled={busy || !canManageQuickReplies} onClick={openQuickReplyLibraryEdit}>EDITAR</button>
+                <button type="button" disabled={busy || !canManageQuickReplies} onClick={() => runAction?.('Biblioteca desactivada', async () => deactivateQuickReplyLibrary?.(selectedQuickReplyLibrary?.libraryId))}>DESACTIVAR</button>
                 <button type="button" disabled={busy || !canManageQuickReplies} onClick={openQuickReplyItemCreate}>Nueva respuesta</button>
             </>
         );
@@ -411,7 +417,7 @@ export default function QuickRepliesSection(props = {}) {
         <SaasEntityPage
             id="saas_quick_replies"
             sectionKey="saas_quick_replies"
-            title="Respuestas rapidas"
+            title="RESPUESTAS RÁPIDAS"
             rows={rows}
             columns={columns}
             selectedId={selectedId}
@@ -423,8 +429,8 @@ export default function QuickRepliesSection(props = {}) {
             dirty={isLibraryEditing || isItemEditing}
             requestJson={context.requestJson}
             loading={loadingQuickReplies}
-            emptyText={settingsTenantId ? 'Sin bibliotecas registradas.' : 'Selecciona una empresa para gestionar respuestas rapidas.'}
-            searchPlaceholder="Buscar biblioteca por nombre, codigo, alcance o estado"
+            emptyText={settingsTenantId ? 'Sin bibliotecas registradas.' : 'Selecciona una empresa para gestionar respuestas rápidas.'}
+            searchPlaceholder="Buscar biblioteca por nombre, código, alcance o estado..."
             filters={filters}
             extra={settingsTenantId ? (
                 <select
@@ -439,7 +445,7 @@ export default function QuickRepliesSection(props = {}) {
                     }}
                     disabled={loadingQuickReplies}
                 >
-                    <option value="">Todos los modulos</option>
+                    <option value="">Todos los módulos</option>
                     {waModules.map((moduleItem) => {
                         const moduleId = text(moduleItem?.moduleId).toLowerCase();
                         return <option key={`qr_scope_${moduleId}`} value={moduleId}>{moduleItem?.name || moduleId}</option>;
@@ -449,17 +455,17 @@ export default function QuickRepliesSection(props = {}) {
             actions={[
                 {
                     label: 'Recargar',
-                    onClick: () => settingsTenantId && loadQuickReplyData?.(settingsTenantId).catch((err) => setError?.(String(err?.message || err || 'No se pudo recargar respuestas rapidas.'))),
+                    onClick: () => settingsTenantId && loadQuickReplyData?.(settingsTenantId).catch((err) => setError?.(String(err?.message || err || 'No se pudo recargar respuestas rápidas.'))),
                     disabled: busy || loadingQuickReplies || !settingsTenantId
                 },
                 {
-                    label: 'Nueva biblioteca',
+                    label: 'Nuevo',
                     onClick: openQuickReplyLibraryCreate,
                     disabled: busy || !canManageQuickReplies || !settingsTenantId
                 }
             ]}
             detailTitle={quickReplyLibraryPanelMode === 'create' ? 'Nueva biblioteca' : (selectedQuickReplyLibrary?.name || 'Biblioteca de respuestas')}
-            detailSubtitle={quickReplyLibraryPanelMode === 'create' ? 'Define tipo, alcance y modulos asignados.' : (selectedQuickReplyLibrary?.libraryId || '')}
+            detailSubtitle={quickReplyLibraryPanelMode === 'create' ? 'Define tipo, alcance y módulos asignados.' : (selectedQuickReplyLibrary?.libraryId || '')}
             detailActions={detailActions}
         />
     );

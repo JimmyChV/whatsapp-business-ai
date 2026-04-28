@@ -10,6 +10,8 @@ export default function useSaasPanelFrameProps(input = {}) {
         currentUserRoleLabel,
         buildInitials,
         closeLabel,
+        themeMode,
+        onThemeChange,
         handlePanelClose,
         activeTenantLabel,
         error,
@@ -38,6 +40,8 @@ export default function useSaasPanelFrameProps(input = {}) {
         currentUserRoleLabel,
         buildInitials,
         closeLabel,
+        themeMode,
+        onThemeChange,
         onClose: handlePanelClose
     };
 

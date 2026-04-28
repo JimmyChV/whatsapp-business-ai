@@ -1,4 +1,4 @@
-// Helpers extraidos desde SaasAdminPanel para reducir tamano del modulo principal.
+// Helpers extraídos desde SaasAdminPanel para reducir tamaño del módulo principal.
 import { sanitizeMemberships } from './rbac.helpers';
 import { sanitizeAiAssistantCode } from './ai.helpers';
 
@@ -153,27 +153,27 @@ export const PLAN_OPTIONS = ['starter', 'pro', 'enterprise'];
 export const CATALOG_MODE_OPTIONS = ['hybrid', 'meta_only', 'woo_only', 'local_only'];
 export const MODULE_KEYS = [
     { key: 'aiPro', label: 'IA Pro' },
-    { key: 'catalog', label: 'Catalogo' },
+    { key: 'catalog', label: 'Catálogo' },
     { key: 'cart', label: 'Carrito' },
-    { key: 'quickReplies', label: 'Respuestas rapidas' }
+    { key: 'quickReplies', label: 'Respuestas rápidas' }
 ];
 export const ADMIN_NAV_ITEMS = [
     { id: 'saas_resumen', label: 'Resumen' },
     { id: 'saas_global_labels', label: 'Etiquetas globales' },
-    { id: 'saas_modulos', label: 'Modulos' },
+    { id: 'saas_modulos', label: 'Módulos' },
     { id: 'saas_usuarios', label: 'Usuarios' },
-    { id: 'saas_catalogos', label: 'Catalogos' },
+    { id: 'saas_catalogos', label: 'Catálogos' },
     { id: 'saas_etiquetas', label: 'Etiquetas' },
-    { id: 'saas_quick_replies', label: 'Respuestas rapidas' },
-    { id: 'saas_ia', label: 'IA' },
-    { id: 'saas_operacion', label: 'Operacion' },
+    { id: 'saas_quick_replies', label: 'Respuestas Rápidas' },
+    { id: 'saas_ia', label: 'Asistentes IA' },
+    { id: 'saas_operacion', label: 'Operación' },
     { id: 'saas_clientes', label: 'Clientes' },
-    { id: 'saas_templates', label: 'Templates Meta' },
-    { id: 'saas_campaigns', label: 'Campanas' },
+    { id: 'saas_templates', label: 'Plantillas Meta' },
+    { id: 'saas_campaigns', label: 'Campañas' },
     { id: 'saas_empresas', label: 'Empresas' },
     { id: 'saas_roles', label: 'Roles' },
     { id: 'saas_planes', label: 'Planes' },
-    { id: 'saas_config', label: 'Configuracion' }
+    { id: 'saas_config', label: 'Configuración' }
 ];
 export const ADMIN_IMAGE_MAX_BYTES = Math.max(200 * 1024, Number(import.meta.env.VITE_ADMIN_ASSET_MAX_BYTES || 2 * 1024 * 1024));
 export const ADMIN_IMAGE_ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -430,13 +430,13 @@ export function chunkItems(items = [], size = 2) {
 }
 
 export function validateImageFile(file = null) {
-    if (!file) return 'Selecciona una imagen valida.';
+    if (!file) return 'Selecciona una imagen válida.';
     const mimeType = String(file.type || '').trim().toLowerCase();
     if (!ADMIN_IMAGE_ALLOWED_MIME_TYPES.includes(mimeType)) {
         return `Formato no permitido. Usa ${ADMIN_IMAGE_ALLOWED_EXTENSIONS_LABEL}.`;
     }
     if (Number(file.size || 0) > ADMIN_IMAGE_MAX_BYTES) {
-        return `Imagen demasiado pesada. Maximo ${formatBytes(ADMIN_IMAGE_MAX_BYTES)}.`;
+        return `Imagen demasiado pesada. Máximo ${formatBytes(ADMIN_IMAGE_MAX_BYTES)}.`;
     }
     return '';
 }

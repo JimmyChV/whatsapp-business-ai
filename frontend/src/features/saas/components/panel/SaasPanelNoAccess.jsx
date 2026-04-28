@@ -11,6 +11,8 @@ export default function SaasPanelNoAccess({
     currentUserRoleLabel = 'Sin rol',
     buildInitials,
     closeLabel = 'Cerrar sesion',
+    themeMode = 'dark',
+    onThemeChange = null,
     onClose
 }) {
     return (
@@ -28,6 +30,8 @@ export default function SaasPanelNoAccess({
                     currentUserRoleLabel={currentUserRoleLabel}
                     buildInitials={buildInitials}
                     closeLabel={closeLabel}
+                    themeMode={themeMode}
+                    onThemeChange={onThemeChange}
                     onClose={onClose}
                 />
                 <p>No tienes permisos para administrar empresas y usuarios.</p>

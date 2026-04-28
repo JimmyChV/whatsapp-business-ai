@@ -58,6 +58,10 @@ function RoleProfilesSection(props = {}) {
             id: role,
             role,
             label,
+            name: label,
+            scope: 'Global',
+            permissions: (Array.isArray(profile?.required) ? profile.required.length : 0) + (Array.isArray(profile?.optional) ? profile.optional.length : 0),
+            updatedAt: String(profile?.updatedAt || '-').trim() || '-',
             requiredCount: Array.isArray(profile?.required) ? profile.required.length : 0,
             optionalCount: Array.isArray(profile?.optional) ? profile.optional.length : 0,
             blockedCount: Array.isArray(profile?.blocked) ? profile.blocked.length : 0,
@@ -67,12 +71,22 @@ function RoleProfilesSection(props = {}) {
     }), [roleProfiles]);
 
     const columns = React.useMemo(() => [
-        { key: 'label', label: 'Rol', width: '24%', minWidth: '220px', sortable: true },
-        { key: 'role', label: 'Codigo', width: '20%', minWidth: '180px', sortable: true },
-        { key: 'requiredCount', label: 'Requeridos', width: '14%', minWidth: '130px', sortable: true },
-        { key: 'optionalCount', label: 'Opcionales', width: '14%', minWidth: '130px', sortable: true },
-        { key: 'blockedCount', label: 'Bloqueados', width: '14%', minWidth: '130px', sortable: true },
+        { key: 'name', label: 'Nombre', width: '24%', minWidth: '220px', sortable: true },
+        { key: 'scope', label: 'Scope', width: '16%', minWidth: '140px', sortable: true, hidden: true },
+        { key: 'permissions', label: 'Permisos', width: '14%', minWidth: '130px', sortable: true, hidden: true },
+        { key: 'updatedAt', label: 'Actualizado', width: '16%', minWidth: '150px', sortable: true, hidden: true },
+        { key: 'role', label: 'Código', width: '20%', minWidth: '180px', sortable: true, hidden: true },
+        { key: 'requiredCount', label: 'Requeridos', width: '14%', minWidth: '130px', sortable: true, hidden: true },
+        { key: 'optionalCount', label: 'Opcionales', width: '14%', minWidth: '130px', sortable: true, hidden: true },
+        { key: 'blockedCount', label: 'Bloqueados', width: '14%', minWidth: '130px', sortable: true, hidden: true },
         { key: 'status', label: 'Estado', width: '14%', minWidth: '120px', sortable: true }
+    ], []);
+
+    const filters = React.useMemo(() => [
+        { key: 'name', label: 'Nombre', type: 'text' },
+        { key: 'role', label: 'Código', type: 'text' },
+        { key: 'status', label: 'Estado', type: 'option', options: [{ value: 'Activo', label: 'Activo' }, { value: 'Inactivo', label: 'Inactivo' }] },
+        { key: 'scope', label: 'Scope', type: 'option', options: [{ value: 'Global', label: 'Global' }] }
     ], []);
 
     const close = React.useCallback(() => {
@@ -89,7 +103,7 @@ function RoleProfilesSection(props = {}) {
             return (
                 <div className="saas-admin-empty-state saas-admin-empty-state--detail">
                     <h4>Selecciona un rol</h4>
-                    <p>Podras revisar su detalle y ajustar permisos si tienes acceso de superadmin.</p>
+                    <p>Podrás revisar su detalle y ajustar permisos si tienes acceso de superadmin.</p>
                 </div>
             );
         }
@@ -97,12 +111,12 @@ function RoleProfilesSection(props = {}) {
         return (
             <>
                 <div className="saas-admin-detail-grid">
-                    <div className="saas-admin-detail-field"><span>Codigo</span><strong>{selectedRoleProfile.role}</strong></div>
+                    <div className="saas-admin-detail-field"><span>CÓDIGO</span><strong>{selectedRoleProfile.role}</strong></div>
                     <div className="saas-admin-detail-field"><span>Etiqueta</span><strong>{selectedRoleProfile.label || selectedRoleProfile.role}</strong></div>
                     <div className="saas-admin-detail-field"><span>Permisos obligatorios</span><strong>{Array.isArray(selectedRoleProfile.required) ? selectedRoleProfile.required.length : 0}</strong></div>
                     <div className="saas-admin-detail-field"><span>Permisos opcionales</span><strong>{Array.isArray(selectedRoleProfile.optional) ? selectedRoleProfile.optional.length : 0}</strong></div>
                     <div className="saas-admin-detail-field"><span>Permisos bloqueados</span><strong>{Array.isArray(selectedRoleProfile.blocked) ? selectedRoleProfile.blocked.length : 0}</strong></div>
-                    <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedRoleProfile.active === false ? 'Inactivo' : 'Activo'}</strong></div>
+                    <div className="saas-admin-detail-field"><span>ESTADO</span><strong>{selectedRoleProfile.active === false ? 'Inactivo' : 'Activo'}</strong></div>
                 </div>
                 <PermissionList title="Obligatorios" permissions={selectedRoleProfile.required} permissionLabelMap={permissionLabelMap} />
                 <PermissionList title="Opcionales" permissions={selectedRoleProfile.optional} permissionLabelMap={permissionLabelMap} />
@@ -117,7 +131,7 @@ function RoleProfilesSection(props = {}) {
                 <input
                     value={roleForm.role || ''}
                     onChange={(event) => setRoleForm?.((prev) => ({ ...prev, role: sanitizeRoleCode?.(event.target.value) || '' }))}
-                    placeholder="Codigo rol (ej: support_manager)"
+                    placeholder="Código del rol (ej: support_manager)"
                     disabled={busy || rolePanelMode !== 'create'}
                 />
                 <input
@@ -173,7 +187,7 @@ function RoleProfilesSection(props = {}) {
                 <button type="button" disabled={busy || !String(roleForm.role || selectedRoleKey || '').trim()} onClick={saveRoleProfile}>
                     {rolePanelMode === 'create' ? 'Crear rol' : 'Guardar cambios'}
                 </button>
-                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelRoleEdit}>Cancelar</button>
+                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelRoleEdit}>CANCELAR</button>
             </div>
         </>
     ), [
@@ -192,7 +206,7 @@ function RoleProfilesSection(props = {}) {
 
     const detailActions = React.useMemo(() => {
         if (rolePanelMode !== 'view' || !selectedRoleProfile || !canManageRoles) return null;
-        return <button type="button" disabled={busy} onClick={openRoleEdit}>Editar rol</button>;
+        return <button type="button" disabled={busy} onClick={openRoleEdit}>EDITAR</button>;
     }, [busy, canManageRoles, openRoleEdit, rolePanelMode, selectedRoleProfile]);
 
     if (!isRolesSection) return null;
@@ -212,10 +226,11 @@ function RoleProfilesSection(props = {}) {
             mode={isEditing ? 'form' : 'detail'}
             dirty={isEditing}
             emptyText="No hay perfiles de rol cargados."
-            searchPlaceholder="Buscar rol por nombre, codigo o estado"
+            searchPlaceholder="Buscar rol por nombre, código o estado..."
             actions={canManageRoles ? [{ key: 'create', label: 'Nuevo rol', onClick: openRoleCreate, disabled: busy }] : []}
+            filters={filters}
             detailTitle={rolePanelMode === 'create' ? 'Nuevo rol' : rolePanelMode === 'edit' ? `Editando rol: ${roleForm.role || selectedRoleKey}` : selectedRoleProfile?.label || selectedRoleProfile?.role || 'Rol'}
-            detailSubtitle={isEditing ? 'Define permisos obligatorios, opcionales y bloqueados por perfil.' : 'Catalogo global de perfiles de acceso.'}
+            detailSubtitle={isEditing ? 'Define permisos obligatorios, opcionales y bloqueados por perfil.' : 'Catálogo global de perfiles de acceso.'}
             detailActions={detailActions}
         />
     );

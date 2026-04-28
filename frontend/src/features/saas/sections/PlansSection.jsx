@@ -33,6 +33,9 @@ function PlansSection(props = {}) {
         return {
             id: planId,
             plan: planId,
+            name: planId,
+            scope: 'Global',
+            updatedAt: String(limits.updatedAt || '-').trim() || '-',
             maxUsers: Number(limits.maxUsers || 0),
             maxWaModules: Number(limits.maxWaModules || 0),
             maxCatalogs: Number(limits.maxCatalogs || 0),
@@ -42,11 +45,18 @@ function PlansSection(props = {}) {
     }), [planIds, planMatrix]);
 
     const columns = React.useMemo(() => [
-        { key: 'plan', label: 'Plan', width: '28%', minWidth: '220px', sortable: true },
-        { key: 'maxUsers', label: 'Usuarios', width: '18%', minWidth: '140px', sortable: true },
-        { key: 'maxWaModules', label: 'Modulos WA', width: '18%', minWidth: '150px', sortable: true },
-        { key: 'maxCatalogs', label: 'Catalogos', width: '18%', minWidth: '140px', sortable: true },
-        { key: 'maxQuickReplies', label: 'Respuestas rapidas', width: '18%', minWidth: '180px', sortable: true }
+        { key: 'name', label: 'Nombre', width: '28%', minWidth: '220px', sortable: true },
+        { key: 'scope', label: 'Scope', width: '18%', minWidth: '140px', sortable: true, hidden: true },
+        { key: 'updatedAt', label: 'Actualizado', width: '18%', minWidth: '150px', sortable: true, hidden: true },
+        { key: 'maxUsers', label: 'Usuarios', width: '18%', minWidth: '140px', sortable: true, hidden: true },
+        { key: 'maxWaModules', label: 'Módulos WA', width: '18%', minWidth: '150px', sortable: true, hidden: true },
+        { key: 'maxCatalogs', label: 'Catálogos', width: '18%', minWidth: '140px', sortable: true, hidden: true },
+        { key: 'maxQuickReplies', label: 'Respuestas Rápidas', width: '18%', minWidth: '180px', sortable: true, hidden: true }
+    ], []);
+
+    const filters = React.useMemo(() => [
+        { key: 'name', label: 'Nombre', type: 'text' },
+        { key: 'scope', label: 'Scope', type: 'option', options: [{ value: 'Global', label: 'Global' }] }
     ], []);
 
     const close = React.useCallback(() => {
@@ -63,7 +73,7 @@ function PlansSection(props = {}) {
             return (
                 <div className="saas-admin-empty-state saas-admin-empty-state--detail">
                     <h4>Selecciona un plan</h4>
-                    <p>Define limites de usuarios, modulos y catalogos segun el plan.</p>
+                    <p>Define límites de usuarios, módulos y catálogos según el plan.</p>
                 </div>
             );
         }
@@ -167,7 +177,7 @@ function PlansSection(props = {}) {
                 >
                     Guardar cambios
                 </button>
-                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelPlanEdit}>Cancelar</button>
+                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelPlanEdit}>CANCELAR</button>
             </div>
         </>
     ), [
@@ -187,7 +197,7 @@ function PlansSection(props = {}) {
 
     const detailActions = React.useMemo(() => {
         if (!selectedPlan || planPanelMode !== 'view') return null;
-        return <button type="button" disabled={busy} onClick={openPlanEdit}>Editar</button>;
+        return <button type="button" disabled={busy} onClick={openPlanEdit}>EDITAR</button>;
     }, [busy, openPlanEdit, planPanelMode, selectedPlan]);
 
     if (!isPlansSection) return null;
@@ -210,6 +220,7 @@ function PlansSection(props = {}) {
             emptyText="No hay planes cargados."
             searchPlaceholder="Buscar plan por nombre o limite"
             actions={[{ key: 'reload', label: 'Recargar planes', onClick: loadPlanMatrix, disabled: busy || loadingPlans }]}
+            filters={filters}
             detailTitle={planPanelMode === 'edit' ? `Editando plan: ${planForm.id}` : `Plan: ${selectedPlan?.id || ''}`}
             detailSubtitle={isEditing ? 'Los cambios aplican globalmente a todos los tenants de este plan.' : 'Control global de limites por plan.'}
             detailActions={detailActions}

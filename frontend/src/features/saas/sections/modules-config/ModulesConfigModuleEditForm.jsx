@@ -40,7 +40,7 @@ export default function ModulesConfigModuleEditForm({
                 <input
                     value={waModuleForm.name}
                     onChange={(event) => setWaModuleForm((prev) => ({ ...prev, name: event.target.value }))}
-                    placeholder="Nombre del modulo"
+                    placeholder="Nombre del módulo"
                     disabled={!settingsTenantId || busy}
                 />
                 <select
@@ -56,7 +56,7 @@ export default function ModulesConfigModuleEditForm({
                 <input
                     value={waModuleForm.phoneNumber}
                     onChange={(event) => setWaModuleForm((prev) => ({ ...prev, phoneNumber: event.target.value }))}
-                    placeholder="Numero (ej: +51999999999)"
+                    placeholder="Número (ej: +51999999999)"
                     disabled={!settingsTenantId || busy}
                 />
                 <select
@@ -64,16 +64,16 @@ export default function ModulesConfigModuleEditForm({
                     onChange={(event) => setWaModuleForm((prev) => ({ ...prev, moduleCatalogMode: event.target.value }))}
                     disabled={!settingsTenantId || busy}
                 >
-                    <option value="inherit">Catalogo: heredar empresa</option>
+                    <option value="inherit">Catálogo: heredar empresa</option>
                     {CATALOG_MODE_OPTIONS.map((mode) => (
-                        <option key={`module_catalog_${mode}`} value={mode}>{`Catalogo: ${mode}`}</option>
+                        <option key={`module_catalog_${mode}`} value={mode}>{`Catálogo: ${mode}`}</option>
                     ))}
                 </select>
             </div>
 
             <div className="saas-admin-form-row">
                 <div className="saas-admin-field">
-                    <label htmlFor="wa-module-ai-assistant">Asistente IA del modulo</label>
+                    <label htmlFor="wa-module-ai-assistant">Asistente IA del módulo</label>
                     <select
                         id="wa-module-ai-assistant"
                         value={waModuleForm.aiAssistantId}
@@ -91,11 +91,11 @@ export default function ModulesConfigModuleEditForm({
             </div>
 
             <div className="saas-admin-related-block">
-                <h4>Catalogos asignados al modulo</h4>
-                <small>Selecciona uno o mas catalogos activos para este modulo.</small>
+                <h4>CATÁLOGOS ASIGNADOS AL MÓDULO</h4>
+                <small>Selecciona uno o más catálogos activos para este módulo.</small>
                 <div className="saas-admin-modules">
                     {activeCatalogOptions.length === 0 && (
-                        <div className="saas-admin-empty-inline">No hay catalogos activos. Crea uno en la pestana Catalogos.</div>
+                        <div className="saas-admin-empty-inline">No hay catálogos activos. Crea uno en la pestaña Catálogos.</div>
                     )}
                     {activeCatalogOptions.map((catalogItem) => {
                         const catalogId = String(catalogItem?.catalogId || '').trim().toUpperCase();
@@ -116,11 +116,11 @@ export default function ModulesConfigModuleEditForm({
             </div>
 
             <div className="saas-admin-related-block">
-                <h4>Bibliotecas de respuestas rapidas</h4>
-                <small>Selecciona las bibliotecas especificas para este modulo. Las compartidas aplican siempre.</small>
+                <h4>BIBLIOTECAS DE RESPUESTAS RÁPIDAS</h4>
+                <small>Selecciona las bibliotecas específicas para este módulo. Las compartidas aplican siempre.</small>
                 <div className="saas-admin-modules">
                     {activeQuickReplyLibraries.length === 0 && (
-                        <div className="saas-admin-empty-inline">No hay bibliotecas activas. Crea bibliotecas en la pestana Respuestas rapidas.</div>
+                        <div className="saas-admin-empty-inline">No hay bibliotecas activas. Crea bibliotecas en la pestaña Respuestas Rápidas.</div>
                     )}
                     {activeQuickReplyLibraries.map((library) => {
                         const libraryId = String(library?.libraryId || '').trim().toUpperCase();
@@ -162,7 +162,7 @@ export default function ModulesConfigModuleEditForm({
                         onChange={(event) => setWaModuleForm((prev) => ({ ...prev, moduleCatalogEnabled: event.target.checked }))}
                         disabled={!settingsTenantId || busy}
                     />
-                    <span>Catalogo habilitado</span>
+                    <span>Catálogo habilitado</span>
                 </label>
                 <label className="saas-admin-module-toggle">
                     <input
@@ -180,13 +180,13 @@ export default function ModulesConfigModuleEditForm({
                         onChange={(event) => setWaModuleForm((prev) => ({ ...prev, moduleQuickRepliesEnabled: event.target.checked }))}
                         disabled={!settingsTenantId || busy}
                     />
-                    <span>Respuestas rapidas habilitadas</span>
+                    <span>Respuestas rápidas habilitadas</span>
                 </label>
             </div>
 
             <div className="saas-admin-form-row">
                 <ImageDropInput
-                    label="Reemplazar imagen del modulo"
+                    label="Reemplazar imagen del módulo"
                     disabled={busy}
                     onFile={(file) => handleFormImageUpload({
                         file,
@@ -199,7 +199,7 @@ export default function ModulesConfigModuleEditForm({
 
             {waModuleForm.imageUrl && (
                 <div className="saas-admin-preview-strip">
-                    <img src={waModuleForm.imageUrl} alt="Imagen modulo" className="saas-admin-preview-thumb" />
+                    <img src={waModuleForm.imageUrl} alt="Imagen del módulo" className="saas-admin-preview-thumb" />
                 </div>
             )}
 
@@ -209,7 +209,7 @@ export default function ModulesConfigModuleEditForm({
                     onChange={(event) => setModuleUserPickerId(String(event.target.value || '').trim())}
                     disabled={!settingsTenantId || busy || availableUsersForModulePicker.length === 0}
                 >
-                    <option value="">Seleccionar usuario para el modulo</option>
+                    <option value="">Seleccionar usuario para el módulo</option>
                     {availableUsersForModulePicker.map((user) => (
                         <option key={`wa_module_user_picker_${user.id}`} value={user.id}>{toUserDisplayName(user)}</option>
                     ))}
@@ -227,7 +227,7 @@ export default function ModulesConfigModuleEditForm({
                 <h4>Usuarios asignados</h4>
                 <div className="saas-admin-related-list">
                     {assignedModuleUsers.length === 0 && (
-                        <div className="saas-admin-empty-inline">No hay usuarios asignados al modulo.</div>
+                        <div className="saas-admin-empty-inline">No hay usuarios asignados al módulo.</div>
                     )}
                     {assignedModuleUsers.map((user) => (
                         <button
@@ -238,7 +238,7 @@ export default function ModulesConfigModuleEditForm({
                             disabled={busy}
                         >
                             <span>{toUserDisplayName(user)}</span>
-                            <small>Quitar del modulo</small>
+                            <small>Quitar del módulo</small>
                         </button>
                     ))}
                 </div>
@@ -275,7 +275,7 @@ export default function ModulesConfigModuleEditForm({
                             id="wa-module-meta-phone-id"
                             value={waModuleForm.cloudPhoneNumberId}
                             onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudPhoneNumberId: event.target.value }))}
-                            placeholder="ID del numero de telefono en Meta"
+                            placeholder="ID del número de teléfono en Meta"
                             disabled={!settingsTenantId || busy}
                         />
                     </div>
@@ -285,7 +285,7 @@ export default function ModulesConfigModuleEditForm({
                             id="wa-module-meta-verify-token"
                             value={waModuleForm.cloudVerifyToken}
                             onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudVerifyToken: event.target.value }))}
-                            placeholder="Token de verificacion del webhook"
+                            placeholder="Token de verificación del webhook"
                             disabled={!settingsTenantId || busy}
                         />
                     </div>
@@ -297,7 +297,7 @@ export default function ModulesConfigModuleEditForm({
                             id="wa-module-meta-graph-version"
                             value={waModuleForm.cloudGraphVersion}
                             onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudGraphVersion: event.target.value }))}
-                            placeholder="Version Graph API (ej: v22.0)"
+                            placeholder="Versión Graph API (ej: v22.0)"
                             disabled={!settingsTenantId || busy}
                         />
                     </div>
@@ -307,7 +307,7 @@ export default function ModulesConfigModuleEditForm({
                             id="wa-module-meta-display-phone"
                             value={waModuleForm.cloudDisplayPhoneNumber}
                             onChange={(event) => setWaModuleForm((prev) => ({ ...prev, cloudDisplayPhoneNumber: event.target.value }))}
-                            placeholder="Numero visible (ej: 519XXXXXXXX)"
+                            placeholder="Número visible (ej: 519XXXXXXXX)"
                             disabled={!settingsTenantId || busy}
                         />
                     </div>
@@ -351,8 +351,8 @@ export default function ModulesConfigModuleEditForm({
                         <label>Estado actual de secretos</label>
                         <input
                             value={[
-                                waModuleForm.cloudAppSecretMasked ? 'APP_SECRET: configurado' : 'APP_SECRET: vacio',
-                                waModuleForm.cloudSystemUserTokenMasked ? 'SYSTEM_USER_TOKEN: configurado' : 'SYSTEM_USER_TOKEN: vacio'
+                                waModuleForm.cloudAppSecretMasked ? 'APP_SECRET: configurado' : 'APP_SECRET: vacío',
+                                waModuleForm.cloudSystemUserTokenMasked ? 'SYSTEM_USER_TOKEN: configurado' : 'SYSTEM_USER_TOKEN: vacío'
                             ].join(' | ')}
                             disabled
                         />
@@ -377,7 +377,7 @@ export default function ModulesConfigModuleEditForm({
                     disabled={busy || !settingsTenantId || !waModuleForm.name.trim() || !canEditModules}
                     onClick={handleModuleSave}
                 >
-                    {waModulePanelMode === 'create' ? 'Guardar modulo' : 'Actualizar modulo'}
+                    {waModulePanelMode === 'create' ? 'Guardar módulo' : 'Actualizar módulo'}
                 </button>
                 <button
                     type="button"
@@ -391,7 +391,7 @@ export default function ModulesConfigModuleEditForm({
                         clearConfigSelection();
                     }}
                 >
-                    Cancelar
+                    CANCELAR
                 </button>
             </div>
         </>

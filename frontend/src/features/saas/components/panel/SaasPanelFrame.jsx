@@ -14,6 +14,8 @@ export default function SaasPanelFrame({
     currentUserRoleLabel = 'Sin rol',
     buildInitials,
     closeLabel = 'Cerrar sesion',
+    themeMode = 'dark',
+    onThemeChange = null,
     onClose,
     error = '',
     showPanelLoading = false,
@@ -46,6 +48,8 @@ export default function SaasPanelFrame({
                     currentUserRoleLabel={currentUserRoleLabel}
                     buildInitials={buildInitials}
                     closeLabel={closeLabel}
+                    themeMode={themeMode}
+                    onThemeChange={onThemeChange}
                     onClose={onClose}
                     tenantPicker={requiresTenantSelection ? {
                         visible: true,

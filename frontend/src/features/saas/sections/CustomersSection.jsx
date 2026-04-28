@@ -19,23 +19,24 @@ import { fetchTenantCustomerLabels, fetchTenantZoneRules } from '../services/lab
 import { listMetaTemplates } from '../services/metaTemplates.service';
 
 const CUSTOMER_TABLE_COLUMNS = [
-    { key: 'codigo', label: 'Codigo', width: '132px', minWidth: '120px', maxWidth: '152px', type: 'text' },
-    { key: 'nombreCompleto', label: 'Nombre completo', width: '208px', minWidth: '160px', maxWidth: '260px', type: 'text' },
+    { key: 'codigo', label: 'Código', width: '132px', minWidth: '120px', maxWidth: '152px', type: 'text' },
+    { key: 'nombreCompleto', label: 'Nombre Completo', width: '208px', minWidth: '160px', maxWidth: '260px', type: 'text' },
     { key: 'nombres', label: 'Nombres', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
-    { key: 'apellidoPaterno', label: 'Apellido paterno', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
-    { key: 'apellidoMaterno', label: 'Apellido materno', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
-    { key: 'telefono', label: 'Telefono', width: '156px', minWidth: '132px', maxWidth: '190px', type: 'text' },
-    { key: 'telefonoAlt', label: 'Telefono alterno', width: '168px', minWidth: '140px', maxWidth: '208px', type: 'text' },
+    { key: 'apellidoPaterno', label: 'Apellido Paterno', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
+    { key: 'apellidoMaterno', label: 'Apellido Materno', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
+    { key: 'telefono', label: 'Teléfono', width: '156px', minWidth: '132px', maxWidth: '190px', type: 'text' },
+    { key: 'telefonoAlt', label: 'Teléfono Alterno', width: '168px', minWidth: '140px', maxWidth: '208px', type: 'text' },
     { key: 'email', label: 'Correo', width: '220px', minWidth: '180px', maxWidth: '280px', type: 'text' },
-    { key: 'tipoCliente', label: 'Tipo de cliente', width: '146px', minWidth: '124px', maxWidth: '196px', type: 'option' },
-    { key: 'tipoDocumento', label: 'Tipo documento', width: '162px', minWidth: '136px', maxWidth: '216px', type: 'option' },
+    { key: 'tipoCliente', label: 'Tipo De Cliente', width: '146px', minWidth: '124px', maxWidth: '196px', type: 'option' },
+    { key: 'tipoDocumento', label: 'Tipo De Documento', width: '162px', minWidth: '136px', maxWidth: '216px', type: 'option' },
     { key: 'documento', label: 'Documento', width: '150px', minWidth: '130px', maxWidth: '190px', type: 'text' },
     { key: 'idioma', label: 'Idioma', width: '118px', minWidth: '100px', maxWidth: '150px', type: 'option' },
     { key: 'fuenteAdquisicion', label: 'Fuente', width: '146px', minWidth: '124px', maxWidth: '196px', type: 'option' },
     { key: 'tratamiento', label: 'Tratamiento', width: '146px', minWidth: '124px', maxWidth: '196px', type: 'option' },
     { key: 'zona', label: 'Zona', width: '154px', minWidth: '130px', maxWidth: '210px', type: 'option' },
     { key: 'etiquetas', label: 'Etiquetas', width: '220px', minWidth: '180px', maxWidth: '300px', type: 'text' },
-    { key: 'ultimaInteraccion', label: 'Ultima interaccion', width: '166px', minWidth: '144px', maxWidth: '220px', type: 'date' },
+    { key: 'estadoComercial', label: 'Estado Comercial', width: '160px', minWidth: '136px', maxWidth: '210px', type: 'option' },
+    { key: 'ultimaInteraccion', label: 'Última Interacción', width: '166px', minWidth: '144px', maxWidth: '220px', type: 'date' },
     { key: 'actualizado', label: 'Actualizado', width: '166px', minWidth: '144px', maxWidth: '220px', type: 'date' },
     { key: 'estado', label: 'Estado', width: '116px', minWidth: '96px', maxWidth: '146px', type: 'option' }
 ];
@@ -156,7 +157,8 @@ function normalizeCatalogItems(items = []) {
         .map((item = {}) => ({
             id: String(item.id || item.code || '').trim(),
             label: String(item.label || item.name || item.code || item.id || '').trim(),
-            value: String(item.label || item.name || item.code || item.id || '').trim()
+            value: String(item.label || item.name || item.code || item.id || '').trim(),
+            abbreviation: String(item.abbreviation || '').trim()
         }))
         .filter((item) => item.id && item.label);
 }
@@ -168,12 +170,13 @@ function normalizeCatalogLookupKey(value = '') {
     return raw.toLowerCase();
 }
 
-function buildCatalogLabelMap(items = []) {
+function buildCatalogLabelMap(items = [], preferredField = 'label') {
     return normalizeCatalogItems(items).reduce((acc, item) => {
         const rawId = String(item.id || '').trim();
         const normalizedId = normalizeCatalogLookupKey(rawId);
-        if (rawId) acc[rawId] = item.label;
-        if (normalizedId) acc[normalizedId] = item.label;
+        const preferredValue = String(item?.[preferredField] || item.label || '').trim() || item.label;
+        if (rawId) acc[rawId] = preferredValue;
+        if (normalizedId) acc[normalizedId] = preferredValue;
         return acc;
     }, {});
 }
@@ -1017,8 +1020,8 @@ function CustomersSection(props = {}) {
     );
     const customerLabelMaps = useMemo(() => ({
         customerTypeById: buildCatalogLabelMap(customerTypeOptions),
-        documentTypeById: buildCatalogLabelMap(documentTypeOptions),
-        treatmentById: buildCatalogLabelMap(treatmentOptions),
+        documentTypeById: buildCatalogLabelMap(documentTypeOptions, 'abbreviation'),
+        treatmentById: buildCatalogLabelMap(treatmentOptions, 'abbreviation'),
         sourceById: buildCatalogLabelMap(sourceOptions)
     }), [customerTypeOptions, documentTypeOptions, treatmentOptions, sourceOptions]);
     const geoDepartmentOptions = useMemo(
@@ -1395,6 +1398,7 @@ function CustomersSection(props = {}) {
                 tratamiento: buildTreatmentLabel(customer, customerLabelMaps),
                 zona: zone?.label || '-',
                 etiquetas: tags.length ? tags.join(', ') : '-',
+                estadoComercial: String(customer.commercialStatus || customer.commercial_status || '-').trim() || '-',
                 ultimaInteraccion: formatDateTimeLabel(customer.lastInteractionAt || customer.last_interaction_at || ''),
                 actualizado: formatDateTimeLabel(customer.updatedAt || customer.updated_at || ''),
                 estado: customer.isActive === false ? 'Inactivo' : 'Activo',
@@ -1414,6 +1418,16 @@ function CustomersSection(props = {}) {
             if (column.key === 'fuenteAdquisicion') return { ...column, options: sourceOptions };
             if (column.key === 'tratamiento') return { ...column, options: treatmentOptions };
             if (column.key === 'zona') return { ...column, options: zoneOptions };
+            if (column.key === 'estadoComercial') return {
+                ...column,
+                options: [
+                    { value: 'nuevo', label: 'Nuevo' },
+                    { value: 'en_conversacion', label: 'En conversación' },
+                    { value: 'cotizado', label: 'Cotizado' },
+                    { value: 'vendido', label: 'Vendido' },
+                    { value: 'perdido', label: 'Perdido' }
+                ]
+            };
             if (column.key === 'idioma') return {
                 ...column,
                 options: [
@@ -3267,7 +3281,7 @@ function CustomersSection(props = {}) {
     const headerActions = [
         {
             key: 'add-customer',
-            label: 'Agregar cliente',
+            label: 'Agregar',
             onClick: openCustomerCreate,
             variant: 'primary',
             disabled: busy || tenantScopeLocked
@@ -3333,7 +3347,7 @@ function CustomersSection(props = {}) {
             actions={headerActions.filter((action) => action.key !== 'toggle-columns')}
             actionsExtra={(
                 <div className="saas-entity-columns">
-                    <button type="button" onClick={() => setShowColumnsMenu((prev) => !prev)} disabled={busy || tenantScopeLocked}>
+                    <button type="button" className="saas-header-btn saas-header-btn--secondary saas-btn-columns" onClick={() => setShowColumnsMenu((prev) => !prev)} disabled={busy || tenantScopeLocked}>
                         Columnas
                     </button>
                     {showColumnsMenu ? (
@@ -3655,7 +3669,7 @@ function CustomersSection(props = {}) {
                         >
                             <option value="">{loadingCustomerCatalogs ? 'Cargando tratamientos...' : 'Tratamiento'}</option>
                             {treatmentOptions.map((item) => (
-                                <option key={`customer-treatment-${item.id}`} value={item.id}>{item.label}</option>
+                                <option key={`customer-treatment-${item.id}`} value={item.id}>{item.abbreviation || item.label}</option>
                             ))}
                         </select>
                     </div>
@@ -3710,7 +3724,7 @@ function CustomersSection(props = {}) {
                         >
                             <option value="">{loadingCustomerCatalogs ? 'Cargando tipos documento...' : 'Tipo de documento'}</option>
                             {documentTypeOptions.map((item) => (
-                                <option key={`customer-document-${item.id}`} value={item.id}>{item.label}</option>
+                                <option key={`customer-document-${item.id}`} value={item.id}>{item.abbreviation || item.label}</option>
                             ))}
                         </select>
                         <input

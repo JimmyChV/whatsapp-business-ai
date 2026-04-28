@@ -5,6 +5,7 @@ const {
     queryPostgres
 } = require('../../../config/persistence-runtime');
 const { parseCsvRows } = require('../../tenant/helpers/customers-normalizers.helpers');
+const { normalizeAddressFields } = require('../../../utils/normalize-text');
 
 const ERP_DATA_DIR = path.join(__dirname, '../../../config/data/erp');
 const ERP_CATALOG_FILES = {
@@ -380,6 +381,9 @@ function registerOperationsHttpRoutes({
     const getCampaignById = typeof campaignsApi.getCampaignById === 'function'
         ? campaignsApi.getCampaignById.bind(campaignsApi)
         : async () => null;
+    const hydrateCampaignReadOnlyState = typeof campaignsApi.hydrateCampaignReadOnlyState === 'function'
+        ? campaignsApi.hydrateCampaignReadOnlyState.bind(campaignsApi)
+        : async (_tenantId, campaign) => campaign;
     const hydrateCampaignRuntimeState = typeof campaignsApi.hydrateCampaignRuntimeState === 'function'
         ? campaignsApi.hydrateCampaignRuntimeState.bind(campaignsApi)
         : async (_tenantId, campaign) => campaign;
@@ -555,14 +559,21 @@ function registerOperationsHttpRoutes({
             ? Boolean(source.isPrimary)
             : (source.is_primary !== undefined ? Boolean(source.is_primary) : Boolean(base.isPrimary));
         const metadata = toSafeObject(source.metadata || base.metadata);
-        return {
-            addressType,
+        const normalizedDbFields = normalizeAddressFields({
             street,
             reference,
+            district_name: districtName,
+            province_name: provinceName,
+            department_name: departmentName
+        });
+        return {
+            addressType,
+            street: normalizedDbFields.street,
+            reference: normalizedDbFields.reference,
             mapsUrl,
-            districtName,
-            provinceName,
-            departmentName,
+            districtName: normalizedDbFields.district_name,
+            provinceName: normalizedDbFields.province_name,
+            departmentName: normalizedDbFields.department_name,
             latitude,
             longitude,
             isPrimary,
@@ -1794,7 +1805,7 @@ function registerOperationsHttpRoutes({
             const campaignId = toText(req.params?.campaignId || '');
             if (!campaignId) return res.status(400).json({ ok: false, error: 'campaignId invalido.' });
 
-            const campaign = await hydrateCampaignRuntimeState(tenantId, campaignId, { markCompleted: true });
+            const campaign = await hydrateCampaignReadOnlyState(tenantId, campaignId, { markCompleted: true });
             if (!campaign) return res.status(404).json({ ok: false, error: 'Campana no encontrada.' });
 
             return res.json({ ok: true, tenantId, campaign });

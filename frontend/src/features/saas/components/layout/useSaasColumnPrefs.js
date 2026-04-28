@@ -7,6 +7,8 @@ const useSaasColumnPrefs = (sectionKey, defaultColumns = [], options = {}) => {
         visibleColumnKeys: prefs.visibleColumnKeys,
         setVisibleKeys: prefs.setVisibleColumnKeys,
         setVisibleColumnKeys: prefs.setVisibleColumnKeys,
+        sort: prefs.sort,
+        setSort: prefs.setSort,
         isColumnVisible: prefs.isColumnVisible,
         toggleColumn: prefs.toggleColumn,
         resetVisibleKeys: prefs.resetColumns,

@@ -17,6 +17,7 @@ const {
     toLower,
     toBool
 } = require('../domains/tenant/helpers/customers-normalizers.helpers');
+const { normalizeCustomerFields, normalizeAddressFields } = require('../utils/normalize-text');
 
 const DEFAULT_ERP_DIR = path.join(__dirname, '..', 'config', 'data', 'erp');
 
@@ -412,6 +413,19 @@ async function upsertCustomer(tenantId, row = {}, lookups = {}, options = {}) {
             autorizacion: toBool(row.autorizacion, false)
         }
     };
+    const normalizedDbFields = normalizeCustomerFields({
+        contact_name: contactName,
+        phone_e164: phoneE164,
+        phone_alt: phoneAlt,
+        first_name: firstName,
+        last_name_paternal: lastNamePaternal,
+        last_name_maternal: lastNameMaternal,
+        document_number: documentNumber,
+        notes,
+        erp_id: erpClientId,
+        erp_employee_id: toText(row.idempleado) || null,
+        referral_customer_id: toText(row.idreferido) || null
+    });
 
     await queryPostgres(
         `INSERT INTO tenant_customers (
@@ -449,9 +463,9 @@ async function upsertCustomer(tenantId, row = {}, lookups = {}, options = {}) {
             tenantId,
             customerId,
             moduleId,
-            contactName,
-            phoneE164,
-            phoneAlt,
+            normalizedDbFields.contact_name,
+            normalizedDbFields.phone_e164,
+            normalizedDbFields.phone_alt,
             email,
             JSON.stringify(Array.from(new Set(tags))),
             JSON.stringify({
@@ -466,14 +480,14 @@ async function upsertCustomer(tenantId, row = {}, lookups = {}, options = {}) {
             registeredAt || now,
             now,
             treatmentId,
-            firstName,
-            lastNamePaternal,
-            lastNameMaternal,
+            normalizedDbFields.first_name,
+            normalizedDbFields.last_name_paternal,
+            normalizedDbFields.last_name_maternal,
             documentTypeId,
-            documentNumber,
+            normalizedDbFields.document_number,
             customerTypeId,
             acquisitionSourceId,
-            notes
+            normalizedDbFields.notes
         ]
     );
 
@@ -496,6 +510,12 @@ async function upsertAddress(tenantId, row = {}, customerId = null) {
     const isPrimary = toBool(row.esprincipal, false);
     const mapsUrl = toText(row.ubicacionmaps) || null;
     const coords = parseMapsCoordinates(mapsUrl || '');
+    const normalizedDbFields = normalizeAddressFields({
+        street: toText(row.direccion) || null,
+        reference: toText(row.referencia) || null,
+        wkt: toText(row.wkt) || null,
+        district_id: toText(row.iddistrito) || null
+    });
 
     if (isPrimary) {
         await queryPostgres(
@@ -540,14 +560,14 @@ async function upsertAddress(tenantId, row = {}, customerId = null) {
             tenantId,
             customerId,
             'delivery',
-            toText(row.direccion) || null,
-            toText(row.referencia) || null,
+            normalizedDbFields.street,
+            normalizedDbFields.reference,
             mapsUrl,
-            toText(row.wkt) || null,
+            normalizedDbFields.wkt,
             Number.isFinite(coords.latitude) ? coords.latitude : null,
             Number.isFinite(coords.longitude) ? coords.longitude : null,
             isPrimary,
-            toText(row.iddistrito) || null,
+            normalizedDbFields.district_id,
             null,
             null,
             null,

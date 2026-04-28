@@ -1,9 +1,14 @@
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useLayoutEffect, useState } from 'react';
 
 import AppErrorBoundary from '../../../shared/components/AppErrorBoundary';
 import SaasAdminPanel from './SaasAdminPanel';
 
 const SAAS_NAV_COLLAPSED_KEY = 'saas_nav_collapsed';
+const normalizeThemeMode = (value = '') => (String(value || '').trim().toLowerCase() === 'light' ? 'light' : 'dark');
+const applyDocumentTheme = (mode = 'dark') => {
+  if (typeof document === 'undefined') return;
+  document.documentElement.setAttribute('data-theme', normalizeThemeMode(mode));
+};
 
 const PanelChunkFallback = () => (
   <div className='login-screen'>
@@ -30,7 +35,11 @@ export default function SaasAdminPanelShell({
   launchSource,
   initialSection,
   resetKeys,
+  themeMode = 'dark',
+  onThemeChange = null,
 }) {
+  applyDocumentTheme(themeMode);
+
   const [navCollapsed, setNavCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
     try {
@@ -49,6 +58,10 @@ export default function SaasAdminPanelShell({
       // ignore storage failures
     }
   }, [navCollapsed]);
+
+  useLayoutEffect(() => {
+    applyDocumentTheme(themeMode || 'dark');
+  }, [themeMode]);
 
   const handleToggleNav = () => {
     setNavCollapsed((prev) => !prev);
@@ -96,6 +109,8 @@ export default function SaasAdminPanelShell({
             preferredTenantId={preferredTenantId}
             launchSource={launchSource}
             initialSection={initialSection}
+            themeMode={themeMode}
+            onThemeChange={onThemeChange}
           />
         </AppErrorBoundary>
       </Suspense>

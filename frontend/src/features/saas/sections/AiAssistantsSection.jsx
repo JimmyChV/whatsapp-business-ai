@@ -94,7 +94,7 @@ function AiAssistantsSection(props = {}) {
             return (
                 <div className="saas-admin-empty-state saas-admin-empty-state--detail">
                     <h4>Asistentes por empresa</h4>
-                    <p>Selecciona una empresa para ver detalle y configuracion IA.</p>
+                    <p>Selecciona una empresa para ver el detalle y la configuración de asistentes IA.</p>
                 </div>
             );
         }
@@ -113,18 +113,18 @@ function AiAssistantsSection(props = {}) {
                     <div className="saas-admin-detail-field"><span>Modelo</span><strong>{selectedAiAssistant.model}</strong></div>
                     <div className="saas-admin-detail-field"><span>Temperatura</span><strong>{selectedAiAssistant.temperature}</strong></div>
                     <div className="saas-admin-detail-field"><span>Top P</span><strong>{selectedAiAssistant.topP}</strong></div>
-                    <div className="saas-admin-detail-field"><span>Max tokens</span><strong>{selectedAiAssistant.maxTokens}</strong></div>
+                    <div className="saas-admin-detail-field"><span>Máx. tokens</span><strong>{selectedAiAssistant.maxTokens}</strong></div>
                     <div className="saas-admin-detail-field"><span>API key</span><strong>{selectedAiAssistant.openAiApiKeyMasked || 'No configurada'}</strong></div>
                     <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedAiAssistant.isActive ? 'Activo' : 'Inactivo'}</strong></div>
-                    <div className="saas-admin-detail-field"><span>Principal</span><strong>{selectedAiAssistant.isDefault ? 'Si' : 'No'}</strong></div>
-                    <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{formatDateTimeLabel(selectedAiAssistant.updatedAt)}</strong></div>
+                    <div className="saas-admin-detail-field"><span>Principal</span><strong>{selectedAiAssistant.isDefault ? 'Sí' : 'No'}</strong></div>
+                    <div className="saas-admin-detail-field"><span>ACTUALIZADO</span><strong>{formatDateTimeLabel(selectedAiAssistant.updatedAt)}</strong></div>
                 </div>
                 <div className="saas-admin-related-block">
-                    <h4>Descripcion</h4>
-                    <div className="saas-admin-related-row" role="status"><span>{selectedAiAssistant.description || 'Sin descripcion.'}</span></div>
+                    <h4>Descripción</h4>
+                    <div className="saas-admin-related-row" role="status"><span>{selectedAiAssistant.description || 'Sin descripción.'}</span></div>
                 </div>
                 <div className="saas-admin-related-block">
-                    <h4>System prompt</h4>
+                    <h4>Prompt del sistema</h4>
                     <div className="saas-admin-detail-metadata">
                         <pre>{selectedAiAssistant.systemPrompt || 'Sin prompt configurado.'}</pre>
                     </div>
@@ -173,7 +173,7 @@ function AiAssistantsSection(props = {}) {
         <>
             {aiAssistantPanelMode === 'edit' ? (
                 <div className="saas-admin-detail-grid">
-                    <div className="saas-admin-detail-field"><span>Codigo</span><strong>{aiAssistantForm.assistantId || '-'}</strong></div>
+                    <div className="saas-admin-detail-field"><span>CÓDIGO</span><strong>{aiAssistantForm.assistantId || '-'}</strong></div>
                 </div>
             ) : null}
             <div className="saas-admin-form-row">
@@ -192,12 +192,12 @@ function AiAssistantsSection(props = {}) {
                     <input type="number" min="0" max="1" step="0.05" value={aiAssistantForm.topP || ''} onChange={(event) => setAiAssistantForm?.((prev) => ({ ...prev, topP: event.target.value }))} disabled={busy} />
                 </div>
                 <div className="saas-admin-field">
-                    <label>Max tokens</label>
+                    <label>Máx. tokens</label>
                     <input type="number" min="64" max="4096" step="1" value={aiAssistantForm.maxTokens || ''} onChange={(event) => setAiAssistantForm?.((prev) => ({ ...prev, maxTokens: event.target.value }))} disabled={busy} />
                 </div>
             </div>
             <div className="saas-admin-form-row">
-                <textarea value={aiAssistantForm.description || ''} onChange={(event) => setAiAssistantForm?.((prev) => ({ ...prev, description: event.target.value }))} placeholder="Descripcion del asistente" rows={2} disabled={busy} />
+                <textarea value={aiAssistantForm.description || ''} onChange={(event) => setAiAssistantForm?.((prev) => ({ ...prev, description: event.target.value }))} placeholder="descripción del asistente" rows={2} disabled={busy} />
             </div>
             <div className="saas-admin-form-row">
                 <textarea value={aiAssistantForm.systemPrompt || ''} onChange={(event) => setAiAssistantForm?.((prev) => ({ ...prev, systemPrompt: event.target.value }))} placeholder="Prompt base del asistente" rows={8} disabled={busy} />
@@ -222,7 +222,7 @@ function AiAssistantsSection(props = {}) {
                 <button type="button" disabled={busy || !text(aiAssistantForm.name)} onClick={saveAiAssistant}>
                     {aiAssistantPanelMode === 'create' ? 'Guardar asistente' : 'Actualizar asistente'}
                 </button>
-                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelAiAssistantEdit}>Cancelar</button>
+                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelAiAssistantEdit}>CANCELAR</button>
             </div>
         </>
     ), [
@@ -255,11 +255,11 @@ function AiAssistantsSection(props = {}) {
             requestJson={context.requestJson}
             loading={loadingAiAssistants}
             emptyText={settingsTenantId ? 'Sin asistentes IA registrados.' : 'Selecciona una empresa para administrar asistentes IA.'}
-            searchPlaceholder="Buscar asistente por nombre, codigo, modelo o estado"
+            searchPlaceholder="Buscar asistente por nombre, código, modelo o estado..."
             filters={filters}
             actions={[
                 { label: 'Recargar', onClick: () => settingsTenantId && loadTenantAiAssistants?.(settingsTenantId), disabled: busy || !settingsTenantId || loadingAiAssistants },
-                { label: 'Nuevo asistente', onClick: openAiAssistantCreate, disabled: busy || !settingsTenantId || !canManageAi }
+                { label: 'Nuevo', onClick: openAiAssistantCreate, disabled: busy || !settingsTenantId || !canManageAi }
             ]}
             detailTitle={aiAssistantPanelMode === 'create' ? 'Nuevo asistente IA' : (selectedAiAssistant?.name || 'Detalle IA')}
             detailSubtitle={aiAssistantPanelMode === 'create' ? 'Define contexto y parametros de inferencia.' : (selectedAiAssistant?.assistantId || '')}

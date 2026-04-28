@@ -43,7 +43,7 @@ function OperationsSection(props = {}) {
             left={<aside className="saas-admin-master-pane">
                     <div className="saas-admin-pane-header">
                         <div>
-                            <h3>Operacion (asignacion y rendimiento)</h3>
+                            <h3>OPERACIÓN (ASIGNACIÓN Y RENDIMIENTO)</h3>
                             <small>Reglas de enrutamiento y KPI operativo por empresa.</small>
                         </div>
                     </div>
@@ -183,7 +183,7 @@ function OperationsSection(props = {}) {
                                         >
                                             <span>{entry.chatId || 'chat'}</span>
                                             <small>
-                                                {entry.scopeModuleId ? `Modulo ${entry.scopeModuleId}` : 'Sin modulo'}
+                                                {entry.scopeModuleId ? `Módulo ${entry.scopeModuleId}` : 'Sin módulo'}
                                                 {' | '}
                                                 {entry.lastIncomingAt ? formatDateTimeLabel(entry.lastIncomingAt) : 'sin fecha'}
                                             </small>

@@ -145,7 +145,7 @@ function SummarySection(props = {}) {
                         <strong>{tenantScopeLocked ? 0 : customersCreatedThisWeek}</strong>
                     </div>
                     <div className="saas-summary-kpi">
-                        <small>Campanas activas</small>
+                        <small>Campañas activas</small>
                         <strong>{tenantScopeLocked ? 0 : activeCampaignsCount}</strong>
                     </div>
                     <div className="saas-summary-kpi">
@@ -156,14 +156,14 @@ function SummarySection(props = {}) {
 
                 <section className="saas-summary-card saas-summary-card--actions">
                     <div className="saas-summary-card__header">
-                        <h3>Acciones rapidas</h3>
+                        <h3>ACCIONES RÁPIDAS</h3>
                         <span>Atajos a las secciones que mas se usan en el panel.</span>
                     </div>
                     <div className="saas-summary-actions">
                         <button type="button" disabled={busy || !isSectionEnabled('saas_empresas')} onClick={() => handleSectionChange('saas_empresas')}>Gestionar empresas</button>
                         <button type="button" disabled={busy || !isSectionEnabled('saas_usuarios')} onClick={() => handleSectionChange('saas_usuarios')}>Gestionar usuarios</button>
-                        <button type="button" disabled={busy || !isSectionEnabled('saas_modulos')} onClick={() => handleSectionChange('saas_modulos')}>Gestionar modulos</button>
-                        <button type="button" disabled={busy || !isSectionEnabled('saas_config')} onClick={() => handleSectionChange('saas_config')}>Configuracion general</button>
+                        <button type="button" disabled={busy || !isSectionEnabled('saas_modulos')} onClick={() => handleSectionChange('saas_modulos')}>Gestionar módulos</button>
+                        <button type="button" disabled={busy || !isSectionEnabled('saas_config')} onClick={() => handleSectionChange('saas_config')}>Configuración general</button>
                     </div>
                 </section>
             </div>
