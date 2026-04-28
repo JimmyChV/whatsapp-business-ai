@@ -76,7 +76,7 @@ function Chips({ title, items = [], remove, readonly = false }) {
 const LABEL_TABLE_COLUMNS = [
     { key: 'color', label: '', width: '54px', render: (value) => <Dot color={value || '#00A884'} /> },
     { key: 'name', label: 'Nombre', minWidth: '220px', render: (value, row) => <strong>{value || row.code}</strong> },
-    { key: 'code', label: 'Codigo', minWidth: '150px' },
+    { key: 'code', label: 'Código', minWidth: '150px' },
     { key: 'metaText', label: 'Alcance', minWidth: '170px' },
     { key: 'statusText', label: 'Estado', width: '110px' }
 ];
@@ -99,7 +99,7 @@ function buildLabelRows(items = [], idField = 'id', kind = 'label') {
 }
 function LabelsTable({ items = [], selectedId = '', idField = 'id', kind = 'label', emptyText = 'No hay etiquetas para mostrar.', onSelect }) {
     const rows = buildLabelRows(items, idField, kind);
-    const columns = LABEL_TABLE_COLUMNS.map((column) => column.key === 'metaText' ? { ...column, label: kind === 'global' ? 'Estado comercial' : 'Alcance' } : column);
+    const columns = LABEL_TABLE_COLUMNS.map((column) => column.key === 'metaText' ? { ...column, label: kind === 'global' ? 'Estado Comercial' : 'Alcance' } : column);
     return <SaasDataTable columns={columns} rows={rows} selectedId={selectedId} onSelect={(row) => { const source = items.find((item) => upper(item?.[idField] || '') === upper(row?.id || '')) || row; onSelect?.(source); }} emptyText={emptyText} enableInfinite={false} />;
 }
 
@@ -166,7 +166,7 @@ function GlobalPanel({ busy, requestJson, runAction, setError, isSuperAdmin }) {
             </div>
         </SaasDetailPanelSection>
     );
-    return <SaasEntityPage title="Globales comerciales" sectionKey="global_labels_inner" rows={buildLabelRows(visible, 'id', 'global')} columns={LABEL_TABLE_COLUMNS.map((column) => column.key === 'metaText' ? { ...column, label: 'Estado comercial' } : column)} selectedId={mode === 'list' ? '' : selectedId} onSelect={(row) => openDetail(row)} onClose={close} renderDetail={renderDetail} renderForm={renderForm} mode={mode === 'create' || mode === 'edit' ? 'form' : 'detail'} dirty={mode === 'create' || mode === 'edit'} requestJson={requestJson} loading={loading} emptyText="No hay etiquetas globales para mostrar." searchPlaceholder="Buscar etiqueta global" actions={[{ key: 'reload', label: 'Recargar', onClick: () => load({ force: true }).catch((e) => setError?.(String(e?.message || e))), disabled: busy || loading }, { key: 'create', label: 'Nueva global', onClick: openCreate, disabled: busy }]} detailTitle={mode === 'create' ? 'Nueva global' : mode === 'edit' ? 'Editar global' : selected?.name || 'Etiqueta global'} detailSubtitle={mode === 'detail' ? 'Etiqueta comercial global.' : 'Define nombre, color, orden y estado comercial asociado.'} detailActions={mode === 'detail' && selected ? <button type="button" disabled={busy} onClick={openEdit}>Editar</button> : null} />;
+    return <SaasEntityPage title="Globales comerciales" sectionKey="global_labels_inner" rows={buildLabelRows(visible, 'id', 'global')} columns={LABEL_TABLE_COLUMNS.map((column) => column.key === 'metaText' ? { ...column, label: 'Estado Comercial' } : column)} selectedId={mode === 'list' ? '' : selectedId} onSelect={(row) => openDetail(row)} onClose={close} renderDetail={renderDetail} renderForm={renderForm} mode={mode === 'create' || mode === 'edit' ? 'form' : 'detail'} dirty={mode === 'create' || mode === 'edit'} requestJson={requestJson} loading={loading} emptyText="No hay etiquetas globales para mostrar." searchPlaceholder="Buscar etiqueta global" actions={[{ key: 'reload', label: 'Recargar', onClick: () => load({ force: true }).catch((e) => setError?.(String(e?.message || e))), disabled: busy || loading }, { key: 'create', label: 'Nueva global', onClick: openCreate, disabled: busy }]} detailTitle={mode === 'create' ? 'Nueva global' : mode === 'edit' ? 'Editar global' : selected?.name || 'Etiqueta global'} detailSubtitle={mode === 'detail' ? 'Etiqueta comercial global.' : 'Define nombre, color, orden y estado comercial asociado.'} detailActions={mode === 'detail' && selected ? <button type="button" disabled={busy} onClick={openEdit}>Editar</button> : null} />;
 }
 
 function ZonePanel({ busy, requestJson, runAction, setError, canManageLabels, tenantScopeLocked, settingsTenantId }) {

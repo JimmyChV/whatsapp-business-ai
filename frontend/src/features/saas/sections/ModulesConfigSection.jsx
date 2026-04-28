@@ -74,8 +74,8 @@ function ModulesConfigSection(props = {}) {
     }, [MODULE_KEYS, isGeneralConfigSection, tenantSettings, waModules]);
 
     const columns = React.useMemo(() => [
-        { key: 'name', label: isGeneralConfigSection ? 'CONFIGURACIÓN' : 'MÓDULO', width: '32%', minWidth: '240px', sortable: true },
-        { key: 'phone', label: 'TELÉFONO', width: '24%', minWidth: '180px', sortable: true },
+        { key: 'name', label: isGeneralConfigSection ? 'Configuración' : 'Módulo', width: '32%', minWidth: '240px', sortable: true },
+        { key: 'phone', label: 'Teléfono', width: '24%', minWidth: '180px', sortable: true },
         { key: 'type', label: 'Tipo', width: '20%', minWidth: '160px', sortable: true },
         { key: 'status', label: 'Estado', width: '18%', minWidth: '120px', sortable: true }
     ], [isGeneralConfigSection]);

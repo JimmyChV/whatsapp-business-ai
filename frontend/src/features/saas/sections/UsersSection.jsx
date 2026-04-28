@@ -76,7 +76,7 @@ function UsersSection(props = {}) {
 
     const columns = React.useMemo(() => [
         { key: 'name', label: 'Usuario', width: '24%', minWidth: '220px', sortable: true },
-        { key: 'email', label: 'CORREO', width: '28%', minWidth: '260px', sortable: true },
+        { key: 'email', label: 'Correo', width: '28%', minWidth: '260px', sortable: true },
         { key: 'role', label: 'Rol', width: '18%', minWidth: '150px', sortable: true },
         { key: 'status', label: 'Estado', width: '14%', minWidth: '120px', sortable: true },
         { key: 'memberships', label: 'Empresas', width: '12%', minWidth: '120px', sortable: true }

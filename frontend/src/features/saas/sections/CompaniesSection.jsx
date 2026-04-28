@@ -61,7 +61,7 @@ function CompaniesSection(props = {}) {
         { key: 'plan', label: 'Plan', width: '14%', minWidth: '120px', sortable: true },
         { key: 'status', label: 'Estado', width: '14%', minWidth: '120px', sortable: true },
         { key: 'activeUsers', label: 'Usuarios', width: '12%', minWidth: '120px', sortable: true },
-        { key: 'aiUsage', label: 'IA mes', width: '12%', minWidth: '120px', sortable: true }
+        { key: 'aiUsage', label: 'IA Mes', width: '12%', minWidth: '120px', sortable: true }
     ], []);
 
     const close = React.useCallback(() => {

@@ -67,11 +67,11 @@ function CatalogSection(props = {}) {
     })), [tenantCatalogItems]);
 
     const columns = React.useMemo(() => [
-        { key: 'name', label: 'CATÁLOGO', width: '30%', sortable: true },
+        { key: 'name', label: 'Catálogo', width: '30%', sortable: true },
         { key: 'sourceType', label: 'Origen', width: '20%', sortable: true },
         { key: 'defaultLabel', label: 'Principal', width: '16%', sortable: true },
         { key: 'status', label: 'Estado', width: '16%', sortable: true },
-        { key: 'id', label: 'CÓDIGO', width: '18%', sortable: true }
+        { key: 'id', label: 'Código', width: '18%', sortable: true }
     ], []);
 
     const filters = React.useMemo(() => [

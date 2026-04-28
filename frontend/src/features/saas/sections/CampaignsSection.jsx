@@ -129,10 +129,10 @@ const COMMERCIAL_STATUS_COLORS = {
 
 const CAMPAIGN_TABLE_COLUMNS = [
     { key: 'campaignName', label: 'Nombre', width: '240px', minWidth: '220px', maxWidth: '320px', type: 'text' },
-    { key: 'category', label: 'CATEGORÍA', width: '140px', minWidth: '124px', maxWidth: '180px', type: 'option' },
+    { key: 'category', label: 'Categoría', width: '140px', minWidth: '124px', maxWidth: '180px', type: 'option' },
     { key: 'language', label: 'Idioma', width: '120px', minWidth: '108px', maxWidth: '144px', type: 'option' },
     { key: 'status', label: 'Estado', width: '132px', minWidth: '120px', maxWidth: '168px', type: 'option' },
-    { key: 'moduleId', label: 'MÓDULO', width: '168px', minWidth: '144px', maxWidth: '220px', type: 'option' },
+    { key: 'moduleId', label: 'Módulo', width: '168px', minWidth: '144px', maxWidth: '220px', type: 'option' },
     { key: 'updatedAt', label: 'Actualizado', width: '168px', minWidth: '146px', maxWidth: '220px', type: 'date' }
 ];
 
@@ -1138,8 +1138,8 @@ export default React.memo(function CampaignsSection(props = {}) {
             {
                 key: 'template',
                 ok: templateApproved,
-                label: 'Template aprobado',
-                hint: templateApproved ? 'OK' : 'Selecciona un template en estado aprobado.'
+                label: 'Plantilla aprobada',
+                hint: templateApproved ? 'OK' : 'Selecciona una plantilla en estado aprobado.'
             },
             {
                 key: 'module',
@@ -1732,7 +1732,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         estimateRequestRef.current.full = requestId;
         const payload = buildEstimatePayload();
         if (!payload.moduleId) throw new Error('Selecciona un modulo antes de estimar alcance.');
-        if (!payload.templateName) throw new Error('Selecciona un template aprobado antes de estimar alcance.');
+        if (!payload.templateName) throw new Error('Selecciona una plantilla aprobada antes de estimar alcance.');
         const response = await estimateReachAction({
             scopeModuleId: payload.scopeModuleId,
             moduleId: payload.moduleId,
@@ -1954,7 +1954,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                 return false;
             }
             if (!toText(form.templateId || form.templateName)) {
-                notify({ type: 'warn', message: 'Selecciona un template aprobado antes de continuar.' });
+                notify({ type: 'warn', message: 'Selecciona una plantilla aprobada antes de continuar.' });
                 return false;
             }
         }
@@ -1983,7 +1983,7 @@ export default React.memo(function CampaignsSection(props = {}) {
             status: 'draft'
         };
         if (!payload.moduleId || !payload.templateName || !payload.campaignName) {
-            throw new Error('Nombre, modulo y template son obligatorios.');
+            throw new Error('Nombre, módulo y plantilla son obligatorios.');
         }
         const response = panelMode === 'edit'
             ? await updateCampaign?.({ campaignId: selectedCampaignId, patch: payload })
@@ -2012,7 +2012,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const saveAndStartCampaignAction = useCallback(async () => {
         const payload = buildCampaignPayload();
         if (!payload.moduleId || !payload.templateName || !payload.campaignName) {
-            throw new Error('Nombre, modulo y template son obligatorios.');
+            throw new Error('Nombre, módulo y plantilla son obligatorios.');
         }
         const hasSchedule = Boolean(payload.scheduledAt);
         const shouldStartNow = !hasSchedule && !form.blocksEnabled;
@@ -2264,10 +2264,10 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 {['image', 'video', 'document'].includes(selectedTemplatePreview.headerType) ? (
                                     <div className="saas-wa-preview__media-placeholder">
                                         <strong>{selectedTemplatePreview.headerType === 'image' ? 'Imagen' : selectedTemplatePreview.headerType === 'video' ? 'Video' : 'Documento'}</strong>
-                                        <small>El template usa un header multimedia definido en Meta.</small>
+                                        <small>La plantilla usa un encabezado multimedia definido en Meta.</small>
                                     </div>
                                 ) : null}
-                                <div className="saas-wa-preview__body">{selectedTemplatePreview.bodyText || 'El cuerpo del template aparecera aqui.'}</div>
+                                <div className="saas-wa-preview__body">{selectedTemplatePreview.bodyText || 'El cuerpo de la plantilla aparecerá aquí.'}</div>
                                 {selectedTemplatePreview.footerText ? (
                                     <div className="saas-wa-preview__footer">{selectedTemplatePreview.footerText}</div>
                                 ) : null}
@@ -2295,7 +2295,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         ) : (
             <div className="saas-campaigns-wizard-preview__empty">
                 <strong>Preview no disponible</strong>
-                <p>Selecciona un template aprobado para ver una simulacion de entrega en WhatsApp.</p>
+                <p>Selecciona una plantilla aprobada para ver una simulación de entrega en WhatsApp.</p>
             </div>
         )
     );
@@ -2709,7 +2709,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                             </div>
                             <div className="saas-admin-form-row">
                                 <div className="saas-admin-field">
-                                    <label>Template aprobado</label>
+                                    <label>Plantilla aprobada</label>
                                     <select
                                         value={form.templateId}
                                         onChange={(e) => {
@@ -2718,7 +2718,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                                             setForm((p) => ({ ...p, templateId: id, templateName: t?.templateName || '', templateLanguage: t?.templateLanguage || 'es' }));
                                         }}
                                     >
-                                        <option value="">Selecciona template</option>
+                                        <option value="">Selecciona una plantilla</option>
                                         {templatesByModule.map((t) => <option key={t.templateId} value={t.templateId}>{`${t.templateName} (${toText(t.templateLanguage).toUpperCase()})`}</option>)}
                                     </select>
                                 </div>
@@ -2764,8 +2764,8 @@ export default React.memo(function CampaignsSection(props = {}) {
                         </div>
                         <aside className="saas-campaigns-wizard-preview">
                             <div className="saas-campaigns-wizard-preview__header">
-                                <h4>Preview del template</h4>
-                                <small>{selectedTemplate ? `${selectedTemplate.templateName} (${toUpper(selectedTemplate.templateLanguage)})` : 'Selecciona un template para visualizar el mensaje.'}</small>
+                                <h4>Vista previa de la plantilla</h4>
+                                <small>{selectedTemplate ? `${selectedTemplate.templateName} (${toUpper(selectedTemplate.templateLanguage)})` : 'Selecciona una plantilla para visualizar el mensaje.'}</small>
                             </div>
                             {renderTemplatePreviewBubble()}
                             <div className="saas-campaigns-wizard-preview__meta">
@@ -2963,7 +2963,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                             </div>
                         )}
                         <div className="saas-campaigns-delivery-step__summary">
-                            {`Se enviaran ${finalAudienceCount} mensajes via ${selectedModule?.label || 'modulo seleccionado'} con ${selectedTemplate?.templateName || form.templateName || 'template elegido'}.`}
+                            {`Se enviarán ${finalAudienceCount} mensajes vía ${selectedModule?.label || 'módulo seleccionado'} con ${selectedTemplate?.templateName || form.templateName || 'plantilla elegida'}.`}
                         </div>
                     </div>
                 </SaasDetailPanelSection>
@@ -2981,7 +2981,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                             <div className="saas-campaigns-summary-grid">
                                 <div><span>Nombre</span><strong>{toText(form.campaignName) || '-'}</strong></div>
                                 <div><span>Módulo</span><strong>{selectedModule?.label || '-'}</strong></div>
-                                <div><span>Template</span><strong>{selectedTemplate?.templateName || form.templateName || '-'}</strong></div>
+                                <div><span>Plantilla</span><strong>{selectedTemplate?.templateName || form.templateName || '-'}</strong></div>
                                 <div><span>Programación</span><strong>{form.scheduleMode === 'scheduled' ? formatDateTime(form.scheduledAt) : 'Inmediata'}</strong></div>
                                 <div><span>Vigencia desde</span><strong>{form.validFrom || '-'}</strong></div>
                                 <div><span>Vigencia hasta</span><strong>{form.validTo || '-'}</strong></div>
@@ -2989,7 +2989,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                         </section>
                         <section className="saas-campaigns-summary-section saas-campaigns-summary-preview">
                             <header>
-                                <h4>PREVIEW DEL TEMPLATE</h4>
+                                <h4>VISTA PREVIA DE LA PLANTILLA</h4>
                             </header>
                             {renderTemplatePreviewBubble()}
                         </section>
@@ -3097,7 +3097,7 @@ export default React.memo(function CampaignsSection(props = {}) {
             ]}
             actionsExtra={(
                 <div className="saas-entity-columns">
-                    <button type="button" onClick={() => setShowColumnsMenu((prev) => !prev)} disabled={tenantScopeLocked}>
+                    <button type="button" className="saas-btn-columns" onClick={() => setShowColumnsMenu((prev) => !prev)} disabled={tenantScopeLocked}>
                         Columnas
                     </button>
                     {showColumnsMenu ? (
@@ -3129,7 +3129,7 @@ export default React.memo(function CampaignsSection(props = {}) {
             filters={{
                 columns: [
                     { key: 'status', label: 'Estado', type: 'option', options: Object.keys(STATUS_META).map((key) => ({ value: key, label: STATUS_META[key].label })) },
-                    { key: 'moduleId', label: 'MÓDULO', type: 'option', options: moduleOptions.map((item) => ({ value: item.moduleId, label: item.label })) }
+                    { key: 'moduleId', label: 'Módulo', type: 'option', options: moduleOptions.map((item) => ({ value: item.moduleId, label: item.label })) }
                 ],
                 value: {
                     columnKey: statusFilter ? 'status' : (moduleFilter ? 'moduleId' : ''),
@@ -3231,7 +3231,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                             <div className="saas-admin-detail-grid">
                                 <div className="saas-admin-detail-field"><span>Estado</span><strong><span className={`saas-campaigns-status ${selectedMeta.className}`}>{selectedMeta.label}</span></strong></div>
                                 <div className="saas-admin-detail-field"><span>MÓDULO</span><strong>{toText(selectedCampaign?.moduleId) || '-'}</strong></div>
-                                <div className="saas-admin-detail-field"><span>TEMPLATE</span><strong>{toText(selectedCampaign?.templateName) || '-'}</strong></div>
+                                <div className="saas-admin-detail-field"><span>PLANTILLA</span><strong>{toText(selectedCampaign?.templateName) || '-'}</strong></div>
                                 <div className="saas-admin-detail-field"><span>PROGRAMADA</span><strong>{formatDateTime(selectedCampaign?.scheduledAt)}</strong></div>
                                 <div className="saas-admin-detail-field"><span>CREADA</span><strong>{formatDateTime(selectedCampaign?.createdAt)}</strong></div>
                                 <div className="saas-admin-detail-field"><span>ACTUALIZADA</span><strong>{formatDateTime(selectedCampaign?.updatedAt)}</strong></div>

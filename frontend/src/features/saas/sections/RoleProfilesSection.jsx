@@ -68,7 +68,7 @@ function RoleProfilesSection(props = {}) {
 
     const columns = React.useMemo(() => [
         { key: 'label', label: 'Rol', width: '24%', minWidth: '220px', sortable: true },
-        { key: 'role', label: 'CÓDIGO', width: '20%', minWidth: '180px', sortable: true },
+        { key: 'role', label: 'Código', width: '20%', minWidth: '180px', sortable: true },
         { key: 'requiredCount', label: 'Requeridos', width: '14%', minWidth: '130px', sortable: true },
         { key: 'optionalCount', label: 'Opcionales', width: '14%', minWidth: '130px', sortable: true },
         { key: 'blockedCount', label: 'Bloqueados', width: '14%', minWidth: '130px', sortable: true },

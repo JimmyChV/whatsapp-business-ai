@@ -88,7 +88,7 @@ export default function ModulesConfigMasterPane({
                                 onChange={(event) => setSearch(event.target.value)}
                                 placeholder="Buscar módulo por nombre, código o teléfono..."
                             />
-                            <button type="button">Columnas</button>
+                            <button type="button" className="saas-btn-columns">Columnas</button>
                         </div>
                         <div className="saas-admin-list-table-head saas-admin-list-table-head--modules">
                             <span>MÓDULO</span>

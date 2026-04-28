@@ -33,7 +33,12 @@ function normalizeColumns(columns = [], visibleColumnKeys = [], columnOrder = []
 
 function getColumnTextLabel(column = {}) {
     const rawLabel = column.menuLabel ?? column.sortLabel ?? column.label ?? column.key;
-    if (typeof rawLabel === 'string' || typeof rawLabel === 'number') return String(rawLabel);
+    if (typeof rawLabel === 'string' || typeof rawLabel === 'number') {
+        return String(rawLabel)
+            .trim()
+            .toLocaleLowerCase('es')
+            .replace(/\b([\p{L}\p{N}])/gu, (match) => match.toLocaleUpperCase('es'));
+    }
     return String(column.key || '');
 }
 
@@ -116,7 +121,7 @@ function ColumnMenu({
     const visible = new Set(preferences?.visibleColumnKeys || []);
     return (
         <div className={['saas-entity-columns', className].filter(Boolean).join(' ')}>
-            <button type="button" onClick={() => setOpen((prev) => !prev)}>
+            <button type="button" className="saas-btn-columns" onClick={() => setOpen((prev) => !prev)}>
                 Columnas
             </button>
             {open ? (

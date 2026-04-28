@@ -77,9 +77,9 @@ export default function QuickRepliesSection(props = {}) {
     const columns = React.useMemo(() => [
         { key: 'name', label: 'Biblioteca', width: '30%', sortable: true },
         { key: 'scope', label: 'Alcance', width: '20%', sortable: true },
-        { key: 'modules', label: 'MÓDULOS', width: '14%', sortable: true },
+        { key: 'modules', label: 'Módulos', width: '14%', sortable: true },
         { key: 'status', label: 'Estado', width: '16%', sortable: true },
-        { key: 'id', label: 'CÓDIGO', width: '20%', sortable: true }
+        { key: 'id', label: 'Código', width: '20%', sortable: true }
     ], []);
 
     const filters = React.useMemo(() => [

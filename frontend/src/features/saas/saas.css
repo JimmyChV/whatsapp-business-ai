@@ -3863,13 +3863,15 @@
   z-index: 1001;
 }
 
-.saas-entity-columns > button {
+.saas-entity-columns > button,
+.saas-btn-columns {
     border: 1px solid rgba(123, 170, 196, 0.42);
     background: linear-gradient(180deg, rgba(90, 133, 159, 0.24), rgba(90, 133, 159, 0.14));
     color: #e3f1fa;
     border-radius: 10px;
     padding: 6px 9px;
     font-size: 0.72rem;
+    min-height: 32px;
     cursor: pointer;
     font-weight: 700;
 }

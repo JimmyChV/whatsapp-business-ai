@@ -44,9 +44,9 @@ function PlansSection(props = {}) {
     const columns = React.useMemo(() => [
         { key: 'plan', label: 'Plan', width: '28%', minWidth: '220px', sortable: true },
         { key: 'maxUsers', label: 'Usuarios', width: '18%', minWidth: '140px', sortable: true },
-        { key: 'maxWaModules', label: 'MÓDULOS WA', width: '18%', minWidth: '150px', sortable: true },
-        { key: 'maxCatalogs', label: 'CATÁLOGOS', width: '18%', minWidth: '140px', sortable: true },
-        { key: 'maxQuickReplies', label: 'RESPUESTAS RÁPIDAS', width: '18%', minWidth: '180px', sortable: true }
+        { key: 'maxWaModules', label: 'Módulos WA', width: '18%', minWidth: '150px', sortable: true },
+        { key: 'maxCatalogs', label: 'Catálogos', width: '18%', minWidth: '140px', sortable: true },
+        { key: 'maxQuickReplies', label: 'Respuestas Rápidas', width: '18%', minWidth: '180px', sortable: true }
     ], []);
 
     const close = React.useCallback(() => {
