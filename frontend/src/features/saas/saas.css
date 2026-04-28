@@ -4910,22 +4910,24 @@
 .saas-admin-header-tenant-inline {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  max-width: 260px;
+  gap: 8px;
+  max-width: 300px;
   flex-shrink: 1;
   overflow: hidden;
 }
 
 .saas-admin-header-tenant-inline select,
 .saas-admin-header-tenant-select {
-  min-width: 260px;
-  max-width: 100%;
-  border-radius: 8px;
+  flex: 1;
+  min-width: 0;
+  max-width: 220px;
+  height: 32px;
+  border-radius: var(--saas-radius-md);
   border: 1px solid var(--saas-border-color);
-  background: color-mix(in srgb, var(--saas-bg-base) 92%, transparent);
+  background: var(--saas-bg-elevated);
   color: var(--saas-text-primary);
-  padding: 5px 8px;
-  font-size: 0.74rem;
+  padding: 0 8px;
+  font-size: 13px;
   outline: none;
   flex-shrink: 1;
   overflow: hidden;
@@ -5996,6 +5998,9 @@
 .sidebar-theme-toggle {
   display: inline-flex;
   align-items: center;
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 10;
 }
 
 .saas-admin-theme-toggle__switch,
@@ -6033,6 +6038,12 @@
   background: var(--saas-accent-primary);
   color: var(--saas-accent-primary-text);
   transform: scale(1.02);
+}
+
+.saas-admin-theme-toggle__button {
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 10;
 }
 
 .saas-view-header__actions .saas-btn-text,
