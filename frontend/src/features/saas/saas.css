@@ -5854,6 +5854,7 @@
 .saas-view-header__search {
   flex: 1 1 auto;
   min-width: var(--saas-search-min-width);
+  max-width: min(640px, 100%);
   display: flex;
   align-items: center;
   gap: var(--saas-control-gap);
@@ -5987,6 +5988,37 @@
 .saas-entity-columns .saas-btn-text,
 .saas-admin-header .saas-btn-text {
   display: inline;
+}
+
+.saas-view-header__actions,
+.saas-admin-header-actions,
+.saas-detail-panel__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--saas-space-2);
+  flex-wrap: nowrap;
+}
+
+.saas-view-header__action-btn,
+.saas-admin-header-actions .saas-header-btn,
+.saas-detail-panel__actions .saas-header-btn,
+.saas-btn-columns {
+  height: var(--saas-btn-height-md);
+}
+
+@media (max-width: 1200px) {
+  .saas-view-header__actions .saas-btn-text,
+  .saas-admin-header-actions .saas-btn-text,
+  .saas-btn-columns .saas-btn-text {
+    display: none;
+  }
+
+  .saas-view-header__action-btn,
+  .saas-admin-header-actions .saas-header-btn,
+  .saas-btn-columns {
+    width: var(--saas-btn-height-md);
+    padding: 0;
+  }
 }
 
 .saas-admin-shell #saas_clientes .saas-customers-header-extra {
