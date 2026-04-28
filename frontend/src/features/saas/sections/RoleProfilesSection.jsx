@@ -58,6 +58,10 @@ function RoleProfilesSection(props = {}) {
             id: role,
             role,
             label,
+            name: label,
+            scope: 'Global',
+            permissions: (Array.isArray(profile?.required) ? profile.required.length : 0) + (Array.isArray(profile?.optional) ? profile.optional.length : 0),
+            updatedAt: String(profile?.updatedAt || '-').trim() || '-',
             requiredCount: Array.isArray(profile?.required) ? profile.required.length : 0,
             optionalCount: Array.isArray(profile?.optional) ? profile.optional.length : 0,
             blockedCount: Array.isArray(profile?.blocked) ? profile.blocked.length : 0,
@@ -67,11 +71,14 @@ function RoleProfilesSection(props = {}) {
     }), [roleProfiles]);
 
     const columns = React.useMemo(() => [
-        { key: 'label', label: 'Rol', width: '24%', minWidth: '220px', sortable: true },
-        { key: 'role', label: 'Código', width: '20%', minWidth: '180px', sortable: true },
-        { key: 'requiredCount', label: 'Requeridos', width: '14%', minWidth: '130px', sortable: true },
-        { key: 'optionalCount', label: 'Opcionales', width: '14%', minWidth: '130px', sortable: true },
-        { key: 'blockedCount', label: 'Bloqueados', width: '14%', minWidth: '130px', sortable: true },
+        { key: 'name', label: 'Nombre', width: '24%', minWidth: '220px', sortable: true },
+        { key: 'scope', label: 'Scope', width: '16%', minWidth: '140px', sortable: true, hidden: true },
+        { key: 'permissions', label: 'Permisos', width: '14%', minWidth: '130px', sortable: true, hidden: true },
+        { key: 'updatedAt', label: 'Actualizado', width: '16%', minWidth: '150px', sortable: true, hidden: true },
+        { key: 'role', label: 'Código', width: '20%', minWidth: '180px', sortable: true, hidden: true },
+        { key: 'requiredCount', label: 'Requeridos', width: '14%', minWidth: '130px', sortable: true, hidden: true },
+        { key: 'optionalCount', label: 'Opcionales', width: '14%', minWidth: '130px', sortable: true, hidden: true },
+        { key: 'blockedCount', label: 'Bloqueados', width: '14%', minWidth: '130px', sortable: true, hidden: true },
         { key: 'status', label: 'Estado', width: '14%', minWidth: '120px', sortable: true }
     ], []);
 

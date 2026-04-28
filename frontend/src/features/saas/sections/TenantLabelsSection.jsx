@@ -76,8 +76,12 @@ function Chips({ title, items = [], remove, readonly = false }) {
 const LABEL_TABLE_COLUMNS = [
     { key: 'color', label: '', width: '54px', render: (value) => <Dot color={value || '#00A884'} /> },
     { key: 'name', label: 'Nombre', minWidth: '220px', render: (value, row) => <strong>{value || row.code}</strong> },
-    { key: 'code', label: 'Código', minWidth: '150px' },
+    { key: 'code', label: 'Código', minWidth: '150px', hidden: true },
+    { key: 'typeText', label: 'Tipo', minWidth: '150px', hidden: true },
+    { key: 'colorText', label: 'Color', minWidth: '140px', hidden: true },
     { key: 'metaText', label: 'Alcance', minWidth: '170px' },
+    { key: 'sortOrderText', label: 'Orden', minWidth: '100px', hidden: true },
+    { key: 'updatedAtText', label: 'Actualizado', minWidth: '170px', hidden: true },
     { key: 'statusText', label: 'Estado', width: '110px' }
 ];
 function buildLabelRows(items = [], idField = 'id', kind = 'label') {
@@ -88,12 +92,16 @@ function buildLabelRows(items = [], idField = 'id', kind = 'label') {
             ...item,
             id: rowId,
             code: rowId,
+            typeText: kind === 'global' ? 'Global' : kind === 'zone' ? 'Zona' : 'Operativa',
+            colorText: text(item?.color || '#00A884') || '#00A884',
             statusText: item?.isActive === false ? 'Inactiva' : 'Activa',
             metaText: kind === 'global'
                 ? (item?.commercialStatusKey || 'Sin estado comercial')
                 : kind === 'zone'
                     ? 'Regla geografica'
-                    : moduleCount > 0 ? `${moduleCount} modulo${moduleCount === 1 ? '' : 's'}` : 'Compartida'
+                    : moduleCount > 0 ? `${moduleCount} modulo${moduleCount === 1 ? '' : 's'}` : 'Compartida',
+            sortOrderText: String(item?.sortOrder ?? '-'),
+            updatedAtText: text(item?.updatedAt || item?.updated_at || '-')
         };
     });
 }

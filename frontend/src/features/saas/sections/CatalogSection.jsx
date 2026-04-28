@@ -60,18 +60,21 @@ function CatalogSection(props = {}) {
     const rows = React.useMemo(() => tenantCatalogItems.map((item) => ({
         id: text(item?.catalogId),
         name: item?.name || item?.catalogId || '-',
+        code: text(item?.catalogId) || '-',
         sourceType: item?.sourceType || '-',
         status: item?.isActive === false ? 'Inactivo' : 'Activo',
         defaultLabel: item?.isDefault ? 'Principal' : '-',
+        updatedAt: formatDateTimeLabel(item?.updatedAt),
         raw: item
-    })), [tenantCatalogItems]);
+    })), [formatDateTimeLabel, tenantCatalogItems]);
 
     const columns = React.useMemo(() => [
-        { key: 'name', label: 'Catálogo', width: '30%', sortable: true },
+        { key: 'name', label: 'Nombre', width: '30%', sortable: true },
         { key: 'sourceType', label: 'Origen', width: '20%', sortable: true },
         { key: 'defaultLabel', label: 'Principal', width: '16%', sortable: true },
         { key: 'status', label: 'Estado', width: '16%', sortable: true },
-        { key: 'id', label: 'Código', width: '18%', sortable: true }
+        { key: 'code', label: 'Código', width: '18%', sortable: true, hidden: true },
+        { key: 'updatedAt', label: 'Actualizado', width: '18%', sortable: true, hidden: true }
     ], []);
 
     const filters = React.useMemo(() => [

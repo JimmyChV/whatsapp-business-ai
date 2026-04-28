@@ -70,16 +70,20 @@ function UsersSection(props = {}) {
             role: user.roleLabel || user.role || '-',
             status: user.active === false ? 'Inactivo' : 'Activo',
             memberships: String(memberships.length),
+            createdAt: formatDateTimeLabel(user.createdAt),
+            updatedAt: formatDateTimeLabel(user.updatedAt),
             raw: user
         };
-    }), [sanitizeMemberships, scopedUsers, toUserDisplayName]);
+    }), [formatDateTimeLabel, sanitizeMemberships, scopedUsers, toUserDisplayName]);
 
     const columns = React.useMemo(() => [
-        { key: 'name', label: 'Usuario', width: '24%', minWidth: '220px', sortable: true },
+        { key: 'name', label: 'Nombre', width: '24%', minWidth: '220px', sortable: true },
         { key: 'email', label: 'Correo', width: '28%', minWidth: '260px', sortable: true },
         { key: 'role', label: 'Rol', width: '18%', minWidth: '150px', sortable: true },
         { key: 'status', label: 'Estado', width: '14%', minWidth: '120px', sortable: true },
-        { key: 'memberships', label: 'Empresas', width: '12%', minWidth: '120px', sortable: true }
+        { key: 'memberships', label: 'Empresas', width: '12%', minWidth: '120px', sortable: true, hidden: true },
+        { key: 'createdAt', label: 'Creado', width: '18%', minWidth: '160px', sortable: true, hidden: true },
+        { key: 'updatedAt', label: 'Actualizado', width: '18%', minWidth: '160px', sortable: true, hidden: true }
     ], []);
 
     const filters = React.useMemo(() => [

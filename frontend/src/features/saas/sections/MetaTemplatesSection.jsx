@@ -54,6 +54,9 @@ const TEMPLATE_TABLE_COLUMNS = [
     { key: 'templateLanguage', label: 'Idioma', width: '120px', minWidth: '100px', maxWidth: '150px', type: 'option' },
     { key: 'statusLabel', label: 'Estado', width: '140px', minWidth: '120px', maxWidth: '180px', type: 'option' },
     { key: 'moduleLabel', label: 'Módulo', width: '200px', minWidth: '160px', maxWidth: '280px', type: 'text' },
+    { key: 'useCaseLabel', label: 'Caso De Uso', width: '180px', minWidth: '150px', maxWidth: '220px', type: 'option' },
+    { key: 'qualityLabel', label: 'Calidad', width: '140px', minWidth: '120px', maxWidth: '180px', type: 'option' },
+    { key: 'createdAt', label: 'Creado', width: '190px', minWidth: '160px', maxWidth: '230px', type: 'date' },
     { key: 'updatedAt', label: 'Actualizado', width: '190px', minWidth: '160px', maxWidth: '230px', type: 'date' }
 ];
 
@@ -796,6 +799,13 @@ function MetaTemplatesSection(props = {}) {
                     templateLanguage: toText(template?.templateLanguage).toUpperCase() || '-',
                     statusLabel: statusMeta.label,
                     moduleLabel: toText(template?.moduleId) || '-',
+                    useCaseLabel: USE_CASE_OPTIONS.find((option) => option.value === normalizeTemplateUseCase(template?.useCase || 'both'))?.label || 'Campaña e individual',
+                    qualityLabel: (() => {
+                        const value = Number(template?.qualityScore);
+                        if (!Number.isFinite(value) || value <= 0) return '-';
+                        return value >= 4 ? 'Alta' : value >= 2 ? 'Media' : 'Baja';
+                    })(),
+                    createdAt: toText(template?.createdAt) || '-',
                     updatedAt: toText(template?.updatedAt) || '-'
                 };
             })

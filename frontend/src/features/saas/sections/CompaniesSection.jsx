@@ -51,17 +51,21 @@ function CompaniesSection(props = {}) {
             status: tenant.active === false ? 'Inactiva' : 'Activa',
             activeUsers,
             aiUsage: usage,
+            createdAt: formatDateTimeLabel(tenant.createdAt),
+            updatedAt: formatDateTimeLabel(tenant.updatedAt),
             raw: tenant
         };
-    }), [aiUsageByTenant, overview.metrics, tenantOptions, toTenantDisplayName]);
+    }), [aiUsageByTenant, formatDateTimeLabel, overview.metrics, tenantOptions, toTenantDisplayName]);
 
     const columns = React.useMemo(() => [
-        { key: 'name', label: 'Empresa', width: '28%', minWidth: '240px', sortable: true },
-        { key: 'slug', label: 'Slug', width: '18%', minWidth: '160px', sortable: true },
+        { key: 'name', label: 'Nombre', width: '28%', minWidth: '240px', sortable: true },
+        { key: 'slug', label: 'Código', width: '18%', minWidth: '160px', sortable: true, hidden: true },
         { key: 'plan', label: 'Plan', width: '14%', minWidth: '120px', sortable: true },
         { key: 'status', label: 'Estado', width: '14%', minWidth: '120px', sortable: true },
-        { key: 'activeUsers', label: 'Usuarios', width: '12%', minWidth: '120px', sortable: true },
-        { key: 'aiUsage', label: 'IA Mes', width: '12%', minWidth: '120px', sortable: true }
+        { key: 'activeUsers', label: 'Usuarios', width: '12%', minWidth: '120px', sortable: true, hidden: true },
+        { key: 'aiUsage', label: 'IA Mes', width: '12%', minWidth: '120px', sortable: true, hidden: true },
+        { key: 'createdAt', label: 'Creado', width: '16%', minWidth: '150px', sortable: true, hidden: true },
+        { key: 'updatedAt', label: 'Actualizado', width: '16%', minWidth: '150px', sortable: true, hidden: true }
     ], []);
 
     const close = React.useCallback(() => {

@@ -60,7 +60,10 @@ function ModulesConfigSection(props = {}) {
                 name: 'Configuración general',
                 phone: tenantSettings?.contactPhone || '-',
                 status: tenantSettings?.enabled === false ? 'Inactiva' : 'Activa',
-                type: 'General'
+                channel: 'General',
+                defaultLabel: 'Sí',
+                assignedUsers: '-',
+                updatedAt: formatDateTimeLabel?.(tenantSettings?.updatedAt) || '-'
             }];
         }
         return (Array.isArray(waModules) ? waModules : []).map((module) => ({
@@ -68,16 +71,22 @@ function ModulesConfigSection(props = {}) {
             name: module?.name || module?.moduleName || module?.moduleId || '-',
             phone: module?.phoneE164 || module?.phone || '-',
             status: module?.isActive === false || module?.active === false ? 'Inactivo' : 'Activo',
-            type: module?.catalogMode || module?.mode || 'Módulo',
+            channel: module?.channel || module?.type || module?.catalogMode || module?.mode || 'Módulo',
+            defaultLabel: module?.isDefault ? 'Sí' : 'No',
+            assignedUsers: String((Array.isArray(module?.assignedUserIds) ? module.assignedUserIds.length : Array.isArray(module?.userIds) ? module.userIds.length : 0)),
+            updatedAt: formatDateTimeLabel?.(module?.updatedAt) || '-',
             raw: module
         }));
-    }, [MODULE_KEYS, isGeneralConfigSection, tenantSettings, waModules]);
+    }, [MODULE_KEYS, formatDateTimeLabel, isGeneralConfigSection, tenantSettings, waModules]);
 
     const columns = React.useMemo(() => [
-        { key: 'name', label: isGeneralConfigSection ? 'Configuración' : 'Módulo', width: '32%', minWidth: '240px', sortable: true },
+        { key: 'name', label: 'Nombre', width: '32%', minWidth: '240px', sortable: true },
         { key: 'phone', label: 'Teléfono', width: '24%', minWidth: '180px', sortable: true },
-        { key: 'type', label: 'Tipo', width: '20%', minWidth: '160px', sortable: true },
-        { key: 'status', label: 'Estado', width: '18%', minWidth: '120px', sortable: true }
+        { key: 'channel', label: 'Canal', width: '20%', minWidth: '160px', sortable: true },
+        { key: 'status', label: 'Estado', width: '18%', minWidth: '120px', sortable: true },
+        { key: 'defaultLabel', label: 'Por Defecto', width: '16%', minWidth: '140px', sortable: true, hidden: true },
+        { key: 'assignedUsers', label: 'Usuarios Asignados', width: '18%', minWidth: '170px', sortable: true, hidden: true },
+        { key: 'updatedAt', label: 'Actualizado', width: '18%', minWidth: '160px', sortable: true, hidden: true }
     ], [isGeneralConfigSection]);
 
     const filters = React.useMemo(() => [

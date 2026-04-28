@@ -133,6 +133,14 @@ const CAMPAIGN_TABLE_COLUMNS = [
     { key: 'language', label: 'Idioma', width: '120px', minWidth: '108px', maxWidth: '144px', type: 'option' },
     { key: 'status', label: 'Estado', width: '132px', minWidth: '120px', maxWidth: '168px', type: 'option' },
     { key: 'moduleId', label: 'Módulo', width: '168px', minWidth: '144px', maxWidth: '220px', type: 'option' },
+    { key: 'templateName', label: 'Plantilla', width: '220px', minWidth: '180px', maxWidth: '280px', type: 'text' },
+    { key: 'totalRecipients', label: 'Total Destinatarios', width: '172px', minWidth: '150px', maxWidth: '210px', type: 'number' },
+    { key: 'sentRecipients', label: 'Enviados', width: '124px', minWidth: '110px', maxWidth: '150px', type: 'number' },
+    { key: 'failedRecipients', label: 'Fallidos', width: '124px', minWidth: '110px', maxWidth: '150px', type: 'number' },
+    { key: 'scheduledAt', label: 'Programada', width: '178px', minWidth: '150px', maxWidth: '220px', type: 'date' },
+    { key: 'startedAt', label: 'Iniciada', width: '178px', minWidth: '150px', maxWidth: '220px', type: 'date' },
+    { key: 'completedAt', label: 'Completada', width: '178px', minWidth: '150px', maxWidth: '220px', type: 'date' },
+    { key: 'createdAt', label: 'Creado', width: '168px', minWidth: '146px', maxWidth: '220px', type: 'date' },
     { key: 'updatedAt', label: 'Actualizado', width: '168px', minWidth: '146px', maxWidth: '220px', type: 'date' }
 ];
 
@@ -771,9 +779,11 @@ export default React.memo(function CampaignsSection(props = {}) {
                     const meta = statusMeta(value);
                     return <span className={`saas-campaigns-status ${meta.className}`}>{meta.label}</span>;
                 }
-                : (column.key === 'updatedAt'
-                    ? (value) => formatDateTime(value)
-                    : undefined)
+                : (column.key === 'moduleId'
+                    ? (value) => moduleOptions.find((item) => item.moduleId === toText(value))?.label || toText(value) || '-'
+                    : (['scheduledAt', 'startedAt', 'completedAt', 'createdAt', 'updatedAt'].includes(column.key)
+                        ? (value) => formatDateTime(value)
+                        : undefined))
         }));
     }, [columnPrefs.visibleColumnKeys, moduleOptions]);
 
@@ -785,6 +795,14 @@ export default React.memo(function CampaignsSection(props = {}) {
         language: toUpper(campaign?.templateLanguage || campaign?.language || '-'),
         status: toLower(campaign?.status || ''),
         moduleId: toText(campaign?.moduleId || '-') || '-',
+        templateName: toText(campaign?.templateName || '-') || '-',
+        totalRecipients: toNumber(campaign?.totalRecipients),
+        sentRecipients: toNumber(campaign?.sentRecipients),
+        failedRecipients: toNumber(campaign?.failedRecipients),
+        scheduledAt: toText(campaign?.scheduledAt || ''),
+        startedAt: toText(campaign?.startedAt || campaign?.started_at || ''),
+        completedAt: toText(campaign?.completedAt || campaign?.completed_at || ''),
+        createdAt: toText(campaign?.createdAt || ''),
         updatedAt: toText(campaign?.updatedAt || campaign?.createdAt || '')
     })), [filteredCampaigns]);
 

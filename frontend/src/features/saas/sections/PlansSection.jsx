@@ -33,6 +33,9 @@ function PlansSection(props = {}) {
         return {
             id: planId,
             plan: planId,
+            name: planId,
+            scope: 'Global',
+            updatedAt: String(limits.updatedAt || '-').trim() || '-',
             maxUsers: Number(limits.maxUsers || 0),
             maxWaModules: Number(limits.maxWaModules || 0),
             maxCatalogs: Number(limits.maxCatalogs || 0),
@@ -42,11 +45,13 @@ function PlansSection(props = {}) {
     }), [planIds, planMatrix]);
 
     const columns = React.useMemo(() => [
-        { key: 'plan', label: 'Plan', width: '28%', minWidth: '220px', sortable: true },
-        { key: 'maxUsers', label: 'Usuarios', width: '18%', minWidth: '140px', sortable: true },
-        { key: 'maxWaModules', label: 'Módulos WA', width: '18%', minWidth: '150px', sortable: true },
-        { key: 'maxCatalogs', label: 'Catálogos', width: '18%', minWidth: '140px', sortable: true },
-        { key: 'maxQuickReplies', label: 'Respuestas Rápidas', width: '18%', minWidth: '180px', sortable: true }
+        { key: 'name', label: 'Nombre', width: '28%', minWidth: '220px', sortable: true },
+        { key: 'scope', label: 'Scope', width: '18%', minWidth: '140px', sortable: true, hidden: true },
+        { key: 'updatedAt', label: 'Actualizado', width: '18%', minWidth: '150px', sortable: true, hidden: true },
+        { key: 'maxUsers', label: 'Usuarios', width: '18%', minWidth: '140px', sortable: true, hidden: true },
+        { key: 'maxWaModules', label: 'Módulos WA', width: '18%', minWidth: '150px', sortable: true, hidden: true },
+        { key: 'maxCatalogs', label: 'Catálogos', width: '18%', minWidth: '140px', sortable: true, hidden: true },
+        { key: 'maxQuickReplies', label: 'Respuestas Rápidas', width: '18%', minWidth: '180px', sortable: true, hidden: true }
     ], []);
 
     const close = React.useCallback(() => {

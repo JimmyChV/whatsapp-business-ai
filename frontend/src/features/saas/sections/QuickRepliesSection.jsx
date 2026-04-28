@@ -68,18 +68,24 @@ export default function QuickRepliesSection(props = {}) {
     const rows = React.useMemo(() => visibleQuickReplyLibraries.map((library) => ({
         id: text(library?.libraryId).toUpperCase(),
         name: library?.name || library?.libraryId || '-',
+        textPreview: library?.description || '-',
+        sortOrder: String(library?.sortOrder ?? '-'),
         scope: library?.isShared ? 'Compartida' : 'Por módulo',
         status: library?.isActive === false ? 'Inactiva' : 'Activa',
         modules: Array.isArray(library?.moduleIds) ? String(library.moduleIds.length) : '0',
+        updatedAt: formatDateTimeLabel(library?.updatedAt),
         raw: library
-    })), [visibleQuickReplyLibraries]);
+    })), [formatDateTimeLabel, visibleQuickReplyLibraries]);
 
     const columns = React.useMemo(() => [
-        { key: 'name', label: 'Biblioteca', width: '30%', sortable: true },
-        { key: 'scope', label: 'Alcance', width: '20%', sortable: true },
-        { key: 'modules', label: 'Módulos', width: '14%', sortable: true },
+        { key: 'name', label: 'Etiqueta', width: '24%', sortable: true },
+        { key: 'textPreview', label: 'Texto', width: '30%', sortable: true, hidden: true },
+        { key: 'sortOrder', label: 'Orden', width: '12%', sortable: true, hidden: true },
+        { key: 'updatedAt', label: 'Actualizado', width: '18%', sortable: true, hidden: true },
+        { key: 'scope', label: 'Alcance', width: '18%', sortable: true, hidden: true },
+        { key: 'modules', label: 'Módulos', width: '14%', sortable: true, hidden: true },
         { key: 'status', label: 'Estado', width: '16%', sortable: true },
-        { key: 'id', label: 'Código', width: '20%', sortable: true }
+        { key: 'id', label: 'Código', width: '20%', sortable: true, hidden: true }
     ], []);
 
     const filters = React.useMemo(() => [

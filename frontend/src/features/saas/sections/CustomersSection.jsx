@@ -35,6 +35,7 @@ const CUSTOMER_TABLE_COLUMNS = [
     { key: 'tratamiento', label: 'Tratamiento', width: '146px', minWidth: '124px', maxWidth: '196px', type: 'option' },
     { key: 'zona', label: 'Zona', width: '154px', minWidth: '130px', maxWidth: '210px', type: 'option' },
     { key: 'etiquetas', label: 'Etiquetas', width: '220px', minWidth: '180px', maxWidth: '300px', type: 'text' },
+    { key: 'estadoComercial', label: 'Estado Comercial', width: '160px', minWidth: '136px', maxWidth: '210px', type: 'option' },
     { key: 'ultimaInteraccion', label: 'Última Interacción', width: '166px', minWidth: '144px', maxWidth: '220px', type: 'date' },
     { key: 'actualizado', label: 'Actualizado', width: '166px', minWidth: '144px', maxWidth: '220px', type: 'date' },
     { key: 'estado', label: 'Estado', width: '116px', minWidth: '96px', maxWidth: '146px', type: 'option' }
@@ -1397,6 +1398,7 @@ function CustomersSection(props = {}) {
                 tratamiento: buildTreatmentLabel(customer, customerLabelMaps),
                 zona: zone?.label || '-',
                 etiquetas: tags.length ? tags.join(', ') : '-',
+                estadoComercial: String(customer.commercialStatus || customer.commercial_status || '-').trim() || '-',
                 ultimaInteraccion: formatDateTimeLabel(customer.lastInteractionAt || customer.last_interaction_at || ''),
                 actualizado: formatDateTimeLabel(customer.updatedAt || customer.updated_at || ''),
                 estado: customer.isActive === false ? 'Inactivo' : 'Activo',
@@ -1416,6 +1418,16 @@ function CustomersSection(props = {}) {
             if (column.key === 'fuenteAdquisicion') return { ...column, options: sourceOptions };
             if (column.key === 'tratamiento') return { ...column, options: treatmentOptions };
             if (column.key === 'zona') return { ...column, options: zoneOptions };
+            if (column.key === 'estadoComercial') return {
+                ...column,
+                options: [
+                    { value: 'nuevo', label: 'Nuevo' },
+                    { value: 'en_conversacion', label: 'En conversación' },
+                    { value: 'cotizado', label: 'Cotizado' },
+                    { value: 'vendido', label: 'Vendido' },
+                    { value: 'perdido', label: 'Perdido' }
+                ]
+            };
             if (column.key === 'idioma') return {
                 ...column,
                 options: [
