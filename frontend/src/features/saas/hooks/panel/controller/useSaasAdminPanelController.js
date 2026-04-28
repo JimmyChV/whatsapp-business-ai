@@ -126,6 +126,8 @@ export default function useSaasAdminPanelController({
     showHeader = true,
     closeLabel = 'Cerrar sesion',
     currentUser = null,
+    themeMode = 'dark',
+    onThemeChange = null,
 }) {
     const panelCoreState = useSaasPanelCoreState({
         activeSection,
@@ -984,6 +986,8 @@ export default function useSaasAdminPanelController({
         currentUserRoleLabel: tenantDerived.currentUserRoleLabel,
         buildInitials,
         closeLabel,
+        themeMode,
+        onThemeChange,
         activeTenantLabel: tenantDerived.activeTenantLabel,
         error,
         showPanelLoading,

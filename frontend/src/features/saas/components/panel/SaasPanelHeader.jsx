@@ -11,6 +11,8 @@ export default function SaasPanelHeader({
     currentUserRoleLabel = 'Sin rol',
     buildInitials,
     closeLabel = 'Cerrar sesion',
+    themeMode = 'dark',
+    onThemeChange = null,
     onClose,
     tenantPicker = null
 }) {
@@ -71,6 +73,22 @@ export default function SaasPanelHeader({
                             Ir al chat
                         </button>
                     )}
+                    <div className="saas-admin-theme-toggle" role="group" aria-label="Cambiar tema">
+                        <button
+                            type="button"
+                            className={`saas-header-btn ${themeMode === 'dark' ? 'saas-header-btn--primary' : 'saas-header-btn--secondary'}`.trim()}
+                            onClick={() => onThemeChange?.('dark')}
+                        >
+                            🌙 Oscuro
+                        </button>
+                        <button
+                            type="button"
+                            className={`saas-header-btn ${themeMode === 'light' ? 'saas-header-btn--primary' : 'saas-header-btn--secondary'}`.trim()}
+                            onClick={() => onThemeChange?.('light')}
+                        >
+                            ☀️ Claro
+                        </button>
+                    </div>
                     <div className="saas-admin-header-profile" role="status" aria-label="Usuario en sesion">
                         <div className="saas-admin-header-profile-avatar">
                             {currentUserAvatarUrl

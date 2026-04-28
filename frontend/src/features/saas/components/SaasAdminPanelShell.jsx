@@ -30,6 +30,8 @@ export default function SaasAdminPanelShell({
   launchSource,
   initialSection,
   resetKeys,
+  themeMode = 'dark',
+  onThemeChange = null,
 }) {
   const [navCollapsed, setNavCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -96,6 +98,8 @@ export default function SaasAdminPanelShell({
             preferredTenantId={preferredTenantId}
             launchSource={launchSource}
             initialSection={initialSection}
+            themeMode={themeMode}
+            onThemeChange={onThemeChange}
           />
         </AppErrorBoundary>
       </Suspense>

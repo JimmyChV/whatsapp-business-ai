@@ -64,6 +64,8 @@ const Sidebar = ({
     chatCommercialStatusState = null,
     showBackToPanel = false,
     onBackToPanel = null,
+    themeMode = 'dark',
+    onThemeChange = null,
 }) => {
     const {
         showMenu,
@@ -230,6 +232,25 @@ const Sidebar = ({
                                     {showBackToPanel ? 'Volver al panel SaaS' : 'Panel SaaS (empresas/usuarios)'}
                                 </button>
                             )}
+                            <div className="sidebar-menu-section">
+                                <div className="sidebar-menu-section-title">Tema</div>
+                                <div className="sidebar-theme-toggle" role="group" aria-label="Cambiar tema">
+                                    <button
+                                        type="button"
+                                        className={`sidebar-theme-toggle__btn ${themeMode === 'dark' ? 'is-active' : ''}`.trim()}
+                                        onClick={() => onThemeChange?.('dark')}
+                                    >
+                                        🌙 Oscuro
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`sidebar-theme-toggle__btn ${themeMode === 'light' ? 'is-active' : ''}`.trim()}
+                                        onClick={() => onThemeChange?.('light')}
+                                    >
+                                        ☀️ Claro
+                                    </button>
+                                </div>
+                            </div>
                             <button type="button" className="sidebar-menu-item" onClick={() => { onStartNewChat?.(); setShowMenu(false); }}>
                                 Nuevo chat (numero)
                             </button>

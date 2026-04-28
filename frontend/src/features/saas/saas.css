@@ -1678,6 +1678,15 @@
   flex-wrap: nowrap;
   justify-content: flex-end;
 }
+.saas-admin-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--saas-space-1);
+  flex-shrink: 0;
+}
+.saas-admin-theme-toggle .saas-header-btn {
+  min-width: 92px;
+}
 .saas-admin-header-profile {
   display: inline-flex;
   align-items: center;

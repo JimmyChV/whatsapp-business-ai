@@ -14,6 +14,22 @@
   --system-message-bg: rgba(24, 34, 41, 0.9);
 }
 
+:root[data-theme="light"] {
+  --app-background: #f8f6f2;
+  --panel-background: #ffffff;
+  --sidebar-background: #f0ede8;
+  --search-container-background: #f0ede8;
+  --input-background: #ffffff;
+  --text-primary: #1a1a1a;
+  --text-secondary: #6b7280;
+  --primary-green: #2ea043;
+  --incoming-msg-bg: #ffffff;
+  --outgoing-msg-bg: #dff3e4;
+  --border-color: rgba(120, 113, 108, 0.18);
+  --ai-accent: #7c3aed;
+  --system-message-bg: rgba(240, 237, 232, 0.95);
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -22,7 +38,7 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background-color: #0c1317;
+  background-color: var(--app-background);
   color: var(--text-primary);
   height: 100vh;
   display: flex;
@@ -1058,6 +1074,34 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: #8ea3ad;
+}
+
+.sidebar-theme-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sidebar-theme-toggle__btn {
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid rgba(134, 150, 160, 0.28);
+  background: rgba(255, 255, 255, 0.04);
+  color: #d6e1e7;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.sidebar-theme-toggle__btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-theme-toggle__btn.is-active {
+  border-color: #00a884;
+  background: rgba(0, 168, 132, 0.18);
+  color: #eafff8;
 }
 
 .sidebar-tenant-select {
