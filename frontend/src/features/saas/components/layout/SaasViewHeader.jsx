@@ -65,6 +65,39 @@ const toTitleCaseLabel = (value = '') => String(value || '')
     .toLocaleLowerCase('es')
     .replace(/\b([\p{L}\p{N}])/gu, (match) => match.toLocaleUpperCase('es'));
 
+const FILTER_OPERATORS = {
+    text: [
+        { value: 'contains', label: 'Contiene' },
+        { value: 'equals', label: 'Igual A' },
+        { value: 'starts_with', label: 'Empieza Con' },
+        { value: 'ends_with', label: 'Termina Con' },
+        { value: 'is_empty', label: 'Vacío' },
+        { value: 'not_empty', label: 'No Vacío' }
+    ],
+    option: [
+        { value: 'equals', label: 'Igual A' },
+        { value: 'not_equals', label: 'Distinto De' },
+        { value: 'is_empty', label: 'Vacío' },
+        { value: 'not_empty', label: 'No Vacío' }
+    ],
+    number: [
+        { value: 'equals', label: '=' },
+        { value: 'gt', label: '>' },
+        { value: 'gte', label: '>=' },
+        { value: 'lt', label: '<' },
+        { value: 'lte', label: '<=' },
+        { value: 'is_empty', label: 'Vacío' },
+        { value: 'not_empty', label: 'No Vacío' }
+    ],
+    date: [
+        { value: 'on', label: 'En Fecha' },
+        { value: 'before', label: 'Antes De' },
+        { value: 'after', label: 'Después De' },
+        { value: 'is_empty', label: 'Vacío' },
+        { value: 'not_empty', label: 'No Vacío' }
+    ]
+};
+
 const SaasViewHeader = ({
     title = '',
     count = null,
@@ -93,10 +126,10 @@ const SaasViewHeader = ({
     const hasFilterOptions = Array.isArray(selectedFilterColumn?.options) && selectedFilterColumn.options.length > 0;
     const operatorOptions = useMemo(() => {
         if (Array.isArray(filters?.operators) && filters.operators.length > 0) return filters.operators;
-        if (hasFilterOptions) return OPERATORS_BY_TYPE.option;
-        if (selectedFilterType === 'number') return OPERATORS_BY_TYPE.number;
-        if (selectedFilterType === 'date') return OPERATORS_BY_TYPE.date;
-        return OPERATORS_BY_TYPE.text || DEFAULT_OPERATORS;
+        if (hasFilterOptions) return FILTER_OPERATORS.option;
+        if (selectedFilterType === 'number') return FILTER_OPERATORS.number;
+        if (selectedFilterType === 'date') return FILTER_OPERATORS.date;
+        return FILTER_OPERATORS.text;
     }, [filters, hasFilterOptions, selectedFilterType]);
     const showFilterValue = !['is_empty', 'not_empty'].includes(String(filters?.value?.operator || '').trim());
     const sortColumns = useMemo(
@@ -208,7 +241,7 @@ const SaasViewHeader = ({
                                 }
                             }}
                         >
-                            <option value="">ORDENAR POR...</option>
+                            <option value="">Ordenar por...</option>
                             {sortColumns.map((column) => (
                                 <option key={column.key} value={column.key}>{column.label || column.key}</option>
                             ))}
@@ -226,7 +259,7 @@ const SaasViewHeader = ({
                             }}
                             disabled={!String(sortConfig?.columnKey || '').trim()}
                         >
-                            {String(sortConfig?.direction || 'asc') === 'asc' ? 'ASC' : 'DESC'}
+                            {String(sortConfig?.direction || 'asc') === 'asc' ? 'Asc' : 'Desc'}
                         </button>
                     </div>
                 ) : null}
