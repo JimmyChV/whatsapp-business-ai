@@ -58,6 +58,13 @@ const resolveHeaderActionVariant = (action = {}) => {
     return 'secondary';
 };
 
+const toUpperLabel = (value = '') => String(value || '').trim().toLocaleUpperCase('es');
+
+const toTitleCaseLabel = (value = '') => String(value || '')
+    .trim()
+    .toLocaleLowerCase('es')
+    .replace(/\b([\p{L}\p{N}])/gu, (match) => match.toLocaleUpperCase('es'));
+
 const SaasViewHeader = ({
     title = '',
     count = null,
@@ -101,8 +108,8 @@ const SaasViewHeader = ({
         <div className="saas-view-header saas-view-header__sticky">
             <div className="saas-view-header__top">
                 <div className="saas-view-header__title-group">
-                    <h3>{title || 'Vista'}</h3>
-                    {count !== null && count !== undefined ? <small>{Number(count) || 0} registros</small> : null}
+                    <h3>{toUpperLabel(title || 'Vista')}</h3>
+                    {count !== null && count !== undefined ? <small>{`${Number(count || 0).toLocaleString('es-PE')} registros`}</small> : null}
                 </div>
                 <div className="saas-view-header__actions">
                     {safeActions.map((action, index) => (
@@ -142,7 +149,7 @@ const SaasViewHeader = ({
                         >
                             <option value="">Filtrar por...</option>
                             {filterColumns.map((column) => (
-                                <option key={column.key} value={column.key}>{column.label || column.key}</option>
+                                <option key={column.key} value={column.key}>{toTitleCaseLabel(column.label || column.key)}</option>
                             ))}
                         </select>
 

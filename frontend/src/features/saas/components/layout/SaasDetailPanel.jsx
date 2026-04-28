@@ -1,5 +1,10 @@
 import React, { useMemo, useState } from 'react';
 
+const toTitleCaseLabel = (value = '') => String(value || '')
+    .trim()
+    .toLocaleLowerCase('es')
+    .replace(/\b([\p{L}\p{N}])/gu, (match) => match.toLocaleUpperCase('es'));
+
 export const SaasDetailPanelSection = ({
     title,
     defaultOpen = true,
@@ -18,7 +23,7 @@ export const SaasDetailPanelSection = ({
                 onClick={() => setOpen((prev) => !prev)}
                 aria-expanded={open}
             >
-                <span className="saas-detail-panel__section-title">{title}</span>
+                <span className="saas-detail-panel__section-title">{toTitleCaseLabel(title)}</span>
                 <span className="saas-detail-panel__section-meta">
                     {actions}
                     <span className="saas-detail-panel__section-chevron">{open ? '-' : '+'}</span>
