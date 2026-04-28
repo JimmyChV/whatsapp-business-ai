@@ -3489,14 +3489,15 @@
 .saas-view-header__actions {
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
   overflow: visible;
 }
 
 .saas-header-btn {
-  height: 36px;
-  padding: 0 16px;
+  height: 34px;
+  padding: 0 14px;
   font-size: 13px;
   font-weight: 500;
   border-radius: 6px;
@@ -3505,9 +3506,42 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
+  flex-shrink: 0;
   cursor: pointer;
   border: 1px solid transparent;
   transition: filter 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.saas-header-actions-overflow {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.saas-header-actions-overflow__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(122, 173, 204, 0.24);
+  background: rgba(5, 17, 27, 0.97);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
+}
+
+.saas-header-actions-overflow__menu--detail {
+  min-width: 220px;
+}
+
+.saas-header-actions-overflow__item {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .saas-header-btn--primary {
@@ -3676,8 +3710,10 @@
 
 .saas-detail-panel__actions {
     display: flex;
+    align-items: center;
     gap: 8px;
-    flex-wrap: wrap;
+    flex-shrink: 0;
+    flex-wrap: nowrap;
     justify-content: flex-end;
 }
 

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 const DEFAULT_OPERATORS = [
     { value: 'contains', label: 'Contiene' },
@@ -121,6 +121,8 @@ const SaasViewHeader = ({
     extra = null
 }) => {
     const safeActions = useMemo(() => normalizeActions(actions), [actions]);
+    const [compactActions, setCompactActions] = useState(false);
+    const [overflowOpen, setOverflowOpen] = useState(false);
     const filterColumns = useMemo(
         () => (Array.isArray(filters?.columns) ? filters.columns.filter((column) => column && column.key) : []),
         [filters]
@@ -144,6 +146,31 @@ const SaasViewHeader = ({
         () => (Array.isArray(sortConfig?.columns) ? sortConfig.columns.filter((column) => column && column.key) : []),
         [sortConfig]
     );
+    const inlineActions = useMemo(
+        () => (compactActions ? safeActions.slice(0, 2) : safeActions),
+        [compactActions, safeActions]
+    );
+    const overflowActions = useMemo(
+        () => (compactActions ? safeActions.slice(2) : []),
+        [compactActions, safeActions]
+    );
+
+    useEffect(() => {
+        if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+        const mediaQuery = window.matchMedia('(max-width: 1440px)');
+        const sync = () => setCompactActions(mediaQuery.matches);
+        sync();
+        if (typeof mediaQuery.addEventListener === 'function') {
+            mediaQuery.addEventListener('change', sync);
+            return () => mediaQuery.removeEventListener('change', sync);
+        }
+        mediaQuery.addListener(sync);
+        return () => mediaQuery.removeListener(sync);
+    }, []);
+
+    useEffect(() => {
+        if (!compactActions) setOverflowOpen(false);
+    }, [compactActions]);
 
     return (
         <div className="saas-view-header saas-view-header__sticky">
@@ -153,7 +180,7 @@ const SaasViewHeader = ({
                     {count !== null && count !== undefined ? <small>{`${Number(count || 0).toLocaleString('es-PE')} registros`}</small> : null}
                 </div>
                 <div className="saas-view-header__actions">
-                    {safeActions.map((action, index) => (
+                    {inlineActions.map((action, index) => (
                         <button
                             key={String(action.key || action.label || index)}
                             type="button"
@@ -165,6 +192,36 @@ const SaasViewHeader = ({
                         </button>
                     ))}
                     {actionsExtra}
+                    {compactActions && overflowActions.length > 0 ? (
+                        <div className="saas-header-actions-overflow">
+                            <button
+                                type="button"
+                                className="saas-header-btn saas-header-btn--secondary"
+                                onClick={() => setOverflowOpen((prev) => !prev)}
+                                aria-expanded={overflowOpen}
+                            >
+                                ...
+                            </button>
+                            {overflowOpen ? (
+                                <div className="saas-header-actions-overflow__menu">
+                                    {overflowActions.map((action, index) => (
+                                        <button
+                                            key={`overflow_${String(action.key || action.label || index)}`}
+                                            type="button"
+                                            className={`saas-header-btn saas-header-btn--${resolveHeaderActionVariant(action)}`}
+                                            onClick={() => {
+                                                setOverflowOpen(false);
+                                                action?.onClick?.();
+                                            }}
+                                            disabled={Boolean(action.disabled)}
+                                        >
+                                            {action.label || 'AcciÃ³n'}
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : null}
                 </div>
             </div>
 
