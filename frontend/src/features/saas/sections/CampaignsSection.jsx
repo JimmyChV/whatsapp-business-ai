@@ -170,6 +170,21 @@ function blockStatusMeta(status = '') {
     return map[key] || map.pending;
 }
 
+function applyCampaignSort(rows = [], sort = {}) {
+    const columnKey = toText(sort?.columnKey);
+    if (!columnKey) return rows;
+    const direction = toLower(sort?.direction) === 'desc' ? -1 : 1;
+    return [...rows].sort((left, right) => {
+        const leftValue = left?.[columnKey];
+        const rightValue = right?.[columnKey];
+        if (leftValue === rightValue) return 0;
+        if (leftValue === null || leftValue === undefined || leftValue === '') return 1;
+        if (rightValue === null || rightValue === undefined || rightValue === '') return -1;
+        if (typeof leftValue === 'number' && typeof rightValue === 'number') return (leftValue - rightValue) * direction;
+        return String(leftValue).localeCompare(String(rightValue), 'es', { sensitivity: 'base', numeric: true }) * direction;
+    });
+}
+
 function progress(campaign = {}) {
     const total = Math.max(0, toNumber(campaign?.totalRecipients));
     if (!total) return 0;
@@ -805,6 +820,10 @@ export default React.memo(function CampaignsSection(props = {}) {
         createdAt: toText(campaign?.createdAt || ''),
         updatedAt: toText(campaign?.updatedAt || campaign?.createdAt || '')
     })), [filteredCampaigns]);
+    const sortedCampaignTableRows = useMemo(
+        () => applyCampaignSort(campaignTableRows, columnPrefs.sort),
+        [campaignTableRows, columnPrefs.sort]
+    );
 
     const templatesByModule = useMemo(() => {
         if (!form.moduleId) return approvedTemplates;
@@ -3175,6 +3194,12 @@ export default React.memo(function CampaignsSection(props = {}) {
                     setModuleFilter('');
                 }
             }}
+            sortConfig={{
+                columns: CAMPAIGN_TABLE_COLUMNS,
+                columnKey: columnPrefs.sort?.columnKey || '',
+                direction: columnPrefs.sort?.direction || 'asc'
+            }}
+            onSortChange={columnPrefs.setSort}
         />
     );
 
@@ -3183,7 +3208,7 @@ export default React.memo(function CampaignsSection(props = {}) {
             {tenantScopeLocked ? <div className="saas-admin-empty-state"><p>Selecciona una empresa para gestionar campañas.</p></div> : (
                 <SaasDataTable
                     columns={campaignTableColumns}
-                    rows={campaignTableRows}
+                    rows={sortedCampaignTableRows}
                     selectedId={panelMode === 'create' ? '' : selectedCampaignId}
                     loading={loadingList}
                     emptyText="No hay campañas para estos filtros."
