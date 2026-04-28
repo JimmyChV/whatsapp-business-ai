@@ -48,7 +48,7 @@ export default function SaasPanelHeader({
                             {tenantPicker.canClear ? (
                                 <button
                                     type="button"
-                                    className="saas-admin-header-tenant-clear"
+                                    className="saas-header-btn saas-header-btn--secondary saas-admin-header-tenant-clear"
                                     disabled={Boolean(tenantPicker.disabled)}
                                     onClick={() => tenantPicker.onClear?.()}
                                 >
@@ -64,7 +64,7 @@ export default function SaasPanelHeader({
                     {typeof onOpenOperation === 'function' && (
                         <button
                             type="button"
-                            className="saas-admin-header-open-operation"
+                            className="saas-header-btn saas-header-btn--primary saas-admin-header-open-operation"
                             disabled={isBusy || !canOpenOperation}
                             onClick={onOpenOperation}
                         >
@@ -84,7 +84,7 @@ export default function SaasPanelHeader({
                     </div>
                     <button
                         type="button"
-                        className="saas-admin-header-close-danger"
+                        className="saas-header-btn saas-header-btn--danger saas-admin-header-close-danger"
                         onClick={onClose}
                     >
                         {closeLabel}

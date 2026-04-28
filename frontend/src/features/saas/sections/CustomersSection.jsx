@@ -3335,7 +3335,7 @@ function CustomersSection(props = {}) {
             actions={headerActions.filter((action) => action.key !== 'toggle-columns')}
             actionsExtra={(
                 <div className="saas-entity-columns">
-                    <button type="button" className="saas-btn-columns" onClick={() => setShowColumnsMenu((prev) => !prev)} disabled={busy || tenantScopeLocked}>
+                    <button type="button" className="saas-header-btn saas-header-btn--secondary saas-btn-columns" onClick={() => setShowColumnsMenu((prev) => !prev)} disabled={busy || tenantScopeLocked}>
                         Columnas
                     </button>
                     {showColumnsMenu ? (

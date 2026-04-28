@@ -121,7 +121,7 @@ function ColumnMenu({
     const visible = new Set(preferences?.visibleColumnKeys || []);
     return (
         <div className={['saas-entity-columns', className].filter(Boolean).join(' ')}>
-            <button type="button" className="saas-btn-columns" onClick={() => setOpen((prev) => !prev)}>
+            <button type="button" className="saas-header-btn saas-header-btn--secondary saas-btn-columns" onClick={() => setOpen((prev) => !prev)}>
                 Columnas
             </button>
             {open ? (

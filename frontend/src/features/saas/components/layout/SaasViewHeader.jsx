@@ -48,6 +48,16 @@ const normalizeActions = (actions = []) => (
         : []
 );
 
+const resolveHeaderActionVariant = (action = {}) => {
+    const explicitVariant = String(action?.variant || '').trim().toLowerCase();
+    if (explicitVariant) return explicitVariant;
+    const key = String(action?.key || action?.label || '').trim().toLowerCase();
+    if (!key) return 'secondary';
+    if (/(cancel|cerrar|close|delete|eliminar|danger)/.test(key)) return 'danger';
+    if (/(create|new|nuevo|nueva|save|guardar|add|agregar|import|select|seleccionar|update|actualizar|next|siguiente|chat)/.test(key)) return 'primary';
+    return 'secondary';
+};
+
 const SaasViewHeader = ({
     title = '',
     count = null,
@@ -99,7 +109,7 @@ const SaasViewHeader = ({
                         <button
                             key={String(action.key || action.label || index)}
                             type="button"
-                            className={`saas-view-header__action-btn ${action.variant ? `is-${action.variant}` : ''}`}
+                            className={`saas-header-btn saas-header-btn--${resolveHeaderActionVariant(action)} saas-view-header__action-btn`}
                             onClick={typeof action.onClick === 'function' ? action.onClick : undefined}
                             disabled={Boolean(action.disabled)}
                         >
@@ -174,7 +184,7 @@ const SaasViewHeader = ({
                             <div className="saas-view-header__filter-placeholder">Sin valor</div>
                         )}
 
-                        <button type="button" onClick={filters?.onClear}>Limpiar</button>
+                        <button type="button" className="saas-header-btn saas-header-btn--secondary" onClick={filters?.onClear}>Limpiar</button>
                     </div>
                 ) : null}
 
@@ -198,6 +208,7 @@ const SaasViewHeader = ({
                         </select>
                         <button
                             type="button"
+                            className="saas-header-btn saas-header-btn--secondary"
                             onClick={() => {
                                 if (typeof onSortChange === 'function') {
                                     onSortChange({

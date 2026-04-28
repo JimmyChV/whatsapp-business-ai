@@ -1320,7 +1320,7 @@ function MetaTemplatesSection(props = {}) {
             ]}
             actionsExtra={!tenantScopeLocked ? (
                 <div className="saas-entity-columns">
-                    <button type="button" className="saas-btn-columns" onClick={() => setShowColumnsPanel((prev) => !prev)}>
+                    <button type="button" className="saas-header-btn saas-header-btn--secondary saas-btn-columns" onClick={() => setShowColumnsPanel((prev) => !prev)}>
                         Columnas
                     </button>
                     {showColumnsPanel ? (

@@ -3097,7 +3097,7 @@ export default React.memo(function CampaignsSection(props = {}) {
             ]}
             actionsExtra={(
                 <div className="saas-entity-columns">
-                    <button type="button" className="saas-btn-columns" onClick={() => setShowColumnsMenu((prev) => !prev)} disabled={tenantScopeLocked}>
+                    <button type="button" className="saas-header-btn saas-header-btn--secondary saas-btn-columns" onClick={() => setShowColumnsMenu((prev) => !prev)} disabled={tenantScopeLocked}>
                         Columnas
                     </button>
                     {showColumnsMenu ? (
