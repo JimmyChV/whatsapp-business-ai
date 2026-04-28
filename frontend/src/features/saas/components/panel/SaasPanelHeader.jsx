@@ -30,6 +30,7 @@ export default function SaasPanelHeader({
                         <div className="saas-admin-header-tenant-inline">
                             <span className="saas-admin-header-tenant-label">Empresa</span>
                             <select
+                                className="saas-admin-header-tenant-select"
                                 value={String(tenantPicker.value || '')}
                                 onChange={(event) => {
                                     const nextTenantId = String(event.target.value || '').trim();

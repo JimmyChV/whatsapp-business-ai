@@ -64,6 +64,12 @@ const toTitleCaseLabel = (value = '') => {
         .join(' ');
 };
 
+const resolveFilterOperatorLabel = (operator = '') => {
+    const key = String(operator || 'contains').trim().toLowerCase();
+    const options = [...FILTER_OPERATORS.text, ...FILTER_OPERATORS.option, ...FILTER_OPERATORS.number, ...FILTER_OPERATORS.date];
+    return options.find((entry) => entry.value === key)?.label || 'Contiene';
+};
+
 const FILTER_OPERATORS = {
     text: [
         { value: 'contains', label: 'Contiene' },
@@ -183,6 +189,25 @@ const SaasViewHeader = ({
         || String(sortConfig?.columnKey || '').trim()
     );
     const hasActiveSort = Boolean(String(sortConfig?.columnKey || '').trim());
+    const activeFilterLabel = useMemo(() => {
+        const columnLabel = toTitleCaseLabel(selectedFilterColumn?.label || filters?.value?.columnKey || '');
+        const operatorLabel = resolveFilterOperatorLabel(filters?.value?.operator || 'contains');
+        const filterValue = String(filters?.value?.value || '').trim();
+        if (columnLabel && filterValue) return `${columnLabel}: ${operatorLabel} "${filterValue}"`;
+        if (columnLabel) return `${columnLabel}: ${operatorLabel}`;
+        if (hasActiveSort) {
+            const sortColumn = sortColumns.find((column) => String(column?.key || '') === String(sortConfig?.columnKey || ''));
+            const directionLabel = String(sortConfig?.direction || 'asc').toLowerCase() === 'desc' ? 'Desc' : 'Asc';
+            return `Orden: ${toTitleCaseLabel(sortColumn?.label || sortConfig?.columnKey || '')} ${directionLabel}`;
+        }
+        return '';
+    }, [filters, hasActiveSort, selectedFilterColumn, sortColumns, sortConfig]);
+    const clearHeaderState = useCallback(() => {
+        filters?.onClear?.();
+        if (typeof onSortChange === 'function' && String(sortConfig?.columnKey || '').trim()) {
+            onSortChange({ columnKey: '', direction: String(sortConfig?.direction || 'asc') });
+        }
+    }, [filters, onSortChange, sortConfig]);
 
     return (
         <div className="saas-view-header saas-view-header__sticky">
@@ -414,14 +439,23 @@ const SaasViewHeader = ({
                     {filters && hasActiveFilter ? (
                         <button
                             type="button"
-                            className="saas-header-btn saas-header-btn--secondary saas-view-header__clear-btn"
-                            onClick={() => filters?.onClear?.()}
+                            className="saas-header-btn saas-header-btn--danger saas-btn--sm saas-view-header__clear-btn"
+                            onClick={clearHeaderState}
                             title="Limpiar filtros"
                         >
-                            <Trash2 size={15} strokeWidth={2} />
+                            <Trash2 size={16} strokeWidth={2} />
+                            <span className="saas-btn-text saas-btn-text--force">Limpiar</span>
                         </button>
                     ) : null}
                 </div>
+                {hasActiveFilter && activeFilterLabel ? (
+                    <div className="saas-active-filter-chip">
+                        <span>{activeFilterLabel}</span>
+                        <button type="button" onClick={clearHeaderState} title="Quitar filtro">
+                            <X size={12} strokeWidth={2} />
+                        </button>
+                    </div>
+                ) : null}
             </div>
             {extra ? <div className="saas-view-header__extra">{extra}</div> : null}
         </div>

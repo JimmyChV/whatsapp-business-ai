@@ -49,15 +49,15 @@ const HEADER_TYPE_OPTIONS = [
 ];
 
 const TEMPLATE_TABLE_COLUMNS = [
-    { key: 'templateName', label: 'Nombre', width: '280px', minWidth: '220px', maxWidth: '360px', type: 'text' },
-    { key: 'category', label: 'Categoría', width: '140px', minWidth: '120px', maxWidth: '180px', type: 'option' },
-    { key: 'templateLanguage', label: 'Idioma', width: '120px', minWidth: '100px', maxWidth: '150px', type: 'option' },
-    { key: 'statusLabel', label: 'Estado', width: '140px', minWidth: '120px', maxWidth: '180px', type: 'option' },
-    { key: 'moduleLabel', label: 'Módulo', width: '200px', minWidth: '160px', maxWidth: '280px', type: 'text' },
-    { key: 'useCaseLabel', label: 'Caso De Uso', width: '180px', minWidth: '150px', maxWidth: '220px', type: 'option' },
-    { key: 'qualityLabel', label: 'Calidad', width: '140px', minWidth: '120px', maxWidth: '180px', type: 'option' },
-    { key: 'createdAt', label: 'Creado', width: '190px', minWidth: '160px', maxWidth: '230px', type: 'date' },
-    { key: 'updatedAt', label: 'Actualizado', width: '190px', minWidth: '160px', maxWidth: '230px', type: 'date' }
+    { key: 'templateName', label: 'Nombre', width: '280px', minWidth: '220px', maxWidth: '360px', type: 'text', filterable: true },
+    { key: 'category', label: 'Categoría', width: '140px', minWidth: '120px', maxWidth: '180px', type: 'option', filterable: true },
+    { key: 'templateLanguage', label: 'Idioma', width: '120px', minWidth: '100px', maxWidth: '150px', type: 'option', filterable: true },
+    { key: 'statusLabel', label: 'Estado', width: '140px', minWidth: '120px', maxWidth: '180px', type: 'option', filterable: true },
+    { key: 'moduleLabel', label: 'Módulo', width: '200px', minWidth: '160px', maxWidth: '280px', type: 'text', filterable: true },
+    { key: 'useCaseLabel', label: 'Caso De Uso', width: '180px', minWidth: '150px', maxWidth: '220px', type: 'option', filterable: true },
+    { key: 'qualityLabel', label: 'Calidad', width: '140px', minWidth: '120px', maxWidth: '180px', type: 'option', filterable: true },
+    { key: 'createdAt', label: 'Creado', width: '190px', minWidth: '160px', maxWidth: '230px', type: 'date', filterable: true },
+    { key: 'updatedAt', label: 'Actualizado', width: '190px', minWidth: '160px', maxWidth: '230px', type: 'date', filterable: true }
 ];
 
 const TEMPLATE_DEFAULT_COLUMN_KEYS = [

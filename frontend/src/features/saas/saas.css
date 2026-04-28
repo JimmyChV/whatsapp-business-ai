@@ -4911,11 +4911,15 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  max-width: 260px;
+  flex-shrink: 1;
+  overflow: hidden;
 }
 
-.saas-admin-header-tenant-inline select {
+.saas-admin-header-tenant-inline select,
+.saas-admin-header-tenant-select {
   min-width: 260px;
-  max-width: 360px;
+  max-width: 100%;
   border-radius: 8px;
   border: 1px solid var(--saas-border-color);
   background: color-mix(in srgb, var(--saas-bg-base) 92%, transparent);
@@ -4923,6 +4927,10 @@
   padding: 5px 8px;
   font-size: 0.74rem;
   outline: none;
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .saas-admin-header-tenant-clear {
@@ -5051,18 +5059,21 @@
 
 .saas-admin-shell .saas-admin-header-tenant-inline {
   gap: 6px;
+  max-width: 260px;
 }
 
 .saas-admin-shell .saas-admin-header-tenant-label {
-  font-size: 0.72rem;
+  font-size: var(--saas-font-size-xs);
   color: var(--saas-text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  flex-shrink: 0;
 }
 
-.saas-admin-shell .saas-admin-header-tenant-inline select {
-  min-width: 220px;
-  max-width: 320px;
+.saas-admin-shell .saas-admin-header-tenant-inline select,
+.saas-admin-shell .saas-admin-header-tenant-select {
+  min-width: 0;
+  max-width: 100%;
   height: 32px;
   border-radius: 10px;
   font-size: 0.76rem;
@@ -5930,8 +5941,48 @@
 }
 
 .saas-view-header__clear-btn {
-  width: var(--saas-btn-height-md);
+  width: auto;
+  padding: 0 var(--saas-btn-padding-x);
+}
+
+.saas-btn-text--force {
+  display: inline !important;
+}
+
+.saas-active-filter-chip {
+  margin-top: var(--saas-space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--saas-space-2);
+  width: fit-content;
+  max-width: 100%;
+  padding: 0 var(--saas-space-3);
+  min-height: var(--saas-btn-height-sm);
+  border-radius: var(--saas-radius-full);
+  border: var(--saas-border-width) solid var(--saas-accent-info);
+  background: color-mix(in srgb, var(--saas-accent-info) 15%, transparent);
+  color: var(--saas-accent-info);
+  font-size: var(--saas-font-size-sm);
+}
+
+.saas-active-filter-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saas-active-filter-chip button {
+  border: none;
+  background: transparent;
+  color: inherit;
   padding: 0;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .saas-header-btn,

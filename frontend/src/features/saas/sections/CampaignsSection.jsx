@@ -69,6 +69,18 @@ function toText(value = '') { return String(value || '').trim(); }
 function toLower(value = '') { return toText(value).toLowerCase(); }
 function toUpper(value = '') { return toText(value).toUpperCase(); }
 function toNumber(value = 0, fallback = 0) { const n = Number(value); return Number.isFinite(n) ? n : fallback; }
+function matchesTextFilter(actual = '', expected = '', operator = 'contains') {
+    const left = toLower(actual);
+    const right = toLower(expected);
+    if (operator === 'is_empty') return !left;
+    if (operator === 'not_empty') return Boolean(left);
+    if (!right) return true;
+    if (operator === 'equals') return left === right;
+    if (operator === 'not_equals') return left !== right;
+    if (operator === 'starts_with') return left.startsWith(right);
+    if (operator === 'ends_with') return left.endsWith(right);
+    return left.includes(right);
+}
 
 function formatDateTime(value = '') {
     const raw = toText(value);
@@ -128,20 +140,20 @@ const COMMERCIAL_STATUS_COLORS = {
 };
 
 const CAMPAIGN_TABLE_COLUMNS = [
-    { key: 'campaignName', label: 'Nombre', width: '240px', minWidth: '220px', maxWidth: '320px', type: 'text' },
-    { key: 'category', label: 'Categoría', width: '140px', minWidth: '124px', maxWidth: '180px', type: 'option' },
-    { key: 'language', label: 'Idioma', width: '120px', minWidth: '108px', maxWidth: '144px', type: 'option' },
-    { key: 'status', label: 'Estado', width: '132px', minWidth: '120px', maxWidth: '168px', type: 'option' },
-    { key: 'moduleId', label: 'Módulo', width: '168px', minWidth: '144px', maxWidth: '220px', type: 'option' },
-    { key: 'templateName', label: 'Plantilla', width: '220px', minWidth: '180px', maxWidth: '280px', type: 'text' },
-    { key: 'totalRecipients', label: 'Total Destinatarios', width: '172px', minWidth: '150px', maxWidth: '210px', type: 'number' },
-    { key: 'sentRecipients', label: 'Enviados', width: '124px', minWidth: '110px', maxWidth: '150px', type: 'number' },
-    { key: 'failedRecipients', label: 'Fallidos', width: '124px', minWidth: '110px', maxWidth: '150px', type: 'number' },
-    { key: 'scheduledAt', label: 'Programada', width: '178px', minWidth: '150px', maxWidth: '220px', type: 'date' },
-    { key: 'startedAt', label: 'Iniciada', width: '178px', minWidth: '150px', maxWidth: '220px', type: 'date' },
-    { key: 'completedAt', label: 'Completada', width: '178px', minWidth: '150px', maxWidth: '220px', type: 'date' },
-    { key: 'createdAt', label: 'Creado', width: '168px', minWidth: '146px', maxWidth: '220px', type: 'date' },
-    { key: 'updatedAt', label: 'Actualizado', width: '168px', minWidth: '146px', maxWidth: '220px', type: 'date' }
+    { key: 'campaignName', label: 'Nombre', width: '240px', minWidth: '220px', maxWidth: '320px', type: 'text', filterable: true },
+    { key: 'category', label: 'Categoría', width: '140px', minWidth: '124px', maxWidth: '180px', type: 'option', filterable: true },
+    { key: 'language', label: 'Idioma', width: '120px', minWidth: '108px', maxWidth: '144px', type: 'option', filterable: true },
+    { key: 'status', label: 'Estado', width: '132px', minWidth: '120px', maxWidth: '168px', type: 'option', filterable: true },
+    { key: 'moduleId', label: 'Módulo', width: '168px', minWidth: '144px', maxWidth: '220px', type: 'option', filterable: true },
+    { key: 'templateName', label: 'Plantilla', width: '220px', minWidth: '180px', maxWidth: '280px', type: 'text', filterable: true },
+    { key: 'totalRecipients', label: 'Total Destinatarios', width: '172px', minWidth: '150px', maxWidth: '210px', type: 'number', filterable: true },
+    { key: 'sentRecipients', label: 'Enviados', width: '124px', minWidth: '110px', maxWidth: '150px', type: 'number', filterable: true },
+    { key: 'failedRecipients', label: 'Fallidos', width: '124px', minWidth: '110px', maxWidth: '150px', type: 'number', filterable: true },
+    { key: 'scheduledAt', label: 'Programada', width: '178px', minWidth: '150px', maxWidth: '220px', type: 'date', filterable: true },
+    { key: 'startedAt', label: 'Iniciada', width: '178px', minWidth: '150px', maxWidth: '220px', type: 'date', filterable: true },
+    { key: 'completedAt', label: 'Completada', width: '178px', minWidth: '150px', maxWidth: '220px', type: 'date', filterable: true },
+    { key: 'createdAt', label: 'Creado', width: '168px', minWidth: '146px', maxWidth: '220px', type: 'date', filterable: true },
+    { key: 'updatedAt', label: 'Actualizado', width: '168px', minWidth: '146px', maxWidth: '220px', type: 'date', filterable: true }
 ];
 
 const CAMPAIGN_DEFAULT_COLUMN_KEYS = ['campaignName', 'category', 'language', 'status', 'moduleId', 'updatedAt'];
@@ -632,8 +644,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const [wizardStep, setWizardStep] = useState(1);
     const [form, setForm] = useState(EMPTY_FORM);
     const [search, setSearch] = useState('');
-    const [statusFilter, setStatusFilter] = useState('');
-    const [moduleFilter, setModuleFilter] = useState('');
+    const [headerFilter, setHeaderFilter] = useState({ columnKey: '', operator: 'contains', value: '' });
     const [showColumnsMenu, setShowColumnsMenu] = useState(false);
     const [localEstimate, setLocalEstimate] = useState(null);
     const [baseAudienceEstimate, setBaseAudienceEstimate] = useState(null);
@@ -774,10 +785,10 @@ export default React.memo(function CampaignsSection(props = {}) {
 
     const filteredCampaigns = useMemo(() => {
         const term = toLower(search);
-        return campaigns.filter((item) => (!statusFilter || toLower(item?.status) === toLower(statusFilter))
-            && (!moduleFilter || toText(item?.moduleId) === toText(moduleFilter))
-            && (!term || `${toLower(item?.campaignName)} ${toLower(item?.templateName)} ${toLower(item?.moduleId)}`.includes(term)));
-    }, [campaigns, moduleFilter, search, statusFilter]);
+        return campaigns.filter((item) => (
+            !term || `${toLower(item?.campaignName)} ${toLower(item?.templateName)} ${toLower(item?.moduleId)}`.includes(term)
+        ));
+    }, [campaigns, search]);
 
     const campaignTableColumns = useMemo(() => {
         const visible = new Set(columnPrefs.visibleColumnKeys);
@@ -820,9 +831,14 @@ export default React.memo(function CampaignsSection(props = {}) {
         createdAt: toText(campaign?.createdAt || ''),
         updatedAt: toText(campaign?.updatedAt || campaign?.createdAt || '')
     })), [filteredCampaigns]);
+    const filteredCampaignTableRows = useMemo(() => {
+        const columnKey = toText(headerFilter?.columnKey);
+        if (!columnKey) return campaignTableRows;
+        return campaignTableRows.filter((row) => matchesTextFilter(row?.[columnKey], headerFilter?.value, headerFilter?.operator));
+    }, [campaignTableRows, headerFilter]);
     const sortedCampaignTableRows = useMemo(
-        () => applyCampaignSort(campaignTableRows, columnPrefs.sort),
-        [campaignTableRows, columnPrefs.sort]
+        () => applyCampaignSort(filteredCampaignTableRows, columnPrefs.sort),
+        [filteredCampaignTableRows, columnPrefs.sort]
     );
 
     const templatesByModule = useMemo(() => {
@@ -3107,7 +3123,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const headerElement = (
         <SaasViewHeader
             title="CAMPAÑAS"
-            count={filteredCampaigns.length}
+            count={sortedCampaignTableRows.length}
             searchValue={search}
             onSearchChange={setSearch}
             searchPlaceholder="Buscar campaña por nombre, plantilla o módulo..."
@@ -3165,34 +3181,20 @@ export default React.memo(function CampaignsSection(props = {}) {
             )}
             filters={{
                 columns: [
-                    { key: 'status', label: 'Estado', type: 'option', options: Object.keys(STATUS_META).map((key) => ({ value: key, label: STATUS_META[key].label })) },
-                    { key: 'moduleId', label: 'Módulo', type: 'option', options: moduleOptions.map((item) => ({ value: item.moduleId, label: item.label })) }
+                    ...CAMPAIGN_TABLE_COLUMNS.map((column) => ({
+                        key: column.key,
+                        label: column.label,
+                        type: column.type || 'text',
+                        options: column.key === 'status'
+                            ? Object.keys(STATUS_META).map((key) => ({ value: key, label: STATUS_META[key].label }))
+                            : (column.key === 'moduleId'
+                                ? moduleOptions.map((item) => ({ value: item.moduleId, label: item.label }))
+                                : undefined)
+                    }))
                 ],
-                value: {
-                    columnKey: statusFilter ? 'status' : (moduleFilter ? 'moduleId' : ''),
-                    operator: 'equals',
-                    value: statusFilter || moduleFilter || ''
-                },
-                onChange: (next) => {
-                    const columnKey = toText(next?.columnKey);
-                    const value = toText(next?.value);
-                    if (columnKey === 'status') {
-                        setStatusFilter(value);
-                        setModuleFilter('');
-                        return;
-                    }
-                    if (columnKey === 'moduleId') {
-                        setModuleFilter(value);
-                        setStatusFilter('');
-                        return;
-                    }
-                    setStatusFilter('');
-                    setModuleFilter('');
-                },
-                onClear: () => {
-                    setStatusFilter('');
-                    setModuleFilter('');
-                }
+                value: headerFilter,
+                onChange: setHeaderFilter,
+                onClear: () => setHeaderFilter({ columnKey: '', operator: 'contains', value: '' })
             }}
             sortConfig={{
                 columns: CAMPAIGN_TABLE_COLUMNS,
