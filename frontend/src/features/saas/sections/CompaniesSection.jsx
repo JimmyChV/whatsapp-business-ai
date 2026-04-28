@@ -315,7 +315,7 @@ function CompaniesSection(props = {}) {
                 requestJson={requestJson}
                 emptyText="No hay empresas registradas."
                 searchPlaceholder="Buscar empresa por nombre, slug, plan o estado..."
-                actions={canManageTenants ? [{ key: 'create', label: 'Agregar empresa', onClick: openTenantCreate, disabled: busy }] : []}
+                actions={canManageTenants ? [{ key: 'create', label: 'Agregar', onClick: openTenantCreate, disabled: busy }] : []}
                 filters={filters}
                 detailTitle={tenantPanelMode === 'create' ? 'Nueva empresa' : tenantPanelMode === 'edit' ? `Editando: ${toTenantDisplayName(selectedTenant || {})}` : toTenantDisplayName(selectedTenant || {})}
                 detailSubtitle={tenantPanelMode === 'view' ? 'Campos bloqueados. Usa Editar para modificar.' : 'ID fijo después de crear. Ajusta solo campos permitidos.'}

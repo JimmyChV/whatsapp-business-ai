@@ -459,7 +459,7 @@ export default function QuickRepliesSection(props = {}) {
                     disabled: busy || loadingQuickReplies || !settingsTenantId
                 },
                 {
-                    label: 'Nueva biblioteca',
+                    label: 'Nuevo',
                     onClick: openQuickReplyLibraryCreate,
                     disabled: busy || !canManageQuickReplies || !settingsTenantId
                 }

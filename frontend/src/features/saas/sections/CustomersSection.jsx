@@ -3281,7 +3281,7 @@ function CustomersSection(props = {}) {
     const headerActions = [
         {
             key: 'add-customer',
-            label: 'Agregar cliente',
+            label: 'Agregar',
             onClick: openCustomerCreate,
             variant: 'primary',
             disabled: busy || tenantScopeLocked

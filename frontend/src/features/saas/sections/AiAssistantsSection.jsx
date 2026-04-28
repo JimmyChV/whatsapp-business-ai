@@ -259,7 +259,7 @@ function AiAssistantsSection(props = {}) {
             filters={filters}
             actions={[
                 { label: 'Recargar', onClick: () => settingsTenantId && loadTenantAiAssistants?.(settingsTenantId), disabled: busy || !settingsTenantId || loadingAiAssistants },
-                { label: 'Nuevo asistente', onClick: openAiAssistantCreate, disabled: busy || !settingsTenantId || !canManageAi }
+                { label: 'Nuevo', onClick: openAiAssistantCreate, disabled: busy || !settingsTenantId || !canManageAi }
             ]}
             detailTitle={aiAssistantPanelMode === 'create' ? 'Nuevo asistente IA' : (selectedAiAssistant?.name || 'Detalle IA')}
             detailSubtitle={aiAssistantPanelMode === 'create' ? 'Define contexto y parametros de inferencia.' : (selectedAiAssistant?.assistantId || '')}

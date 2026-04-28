@@ -489,7 +489,7 @@ function CatalogSection(props = {}) {
             filters={filters}
             actions={[
                 { label: 'Recargar', onClick: () => settingsTenantId && loadTenantCatalogs?.(settingsTenantId), disabled: busy || !settingsTenantId || loadingTenantCatalogs },
-                { label: 'Nuevo catálogo', onClick: openCatalogCreate, disabled: busy || !settingsTenantId || !canEditCatalog }
+                { label: 'Nuevo', onClick: openCatalogCreate, disabled: busy || !settingsTenantId || !canEditCatalog }
             ]}
             detailTitle={catalogPanelMode === 'create' ? 'Nuevo catálogo' : (selectedTenantCatalog?.name || 'Detalle de catálogo')}
             detailSubtitle={catalogPanelMode === 'create' ? 'Deja el ID vacío para generarlo automáticamente.' : (selectedTenantCatalog?.catalogId || '')}

@@ -533,7 +533,7 @@ function UsersSection(props = {}) {
                 filters={filters}
                 actions={[
                     canManageUsers
-                        ? { label: 'Agregar usuario', onClick: openUserCreate, disabled: busy || tenantScopeLocked }
+                        ? { label: 'Agregar', onClick: openUserCreate, disabled: busy || tenantScopeLocked }
                         : null
                 ].filter(Boolean)}
                 detailTitle={userPanelMode === 'create'

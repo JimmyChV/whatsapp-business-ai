@@ -261,7 +261,7 @@ function ModulesConfigSection(props = {}) {
             emptyText={isModulesSection ? 'No hay modulos registrados.' : 'No hay configuracion disponible.'}
             actions={[
                 isModulesSection && canEditModules
-                    ? { label: 'Nuevo modulo', onClick: openConfigModuleCreate, disabled: busy || !settingsTenantId }
+                    ? { label: 'Nuevo', onClick: openConfigModuleCreate, disabled: busy || !settingsTenantId }
                     : null,
                 isGeneralConfigSection
                     ? { label: 'Configuración general', onClick: openConfigSettingsView, disabled: busy || !settingsTenantId }
