@@ -1,9 +1,17 @@
 import React, { useMemo, useState } from 'react';
 
-const toTitleCaseLabel = (value = '') => String(value || '')
-    .trim()
-    .toLocaleLowerCase('es')
-    .replace(/\b([\p{L}\p{N}])/gu, (match) => match.toLocaleUpperCase('es'));
+const toTitleCaseLabel = (value = '') => {
+    const normalized = String(value || '').trim();
+    if (!normalized) return normalized;
+    return normalized
+        .toLocaleLowerCase('es')
+        .split(' ')
+        .map((word) => {
+            if (!word) return word;
+            return word.charAt(0).toLocaleUpperCase('es') + word.slice(1);
+        })
+        .join(' ');
+};
 
 export const SaasDetailPanelSection = ({
     title,

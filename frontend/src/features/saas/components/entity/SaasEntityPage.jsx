@@ -34,10 +34,16 @@ function normalizeColumns(columns = [], visibleColumnKeys = [], columnOrder = []
 function getColumnTextLabel(column = {}) {
     const rawLabel = column.menuLabel ?? column.sortLabel ?? column.label ?? column.key;
     if (typeof rawLabel === 'string' || typeof rawLabel === 'number') {
-        return String(rawLabel)
-            .trim()
+        const normalized = String(rawLabel).trim();
+        if (!normalized) return normalized;
+        return normalized
             .toLocaleLowerCase('es')
-            .replace(/\b([\p{L}\p{N}])/gu, (match) => match.toLocaleUpperCase('es'));
+            .split(' ')
+            .map((word) => {
+                if (!word) return word;
+                return word.charAt(0).toLocaleUpperCase('es') + word.slice(1);
+            })
+            .join(' ');
     }
     return String(column.key || '');
 }
