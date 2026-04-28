@@ -5823,6 +5823,165 @@
   overflow: visible;
 }
 
+/* Compact control bar */
+.saas-view-header {
+  border: var(--saas-border-width) solid var(--saas-border-color);
+  border-radius: var(--saas-radius-xl);
+  background: color-mix(in srgb, var(--saas-bg-surface) 94%, transparent);
+  box-shadow: var(--saas-shadow-sm);
+  padding: var(--saas-space-2);
+  gap: var(--saas-space-2);
+}
+
+.saas-view-header__controls {
+  display: block;
+}
+
+.saas-view-header__control-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--saas-space-2);
+  min-width: 0;
+}
+
+.saas-view-header__search {
+  flex: 1 1 auto;
+  min-width: 220px;
+  display: flex;
+  align-items: center;
+  gap: var(--saas-space-2);
+  height: var(--saas-btn-height-md);
+  padding: 0 var(--saas-space-3);
+  border: var(--saas-border-width) solid var(--saas-border-color);
+  border-radius: var(--saas-input-radius);
+  background: var(--saas-bg-input);
+}
+
+.saas-view-header__search-icon {
+  flex-shrink: 0;
+  color: var(--saas-text-secondary);
+}
+
+.saas-view-header__search input {
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.saas-view-header__search input:focus {
+  border: none;
+}
+
+.saas-view-header__dropdown {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.saas-view-header__dropdown-menu {
+  position: absolute;
+  top: calc(100% + var(--saas-space-2));
+  right: 0;
+  z-index: var(--saas-z-dropdown);
+  min-width: 260px;
+  display: grid;
+  gap: var(--saas-space-2);
+  padding: var(--saas-space-3);
+  border: var(--saas-border-width) solid var(--saas-border-color);
+  border-radius: var(--saas-radius-lg);
+  background: var(--saas-bg-elevated);
+  box-shadow: var(--saas-shadow-md);
+}
+
+.saas-view-header__dropdown-menu--sort {
+  min-width: 220px;
+}
+
+.saas-view-header__dropdown-menu select,
+.saas-view-header__dropdown-menu input {
+  min-width: 0;
+}
+
+.saas-view-header__dropdown-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--saas-space-2);
+}
+
+.saas-view-header__filter-placeholder {
+  min-height: var(--saas-btn-height-md);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--saas-space-3);
+  border: var(--saas-border-width) dashed var(--saas-border-color);
+  border-radius: var(--saas-radius-md);
+  color: var(--saas-text-secondary);
+  font-size: var(--saas-font-size-sm);
+}
+
+.saas-view-header__clear-btn {
+  width: var(--saas-btn-height-md);
+  padding: 0;
+}
+
+.saas-header-btn,
+.saas-btn-columns,
+.saas-entity-columns__actions button {
+  height: var(--saas-btn-height-md);
+  gap: var(--saas-space-1);
+}
+
+.saas-admin-theme-toggle,
+.sidebar-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+}
+
+.saas-admin-theme-toggle__switch,
+.sidebar-theme-toggle__switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--saas-space-1);
+  padding: var(--saas-space-1);
+  border: var(--saas-border-width) solid var(--saas-border-color);
+  border-radius: var(--saas-radius-full);
+  background: var(--saas-bg-surface);
+  cursor: pointer;
+  transition: background var(--saas-transition-fast), border-color var(--saas-transition-fast);
+}
+
+.saas-admin-theme-toggle__switch:hover,
+.sidebar-theme-toggle__switch:hover {
+  background: var(--saas-bg-hover);
+}
+
+.saas-admin-theme-toggle__icon,
+.sidebar-theme-toggle__icon {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--saas-radius-full);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--saas-text-secondary);
+  transition: background var(--saas-transition-fast), color var(--saas-transition-fast), transform var(--saas-transition-fast);
+}
+
+.saas-admin-theme-toggle__icon.is-active,
+.sidebar-theme-toggle__icon.is-active {
+  background: var(--saas-accent-primary);
+  color: var(--saas-accent-primary-text);
+  transform: scale(1.02);
+}
+
+.saas-view-header__actions .saas-btn-text,
+.saas-entity-columns .saas-btn-text,
+.saas-admin-header .saas-btn-text {
+  display: inline;
+}
+
 .saas-admin-shell #saas_clientes .saas-customers-header-extra {
   display: flex;
   flex-direction: column;

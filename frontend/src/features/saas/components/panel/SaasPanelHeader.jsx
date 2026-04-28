@@ -1,3 +1,5 @@
+import { MessageCircle, Moon, Sun, X } from 'lucide-react';
+
 export default function SaasPanelHeader({
     showHeader = true,
     embedded = false,
@@ -10,7 +12,7 @@ export default function SaasPanelHeader({
     currentUserDisplayName = 'Usuario',
     currentUserRoleLabel = 'Sin rol',
     buildInitials,
-    closeLabel = 'Cerrar sesion',
+    closeLabel = 'Cerrar sesión',
     themeMode = 'dark',
     onThemeChange = null,
     onClose,
@@ -69,27 +71,29 @@ export default function SaasPanelHeader({
                             className="saas-header-btn saas-header-btn--primary saas-admin-header-open-operation"
                             disabled={isBusy || !canOpenOperation}
                             onClick={onOpenOperation}
+                            title="Ir al chat"
                         >
-                            Ir al chat
+                            <MessageCircle size={15} strokeWidth={2} />
+                            <span className="saas-btn-text">Ir al chat</span>
                         </button>
                     )}
                     <div className="saas-admin-theme-toggle" role="group" aria-label="Cambiar tema">
                         <button
                             type="button"
-                            className={`saas-header-btn ${themeMode === 'dark' ? 'saas-header-btn--primary' : 'saas-header-btn--secondary'}`.trim()}
-                            onClick={() => onThemeChange?.('dark')}
+                            className="saas-admin-theme-toggle__switch"
+                            onClick={() => onThemeChange?.(themeMode === 'dark' ? 'light' : 'dark')}
+                            title={themeMode === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+                            aria-label={themeMode === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
                         >
-                            🌙 Oscuro
-                        </button>
-                        <button
-                            type="button"
-                            className={`saas-header-btn ${themeMode === 'light' ? 'saas-header-btn--primary' : 'saas-header-btn--secondary'}`.trim()}
-                            onClick={() => onThemeChange?.('light')}
-                        >
-                            ☀️ Claro
+                            <span className={`saas-admin-theme-toggle__icon ${themeMode === 'dark' ? 'is-active' : ''}`.trim()}>
+                                <Moon size={15} strokeWidth={2} />
+                            </span>
+                            <span className={`saas-admin-theme-toggle__icon ${themeMode === 'light' ? 'is-active' : ''}`.trim()}>
+                                <Sun size={15} strokeWidth={2} />
+                            </span>
                         </button>
                     </div>
-                    <div className="saas-admin-header-profile" role="status" aria-label="Usuario en sesion">
+                    <div className="saas-admin-header-profile" role="status" aria-label="Usuario en sesión">
                         <div className="saas-admin-header-profile-avatar">
                             {currentUserAvatarUrl
                                 ? <img src={currentUserAvatarUrl} alt={currentUserDisplayName} />
@@ -104,8 +108,10 @@ export default function SaasPanelHeader({
                         type="button"
                         className="saas-header-btn saas-header-btn--danger saas-admin-header-close-danger"
                         onClick={onClose}
+                        title={closeLabel}
                     >
-                        {closeLabel}
+                        <X size={15} strokeWidth={2} />
+                        <span className="saas-btn-text">{closeLabel}</span>
                     </button>
                 </div>
             )}

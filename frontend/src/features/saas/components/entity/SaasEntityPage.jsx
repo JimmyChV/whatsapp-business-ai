@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { CheckSquare, Columns3, RotateCcw } from 'lucide-react';
 import {
     SaasDataTable,
     SaasDetailPanel,
@@ -128,7 +129,8 @@ function ColumnMenu({
     return (
         <div className={['saas-entity-columns', className].filter(Boolean).join(' ')}>
             <button type="button" className="saas-header-btn saas-header-btn--secondary saas-btn-columns" onClick={() => setOpen((prev) => !prev)}>
-                Columnas
+                <Columns3 size={15} strokeWidth={2} />
+                <span className="saas-btn-text">Columnas</span>
             </button>
             {open ? (
                 <div className="saas-entity-columns__menu">
@@ -144,10 +146,12 @@ function ColumnMenu({
                     ))}
                     <div className="saas-entity-columns__actions">
                         <button type="button" onClick={() => preferences?.setVisibleColumnKeys?.(menuColumns.map((column) => column.key))}>
-                            TODAS
+                            <CheckSquare size={14} strokeWidth={2} />
+                            <span>Todas</span>
                         </button>
                         <button type="button" onClick={preferences?.resetColumns}>
-                            RESTABLECER
+                            <RotateCcw size={14} strokeWidth={2} />
+                            <span>Restablecer</span>
                         </button>
                     </div>
                 </div>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck, UserCheck, ChevronDown } from 'lucide-react';
+import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck, UserCheck, ChevronDown, Moon, Sun } from 'lucide-react';
 import ChannelBrandIcon from './ChannelBrandIcon';
 import AssignmentBadge from './assignment/AssignmentBadge';
 import CommercialStatusBadge from './commercial/CommercialStatusBadge';
@@ -237,17 +237,17 @@ const Sidebar = ({
                                 <div className="sidebar-theme-toggle" role="group" aria-label="Cambiar tema">
                                     <button
                                         type="button"
-                                        className={`sidebar-theme-toggle__btn ${themeMode === 'dark' ? 'is-active' : ''}`.trim()}
-                                        onClick={() => onThemeChange?.('dark')}
+                                        className="sidebar-theme-toggle__switch"
+                                        onClick={() => onThemeChange?.(themeMode === 'dark' ? 'light' : 'dark')}
+                                        title={themeMode === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+                                        aria-label={themeMode === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
                                     >
-                                        🌙 Oscuro
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className={`sidebar-theme-toggle__btn ${themeMode === 'light' ? 'is-active' : ''}`.trim()}
-                                        onClick={() => onThemeChange?.('light')}
-                                    >
-                                        ☀️ Claro
+                                        <span className={`sidebar-theme-toggle__icon ${themeMode === 'dark' ? 'is-active' : ''}`.trim()}>
+                                            <Moon size={14} strokeWidth={2} />
+                                        </span>
+                                        <span className={`sidebar-theme-toggle__icon ${themeMode === 'light' ? 'is-active' : ''}`.trim()}>
+                                            <Sun size={14} strokeWidth={2} />
+                                        </span>
                                     </button>
                                 </div>
                             </div>
