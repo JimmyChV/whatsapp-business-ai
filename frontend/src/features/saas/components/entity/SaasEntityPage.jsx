@@ -88,14 +88,25 @@ function applySort(rows = [], sort = {}) {
     });
 }
 
-function normalizeEntityFilters(filters = null) {
-    if (!Array.isArray(filters)) return [];
-    return filters
-        .filter((filter) => filter && filter.key)
-        .map((filter) => ({
-            ...filter,
-            type: filter.type === 'select' ? 'option' : (filter.type || 'text')
+function normalizeEntityFilters(filters = null, columns = []) {
+    const explicitFilters = Array.isArray(filters) ? filters.filter((filter) => filter && filter.key) : [];
+    const explicitByKey = new Map(explicitFilters.map((filter) => [String(filter.key), filter]));
+    const inferredFilters = getConfigurableColumns(columns)
+        .filter((column) => column.filterable !== false)
+        .map((column) => ({
+            key: column.key,
+            label: column.menuLabel ?? column.sortLabel ?? column.label ?? column.key,
+            type: column.type === 'select' ? 'option' : (column.type || 'text'),
+            options: Array.isArray(column.options) ? column.options : undefined
         }));
+    const combined = [
+        ...explicitFilters,
+        ...inferredFilters.filter((filter) => !explicitByKey.has(String(filter.key)))
+    ];
+    return combined.map((filter) => ({
+        ...filter,
+        type: filter.type === 'select' ? 'option' : (filter.type || 'text')
+    }));
 }
 
 function matchesFilterValue(rowValue, filterValue = {}) {
@@ -199,7 +210,7 @@ export default function SaasEntityPage({
     const preferences = useSaasViewPreferences(sectionKey || id || title, columns, { requestJson });
     const [search, setSearch] = useState('');
     const [activeFilter, setActiveFilter] = useState({ columnKey: '', operator: 'contains', value: '' });
-    const filterColumns = useMemo(() => normalizeEntityFilters(filters), [filters]);
+    const filterColumns = useMemo(() => normalizeEntityFilters(filters, columns), [columns, filters]);
     const filterConfig = useMemo(() => {
         if (filterColumns.length === 0) return null;
         return {

@@ -49,6 +49,13 @@
   --saas-z-dropdown: 1000;
   --saas-z-modal: 2000;
   --saas-z-toast: 3000;
+  --saas-panel-radius: var(--saas-radius-xl);
+  --saas-control-gap: var(--saas-space-2);
+  --saas-header-gap: var(--saas-space-3);
+  --saas-header-min-height: 72px;
+  --saas-header-padding-y: 14px;
+  --saas-header-padding-x: 24px;
+  --saas-search-min-width: 220px;
 }
 
 :root,
@@ -169,7 +176,7 @@
 
 .saas-btn--danger {
   background: var(--saas-accent-danger);
-  color: #ffffff;
+  color: var(--saas-accent-primary-text);
   border-color: var(--saas-accent-danger);
 }
 
@@ -237,16 +244,16 @@
 .saas-admin-panel--embedded {
   width: 100%;
   height: 100%;
-  border-radius: 12px;
+  border-radius: var(--saas-panel-radius);
 }
 .saas-admin-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  min-height: 72px;
-  padding: 14px 24px;
-  border-bottom: 1px solid var(--saas-header-border);
+  gap: var(--saas-header-gap);
+  min-height: var(--saas-header-min-height);
+  padding: var(--saas-header-padding-y) var(--saas-header-padding-x);
+  border-bottom: var(--saas-border-width) solid var(--saas-header-border);
   background: color-mix(in srgb, var(--saas-header-bg) 86%, transparent);
 }
 .saas-admin-header h2 {
@@ -5840,16 +5847,16 @@
 .saas-view-header__control-bar {
   display: flex;
   align-items: center;
-  gap: var(--saas-space-2);
+  gap: var(--saas-control-gap);
   min-width: 0;
 }
 
 .saas-view-header__search {
   flex: 1 1 auto;
-  min-width: 220px;
+  min-width: var(--saas-search-min-width);
   display: flex;
   align-items: center;
-  gap: var(--saas-space-2);
+  gap: var(--saas-control-gap);
   height: var(--saas-btn-height-md);
   padding: 0 var(--saas-space-3);
   border: var(--saas-border-width) solid var(--saas-border-color);

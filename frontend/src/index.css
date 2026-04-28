@@ -1,33 +1,25 @@
 :root {
-  --app-background: #111b21;
-  --panel-background: #202c33;
-  --sidebar-background: #111b21;
-  --search-container-background: #111b21;
-  --input-background: #2a3942;
-  --text-primary: #e9edef;
-  --text-secondary: #8696a0;
-  --primary-green: #00a884;
-  --incoming-msg-bg: #202c33;
-  --outgoing-msg-bg: #005c4b;
-  --border-color: rgba(134, 150, 160, 0.15);
-  --ai-accent: #8a2be2;
-  --system-message-bg: rgba(24, 34, 41, 0.9);
+  --app-background: var(--saas-bg-base);
+  --panel-background: var(--saas-bg-surface);
+  --sidebar-background: var(--saas-sidebar-bg);
+  --search-container-background: var(--saas-sidebar-bg);
+  --input-background: var(--saas-bg-input);
+  --text-primary: var(--saas-text-primary);
+  --text-secondary: var(--saas-text-secondary);
+  --primary-green: var(--saas-accent-primary);
+  --incoming-msg-bg: var(--saas-bg-surface);
+  --outgoing-msg-bg: color-mix(in srgb, var(--saas-accent-primary) 42%, var(--saas-bg-surface));
+  --border-color: color-mix(in srgb, var(--saas-border-color) 72%, transparent);
+  --ai-accent: var(--saas-accent-info);
+  --system-message-bg: color-mix(in srgb, var(--saas-bg-elevated) 92%, transparent);
+  --chat-window-background: color-mix(in srgb, var(--saas-bg-base) 92%, #000000);
+  --chat-item-hover: var(--saas-bg-hover);
+  --chat-item-active: var(--saas-bg-selected);
 }
 
 :root[data-theme="light"] {
-  --app-background: #f8f6f2;
-  --panel-background: #ffffff;
-  --sidebar-background: #f0ede8;
-  --search-container-background: #f0ede8;
-  --input-background: #ffffff;
-  --text-primary: #1a1a1a;
-  --text-secondary: #6b7280;
-  --primary-green: #2ea043;
-  --incoming-msg-bg: #ffffff;
-  --outgoing-msg-bg: #dff3e4;
-  --border-color: rgba(120, 113, 108, 0.18);
-  --ai-accent: #7c3aed;
-  --system-message-bg: rgba(240, 237, 232, 0.95);
+  --outgoing-msg-bg: color-mix(in srgb, var(--saas-accent-primary) 14%, var(--saas-bg-surface));
+  --chat-window-background: color-mix(in srgb, var(--saas-bg-base) 96%, #d8d3cc);
 }
 
 * {
@@ -37,7 +29,7 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--saas-font-family);
   background-color: var(--app-background);
   color: var(--text-primary);
   height: 100vh;
@@ -98,11 +90,11 @@ body {
 }
 
 .chat-item:hover {
-  background-color: #202c33;
+  background-color: var(--chat-item-hover);
 }
 
 .chat-item.active {
-  background-color: #2a3942;
+  background-color: var(--chat-item-active);
 }
 
 /* Chat Window Styling */
@@ -110,7 +102,7 @@ body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background-color: #0b141a;
+  background-color: var(--chat-window-background);
   position: relative;
 }
 
