@@ -179,8 +179,8 @@ const SaasViewHeader = ({
 
     const hasActiveFilter = Boolean(
         String(filters?.value?.columnKey || '').trim()
-        || String(filters?.value?.operator || 'contains').trim() !== 'contains'
         || String(filters?.value?.value || '').trim()
+        || String(sortConfig?.columnKey || '').trim()
     );
     const hasActiveSort = Boolean(String(sortConfig?.columnKey || '').trim());
 
@@ -411,7 +411,7 @@ const SaasViewHeader = ({
                         </div>
                     ) : null}
 
-                    {filters ? (
+                    {filters && hasActiveFilter ? (
                         <button
                             type="button"
                             className="saas-header-btn saas-header-btn--secondary saas-view-header__clear-btn"
