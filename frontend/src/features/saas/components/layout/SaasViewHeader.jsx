@@ -212,7 +212,8 @@ const SaasViewHeader = ({
                                     <option value="">Seleccionar...</option>
                                     {selectedFilterColumn.options.map((optionItem, optionIndex) => {
                                         const optionValue = String(optionItem?.value ?? optionItem?.id ?? optionItem ?? '').trim();
-                                        const optionLabel = String((optionItem?.label ?? optionValue) || `Opcion ${optionIndex + 1}`).trim();
+                                        const optionLabelSource = String((optionItem?.label ?? optionValue) || `Opcion ${optionIndex + 1}`).trim();
+                                        const optionLabel = toTitleCaseLabel(optionLabelSource.replace(/[_-]+/g, ' '));
                                         return (
                                             <option key={`${selectedFilterColumn.key}-${optionValue}-${optionIndex}`} value={optionValue}>
                                                 {optionLabel}
