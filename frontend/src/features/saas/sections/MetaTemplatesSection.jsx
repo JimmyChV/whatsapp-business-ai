@@ -86,6 +86,19 @@ const EMPTY_CREATE_FORM = {
 const toText = (value = '') => String(value || '').trim();
 const toLower = (value = '') => toText(value).toLowerCase();
 const toUpper = (value = '') => toText(value).toUpperCase();
+const normalizeFilterValue = (value = '') => toText(value).toLowerCase();
+const matchesTextFilter = (actual = '', expected = '', operator = 'contains') => {
+    const left = normalizeFilterValue(actual);
+    const right = normalizeFilterValue(expected);
+    if (operator === 'is_empty') return !left;
+    if (operator === 'not_empty') return Boolean(left);
+    if (!right) return true;
+    if (operator === 'equals') return left === right;
+    if (operator === 'not_equals') return left !== right;
+    if (operator === 'starts_with') return left.startsWith(right);
+    if (operator === 'ends_with') return left.endsWith(right);
+    return left.includes(right);
+};
 const META_PLACEHOLDER_REGEX = /{{\s*(\d+)\s*}}/g;
 const TEMPLATE_TOKEN_REGEX = /{{\s*([^{}]+?)\s*}}/g;
 const SUPPORTED_LANGUAGES = Object.freeze(['es', 'en', 'pt']);
@@ -613,6 +626,7 @@ function MetaTemplatesSection(props = {}) {
     const [panelMode, setPanelMode] = useState('view');
     const [selectedTemplateId, setSelectedTemplateId] = useState('');
     const [showColumnsPanel, setShowColumnsPanel] = useState(false);
+    const [headerFilter, setHeaderFilter] = useState({ columnKey: '', operator: 'contains', value: '' });
     const [syncModuleId, setSyncModuleId] = useState('');
     const [createForm, setCreateForm] = useState(() => buildInitialForm(''));
     const [templateVarCatalog, setTemplateVarCatalog] = useState([]);
@@ -811,6 +825,12 @@ function MetaTemplatesSection(props = {}) {
             })
             : [];
     }, [filteredItems]);
+
+    const filteredTableRows = useMemo(() => {
+        const columnKey = toText(headerFilter?.columnKey);
+        if (!columnKey) return tableRows;
+        return tableRows.filter((row) => matchesTextFilter(row?.[columnKey], headerFilter?.value, headerFilter?.operator));
+    }, [headerFilter, tableRows]);
 
     const tableColumns = useMemo(() => {
         const visibleSet = new Set((Array.isArray(visibleTableColumnKeys) ? visibleTableColumnKeys : [])
@@ -1308,6 +1328,19 @@ function MetaTemplatesSection(props = {}) {
             }}
             searchPlaceholder="Buscar plantilla por nombre, categoría o idioma..."
             searchDisabled={templatesBusy || tenantScopeLocked}
+            filters={{
+                columns: [
+                    { key: 'templateName', label: 'Nombre', type: 'text' },
+                    { key: 'category', label: 'Categoría', type: 'option', options: CATEGORY_OPTIONS.map((option) => ({ value: option.label, label: option.label })) },
+                    { key: 'templateLanguage', label: 'Idioma', type: 'option', options: LANGUAGE_OPTIONS.map((option) => ({ value: option.value.toUpperCase(), label: option.label })) },
+                    { key: 'statusLabel', label: 'Estado', type: 'option', options: statusOptions.filter(Boolean).map((option) => ({ value: resolveStatusMeta(option).label, label: resolveStatusMeta(option).label })) },
+                    { key: 'moduleLabel', label: 'Módulo', type: 'option', options: moduleOptions.map((moduleItem) => ({ value: moduleItem.label, label: moduleItem.label })) },
+                    { key: 'useCaseLabel', label: 'Caso De Uso', type: 'option', options: USE_CASE_OPTIONS.map((option) => ({ value: option.label, label: option.label })) }
+                ],
+                value: headerFilter,
+                onChange: setHeaderFilter,
+                onClear: () => setHeaderFilter({ columnKey: '', operator: 'contains', value: '' })
+            }}
             actions={[
                 {
                     key: 'reload',
@@ -1478,7 +1511,7 @@ function MetaTemplatesSection(props = {}) {
                         <>
                             <SaasDataTable
                                 columns={tableColumns}
-                                rows={tableRows}
+                                rows={filteredTableRows}
                                 selectedId={selectedTemplateId}
                                 loading={loadingList}
                                 emptyText="No hay plantillas para los filtros seleccionados."

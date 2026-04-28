@@ -82,6 +82,13 @@ function RoleProfilesSection(props = {}) {
         { key: 'status', label: 'Estado', width: '14%', minWidth: '120px', sortable: true }
     ], []);
 
+    const filters = React.useMemo(() => [
+        { key: 'name', label: 'Nombre', type: 'text' },
+        { key: 'role', label: 'Código', type: 'text' },
+        { key: 'status', label: 'Estado', type: 'option', options: [{ value: 'Activo', label: 'Activo' }, { value: 'Inactivo', label: 'Inactivo' }] },
+        { key: 'scope', label: 'Scope', type: 'option', options: [{ value: 'Global', label: 'Global' }] }
+    ], []);
+
     const close = React.useCallback(() => {
         if (isEditing) {
             cancelRoleEdit?.();
@@ -221,6 +228,7 @@ function RoleProfilesSection(props = {}) {
             emptyText="No hay perfiles de rol cargados."
             searchPlaceholder="Buscar rol por nombre, código o estado..."
             actions={canManageRoles ? [{ key: 'create', label: 'Nuevo rol', onClick: openRoleCreate, disabled: busy }] : []}
+            filters={filters}
             detailTitle={rolePanelMode === 'create' ? 'Nuevo rol' : rolePanelMode === 'edit' ? `Editando rol: ${roleForm.role || selectedRoleKey}` : selectedRoleProfile?.label || selectedRoleProfile?.role || 'Rol'}
             detailSubtitle={isEditing ? 'Define permisos obligatorios, opcionales y bloqueados por perfil.' : 'Catálogo global de perfiles de acceso.'}
             detailActions={detailActions}

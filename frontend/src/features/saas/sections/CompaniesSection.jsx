@@ -68,6 +68,21 @@ function CompaniesSection(props = {}) {
         { key: 'updatedAt', label: 'Actualizado', width: '16%', minWidth: '150px', sortable: true, hidden: true }
     ], []);
 
+    const filters = React.useMemo(() => [
+        { key: 'name', label: 'Nombre', type: 'text' },
+        { key: 'slug', label: 'Código', type: 'text' },
+        { key: 'plan', label: 'Plan', type: 'option', options: PLAN_OPTIONS.map((plan) => ({ value: plan, label: plan })) },
+        {
+            key: 'status',
+            label: 'Estado',
+            type: 'option',
+            options: [
+                { value: 'Activa', label: 'Activa' },
+                { value: 'Inactiva', label: 'Inactiva' }
+            ]
+        }
+    ], [PLAN_OPTIONS]);
+
     const close = React.useCallback(() => {
         if (isEditing) {
             cancelTenantEdit?.();
@@ -301,6 +316,7 @@ function CompaniesSection(props = {}) {
                 emptyText="No hay empresas registradas."
                 searchPlaceholder="Buscar empresa por nombre, slug, plan o estado..."
                 actions={canManageTenants ? [{ key: 'create', label: 'Agregar empresa', onClick: openTenantCreate, disabled: busy }] : []}
+                filters={filters}
                 detailTitle={tenantPanelMode === 'create' ? 'Nueva empresa' : tenantPanelMode === 'edit' ? `Editando: ${toTenantDisplayName(selectedTenant || {})}` : toTenantDisplayName(selectedTenant || {})}
                 detailSubtitle={tenantPanelMode === 'view' ? 'Campos bloqueados. Usa Editar para modificar.' : 'ID fijo después de crear. Ajusta solo campos permitidos.'}
                 detailActions={detailActions}

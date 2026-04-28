@@ -54,6 +54,11 @@ function PlansSection(props = {}) {
         { key: 'maxQuickReplies', label: 'Respuestas Rápidas', width: '18%', minWidth: '180px', sortable: true, hidden: true }
     ], []);
 
+    const filters = React.useMemo(() => [
+        { key: 'name', label: 'Nombre', type: 'text' },
+        { key: 'scope', label: 'Scope', type: 'option', options: [{ value: 'Global', label: 'Global' }] }
+    ], []);
+
     const close = React.useCallback(() => {
         if (isEditing) {
             cancelPlanEdit?.();
@@ -215,6 +220,7 @@ function PlansSection(props = {}) {
             emptyText="No hay planes cargados."
             searchPlaceholder="Buscar plan por nombre o limite"
             actions={[{ key: 'reload', label: 'Recargar planes', onClick: loadPlanMatrix, disabled: busy || loadingPlans }]}
+            filters={filters}
             detailTitle={planPanelMode === 'edit' ? `Editando plan: ${planForm.id}` : `Plan: ${selectedPlan?.id || ''}`}
             detailSubtitle={isEditing ? 'Los cambios aplican globalmente a todos los tenants de este plan.' : 'Control global de limites por plan.'}
             detailActions={detailActions}
