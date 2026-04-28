@@ -8636,3 +8636,70 @@
 .saas-data-table tbody tr.is-selected td {
     background: var(--saas-table-row-selected);
 }
+
+/* ── Theme-aware overrides ── */
+.saas-admin-card {
+    background: var(--saas-bg-surface) !important;
+    color: var(--saas-text-primary) !important;
+    border-color: var(--saas-border-color) !important;
+}
+
+.saas-admin-panel,
+.saas-admin-content,
+[class*="saas-admin-grid"] {
+    background: var(--saas-bg-base);
+    color: var(--saas-text-primary);
+}
+
+.saas-admin-panel-header,
+.saas-panel-top-bar,
+[class*="panel-header"],
+[class*="top-bar"] {
+    background: var(--saas-header-bg) !important;
+    border-bottom: 1px solid var(--saas-header-border) !important;
+    color: var(--saas-text-primary) !important;
+}
+
+.saas-admin-sidebar,
+[class*="admin-sidebar"],
+[class*="saas-sidebar"] {
+    background: var(--saas-sidebar-bg) !important;
+    border-right: 1px solid var(--saas-border-color) !important;
+}
+
+.saas-data-table,
+[class*="saas-table"],
+[class*="data-table"] {
+    background: var(--saas-bg-surface);
+    color: var(--saas-text-primary);
+}
+
+.saas-data-table th,
+[class*="table-header"] th {
+    background: var(--saas-table-header-bg) !important;
+    color: var(--saas-text-secondary) !important;
+    border-color: var(--saas-table-border) !important;
+}
+
+.saas-data-table td {
+    color: var(--saas-text-primary) !important;
+    border-color: var(--saas-table-border) !important;
+}
+
+.saas-data-table tr:hover td {
+    background: var(--saas-table-row-hover) !important;
+}
+
+input:not([type='checkbox']):not([type='radio']):not([type='color']),
+select,
+textarea {
+    background: var(--saas-bg-input) !important;
+    color: var(--saas-text-primary) !important;
+    border-color: var(--saas-border-color) !important;
+}
+
+input:not([type='checkbox']):not([type='radio']):not([type='color']):focus,
+select:focus,
+textarea:focus {
+    border-color: var(--saas-border-color-focus) !important;
+}
