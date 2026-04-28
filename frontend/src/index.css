@@ -2264,8 +2264,8 @@ body {
 
 .sidebar-label-toggle {
   border: 1px solid rgba(134, 150, 160, 0.24);
-  background: #1b2a33;
-  color: #c1d0d6;
+  background: var(--chat-muted-panel);
+  color: var(--saas-text-primary);
   border-radius: 10px;
   padding: 7px 10px;
   font-size: 0.76rem;
@@ -2279,7 +2279,7 @@ body {
 .sidebar-label-toggle.open,
 .sidebar-label-toggle:hover {
   border-color: rgba(0, 168, 132, 0.45);
-  color: #e1edf2;
+  color: var(--saas-text-primary);
 }
 
 .sidebar-label-selected-count {
@@ -2299,7 +2299,7 @@ body {
 .sidebar-filter-clear {
   border: 1px solid rgba(239, 68, 68, 0.35);
   background: rgba(239, 68, 68, 0.14);
-  color: #ffb8b8;
+  color: var(--chat-danger-text);
   border-radius: 8px;
   padding: 6px 9px;
   font-size: 0.72rem;
@@ -2325,8 +2325,8 @@ body {
   border: 1px solid rgba(134, 150, 160, 0.2);
   border-radius: 8px;
   padding: 6px 8px;
-  color: #8ea3ad;
-  background: rgba(11, 20, 26, 0.5);
+  color: var(--saas-text-secondary);
+  background: color-mix(in srgb, var(--saas-bg-base) 50%, transparent);
 }
 
 .sidebar-label-search-input {
@@ -2351,7 +2351,7 @@ body {
   border: 1px solid rgba(134, 150, 160, 0.2);
   border-radius: 8px;
   background: rgba(17, 27, 33, 0.55);
-  color: #c5d5dc;
+  color: var(--saas-text-primary);
   padding: 7px 8px;
   font-size: 0.78rem;
   cursor: pointer;
@@ -2367,8 +2367,8 @@ body {
 
 .sidebar-label-item.active {
   border-color: transparent;
-  background: linear-gradient(120deg, rgba(0, 168, 132, 0.9), rgba(0, 130, 113, 0.9));
-  color: #042922;
+  background: linear-gradient(120deg, var(--saas-accent-primary), color-mix(in srgb, var(--saas-accent-primary) 82%, #000000));
+  color: var(--saas-text-inverse);
   font-weight: 700;
 }
 

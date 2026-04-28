@@ -73,8 +73,8 @@
   --saas-text-tertiary: #6e7681;
   --saas-text-disabled: #484f58;
   --saas-text-inverse: #0d1117;
-  --saas-accent-primary: #2ea043;
-  --saas-accent-primary-hover: #3fb950;
+  --saas-accent-primary: #238636;
+  --saas-accent-primary-hover: #2ea043;
   --saas-accent-primary-text: #ffffff;
   --saas-accent-danger: #da3633;
   --saas-accent-danger-hover: #f85149;
@@ -3698,7 +3698,7 @@
 
 .saas-view-header__title-group h3 {
   margin: 0;
-  color: #e9f7ff;
+  color: var(--saas-text-primary);
   font-size: 0.9rem;
 }
 
@@ -3780,7 +3780,7 @@
 
 .saas-header-btn--danger {
   background: var(--saas-accent-danger);
-  color: #ffffff;
+  color: var(--saas-accent-primary-text);
   border-color: var(--saas-accent-danger);
 }
 
@@ -4917,18 +4917,18 @@
   min-width: 260px;
   max-width: 360px;
   border-radius: 8px;
-  border: 1px solid rgba(123, 170, 196, 0.35);
-  background: rgba(9, 20, 29, 0.92);
-  color: #e6f3fc;
+  border: 1px solid var(--saas-border-color);
+  background: color-mix(in srgb, var(--saas-bg-base) 92%, transparent);
+  color: var(--saas-text-primary);
   padding: 5px 8px;
   font-size: 0.74rem;
   outline: none;
 }
 
 .saas-admin-header-tenant-clear {
-  border: 1px solid rgba(123, 170, 196, 0.34);
-  background: rgba(123, 170, 196, 0.15);
-  color: #d9ecf8;
+  border: 1px solid var(--saas-border-color);
+  background: transparent;
+  color: var(--saas-text-primary);
   border-radius: 8px;
   padding: 5px 8px;
   font-size: 0.72rem;
@@ -5055,7 +5055,7 @@
 
 .saas-admin-shell .saas-admin-header-tenant-label {
   font-size: 0.72rem;
-  color: #8fb1c6;
+  color: var(--saas-text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
