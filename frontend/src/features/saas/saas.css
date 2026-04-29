@@ -1,6 +1,7 @@
 @import './styles/tokens.css';
 @import './styles/buttons.css';
 @import './styles/inputs.css';
+@import './styles/layout.css';
 
 .saas-admin-overlay {
   position: fixed;
