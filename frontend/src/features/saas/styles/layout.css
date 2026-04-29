@@ -101,8 +101,8 @@
   gap: 10px;
 }
 .saas-admin-kpi {
-  border: 1px solid rgba(148, 184, 204, 0.18);
-  background: rgba(11, 24, 33, 0.86);
+  border: 1px solid var(--saas-border-color);
+  background: var(--saas-bg-surface);
   border-radius: 12px;
   padding: 10px;
   display: flex;

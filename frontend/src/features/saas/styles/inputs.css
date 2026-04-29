@@ -29,8 +29,8 @@
   min-width: 0;
   max-width: 100%;
   color: var(--saas-text-primary);
-  background: linear-gradient(180deg, rgba(5, 14, 20, 0.9), rgba(6, 16, 22, 0.84));
-  border: 1px solid rgba(123, 170, 196, 0.32);
+  background: linear-gradient(180deg, var(--saas-bg-base), var(--saas-bg-base));
+  border: 1px solid var(--saas-border-color);
   color-scheme: dark;
   white-space: nowrap;
   overflow: hidden;
@@ -38,8 +38,8 @@
 }
 
 .saas-admin-panel select:focus {
-  border-color: rgba(0, 199, 160, 0.64);
-  box-shadow: 0 0 0 2px rgba(0, 199, 160, 0.14);
+  border-color: var(--saas-accent-primary);
+  box-shadow: 0 0 0 2px var(--saas-accent-primary);
 }
 
 .saas-admin-panel select:disabled {
