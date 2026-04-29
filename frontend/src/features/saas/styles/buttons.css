@@ -1,0 +1,45 @@
+.saas-btn {
+  height: var(--saas-btn-height-md);
+  padding: 0 var(--saas-btn-padding-x);
+  font-size: var(--saas-btn-font-size);
+  font-weight: var(--saas-btn-font-weight);
+  border-radius: var(--saas-btn-radius);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--saas-space-1);
+  cursor: pointer;
+  border: var(--saas-border-width) solid transparent;
+  transition: all var(--saas-transition-fast);
+  flex-shrink: 0;
+}
+
+.saas-btn--primary {
+  background: var(--saas-accent-primary);
+  color: var(--saas-accent-primary-text);
+  border-color: var(--saas-accent-primary);
+}
+
+.saas-btn--primary:hover {
+  background: var(--saas-accent-primary-hover);
+}
+
+.saas-btn--secondary {
+  background: transparent;
+  color: var(--saas-text-primary);
+  border-color: var(--saas-border-color);
+}
+
+.saas-btn--secondary:hover {
+  background: var(--saas-bg-hover);
+}
+
+.saas-btn--danger {
+  background: var(--saas-accent-danger);
+  color: var(--saas-accent-primary-text);
+  border-color: var(--saas-accent-danger);
+}
+
+.saas-btn--sm { height: var(--saas-btn-height-sm); padding: 0 10px; }
+.saas-btn--lg { height: var(--saas-btn-height-lg); padding: 0 20px; }

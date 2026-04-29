@@ -1,0 +1,53 @@
+.saas-input,
+.saas-admin-panel input:not([type='checkbox']):not([type='radio']):not([type='color']),
+.saas-admin-panel select,
+.saas-admin-panel textarea {
+  height: var(--saas-input-height);
+  padding: var(--saas-input-padding);
+  font-size: var(--saas-input-font-size);
+  border-radius: var(--saas-input-radius);
+  border: var(--saas-border-width) solid var(--saas-border-color);
+  background: var(--saas-bg-input);
+  color: var(--saas-text-primary);
+  width: 100%;
+  transition: border-color var(--saas-transition-fast), background var(--saas-transition-fast), color var(--saas-transition-fast);
+  font-family: var(--saas-font-family);
+}
+
+.saas-input:focus,
+.saas-admin-panel input:not([type='checkbox']):not([type='radio']):not([type='color']):focus,
+.saas-admin-panel select:focus,
+.saas-admin-panel textarea:focus {
+  outline: none;
+  border-color: var(--saas-border-color-focus);
+}
+
+.saas-admin-panel select,
+.saas-admin-panel .saas-admin-form-row select,
+.saas-admin-panel .saas-admin-membership-row select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--saas-text-primary);
+  background: linear-gradient(180deg, rgba(5, 14, 20, 0.9), rgba(6, 16, 22, 0.84));
+  border: 1px solid rgba(123, 170, 196, 0.32);
+  color-scheme: dark;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.saas-admin-panel select:focus {
+  border-color: rgba(0, 199, 160, 0.64);
+  box-shadow: 0 0 0 2px rgba(0, 199, 160, 0.14);
+}
+
+.saas-admin-panel select:disabled {
+  opacity: 0.68;
+  cursor: not-allowed;
+}
+
+.saas-admin-panel select option {
+  background: var(--saas-bg-base);
+  color: var(--saas-text-primary);
+}
