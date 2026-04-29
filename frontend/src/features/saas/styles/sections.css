@@ -1,0 +1,150 @@
+.saas-campaigns-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.88fr) minmax(420px, 1.12fr);
+  gap: var(--saas-space-4);
+  min-height: 0;
+}
+
+.saas-campaigns-pane {
+  min-width: 0;
+  min-height: 0;
+}
+
+.saas-campaigns-layout--builder,
+.saas-campaigns-two-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--saas-space-4);
+}
+
+.saas-campaigns-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--saas-radius-full);
+  border: 1px solid var(--saas-border-color);
+  font-size: var(--saas-font-size-sm);
+  font-weight: var(--saas-font-weight-semibold);
+  white-space: nowrap;
+}
+
+.saas-campaigns-status--draft,
+.saas-campaigns-status--scheduled {
+  background: color-mix(in srgb, var(--saas-accent-info) 14%, var(--saas-bg-surface));
+  color: var(--saas-accent-info);
+}
+
+.saas-campaigns-status--running,
+.saas-campaigns-status--completed {
+  background: color-mix(in srgb, var(--saas-accent-primary) 16%, var(--saas-bg-surface));
+  color: var(--saas-accent-primary);
+}
+
+.saas-campaigns-status--paused {
+  background: color-mix(in srgb, var(--saas-accent-warning) 18%, var(--saas-bg-surface));
+  color: var(--saas-accent-warning);
+}
+
+.saas-campaigns-status--cancelled,
+.saas-campaigns-status--failed {
+  background: color-mix(in srgb, var(--saas-accent-danger) 15%, var(--saas-bg-surface));
+  color: var(--saas-accent-danger);
+}
+
+.saas-campaigns-progress__track {
+  width: 100%;
+  height: 8px;
+  border-radius: var(--saas-radius-full);
+  background: color-mix(in srgb, var(--saas-border-color) 50%, transparent);
+  overflow: hidden;
+}
+
+.saas-campaigns-progress__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--saas-accent-primary), var(--saas-accent-info));
+}
+
+.saas-campaigns-chip-group,
+.saas-campaigns-filter-chip-row,
+.saas-campaigns-filter-chips,
+.saas-campaigns-filter-chips--manual,
+.saas-campaigns-block-preview-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--saas-space-2);
+}
+
+.saas-campaigns-chip,
+.saas-campaigns-block-preview-chip,
+.saas-campaigns-review-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: var(--saas-radius-full);
+  border: 1px solid var(--saas-chip-border);
+  background: var(--saas-chip-bg);
+  color: var(--saas-chip-text);
+  font-size: var(--saas-font-size-sm);
+  font-weight: var(--saas-font-weight-medium);
+}
+
+.saas-campaigns-audience-table-wrap,
+.saas-campaigns-table-wrap,
+.saas-campaigns-events-list,
+.saas-campaigns-detail-panel__body {
+  min-height: 0;
+}
+
+.saas-campaigns-wizard-shell {
+  display: grid;
+  gap: var(--saas-space-4);
+}
+
+.saas-campaigns-wizard-progress {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--saas-space-2);
+}
+
+.saas-campaigns-wizard-progress__item {
+  display: grid;
+  gap: 2px;
+  min-height: 52px;
+  padding: 10px 12px;
+  border-radius: var(--saas-radius-lg);
+  border: 1px solid var(--saas-border-color);
+  background: var(--saas-bg-surface);
+}
+
+.saas-campaigns-wizard-progress__item.is-current {
+  border-color: var(--saas-accent-primary);
+  background: color-mix(in srgb, var(--saas-accent-primary) 12%, var(--saas-bg-surface));
+}
+
+.saas-campaigns-wizard-progress__item.is-complete {
+  border-color: var(--saas-accent-info);
+  background: color-mix(in srgb, var(--saas-accent-info) 12%, var(--saas-bg-surface));
+}
+
+.saas-campaigns-wizard-content,
+.saas-campaigns-wizard-step,
+.saas-campaigns-audience-step,
+.saas-campaigns-review-step,
+.saas-campaigns-delivery-step,
+.saas-campaigns-summary-step {
+  display: grid;
+  gap: var(--saas-space-4);
+}
+
+@media (max-width: 1100px) {
+  .saas-campaigns-layout,
+  .saas-campaigns-layout--builder,
+  .saas-campaigns-two-columns,
+  .saas-campaigns-wizard-progress {
+    grid-template-columns: 1fr;
+  }
+}

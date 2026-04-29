@@ -4,6 +4,8 @@
 @import './styles/layout.css';
 @import './styles/cards.css';
 @import './styles/table.css';
+@import './styles/components.css';
+@import './styles/sections.css';
 
 .saas-admin-overlay {
   position: fixed;
