@@ -1,0 +1,212 @@
+.saas-admin-alert {
+  margin: 10px 16px 0 256px;
+  border-radius: var(--saas-radius-lg);
+  padding: 10px 12px;
+  font-size: var(--saas-font-size-base);
+  border: 1px solid transparent;
+}
+
+.saas-admin-alert.ok {
+  background: color-mix(in srgb, var(--saas-accent-primary) 16%, transparent);
+  border-color: color-mix(in srgb, var(--saas-accent-primary) 36%, transparent);
+  color: var(--saas-text-primary);
+}
+
+.saas-admin-alert.error {
+  background: color-mix(in srgb, var(--saas-accent-danger) 14%, transparent);
+  border-color: color-mix(in srgb, var(--saas-accent-danger) 40%, transparent);
+  color: var(--saas-text-primary);
+}
+
+.saas-admin-profile-summary {
+  margin: 10px 16px 0 256px;
+  border: 1px solid var(--saas-border-color);
+  border-radius: var(--saas-radius-xl);
+  background: linear-gradient(165deg, color-mix(in srgb, var(--saas-bg-surface) 88%, transparent), color-mix(in srgb, var(--saas-bg-elevated) 82%, transparent));
+  padding: 12px 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.saas-admin-profile-summary__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.saas-admin-profile-summary__avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid var(--saas-border-color);
+  background: var(--saas-bg-base);
+  color: var(--saas-text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--saas-font-weight-bold);
+  font-size: 0.84rem;
+}
+
+.saas-admin-profile-summary__meta {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.saas-admin-profile-summary__meta strong {
+  color: var(--saas-text-primary);
+  font-size: 0.9rem;
+}
+
+.saas-admin-profile-summary__meta span {
+  color: var(--saas-text-secondary);
+  font-size: 0.76rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saas-admin-profile-summary__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.saas-admin-profile-summary__stats div {
+  border: 1px solid var(--saas-border-color);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--saas-bg-base) 68%, transparent);
+  padding: 8px 10px;
+  display: grid;
+  gap: 2px;
+}
+
+.saas-admin-profile-summary__stats small {
+  color: var(--saas-text-tertiary);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.saas-admin-profile-summary__stats strong {
+  color: var(--saas-text-primary);
+  font-size: 0.9rem;
+}
+
+.saas-admin-profile-summary__caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.saas-admin-card {
+  border: 1px solid var(--saas-border-color);
+  border-radius: var(--saas-radius-xl);
+  padding: 14px;
+  background: var(--saas-bg-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  color: var(--saas-text-primary);
+}
+
+.saas-admin-card--full {
+  grid-column: 1 / -1;
+}
+
+.saas-admin-card h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--saas-text-primary);
+}
+
+.saas-admin-card h4 {
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--saas-text-secondary);
+}
+
+.saas-admin-form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.saas-admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.saas-admin-field label {
+  font-size: 0.72rem;
+  color: var(--saas-text-secondary);
+}
+
+.saas-admin-form-row--actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.saas-admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  min-height: 0;
+}
+
+.saas-admin-list-item {
+  border: 1px solid var(--saas-border-color);
+  border-radius: var(--saas-radius-lg);
+  background: color-mix(in srgb, var(--saas-bg-surface) 92%, transparent);
+  padding: 10px 12px;
+  display: grid;
+  gap: 4px;
+}
+
+.saas-admin-list-item.active {
+  border-color: var(--saas-accent-primary);
+  background: color-mix(in srgb, var(--saas-accent-primary) 16%, var(--saas-bg-surface));
+}
+
+.saas-admin-list-item strong {
+  color: var(--saas-text-primary);
+}
+
+.saas-admin-list-item small {
+  color: var(--saas-text-secondary);
+}
+
+.saas-admin-list-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.saas-admin-flow-card {
+  border: 1px solid var(--saas-border-color);
+  border-radius: var(--saas-radius-lg);
+  background: color-mix(in srgb, var(--saas-bg-elevated) 80%, transparent);
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.saas-admin-flow-card h3,
+.saas-admin-flow-card p {
+  margin: 0;
+}
+
+.saas-admin-membership-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
