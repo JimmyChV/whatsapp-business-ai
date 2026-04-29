@@ -1,0 +1,164 @@
+.saas-admin-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3500;
+  background: color-mix(in srgb, var(--saas-bg-base) 74%, transparent);
+  backdrop-filter: blur(2px);
+  display: block;
+  padding: 0;
+}
+.saas-admin-overlay--embedded {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  background: transparent;
+  backdrop-filter: none;
+  height: 100%;
+}
+.saas-admin-panel {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  border: none;
+  border-radius: 0;
+  background:
+    radial-gradient(circle at 8% 4%, color-mix(in srgb, var(--saas-accent-primary) 18%, transparent), transparent 36%),
+    radial-gradient(circle at 92% 8%, color-mix(in srgb, var(--saas-accent-info) 14%, transparent), transparent 34%),
+    linear-gradient(160deg, var(--saas-bg-base) 0%, var(--saas-bg-surface) 40%, var(--saas-bg-elevated) 100%);
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  color: var(--saas-text-primary);
+  font-family: var(--saas-font-family);
+}
+.saas-admin-panel--embedded {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--saas-panel-radius);
+}
+.saas-admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--saas-header-gap);
+  min-height: var(--saas-header-min-height);
+  padding: var(--saas-header-padding-y) var(--saas-header-padding-x);
+  border-bottom: var(--saas-border-width) solid var(--saas-header-border);
+  background: color-mix(in srgb, var(--saas-header-bg) 86%, transparent);
+}
+.saas-admin-header h2 {
+  margin: 0;
+  font-size: var(--saas-font-size-xl);
+  color: var(--saas-text-primary);
+  letter-spacing: 0.01em;
+}
+.saas-admin-header span {
+  color: var(--saas-text-secondary);
+  font-size: var(--saas-font-size-sm);
+}
+
+.saas-admin-nav {
+  position: absolute;
+  top: 82px;
+  left: 16px;
+  bottom: 16px;
+  width: 224px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--saas-border-color);
+  border-radius: var(--saas-radius-xl);
+  background: color-mix(in srgb, var(--saas-sidebar-bg) 86%, transparent);
+  overflow: auto;
+}
+.saas-admin-nav-btn {
+  text-align: left;
+  border: 1px solid var(--saas-border-color);
+  background: color-mix(in srgb, var(--saas-sidebar-active-bg) 42%, transparent);
+  color: var(--saas-sidebar-text);
+  border-radius: var(--saas-radius-lg);
+  padding: 9px 11px;
+  font-size: var(--saas-font-size-base);
+  font-weight: var(--saas-font-weight-semibold);
+  cursor: pointer;
+}
+.saas-admin-nav-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.saas-admin-nav-btn.active {
+  border-color: var(--saas-accent-primary);
+  background: color-mix(in srgb, var(--saas-accent-primary) 22%, transparent);
+  color: var(--saas-sidebar-active-text);
+}
+.saas-admin-kpis {
+  margin: 10px 16px 0 256px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.saas-admin-kpi {
+  border: 1px solid rgba(148, 184, 204, 0.18);
+  background: rgba(11, 24, 33, 0.86);
+  border-radius: 12px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.saas-admin-kpi small {
+  font-size: 0.73rem;
+  color: var(--saas-text-secondary);
+}
+.saas-admin-kpi strong {
+  font-size: 1rem;
+  color: #eef6fb;
+}
+.saas-admin-grid {
+  flex: 1;
+  min-height: 0;
+  margin: 10px 16px 16px 256px;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: auto;
+}
+
+@media (max-width: 1220px) {
+  .saas-admin-alert,
+  .saas-admin-profile-summary,
+  .saas-admin-kpis,
+  .saas-admin-grid,
+  .saas-admin-flow-card,
+  .saas-admin-tenant-picker-row {
+    margin-left: 18px;
+  }
+
+  .saas-admin-nav {
+    position: static;
+    width: auto;
+    margin: 12px 18px 0;
+    flex-direction: row;
+    flex-wrap: wrap;
+    max-height: none;
+  }
+
+  .saas-admin-tenant-picker-row {
+    width: auto;
+  }
+
+  .saas-admin-card {
+    grid-template-columns: 1fr;
+  }
+
+  .saas-admin-card > .saas-admin-list {
+    grid-column: 1;
+    grid-row: auto;
+    min-height: 240px;
+    max-height: none;
+  }
+}
