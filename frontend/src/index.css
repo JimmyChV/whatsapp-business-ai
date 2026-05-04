@@ -3903,7 +3903,7 @@ body {
   width: min(520px, 96vw);
   margin: 0 auto;
   border-radius: 24px;
-  border: 1px solid rgba(123, 170, 196, 0.28);
+  border: 1px solid var(--saas-border-color);
   background: linear-gradient(160deg, rgba(11, 23, 33, 0.92), rgba(9, 28, 40, 0.88));
   box-shadow: 0 24px 80px rgba(1, 10, 16, 0.56);
   padding: clamp(22px, 3.2vw, 34px);
@@ -3957,7 +3957,7 @@ body {
 .saas-login-field input {
   width: 100%;
   border-radius: 14px;
-  border: 1px solid rgba(123, 170, 196, 0.28);
+  border: 1px solid var(--saas-border-color);
   background: linear-gradient(180deg, rgba(6, 15, 21, 0.9), rgba(6, 17, 24, 0.82));
   color: var(--saas-text-primary);
   padding: 12px 13px;
@@ -3966,8 +3966,8 @@ body {
 }
 
 .saas-login-field input:focus {
-  border-color: rgba(0, 199, 160, 0.85);
-  box-shadow: 0 0 0 3px rgba(0, 199, 160, 0.15);
+  border-color: var(--saas-accent-primary);
+  box-shadow: 0 0 0 3px var(--saas-accent-primary);
 }
 
 .saas-login-error {
@@ -3981,7 +3981,7 @@ body {
 
 .saas-login-submit {
   margin-top: 2px;
-  border: 1px solid rgba(0, 199, 160, 0.64);
+  border: 1px solid var(--saas-accent-primary);
   border-radius: 13px;
   background: linear-gradient(115deg, var(--chat-accent-strong) 0%, var(--saas-accent-primary) 52%, color-mix(in srgb, var(--saas-accent-primary) 78%, #000000) 100%);
   color: var(--saas-text-inverse);
@@ -4097,8 +4097,8 @@ body {
 
 .saas-login-notice {
   border-radius: 12px;
-  border: 1px solid rgba(0, 199, 160, 0.45);
-  background: rgba(0, 199, 160, 0.12);
+  border: 1px solid var(--saas-accent-primary);
+  background: var(--saas-accent-primary);
   color: #cbfff2;
   padding: 9px 11px;
   font-size: 0.82rem;
@@ -4121,7 +4121,7 @@ body {
 }
 
 .saas-recovery-box {
-  border: 1px solid rgba(123, 170, 196, 0.3);
+  border: 1px solid var(--saas-border-color);
   border-radius: 14px;
   background: rgba(7, 20, 30, 0.65);
   padding: 12px;

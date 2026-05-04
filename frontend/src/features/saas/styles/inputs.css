@@ -28,18 +28,26 @@
   width: 100%;
   min-width: 0;
   max-width: 100%;
+  height: var(--saas-input-height);
+  min-height: var(--saas-input-height);
+  line-height: 1.2;
+  padding-right: 40px;
   color: var(--saas-text-primary);
-  background: linear-gradient(180deg, rgba(5, 14, 20, 0.9), rgba(6, 16, 22, 0.84));
-  border: 1px solid rgba(123, 170, 196, 0.32);
-  color-scheme: dark;
+  background: var(--saas-bg-input);
+  border: 1px solid var(--saas-border-color);
+  color-scheme: normal;
+  appearance: auto;
+  -webkit-appearance: menulist;
+  -moz-appearance: menulist;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  box-sizing: border-box;
 }
 
 .saas-admin-panel select:focus {
-  border-color: rgba(0, 199, 160, 0.64);
-  box-shadow: 0 0 0 2px rgba(0, 199, 160, 0.14);
+  border-color: var(--saas-accent-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--saas-accent-primary) 22%, transparent);
 }
 
 .saas-admin-panel select:disabled {
@@ -48,6 +56,6 @@
 }
 
 .saas-admin-panel select option {
-  background: var(--saas-bg-base);
+  background: var(--saas-bg-surface);
   color: var(--saas-text-primary);
 }

@@ -2124,7 +2124,7 @@ function MetaTemplatesSection(props = {}) {
                                 </div>
                             </SaasDetailPanelSection>
 
-                            <SaasDetailPanelSection title="Preview + Payload tecnico" defaultOpen>
+                            <SaasDetailPanelSection title="Preview + Payload tecnico" defaultOpen className="saas-template-preview-section">
                                 <div className="saas-template-detail-layout">
                                     <div className="saas-admin-related-block saas-template-detail-preview-pane">
                                         <h4>Preview WhatsApp</h4>

@@ -9,6 +9,19 @@ const applyDocumentTheme = (mode = 'dark') => {
   if (typeof document === 'undefined') return;
   document.documentElement.setAttribute('data-theme', normalizeThemeMode(mode));
 };
+const resolveStoredThemeMode = (fallback = 'dark') => {
+  if (typeof window === 'undefined') return normalizeThemeMode(fallback);
+  try {
+    return normalizeThemeMode(
+      window.localStorage.getItem('saas-theme')
+      || window.localStorage.getItem('saas.theme.mode')
+      || fallback
+      || 'dark'
+    );
+  } catch {
+    return normalizeThemeMode(fallback || 'dark');
+  }
+};
 
 const PanelChunkFallback = () => (
   <div className='login-screen'>
@@ -38,7 +51,7 @@ export default function SaasAdminPanelShell({
   themeMode = 'dark',
   onThemeChange = null,
 }) {
-  applyDocumentTheme(themeMode);
+  applyDocumentTheme(resolveStoredThemeMode(themeMode));
 
   const [navCollapsed, setNavCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -60,7 +73,8 @@ export default function SaasAdminPanelShell({
   }, [navCollapsed]);
 
   useLayoutEffect(() => {
-    applyDocumentTheme(themeMode || 'dark');
+    const savedTheme = resolveStoredThemeMode(themeMode);
+    applyDocumentTheme(savedTheme);
   }, [themeMode]);
 
   const handleToggleNav = () => {

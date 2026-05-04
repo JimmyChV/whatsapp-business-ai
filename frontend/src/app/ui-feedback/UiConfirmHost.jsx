@@ -2,16 +2,19 @@ import useUiFeedback from './useUiFeedback';
 
 const toneConfirmStyles = {
   default: {
-    background: '#00c2a8',
-    color: '#042521'
+    background: 'var(--saas-accent-primary)',
+    color: 'var(--saas-accent-primary-text)',
+    border: '1px solid var(--saas-accent-primary)'
   },
   danger: {
-    background: '#ef4444',
-    color: '#2a0508'
+    background: 'var(--saas-accent-danger)',
+    color: 'var(--saas-accent-primary-text)',
+    border: '1px solid var(--saas-accent-danger)'
   },
   warn: {
-    background: '#f59e0b',
-    color: '#2b1a00'
+    background: 'var(--saas-accent-warning)',
+    color: 'var(--saas-text-inverse)',
+    border: '1px solid var(--saas-accent-warning)'
   }
 };
 
@@ -31,7 +34,8 @@ export default function UiConfirmHost() {
         position: 'fixed',
         inset: 0,
         zIndex: 4000,
-        background: 'rgba(3, 10, 16, 0.62)',
+        background: 'color-mix(in srgb, var(--saas-bg-base) 78%, transparent)',
+        backdropFilter: 'blur(8px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -45,19 +49,19 @@ export default function UiConfirmHost() {
         onClick={(event) => event.stopPropagation()}
         style={{
           width: 'min(520px, 100%)',
-          borderRadius: '14px',
-          border: '1px solid rgba(96, 125, 139, 0.35)',
-          background: 'linear-gradient(180deg, #112434 0%, #0d1c28 100%)',
-          boxShadow: '0 18px 46px rgba(0,0,0,0.35)',
-          color: '#e6f0f5',
-          padding: '18px 18px 14px'
+          borderRadius: '16px',
+          border: '1px solid var(--saas-border-color)',
+          background: 'linear-gradient(180deg, var(--saas-bg-surface) 0%, var(--saas-bg-elevated) 100%)',
+          boxShadow: 'var(--saas-shadow-lg)',
+          color: 'var(--saas-text-primary)',
+          padding: '20px 20px 16px'
         }}
       >
-        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>
+        <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, lineHeight: 1.2 }}>
           {activeConfirm.title}
         </h3>
 
-        <p style={{ margin: '10px 0 0', fontSize: '0.9rem', lineHeight: 1.45, color: '#b6cad6' }}>
+        <p style={{ margin: '12px 0 0', fontSize: '0.96rem', lineHeight: 1.5, color: 'var(--saas-text-secondary)' }}>
           {activeConfirm.message}
         </p>
 
@@ -66,12 +70,13 @@ export default function UiConfirmHost() {
             type="button"
             onClick={() => resolveConfirm(false)}
             style={{
-              border: '1px solid rgba(118, 149, 166, 0.42)',
+              border: '1px solid var(--saas-border-color)',
               background: 'transparent',
-              color: '#d0e2eb',
+              color: 'var(--saas-text-primary)',
               borderRadius: '10px',
-              padding: '8px 12px',
-              cursor: 'pointer'
+              padding: '10px 14px',
+              cursor: 'pointer',
+              fontWeight: 600
             }}
           >
             {activeConfirm.cancelText || 'Cancelar'}
@@ -81,9 +86,8 @@ export default function UiConfirmHost() {
             type="button"
             onClick={() => resolveConfirm(true)}
             style={{
-              border: 'none',
               borderRadius: '10px',
-              padding: '8px 12px',
+              padding: '10px 14px',
               cursor: 'pointer',
               fontWeight: 700,
               ...confirmStyle

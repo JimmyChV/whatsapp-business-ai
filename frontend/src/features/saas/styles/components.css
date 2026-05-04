@@ -43,13 +43,13 @@
   align-items: center;
   justify-content: center;
   padding: var(--saas-space-6);
-  background: color-mix(in srgb, var(--saas-bg-base) 74%, transparent);
-  backdrop-filter: blur(6px);
+  background: color-mix(in srgb, var(--saas-bg-base) 82%, transparent);
+  backdrop-filter: blur(10px);
 }
 
 .saas-template-builder-modal-shell,
 .saas-campaign-builder-modal-shell {
-  width: min(1320px, 100%);
+  width: min(1380px, 100%);
   max-height: min(92vh, 1080px);
   display: flex;
   flex-direction: column;
@@ -61,8 +61,8 @@
   flex-direction: column;
   min-height: 0;
   border: 1px solid var(--saas-border-color);
-  border-radius: var(--saas-radius-xl);
-  background: var(--saas-bg-surface);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--saas-bg-surface) 94%, var(--saas-bg-elevated));
   box-shadow: var(--saas-shadow-lg);
   overflow: hidden;
 }
@@ -72,7 +72,8 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  background: var(--saas-bg-base);
+  background: color-mix(in srgb, var(--saas-bg-surface) 92%, var(--saas-bg-elevated));
+  color: var(--saas-text-primary);
 }
 
 .saas-template-builder-modal-panel__body::-webkit-scrollbar,
@@ -123,4 +124,16 @@
 
 .saas-labels-zone-chips strong {
   color: var(--saas-text-primary);
+}
+
+:root[data-theme="dark"] .saas-template-builder-modal-panel,
+:root[data-theme="dark"] .saas-campaign-builder-modal-panel {
+  background: color-mix(in srgb, var(--saas-bg-surface) 92%, transparent) !important;
+  border-color: color-mix(in srgb, var(--saas-border-color) 78%, transparent) !important;
+}
+
+:root[data-theme="dark"] .saas-template-builder-modal-panel__body,
+:root[data-theme="dark"] .saas-campaign-builder-modal-panel__body {
+  background: color-mix(in srgb, var(--saas-bg-base) 84%, transparent) !important;
+  color: var(--saas-text-primary) !important;
 }

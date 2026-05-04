@@ -1,4 +1,7 @@
+import { useEffect, useState } from 'react';
 import { MessageCircle, Moon, Sun, X } from 'lucide-react';
+
+const normalizeThemeMode = (value = '') => (String(value || '').trim().toLowerCase() === 'light' ? 'light' : 'dark');
 
 export default function SaasPanelHeader({
     showHeader = true,
@@ -19,6 +22,12 @@ export default function SaasPanelHeader({
     tenantPicker = null
 }) {
     if (!showHeader) return null;
+
+    const [activeThemeMode, setActiveThemeMode] = useState(() => normalizeThemeMode(themeMode));
+
+    useEffect(() => {
+        setActiveThemeMode(normalizeThemeMode(themeMode));
+    }, [themeMode]);
 
     return (
         <div className="saas-admin-header">
@@ -69,7 +78,7 @@ export default function SaasPanelHeader({
                     {typeof onOpenOperation === 'function' && (
                         <button
                             type="button"
-                            className="saas-header-btn saas-header-btn--primary saas-admin-header-open-operation"
+                            className="saas-header-btn saas-header-btn--secondary saas-admin-header-open-operation"
                             disabled={isBusy || !canOpenOperation}
                             onClick={onOpenOperation}
                             title="Ir al chat"
@@ -83,7 +92,8 @@ export default function SaasPanelHeader({
                             type="button"
                             className="saas-admin-theme-toggle__button"
                             onClick={() => {
-                                const next = themeMode === 'dark' ? 'light' : 'dark';
+                                const next = activeThemeMode === 'dark' ? 'light' : 'dark';
+                                setActiveThemeMode(next);
                                 document.documentElement.setAttribute('data-theme', next);
                                 try {
                                     window.localStorage.setItem('saas-theme', next);
@@ -91,8 +101,8 @@ export default function SaasPanelHeader({
                                 } catch {}
                                 onThemeChange?.(next);
                             }}
-                            title={themeMode === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-                            aria-label={themeMode === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+                            title={activeThemeMode === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+                            aria-label={activeThemeMode === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
                             style={{
                                 background: 'transparent',
                                 border: '1px solid var(--saas-border-color)',
@@ -109,7 +119,7 @@ export default function SaasPanelHeader({
                                 position: 'relative'
                             }}
                         >
-                            {themeMode === 'dark'
+                            {activeThemeMode === 'dark'
                                 ? <><Sun size={14} strokeWidth={2} /> Claro</>
                                 : <><Moon size={14} strokeWidth={2} /> Oscuro</>}
                         </button>
