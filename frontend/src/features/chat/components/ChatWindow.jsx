@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { Search, MoreVertical, ChevronUp, ChevronDown, Tag, MapPin, Share2, X } from 'lucide-react';
 import MessageBubble from './message-bubble/MessageBubble';
 import moment from 'moment';
@@ -97,6 +97,8 @@ const ChatWindow = ({
         jumpToMatch
     } = useChatWindowSearchController({ messages });
 
+    const messageRefCallbacks = useRef({});
+
     const {
         avatarColor,
         resolveGroupSenderName,
@@ -134,14 +136,39 @@ const ChatWindow = ({
     const visibleHeaderLabels = headerLabels.slice(0, 2);
     const hiddenHeaderLabelsCount = Math.max(0, headerLabels.length - visibleHeaderLabels.length);
     const conversationWindowOpen = activeChatDetails?.windowOpen !== false;
-    const handleJumpToMessage = (targetMessageId) => {
+
+    const activeLabelIdSet = useMemo(() => {
+        const ids = (activeChatDetails?.labels || [])
+            .map(l => String(l?.id || l?.labelId || '').trim())
+            .filter(Boolean);
+        return new Set(ids);
+    }, [activeChatDetails?.labels]);
+
+    const dayBoundarySet = useMemo(() => {
+        const set = new Set();
+        let prevDay = null;
+        messages.forEach((msg, idx) => {
+            const currentDay = moment.unix(msg.timestamp || 0).format('YYYY-MM-DD');
+            if (idx === 0 || currentDay !== prevDay) set.add(idx);
+            prevDay = currentDay;
+        });
+        return set;
+    }, [messages]);
+
+    const handleJumpToMessage = useCallback((targetMessageId) => {
         const safeTargetMessageId = String(targetMessageId || '').trim();
         if (!safeTargetMessageId) return;
         const targetNode = messageRefs.current?.[safeTargetMessageId]
             || document.querySelector(`[data-message-id="${safeTargetMessageId}"]`);
         if (!targetNode || typeof targetNode.scrollIntoView !== 'function') return;
         targetNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    };
+    }, [messageRefs]);
+
+    const handlePrefillMessage = useCallback((text) => {
+        if (typeof inputProps?.setInputText === 'function') inputProps.setInputText(text);
+    // inputProps is a rest spread; setInputText is stable from parent useState
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [inputProps?.setInputText]);
 
     return (
         <div
@@ -262,7 +289,7 @@ const ChatWindow = ({
                                 {labelDefinitions.length === 0 && <div className="chat-header-popover-empty">No hay etiquetas disponibles.</div>}
                                 {labelDefinitions.map((label) => {
                                     const labelId = String(label?.id || label?.labelId || '').trim();
-                                    const isActive = (activeChatDetails?.labels || []).some((l) => String(l?.id || l?.labelId || '').trim() === labelId);
+                                    const isActive = activeLabelIdSet.has(labelId);
                                     return (
                                         <label key={labelId || label.name} className="chat-header-label-option">
                                             <input type="checkbox" checked={isActive} onChange={() => onToggleChatLabel?.(activeChatDetails?.id, labelId)} />
@@ -354,14 +381,21 @@ const ChatWindow = ({
                     </div>
                 )}
                 {messages.map((msg, idx) => {
-                    const currentDay = moment.unix(msg.timestamp || 0).format('YYYY-MM-DD');
-                    const prevDay = idx > 0 ? moment.unix(messages[idx - 1].timestamp || 0).format('YYYY-MM-DD') : null;
-                    const showDay = idx === 0 || currentDay !== prevDay;
+                    const showDay = dayBoundarySet.has(idx);
                     const matchIdx = matchIndexes.indexOf(idx);
                     const isHighlighted = matchIdx !== -1;
                     const isCurrentHighlighted = isHighlighted && matchIdx === activeMatchIdx;
                     const messageKey = msg.id || `idx_${idx}`;
                     const senderDisplayName = resolveGroupSenderName(msg);
+                    if (!messageRefCallbacks.current[messageKey]) {
+                        messageRefCallbacks.current[messageKey] = (el) => {
+                            if (el) messageRefs.current[messageKey] = el;
+                            else {
+                                delete messageRefs.current[messageKey];
+                                delete messageRefCallbacks.current[messageKey];
+                            }
+                        };
+                    }
                     return (
                         <React.Fragment key={messageKey}>
                             {showDay && (
@@ -371,19 +405,13 @@ const ChatWindow = ({
                             )}
                             <div
                                 data-message-id={messageKey}
-                                ref={(el) => {
-                                    if (el) {
-                                        messageRefs.current[messageKey] = el;
-                                    } else {
-                                        delete messageRefs.current[messageKey];
-                                    }
-                                }}
+                                ref={messageRefCallbacks.current[messageKey]}
                             >
                                 <MessageBubble
                                     msg={msg}
                                     isHighlighted={isHighlighted}
                                     isCurrentHighlighted={isCurrentHighlighted}
-                                    onPrefillMessage={(text) => inputProps?.setInputText && inputProps.setInputText(text)}
+                                    onPrefillMessage={handlePrefillMessage}
                                     // TODO(bug): flujo de importacion al carrito desde cotizacion puede fallar — revisar cadena onLoadOrderToCart -> cart state
                                     onLoadOrderToCart={inputProps?.onLoadOrderToCart}
                                     onOpenMedia={setLightboxMedia}
@@ -565,10 +593,3 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
-
-
-
-
-
-
-

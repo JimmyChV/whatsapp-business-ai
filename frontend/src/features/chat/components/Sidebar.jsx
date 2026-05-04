@@ -180,13 +180,9 @@ const Sidebar = ({
                 >
                     <div
                         className="sidebar-account-avatar"
-                        style={{
-                            background: myProfile?.profilePicUrl
-                                ? `url(${myProfile.profilePicUrl}) center/cover`
-                                : 'var(--chat-control-surface-strong)',
-                        }}
+                        style={{ background: 'var(--chat-control-surface-strong)' }}
                     >
-                        {!myProfile?.profilePicUrl && (myProfile?.pushname?.charAt(0)?.toUpperCase() || '?')}
+                        {myProfile?.pushname?.charAt(0)?.toUpperCase() || '?'}
                     </div>
                     {myProfile?.pushname && (
                         <span className="sidebar-account-name">{myProfile.pushname}</span>

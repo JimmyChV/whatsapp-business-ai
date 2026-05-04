@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 import { buildTemplateResolvedPreview } from '../helpers/templateMessages.helpers';
 import { getTemplateVariablesPreview, listApprovedIndividualTemplates } from '../services/templateMessages.service';
@@ -49,6 +49,8 @@ export default function useChatMessageActions({
   setSendTemplateSubmitting
 } = {}) {
   const { notify } = useUiFeedback();
+  const inputTextRef = useRef(inputText);
+  inputTextRef.current = inputText;
 
   const buildCatalogProductCaptionPreview = useCallback((product = {}) => {
     const title = String(product?.title || product?.name || 'Producto').trim() || 'Producto';
@@ -560,7 +562,7 @@ export default function useChatMessageActions({
 
   const handleSendMessage = useCallback((event) => {
     event?.preventDefault();
-    const text = inputText.trim();
+    const text = inputTextRef.current.trim();
 
     if (editingMessage?.id) {
       if (!waCapabilities.messageEdit) {
@@ -665,7 +667,7 @@ export default function useChatMessageActions({
       const sendPayload = {
         to: activeChatId,
         toPhone,
-        body: inputText,
+        body: inputTextRef.current,
         mediaData: attachment.data,
         mimetype: attachment.mimetype,
         filename: attachment.filename,
@@ -673,7 +675,7 @@ export default function useChatMessageActions({
       };
       insertOptimisticOutgoing({
         chatId: activeChatId,
-        body: String(inputText || '').trim() || String(attachment.filename || '').trim() || 'Adjunto',
+        body: String(inputTextRef.current || '').trim() || String(attachment.filename || '').trim() || 'Adjunto',
         hasMedia: true,
         type: resolveOptimisticMediaType(attachment.mimetype, attachment.filename),
         mimetype: attachment.mimetype,
@@ -688,10 +690,10 @@ export default function useChatMessageActions({
       socket.emit('send_media_message', sendPayload);
       removeAttachment();
     } else {
-      const sendPayload = { to: activeChatId, toPhone, body: inputText, quotedMessageId };
+      const sendPayload = { to: activeChatId, toPhone, body: inputTextRef.current, quotedMessageId };
       insertOptimisticOutgoing({
         chatId: activeChatId,
-        body: inputText,
+        body: inputTextRef.current,
         quotedMessage,
         retryPayload: {
           eventName: 'send_message',
@@ -709,7 +711,6 @@ export default function useChatMessageActions({
     buildQuotedMessagePayload,
     chatsRef,
     editingMessage,
-    inputText,
     insertOptimisticOutgoing,
     normalizeDigits,
     normalizeQuickReplyDraft,

@@ -275,6 +275,7 @@ export default function useAppOperationHandlers({
     setShowClientProfile,
     setClientContact,
     setQuickReplyDraft,
+    setInputText,
     setChats,
     chatIdsReferSameScope
   });

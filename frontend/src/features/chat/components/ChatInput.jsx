@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Smile, Bot, Sparkles, X, Paperclip, Send, MapPin, LayoutTemplate } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { EmojiStyle, SkinTonePickerLocation, SkinTones, SuggestionMode, Theme } from 'emoji-picker-react';
@@ -57,6 +57,11 @@ const ChatInput = ({
     ));
     const inputRef = useRef(null);
     const chatInputRef = useRef(null);
+    // localText drives the controlled textarea so the 'input' handler stays fast.
+    // setInputText (parent state) is deferred via startTransition so expensive
+    // ancestor re-renders don't block the keystroke paint.
+    const lastUserInputRef = useRef(inputText);
+    const [localText, setLocalText] = useState(() => inputText);
     const draftQuickReplyLabel = String(quickReplyDraft?.label || '').trim();
     const draftQuickReplyText = String(quickReplyDraft?.text || '').trim();
     const draftQuickReplyAssets = Array.isArray(quickReplyDraft?.mediaAssets)
@@ -75,13 +80,22 @@ const ChatInput = ({
     const isTemplateOnlyMode = windowOpen === false;
     const isBlockedByEditState = Boolean(editingMessage?.id);
     const disableFreeformComposer = isTemplateOnlyMode || isBlockedByEditState;
-    const canSendFreeform = !isTemplateOnlyMode && (Boolean(inputText.trim()) || Boolean(attachment) || Boolean(hasDraftQuickReply));
+    const canSendFreeform = !isTemplateOnlyMode && (Boolean(localText.trim()) || Boolean(attachment) || Boolean(hasDraftQuickReply));
 
     const handleInputChange = (e) => {
         const val = e.target.value;
-        setInputText(val);
+        lastUserInputRef.current = val;
+        setLocalText(val);                          // fast — only re-renders ChatInput
         setShowCommands(val.startsWith('/'));
         if (showEmoji) setShowEmoji(false);
+        setInputText(val);
+    };
+
+    // Used by one-off format actions (emoji, bold, etc.) to keep both states in sync.
+    const setTextBoth = (val) => {
+        lastUserInputRef.current = val;
+        setLocalText(val);
+        setInputText(val);
     };
 
     const updateSelectionState = () => {
@@ -102,15 +116,15 @@ const ChatInput = ({
     const insertEmoji = (emoji) => {
         const el = inputRef.current;
         if (!el) {
-            setInputText(prev => `${prev}${emoji}`);
+            setTextBoth(`${localText}${emoji}`);
             setShowEmoji(false);
             return;
         }
         const start = Number(el.selectionStart || 0);
         const end = Number(el.selectionEnd || 0);
-        const current = String(inputText || '');
+        const current = el.value;
         const next = `${current.slice(0, start)}${emoji}${current.slice(end)}`;
-        setInputText(next);
+        setTextBoth(next);
         setShowEmoji(false);
         requestAnimationFrame(() => {
             if (!inputRef.current) return;
@@ -136,11 +150,11 @@ const ChatInput = ({
         const start = Number(el.selectionStart || 0);
         const end = Number(el.selectionEnd || 0);
         if (end <= start) return;
-        const current = String(inputText || '');
+        const current = el.value;
         const selected = current.slice(start, end);
         const wrapped = `${openToken}${selected}${closeToken}`;
         const next = `${current.slice(0, start)}${wrapped}${current.slice(end)}`;
-        setInputText(next);
+        setTextBoth(next);
         requestAnimationFrame(() => {
             if (!inputRef.current) return;
             const selStart = start + openToken.length;
@@ -158,7 +172,7 @@ const ChatInput = ({
         const end = Number(el.selectionEnd || 0);
         if (end <= start) return;
 
-        const current = String(inputText || '');
+        const current = el.value;
         const blockStart = current.lastIndexOf('\n', start - 1) + 1;
         const nextBreak = current.indexOf('\n', end);
         const blockEnd = nextBreak === -1 ? current.length : nextBreak;
@@ -175,7 +189,7 @@ const ChatInput = ({
             .join('\n');
 
         const next = `${current.slice(0, blockStart)}${formattedBlock}${current.slice(blockEnd)}`;
-        setInputText(next);
+        setTextBoth(next);
         requestAnimationFrame(() => {
             if (!inputRef.current) return;
             inputRef.current.focus();
@@ -191,11 +205,11 @@ const ChatInput = ({
         const end = Number(el.selectionEnd || 0);
         if (end <= start) return;
 
-        const current = String(inputText || '');
+        const current = el.value;
         const selected = current.slice(start, end);
         const wrapped = `\`\`\`\n${selected}\n\`\`\``;
         const next = `${current.slice(0, start)}${wrapped}${current.slice(end)}`;
-        setInputText(next);
+        setTextBoth(next);
         requestAnimationFrame(() => {
             if (!inputRef.current) return;
             inputRef.current.focus();
@@ -211,7 +225,7 @@ const ChatInput = ({
         const end = Number(el.selectionEnd || 0);
         if (start !== end) return false;
 
-        const current = String(inputText || '');
+        const current = el.value;
         const lineStart = current.lastIndexOf('\n', start - 1) + 1;
         const nextBreak = current.indexOf('\n', start);
         const lineEnd = nextBreak === -1 ? current.length : nextBreak;
@@ -233,7 +247,7 @@ const ChatInput = ({
         const insertion = `\n${continuation}`;
         const next = `${current.slice(0, start)}${insertion}${current.slice(end)}`;
         const nextCursor = start + insertion.length;
-        setInputText(next);
+        setTextBoth(next);
         requestAnimationFrame(() => {
             if (!inputRef.current) return;
             inputRef.current.focus();
@@ -243,50 +257,57 @@ const ChatInput = ({
         return true;
     };
 
-    const normalizedSlashQuery = String(inputText || '').startsWith('/')
-        ? String(inputText || '').slice(1).trim().toLowerCase()
-        : '';
-    const slashTokens = normalizedSlashQuery
-        ? normalizedSlashQuery.split(/\s+/).map((entry) => entry.trim()).filter(Boolean)
-        : [];
+    const normalizedSlashQuery = useMemo(() =>
+        String(localText || '').startsWith('/')
+            ? String(localText || '').slice(1).trim().toLowerCase()
+            : '',
+    [localText]);
 
-    const filteredQuickReplies = (Array.isArray(quickReplies) ? quickReplies : [])
-        .map((item) => {
-            const label = String(item?.label || '').trim().toLowerCase();
-            const text = String(item?.text || '').trim().toLowerCase();
-            const libraryName = String(item?.libraryName || '').trim().toLowerCase();
-            const haystack = `${label} ${libraryName} ${text}`.trim();
-            if (!slashTokens.length) {
-                return {
-                    item,
-                    rank: Number(label.length > 0) * 100 + Number(libraryName.length > 0) * 10
-                };
-            }
-            const containsAll = slashTokens.every((token) => haystack.includes(token));
-            if (!containsAll) return null;
+    const slashTokens = useMemo(() =>
+        normalizedSlashQuery
+            ? normalizedSlashQuery.split(/\s+/).map((entry) => entry.trim()).filter(Boolean)
+            : [],
+    [normalizedSlashQuery]);
 
-            let rank = 0;
-            if (normalizedSlashQuery && label.startsWith(normalizedSlashQuery)) rank += 400;
-            if (normalizedSlashQuery && libraryName.startsWith(normalizedSlashQuery)) rank += 280;
-            if (normalizedSlashQuery && text.startsWith(normalizedSlashQuery)) rank += 220;
-            slashTokens.forEach((token) => {
-                if (label.includes(token)) rank += 80;
-                if (libraryName.includes(token)) rank += 50;
-                if (text.includes(token)) rank += 20;
-            });
+    const filteredQuickReplies = useMemo(() =>
+        (Array.isArray(quickReplies) ? quickReplies : [])
+            .map((item) => {
+                const label = String(item?.label || '').trim().toLowerCase();
+                const text = String(item?.text || '').trim().toLowerCase();
+                const libraryName = String(item?.libraryName || '').trim().toLowerCase();
+                const haystack = `${label} ${libraryName} ${text}`.trim();
+                if (!slashTokens.length) {
+                    return {
+                        item,
+                        rank: Number(label.length > 0) * 100 + Number(libraryName.length > 0) * 10
+                    };
+                }
+                const containsAll = slashTokens.every((token) => haystack.includes(token));
+                if (!containsAll) return null;
 
-            return { item, rank };
-        })
-        .filter(Boolean)
-        .sort((left, right) => {
-            const rankDelta = Number(right?.rank || 0) - Number(left?.rank || 0);
-            if (rankDelta !== 0) return rankDelta;
-            const leftLabel = String(left?.item?.label || '').trim();
-            const rightLabel = String(right?.item?.label || '').trim();
-            return leftLabel.localeCompare(rightLabel, 'es', { sensitivity: 'base' });
-        })
-        .slice(0, 10)
-        .map((entry) => entry.item);
+                let rank = 0;
+                if (normalizedSlashQuery && label.startsWith(normalizedSlashQuery)) rank += 400;
+                if (normalizedSlashQuery && libraryName.startsWith(normalizedSlashQuery)) rank += 280;
+                if (normalizedSlashQuery && text.startsWith(normalizedSlashQuery)) rank += 220;
+                slashTokens.forEach((token) => {
+                    if (label.includes(token)) rank += 80;
+                    if (libraryName.includes(token)) rank += 50;
+                    if (text.includes(token)) rank += 20;
+                });
+
+                return { item, rank };
+            })
+            .filter(Boolean)
+            .sort((left, right) => {
+                const rankDelta = Number(right?.rank || 0) - Number(left?.rank || 0);
+                if (rankDelta !== 0) return rankDelta;
+                const leftLabel = String(left?.item?.label || '').trim();
+                const rightLabel = String(right?.item?.label || '').trim();
+                return leftLabel.localeCompare(rightLabel, 'es', { sensitivity: 'base' });
+            })
+            .slice(0, 10)
+            .map((entry) => entry.item),
+    [quickReplies, slashTokens, normalizedSlashQuery]);
 
     const selectQuickReply = (item = {}) => {
         const entry = item && typeof item === 'object' ? item : null;
@@ -305,10 +326,23 @@ const ChatInput = ({
     useEffect(() => {
         const el = inputRef.current;
         if (!el) return;
-        el.style.height = '24px';
-        const next = Math.min(el.scrollHeight, 220);
-        el.style.height = `${next}px`;
-    }, [inputText]);
+        // Defer the reflow to the next animation frame so it doesn't block the keystroke paint.
+        const raf = requestAnimationFrame(() => {
+            el.style.height = '24px';
+            const next = Math.min(el.scrollHeight, 220);
+            el.style.height = `${next}px`;
+        });
+        return () => cancelAnimationFrame(raf);
+    }, [localText]);
+
+    // Sync localText when the parent changes inputText externally (AI suggestion,
+    // reply prefill, chat switch clearing the field, etc.).
+    // Skip if the change came from our own typing (lastUserInputRef tracks that).
+    useEffect(() => {
+        if (inputText === lastUserInputRef.current) return;
+        lastUserInputRef.current = inputText;
+        setLocalText(inputText);
+    }, [inputText]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         if (!editingMessage?.id) return;
@@ -324,11 +358,11 @@ const ChatInput = ({
 
     useEffect(() => {
         if (!selectionState) return;
-        const inputLen = String(inputText || '').length;
+        const inputLen = String(localText || '').length;
         if (selectionState.start >= inputLen || selectionState.end > inputLen) {
             setSelectionState(null);
         }
-    }, [inputText, selectionState]);
+    }, [localText, selectionState]);
 
     useEffect(() => {
         if (!showEmoji) return;
@@ -370,10 +404,10 @@ const ChatInput = ({
     }, []);
 
     useEffect(() => {
-        const url = extractFirstUrl(inputText);
+        const url = extractFirstUrl(localText);
         if (!url) {
-            setLinkPreview(null);
-            setIsLoadingPreview(false);
+            setLinkPreview(prev => (prev !== null ? null : prev));
+            setIsLoadingPreview(prev => (prev ? false : prev));
             return;
         }
 
@@ -398,7 +432,7 @@ const ChatInput = ({
             cancelled = true;
             clearTimeout(timer);
         };
-    }, [inputText]);
+    }, [localText]);
 
     return (
         <div className="chat-input-area chat-input-area-pro" style={{ position: 'relative' }} ref={chatInputRef}>
@@ -696,7 +730,7 @@ const ChatInput = ({
                             ? 'Usa un template aprobado para contactar a este cliente...'
                             : (editingMessage?.id ? 'Edita el mensaje y presiona Enter...' : (replyingMessage?.id ? 'Escribe tu respuesta y presiona Enter...' : 'Escribe un mensaje...'))
                     }
-                    value={inputText}
+                    value={localText}
                     onChange={handleInputChange}
                     disabled={isTemplateOnlyMode}
                     onKeyDown={(e) => {

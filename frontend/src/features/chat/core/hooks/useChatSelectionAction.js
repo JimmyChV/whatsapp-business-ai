@@ -27,6 +27,7 @@ export default function useChatSelectionAction({
   setShowClientProfile,
   setClientContact,
   setQuickReplyDraft,
+  setInputText,
   setChats,
   chatIdsReferSameScope
 } = {}) {
@@ -105,13 +106,27 @@ export default function useChatSelectionAction({
     shouldInstantScrollRef.current = true;
     suppressSmoothScrollUntilRef.current = Date.now() + 2200;
     prevMessagesMetaRef.current = { count: 0, lastId: '' };
-    const cachedMessages = getCachedMessages(messagesCacheRef, resolvedChatId);
+    // Multi-key lookup: server may echo an un-scoped chatId in chat_history,
+    // causing writeCachedMessages to store under the base ID (e.g. "x@c.us")
+    // while the next read looks up the scoped ID ("x@c.us::mod::abc") — a Map miss.
+    const tryKeys = [resolvedChatId];
+    const { baseChatId: resolvedBase } = parseScopedChatId(resolvedChatId);
+    if (resolvedBase && resolvedBase !== resolvedChatId) tryKeys.push(resolvedBase);
+    if (requestedChatId && !tryKeys.includes(requestedChatId)) tryKeys.push(requestedChatId);
+    const { baseChatId: requestedBase } = parseScopedChatId(requestedChatId);
+    if (requestedBase && !tryKeys.includes(requestedBase)) tryKeys.push(requestedBase);
+    let cachedMessages = [];
+    for (const key of tryKeys) {
+      const found = getCachedMessages(messagesCacheRef, key);
+      if (found.length > 0) { cachedMessages = found; break; }
+    }
     setMessages(Array.isArray(cachedMessages) ? cachedMessages : []);
     setEditingMessage(null);
     setReplyingMessage(null);
     setShowClientProfile(false);
     setClientContact(null);
     setQuickReplyDraft(null);
+    if (typeof setInputText === 'function') setInputText('');
     if (!Array.isArray(cachedMessages) || cachedMessages.length === 0) {
       socket.emit('get_chat_history', resolvedChatId);
     }

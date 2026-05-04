@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import moment from 'moment';
 import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, ChevronDown, Download, SmilePlus, Clock3, AlertCircle, RotateCcw, AlertTriangle } from 'lucide-react';
 import {
@@ -32,6 +32,31 @@ const REACTION_TONE_VARIANTS = {
         '1f3fe': '🙏🏾',
         '1f3ff': '🙏🏿'
     }
+};
+
+const BASE_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
+const BUBBLE_TONE = {
+    successSurface: 'var(--chat-success-surface)',
+    successBorder: 'var(--chat-success-border)',
+    successText: 'var(--chat-success-text)',
+    infoSurface: 'var(--chat-info-surface)',
+    infoBorder: 'var(--chat-info-border)',
+    infoText: 'var(--chat-info-text)',
+    cardSurface: 'var(--chat-card-surface)',
+    cardSurfaceAlt: 'var(--chat-card-surface-alt)',
+    cardBorder: 'var(--chat-card-border)',
+    controlSurface: 'var(--chat-control-surface)',
+    controlStrongSurface: 'var(--chat-control-surface-strong)',
+    controlBorder: 'var(--chat-control-border)',
+    text: 'var(--text-primary)',
+    textSoft: 'var(--chat-control-text-soft)',
+    mutedPanel: 'var(--chat-muted-panel)',
+    mutedPanelSoft: 'var(--chat-muted-panel-soft)',
+    priceText: 'var(--chat-price-text)',
+    warningSurface: 'var(--chat-warning-bg)',
+    warningBorder: 'var(--chat-warning-border)',
+    warningText: 'var(--chat-warning-text-strong)'
 };
 
 const MessageBubble = ({
@@ -123,10 +148,12 @@ const MessageBubble = ({
     const [showReactionPicker, setShowReactionPicker] = useState(false);
     const [preferredSkinTone, setPreferredSkinTone] = useState('neutral');
     const bubbleRef = useRef(null);
-    const reactionOptions = ['👍', '❤️', '😂', '😮', '😢', '🙏'].map((emoji) => {
-        const variants = REACTION_TONE_VARIANTS[emoji];
-        return variants?.[preferredSkinTone] || emoji;
-    });
+    const reactionOptions = useMemo(() =>
+        BASE_REACTION_EMOJIS.map((emoji) => {
+            const variants = REACTION_TONE_VARIANTS[emoji];
+            return variants?.[preferredSkinTone] || emoji;
+        }),
+    [preferredSkinTone]);
 
     const shouldHideBodyForOrder = isQuotePayload || (hasOrder && isLikelyBinaryBody(messageBodyText));
     const messageTextToRender = isCatalogItem
@@ -271,31 +298,35 @@ const MessageBubble = ({
             type: String(msg.quotedMessage?.type || 'chat')
         }
         : null;
-    const reactionSummary = Array.isArray(msg?.reactions)
-        ? Object.entries(
-            msg.reactions.reduce((acc, reaction) => {
-                const emoji = String(reaction?.emoji || '').trim();
-                if (!emoji) return acc;
-                acc[emoji] = (acc[emoji] || 0) + 1;
-                return acc;
-            }, {})
-        )
-        : [];
+    const reactionSummary = useMemo(() =>
+        Array.isArray(msg?.reactions)
+            ? Object.entries(
+                msg.reactions.reduce((acc, reaction) => {
+                    const emoji = String(reaction?.emoji || '').trim();
+                    if (!emoji) return acc;
+                    acc[emoji] = (acc[emoji] || 0) + 1;
+                    return acc;
+                }, {})
+            )
+            : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [msg?.reactions]);
     const hasReactionSummary = reactionSummary.length > 0;
     const canSendReaction = typeof onSendReaction === 'function' && Boolean(String(msg?.id || '').trim());
 
     const hasMenuActions = Boolean(canReplyMessage || canForwardMessage || canEditMessage);
-    const forwardNeedle = normalizeSearchText(forwardSearch);
-    const forwardCandidates = Array.isArray(forwardChatOptions)
-        ? forwardChatOptions.filter((chat) => {
+    const forwardCandidates = useMemo(() => {
+        if (!Array.isArray(forwardChatOptions)) return [];
+        const needle = normalizeSearchText(forwardSearch);
+        return forwardChatOptions.filter((chat) => {
             const id = String(chat?.id || '').trim();
             if (!id) return false;
             if (id === String(activeChatId || '')) return false;
-            if (!forwardNeedle) return true;
+            if (!needle) return true;
             const haystack = normalizeSearchText(`${chat?.name || ''} ${chat?.phone || ''} ${chat?.subtitle || ''}`);
-            return haystack.includes(forwardNeedle);
-        }).slice(0, 40)
-        : [];
+            return haystack.includes(needle);
+        }).slice(0, 40);
+    }, [forwardChatOptions, forwardSearch, activeChatId]);
 
     const handleReplyClick = () => {
         if (!canReplyMessage) return;
@@ -336,28 +367,7 @@ const MessageBubble = ({
         onSendReaction(messageId, safeEmoji);
         setShowReactionPicker(false);
     };
-    const tone = {
-        successSurface: 'var(--chat-success-surface)',
-        successBorder: 'var(--chat-success-border)',
-        successText: 'var(--chat-success-text)',
-        infoSurface: 'var(--chat-info-surface)',
-        infoBorder: 'var(--chat-info-border)',
-        infoText: 'var(--chat-info-text)',
-        cardSurface: 'var(--chat-card-surface)',
-        cardSurfaceAlt: 'var(--chat-card-surface-alt)',
-        cardBorder: 'var(--chat-card-border)',
-        controlSurface: 'var(--chat-control-surface)',
-        controlStrongSurface: 'var(--chat-control-surface-strong)',
-        controlBorder: 'var(--chat-control-border)',
-        text: 'var(--text-primary)',
-        textSoft: 'var(--chat-control-text-soft)',
-        mutedPanel: 'var(--chat-muted-panel)',
-        mutedPanelSoft: 'var(--chat-muted-panel-soft)',
-        priceText: 'var(--chat-price-text)',
-        warningSurface: 'var(--chat-warning-bg)',
-        warningBorder: 'var(--chat-warning-border)',
-        warningText: 'var(--chat-warning-text-strong)'
-    };
+    const tone = BUBBLE_TONE;
 
     return (
         <div
@@ -770,8 +780,8 @@ const MessageBubble = ({
                 )}
 
                 {!shouldRenderTemplateBubble && String(messageTextToRender).trim() && (
-                    <span
-                        style={{ fontSize: '0.9rem', wordBreak: 'break-word', whiteSpace: 'normal' }}
+                    <div
+                        className="message-text-block"
                         onMouseUp={() => {
                             const selected = String(window.getSelection?.()?.toString?.() || '').trim();
                             if (selected.length >= 4 && selected.length <= 180) {
@@ -782,7 +792,7 @@ const MessageBubble = ({
                         }}
                     >
                         {renderWhatsAppFormattedText(messageTextToRender)}
-                    </span>
+                    </div>
                 )}
 
                 {phoneCandidates.length > 0 && typeof onOpenPhoneChat === 'function' && (
@@ -1011,4 +1021,4 @@ const MessageBubble = ({
     );
 };
 
-export default MessageBubble;
+export default React.memo(MessageBubble);

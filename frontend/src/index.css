@@ -78,62 +78,89 @@
 }
 
 :root[data-theme="light"] {
-  --incoming-msg-bg: var(--saas-bg-elevated);
+  /* ── message bubbles ── */
+  --incoming-msg-bg: #ffffff;
   --outgoing-msg-bg: color-mix(in srgb, var(--saas-accent-primary) 16%, var(--saas-bg-surface));
+
+  /* ── shell & layout ── */
   --chat-window-background: var(--saas-bg-base);
-  --chat-skeleton-surface: var(--saas-bg-surface);
-  --chat-skeleton-elevated: var(--saas-bg-elevated);
-  --chat-skeleton-text: var(--saas-bg-surface);
-  --chat-highlight-text: var(--saas-accent-primary);
-  --chat-badge-text: var(--saas-text-inverse);
+  --chat-shell-background: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-base) 99%, #ffffff) 0%, color-mix(in srgb, var(--saas-bg-surface) 92%, var(--saas-bg-base)) 100%);
+  --chat-shell-top-accent: color-mix(in srgb, var(--saas-accent-primary) 78%, #ffffff);
+  --chat-shell-header-gradient: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-surface) 98%, var(--saas-bg-elevated)) 0%, color-mix(in srgb, var(--saas-bg-elevated) 76%, var(--saas-bg-surface)) 100%);
+  --chat-shell-panel-gradient: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-surface) 99%, var(--saas-bg-base)) 0%, color-mix(in srgb, var(--saas-bg-surface) 94%, var(--saas-bg-elevated)) 100%);
+  --chat-shell-panel-gradient-alt: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-elevated) 72%, var(--saas-bg-surface)) 0%, color-mix(in srgb, var(--saas-bg-elevated) 58%, var(--saas-bg-surface)) 100%);
+  --chat-glass-gradient: linear-gradient(180deg, rgba(255, 253, 250, 0.98), rgba(247, 241, 234, 0.94));
+  --chat-panel-shadow: 0 16px 34px rgba(88, 73, 57, 0.12);
+  --chat-overlay-backdrop: rgba(35, 29, 22, 0.22);
+
+  /* ── WA frame ── */
+  --wa-bg: linear-gradient(180deg, #fbf8f3 0%, #efe8df 100%);
+  --wa-panel: #f7f1ea;
+  --wa-panel-2: #fffdfa;
+  --wa-border: color-mix(in srgb, var(--saas-border-color) 84%, transparent);
+  --wa-shadow: 0 18px 38px rgba(97, 77, 56, 0.14);
+
+  /* ── control surfaces ── */
+  --chat-control-surface: #ffffff;
+  --chat-control-surface-strong: color-mix(in srgb, var(--saas-bg-surface) 98%, var(--saas-bg-elevated));
+  --chat-control-surface-soft: color-mix(in srgb, var(--saas-accent-primary) 10%, #ffffff);
+  --chat-control-border: color-mix(in srgb, var(--saas-border-color) 88%, transparent);
+  --chat-control-text: var(--saas-text-primary);
+  --chat-control-text-soft: color-mix(in srgb, var(--saas-text-secondary) 98%, #4f4740);
+  --chat-control-disabled: color-mix(in srgb, var(--saas-text-secondary) 58%, var(--saas-bg-elevated));
+
+  /* ── card surfaces ── */
+  --chat-card-surface: #ffffff;
+  --chat-card-surface-alt: color-mix(in srgb, var(--saas-bg-elevated) 54%, var(--saas-bg-surface));
+  --chat-card-border: color-mix(in srgb, var(--saas-border-color) 82%, transparent);
+
+  /* ── muted panels ── */
+  --chat-muted-panel: #f4ede5;
+  --chat-muted-panel-strong: #ebe3d9;
+  --chat-muted-panel-soft: #faf6f1;
+
+  /* ── pills & menus ── */
+  --chat-pill-bg: #ffffff;
+  --chat-pill-border: color-mix(in srgb, var(--saas-border-color) 90%, transparent);
+  --chat-pill-text: var(--saas-text-primary);
+  --chat-menu-surface: color-mix(in srgb, #ffffff 94%, var(--saas-bg-elevated));
+
+  /* ── buttons ── */
+  --chat-button-ghost-hover: color-mix(in srgb, var(--saas-text-primary) 6%, transparent);
+  --chat-button-ghost-hover-strong: color-mix(in srgb, var(--saas-text-primary) 10%, transparent);
+
+  /* ── accent ── */
   --chat-accent-strong: color-mix(in srgb, var(--saas-accent-primary) 72%, #ffffff);
   --chat-accent-soft: color-mix(in srgb, var(--saas-accent-primary) 14%, transparent);
   --chat-accent-surface: color-mix(in srgb, var(--saas-accent-primary) 12%, var(--saas-bg-surface));
   --chat-accent-surface-strong: color-mix(in srgb, var(--saas-accent-primary) 22%, var(--saas-bg-surface));
-  --chat-danger-soft: color-mix(in srgb, var(--saas-accent-danger) 12%, transparent);
-  --chat-danger-border: color-mix(in srgb, var(--saas-accent-danger) 28%, transparent);
-  --chat-danger-text: color-mix(in srgb, var(--saas-accent-danger) 72%, #7a1111);
-  --chat-warning-bg: color-mix(in srgb, var(--saas-accent-warning) 18%, var(--saas-bg-surface));
-  --chat-warning-border: color-mix(in srgb, var(--saas-accent-warning) 28%, transparent);
-  --chat-warning-text: color-mix(in srgb, var(--saas-accent-warning) 96%, #4b3200);
-  --chat-warning-text-strong: color-mix(in srgb, var(--saas-accent-warning) 100%, #3c2900);
-  --chat-muted-panel: color-mix(in srgb, var(--saas-bg-elevated) 58%, var(--saas-bg-surface));
-  --chat-muted-panel-strong: color-mix(in srgb, var(--saas-bg-elevated) 72%, var(--saas-bg-surface));
-  --chat-muted-panel-soft: color-mix(in srgb, var(--saas-bg-surface) 86%, var(--saas-bg-base));
-  --chat-shell-background: color-mix(in srgb, var(--saas-bg-base) 98%, #d8d3cc);
-  --chat-shell-top-accent: color-mix(in srgb, var(--saas-accent-primary) 78%, #ffffff);
-  --chat-shell-header-gradient: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-elevated) 88%, var(--saas-bg-surface)) 0%, color-mix(in srgb, var(--saas-bg-elevated) 74%, var(--saas-bg-surface)) 100%);
-  --chat-shell-panel-gradient: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-surface) 96%, var(--saas-bg-base)) 0%, color-mix(in srgb, var(--saas-bg-surface) 90%, var(--saas-bg-base)) 36%, color-mix(in srgb, var(--saas-bg-surface) 84%, var(--saas-bg-base)) 100%);
-  --chat-shell-panel-gradient-alt: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-elevated) 84%, var(--saas-bg-surface)) 0%, color-mix(in srgb, var(--saas-bg-elevated) 70%, var(--saas-bg-surface)) 100%);
-  --chat-glass-gradient: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-elevated) 94%, transparent), color-mix(in srgb, var(--saas-bg-surface) 98%, transparent));
-  --chat-pill-bg: color-mix(in srgb, var(--saas-bg-surface) 92%, var(--saas-bg-elevated));
-  --chat-pill-border: color-mix(in srgb, var(--saas-border-color) 92%, transparent);
-  --chat-pill-text: var(--saas-text-primary);
-  --chat-menu-surface: color-mix(in srgb, var(--saas-bg-elevated) 78%, var(--saas-bg-surface));
-  --chat-button-ghost-hover: color-mix(in srgb, var(--saas-text-primary) 6%, transparent);
-  --chat-button-ghost-hover-strong: color-mix(in srgb, var(--saas-text-primary) 10%, transparent);
+  --chat-highlight-text: var(--saas-accent-primary);
+  --chat-badge-text: var(--saas-text-inverse);
   --chat-online-info: color-mix(in srgb, var(--saas-accent-info) 74%, #ffffff);
-  --chat-control-surface: color-mix(in srgb, var(--saas-bg-surface) 98%, var(--saas-bg-elevated));
-  --chat-control-surface-strong: color-mix(in srgb, var(--saas-bg-elevated) 82%, var(--saas-bg-surface));
-  --chat-control-surface-soft: color-mix(in srgb, var(--saas-bg-surface) 96%, var(--saas-bg-elevated));
-  --chat-control-border: color-mix(in srgb, var(--saas-border-color) 86%, transparent);
-  --chat-control-text: var(--saas-text-primary);
-  --chat-control-text-soft: color-mix(in srgb, var(--saas-text-secondary) 100%, #4f463f);
-  --chat-control-disabled: color-mix(in srgb, var(--saas-text-secondary) 58%, var(--saas-bg-elevated));
-  --chat-card-surface: color-mix(in srgb, var(--saas-bg-surface) 98%, var(--saas-bg-elevated));
-  --chat-card-surface-alt: color-mix(in srgb, var(--saas-bg-elevated) 62%, var(--saas-bg-surface));
-  --chat-card-border: color-mix(in srgb, var(--saas-border-color) 82%, transparent);
+
+  /* ── info / success / danger / warning ── */
   --chat-info-surface: color-mix(in srgb, var(--saas-accent-info) 8%, var(--saas-bg-surface));
   --chat-info-border: color-mix(in srgb, var(--saas-accent-info) 18%, transparent);
-  --chat-info-text: color-mix(in srgb, var(--saas-accent-info) 98%, #123149);
-  --chat-success-surface: color-mix(in srgb, var(--saas-accent-primary) 14%, var(--saas-bg-surface));
-  --chat-success-border: color-mix(in srgb, var(--saas-accent-primary) 34%, transparent);
-  --chat-success-text: color-mix(in srgb, var(--saas-accent-primary) 98%, #16301d);
-  --chat-price-text: color-mix(in srgb, var(--saas-accent-primary) 92%, #17311f);
+  --chat-info-text: color-mix(in srgb, var(--saas-accent-info) 88%, #183246);
+  --chat-success-surface: color-mix(in srgb, var(--saas-accent-primary) 13%, var(--saas-bg-surface));
+  --chat-success-border: color-mix(in srgb, var(--saas-accent-primary) 28%, transparent);
+  --chat-success-text: color-mix(in srgb, var(--saas-accent-primary) 88%, #18311f);
+  --chat-danger-soft: color-mix(in srgb, var(--saas-accent-danger) 10%, #ffffff);
+  --chat-danger-border: color-mix(in srgb, var(--saas-accent-danger) 28%, transparent);
+  --chat-danger-text: color-mix(in srgb, var(--saas-accent-danger) 88%, #7a1111);
+  --chat-warning-bg: color-mix(in srgb, var(--saas-accent-warning) 14%, #ffffff);
+  --chat-warning-border: color-mix(in srgb, var(--saas-accent-warning) 28%, transparent);
+  --chat-warning-text: color-mix(in srgb, var(--saas-accent-warning) 88%, #6b4600);
+  --chat-warning-text-strong: color-mix(in srgb, var(--saas-accent-warning) 100%, #5a3b00);
+
+  /* ── price / link / code / skeleton ── */
+  --chat-price-text: color-mix(in srgb, var(--saas-accent-primary) 96%, #18321f);
   --chat-link: color-mix(in srgb, var(--saas-accent-info) 94%, #16324a);
   --chat-code-surface: color-mix(in srgb, var(--saas-bg-elevated) 72%, var(--saas-bg-surface));
   --chat-code-border: color-mix(in srgb, var(--saas-border-color) 72%, transparent);
-  --chat-overlay-backdrop: rgba(25, 23, 18, 0.28);
+  --chat-skeleton-surface: var(--saas-bg-surface);
+  --chat-skeleton-elevated: var(--saas-bg-elevated);
+  --chat-skeleton-text: var(--saas-bg-surface);
 }
 
 * {
@@ -6190,28 +6217,6 @@ body {
   z-index: 2500;
 }
 
-:root[data-theme="light"] {
-  --wa-bg: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-base) 98%, #ffffff) 0%, color-mix(in srgb, var(--saas-bg-surface) 88%, var(--saas-bg-base)) 100%);
-  --wa-panel: color-mix(in srgb, var(--saas-bg-surface) 96%, var(--saas-bg-elevated));
-  --wa-panel-2: color-mix(in srgb, var(--saas-bg-surface) 88%, var(--saas-bg-elevated));
-  --wa-border: color-mix(in srgb, var(--saas-border-color) 72%, transparent);
-  --wa-shadow: 0 18px 40px rgba(88, 73, 57, 0.14);
-  --chat-panel-shadow: 0 18px 40px rgba(88, 73, 57, 0.14);
-  --chat-menu-surface: color-mix(in srgb, var(--saas-bg-surface) 95%, var(--saas-bg-elevated));
-  --chat-muted-panel: color-mix(in srgb, var(--saas-bg-elevated) 78%, var(--saas-bg-surface));
-  --chat-muted-panel-strong: color-mix(in srgb, var(--saas-bg-elevated) 88%, var(--saas-bg-surface));
-  --chat-muted-panel-soft: color-mix(in srgb, var(--saas-bg-surface) 92%, var(--saas-bg-base));
-  --chat-shell-background: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-base) 98%, #ffffff) 0%, color-mix(in srgb, var(--saas-bg-surface) 90%, var(--saas-bg-base)) 100%);
-  --chat-shell-header-gradient: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-surface) 96%, var(--saas-bg-elevated)) 0%, color-mix(in srgb, var(--saas-bg-elevated) 72%, var(--saas-bg-surface)) 100%);
-  --chat-shell-panel-gradient: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-surface) 98%, var(--saas-bg-base)) 0%, color-mix(in srgb, var(--saas-bg-surface) 93%, var(--saas-bg-elevated)) 100%);
-  --chat-shell-panel-gradient-alt: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-elevated) 76%, var(--saas-bg-surface)) 0%, color-mix(in srgb, var(--saas-bg-elevated) 62%, var(--saas-bg-surface)) 100%);
-  --chat-glass-gradient: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-surface) 96%, transparent), color-mix(in srgb, var(--saas-bg-elevated) 92%, transparent));
-  --chat-pill-bg: color-mix(in srgb, var(--saas-bg-surface) 96%, var(--saas-bg-elevated));
-  --chat-pill-border: color-mix(in srgb, var(--saas-border-color) 80%, transparent);
-  --chat-button-ghost-hover: color-mix(in srgb, var(--saas-text-primary) 4%, transparent);
-  --chat-button-ghost-hover-strong: color-mix(in srgb, var(--saas-text-primary) 8%, transparent);
-}
-
 :root[data-theme="light"] .app-container,
 :root[data-theme="light"] .main-workspace,
 :root[data-theme="light"] .conversation-pane-shell,
@@ -6518,29 +6523,6 @@ body {
   color: var(--saas-text-primary);
 }
 
-/* Chat professional light-mode finish */
-:root[data-theme="light"] {
-  --chat-panel-shadow: 0 22px 46px rgba(97, 81, 61, 0.14);
-  --chat-menu-surface: color-mix(in srgb, var(--saas-bg-surface) 98%, var(--saas-bg-elevated));
-  --chat-shell-panel-gradient: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-surface) 99%, var(--saas-bg-base)) 0%, color-mix(in srgb, var(--saas-bg-surface) 95%, var(--saas-bg-elevated)) 100%);
-  --chat-shell-panel-gradient-alt: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-elevated) 72%, var(--saas-bg-surface)) 0%, color-mix(in srgb, var(--saas-bg-elevated) 58%, var(--saas-bg-surface)) 100%);
-  --chat-glass-gradient: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-surface) 98%, transparent), color-mix(in srgb, var(--saas-bg-elevated) 88%, transparent));
-  --chat-control-surface: color-mix(in srgb, var(--saas-bg-surface) 99%, var(--saas-bg-elevated));
-  --chat-control-surface-strong: color-mix(in srgb, var(--saas-bg-elevated) 74%, var(--saas-bg-surface));
-  --chat-control-border: color-mix(in srgb, var(--saas-border-color) 92%, transparent);
-  --chat-control-text-soft: color-mix(in srgb, var(--saas-text-secondary) 98%, #4a4139);
-  --chat-card-surface: color-mix(in srgb, var(--saas-bg-surface) 99%, var(--saas-bg-elevated));
-  --chat-card-surface-alt: color-mix(in srgb, var(--saas-bg-elevated) 54%, var(--saas-bg-surface));
-  --chat-card-border: color-mix(in srgb, var(--saas-border-color) 88%, transparent);
-  --chat-info-surface: color-mix(in srgb, var(--saas-accent-info) 10%, var(--saas-bg-surface));
-  --chat-info-border: color-mix(in srgb, var(--saas-accent-info) 22%, transparent);
-  --chat-info-text: color-mix(in srgb, var(--saas-accent-info) 98%, #16324a);
-  --chat-success-surface: color-mix(in srgb, var(--saas-accent-primary) 16%, var(--saas-bg-surface));
-  --chat-success-border: color-mix(in srgb, var(--saas-accent-primary) 38%, transparent);
-  --chat-success-text: color-mix(in srgb, var(--saas-accent-primary) 96%, #17311f);
-  --chat-price-text: color-mix(in srgb, var(--saas-accent-primary) 100%, #17311f);
-  --chat-overlay-backdrop: rgba(34, 28, 22, 0.26);
-}
 
 :root[data-theme="light"] .sidebar.sidebar-pro,
 :root[data-theme="light"] .business-sidebar.business-sidebar-pro,
@@ -6877,52 +6859,6 @@ body {
 .sidebar-label-dropdown,
 .commercial-status-dropdown-menu {
   z-index: 11200 !important;
-}
-
-:root[data-theme="light"] {
-  --wa-bg: linear-gradient(180deg, #fcfaf7 0%, #f3eee8 100%);
-  --wa-panel: color-mix(in srgb, var(--saas-bg-surface) 98%, var(--saas-bg-elevated));
-  --wa-panel-2: color-mix(in srgb, var(--saas-bg-surface) 84%, var(--saas-bg-elevated));
-  --wa-border: color-mix(in srgb, var(--saas-border-color) 78%, transparent);
-  --wa-shadow: 0 18px 42px rgba(94, 74, 53, 0.14);
-  --chat-panel-shadow: 0 20px 44px rgba(94, 74, 53, 0.14);
-  --chat-menu-surface: color-mix(in srgb, var(--saas-bg-surface) 99%, var(--saas-bg-elevated));
-  --chat-shell-background: linear-gradient(180deg, #fcfaf7 0%, #f2ede6 100%);
-  --chat-shell-header-gradient: linear-gradient(180deg, #ffffff 0%, #f7f2ec 100%);
-  --chat-shell-panel-gradient: linear-gradient(180deg, #ffffff 0%, #f6f1eb 100%);
-  --chat-shell-panel-gradient-alt: linear-gradient(180deg, #faf7f3 0%, #eee7df 100%);
-  --chat-glass-gradient: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 241, 235, 0.94));
-  --chat-pill-bg: color-mix(in srgb, var(--saas-bg-surface) 98%, var(--saas-bg-elevated));
-  --chat-pill-border: color-mix(in srgb, var(--saas-border-color) 84%, transparent);
-  --chat-button-ghost-hover: color-mix(in srgb, var(--saas-text-primary) 6%, transparent);
-  --chat-button-ghost-hover-strong: color-mix(in srgb, var(--saas-text-primary) 10%, transparent);
-  --chat-control-surface: #ffffff;
-  --chat-control-surface-strong: #f4eee7;
-  --chat-control-surface-soft: color-mix(in srgb, var(--saas-bg-surface) 94%, var(--saas-bg-elevated));
-  --chat-control-border: color-mix(in srgb, var(--saas-border-color) 86%, transparent);
-  --chat-control-text: var(--saas-text-primary);
-  --chat-control-text-soft: #655d56;
-  --chat-card-surface: #ffffff;
-  --chat-card-surface-alt: #f4eee7;
-  --chat-card-border: color-mix(in srgb, var(--saas-border-color) 82%, transparent);
-  --chat-muted-panel: #f4eee7;
-  --chat-muted-panel-strong: #ece5dd;
-  --chat-muted-panel-soft: #faf7f2;
-  --chat-info-surface: color-mix(in srgb, var(--saas-accent-info) 8%, #ffffff);
-  --chat-info-border: color-mix(in srgb, var(--saas-accent-info) 20%, transparent);
-  --chat-info-text: color-mix(in srgb, var(--saas-accent-info) 88%, #173a55);
-  --chat-success-surface: color-mix(in srgb, var(--saas-accent-primary) 12%, #ffffff);
-  --chat-success-border: color-mix(in srgb, var(--saas-accent-primary) 32%, transparent);
-  --chat-success-text: color-mix(in srgb, var(--saas-accent-primary) 92%, #17311f);
-  --chat-price-text: color-mix(in srgb, var(--saas-accent-primary) 94%, #17311f);
-  --chat-danger-soft: color-mix(in srgb, var(--saas-accent-danger) 10%, #ffffff);
-  --chat-danger-border: color-mix(in srgb, var(--saas-accent-danger) 26%, transparent);
-  --chat-danger-text: color-mix(in srgb, var(--saas-accent-danger) 86%, #65161d);
-  --chat-warning-bg: color-mix(in srgb, var(--saas-accent-warning) 12%, #ffffff);
-  --chat-warning-border: color-mix(in srgb, var(--saas-accent-warning) 28%, transparent);
-  --chat-warning-text: color-mix(in srgb, var(--saas-accent-warning) 90%, #5a3c04);
-  --chat-warning-text-strong: color-mix(in srgb, var(--saas-accent-warning) 94%, #5a3c04);
-  --chat-overlay-backdrop: rgba(30, 25, 19, 0.24);
 }
 
 :root[data-theme="light"] .app-container,
@@ -7348,54 +7284,6 @@ body {
   background: radial-gradient(circle at 50% 20%, color-mix(in srgb, var(--saas-accent-info) 14%, transparent), transparent 62%) !important;
 }
 
-/* Chat light theme final authority */
-:root[data-theme="light"] {
-  --wa-bg: linear-gradient(180deg, #fbf8f3 0%, #efe8df 100%);
-  --wa-panel: #f7f1ea;
-  --wa-panel-2: #fffdfa;
-  --wa-border: color-mix(in srgb, var(--saas-border-color) 84%, transparent);
-  --wa-shadow: 0 18px 38px rgba(97, 77, 56, 0.14);
-  --chat-panel-shadow: 0 18px 38px rgba(97, 77, 56, 0.14);
-  --chat-shell-background: linear-gradient(180deg, #fbf8f3 0%, #efe7dd 100%);
-  --chat-shell-header-gradient: linear-gradient(180deg, #fffdfa 0%, #f7f1ea 100%);
-  --chat-shell-panel-gradient: linear-gradient(180deg, #fffdfa 0%, #f5eee7 100%);
-  --chat-shell-panel-gradient-alt: linear-gradient(180deg, #f9f3ec 0%, #efe7de 100%);
-  --chat-glass-gradient: linear-gradient(180deg, rgba(255, 253, 250, 0.98), rgba(247, 241, 234, 0.94));
-  --chat-menu-surface: color-mix(in srgb, #ffffff 94%, var(--saas-bg-elevated));
-  --chat-pill-bg: #ffffff;
-  --chat-pill-border: color-mix(in srgb, var(--saas-border-color) 90%, transparent);
-  --chat-button-ghost-hover: color-mix(in srgb, var(--saas-text-primary) 6%, transparent);
-  --chat-button-ghost-hover-strong: color-mix(in srgb, var(--saas-text-primary) 10%, transparent);
-  --chat-control-surface: #ffffff;
-  --chat-control-surface-strong: #f5eee6;
-  --chat-control-surface-soft: color-mix(in srgb, var(--saas-accent-primary) 10%, #ffffff);
-  --chat-control-border: color-mix(in srgb, var(--saas-border-color) 88%, transparent);
-  --chat-control-text: var(--saas-text-primary);
-  --chat-control-text-soft: #5d564f;
-  --chat-card-surface: #ffffff;
-  --chat-card-surface-alt: #f5eee6;
-  --chat-card-border: color-mix(in srgb, var(--saas-border-color) 82%, transparent);
-  --chat-muted-panel: #f4ede5;
-  --chat-muted-panel-strong: #ebe3d9;
-  --chat-muted-panel-soft: #faf6f1;
-  --chat-info-surface: color-mix(in srgb, var(--saas-accent-info) 8%, #ffffff);
-  --chat-info-border: color-mix(in srgb, var(--saas-accent-info) 22%, transparent);
-  --chat-info-text: color-mix(in srgb, var(--saas-accent-info) 92%, #17364f);
-  --chat-success-surface: color-mix(in srgb, var(--saas-accent-primary) 12%, #ffffff);
-  --chat-success-border: color-mix(in srgb, var(--saas-accent-primary) 34%, transparent);
-  --chat-success-text: color-mix(in srgb, var(--saas-accent-primary) 92%, #18321f);
-  --chat-price-text: color-mix(in srgb, var(--saas-accent-primary) 96%, #18321f);
-  --chat-danger-soft: color-mix(in srgb, var(--saas-accent-danger) 10%, #ffffff);
-  --chat-danger-border: color-mix(in srgb, var(--saas-accent-danger) 28%, transparent);
-  --chat-danger-text: color-mix(in srgb, var(--saas-accent-danger) 90%, #6e1820);
-  --chat-warning-bg: color-mix(in srgb, var(--saas-accent-warning) 11%, #ffffff);
-  --chat-warning-border: color-mix(in srgb, var(--saas-accent-warning) 28%, transparent);
-  --chat-warning-text: color-mix(in srgb, var(--saas-accent-warning) 92%, #654303);
-  --chat-warning-text-strong: color-mix(in srgb, var(--saas-accent-warning) 96%, #654303);
-  --incoming-msg-bg: #ffffff;
-  --outgoing-msg-bg: color-mix(in srgb, var(--saas-accent-primary) 18%, #ffffff);
-  --chat-overlay-backdrop: rgba(35, 29, 22, 0.22);
-}
 
 :root[data-theme="light"] .app-container,
 :root[data-theme="light"] .main-workspace,
@@ -7863,32 +7751,6 @@ body {
   --chat-warning-text: color-mix(in srgb, var(--saas-accent-warning) 82%, #fff5de);
   --chat-warning-text-strong: color-mix(in srgb, var(--saas-accent-warning) 92%, #ffffff);
   --chat-panel-shadow: 0 20px 42px rgba(0, 0, 0, 0.28);
-}
-
-:root[data-theme="light"] {
-  --incoming-msg-bg: #ffffff;
-  --outgoing-msg-bg: color-mix(in srgb, var(--saas-accent-primary) 16%, var(--saas-bg-surface));
-  --chat-shell-background: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-base) 99%, #ffffff) 0%, color-mix(in srgb, var(--saas-bg-surface) 92%, var(--saas-bg-base)) 100%);
-  --chat-shell-header-gradient: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-surface) 98%, var(--saas-bg-elevated)) 0%, color-mix(in srgb, var(--saas-bg-elevated) 76%, var(--saas-bg-surface)) 100%);
-  --chat-shell-panel-gradient: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-surface) 99%, var(--saas-bg-base)) 0%, color-mix(in srgb, var(--saas-bg-surface) 94%, var(--saas-bg-elevated)) 100%);
-  --chat-shell-panel-gradient-alt: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-elevated) 72%, var(--saas-bg-surface)) 0%, color-mix(in srgb, var(--saas-bg-elevated) 58%, var(--saas-bg-surface)) 100%);
-  --chat-card-surface: #ffffff;
-  --chat-card-surface-alt: color-mix(in srgb, var(--saas-bg-elevated) 54%, var(--saas-bg-surface));
-  --chat-control-surface: #ffffff;
-  --chat-control-surface-strong: color-mix(in srgb, var(--saas-bg-surface) 98%, var(--saas-bg-elevated));
-  --chat-control-text-soft: color-mix(in srgb, var(--saas-text-secondary) 98%, #4f4740);
-  --chat-info-surface: color-mix(in srgb, var(--saas-accent-info) 8%, var(--saas-bg-surface));
-  --chat-info-border: color-mix(in srgb, var(--saas-accent-info) 18%, transparent);
-  --chat-info-text: color-mix(in srgb, var(--saas-accent-info) 88%, #183246);
-  --chat-success-surface: color-mix(in srgb, var(--saas-accent-primary) 13%, var(--saas-bg-surface));
-  --chat-success-border: color-mix(in srgb, var(--saas-accent-primary) 28%, transparent);
-  --chat-success-text: color-mix(in srgb, var(--saas-accent-primary) 88%, #18311f);
-  --chat-danger-text: color-mix(in srgb, var(--saas-accent-danger) 88%, #7a1111);
-  --chat-warning-bg: color-mix(in srgb, var(--saas-accent-warning) 14%, #ffffff);
-  --chat-warning-border: color-mix(in srgb, var(--saas-accent-warning) 28%, transparent);
-  --chat-warning-text: color-mix(in srgb, var(--saas-accent-warning) 88%, #6b4600);
-  --chat-warning-text-strong: color-mix(in srgb, var(--saas-accent-warning) 100%, #5a3b00);
-  --chat-panel-shadow: 0 16px 34px rgba(88, 73, 57, 0.12);
 }
 
 .app-container,
