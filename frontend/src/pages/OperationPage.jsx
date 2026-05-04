@@ -11,6 +11,7 @@ import {
 } from '../features/chat/core/helpers/notificationWorkspace.helpers';
 
 const SAAS_THEME_STORAGE_KEY = 'saas.theme.mode';
+const SAAS_THEME_STORAGE_LEGACY_KEY = 'saas-theme';
 const SAAS_THEME_SECTION_KEY = 'theme';
 
 const normalizeThemeMode = (value = '') => (String(value || '').trim().toLowerCase() === 'light' ? 'light' : 'dark');
@@ -18,6 +19,30 @@ const normalizeThemeMode = (value = '') => (String(value || '').trim().toLowerCa
 const applyDocumentTheme = (mode = 'dark') => {
   if (typeof document === 'undefined') return;
   document.documentElement.setAttribute('data-theme', normalizeThemeMode(mode));
+};
+
+const resolveStoredThemeMode = (fallback = 'dark') => {
+  if (typeof window === 'undefined') return normalizeThemeMode(fallback);
+  try {
+    return normalizeThemeMode(
+      window.localStorage.getItem(SAAS_THEME_STORAGE_LEGACY_KEY)
+      || window.localStorage.getItem(SAAS_THEME_STORAGE_KEY)
+      || fallback
+    );
+  } catch {
+    return normalizeThemeMode(fallback);
+  }
+};
+
+const persistThemeMode = (mode = 'dark') => {
+  if (typeof window === 'undefined') return;
+  const normalizedMode = normalizeThemeMode(mode);
+  try {
+    window.localStorage.setItem(SAAS_THEME_STORAGE_LEGACY_KEY, normalizedMode);
+    window.localStorage.setItem(SAAS_THEME_STORAGE_KEY, normalizedMode);
+  } catch {
+    // ignore storage failures
+  }
 };
 
 export default function OperationPage({
@@ -142,12 +167,7 @@ export default function OperationPage({
       applyDocumentTheme('dark');
       return 'dark';
     }
-    let initialMode = 'dark';
-    try {
-      initialMode = normalizeThemeMode(window.localStorage.getItem(SAAS_THEME_STORAGE_KEY) || 'dark');
-    } catch {
-      initialMode = 'dark';
-    }
+    const initialMode = resolveStoredThemeMode('dark');
     applyDocumentTheme(initialMode);
     return initialMode;
   });
@@ -190,12 +210,7 @@ export default function OperationPage({
 
   useEffect(() => {
     applyDocumentTheme(themeMode);
-    if (typeof window === 'undefined') return;
-    try {
-      window.localStorage.setItem(SAAS_THEME_STORAGE_KEY, normalizeThemeMode(themeMode));
-    } catch {
-      // ignore storage failures
-    }
+    persistThemeMode(themeMode);
   }, [themeMode]);
 
   useEffect(() => {
@@ -220,13 +235,7 @@ export default function OperationPage({
     const normalizedMode = normalizeThemeMode(nextMode);
     setThemeMode(normalizedMode);
     applyDocumentTheme(normalizedMode);
-    if (typeof window !== 'undefined') {
-      try {
-        window.localStorage.setItem(SAAS_THEME_STORAGE_KEY, normalizedMode);
-      } catch {
-        // ignore storage failures
-      }
-    }
+    persistThemeMode(normalizedMode);
     if (!saasAuthEnabled || typeof buildApiHeaders !== 'function') return;
     saveSaasUiPreference(saasRequestJson, SAAS_THEME_SECTION_KEY, { mode: normalizedMode }).catch(() => {});
   }, [buildApiHeaders, saasAuthEnabled, saasRequestJson]);
@@ -322,7 +331,7 @@ export default function OperationPage({
         chatAssignmentState={chatAssignmentState}
         chatCommercialStatusState={chatCommercialStatusState}
         showBackToPanel={Boolean(forceOperationLaunch && canManageSaas)}
-        onBackToPanel={() => handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId })}
+        onBackToPanel={() => setShowSaasAdminPanel(true)}
         themeMode={themeMode}
         onThemeChange={handleThemeChange}
       />
@@ -413,7 +422,8 @@ export default function OperationPage({
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              background: '#222e35',
+              background: 'var(--chat-window-background)',
+              color: 'var(--saas-text-primary)'
             }}
           >
             <div className="conversation-empty-card">

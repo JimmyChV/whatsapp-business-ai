@@ -640,13 +640,12 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             {/* Tabs */}
             <div className="business-tabs">
                 {tabs.map(t => (
-                    <button key={t.id} onClick={() => { setActiveTab(t.id); setShowCompanyProfile(false); }} className={`business-tab-btn ${activeTab === t.id ? 'active' : ''}`} style={{
-                        flex: 1, padding: '9px 2px', border: 'none', cursor: 'pointer',
-                        background: activeTab === t.id ? '#111b21' : 'transparent',
-                        color: activeTab === t.id ? '#00a884' : '#8696a0',
-                        fontSize: '0.68rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px',
-                        borderBottom: activeTab === t.id ? '2px solid #00a884' : '2px solid transparent',
-                    }}>
+                      <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => { setActiveTab(t.id); setShowCompanyProfile(false); }}
+                          className={`business-tab-btn ${activeTab === t.id ? 'active' : ''}`}
+                      >
                         <span className="business-tab-icon">{t.icon}</span>
                         <span className="business-tab-label">{t.label}</span>
                     </button>
@@ -654,7 +653,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             </div>
 
             {!quickRepliesEnabled && activeTab === 'ai' && (
-                <div style={{ padding: '2px 10px 0', fontSize: '0.66rem', color: '#6f8796', textAlign: 'right' }}>
+                <div style={{ padding: '2px 10px 0', fontSize: '0.66rem', color: 'var(--chat-control-text-soft)', textAlign: 'right' }}>
                     Respuestas rapidas deshabilitadas para esta empresa o plan.
                 </div>
             )}

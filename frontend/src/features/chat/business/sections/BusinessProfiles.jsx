@@ -165,7 +165,7 @@ export const ClientProfilePanel = ({ contact, chats = [], onClose, onQuickAiActi
                         <div className="client-profile-card-title">Etiquetas</div>
                         <div className="client-profile-labels">
                             {contact.labels.map((label, idx) => (
-                                <span key={idx} className="client-profile-label-chip" style={{ '--label-color': label.color || '#5f7380' }}>
+                                <span key={idx} className="client-profile-label-chip" style={{ '--label-color': label.color || 'var(--chat-control-text-soft)' }}>
                                     {label.name}
                                 </span>
                             ))}
@@ -357,7 +357,7 @@ export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout, p
                         <div className="client-profile-card-title">Etiquetas del negocio</div>
                         <div className="client-profile-labels">
                             {labels.map((label) => (
-                                <span key={String(label?.id || label?.name)} className="client-profile-label-chip" style={{ '--label-color': label?.color || '#5f7380' }}>
+                                <span key={String(label?.id || label?.name)} className="client-profile-label-chip" style={{ '--label-color': label?.color || 'var(--chat-control-text-soft)' }}>
                                     {label?.name || `Etiqueta ${label?.id || ''}`}
                                 </span>
                             ))}

@@ -8,7 +8,7 @@ export const renderWhatsAppInline = (text = '') => {
     return tokens.map((token, idx) => {
         if (/^https?:\/\/[^\s]+$/i.test(token)) {
             return (
-                <a key={`url_${idx}`} href={token} target="_blank" rel="noreferrer" style={{ color: '#7cc8ff', textDecoration: 'underline' }}>
+                <a key={`url_${idx}`} href={token} target="_blank" rel="noreferrer" style={{ color: 'var(--chat-link)', textDecoration: 'underline' }}>
                     {token}
                 </a>
             );
@@ -18,7 +18,7 @@ export const renderWhatsAppInline = (text = '') => {
         if (/^~[^~\n]+~$/.test(token)) return <s key={`s_${idx}`}>{token.slice(1, -1)}</s>;
         if (/^`[^`\n]+`$/.test(token)) {
             return (
-                <code key={`m_${idx}`} style={{ fontFamily: 'Consolas, Monaco, monospace', fontSize: '0.88em', background: 'rgba(0,0,0,0.22)', borderRadius: '4px', padding: '1px 4px' }}>
+                <code key={`m_${idx}`} style={{ fontFamily: 'Consolas, Monaco, monospace', fontSize: '0.88em', background: 'var(--chat-code-surface)', border: '1px solid var(--chat-code-border)', borderRadius: '4px', padding: '1px 4px' }}>
                     {token.slice(1, -1)}
                 </code>
             );
@@ -64,8 +64,8 @@ export const renderWhatsAppFormattedText = (text = '') => {
                 style={{
                     margin: '6px 0 2px',
                     borderRadius: '7px',
-                    border: '1px solid rgba(255,255,255,0.18)',
-                    background: 'rgba(0,0,0,0.28)',
+                    border: '1px solid var(--chat-code-border)',
+                    background: 'var(--chat-code-surface)',
                     padding: '8px',
                     whiteSpace: 'pre-wrap',
                     overflowWrap: 'anywhere',

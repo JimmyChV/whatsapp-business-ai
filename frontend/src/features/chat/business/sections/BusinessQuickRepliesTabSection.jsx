@@ -7,32 +7,33 @@ export default function BusinessQuickRepliesTabSection({
     canWriteByAssignment = false
 }) {
     return (
-        <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div style={{ background: '#1f2c34', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px' }}>
+        <div className="quick-replies-shell" style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div className="quick-replies-search-card" style={{ background: 'var(--chat-card-surface)', border: '1px solid var(--chat-card-border)', borderRadius: '8px', padding: '8px' }}>
                 <input
+                    className="quick-replies-search-input"
                     type="text"
                     value={quickSearch}
                     disabled={!canWriteByAssignment}
                     onChange={e => setQuickSearch(e.target.value)}
                     placeholder="Buscar respuesta rapida"
-                    style={{ width: '100%', background: '#111b21', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none', opacity: canWriteByAssignment ? 1 : 0.75, cursor: canWriteByAssignment ? 'text' : 'not-allowed' }}
+                    style={{ width: '100%', background: 'var(--chat-control-surface-strong)', border: '1px solid var(--chat-card-border)', color: 'var(--text-primary)', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none', opacity: canWriteByAssignment ? 1 : 0.75, cursor: canWriteByAssignment ? 'text' : 'not-allowed' }}
                 />
             </div>
 
-            <div style={{ background: '#202c33', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '10px', color: '#8696a0', fontSize: '0.78rem' }}>
+            <div className="quick-replies-info" style={{ background: 'var(--chat-info-surface)', borderRadius: '10px', border: '1px solid var(--chat-info-border)', padding: '10px', color: 'var(--chat-control-text-soft)', fontSize: '0.78rem' }}>
                 Gestion centralizada: crea y edita respuestas rapidas solo desde Panel SaaS. En chat puedes buscarlas y usarlas.
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+            <div className="quick-replies-list" style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
                 {filteredQuickReplies.length === 0 ? (
-                    <div style={{ background: '#1f2c34', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '10px', color: '#8696a0', fontSize: '0.78rem' }}>
+                    <div className="quick-replies-empty" style={{ background: 'var(--chat-card-surface)', border: '1px solid var(--chat-card-border)', borderRadius: '8px', padding: '10px', color: 'var(--chat-control-text-soft)', fontSize: '0.78rem' }}>
                         No hay respuestas rapidas para mostrar.
                     </div>
                 ) : (
                     filteredQuickReplies.map((qr) => (
-                        <div key={qr.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'center' }}>
+                        <div key={qr.id} className="quick-replies-item-row" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'center' }}>
                             <button
-                                className="ai-prompt-chip"
+                                className="ai-prompt-chip quick-replies-item"
                                 onClick={() => {
                                     if (typeof onSendQuickReply === 'function') {
                                         onSendQuickReply(qr);
@@ -45,19 +46,19 @@ export default function BusinessQuickRepliesTabSection({
                                     width: '100%',
                                     padding: '10px 12px',
                                     borderRadius: '8px',
-                                    background: '#202c33',
-                                    border: '1px solid var(--border-color)',
+                                    background: 'var(--chat-card-surface)',
+                                    border: '1px solid var(--chat-card-border)',
                                     cursor: canWriteByAssignment ? 'pointer' : 'not-allowed',
                                     textAlign: 'left',
                                     color: 'var(--text-primary)',
                                     transition: 'all 0.12s',
                                     opacity: canWriteByAssignment ? 1 : 0.75
                                 }}
-                                onMouseEnter={e => e.currentTarget.style.borderColor = '#00a884'}
-                                onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-color)'}
+                                onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--saas-accent-primary)'}
+                                onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--chat-card-border)'}
                             >
-                                <div style={{ fontSize: '0.84rem', fontWeight: 500, marginBottom: '3px' }}>{qr.label}</div>
-                                <div style={{ fontSize: '0.72rem', color: '#8696a0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                <div className="quick-replies-item-title" style={{ fontSize: '0.84rem', fontWeight: 500, marginBottom: '3px' }}>{qr.label}</div>
+                                <div className="quick-replies-item-preview" style={{ fontSize: '0.72rem', color: 'var(--chat-control-text-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                     {String(qr.text || '').split('\n')[0]}
                                 </div>
                             </button>

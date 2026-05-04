@@ -203,14 +203,14 @@ const ChatWindow = ({
                             </span>
                         )}
                         {activeChatDetails?.isBusiness && <span className="chat-header-secondary-pill">Business</span>}
-                        {visibleHeaderLabels.map((label, index) => (
-                            <span
-                                key={`${label?.id || label?.name || 'h'}_${index}`}
-                                className="chat-header-label-chip chat-header-label-chip--compact"
-                                style={{ '--label-color': label?.color || '#7a8f9a' }}
-                                title={label?.name || 'Etiqueta'}
-                            >
-                                {label?.name || 'Etiqueta'}
+                                {visibleHeaderLabels.map((label, index) => (
+                                    <span
+                                        key={`${label?.id || label?.name || 'h'}_${index}`}
+                                        className="chat-header-label-chip chat-header-label-chip--compact"
+                                        style={{ '--label-color': label?.color || 'var(--chat-control-text-soft)' }}
+                                        title={label?.name || 'Etiqueta'}
+                                    >
+                                        {label?.name || 'Etiqueta'}
                             </span>
                         ))}
                         {hiddenHeaderLabelsCount > 0 && (
@@ -266,7 +266,7 @@ const ChatWindow = ({
                                     return (
                                         <label key={labelId || label.name} className="chat-header-label-option">
                                             <input type="checkbox" checked={isActive} onChange={() => onToggleChatLabel?.(activeChatDetails?.id, labelId)} />
-                                            <span className="chat-header-label-color" style={{ background: label.color || '#8696a0' }} />
+                                            <span className="chat-header-label-color" style={{ background: label.color || 'var(--chat-control-text-soft)' }} />
                                             <span className="chat-header-label-name">{label.name}</span>
                                         </label>
                                     );
@@ -315,7 +315,7 @@ const ChatWindow = ({
             {/* In-chat Search Bar */}
             {searchVisible && (
                 <div className="chat-searchbar">
-                    <Search size={16} color="#8696a0" />
+                    <Search size={16} color="var(--chat-control-text-soft)" />
                     <input
                         autoFocus
                         type="text"
@@ -325,22 +325,22 @@ const ChatWindow = ({
                         style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text-primary)', fontSize: '0.9rem' }}
                     />
                     {matchIndexes.length > 0 && (
-                        <span style={{ fontSize: '0.75rem', color: '#9db0ba' }}>{activeMatchIdx + 1}/{matchIndexes.length}</span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--chat-control-text-soft)' }}>{activeMatchIdx + 1}/{matchIndexes.length}</span>
                     )}
                     <button disabled={matchIndexes.length === 0} onClick={() => {
                         if (!matchIndexes.length) return;
                         const next = (activeMatchIdx - 1 + matchIndexes.length) % matchIndexes.length;
                         setActiveMatchIdx(next);
                         jumpToMatch(next);
-                    }} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: matchIndexes.length ? 1 : 0.4 }}><ChevronUp size={16} color="#8696a0" /></button>
+                    }} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: matchIndexes.length ? 1 : 0.4 }}><ChevronUp size={16} color="var(--chat-control-text-soft)" /></button>
                     <button disabled={matchIndexes.length === 0} onClick={() => {
                         if (!matchIndexes.length) return;
                         const next = (activeMatchIdx + 1) % matchIndexes.length;
                         setActiveMatchIdx(next);
                         jumpToMatch(next);
-                    }} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: matchIndexes.length ? 1 : 0.4 }}><ChevronDown size={16} color="#8696a0" /></button>
+                    }} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: matchIndexes.length ? 1 : 0.4 }}><ChevronDown size={16} color="var(--chat-control-text-soft)" /></button>
                     <button onClick={() => { setSearchVisible(false); setChatSearch(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                        <X size={16} color="#8696a0" />
+                        <X size={16} color="var(--chat-control-text-soft)" />
                     </button>
                 </div>
             )}

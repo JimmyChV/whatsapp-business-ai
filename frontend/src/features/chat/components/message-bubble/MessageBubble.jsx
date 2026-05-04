@@ -336,17 +336,39 @@ const MessageBubble = ({
         onSendReaction(messageId, safeEmoji);
         setShowReactionPicker(false);
     };
+    const tone = {
+        successSurface: 'var(--chat-success-surface)',
+        successBorder: 'var(--chat-success-border)',
+        successText: 'var(--chat-success-text)',
+        infoSurface: 'var(--chat-info-surface)',
+        infoBorder: 'var(--chat-info-border)',
+        infoText: 'var(--chat-info-text)',
+        cardSurface: 'var(--chat-card-surface)',
+        cardSurfaceAlt: 'var(--chat-card-surface-alt)',
+        cardBorder: 'var(--chat-card-border)',
+        controlSurface: 'var(--chat-control-surface)',
+        controlStrongSurface: 'var(--chat-control-surface-strong)',
+        controlBorder: 'var(--chat-control-border)',
+        text: 'var(--text-primary)',
+        textSoft: 'var(--chat-control-text-soft)',
+        mutedPanel: 'var(--chat-muted-panel)',
+        mutedPanelSoft: 'var(--chat-muted-panel-soft)',
+        priceText: 'var(--chat-price-text)',
+        warningSurface: 'var(--chat-warning-bg)',
+        warningBorder: 'var(--chat-warning-border)',
+        warningText: 'var(--chat-warning-text-strong)'
+    };
 
     return (
         <div
             ref={bubbleRef}
             className={`message ${isOut ? 'out' : 'in'}${hasMenuActions ? ' has-menu-actions' : ''}${hasReactionSummary ? ' has-reactions' : ''}`}
-            style={isHighlighted ? { outline: `2px solid ${isCurrentHighlighted ? '#00a884' : 'rgba(0,168,132,0.35)'}`, borderRadius: '10px', padding: '2px' } : undefined}
+            style={isHighlighted ? { outline: `2px solid ${isCurrentHighlighted ? tone.successText : tone.successBorder}`, borderRadius: '10px', padding: '2px' } : undefined}
         >
             {isCatalogItem && (
                 <div className="catalog-card">
-                    <div style={{ width: '100%', height: '72px', background: 'linear-gradient(120deg,#233138,#1a252b)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <ShoppingBag size={20} color="#9db0ba" />
+                    <div style={{ width: '100%', height: '72px', background: `linear-gradient(120deg, ${tone.cardSurfaceAlt}, ${tone.controlStrongSurface})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <ShoppingBag size={20} color="var(--chat-control-text-soft)" />
                     </div>
                     <div className="catalog-card-info">
                         <div className="catalog-card-title">{productTitle}</div>
@@ -387,7 +409,7 @@ const MessageBubble = ({
                         maxWidth: 'min(320px, 56vw)',
                         maxHeight: '260px',
                         display: 'block',
-                        background: '#000'
+                        background: tone.cardSurfaceAlt
                     }}
                 />
             )}
@@ -438,17 +460,17 @@ const MessageBubble = ({
 
             {isOrderActionable && (
                 <div style={{
-                    background: 'rgba(0,168,132,0.12)',
-                    border: '1px solid rgba(0,168,132,0.3)',
+                    background: tone.successSurface,
+                    border: `1px solid ${tone.successBorder}`,
                     borderRadius: '8px',
                     padding: '8px 10px',
                     marginBottom: '6px'
                 }}>
-                    <div style={{ fontSize: '0.78rem', color: '#00a884', fontWeight: 700, marginBottom: '4px' }}>
+                    <div style={{ fontSize: '0.78rem', color: tone.successText, fontWeight: 700, marginBottom: '4px' }}>
                         {isProductPayload ? 'Producto compartido' : (isQuotePayload ? 'Cotizacion' : 'Carrito/Pedido del cliente')}
                     </div>
                     {orderIdentifier && (
-                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '2px' }}>ID: {orderIdentifier}</div>
+                        <div style={{ fontSize: '0.74rem', color: tone.textSoft, marginBottom: '2px' }}>ID: {orderIdentifier}</div>
                     )}
                     {isProductPayload && (firstOrderItem?.title || firstOrderItem?.name) && (
                         <div style={{ fontSize: '0.82rem', color: 'var(--text-primary)', marginBottom: '4px', fontWeight: 600 }}>
@@ -456,15 +478,15 @@ const MessageBubble = ({
                         </div>
                     )}
                     {orderSubtotalLabel && !isQuotePayload && (
-                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '4px' }}>Subtotal: {orderSubtotalLabel}</div>
+                        <div style={{ fontSize: '0.74rem', color: tone.textSoft, marginBottom: '4px' }}>Subtotal: {orderSubtotalLabel}</div>
                     )}
                     {isProductPayload ? (
-                        <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>
+                        <div style={{ fontSize: '0.8rem', color: tone.text }}>
                             Puedes anadir este producto al carrito para cotizarlo.
                         </div>
                     ) : isQuotePayload ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <div style={{ fontSize: '0.75rem', color: '#9bb0ba', marginTop: '1px' }}>Detalle de productos:</div>
+                            <div style={{ fontSize: '0.75rem', color: tone.textSoft, marginTop: '1px' }}>Detalle de productos:</div>
                             {orderItems.length > 0 ? orderItems.slice(0, 40).map((item, idx) => {
                                 const itemQty = Number.isFinite(Number(item?.qty)) ? Number(item.qty)
                                     : (Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1);
@@ -475,37 +497,37 @@ const MessageBubble = ({
                                     </div>
                                 );
                             }) : (
-                                <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>No se pudo leer el detalle de productos.</div>
+                                <div style={{ fontSize: '0.8rem', color: tone.text }}>No se pudo leer el detalle de productos.</div>
                             )}
                             {(quoteSubtotalLabel || quoteDiscountLabel || quoteTotalAfterDiscountLabel || quoteDeliveryLabel || quoteTotalPayableLabel) && (
                                 <>
-                                    <div style={{ fontSize: '0.75rem', color: '#9bb0ba', marginTop: '6px' }}>Detalle de pago:</div>
+                                    <div style={{ fontSize: '0.75rem', color: tone.textSoft, marginTop: '6px' }}>Detalle de pago:</div>
                                     {quoteSubtotalLabel && (
-                                        <div style={{ fontSize: '0.79rem', color: '#d6e3eb', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                        <div style={{ fontSize: '0.79rem', color: tone.text, display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
                                             <span>Subtotal</span>
                                             <strong>{quoteSubtotalLabel}</strong>
                                         </div>
                                     )}
                                     {quoteDiscountLabel && (
-                                        <div style={{ fontSize: '0.79rem', color: '#d6e3eb', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                        <div style={{ fontSize: '0.79rem', color: tone.text, display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
                                             <span>Descuento</span>
                                             <strong>- {quoteDiscountLabel}</strong>
                                         </div>
                                     )}
                                     {quoteTotalAfterDiscountLabel && (
-                                        <div style={{ fontSize: '0.79rem', color: '#d6e3eb', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                        <div style={{ fontSize: '0.79rem', color: tone.text, display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
                                             <span>Total con descuento</span>
                                             <strong>{quoteTotalAfterDiscountLabel}</strong>
                                         </div>
                                     )}
                                     {quoteDeliveryLabel && (
-                                        <div style={{ fontSize: '0.79rem', color: '#d6e3eb', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                        <div style={{ fontSize: '0.79rem', color: tone.text, display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
                                             <span>Delivery</span>
                                             <strong>{quoteDeliveryLabel}</strong>
                                         </div>
                                     )}
                                     {quoteTotalPayableLabel && (
-                                        <div style={{ fontSize: '0.82rem', color: '#e8fbf3', display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '2px' }}>
+                                        <div style={{ fontSize: '0.82rem', color: tone.priceText, display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '2px' }}>
                                             <span style={{ fontWeight: 700 }}>TOTAL A PAGAR</span>
                                             <strong style={{ fontWeight: 800 }}>{quoteTotalPayableLabel}</strong>
                                         </div>
@@ -521,19 +543,19 @@ const MessageBubble = ({
                         return (
                             <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>- {itemTitle} x{itemQty}{item?.sku ? ` (SKU: ${item.sku})` : ''}</span>
-                                <span style={{ color: '#9bb0ba', flexShrink: 0 }}>{itemAmount || ''}</span>
+                                <span style={{ color: tone.textSoft, flexShrink: 0 }}>{itemAmount || ''}</span>
                             </div>
                         );
                     }) : (
-                        <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>Se recibio un pedido desde catalogo de WhatsApp.</div>
+                        <div style={{ fontSize: '0.8rem', color: tone.text }}>Se recibio un pedido desde catalogo de WhatsApp.</div>
                     )}
                     {!isProductPayload && !isQuotePayload && safeOrderNote && (
-                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginTop: '6px' }}>
+                        <div style={{ fontSize: '0.74rem', color: tone.textSoft, marginTop: '6px' }}>
                             Nota cliente: {safeOrderNote}
                         </div>
                     )}
                     {!isProductPayload && !isQuotePayload && actionOrder?.rawPreview?.itemCount && (
-                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginTop: '2px' }}>
+                        <div style={{ fontSize: '0.74rem', color: tone.textSoft, marginTop: '2px' }}>
                             Items reportados: {actionOrder.rawPreview.itemCount}
                         </div>
                     )}
@@ -542,9 +564,9 @@ const MessageBubble = ({
                             onClick={() => typeof onLoadOrderToCart === 'function' && onLoadOrderToCart(actionOrder || null)}
                             disabled={typeof onLoadOrderToCart !== 'function'}
                             style={{
-                                background: '#17323f',
-                                color: '#c7f1ff',
-                                border: '1px solid rgba(124,200,255,0.45)',
+                                background: tone.infoSurface,
+                                color: tone.infoText,
+                                border: `1px solid ${tone.infoBorder}`,
                                 borderRadius: '6px',
                                 padding: '6px 10px',
                                 cursor: typeof onLoadOrderToCart === 'function' ? 'pointer' : 'not-allowed',
@@ -584,15 +606,16 @@ const MessageBubble = ({
                     </div>
                 )}
                 {quotedMessage && (
-                    <div style={{
-                        borderLeft: '3px solid ' + (quotedMessage.fromMe ? '#73dbf8' : '#00a884'),
-                        background: 'rgba(0,0,0,0.16)',
-                        borderRadius: '8px',
-                        padding: '6px 8px',
-                        marginBottom: '6px',
-                        cursor: quotedMessage.id ? 'pointer' : 'default'
-                    }}>
+                    <div
+                        className="message-quoted-context"
+                        style={{
+                            '--message-quoted-border': quotedMessage.fromMe ? tone.infoBorder : tone.successBorder,
+                            '--message-quoted-label': quotedMessage.fromMe ? tone.infoText : tone.successText,
+                            cursor: quotedMessage.id ? 'pointer' : 'default'
+                        }}
+                    >
                         <div
+                            className="message-quoted-context__inner"
                             role={quotedMessage.id ? 'button' : undefined}
                             tabIndex={quotedMessage.id ? 0 : undefined}
                             onClick={handleJumpToQuotedMessage}
@@ -605,10 +628,10 @@ const MessageBubble = ({
                             }}
                             style={{ outline: 'none' }}
                         >
-                            <div style={{ fontSize: '0.68rem', fontWeight: 700, color: quotedMessage.fromMe ? '#9fe9ff' : '#72f3d3', marginBottom: '2px' }}>
-                            {quotedMessage.fromMe ? 'Tu mensaje' : 'Mensaje respondido'}
+                            <div className="message-quoted-context__label">
+                                {quotedMessage.fromMe ? 'Tu mensaje' : 'Mensaje respondido'}
                             </div>
-                            <div style={{ fontSize: '0.78rem', color: '#c8d8e0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <div className="message-quoted-context__body">
                                 {quotedMessage.body}
                             </div>
                         </div>
@@ -616,13 +639,13 @@ const MessageBubble = ({
                 )}
                 {isLocationMessage && (
                     <div style={{
-                        border: '1px solid rgba(0,168,132,0.38)',
-                        background: 'rgba(0,0,0,0.16)',
+                        border: `1px solid ${tone.successBorder}`,
+                        background: tone.mutedPanelSoft,
                         borderRadius: '9px',
                         padding: '8px',
                         marginBottom: '6px'
                     }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#00c7a0', fontSize: '0.78rem', fontWeight: 700 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: tone.successText, fontSize: '0.78rem', fontWeight: 700 }}>
                             <MapPin size={14} /> Ubicacion compartida
                         </div>
 
@@ -633,12 +656,12 @@ const MessageBubble = ({
                                 style={{
                                     marginTop: '7px',
                                     width: '100%',
-                                    border: '1px solid rgba(124,200,255,0.35)',
+                                    border: `1px solid ${tone.infoBorder}`,
                                     borderRadius: '8px',
                                     overflow: 'hidden',
                                     padding: 0,
                                     cursor: 'pointer',
-                                    background: '#17242d'
+                                    background: tone.cardSurfaceAlt
                                 }}
                             >
                                 <iframe
@@ -651,11 +674,11 @@ const MessageBubble = ({
                             </button>
                         )}
 
-                        <div style={{ fontSize: '0.84rem', color: '#e4edf2', marginTop: '6px' }}>
+                        <div style={{ fontSize: '0.84rem', color: tone.text, marginTop: '6px' }}>
                             {locationData?.label || 'Ubicacion'}
                         </div>
                         {(locationData?.latitude !== null && locationData?.longitude !== null) && (
-                            <div style={{ fontSize: '0.72rem', color: '#97aab4', marginTop: '2px' }}>
+                            <div style={{ fontSize: '0.72rem', color: tone.textSoft, marginTop: '2px' }}>
                                 {locationData.latitude.toFixed(6)}, {locationData.longitude.toFixed(6)}
                             </div>
                         )}
@@ -664,9 +687,9 @@ const MessageBubble = ({
                                 type="button"
                                 onClick={() => openMapPopup({ query: locationMapQuery, mapUrl: locationData?.mapUrl, latitude: locationData?.latitude, longitude: locationData?.longitude })}
                                 style={{
-                                    border: '1px solid rgba(124,200,255,0.45)',
-                                    background: 'rgba(124,200,255,0.12)',
-                                    color: '#cfefff',
+                                    border: `1px solid ${tone.infoBorder}`,
+                                    background: tone.infoSurface,
+                                    color: tone.infoText,
                                     borderRadius: '999px',
                                     padding: '4px 10px',
                                     fontSize: '0.74rem',
@@ -693,8 +716,8 @@ const MessageBubble = ({
                             gap: '10px',
                             textDecoration: 'none',
                             color: 'inherit',
-                            border: '1px solid rgba(124,200,255,0.26)',
-                            background: 'rgba(16,26,34,0.72)',
+                            border: `1px solid ${tone.infoBorder}`,
+                            background: tone.cardSurfaceAlt,
                             borderRadius: '10px',
                             padding: '8px',
                             marginBottom: '6px'
@@ -708,14 +731,14 @@ const MessageBubble = ({
                             />
                         )}
                         <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: '0.72rem', color: '#82d0ff', marginBottom: '2px' }}>
+                            <div style={{ fontSize: '0.72rem', color: tone.infoText, marginBottom: '2px' }}>
                                 {webPreviewLoading ? 'Cargando vista previa...' : 'Enlace'}
                             </div>
-                            <div style={{ fontSize: '0.84rem', color: '#e8f1f6', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <div style={{ fontSize: '0.84rem', color: tone.text, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {webPreview?.title || webPreview?.siteName || firstNonMapUrl}
                             </div>
                             {webPreview?.description && (
-                                <div style={{ fontSize: '0.74rem', color: '#9cb1ba', marginTop: '2px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                <div style={{ fontSize: '0.74rem', color: tone.textSoft, marginTop: '2px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                                     {webPreview.description}
                                 </div>
                             )}
@@ -785,9 +808,9 @@ const MessageBubble = ({
                         }}
                         style={{
                             marginTop: '6px',
-                            border: '1px solid rgba(0,168,132,0.45)',
-                            background: 'rgba(0,168,132,0.14)',
-                            color: '#baf6e8',
+                            border: `1px solid ${tone.successBorder}`,
+                            background: tone.successSurface,
+                            color: tone.successText,
                             borderRadius: '999px',
                             padding: '4px 10px',
                             fontSize: '0.73rem',
@@ -883,15 +906,15 @@ const MessageBubble = ({
                 {showForwardPicker && canForwardMessage && (
                     <div style={{
                         marginTop: '6px',
-                        border: '1px solid rgba(124,200,255,0.32)',
-                        background: 'rgba(15,26,34,0.96)',
+                        border: `1px solid ${tone.infoBorder}`,
+                        background: tone.cardSurface,
                         borderRadius: '10px',
                         padding: '8px',
                         minWidth: '220px',
                         maxWidth: '320px',
                         alignSelf: isOut ? 'flex-end' : 'flex-start'
                     }}>
-                        <div style={{ fontSize: '0.72rem', color: '#7cc8ff', fontWeight: 700, marginBottom: '6px' }}>
+                        <div style={{ fontSize: '0.72rem', color: tone.infoText, fontWeight: 700, marginBottom: '6px' }}>
                             Reenviar a...
                         </div>
                         <input
@@ -902,9 +925,9 @@ const MessageBubble = ({
                             style={{
                                 width: '100%',
                                 borderRadius: '8px',
-                                border: '1px solid rgba(255,255,255,0.18)',
-                                background: 'rgba(255,255,255,0.04)',
-                                color: '#e8f1f6',
+                                border: `1px solid ${tone.controlBorder}`,
+                                background: tone.controlStrongSurface,
+                                color: tone.text,
                                 padding: '5px 8px',
                                 fontSize: '0.75rem',
                                 marginBottom: '6px'
@@ -918,9 +941,9 @@ const MessageBubble = ({
                                     onClick={() => handleForwardSelect(chat.id)}
                                     style={{
                                         textAlign: 'left',
-                                        border: '1px solid rgba(255,255,255,0.1)',
-                                        background: 'rgba(255,255,255,0.02)',
-                                        color: '#e8f1f6',
+                                        border: `1px solid ${tone.cardBorder}`,
+                                        background: tone.cardSurfaceAlt,
+                                        color: tone.text,
                                         borderRadius: '8px',
                                         padding: '5px 7px',
                                         cursor: 'pointer'
@@ -930,13 +953,13 @@ const MessageBubble = ({
                                         {chat.name || chat.phone || 'Chat'}
                                     </div>
                                     {(chat.phone || chat.subtitle) && (
-                                        <div style={{ fontSize: '0.68rem', color: '#9db0ba', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        <div style={{ fontSize: '0.68rem', color: tone.textSoft, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                             {chat.phone || chat.subtitle}
                                         </div>
                                     )}
                                 </button>
                             )) : (
-                                <div style={{ fontSize: '0.72rem', color: '#9db0ba' }}>No se encontraron chats.</div>
+                                <div style={{ fontSize: '0.72rem', color: tone.textSoft }}>No se encontraron chats.</div>
                             )}
                         </div>
                     </div>
@@ -947,13 +970,13 @@ const MessageBubble = ({
                         marginTop: '4px',
                         marginBottom: '2px',
                         fontSize: '0.68rem',
-                        color: 'rgba(214,231,240,0.82)',
+                        color: tone.textSoft,
                         alignSelf: 'flex-end',
                         textAlign: 'right'
                     }}>
-                        Respondio: <strong style={{ color: '#e8f3f8', fontWeight: 600 }}>{displaySentByName}</strong>
+                        Respondio: <strong style={{ color: tone.text, fontWeight: 600 }}>{displaySentByName}</strong>
                         {safeSentViaLabel && (
-                            <span style={{ color: '#9eb2bf' }}>
+                            <span style={{ color: tone.textSoft }}>
                                 {' - '}{safeSentViaLabel}
                             </span>
                         )}

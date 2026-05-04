@@ -50,6 +50,11 @@ const ChatInput = ({
     const [isLoadingPreview, setIsLoadingPreview] = useState(false);
     const [selectionState, setSelectionState] = useState(null);
     const [preferredSkinTone, setPreferredSkinTone] = useState(SkinTones.NEUTRAL);
+    const [emojiTheme, setEmojiTheme] = useState(() => (
+        typeof document !== 'undefined' && document.documentElement?.getAttribute('data-theme') === 'light'
+            ? Theme.LIGHT
+            : Theme.DARK
+    ));
     const inputRef = useRef(null);
     const chatInputRef = useRef(null);
     const draftQuickReplyLabel = String(quickReplyDraft?.label || '').trim();
@@ -352,6 +357,19 @@ const ChatInput = ({
     }, []);
 
     useEffect(() => {
+        if (typeof document === 'undefined') return undefined;
+        const root = document.documentElement;
+        if (!root) return undefined;
+        const syncTheme = () => {
+            setEmojiTheme(root.getAttribute('data-theme') === 'light' ? Theme.LIGHT : Theme.DARK);
+        };
+        syncTheme();
+        const observer = new MutationObserver(syncTheme);
+        observer.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+        return () => observer.disconnect();
+    }, []);
+
+    useEffect(() => {
         const url = extractFirstUrl(inputText);
         if (!url) {
             setLinkPreview(null);
@@ -385,14 +403,14 @@ const ChatInput = ({
     return (
         <div className="chat-input-area chat-input-area-pro" style={{ position: 'relative' }} ref={chatInputRef}>
             {editingMessage?.id && (
-                <div style={{
+                <div className="chat-draft-banner chat-draft-banner--edit" style={{
                     position: 'absolute',
                     left: '12px',
                     right: '12px',
                     bottom: '100%',
                     marginBottom: '8px',
-                    border: '1px solid rgba(0, 168, 132, 0.45)',
-                    background: '#1f2c34',
+                    border: '1px solid var(--chat-success-border)',
+                    background: 'var(--chat-success-surface)',
                     borderRadius: '10px',
                     padding: '8px 10px',
                     display: 'flex',
@@ -402,15 +420,16 @@ const ChatInput = ({
                     zIndex: 40
                 }}>
                     <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: '0.72rem', color: '#00a884', fontWeight: 700, marginBottom: '2px' }}>Editando mensaje</div>
-                        <div style={{ fontSize: '0.78rem', color: '#b6c7cf', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div className="chat-draft-banner__title" style={{ fontSize: '0.72rem', color: 'var(--chat-success-text)', fontWeight: 700, marginBottom: '2px' }}>Editando mensaje</div>
+                        <div className="chat-draft-banner__text" style={{ fontSize: '0.78rem', color: 'var(--chat-control-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {String(editingMessage?.originalBody || '').trim() || 'Mensaje sin texto'}
                         </div>
                     </div>
                     <button
                         type="button"
+                        className="chat-draft-banner__action"
                         onClick={() => onCancelEditMessage && onCancelEditMessage()}
-                        style={{ border: '1px solid rgba(255,255,255,0.18)', background: 'transparent', color: '#d8e3e8', borderRadius: '8px', padding: '4px 10px', fontSize: '0.78rem', cursor: 'pointer' }}
+                        style={{ border: '1px solid var(--chat-card-border)', background: 'transparent', color: 'var(--chat-control-text)', borderRadius: '8px', padding: '4px 10px', fontSize: '0.78rem', cursor: 'pointer' }}
                     >
                         Cancelar
                     </button>
@@ -418,14 +437,14 @@ const ChatInput = ({
             )}
 
             {!editingMessage?.id && replyingMessage?.id && (
-                <div style={{
+                <div className="chat-draft-banner chat-draft-banner--reply" style={{
                     position: 'absolute',
                     left: '12px',
                     right: '12px',
                     bottom: '100%',
                     marginBottom: '8px',
-                    border: '1px solid rgba(124, 200, 255, 0.45)',
-                    background: '#1b2831',
+                    border: '1px solid var(--chat-info-border)',
+                    background: 'var(--chat-info-surface)',
                     borderRadius: '10px',
                     padding: '8px 10px',
                     display: 'flex',
@@ -435,17 +454,18 @@ const ChatInput = ({
                     zIndex: 39
                 }}>
                     <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: '0.72rem', color: '#7cc8ff', fontWeight: 700, marginBottom: '2px' }}>
+                        <div className="chat-draft-banner__title" style={{ fontSize: '0.72rem', color: 'var(--chat-info-text)', fontWeight: 700, marginBottom: '2px' }}>
                             Respondiendo {replyingMessage?.fromMe ? 'tu mensaje' : 'mensaje del cliente'}
                         </div>
-                        <div style={{ fontSize: '0.78rem', color: '#b6c7cf', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div className="chat-draft-banner__text" style={{ fontSize: '0.78rem', color: 'var(--chat-control-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {String(replyingMessage?.body || '').trim() || 'Mensaje sin texto'}
                         </div>
                     </div>
                     <button
                         type="button"
+                        className="chat-draft-banner__action"
                         onClick={() => onCancelReplyMessage && onCancelReplyMessage()}
-                        style={{ border: '1px solid rgba(255,255,255,0.18)', background: 'transparent', color: '#d8e3e8', borderRadius: '8px', padding: '4px 10px', fontSize: '0.78rem', cursor: 'pointer' }}
+                        style={{ border: '1px solid var(--chat-card-border)', background: 'transparent', color: 'var(--chat-control-text)', borderRadius: '8px', padding: '4px 10px', fontSize: '0.78rem', cursor: 'pointer' }}
                     >
                         Cancelar
                     </button>
@@ -453,14 +473,14 @@ const ChatInput = ({
             )}
 
             {!editingMessage?.id && hasDraftQuickReply && (
-                <div style={{
+                <div className="chat-draft-banner chat-draft-banner--quick-reply" style={{
                     position: 'absolute',
                     left: '12px',
                     right: '12px',
                     bottom: '100%',
                     marginBottom: replyingMessage?.id ? '74px' : '8px',
-                    border: '1px solid rgba(0, 168, 132, 0.55)',
-                    background: '#173138',
+                    border: '1px solid var(--chat-success-border)',
+                    background: 'var(--chat-success-surface)',
                     borderRadius: '10px',
                     padding: '8px 10px',
                     display: 'flex',
@@ -470,28 +490,28 @@ const ChatInput = ({
                     zIndex: 38
                 }}>
                     <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: '0.72rem', color: '#00d4aa', fontWeight: 700, marginBottom: '2px' }}>
+                        <div className="chat-draft-banner__title" style={{ fontSize: '0.72rem', color: 'var(--chat-success-text)', fontWeight: 700, marginBottom: '2px' }}>
                             Respuesta rapida cargada{draftQuickReplyLabel ? `: ${draftQuickReplyLabel}` : ''}
                         </div>
-                        <div style={{ fontSize: '0.78rem', color: '#d4e2e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div className="chat-draft-banner__text" style={{ fontSize: '0.78rem', color: 'var(--chat-control-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {draftQuickReplyText || `Adjuntos: ${draftQuickReplyAssets.length}`}
                         </div>
                         {draftQuickReplyPreviewAssets.length > 0 && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
+                            <div className="chat-draft-banner__attachments" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
                                 {draftQuickReplyPreviewAssets.slice(0, 3).map((asset, assetIdx) => (
-                                    <div key={`draft_qr_preview_${assetIdx}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 8px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.14)', background: 'rgba(0,0,0,0.18)', maxWidth: '230px' }}>
+                                    <div key={`draft_qr_preview_${assetIdx}`} className="chat-draft-banner__attachment" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 8px', borderRadius: '8px', border: '1px solid var(--chat-card-border)', background: 'var(--chat-card-surface-alt)', maxWidth: '230px' }}>
                                         {asset.isImage ? (
                                             <img src={asset.previewUrl} alt={asset.name} style={{ width: '28px', height: '28px', borderRadius: '6px', objectFit: 'cover', flexShrink: 0 }} />
                                         ) : (
-                                            <span style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px dashed rgba(255,255,255,0.3)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', color: '#b8ccd8', flexShrink: 0 }}>
+                                            <span style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px dashed var(--chat-card-border)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', color: 'var(--chat-control-text-soft)', flexShrink: 0 }}>
                                                 {String(asset?.mimeType || 'file').split('/')[1] || 'file'}
                                             </span>
                                         )}
                                         <div style={{ minWidth: 0 }}>
-                                            <div style={{ fontSize: '0.72rem', color: '#d4e2e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            <div className="chat-draft-banner__attachment-name" style={{ fontSize: '0.72rem', color: 'var(--chat-control-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                 {asset.name}
                                             </div>
-                                            <div style={{ fontSize: '0.66rem', color: '#9fb6c1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            <div className="chat-draft-banner__attachment-meta" style={{ fontSize: '0.66rem', color: 'var(--chat-control-text-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                 {(asset.mimeType || 'archivo').replace('application/', '')}
                                                 {asset.sizeBytes ? ` | ${formatAssetBytes(asset.sizeBytes)}` : ''}
                                             </div>
@@ -499,15 +519,16 @@ const ChatInput = ({
                                     </div>
                                 ))}
                                 {draftQuickReplyPreviewAssets.length > 3 && (
-                                    <div style={{ fontSize: '0.68rem', color: '#9fb6c1' }}>+{draftQuickReplyPreviewAssets.length - 3} adjuntos</div>
+                                    <div style={{ fontSize: '0.68rem', color: 'var(--chat-control-text-soft)' }}>+{draftQuickReplyPreviewAssets.length - 3} adjuntos</div>
                                 )}
                             </div>
                         )}
                     </div>
                     <button
                         type="button"
+                        className="chat-draft-banner__action"
                         onClick={() => onClearQuickReplyDraft && onClearQuickReplyDraft()}
-                        style={{ border: '1px solid rgba(255,255,255,0.18)', background: 'transparent', color: '#d8e3e8', borderRadius: '8px', padding: '4px 10px', fontSize: '0.78rem', cursor: 'pointer' }}
+                        style={{ border: '1px solid var(--chat-card-border)', background: 'transparent', color: 'var(--chat-control-text)', borderRadius: '8px', padding: '4px 10px', fontSize: '0.78rem', cursor: 'pointer' }}
                     >
                         Limpiar
                     </button>
@@ -517,24 +538,24 @@ const ChatInput = ({
             {/* Commands popover */}
             {showCommands && (
                 <div className="floating-panel commands-panel">
-                    <div style={{ padding: '6px 14px', color: '#00a884', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em' }}>RESPUESTAS RAPIDAS</div>
+                    <div style={{ padding: '6px 14px', color: 'var(--chat-success-text)', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em' }}>RESPUESTAS RAPIDAS</div>
                     {filteredQuickReplies.length === 0 && (
-                        <div style={{ padding: '10px 14px', color: '#9db0ba', fontSize: '0.78rem' }}>
+                        <div style={{ padding: '10px 14px', color: 'var(--chat-control-text-soft)', fontSize: '0.78rem' }}>
                             No hay respuestas rapidas para este modulo.
                         </div>
                     )}
                     {filteredQuickReplies.map((item) => (
                         <div key={String(item?.id || item?.label || Math.random())} onClick={() => selectQuickReply(item)}
                             style={{ padding: '10px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}
-                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                            onMouseEnter={e => e.currentTarget.style.background = 'var(--chat-button-ghost-hover)'}
                             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                         >
-                            <Sparkles size={15} color="#00a884" />
+                            <Sparkles size={15} color="var(--chat-success-text)" />
                             <div style={{ minWidth: 0 }}>
                                 <div style={{ fontSize: '0.9rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                     {String(item?.label || 'Respuesta rapida')}
                                 </div>
-                                <div style={{ fontSize: '0.75rem', color: '#8696a0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--chat-control-text-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                     {String(item?.text || item?.mediaFileName || 'Adjunto').split('\n')[0]}
                                 </div>
                             </div>
@@ -560,7 +581,7 @@ const ChatInput = ({
                         skinTonePickerLocation={SkinTonePickerLocation.SEARCH}
                         emojiStyle={EmojiStyle.APPLE}
                         previewConfig={{ showPreview: false }}
-                        theme={Theme.DARK}
+                        theme={emojiTheme}
                     />
                 </div>
             )}
@@ -604,14 +625,14 @@ const ChatInput = ({
                         <img src={linkPreview.image} alt="preview" style={{ width: '64px', height: '64px', borderRadius: '8px', objectFit: 'cover', flexShrink: 0 }} />
                     )}
                     <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: '0.72rem', color: '#00a884', marginBottom: '2px' }}>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--chat-success-text)', marginBottom: '2px' }}>
                             {isLoadingPreview ? 'Cargando vista previa...' : 'Vista previa del enlace'}
                         </div>
                         <div style={{ fontSize: '0.84rem', color: 'var(--text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {linkPreview?.title || linkPreview?.siteName || linkPreview?.url}
                         </div>
                         {linkPreview?.description && (
-                            <div style={{ fontSize: '0.75rem', color: '#8696a0', marginTop: '2px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--chat-control-text-soft)', marginTop: '2px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                                 {linkPreview.description}
                             </div>
                         )}
@@ -626,7 +647,7 @@ const ChatInput = ({
                     {attachmentPreview !== 'document' ? (
                         <img src={attachmentPreview} alt="Preview" style={{ maxWidth: '160px', maxHeight: '160px', borderRadius: '8px' }} />
                     ) : (
-                        <div style={{ padding: '15px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', fontSize: '0.8rem' }}>
+                        <div style={{ padding: '15px', background: 'var(--chat-card-surface-alt)', border: '1px solid var(--chat-card-border)', borderRadius: '8px', fontSize: '0.8rem', color: 'var(--chat-control-text)' }}>
                             Archivo: {attachment.filename}
                         </div>
                     )}
@@ -725,7 +746,7 @@ const ChatInput = ({
                 {/* AI button */}
                 <button
                     className="btn-icon"
-                    style={{ color: isAiLoading ? '#8a2be2' : '#8696a0', animation: isAiLoading ? 'spin 2s linear infinite' : 'none' }}
+                    style={{ color: isAiLoading ? 'var(--saas-accent-info)' : 'var(--chat-control-text-soft)', animation: isAiLoading ? 'spin 2s linear infinite' : 'none' }}
                     onClick={onRequestAiSuggestion}
                     title="Sugerencia IA (/ayudar)"
                     disabled={isTemplateOnlyMode}

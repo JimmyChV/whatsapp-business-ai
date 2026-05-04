@@ -1162,6 +1162,16 @@ export default function useSocketChatConversationEvents({
                 reactions: Array.isArray(msg?.reactions) ? msg.reactions : []
             };
 
+            if (!normalizedIncoming?.fromMe) {
+                normalizedIncoming.type = String(normalizedIncoming?.type || '').trim().toLowerCase() === 'template'
+                    ? 'chat'
+                    : normalizedIncoming.type;
+                normalizedIncoming.templateName = null;
+                normalizedIncoming.templateLanguage = null;
+                normalizedIncoming.templatePreviewText = null;
+                normalizedIncoming.templateComponents = [];
+            }
+
             const fallbackSessionName = normalizedIncoming?.fromMe
                 ? String(sessionSenderIdentity?.name || '').trim()
                 : '';

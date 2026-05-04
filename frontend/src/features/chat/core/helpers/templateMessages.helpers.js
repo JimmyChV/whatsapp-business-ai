@@ -63,6 +63,23 @@ export function mergeTemplateMessageContent(existingMessage = {}, incomingMessag
         ...incoming
     };
 
+    const incomingIsStructuredTemplate = Boolean(
+        incomingTemplate.isTemplateMessage
+        && (
+            Array.isArray(incoming?.templateComponents)
+            || toLower(incoming?.type || '') === 'template'
+            || toText(incoming?.templatePreviewText || '')
+        )
+    );
+    const incomingLooksLikePlainMessage = Boolean(
+        !incomingIsStructuredTemplate
+        && (
+            toText(incoming?.body || '')
+            || toText(incoming?.caption || '')
+            || toText(incoming?.text || '')
+        )
+    );
+
     if (existingHasRealContent && !incomingHasStructuredContent) {
         merged.templateComponents = Array.isArray(existing?.templateComponents) ? existing.templateComponents : [];
         merged.templatePreviewText = existing?.templatePreviewText || existingPreviewText || null;
@@ -83,6 +100,13 @@ export function mergeTemplateMessageContent(existingMessage = {}, incomingMessag
 
     if (!toText(merged.body) || (incomingLooksGeneric && existingHasRealContent)) {
         merged.body = existing?.body || existingPreviewText || merged.body;
+    }
+
+    if (incomingLooksLikePlainMessage) {
+        merged.templateComponents = [];
+        merged.templatePreviewText = null;
+        merged.templateName = null;
+        merged.templateLanguage = null;
     }
 
     return merged;
@@ -209,7 +233,12 @@ export function buildTemplateResolvedPreview(template = {}, previewPayload = {})
 
 export function buildRenderedTemplateMessage(message = {}) {
     const source = message && typeof message === 'object' ? message : {};
+    const isOutgoingBusinessMessage = Boolean(source?.fromMe);
     const isExplicitTemplateType = toLower(source?.type || '') === 'template';
+    const templateName = toText(source?.templateName || '');
+    const templateLanguage = toText(source?.templateLanguage || '');
+    const rawTemplatePreviewText = toText(source?.templatePreviewText || '');
+    const rawBodyText = toText(source?.body || '');
     const templateComponents = Array.isArray(source?.templateComponents) ? source.templateComponents : [];
     const renderedComponents = templateComponents
         .map((component = {}) => {
@@ -229,19 +258,44 @@ export function buildRenderedTemplateMessage(message = {}) {
     const bodyText = renderedComponents.find((component) => component.type === 'BODY')?.resolvedText || '';
     const footerText = renderedComponents.find((component) => component.type === 'FOOTER')?.resolvedText || '';
     const previewText = [headerText, bodyText, footerText].filter(Boolean).join('\n').trim()
-        || toText(source?.templatePreviewText || '')
-        || toText(source?.body || '')
-        || `Template: ${toText(source?.templateName || '') || 'sin nombre'}`;
+        || rawTemplatePreviewText
+        || rawBodyText
+        || `Template: ${templateName || 'sin nombre'}`;
+
+    const hasStructuredComponents = renderedComponents.length > 0;
+    const hasStrongTemplateMetadata = Boolean(
+        templateName
+        && (
+            templateLanguage
+            || isExplicitTemplateType
+            || hasStructuredComponents
+        )
+    );
+    const hasMeaningfulTemplatePreview = Boolean(
+        rawTemplatePreviewText
+        && !isGenericTemplateFallbackText(rawTemplatePreviewText, templateName)
+        && hasStrongTemplateMetadata
+    );
+    const hasMeaningfulTemplateBody = Boolean(
+        rawBodyText
+        && templateName
+        && rawBodyText !== rawTemplatePreviewText
+        && !isGenericTemplateFallbackText(rawBodyText, templateName)
+        && hasStrongTemplateMetadata
+    );
 
     return {
         isTemplateMessage: Boolean(
-            isExplicitTemplateType
-            || toText(source?.templateName || '')
-            || toText(source?.templatePreviewText || '')
-            || renderedComponents.length > 0
+            isOutgoingBusinessMessage
+            && (
+                isExplicitTemplateType
+                || hasStructuredComponents
+                || hasMeaningfulTemplatePreview
+                || hasMeaningfulTemplateBody
+            )
         ),
-        templateName: toText(source?.templateName || '') || null,
-        templateLanguage: toText(source?.templateLanguage || '') || null,
+        templateName: templateName || null,
+        templateLanguage: templateLanguage || null,
         headerText,
         bodyText,
         footerText,
