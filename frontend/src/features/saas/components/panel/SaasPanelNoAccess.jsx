@@ -10,7 +10,7 @@ export default function SaasPanelNoAccess({
     currentUserDisplayName = 'Usuario',
     currentUserRoleLabel = 'Sin rol',
     buildInitials,
-    closeLabel = 'Cerrar sesion',
+    closeLabel = 'Cerrar sesión',
     themeMode = 'dark',
     onThemeChange = null,
     onClose

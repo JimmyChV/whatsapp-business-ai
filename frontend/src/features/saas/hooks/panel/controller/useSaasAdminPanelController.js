@@ -506,6 +506,7 @@ export default function useSaasAdminPanelController({
         setSelectedCatalogId: catalogController.catalogState.setSelectedCatalogId,
         setSelectedCatalogProductId: catalogController.catalogState.setSelectedCatalogProductId,
         setSelectedConfigKey,
+        setSelectedRoleKey: plansRolesController.plansRolesState.setSelectedRoleKey,
         setTenantPanelMode: tenantController.tenantState.setTenantPanelMode,
         setUserPanelMode: usersController.usersState.setUserPanelMode,
         setTenantSettingsPanelMode,

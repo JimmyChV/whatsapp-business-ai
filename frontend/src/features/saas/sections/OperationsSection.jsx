@@ -39,7 +39,7 @@ function OperationsSection(props = {}) {
             sectionKey="operations"
             selectedId={tenantScopeLocked ? '' : tenantScopeId || 'operations'}
             className="saas-entity-page--legacy"
-            layoutClassName="saas-admin-master-detail"
+            layoutClassName="saas-admin-master-detail saas-admin-master-detail--td-pattern"
             left={<aside className="saas-admin-master-pane">
                     <div className="saas-admin-pane-header">
                         <div>

@@ -48,7 +48,7 @@ export default function useSaasPanelFrameProps(input = {}) {
     const frameProps = {
         ...sharedHeaderProps,
         title: 'Control SaaS',
-        subtitle: `Empresa activa: ${activeTenantLabel}`,
+        subtitle: requiresTenantSelection ? '' : `Empresa activa: ${activeTenantLabel}`,
         error,
         showPanelLoading,
         requiresTenantSelection,

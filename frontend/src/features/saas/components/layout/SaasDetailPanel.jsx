@@ -25,8 +25,8 @@ const deriveActionVariant = (item) => {
     const className = String(item?.props?.className || '').toLowerCase();
     const label = extractTextContent(item?.props?.children).trim().toLowerCase();
     if (className.includes('saas-header-btn--') || className.includes('saas-btn--')) return null;
-    if (className.includes('danger') || /(cerrar|eliminar|desactivar)/.test(label)) return 'danger';
-    if (className.includes('cancel') || /(cancelar|limpiar|volver)/.test(label)) return 'secondary';
+    if (className.includes('danger') || /(cerrar sesión|logout|eliminar|descartar)/.test(label)) return 'danger';
+    if (className.includes('cancel') || /(cancelar|limpiar|volver|cerrar|desactivar)/.test(label)) return 'secondary';
     if (/(editar|guardar|crear|nuevo|nueva|agregar|activar|sincronizar)/.test(label)) return 'primary';
     return 'secondary';
 };
@@ -35,6 +35,7 @@ const decorateActionItem = (item) => {
     if (!React.isValidElement(item) || item.type !== 'button') return item;
     const variant = deriveActionVariant(item);
     const nextClassName = [
+        'saas-btn',
         'saas-header-btn',
         variant ? `saas-header-btn--${variant}` : '',
         item.props.className || ''
@@ -142,7 +143,7 @@ const SaasDetailPanel = ({
                             <div className="saas-header-actions-overflow">
                                 <button
                                     type="button"
-                                    className="saas-header-btn saas-header-btn--secondary"
+                                    className="saas-btn saas-header-btn saas-header-btn--secondary"
                                     onClick={() => setOverflowOpen((prev) => !prev)}
                                     aria-expanded={overflowOpen}
                                 >

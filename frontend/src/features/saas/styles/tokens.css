@@ -2,60 +2,65 @@
   --saas-font-family: 'Inter', system-ui, -apple-system, sans-serif;
   --saas-font-size-xs: 11px;
   --saas-font-size-sm: 12px;
-  --saas-font-size-base: 13px;
-  --saas-font-size-md: 14px;
-  --saas-font-size-lg: 16px;
-  --saas-font-size-xl: 20px;
-  --saas-font-size-2xl: 24px;
+  --saas-font-size-base: 14px;
+  --saas-font-size-md: 15px;
+  --saas-font-size-lg: 17px;
+  --saas-font-size-xl: 22px;
+  --saas-font-size-2xl: 28px;
   --saas-font-weight-normal: 400;
   --saas-font-weight-medium: 500;
   --saas-font-weight-semibold: 600;
   --saas-font-weight-bold: 700;
   --saas-line-height-tight: 1.2;
-  --saas-line-height-normal: 1.5;
+  --saas-line-height-normal: 1.55;
   --saas-space-1: 4px;
   --saas-space-2: 8px;
   --saas-space-3: 12px;
   --saas-space-4: 16px;
-  --saas-space-5: 20px;
-  --saas-space-6: 24px;
-  --saas-space-8: 32px;
+  --saas-space-5: 22px;
+  --saas-space-6: 28px;
+  --saas-space-8: 36px;
   --saas-radius-sm: 4px;
-  --saas-radius-md: 6px;
-  --saas-radius-lg: 8px;
-  --saas-radius-xl: 12px;
+  --saas-radius-md: 10px;
+  --saas-radius-lg: 14px;
+  --saas-radius-xl: 18px;
   --saas-radius-full: 9999px;
   --saas-border-width: 1px;
-  --saas-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12);
-  --saas-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
-  --saas-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.18);
-  --saas-transition-fast: 150ms ease;
-  --saas-transition-normal: 250ms ease;
-  --saas-btn-height-sm: 28px;
-  --saas-btn-height-md: 34px;
-  --saas-btn-height-lg: 40px;
-  --saas-btn-padding-x: 14px;
+  --saas-shadow-sm: 0 8px 18px rgba(0, 0, 0, 0.12);
+  --saas-shadow-md: 0 18px 34px rgba(0, 0, 0, 0.16);
+  --saas-shadow-lg: 0 28px 64px rgba(0, 0, 0, 0.22);
+  --saas-transition-fast: 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  --saas-transition-normal: 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  --saas-btn-height-sm: 32px;
+  --saas-btn-height-md: 40px;
+  --saas-btn-height-lg: 46px;
+  --saas-btn-padding-x: 16px;
   --saas-btn-font-size: var(--saas-font-size-base);
   --saas-btn-font-weight: var(--saas-font-weight-medium);
   --saas-btn-radius: var(--saas-radius-md);
-  --saas-input-height: 34px;
-  --saas-input-padding: 0 12px;
+  --saas-input-height: 42px;
+  --saas-input-padding: 0 14px;
   --saas-input-font-size: var(--saas-font-size-base);
   --saas-input-radius: var(--saas-radius-md);
-  --saas-table-row-height: 44px;
-  --saas-table-header-height: 36px;
+  --saas-table-row-height: 48px;
+  --saas-table-header-height: 40px;
   --saas-table-font-size: var(--saas-font-size-base);
-  --saas-table-cell-padding: 0 12px;
+  --saas-table-cell-padding: 0 14px;
   --saas-z-dropdown: 1000;
   --saas-z-modal: 2000;
   --saas-z-toast: 3000;
   --saas-panel-radius: var(--saas-radius-xl);
   --saas-control-gap: var(--saas-space-2);
   --saas-header-gap: var(--saas-space-3);
-  --saas-header-min-height: 72px;
-  --saas-header-padding-y: 14px;
-  --saas-header-padding-x: 24px;
-  --saas-search-min-width: 220px;
+  --saas-header-min-height: 78px;
+  --saas-header-padding-y: 16px;
+  --saas-header-padding-x: 26px;
+  --saas-search-min-width: 240px;
+  --saas-focus-ring: 0 0 0 3px color-mix(in srgb, var(--saas-accent-primary) 18%, transparent);
+  --saas-control-shadow: inset 0 1px 0 color-mix(in srgb, var(--saas-text-inverse) 4%, transparent);
+  --saas-panel-shadow: 0 24px 52px rgba(0, 0, 0, 0.18);
+  --saas-card-padding: 16px;
+  --saas-section-gap: 16px;
 }
 
 :root,
@@ -92,10 +97,15 @@
   --saas-table-row-selected: #1f6feb22;
   --saas-table-border: #21262d;
   --saas-scrollbar-thumb: #30363d;
+  --saas-scrollbar-thumb-hover: #3f4852;
   --saas-scrollbar-track: transparent;
   --saas-chip-bg: #21262d;
   --saas-chip-text: #8b949e;
   --saas-chip-border: #30363d;
+  --saas-surface-soft: color-mix(in srgb, var(--saas-bg-surface) 90%, var(--saas-bg-elevated));
+  --saas-surface-strong: color-mix(in srgb, var(--saas-bg-elevated) 88%, var(--saas-bg-base));
+  --saas-surface-floating: color-mix(in srgb, var(--saas-bg-surface) 84%, transparent);
+  --saas-divider-soft: color-mix(in srgb, var(--saas-border-color) 72%, transparent);
 }
 
 :root[data-theme="light"] {
@@ -146,11 +156,16 @@
 
   /* Scrollbar */
   --saas-scrollbar-thumb:   #d4cfc8;
+  --saas-scrollbar-thumb-hover: #bdb4ab;
   --saas-scrollbar-track:   transparent;
 
   /* Chips */
   --saas-chip-bg:     #e8e4de;
   --saas-chip-text:   #6b6560;
   --saas-chip-border: #d4cfc8;
+  --saas-surface-soft: color-mix(in srgb, var(--saas-bg-surface) 84%, var(--saas-bg-elevated));
+  --saas-surface-strong: color-mix(in srgb, var(--saas-bg-elevated) 94%, var(--saas-bg-base));
+  --saas-surface-floating: color-mix(in srgb, var(--saas-bg-surface) 92%, transparent);
+  --saas-divider-soft: color-mix(in srgb, var(--saas-border-color) 78%, transparent);
 }
 

@@ -13,7 +13,7 @@ export default function SaasPanelFrame({
     currentUserDisplayName = 'Usuario',
     currentUserRoleLabel = 'Sin rol',
     buildInitials,
-    closeLabel = 'Cerrar sesion',
+    closeLabel = 'Cerrar sesión',
     themeMode = 'dark',
     onThemeChange = null,
     onClose,

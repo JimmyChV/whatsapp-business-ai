@@ -41,6 +41,7 @@ export default function useSaasPanelSelectionState({
     setSelectedCatalogId,
     setSelectedCatalogProductId,
     setSelectedConfigKey,
+    setSelectedRoleKey,
     setTenantPanelMode,
     setUserPanelMode,
     setTenantSettingsPanelMode,
@@ -86,6 +87,7 @@ export default function useSaasPanelSelectionState({
         setSelectedCatalogId?.('');
         setSelectedCatalogProductId?.('');
         setSelectedConfigKey('');
+        setSelectedRoleKey?.('');
         setTenantPanelMode('view');
         setUserPanelMode('view');
         setTenantSettingsPanelMode('view');
@@ -162,6 +164,7 @@ export default function useSaasPanelSelectionState({
         setSelectedCatalogId,
         setSelectedCatalogProductId,
         setSelectedConfigKey,
+        setSelectedRoleKey,
         setSelectedLabelId,
         setSelectedPlanId,
         setSelectedQuickReplyItemId,

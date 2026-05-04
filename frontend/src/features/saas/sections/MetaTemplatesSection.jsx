@@ -10,6 +10,7 @@ import {
     SaasViewHeader,
     useSaasColumnPrefs
 } from '../components/layout';
+import { applyMultiSort, normalizeSortState } from '../components/layout/sortUtils';
 
 const STATUS_META = {
     approved: { label: 'Aprobado', className: 'saas-meta-template-status--approved' },
@@ -87,6 +88,7 @@ const toText = (value = '') => String(value || '').trim();
 const toLower = (value = '') => toText(value).toLowerCase();
 const toUpper = (value = '') => toText(value).toUpperCase();
 const normalizeFilterValue = (value = '') => toText(value).toLowerCase();
+const normalizeSortDirection = (value = 'asc') => (toLower(value) === 'desc' ? 'desc' : 'asc');
 const matchesTextFilter = (actual = '', expected = '', operator = 'contains') => {
     const left = normalizeFilterValue(actual);
     const right = normalizeFilterValue(expected);
@@ -219,6 +221,10 @@ function replaceTemplateTokens(text = '', valuesByToken = {}) {
         const replacement = toText(valuesByToken?.[token]);
         return replacement || `{{${token}}}`;
     });
+}
+
+function sortTemplateTableRows(rows = [], sort = {}) {
+    return applyMultiSort(Array.isArray(rows) ? rows : [], sort);
 }
 
 function wrapPreviewLines(text = '', maxCharsPerLine = 90) {
@@ -626,7 +632,7 @@ function MetaTemplatesSection(props = {}) {
     const [panelMode, setPanelMode] = useState('view');
     const [selectedTemplateId, setSelectedTemplateId] = useState('');
     const [showColumnsPanel, setShowColumnsPanel] = useState(false);
-    const [headerFilter, setHeaderFilter] = useState({ columnKey: '', operator: 'contains', value: '' });
+    const [headerFilters, setHeaderFilters] = useState([{ id: 'templates_filter_1', columnKey: '', operator: 'contains', value: '' }]);
     const [syncModuleId, setSyncModuleId] = useState('');
     const [createForm, setCreateForm] = useState(() => buildInitialForm(''));
     const [templateVarCatalog, setTemplateVarCatalog] = useState([]);
@@ -643,7 +649,9 @@ function MetaTemplatesSection(props = {}) {
     const {
         visibleKeys: visibleTableColumnKeys,
         setVisibleKeys: setVisibleTableColumnKeys,
-        resetVisibleKeys: resetVisibleTableColumnKeys
+        resetVisibleKeys: resetVisibleTableColumnKeys,
+        sort: tableSort,
+        setSort: setTableSort
     } = useSaasColumnPrefs('meta_templates', TEMPLATE_DEFAULT_COLUMN_KEYS, {
         requestJson,
         availableColumns: TEMPLATE_TABLE_COLUMNS
@@ -827,10 +835,19 @@ function MetaTemplatesSection(props = {}) {
     }, [filteredItems]);
 
     const filteredTableRows = useMemo(() => {
-        const columnKey = toText(headerFilter?.columnKey);
-        if (!columnKey) return tableRows;
-        return tableRows.filter((row) => matchesTextFilter(row?.[columnKey], headerFilter?.value, headerFilter?.operator));
-    }, [headerFilter, tableRows]);
+        const activeHeaderFilters = (Array.isArray(headerFilters) ? headerFilters : []).filter((filterItem) => {
+            const columnKey = toText(filterItem?.columnKey);
+            const operator = toLower(filterItem?.operator || 'contains');
+            if (!columnKey) return false;
+            if (operator === 'is_empty' || operator === 'not_empty') return true;
+            return Boolean(toText(filterItem?.value));
+        });
+        const filteredRows = activeHeaderFilters.reduce((currentRows, filterItem) => {
+            const columnKey = toText(filterItem?.columnKey);
+            return currentRows.filter((row) => matchesTextFilter(row?.[columnKey], filterItem?.value, filterItem?.operator));
+        }, tableRows);
+        return sortTemplateTableRows(filteredRows, tableSort);
+    }, [headerFilters, tableRows, tableSort]);
 
     const tableColumns = useMemo(() => {
         const visibleSet = new Set((Array.isArray(visibleTableColumnKeys) ? visibleTableColumnKeys : [])
@@ -1268,7 +1285,7 @@ function MetaTemplatesSection(props = {}) {
                 message: 'Hay cambios sin guardar en el template. Si continuas, se perderan.',
                 confirmText: 'Descartar',
                 cancelText: 'Seguir editando',
-                tone: 'danger'
+                tone: 'warn'
             });
             if (!ok) return;
         }
@@ -1337,10 +1354,18 @@ function MetaTemplatesSection(props = {}) {
                     { key: 'moduleLabel', label: 'Módulo', type: 'option', options: moduleOptions.map((moduleItem) => ({ value: moduleItem.label, label: moduleItem.label })) },
                     { key: 'useCaseLabel', label: 'Caso De Uso', type: 'option', options: USE_CASE_OPTIONS.map((option) => ({ value: option.label, label: option.label })) }
                 ],
-                value: headerFilter,
-                onChange: setHeaderFilter,
-                onClear: () => setHeaderFilter({ columnKey: '', operator: 'contains', value: '' })
+                items: headerFilters,
+                onItemsChange: setHeaderFilters,
+                onClear: () => setHeaderFilters([{ id: 'templates_filter_1', columnKey: '', operator: 'contains', value: '' }])
             }}
+            sortConfig={{
+                columns: TEMPLATE_TABLE_COLUMNS.map((column) => ({
+                    key: column.key,
+                    label: column.label
+                })),
+                ...normalizeSortState(tableSort)
+            }}
+            onSortChange={setTableSort}
             actions={[
                 {
                     key: 'reload',
@@ -1363,7 +1388,7 @@ function MetaTemplatesSection(props = {}) {
             ]}
             actionsExtra={!tenantScopeLocked ? (
                 <div className="saas-entity-columns">
-                    <button type="button" className="saas-header-btn saas-header-btn--secondary saas-btn-columns" onClick={() => setShowColumnsPanel((prev) => !prev)}>
+                    <button type="button" className="saas-btn saas-header-btn saas-header-btn--secondary saas-btn-columns" onClick={() => setShowColumnsPanel((prev) => !prev)}>
                         Columnas
                     </button>
                     {showColumnsPanel ? (
@@ -1388,8 +1413,8 @@ function MetaTemplatesSection(props = {}) {
                                 );
                             })}
                             <div className="saas-entity-columns__actions">
-                                <button type="button" onClick={resetVisibleTableColumnKeys}>Restablecer</button>
-                                <button type="button" onClick={() => setShowColumnsPanel(false)}>Cerrar</button>
+                                <button type="button" className="saas-btn saas-btn--secondary saas-btn--sm" onClick={resetVisibleTableColumnKeys}>Restablecer</button>
+                                <button type="button" className="saas-btn saas-btn--secondary saas-btn--sm" onClick={() => setShowColumnsPanel(false)}>Cerrar</button>
                             </div>
                         </div>
                     ) : null}
@@ -1471,6 +1496,8 @@ function MetaTemplatesSection(props = {}) {
         showColumnsPanel,
         statusOptions,
         syncModuleId,
+        tableSort,
+        setTableSort,
         templatesBusy,
         tenantScopeLocked,
         filteredItems.length,
@@ -1513,6 +1540,8 @@ function MetaTemplatesSection(props = {}) {
                                 columns={tableColumns}
                                 rows={filteredTableRows}
                                 selectedId={selectedTemplateId}
+                                sortConfig={tableSort}
+                                onSortChange={setTableSort}
                                 loading={loadingList}
                                 emptyText="No hay plantillas para los filtros seleccionados."
                                 onSelect={(row) => {
@@ -1557,16 +1586,17 @@ function MetaTemplatesSection(props = {}) {
                                 <div className="saas-admin-list-actions saas-admin-list-actions--row">
                                     <button
                                         type="button"
-                                        className="saas-btn-cancel"
+                                        className="saas-btn saas-btn--secondary saas-btn-cancel"
                                         disabled={templatesBusy || !canWrite}
                                         onClick={() => {
                                             void handleRequestCloseTemplateBuilder();
                                         }}
                                     >
-                                        CANCELAR
+                                        Cancelar
                                     </button>
                                     <button
                                         type="button"
+                                        className="saas-btn saas-btn--primary"
                                         disabled={templatesBusy || !canWrite}
                                         onClick={() => handleCreateTemplate().catch((error) => {
                                                 const message = String(error?.message || error || 'No se pudo crear la plantilla Meta.');
@@ -1825,11 +1855,11 @@ function MetaTemplatesSection(props = {}) {
                                                             />
                                                         </div>
                                                     )}
-                                                    <button
-                                                        type="button"
-                                                        className="saas-meta-template-button-remove"
-                                                        disabled={templatesBusy || !canWrite}
-                                                        onClick={() => {
+                                            <button
+                                                type="button"
+                                                className="saas-btn saas-btn--danger saas-meta-template-button-remove"
+                                                disabled={templatesBusy || !canWrite}
+                                                onClick={() => {
                                                             setCreateForm((prev) => ({
                                                                 ...prev,
                                                                 buttons: (Array.isArray(prev.buttons) ? prev.buttons : []).filter((row) => row.id !== buttonRow.id)
@@ -1842,7 +1872,7 @@ function MetaTemplatesSection(props = {}) {
                                             ))}
                                             <button
                                                 type="button"
-                                                className="saas-meta-template-button-add"
+                                                className="saas-btn saas-btn--secondary saas-meta-template-button-add"
                                                 disabled={templatesBusy || !canWrite || (createForm.buttons || []).length >= 10}
                                                 onClick={() => {
                                                     setCreateForm((prev) => ({
@@ -1859,6 +1889,7 @@ function MetaTemplatesSection(props = {}) {
                                     <div className="saas-admin-form-row saas-admin-form-row--actions saas-meta-template-builder__actions">
                                         <button
                                             type="button"
+                                            className="saas-btn saas-btn--primary"
                                             disabled={templatesBusy || !canWrite}
                                             onClick={() => handleCreateTemplate().catch((error) => {
                                                 const message = String(error?.message || error || 'No se pudo crear la plantilla Meta.');
@@ -1870,7 +1901,7 @@ function MetaTemplatesSection(props = {}) {
                                         </button>
                                         <button
                                             type="button"
-                                            className="saas-btn-cancel"
+                                            className="saas-btn saas-btn--secondary saas-btn-cancel"
                                             disabled={templatesBusy}
                                             onClick={() => {
                                                 void handleRequestCloseTemplateBuilder();
@@ -1922,7 +1953,7 @@ function MetaTemplatesSection(props = {}) {
                                                                         </div>
                                                                         <button
                                                                             type="button"
-                                                                            className="saas-meta-template-var-insert"
+                                                                            className="saas-btn saas-btn--primary saas-meta-template-var-insert"
                                                                             disabled={templatesBusy || !canWrite}
                                                                             onClick={() => insertVariableAtBodyCursor(variable)}
                                                                         >
@@ -1982,14 +2013,14 @@ function MetaTemplatesSection(props = {}) {
                                         <div className="saas-template-preview-mode">
                                             <button
                                                 type="button"
-                                                className={previewMode === 'delivery' ? 'active' : ''}
+                                                className={`saas-header-btn ${previewMode === 'delivery' ? 'saas-header-btn--primary active' : 'saas-header-btn--secondary'}`.trim()}
                                                 onClick={() => setPreviewMode('delivery')}
                                             >
                                                 Mensaje final al cliente
                                             </button>
                                             <button
                                                 type="button"
-                                                className={previewMode === 'approval' ? 'active' : ''}
+                                                className={`saas-header-btn ${previewMode === 'approval' ? 'saas-header-btn--primary active' : 'saas-header-btn--secondary'}`.trim()}
                                                 onClick={() => setPreviewMode('approval')}
                                             >
                                                 Aprobacion Meta
@@ -2076,10 +2107,11 @@ function MetaTemplatesSection(props = {}) {
                                         disabled={templatesBusy}
                                         onClick={handleCloseTemplateDetail}
                                     >
-                                        Cerrar
+                                        Volver
                                     </button>
                                     <button
                                         type="button"
+                                        className="saas-btn saas-btn--danger"
                                         disabled={templatesBusy || !canWrite || Boolean(loadingDeleteById?.[selectedTemplate.templateId])}
                                         onClick={() => handleDeleteTemplate(selectedTemplate).catch((error) => {
                                             const message = String(error?.message || error || 'No se pudo eliminar la plantilla Meta.');
@@ -2091,6 +2123,7 @@ function MetaTemplatesSection(props = {}) {
                                     </button>
                                     <button
                                         type="button"
+                                        className="saas-btn saas-btn--primary"
                                         disabled={templatesBusy || !canWrite}
                                         onClick={() => openCreateTemplatePanel().catch((error) => {
                                             const message = String(error?.message || error || 'No se pudo abrir el formulario de plantillas.');

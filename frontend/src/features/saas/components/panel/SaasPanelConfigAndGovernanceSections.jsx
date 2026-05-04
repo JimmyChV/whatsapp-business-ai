@@ -11,6 +11,8 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
         isGeneralConfigSection: context.isGeneralConfigSection,
         isModulesSection: context.isModulesSection,
         settingsTenantId: context.settingsTenantId,
+        loadTenantSettings: context.loadTenantSettings,
+        loadWaModules: context.loadWaModules,
         toTenantDisplayName: context.toTenantDisplayName,
         tenantOptions: context.tenantOptions,
         busy: context.busy,
@@ -108,6 +110,7 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
 
     const rolesContext = {
         isRolesSection: context.isRolesSection,
+        loadAccessCatalog: context.loadAccessCatalog,
         busy: context.busy,
         canManageRoles: context.canManageRoles,
         openRoleCreate: context.openRoleCreate,

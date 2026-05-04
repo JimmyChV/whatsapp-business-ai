@@ -62,6 +62,7 @@ export default function SaasPanelEntitySections(props = {}) {
         toUserDisplayName: context.toUserDisplayName,
         openUserFromTenant: context.openUserFromTenant,
         overview: context.overview,
+        refreshOverview: context.refreshOverview,
         aiUsageByTenant: context.aiUsageByTenant,
         settingsTenantId: context.settingsTenantId
     };
@@ -87,6 +88,7 @@ export default function SaasPanelEntitySections(props = {}) {
         openUserEdit: context.openUserEdit,
         runAction: context.runAction,
         requestJson: context.requestJson,
+        refreshOverview: context.refreshOverview,
         canEditScopeInUserForm: context.canEditScopeInUserForm,
         settingsTenantId: context.settingsTenantId,
         openTenantFromUserMembership: context.openTenantFromUserMembership,

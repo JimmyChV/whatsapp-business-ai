@@ -20,17 +20,17 @@
   --chat-skeleton-text: var(--saas-bg-surface);
   --chat-highlight-text: var(--saas-accent-primary);
   --chat-badge-text: var(--saas-text-inverse);
-  --chat-accent-strong: color-mix(in srgb, var(--saas-accent-primary) 82%, var(--saas-accent-primary-text)fff);
+  --chat-accent-strong: color-mix(in srgb, var(--saas-accent-primary) 82%, #ffffff);
   --chat-accent-soft: color-mix(in srgb, var(--saas-accent-primary) 24%, transparent);
   --chat-accent-surface: color-mix(in srgb, var(--saas-accent-primary) 18%, var(--saas-bg-surface));
   --chat-accent-surface-strong: color-mix(in srgb, var(--saas-accent-primary) 30%, var(--saas-bg-surface));
   --chat-danger-soft: color-mix(in srgb, var(--saas-accent-danger) 18%, transparent);
   --chat-danger-border: color-mix(in srgb, var(--saas-accent-danger) 42%, transparent);
-  --chat-danger-text: color-mix(in srgb, var(--saas-accent-danger) 42%, var(--saas-accent-primary-text)fff);
+  --chat-danger-text: color-mix(in srgb, var(--saas-accent-danger) 52%, #ffffff);
   --chat-warning-bg: color-mix(in srgb, var(--saas-accent-warning) 22%, transparent);
   --chat-warning-border: color-mix(in srgb, var(--saas-accent-warning) 42%, transparent);
-  --chat-warning-text: color-mix(in srgb, var(--saas-accent-warning) 60%, var(--saas-accent-primary-text)fff);
-  --chat-warning-text-strong: color-mix(in srgb, var(--saas-accent-warning) 72%, var(--saas-accent-primary-text)fff);
+  --chat-warning-text: color-mix(in srgb, var(--saas-accent-warning) 60%, #ffffff);
+  --chat-warning-text-strong: color-mix(in srgb, var(--saas-accent-warning) 72%, #ffffff);
   --chat-muted-panel: color-mix(in srgb, var(--saas-bg-elevated) 82%, var(--saas-bg-surface));
   --chat-muted-panel-strong: color-mix(in srgb, var(--saas-bg-elevated) 92%, var(--saas-bg-base));
   --chat-muted-panel-soft: color-mix(in srgb, var(--saas-bg-surface) 74%, var(--saas-bg-base));
@@ -47,7 +47,7 @@
   --chat-menu-surface: color-mix(in srgb, var(--saas-bg-elevated) 86%, var(--saas-bg-surface));
   --chat-button-ghost-hover: color-mix(in srgb, var(--saas-text-primary) 8%, transparent);
   --chat-button-ghost-hover-strong: color-mix(in srgb, var(--saas-text-primary) 14%, transparent);
-  --chat-online-info: color-mix(in srgb, var(--saas-accent-info) 64%, var(--saas-accent-primary-text)fff);
+  --chat-online-info: color-mix(in srgb, var(--saas-accent-info) 64%, #ffffff);
   --chat-instagram-gradient: linear-gradient(135deg, #833ab4 0%, #fd1d1d 52%, #fcb045 100%);
   --chat-whatsapp-dark: var(--saas-accent-primary);
   --chat-facebook: #1877f2;
@@ -65,7 +65,7 @@
   --chat-skeleton-text: var(--saas-bg-surface);
   --chat-highlight-text: var(--saas-accent-primary);
   --chat-badge-text: var(--saas-text-inverse);
-  --chat-accent-strong: color-mix(in srgb, var(--saas-accent-primary) 72%, var(--saas-accent-primary-text)fff);
+  --chat-accent-strong: color-mix(in srgb, var(--saas-accent-primary) 72%, #ffffff);
   --chat-accent-soft: color-mix(in srgb, var(--saas-accent-primary) 14%, transparent);
   --chat-accent-surface: color-mix(in srgb, var(--saas-accent-primary) 12%, var(--saas-bg-surface));
   --chat-accent-surface-strong: color-mix(in srgb, var(--saas-accent-primary) 22%, var(--saas-bg-surface));
@@ -80,7 +80,7 @@
   --chat-muted-panel-strong: color-mix(in srgb, var(--saas-bg-elevated) 82%, var(--saas-bg-surface));
   --chat-muted-panel-soft: color-mix(in srgb, var(--saas-bg-surface) 86%, var(--saas-bg-base));
   --chat-shell-background: color-mix(in srgb, var(--saas-bg-base) 98%, #d8d3cc);
-  --chat-shell-top-accent: color-mix(in srgb, var(--saas-accent-primary) 78%, var(--saas-accent-primary-text)fff);
+  --chat-shell-top-accent: color-mix(in srgb, var(--saas-accent-primary) 78%, #ffffff);
   --chat-shell-header-gradient: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-elevated) 88%, var(--saas-bg-surface)) 0%, color-mix(in srgb, var(--saas-bg-elevated) 74%, var(--saas-bg-surface)) 100%);
   --chat-shell-panel-gradient: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-surface) 96%, var(--saas-bg-base)) 0%, color-mix(in srgb, var(--saas-bg-surface) 90%, var(--saas-bg-base)) 36%, color-mix(in srgb, var(--saas-bg-surface) 84%, var(--saas-bg-base)) 100%);
   --chat-shell-panel-gradient-alt: linear-gradient(180deg, color-mix(in srgb, var(--saas-bg-elevated) 84%, var(--saas-bg-surface)) 0%, color-mix(in srgb, var(--saas-bg-elevated) 70%, var(--saas-bg-surface)) 100%);
@@ -91,7 +91,7 @@
   --chat-menu-surface: color-mix(in srgb, var(--saas-bg-elevated) 78%, var(--saas-bg-surface));
   --chat-button-ghost-hover: color-mix(in srgb, var(--saas-text-primary) 6%, transparent);
   --chat-button-ghost-hover-strong: color-mix(in srgb, var(--saas-text-primary) 10%, transparent);
-  --chat-online-info: color-mix(in srgb, var(--saas-accent-info) 74%, var(--saas-accent-primary-text)fff);
+  --chat-online-info: color-mix(in srgb, var(--saas-accent-info) 74%, #ffffff);
 }
 
 * {
@@ -1514,7 +1514,7 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--saas-accent-primary-text)fff;
+  color: var(--saas-accent-primary-text);
   border: 1px solid rgba(255, 255, 255, 0.6);
   background: rgba(27, 47, 58, 0.95);
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.38);
@@ -2713,7 +2713,7 @@ body {
   align-items: center;
   justify-content: center;
   border: 1px solid rgba(255, 255, 255, 0.5);
-  color: var(--saas-accent-primary-text)fff;
+  color: var(--saas-accent-primary-text);
   background: rgba(39, 57, 70, 0.95);
   line-height: 0;
 }
@@ -3055,7 +3055,7 @@ body {
   overflow: hidden;
   flex-shrink: 0;
   font-size: 2.4rem;
-  color: var(--saas-accent-primary-text)fff;
+  color: var(--saas-accent-primary-text);
   font-weight: 600;
   box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.04), 0 14px 34px rgba(0, 0, 0, 0.45);
 }
@@ -3301,7 +3301,7 @@ body {
 .client-profile-action-btn:hover {
   border-color: rgba(0, 168, 132, 0.48);
   background: var(--saas-bg-elevated);
-  color: var(--saas-accent-primary-text)fff;
+  color: var(--saas-accent-primary-text);
 }
 
 .business-sidebar.business-sidebar-pro {
@@ -5367,7 +5367,7 @@ body {
 
 .chat-window .chat-header-avatar-channel--whatsapp {
   background: var(--saas-accent-primary);
-  color: var(--saas-accent-primary-text)fff;
+  color: var(--saas-accent-primary-text);
 }
 
 .chat-window .chat-header-avatar-channel-icon {
@@ -5812,4 +5812,243 @@ body {
   padding: 7px 10px;
   font-size: 0.74rem;
   font-weight: 600;
+}
+
+/* Experience polish — canonical chat layer */
+.app-container {
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--saas-accent-primary) 10%, transparent), transparent 28%),
+    radial-gradient(circle at top right, color-mix(in srgb, var(--saas-accent-info) 9%, transparent), transparent 32%),
+    var(--chat-shell-background);
+}
+
+.sidebar.sidebar-pro,
+.business-sidebar.business-sidebar-pro,
+.client-profile-panel {
+  background: var(--chat-shell-panel-gradient);
+  border-color: var(--chat-pill-border) !important;
+}
+
+.sidebar-header-pro,
+.chat-header-pro,
+.business-sidebar-header {
+  background: var(--chat-shell-header-gradient);
+  backdrop-filter: blur(18px);
+  border-color: var(--chat-pill-border) !important;
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--saas-border-color) 12%, transparent);
+}
+
+.sidebar-account-avatar,
+.chat-header-avatar,
+.business-header-avatar {
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--saas-text-inverse) 12%, transparent),
+    0 10px 20px color-mix(in srgb, var(--saas-bg-base) 22%, transparent);
+}
+
+.sidebar-dropdown-menu,
+.chat-header-popover,
+.floating-panel,
+.commercial-status-dropdown {
+  background: color-mix(in srgb, var(--chat-menu-surface) 94%, transparent);
+  border-color: var(--chat-pill-border) !important;
+  border-radius: 16px;
+  backdrop-filter: blur(18px);
+  box-shadow: var(--chat-panel-shadow);
+}
+
+.sidebar-search-box,
+.sidebar-tenant-select,
+.assignment-selector-select,
+.chat-searchbar,
+.input-container,
+.chat-composer-field {
+  border-radius: 16px;
+  border: 1px solid var(--chat-pill-border);
+  background: color-mix(in srgb, var(--chat-pill-bg) 88%, var(--saas-bg-elevated));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--saas-text-inverse) 5%, transparent);
+}
+
+.sidebar-search-box,
+.chat-searchbar {
+  padding: 10px 12px;
+}
+
+.sidebar-search-input,
+.message-input,
+.assignment-selector-select {
+  color: var(--saas-text-primary);
+  font-size: 0.95rem;
+}
+
+.sidebar-search-input::placeholder,
+.message-input::placeholder {
+  color: var(--saas-text-tertiary);
+}
+
+.sidebar-left-ribbon {
+  border-color: var(--chat-pill-border);
+  background: color-mix(in srgb, var(--chat-pill-bg) 82%, transparent);
+  border-radius: 16px;
+  box-shadow: var(--chat-panel-shadow);
+}
+
+.sidebar-ribbon-btn {
+  min-height: 36px;
+  border-radius: 12px;
+}
+
+.sidebar-ribbon-btn:hover {
+  background: var(--chat-button-ghost-hover);
+  border-color: var(--chat-pill-border);
+}
+
+.sidebar-ribbon-btn.active {
+  background: linear-gradient(140deg, var(--chat-accent-soft), color-mix(in srgb, var(--saas-accent-primary) 24%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--saas-accent-primary-text) 10%, transparent);
+}
+
+.chat-list,
+.sidebar-main-content .chat-list {
+  padding: 8px 10px 12px;
+  gap: 8px;
+}
+
+.chat-item,
+.chat-item-modern {
+  border-radius: 18px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--chat-pill-bg) 44%, transparent);
+  transition:
+    background var(--saas-transition-fast),
+    border-color var(--saas-transition-fast),
+    transform var(--saas-transition-fast),
+    box-shadow var(--saas-transition-fast);
+}
+
+.chat-item:hover,
+.chat-item-modern:hover {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--chat-item-hover) 78%, var(--chat-pill-bg));
+  border-color: var(--chat-pill-border);
+  box-shadow: 0 12px 24px color-mix(in srgb, var(--saas-border-color) 10%, transparent);
+}
+
+.chat-item.active,
+.chat-item-modern.active {
+  background: color-mix(in srgb, var(--chat-item-active) 92%, var(--chat-pill-bg));
+  border-color: color-mix(in srgb, var(--saas-accent-primary) 36%, transparent);
+  box-shadow: 0 14px 24px color-mix(in srgb, var(--saas-accent-primary) 12%, transparent);
+}
+
+.chat-window {
+  background: var(--chat-shell-panel-gradient-alt);
+}
+
+.chat-window::before {
+  opacity: 0.045;
+}
+
+.chat-messages {
+  padding: 24px clamp(16px, 5vw, 64px) 28px;
+  gap: 8px;
+}
+
+.message {
+  border-radius: 18px;
+  padding: 10px 12px 9px;
+  box-shadow: 0 12px 24px color-mix(in srgb, var(--saas-bg-base) 18%, transparent);
+  animation: chat-message-rise 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.message.in {
+  background: color-mix(in srgb, var(--incoming-msg-bg) 96%, var(--saas-bg-elevated));
+}
+
+.message.out {
+  background: color-mix(in srgb, var(--outgoing-msg-bg) 92%, var(--saas-bg-surface));
+}
+
+.message-time,
+.message.out .message-time {
+  color: var(--saas-text-secondary);
+}
+
+.chat-input-area,
+.chat-input-area-pro {
+  margin-bottom: 0;
+  padding: 12px 14px 16px;
+  border-top: 1px solid var(--chat-pill-border);
+  background: var(--chat-shell-header-gradient);
+}
+
+.input-container,
+.chat-composer-field {
+  padding: 11px 14px;
+}
+
+.message-input {
+  line-height: 1.5;
+}
+
+.chat-header-action-btn,
+.ai-button,
+.take-chat-button,
+.business-logout-btn,
+.chat-window-expired-banner-action {
+  transition:
+    background var(--saas-transition-fast),
+    border-color var(--saas-transition-fast),
+    transform var(--saas-transition-fast),
+    box-shadow var(--saas-transition-fast);
+}
+
+.chat-header-action-btn,
+.ai-button {
+  border-radius: 12px;
+}
+
+.chat-header-action-btn:hover,
+.ai-button:hover,
+.take-chat-button:hover,
+.business-logout-btn:hover,
+.chat-window-expired-banner-action:hover {
+  transform: translateY(-1px);
+}
+
+.take-chat-button {
+  border-color: color-mix(in srgb, var(--saas-accent-primary) 44%, transparent);
+  background: color-mix(in srgb, var(--saas-accent-primary) 16%, var(--saas-bg-surface));
+  color: var(--chat-accent-strong);
+  border-radius: 12px;
+  padding: 9px 13px;
+}
+
+.business-logout-btn {
+  border-color: color-mix(in srgb, var(--saas-accent-danger) 44%, transparent);
+  background: color-mix(in srgb, var(--saas-accent-danger) 14%, transparent);
+  color: var(--chat-danger-text);
+  border-radius: 12px;
+  padding: 7px 10px;
+}
+
+.chat-window-expired-banner {
+  border-top: 1px solid var(--chat-pill-border);
+  border-bottom: 1px solid color-mix(in srgb, var(--saas-accent-warning) 24%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--saas-accent-warning) 12%, var(--saas-bg-elevated)), color-mix(in srgb, var(--saas-accent-warning) 9%, var(--saas-bg-base)));
+}
+
+.client-profile-panel {
+  box-shadow: -20px 0 46px color-mix(in srgb, var(--saas-bg-base) 24%, transparent);
+}
+
+@keyframes chat-message-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

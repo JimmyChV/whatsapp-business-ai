@@ -112,7 +112,7 @@ export default function SaasAdminPanelShell({
             onClose={onClose}
             onLogout={onLogout}
             socket={socket}
-            closeLabel='Cerrar sesion'
+            closeLabel='Cerrar sesión'
             onOpenWhatsAppOperation={onOpenWhatsAppOperation}
             buildApiHeaders={buildApiHeaders}
             activeTenantId={activeTenantId}

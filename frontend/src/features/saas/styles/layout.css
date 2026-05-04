@@ -53,7 +53,7 @@
   color: var(--saas-text-primary);
   letter-spacing: 0.01em;
 }
-.saas-admin-header span {
+.saas-admin-header-subtitle {
   color: var(--saas-text-secondary);
   font-size: var(--saas-font-size-sm);
 }
@@ -167,9 +167,9 @@
 
 .saas-admin-header button,
 .saas-admin-card button {
-  border: var(--saas-border-width) solid var(--saas-accent-primary);
-  background: var(--saas-accent-primary);
-  color: var(--saas-accent-primary-text);
+  border: var(--saas-border-width) solid var(--saas-border-color);
+  background: transparent;
+  color: var(--saas-text-primary);
   border-radius: var(--saas-btn-radius);
   height: var(--saas-btn-height-md);
   padding: 0 var(--saas-btn-padding-x);
@@ -181,8 +181,8 @@
 
 .saas-admin-card button:hover,
 .saas-admin-header button:hover {
-  filter: brightness(1.08);
-  transform: translateY(-1px);
+  background: var(--saas-bg-hover);
+  border-color: color-mix(in srgb, var(--saas-border-color) 88%, var(--saas-text-primary));
 }
 
 .saas-admin-card button:disabled,

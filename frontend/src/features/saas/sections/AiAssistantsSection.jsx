@@ -169,7 +169,7 @@ function AiAssistantsSection(props = {}) {
         toggleAiAssistantActive
     ]);
 
-    const renderForm = React.useCallback(() => (
+    const renderForm = React.useCallback(({ close: requestClose } = {}) => (
         <>
             {aiAssistantPanelMode === 'edit' ? (
                 <div className="saas-admin-detail-grid">
@@ -222,7 +222,7 @@ function AiAssistantsSection(props = {}) {
                 <button type="button" disabled={busy || !text(aiAssistantForm.name)} onClick={saveAiAssistant}>
                     {aiAssistantPanelMode === 'create' ? 'Guardar asistente' : 'Actualizar asistente'}
                 </button>
-                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelAiAssistantEdit}>CANCELAR</button>
+                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { void requestClose?.(); }}>Cancelar</button>
             </div>
         </>
     ), [
@@ -231,7 +231,6 @@ function AiAssistantsSection(props = {}) {
         aiAssistantPanelMode,
         applyLavitatAssistantPreset,
         busy,
-        cancelAiAssistantEdit,
         saveAiAssistant,
         setAiAssistantForm
     ]);

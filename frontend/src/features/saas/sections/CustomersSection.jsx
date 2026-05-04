@@ -14,6 +14,7 @@ import {
     SaasViewHeader,
     useSaasColumnPrefs
 } from '../components/layout';
+import { normalizeSortState } from '../components/layout/sortUtils';
 import { createCampaign as createCampaignApi, startCampaign as startCampaignApi } from '../services/campaigns.service';
 import { fetchTenantCustomerLabels, fetchTenantZoneRules } from '../services/labels.service';
 import { listMetaTemplates } from '../services/metaTemplates.service';
@@ -830,11 +831,7 @@ function CustomersSection(props = {}) {
 
     const [showColumnsMenu, setShowColumnsMenu] = useState(false);
     const [searchInput, setSearchInput] = useState(String(customerSearch || ''));
-    const [headerFilter, setHeaderFilter] = useState({
-        columnKey: '',
-        operator: 'contains',
-        value: ''
-    });
+    const [headerFilters, setHeaderFilters] = useState([{ id: 'customers_filter_1', columnKey: '', operator: 'contains', value: '' }]);
     const [sortConfig, setSortConfig] = useState(CUSTOMER_DEFAULT_SORT);
     const [languageDraftByCustomer, setLanguageDraftByCustomer] = useState({});
     const [languageBusy, setLanguageBusy] = useState(false);
@@ -1456,11 +1453,6 @@ function CustomersSection(props = {}) {
 
     const sortedAndFilteredRows = useMemo(() => {
         const sourceRows = Array.isArray(tableRows) ? [...tableRows] : [];
-        const filterColumnKey = String(headerFilter?.columnKey || '').trim();
-        const filterOperator = String(headerFilter?.operator || 'contains').trim().toLowerCase();
-        const filterValue = String(headerFilter?.value || '').trim().toLowerCase();
-        const filterColumnType = String(filterColumnByKey[filterColumnKey]?.type || 'text').trim().toLowerCase();
-
         const toDateTimestamp = (value) => {
             const raw = String(value || '').trim();
             if (!raw || raw === '-') return NaN;
@@ -1474,7 +1466,11 @@ function CustomersSection(props = {}) {
             return Number.isFinite(parsed) ? parsed : NaN;
         };
 
-        const matchValue = (candidateValueRaw) => {
+        const matchValue = (candidateValueRaw, filterItem = {}) => {
+            const filterColumnKey = String(filterItem?.columnKey || '').trim();
+            const filterOperator = String(filterItem?.operator || 'contains').trim().toLowerCase();
+            const filterValue = String(filterItem?.value || '').trim().toLowerCase();
+            const filterColumnType = String(filterColumnByKey[filterColumnKey]?.type || 'text').trim().toLowerCase();
             const candidateValue = String(candidateValueRaw ?? '').trim().toLowerCase();
             if (!filterColumnKey) return true;
             if (filterOperator === 'is_empty') return candidateValue.length === 0 || candidateValue === '-';
@@ -1507,23 +1503,27 @@ function CustomersSection(props = {}) {
             return candidateValue.includes(filterValue);
         };
 
-        const filteredRows = filterColumnKey
-            ? sourceRows.filter((row) => {
-                if (filterColumnKey === 'actualizado') {
-                    return matchValue(row?._raw?.updatedAt || row?.actualizado);
-                }
-                if (filterColumnKey === 'ultimaInteraccion') {
-                    return matchValue(row?._raw?.lastInteractionAt || row?.ultimaInteraccion);
-                }
-                return matchValue(row?.[filterColumnKey]);
-            })
-            : sourceRows;
+        const activeHeaderFilters = (Array.isArray(headerFilters) ? headerFilters : []).filter((filterItem) => {
+            const columnKey = String(filterItem?.columnKey || '').trim();
+            const operator = String(filterItem?.operator || 'contains').trim().toLowerCase();
+            if (!columnKey) return false;
+            if (operator === 'is_empty' || operator === 'not_empty') return true;
+            return Boolean(String(filterItem?.value || '').trim());
+        });
 
-        const sortColumnKey = String(sortConfig?.columnKey || '').trim();
-        const sortDirection = String(sortConfig?.direction || 'asc').trim().toLowerCase() === 'desc' ? 'desc' : 'asc';
-        if (!sortColumnKey) return filteredRows;
+        const filteredRows = activeHeaderFilters.reduce((currentRows, filterItem) => {
+            const filterColumnKey = String(filterItem?.columnKey || '').trim();
+            return currentRows.filter((row) => {
+                if (filterColumnKey === 'actualizado') return matchValue(row?._raw?.updatedAt || row?.actualizado, filterItem);
+                if (filterColumnKey === 'ultimaInteraccion') return matchValue(row?._raw?.lastInteractionAt || row?.ultimaInteraccion, filterItem);
+                return matchValue(row?.[filterColumnKey], filterItem);
+            });
+        }, sourceRows);
 
-        const resolveSortValue = (row) => {
+        const activeSortItems = normalizeSortState(sortConfig).activeItems;
+        if (activeSortItems.length === 0) return filteredRows;
+
+        const resolveSortValue = (row, sortColumnKey) => {
             if (sortColumnKey === 'actualizado') {
                 return String(row?._raw?.updatedAt || row?.actualizado || '').trim();
             }
@@ -1533,21 +1533,29 @@ function CustomersSection(props = {}) {
             return row?.[sortColumnKey];
         };
 
-        const sortedRows = [...filteredRows].sort((left, right) => {
-            const leftValue = resolveSortValue(left);
-            const rightValue = resolveSortValue(right);
+        return [...filteredRows].sort((left, right) => {
+            for (const item of activeSortItems) {
+                const sortColumnKey = String(item?.columnKey || '').trim();
+                if (!sortColumnKey) continue;
+                const leftValue = resolveSortValue(left, sortColumnKey);
+                const rightValue = resolveSortValue(right, sortColumnKey);
+                let comparison = 0;
 
-            if (typeof leftValue === 'number' && typeof rightValue === 'number') {
-                return leftValue - rightValue;
+                if (typeof leftValue === 'number' && typeof rightValue === 'number') {
+                    comparison = leftValue - rightValue;
+                } else {
+                    const leftText = String(leftValue ?? '').trim();
+                    const rightText = String(rightValue ?? '').trim();
+                    comparison = leftText.localeCompare(rightText, 'es', { numeric: true, sensitivity: 'base' });
+                }
+
+                if (comparison !== 0) {
+                    return comparison * (String(item?.direction || 'asc').trim().toLowerCase() === 'desc' ? -1 : 1);
+                }
             }
-
-            const leftText = String(leftValue ?? '').trim();
-            const rightText = String(rightValue ?? '').trim();
-            return leftText.localeCompare(rightText, 'es', { numeric: true, sensitivity: 'base' });
+            return 0;
         });
-
-        return sortDirection === 'desc' ? sortedRows.reverse() : sortedRows;
-    }, [filterColumnByKey, headerFilter, sortConfig, tableRows]);
+    }, [filterColumnByKey, headerFilters, sortConfig, tableRows]);
 
     const visibleCustomerIdsForCampaign = useMemo(
         () => sortedAndFilteredRows
@@ -1767,7 +1775,7 @@ function CustomersSection(props = {}) {
                 message: 'Hay cambios sin guardar en el cliente. Si continuas, se perderan.',
                 confirmText: 'Descartar',
                 cancelText: 'Seguir editando',
-                tone: 'danger'
+                tone: 'warn'
             });
             if (!ok) return;
         }
@@ -1781,7 +1789,7 @@ function CustomersSection(props = {}) {
                 message: 'Hay cambios sin guardar en la direccion. Si continuas, se perderan.',
                 confirmText: 'Descartar',
                 cancelText: 'Seguir editando',
-                tone: 'danger'
+                tone: 'warn'
             });
             if (!ok) return;
         }
@@ -3296,7 +3304,7 @@ function CustomersSection(props = {}) {
                 }
                 setCampaignSelectionMode(true);
             },
-            variant: campaignSelectionMode ? 'danger' : 'secondary',
+            variant: 'secondary',
             disabled: busy || tenantScopeLocked
         },
         campaignSelectionMode && selectedCustomerIdsForCampaign.length > 0 && outreachMode === 'eligible' ? {
@@ -3315,7 +3323,7 @@ function CustomersSection(props = {}) {
         } : null,
         {
             key: 'refresh-customers',
-            label: 'Actualizar',
+            label: 'Recargar',
             onClick: () => { void refreshCustomersView({ forceFullReload: false, silent: false }); },
             variant: 'secondary',
             disabled: busy || tenantScopeLocked || customersLoadingBatch
@@ -3375,13 +3383,9 @@ function CustomersSection(props = {}) {
             )}
             filters={{
                 columns: headerFilterColumns,
-                value: headerFilter,
-                onChange: setHeaderFilter,
-                onClear: () => setHeaderFilter({
-                    columnKey: '',
-                    operator: 'contains',
-                    value: ''
-                })
+                items: headerFilters,
+                onItemsChange: setHeaderFilters,
+                onClear: () => setHeaderFilters([{ id: 'customers_filter_1', columnKey: '', operator: 'contains', value: '' }])
             }}
             sortConfig={{
                 ...sortConfig,
@@ -3460,6 +3464,8 @@ function CustomersSection(props = {}) {
                 columns={tableColumns}
                 rows={tenantScopeLocked ? [] : visibleTableRows}
                 selectedId={tableSelectedId}
+                sortConfig={sortConfig}
+                onSortChange={setSortConfig}
                 onSelect={(row) => {
                     if (tenantScopeLocked) return;
                     openCustomerView(row?.id || row?._raw);
@@ -3528,7 +3534,7 @@ function CustomersSection(props = {}) {
                             </button>
                             <button type="button" disabled={editClickBusy} onClick={handleOpenCustomerEdit}>Editar</button>
                             <button type="button" disabled={busy} onClick={handleSoftDeleteCustomer}>Eliminar</button>
-                            <button type="button" className="saas-btn-close" disabled={busy} onClick={() => { void handleRequestCloseCustomersPanel(); }}>Cerrar</button>
+                            <button type="button" className="saas-btn-close" disabled={busy} onClick={() => { void handleRequestCloseCustomersPanel(); }}>Volver</button>
                         </div>
                     )}
                 >
@@ -3608,7 +3614,7 @@ function CustomersSection(props = {}) {
                                 {customerPanelMode === 'create' ? 'Guardar cliente' : 'Actualizar cliente'}
                             </button>
                             <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { void handleRequestCancelCustomerEdit(); }}>Cancelar</button>
-                            <button type="button" className="saas-btn-close" disabled={busy} onClick={() => { void handleRequestCloseCustomersPanel(); }}>Cerrar</button>
+                            <button type="button" className="saas-btn-close" disabled={busy} onClick={() => { void handleRequestCloseCustomersPanel(); }}>Volver</button>
                         </div>
                     )}
                 >

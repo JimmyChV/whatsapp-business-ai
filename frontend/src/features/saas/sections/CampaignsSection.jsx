@@ -12,6 +12,7 @@ import {
     SaasViewHeader,
     useSaasColumnPrefs
 } from '../components/layout';
+import { applyMultiSort, normalizeSortState } from '../components/layout/sortUtils';
 
 const STATUS_META = {
     draft: { label: 'Borrador', className: 'saas-campaigns-status--draft' },
@@ -183,18 +184,7 @@ function blockStatusMeta(status = '') {
 }
 
 function applyCampaignSort(rows = [], sort = {}) {
-    const columnKey = toText(sort?.columnKey);
-    if (!columnKey) return rows;
-    const direction = toLower(sort?.direction) === 'desc' ? -1 : 1;
-    return [...rows].sort((left, right) => {
-        const leftValue = left?.[columnKey];
-        const rightValue = right?.[columnKey];
-        if (leftValue === rightValue) return 0;
-        if (leftValue === null || leftValue === undefined || leftValue === '') return 1;
-        if (rightValue === null || rightValue === undefined || rightValue === '') return -1;
-        if (typeof leftValue === 'number' && typeof rightValue === 'number') return (leftValue - rightValue) * direction;
-        return String(leftValue).localeCompare(String(rightValue), 'es', { sensitivity: 'base', numeric: true }) * direction;
-    });
+    return applyMultiSort(rows, sort);
 }
 
 function progress(campaign = {}) {
@@ -644,7 +634,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const [wizardStep, setWizardStep] = useState(1);
     const [form, setForm] = useState(EMPTY_FORM);
     const [search, setSearch] = useState('');
-    const [headerFilter, setHeaderFilter] = useState({ columnKey: '', operator: 'contains', value: '' });
+    const [headerFilters, setHeaderFilters] = useState([{ id: 'campaigns_filter_1', columnKey: '', operator: 'contains', value: '' }]);
     const [showColumnsMenu, setShowColumnsMenu] = useState(false);
     const [localEstimate, setLocalEstimate] = useState(null);
     const [baseAudienceEstimate, setBaseAudienceEstimate] = useState(null);
@@ -832,10 +822,18 @@ export default React.memo(function CampaignsSection(props = {}) {
         updatedAt: toText(campaign?.updatedAt || campaign?.createdAt || '')
     })), [filteredCampaigns]);
     const filteredCampaignTableRows = useMemo(() => {
-        const columnKey = toText(headerFilter?.columnKey);
-        if (!columnKey) return campaignTableRows;
-        return campaignTableRows.filter((row) => matchesTextFilter(row?.[columnKey], headerFilter?.value, headerFilter?.operator));
-    }, [campaignTableRows, headerFilter]);
+        const activeHeaderFilters = (Array.isArray(headerFilters) ? headerFilters : []).filter((filterItem) => {
+            const columnKey = toText(filterItem?.columnKey);
+            const operator = toLower(filterItem?.operator || 'contains');
+            if (!columnKey) return false;
+            if (operator === 'is_empty' || operator === 'not_empty') return true;
+            return Boolean(toText(filterItem?.value));
+        });
+        return activeHeaderFilters.reduce((currentRows, filterItem) => {
+            const columnKey = toText(filterItem?.columnKey);
+            return currentRows.filter((row) => matchesTextFilter(row?.[columnKey], filterItem?.value, filterItem?.operator));
+        }, campaignTableRows);
+    }, [campaignTableRows, headerFilters]);
     const sortedCampaignTableRows = useMemo(
         () => applyCampaignSort(filteredCampaignTableRows, columnPrefs.sort),
         [filteredCampaignTableRows, columnPrefs.sort]
@@ -1939,10 +1937,9 @@ export default React.memo(function CampaignsSection(props = {}) {
         };
     }, [loadTracking, panelMode, selectCampaign, selectedBlocks, selectedCampaignId]);
 
-    const clearSelectedCampaign = useCallback(() => {
-        if (typeof selectCampaign === 'function') {
-            selectCampaign('').catch(() => {});
-        }
+    const clearSelectedCampaign = useCallback(async () => {
+        if (typeof selectCampaign !== 'function') return null;
+        return selectCampaign('').catch(() => null);
     }, [selectCampaign]);
 
     const handleCloseCampaignDetail = useCallback(() => {
@@ -1961,7 +1958,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                 message: 'Hay cambios sin guardar en la campaña. Si continúas, se perderán.',
                 confirmText: 'Descartar',
                 cancelText: 'Seguir editando',
-                tone: 'danger'
+                tone: 'warn'
             });
             if (!ok) return;
         }
@@ -3137,10 +3134,10 @@ export default React.memo(function CampaignsSection(props = {}) {
                 {
                     key: 'create',
                     label: 'Nueva',
-                    onClick: () => {
+                    onClick: async () => {
+                        await clearSelectedCampaign();
                         setPanelMode('create');
                         setWizardStep(1);
-                        clearSelectedCampaign();
                         setLocalEstimate(null);
                         setInclusionOnlyEstimate(null);
                         setForm({ ...EMPTY_FORM, moduleId: moduleOptions[0]?.moduleId || '' });
@@ -3192,14 +3189,13 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 : undefined)
                     }))
                 ],
-                value: headerFilter,
-                onChange: setHeaderFilter,
-                onClear: () => setHeaderFilter({ columnKey: '', operator: 'contains', value: '' })
+                items: headerFilters,
+                onItemsChange: setHeaderFilters,
+                onClear: () => setHeaderFilters([{ id: 'campaigns_filter_1', columnKey: '', operator: 'contains', value: '' }])
             }}
             sortConfig={{
                 columns: CAMPAIGN_TABLE_COLUMNS,
-                columnKey: columnPrefs.sort?.columnKey || '',
-                direction: columnPrefs.sort?.direction || 'asc'
+                ...normalizeSortState(columnPrefs.sort)
             }}
             onSortChange={columnPrefs.setSort}
         />
@@ -3212,6 +3208,8 @@ export default React.memo(function CampaignsSection(props = {}) {
                     columns={campaignTableColumns}
                     rows={sortedCampaignTableRows}
                     selectedId={panelMode === 'create' ? '' : selectedCampaignId}
+                    sortConfig={columnPrefs.sort}
+                    onSortChange={columnPrefs.setSort}
                     loading={loadingList}
                     emptyText="No hay campañas para estos filtros."
                     onSelect={handleSelectCampaignRow}
@@ -3268,7 +3266,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 {['draft', 'scheduled'].includes(toLower(selectedCampaign?.status)) && !selectedBlocksConfig && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => startCampaign?.(selectedCampaignId), 'No se pudo iniciar campaña.')}>Iniciar</button>}
                                 {!['cancelled', 'completed'].includes(toLower(selectedCampaign?.status)) && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(async () => { const ok = await confirm({ title: 'Cancelar campaña', message: 'Esta acción detendrá el procesamiento pendiente.', confirmText: 'Cancelar campaña', cancelText: 'Volver', tone: 'danger' }); if (!ok) return; await cancelCampaign?.(selectedCampaignId, 'cancelled_by_user'); }, 'No se pudo cancelar campaña.')}>Cancelar</button>}
                                 <button type="button" disabled={loading} onClick={() => runSafe(async () => { await loadCampaigns?.(); await loadTracking(selectedCampaignId); }, 'No se pudo recargar tracking.')}>Recargar</button>
-                                <button type="button" className="saas-btn-close" disabled={loading} onClick={() => { void handleRequestCloseCampaignPanel(); }}>Cerrar</button>
+                                <button type="button" className="saas-btn-close" disabled={loading} onClick={() => { void handleRequestCloseCampaignPanel(); }}>Volver</button>
                             </>
                         )}
                     >

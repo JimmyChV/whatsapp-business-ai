@@ -145,7 +145,7 @@ export default function QuickRepliesSection(props = {}) {
         setSelectedQuickReplyLibraryId
     ]);
 
-    const renderLibraryForm = React.useCallback(() => (
+    const renderLibraryForm = React.useCallback(({ close: requestClose } = {}) => (
         <div className="saas-admin-related-block">
             <div className="saas-admin-form-row">
                 <input value={quickReplyLibraryForm.name || ''} onChange={(event) => setQuickReplyLibraryForm?.((prev) => ({ ...prev, name: event.target.value }))} placeholder="Nombre de biblioteca" disabled={busy} />
@@ -179,13 +179,12 @@ export default function QuickRepliesSection(props = {}) {
                 <button type="button" disabled={busy || !canManageQuickReplies || !text(quickReplyLibraryForm.name)} onClick={() => runAction?.(quickReplyLibraryPanelMode === 'create' ? 'Biblioteca creada' : 'Biblioteca actualizada', async () => saveQuickReplyLibrary?.())}>
                     {quickReplyLibraryPanelMode === 'create' ? 'Guardar biblioteca' : 'Actualizar biblioteca'}
                 </button>
-                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelQuickReplyLibraryEdit}>CANCELAR</button>
+                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { void requestClose?.(); }}>Cancelar</button>
             </div>
         </div>
     ), [
         busy,
         canManageQuickReplies,
-        cancelQuickReplyLibraryEdit,
         quickReplyLibraryForm,
         quickReplyLibraryPanelMode,
         runAction,
@@ -195,7 +194,7 @@ export default function QuickRepliesSection(props = {}) {
         waModules
     ]);
 
-    const renderItemForm = React.useCallback(() => (
+    const renderItemForm = React.useCallback(({ close: requestClose } = {}) => (
         <div className="saas-admin-related-block">
             <h4>{quickReplyItemPanelMode === 'create' ? 'Nueva respuesta' : 'Editar respuesta'}</h4>
             <div className="saas-admin-form-row">
@@ -254,7 +253,7 @@ export default function QuickRepliesSection(props = {}) {
                 >
                     {quickReplyItemPanelMode === 'create' ? 'Guardar respuesta' : 'Actualizar respuesta'}
                 </button>
-                <button type="button" className="saas-btn-cancel" disabled={busy || uploadingQuickReplyAssets} onClick={cancelQuickReplyItemEdit}>CANCELAR</button>
+                <button type="button" className="saas-btn-cancel" disabled={busy || uploadingQuickReplyAssets} onClick={() => { void requestClose?.(); }}>Cancelar</button>
             </div>
         </div>
     ), [
@@ -262,7 +261,6 @@ export default function QuickRepliesSection(props = {}) {
         QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL,
         busy,
         canManageQuickReplies,
-        cancelQuickReplyItemEdit,
         formatBytes,
         getQuickReplyAssetDisplayName,
         handleQuickReplyAssetSelection,
@@ -288,7 +286,7 @@ export default function QuickRepliesSection(props = {}) {
                 </div>
             );
         }
-        if (isLibraryEditing) return renderLibraryForm();
+        if (isLibraryEditing) return renderLibraryForm({ close });
         if (!selectedQuickReplyLibrary) {
             return (
                 <div className="saas-admin-empty-state saas-admin-empty-state--detail">
@@ -328,8 +326,8 @@ export default function QuickRepliesSection(props = {}) {
                 {selectedQuickReplyItem && quickReplyItemPanelMode === 'view' ? (
                     <div className="saas-admin-related-block">
                         <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                            <button type="button" disabled={busy || !canManageQuickReplies} onClick={openQuickReplyItemEdit}>EDITAR</button>
-                            <button type="button" disabled={busy || !canManageQuickReplies} onClick={() => runAction?.('Respuesta rápida desactivada', async () => deactivateQuickReplyItem?.(selectedQuickReplyItem?.itemId))}>DESACTIVAR</button>
+                            <button type="button" disabled={busy || !canManageQuickReplies} onClick={openQuickReplyItemEdit}>Editar</button>
+                            <button type="button" disabled={busy || !canManageQuickReplies} onClick={() => runAction?.('Respuesta rápida desactivada', async () => deactivateQuickReplyItem?.(selectedQuickReplyItem?.itemId))}>Desactivar</button>
                         </div>
                         <div className="saas-admin-detail-grid">
                             <div className="saas-admin-detail-field"><span>Etiqueta</span><strong>{selectedQuickReplyItem.label || '-'}</strong></div>
@@ -361,7 +359,7 @@ export default function QuickRepliesSection(props = {}) {
                         ) : null}
                     </div>
                 ) : null}
-                {isItemEditing ? renderItemForm() : null}
+                {isItemEditing ? renderItemForm({ close }) : null}
             </>
         );
     }, [
@@ -396,8 +394,8 @@ export default function QuickRepliesSection(props = {}) {
         if (!selectedQuickReplyLibrary || isLibraryEditing || isItemEditing) return null;
         return (
             <>
-                <button type="button" disabled={busy || !canManageQuickReplies} onClick={openQuickReplyLibraryEdit}>EDITAR</button>
-                <button type="button" disabled={busy || !canManageQuickReplies} onClick={() => runAction?.('Biblioteca desactivada', async () => deactivateQuickReplyLibrary?.(selectedQuickReplyLibrary?.libraryId))}>DESACTIVAR</button>
+                <button type="button" disabled={busy || !canManageQuickReplies} onClick={openQuickReplyLibraryEdit}>Editar</button>
+                <button type="button" disabled={busy || !canManageQuickReplies} onClick={() => runAction?.('Biblioteca desactivada', async () => deactivateQuickReplyLibrary?.(selectedQuickReplyLibrary?.libraryId))}>Desactivar</button>
                 <button type="button" disabled={busy || !canManageQuickReplies} onClick={openQuickReplyItemCreate}>Nueva respuesta</button>
             </>
         );

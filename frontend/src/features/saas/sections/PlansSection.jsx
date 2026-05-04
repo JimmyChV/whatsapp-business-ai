@@ -103,7 +103,7 @@ function PlansSection(props = {}) {
         );
     }, [PLAN_FEATURE_KEYS, PLAN_LIMIT_KEYS, selectedPlan]);
 
-    const renderForm = React.useCallback(() => (
+    const renderForm = React.useCallback(({ close: requestClose } = {}) => (
         <>
             {chunkItems(PLAN_LIMIT_KEYS, 2).map((row, rowIndex) => (
                 <div key={`plan_limit_edit_row_${rowIndex}`} className="saas-admin-form-row">
@@ -177,14 +177,13 @@ function PlansSection(props = {}) {
                 >
                     Guardar cambios
                 </button>
-                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelPlanEdit}>CANCELAR</button>
+                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { void requestClose?.(); }}>Cancelar</button>
             </div>
         </>
     ), [
         PLAN_FEATURE_KEYS,
         PLAN_LIMIT_KEYS,
         busy,
-        cancelPlanEdit,
         chunkItems,
         loadPlanMatrix,
         openPlanView,
@@ -197,7 +196,7 @@ function PlansSection(props = {}) {
 
     const detailActions = React.useMemo(() => {
         if (!selectedPlan || planPanelMode !== 'view') return null;
-        return <button type="button" disabled={busy} onClick={openPlanEdit}>EDITAR</button>;
+        return <button type="button" disabled={busy} onClick={openPlanEdit}>Editar</button>;
     }, [busy, openPlanEdit, planPanelMode, selectedPlan]);
 
     if (!isPlansSection) return null;

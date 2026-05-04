@@ -137,9 +137,9 @@ export function useSaasSessionActions({
 
   const handleSaasLogout = useCallback(async () => {
     const confirmed = await confirm({
-      title: 'Cerrar sesion',
-      message: 'Cerrar sesion de tu cuenta SaaS?',
-      confirmText: 'Cerrar sesion',
+      title: 'Cerrar sesión',
+      message: '¿Cerrar sesión de tu cuenta SaaS?',
+      confirmText: 'Cerrar sesión',
       cancelText: 'Cancelar',
       tone: 'danger'
     });

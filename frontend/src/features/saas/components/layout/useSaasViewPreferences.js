@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchSaasUiPreference, saveSaasUiPreference } from '../../services/uiPreferences.service';
+import { normalizeSortState } from './sortUtils';
 
 const STORAGE_PREFIX = 'saas.viewPrefs';
 
@@ -20,13 +21,18 @@ const normalizePrefs = (value = {}, defaultKeys = [], availableKeys = defaultKey
     const order = Array.isArray(source.columnOrder)
         ? source.columnOrder.map((key) => String(key || '').trim()).filter((key) => allowedKeys.includes(key))
         : [];
+    const normalizedSort = normalizeSortState(
+        source?.sort && typeof source.sort === 'object'
+            ? source.sort
+            : {
+                columnKey: source?.sortColumnKey,
+                direction: source?.sortDirection
+            }
+    );
     return {
         visibleColumnKeys: visible.length ? visible : defaultKeys,
         columnOrder: [...order, ...allowedKeys.filter((key) => !order.includes(key))],
-        sort: {
-            columnKey: String(source?.sort?.columnKey || source?.sortColumnKey || '').trim(),
-            direction: String(source?.sort?.direction || source?.sortDirection || 'asc').trim().toLowerCase() === 'desc' ? 'desc' : 'asc'
-        }
+        sort: normalizedSort
     };
 };
 
@@ -126,7 +132,10 @@ export default function useSaasViewPreferences(sectionKey, defaultColumns = [], 
 
     const setSort = useCallback((sort) => {
         userTouchedRef.current = true;
-        setPreferences((prev) => normalizePrefs({ ...prev, sort }, defaultKeys, availableKeys));
+        setPreferences((prev) => normalizePrefs({
+            ...prev,
+            sort: typeof sort === 'function' ? sort(prev.sort) : sort
+        }, defaultKeys, availableKeys));
     }, [availableKeys, defaultKeys]);
 
     const setColumnOrder = useCallback((columnOrder) => {
