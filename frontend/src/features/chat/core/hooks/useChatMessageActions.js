@@ -560,42 +560,49 @@ export default function useChatMessageActions({
     socket
   ]);
 
-  const handleSendMessage = useCallback((event) => {
+  const handleSendMessage = useCallback((eventOrText = null, textOverride = null) => {
+    const event = eventOrText && typeof eventOrText === 'object' && typeof eventOrText.preventDefault === 'function'
+      ? eventOrText
+      : null;
+    const explicitText = typeof eventOrText === 'string'
+      ? eventOrText
+      : (typeof textOverride === 'string' ? textOverride : null);
     event?.preventDefault();
-    const text = inputTextRef.current.trim();
+    const resolvedInputText = explicitText !== null ? explicitText : inputTextRef.current;
+    const text = String(resolvedInputText || '').trim();
 
     if (editingMessage?.id) {
       if (!waCapabilities.messageEdit) {
         notify({ type: 'warn', message: 'La edicion de mensajes no esta disponible en esta sesion de WhatsApp.' });
-        return;
+        return false;
       }
       if (attachment) {
         notify({ type: 'warn', message: 'No puedes adjuntar archivos mientras editas un mensaje.' });
-        return;
+        return false;
       }
-      if (!text) return;
+      if (!text) return false;
 
       const original = String(editingMessage.originalBody || '').trim();
       if (text === original) {
         setEditingMessage(null);
         setInputText('');
-        return;
+        return true;
       }
 
       const activeId = String(activeChatIdRef.current || '');
-      if (!activeId) return;
+      if (!activeId) return false;
       socket.emit('edit_message', { chatId: activeId, messageId: String(editingMessage.id), body: text });
       setEditingMessage(null);
       setInputText('');
-      return;
+      return true;
     }
 
-    if (!text && !attachment && !quickReplyDraft) return;
+    if (!text && !attachment && !quickReplyDraft) return false;
 
     if (text === '/ayudar') {
       requestAiSuggestion();
       setInputText('');
-      return;
+      return true;
     }
 
     const quotedMessageId = String(replyingMessage?.id || '').trim() || null;
@@ -660,14 +667,14 @@ export default function useChatMessageActions({
       setQuickReplyDraft(null);
       setInputText('');
       setReplyingMessage(null);
-      return;
+      return true;
     }
 
     if (attachment) {
       const sendPayload = {
         to: activeChatId,
         toPhone,
-        body: inputTextRef.current,
+        body: resolvedInputText,
         mediaData: attachment.data,
         mimetype: attachment.mimetype,
         filename: attachment.filename,
@@ -675,7 +682,7 @@ export default function useChatMessageActions({
       };
       insertOptimisticOutgoing({
         chatId: activeChatId,
-        body: String(inputTextRef.current || '').trim() || String(attachment.filename || '').trim() || 'Adjunto',
+        body: String(resolvedInputText || '').trim() || String(attachment.filename || '').trim() || 'Adjunto',
         hasMedia: true,
         type: resolveOptimisticMediaType(attachment.mimetype, attachment.filename),
         mimetype: attachment.mimetype,
@@ -690,10 +697,10 @@ export default function useChatMessageActions({
       socket.emit('send_media_message', sendPayload);
       removeAttachment();
     } else {
-      const sendPayload = { to: activeChatId, toPhone, body: inputTextRef.current, quotedMessageId };
+      const sendPayload = { to: activeChatId, toPhone, body: resolvedInputText, quotedMessageId };
       insertOptimisticOutgoing({
         chatId: activeChatId,
-        body: inputTextRef.current,
+        body: resolvedInputText,
         quotedMessage,
         retryPayload: {
           eventName: 'send_message',
@@ -704,6 +711,7 @@ export default function useChatMessageActions({
     }
     setInputText('');
     setReplyingMessage(null);
+    return true;
   }, [
     activeChatId,
     activeChatIdRef,

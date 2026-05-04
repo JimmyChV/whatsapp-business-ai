@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Sidebar, BusinessSidebar, ClientProfilePanel, ChatWindow, NewChatModal } from '../features/chat/components';
 import { sanitizeDisplayText } from '../features/chat/core';
 import { API_BASE } from '../features/saas/helpers';
@@ -186,27 +186,42 @@ export default function OperationPage({
     }
     return payload;
   }, [buildApiHeaders]);
-  const activeChatDetails = chats.find((c) => c.id === activeChatId) || null;
-  const mergedActiveChatDetails = activeChatDetails || clientContact
-    ? {
-      ...(clientContact || {}),
-      ...(activeChatDetails || {}),
-      windowOpen: typeof activeChatDetails?.windowOpen === 'boolean'
-        ? activeChatDetails.windowOpen
-        : (typeof clientContact?.windowOpen === 'boolean' ? clientContact.windowOpen : true),
-      windowExpiresAt: activeChatDetails?.windowExpiresAt || clientContact?.windowExpiresAt || null
-    }
-    : null;
-  const forwardChatOptions = chats
-    .filter((chat) => chat?.id && String(chat.id) !== String(activeChatId || ''))
-    .map((chat) => ({
-      id: chat.id,
-      name: sanitizeDisplayText(chat?.name || '') || 'Contacto',
-      phone: sanitizeDisplayText(chat?.phone || ''),
-      subtitle: sanitizeDisplayText(chat?.subtitle || ''),
-      timestamp: Number(chat?.timestamp || 0) || 0,
-    }))
-    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  const activeChatDetails = useMemo(
+    () => chats.find((c) => c.id === activeChatId) || null,
+    [activeChatId, chats]
+  );
+  const mergedActiveChatDetails = useMemo(() => (
+    activeChatDetails || clientContact
+      ? {
+        ...(clientContact || {}),
+        ...(activeChatDetails || {}),
+        windowOpen: typeof activeChatDetails?.windowOpen === 'boolean'
+          ? activeChatDetails.windowOpen
+          : (typeof clientContact?.windowOpen === 'boolean' ? clientContact.windowOpen : true),
+        windowExpiresAt: activeChatDetails?.windowExpiresAt || clientContact?.windowExpiresAt || null
+      }
+      : null
+  ), [activeChatDetails, clientContact]);
+  const forwardChatOptions = useMemo(() => (
+    chats
+      .filter((chat) => chat?.id && String(chat.id) !== String(activeChatId || ''))
+      .map((chat) => ({
+        id: chat.id,
+        name: sanitizeDisplayText(chat?.name || '') || 'Contacto',
+        phone: sanitizeDisplayText(chat?.phone || ''),
+        subtitle: sanitizeDisplayText(chat?.subtitle || ''),
+        timestamp: Number(chat?.timestamp || 0) || 0,
+      }))
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+  ), [activeChatId, chats]);
+  const activeSidebarProfile = useMemo(
+    () => myProfile || businessData?.profile,
+    [businessData?.profile, myProfile]
+  );
+  const clientProfileContact = useMemo(
+    () => ({ ...activeChatDetails, ...clientContact }),
+    [activeChatDetails, clientContact]
+  );
 
   useEffect(() => {
     applyDocumentTheme(themeMode);
@@ -305,7 +320,7 @@ export default function OperationPage({
         chatsLoaded={chatsLoaded}
         activeChatId={activeChatId}
         onChatSelect={handleChatSelect}
-        myProfile={myProfile || businessData?.profile}
+        myProfile={activeSidebarProfile}
         onLogout={handleLogoutWhatsapp}
         onRefreshChats={handleRefreshChats}
         onStartNewChat={handleStartNewChat}
@@ -406,7 +421,7 @@ export default function OperationPage({
 
             {showClientProfile && (
               <ClientProfilePanel
-                contact={{ ...activeChatDetails, ...clientContact }}
+                contact={clientProfileContact}
                 chats={chats}
                 onClose={() => setShowClientProfile(false)}
                 onQuickAiAction={requestAiSuggestion}
@@ -484,7 +499,7 @@ export default function OperationPage({
             activeChatPhone={activeChatDetails?.phone || clientContact?.phone || ''}
             activeChatDetails={mergedActiveChatDetails}
             socket={socket}
-            myProfile={myProfile || businessData?.profile}
+            myProfile={activeSidebarProfile}
             onLogout={handleLogoutWhatsapp}
             quickReplies={quickReplies}
             onSendQuickReply={handleSendQuickReply}

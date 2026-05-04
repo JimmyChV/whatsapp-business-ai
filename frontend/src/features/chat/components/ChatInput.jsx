@@ -88,14 +88,12 @@ const ChatInput = ({
         setLocalText(val);                          // fast — only re-renders ChatInput
         setShowCommands(val.startsWith('/'));
         if (showEmoji) setShowEmoji(false);
-        startTransition(() => setInputText(val));
     };
 
-    // Used by one-off format actions (emoji, bold, etc.) to keep both states in sync.
+    // Used by one-off format actions (emoji, bold, etc.) to keep the local draft in sync.
     const setTextBoth = (val) => {
         lastUserInputRef.current = val;
         setLocalText(val);
-        startTransition(() => setInputText(val));
     };
 
     const updateSelectionState = () => {
@@ -313,7 +311,7 @@ const ChatInput = ({
         const entry = item && typeof item === 'object' ? item : null;
         if (!entry) return;
         if (typeof onSendQuickReply === 'function') onSendQuickReply(entry);
-        else setInputText(String(entry?.text || '').trim());
+        else setTextBoth(String(entry?.text || '').trim());
         setShowCommands(false);
     };
 
@@ -334,6 +332,14 @@ const ChatInput = ({
         });
         return () => cancelAnimationFrame(raf);
     }, [localText]);
+
+    useEffect(() => {
+        if (localText === inputText) return undefined;
+        const timer = setTimeout(() => {
+            startTransition(() => setInputText(localText));
+        }, 180);
+        return () => clearTimeout(timer);
+    }, [inputText, localText, setInputText]);
 
     // Sync localText when the parent changes inputText externally (AI suggestion,
     // reply prefill, chat switch clearing the field, etc.).
@@ -763,7 +769,12 @@ const ChatInput = ({
                         if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
                             e.preventDefault();
                             if (isTemplateOnlyMode) return;
-                            onSendMessage();
+                            const didSend = onSendMessage(localText);
+                            if (didSend !== false) {
+                                lastUserInputRef.current = '';
+                                setLocalText('');
+                                setShowCommands(false);
+                            }
                             return;
                         }
                         onKeyDown && onKeyDown(e);
@@ -792,7 +803,12 @@ const ChatInput = ({
                     className="send-button send-button-modern"
                     onClick={() => {
                         if (!canSendFreeform) return;
-                        onSendMessage();
+                        const didSend = onSendMessage(localText);
+                        if (didSend !== false) {
+                            lastUserInputRef.current = '';
+                            setLocalText('');
+                            setShowCommands(false);
+                        }
                     }}
 
                     title={editingMessage?.id ? 'Guardar edicion' : (replyingMessage?.id ? 'Enviar respuesta' : 'Enviar')}

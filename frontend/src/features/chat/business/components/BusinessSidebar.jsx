@@ -759,7 +759,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     );
 };
 
-export default BusinessSidebar;
+export default React.memo(BusinessSidebar);
 
 
 

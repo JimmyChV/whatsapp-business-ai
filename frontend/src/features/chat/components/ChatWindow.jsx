@@ -592,4 +592,4 @@ const ChatWindow = ({
 };
 
 export { ChatInput };
-export default ChatWindow;
+export default React.memo(ChatWindow);
