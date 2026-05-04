@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { startTransition, useState, useRef, useEffect, useMemo } from 'react';
 import { Smile, Bot, Sparkles, X, Paperclip, Send, MapPin, LayoutTemplate } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { EmojiStyle, SkinTonePickerLocation, SkinTones, SuggestionMode, Theme } from 'emoji-picker-react';
@@ -88,14 +88,14 @@ const ChatInput = ({
         setLocalText(val);                          // fast — only re-renders ChatInput
         setShowCommands(val.startsWith('/'));
         if (showEmoji) setShowEmoji(false);
-        setInputText(val);
+        startTransition(() => setInputText(val));
     };
 
     // Used by one-off format actions (emoji, bold, etc.) to keep both states in sync.
     const setTextBoth = (val) => {
         lastUserInputRef.current = val;
         setLocalText(val);
-        setInputText(val);
+        startTransition(() => setInputText(val));
     };
 
     const updateSelectionState = () => {

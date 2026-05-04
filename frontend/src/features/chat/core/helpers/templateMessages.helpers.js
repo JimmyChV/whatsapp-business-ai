@@ -33,6 +33,7 @@ export function isGenericTemplateFallbackText(text = '', templateName = '') {
 export function mergeTemplateMessageContent(existingMessage = {}, incomingMessage = {}) {
     const existing = existingMessage && typeof existingMessage === 'object' ? existingMessage : {};
     const incoming = incomingMessage && typeof incomingMessage === 'object' ? incomingMessage : {};
+    const incomingIsInboundMessage = incoming?.fromMe === false;
     const existingTemplate = buildRenderedTemplateMessage(existing);
     const incomingTemplate = buildRenderedTemplateMessage(incoming);
     const safeTemplateName = toText(incoming?.templateName || existing?.templateName || '');
@@ -62,6 +63,14 @@ export function mergeTemplateMessageContent(existingMessage = {}, incomingMessag
         ...existing,
         ...incoming
     };
+
+    if (incomingIsInboundMessage) {
+        merged.templateComponents = [];
+        merged.templatePreviewText = null;
+        merged.templateName = null;
+        merged.templateLanguage = null;
+        return merged;
+    }
 
     const incomingIsStructuredTemplate = Boolean(
         incomingTemplate.isTemplateMessage
