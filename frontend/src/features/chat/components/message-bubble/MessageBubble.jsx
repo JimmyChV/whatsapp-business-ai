@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import moment from 'moment';
 import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, ChevronDown, Download, SmilePlus, Clock3, AlertCircle, RotateCcw, AlertTriangle } from 'lucide-react';
 import {
@@ -32,31 +32,6 @@ const REACTION_TONE_VARIANTS = {
         '1f3fe': '🙏🏾',
         '1f3ff': '🙏🏿'
     }
-};
-
-const BASE_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
-
-const BUBBLE_TONE = {
-    successSurface: 'var(--chat-success-surface)',
-    successBorder: 'var(--chat-success-border)',
-    successText: 'var(--chat-success-text)',
-    infoSurface: 'var(--chat-info-surface)',
-    infoBorder: 'var(--chat-info-border)',
-    infoText: 'var(--chat-info-text)',
-    cardSurface: 'var(--chat-card-surface)',
-    cardSurfaceAlt: 'var(--chat-card-surface-alt)',
-    cardBorder: 'var(--chat-card-border)',
-    controlSurface: 'var(--chat-control-surface)',
-    controlStrongSurface: 'var(--chat-control-surface-strong)',
-    controlBorder: 'var(--chat-control-border)',
-    text: 'var(--text-primary)',
-    textSoft: 'var(--chat-control-text-soft)',
-    mutedPanel: 'var(--chat-muted-panel)',
-    mutedPanelSoft: 'var(--chat-muted-panel-soft)',
-    priceText: 'var(--chat-price-text)',
-    warningSurface: 'var(--chat-warning-bg)',
-    warningBorder: 'var(--chat-warning-border)',
-    warningText: 'var(--chat-warning-text-strong)'
 };
 
 const MessageBubble = ({
@@ -148,12 +123,10 @@ const MessageBubble = ({
     const [showReactionPicker, setShowReactionPicker] = useState(false);
     const [preferredSkinTone, setPreferredSkinTone] = useState('neutral');
     const bubbleRef = useRef(null);
-    const reactionOptions = useMemo(() =>
-        BASE_REACTION_EMOJIS.map((emoji) => {
-            const variants = REACTION_TONE_VARIANTS[emoji];
-            return variants?.[preferredSkinTone] || emoji;
-        }),
-    [preferredSkinTone]);
+    const reactionOptions = ['👍', '❤️', '😂', '😮', '😢', '🙏'].map((emoji) => {
+        const variants = REACTION_TONE_VARIANTS[emoji];
+        return variants?.[preferredSkinTone] || emoji;
+    });
 
     const shouldHideBodyForOrder = isQuotePayload || (hasOrder && isLikelyBinaryBody(messageBodyText));
     const messageTextToRender = isCatalogItem
@@ -298,35 +271,31 @@ const MessageBubble = ({
             type: String(msg.quotedMessage?.type || 'chat')
         }
         : null;
-    const reactionSummary = useMemo(() =>
-        Array.isArray(msg?.reactions)
-            ? Object.entries(
-                msg.reactions.reduce((acc, reaction) => {
-                    const emoji = String(reaction?.emoji || '').trim();
-                    if (!emoji) return acc;
-                    acc[emoji] = (acc[emoji] || 0) + 1;
-                    return acc;
-                }, {})
-            )
-            : [],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [msg?.reactions]);
+    const reactionSummary = Array.isArray(msg?.reactions)
+        ? Object.entries(
+            msg.reactions.reduce((acc, reaction) => {
+                const emoji = String(reaction?.emoji || '').trim();
+                if (!emoji) return acc;
+                acc[emoji] = (acc[emoji] || 0) + 1;
+                return acc;
+            }, {})
+        )
+        : [];
     const hasReactionSummary = reactionSummary.length > 0;
     const canSendReaction = typeof onSendReaction === 'function' && Boolean(String(msg?.id || '').trim());
 
     const hasMenuActions = Boolean(canReplyMessage || canForwardMessage || canEditMessage);
-    const forwardCandidates = useMemo(() => {
-        if (!Array.isArray(forwardChatOptions)) return [];
-        const needle = normalizeSearchText(forwardSearch);
-        return forwardChatOptions.filter((chat) => {
+    const forwardNeedle = normalizeSearchText(forwardSearch);
+    const forwardCandidates = Array.isArray(forwardChatOptions)
+        ? forwardChatOptions.filter((chat) => {
             const id = String(chat?.id || '').trim();
             if (!id) return false;
             if (id === String(activeChatId || '')) return false;
-            if (!needle) return true;
+            if (!forwardNeedle) return true;
             const haystack = normalizeSearchText(`${chat?.name || ''} ${chat?.phone || ''} ${chat?.subtitle || ''}`);
-            return haystack.includes(needle);
-        }).slice(0, 40);
-    }, [forwardChatOptions, forwardSearch, activeChatId]);
+            return haystack.includes(forwardNeedle);
+        }).slice(0, 40)
+        : [];
 
     const handleReplyClick = () => {
         if (!canReplyMessage) return;
@@ -367,18 +336,17 @@ const MessageBubble = ({
         onSendReaction(messageId, safeEmoji);
         setShowReactionPicker(false);
     };
-    const tone = BUBBLE_TONE;
 
     return (
         <div
             ref={bubbleRef}
             className={`message ${isOut ? 'out' : 'in'}${hasMenuActions ? ' has-menu-actions' : ''}${hasReactionSummary ? ' has-reactions' : ''}`}
-            style={isHighlighted ? { outline: `2px solid ${isCurrentHighlighted ? tone.successText : tone.successBorder}`, borderRadius: '10px', padding: '2px' } : undefined}
+            style={isHighlighted ? { outline: `2px solid ${isCurrentHighlighted ? '#00a884' : 'rgba(0,168,132,0.35)'}`, borderRadius: '10px', padding: '2px' } : undefined}
         >
             {isCatalogItem && (
                 <div className="catalog-card">
-                    <div style={{ width: '100%', height: '72px', background: `linear-gradient(120deg, ${tone.cardSurfaceAlt}, ${tone.controlStrongSurface})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <ShoppingBag size={20} color="var(--chat-control-text-soft)" />
+                    <div style={{ width: '100%', height: '72px', background: 'linear-gradient(120deg,#233138,#1a252b)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <ShoppingBag size={20} color="#9db0ba" />
                     </div>
                     <div className="catalog-card-info">
                         <div className="catalog-card-title">{productTitle}</div>
@@ -419,7 +387,7 @@ const MessageBubble = ({
                         maxWidth: 'min(320px, 56vw)',
                         maxHeight: '260px',
                         display: 'block',
-                        background: tone.cardSurfaceAlt
+                        background: '#000'
                     }}
                 />
             )}
@@ -470,17 +438,17 @@ const MessageBubble = ({
 
             {isOrderActionable && (
                 <div style={{
-                    background: tone.successSurface,
-                    border: `1px solid ${tone.successBorder}`,
+                    background: 'rgba(0,168,132,0.12)',
+                    border: '1px solid rgba(0,168,132,0.3)',
                     borderRadius: '8px',
                     padding: '8px 10px',
                     marginBottom: '6px'
                 }}>
-                    <div style={{ fontSize: '0.78rem', color: tone.successText, fontWeight: 700, marginBottom: '4px' }}>
+                    <div style={{ fontSize: '0.78rem', color: '#00a884', fontWeight: 700, marginBottom: '4px' }}>
                         {isProductPayload ? 'Producto compartido' : (isQuotePayload ? 'Cotizacion' : 'Carrito/Pedido del cliente')}
                     </div>
                     {orderIdentifier && (
-                        <div style={{ fontSize: '0.74rem', color: tone.textSoft, marginBottom: '2px' }}>ID: {orderIdentifier}</div>
+                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '2px' }}>ID: {orderIdentifier}</div>
                     )}
                     {isProductPayload && (firstOrderItem?.title || firstOrderItem?.name) && (
                         <div style={{ fontSize: '0.82rem', color: 'var(--text-primary)', marginBottom: '4px', fontWeight: 600 }}>
@@ -488,15 +456,15 @@ const MessageBubble = ({
                         </div>
                     )}
                     {orderSubtotalLabel && !isQuotePayload && (
-                        <div style={{ fontSize: '0.74rem', color: tone.textSoft, marginBottom: '4px' }}>Subtotal: {orderSubtotalLabel}</div>
+                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '4px' }}>Subtotal: {orderSubtotalLabel}</div>
                     )}
                     {isProductPayload ? (
-                        <div style={{ fontSize: '0.8rem', color: tone.text }}>
+                        <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>
                             Puedes anadir este producto al carrito para cotizarlo.
                         </div>
                     ) : isQuotePayload ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <div style={{ fontSize: '0.75rem', color: tone.textSoft, marginTop: '1px' }}>Detalle de productos:</div>
+                            <div style={{ fontSize: '0.75rem', color: '#9bb0ba', marginTop: '1px' }}>Detalle de productos:</div>
                             {orderItems.length > 0 ? orderItems.slice(0, 40).map((item, idx) => {
                                 const itemQty = Number.isFinite(Number(item?.qty)) ? Number(item.qty)
                                     : (Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1);
@@ -507,37 +475,37 @@ const MessageBubble = ({
                                     </div>
                                 );
                             }) : (
-                                <div style={{ fontSize: '0.8rem', color: tone.text }}>No se pudo leer el detalle de productos.</div>
+                                <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>No se pudo leer el detalle de productos.</div>
                             )}
                             {(quoteSubtotalLabel || quoteDiscountLabel || quoteTotalAfterDiscountLabel || quoteDeliveryLabel || quoteTotalPayableLabel) && (
                                 <>
-                                    <div style={{ fontSize: '0.75rem', color: tone.textSoft, marginTop: '6px' }}>Detalle de pago:</div>
+                                    <div style={{ fontSize: '0.75rem', color: '#9bb0ba', marginTop: '6px' }}>Detalle de pago:</div>
                                     {quoteSubtotalLabel && (
-                                        <div style={{ fontSize: '0.79rem', color: tone.text, display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                        <div style={{ fontSize: '0.79rem', color: '#d6e3eb', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
                                             <span>Subtotal</span>
                                             <strong>{quoteSubtotalLabel}</strong>
                                         </div>
                                     )}
                                     {quoteDiscountLabel && (
-                                        <div style={{ fontSize: '0.79rem', color: tone.text, display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                        <div style={{ fontSize: '0.79rem', color: '#d6e3eb', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
                                             <span>Descuento</span>
                                             <strong>- {quoteDiscountLabel}</strong>
                                         </div>
                                     )}
                                     {quoteTotalAfterDiscountLabel && (
-                                        <div style={{ fontSize: '0.79rem', color: tone.text, display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                        <div style={{ fontSize: '0.79rem', color: '#d6e3eb', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
                                             <span>Total con descuento</span>
                                             <strong>{quoteTotalAfterDiscountLabel}</strong>
                                         </div>
                                     )}
                                     {quoteDeliveryLabel && (
-                                        <div style={{ fontSize: '0.79rem', color: tone.text, display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                        <div style={{ fontSize: '0.79rem', color: '#d6e3eb', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
                                             <span>Delivery</span>
                                             <strong>{quoteDeliveryLabel}</strong>
                                         </div>
                                     )}
                                     {quoteTotalPayableLabel && (
-                                        <div style={{ fontSize: '0.82rem', color: tone.priceText, display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '2px' }}>
+                                        <div style={{ fontSize: '0.82rem', color: '#e8fbf3', display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '2px' }}>
                                             <span style={{ fontWeight: 700 }}>TOTAL A PAGAR</span>
                                             <strong style={{ fontWeight: 800 }}>{quoteTotalPayableLabel}</strong>
                                         </div>
@@ -553,19 +521,19 @@ const MessageBubble = ({
                         return (
                             <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>- {itemTitle} x{itemQty}{item?.sku ? ` (SKU: ${item.sku})` : ''}</span>
-                                <span style={{ color: tone.textSoft, flexShrink: 0 }}>{itemAmount || ''}</span>
+                                <span style={{ color: '#9bb0ba', flexShrink: 0 }}>{itemAmount || ''}</span>
                             </div>
                         );
                     }) : (
-                        <div style={{ fontSize: '0.8rem', color: tone.text }}>Se recibio un pedido desde catalogo de WhatsApp.</div>
+                        <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>Se recibio un pedido desde catalogo de WhatsApp.</div>
                     )}
                     {!isProductPayload && !isQuotePayload && safeOrderNote && (
-                        <div style={{ fontSize: '0.74rem', color: tone.textSoft, marginTop: '6px' }}>
+                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginTop: '6px' }}>
                             Nota cliente: {safeOrderNote}
                         </div>
                     )}
                     {!isProductPayload && !isQuotePayload && actionOrder?.rawPreview?.itemCount && (
-                        <div style={{ fontSize: '0.74rem', color: tone.textSoft, marginTop: '2px' }}>
+                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginTop: '2px' }}>
                             Items reportados: {actionOrder.rawPreview.itemCount}
                         </div>
                     )}
@@ -574,9 +542,9 @@ const MessageBubble = ({
                             onClick={() => typeof onLoadOrderToCart === 'function' && onLoadOrderToCart(actionOrder || null)}
                             disabled={typeof onLoadOrderToCart !== 'function'}
                             style={{
-                                background: tone.infoSurface,
-                                color: tone.infoText,
-                                border: `1px solid ${tone.infoBorder}`,
+                                background: '#17323f',
+                                color: '#c7f1ff',
+                                border: '1px solid rgba(124,200,255,0.45)',
                                 borderRadius: '6px',
                                 padding: '6px 10px',
                                 cursor: typeof onLoadOrderToCart === 'function' ? 'pointer' : 'not-allowed',
@@ -616,16 +584,15 @@ const MessageBubble = ({
                     </div>
                 )}
                 {quotedMessage && (
-                    <div
-                        className="message-quoted-context"
-                        style={{
-                            '--message-quoted-border': quotedMessage.fromMe ? tone.infoBorder : tone.successBorder,
-                            '--message-quoted-label': quotedMessage.fromMe ? tone.infoText : tone.successText,
-                            cursor: quotedMessage.id ? 'pointer' : 'default'
-                        }}
-                    >
+                    <div style={{
+                        borderLeft: '3px solid ' + (quotedMessage.fromMe ? '#73dbf8' : '#00a884'),
+                        background: 'rgba(0,0,0,0.16)',
+                        borderRadius: '8px',
+                        padding: '6px 8px',
+                        marginBottom: '6px',
+                        cursor: quotedMessage.id ? 'pointer' : 'default'
+                    }}>
                         <div
-                            className="message-quoted-context__inner"
                             role={quotedMessage.id ? 'button' : undefined}
                             tabIndex={quotedMessage.id ? 0 : undefined}
                             onClick={handleJumpToQuotedMessage}
@@ -638,10 +605,10 @@ const MessageBubble = ({
                             }}
                             style={{ outline: 'none' }}
                         >
-                            <div className="message-quoted-context__label">
-                                {quotedMessage.fromMe ? 'Tu mensaje' : 'Mensaje respondido'}
+                            <div style={{ fontSize: '0.68rem', fontWeight: 700, color: quotedMessage.fromMe ? '#9fe9ff' : '#72f3d3', marginBottom: '2px' }}>
+                            {quotedMessage.fromMe ? 'Tu mensaje' : 'Mensaje respondido'}
                             </div>
-                            <div className="message-quoted-context__body">
+                            <div style={{ fontSize: '0.78rem', color: '#c8d8e0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {quotedMessage.body}
                             </div>
                         </div>
@@ -649,13 +616,13 @@ const MessageBubble = ({
                 )}
                 {isLocationMessage && (
                     <div style={{
-                        border: `1px solid ${tone.successBorder}`,
-                        background: tone.mutedPanelSoft,
+                        border: '1px solid rgba(0,168,132,0.38)',
+                        background: 'rgba(0,0,0,0.16)',
                         borderRadius: '9px',
                         padding: '8px',
                         marginBottom: '6px'
                     }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: tone.successText, fontSize: '0.78rem', fontWeight: 700 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#00c7a0', fontSize: '0.78rem', fontWeight: 700 }}>
                             <MapPin size={14} /> Ubicacion compartida
                         </div>
 
@@ -666,12 +633,12 @@ const MessageBubble = ({
                                 style={{
                                     marginTop: '7px',
                                     width: '100%',
-                                    border: `1px solid ${tone.infoBorder}`,
+                                    border: '1px solid rgba(124,200,255,0.35)',
                                     borderRadius: '8px',
                                     overflow: 'hidden',
                                     padding: 0,
                                     cursor: 'pointer',
-                                    background: tone.cardSurfaceAlt
+                                    background: '#17242d'
                                 }}
                             >
                                 <iframe
@@ -684,11 +651,11 @@ const MessageBubble = ({
                             </button>
                         )}
 
-                        <div style={{ fontSize: '0.84rem', color: tone.text, marginTop: '6px' }}>
+                        <div style={{ fontSize: '0.84rem', color: '#e4edf2', marginTop: '6px' }}>
                             {locationData?.label || 'Ubicacion'}
                         </div>
                         {(locationData?.latitude !== null && locationData?.longitude !== null) && (
-                            <div style={{ fontSize: '0.72rem', color: tone.textSoft, marginTop: '2px' }}>
+                            <div style={{ fontSize: '0.72rem', color: '#97aab4', marginTop: '2px' }}>
                                 {locationData.latitude.toFixed(6)}, {locationData.longitude.toFixed(6)}
                             </div>
                         )}
@@ -697,9 +664,9 @@ const MessageBubble = ({
                                 type="button"
                                 onClick={() => openMapPopup({ query: locationMapQuery, mapUrl: locationData?.mapUrl, latitude: locationData?.latitude, longitude: locationData?.longitude })}
                                 style={{
-                                    border: `1px solid ${tone.infoBorder}`,
-                                    background: tone.infoSurface,
-                                    color: tone.infoText,
+                                    border: '1px solid rgba(124,200,255,0.45)',
+                                    background: 'rgba(124,200,255,0.12)',
+                                    color: '#cfefff',
                                     borderRadius: '999px',
                                     padding: '4px 10px',
                                     fontSize: '0.74rem',
@@ -726,8 +693,8 @@ const MessageBubble = ({
                             gap: '10px',
                             textDecoration: 'none',
                             color: 'inherit',
-                            border: `1px solid ${tone.infoBorder}`,
-                            background: tone.cardSurfaceAlt,
+                            border: '1px solid rgba(124,200,255,0.26)',
+                            background: 'rgba(16,26,34,0.72)',
                             borderRadius: '10px',
                             padding: '8px',
                             marginBottom: '6px'
@@ -741,14 +708,14 @@ const MessageBubble = ({
                             />
                         )}
                         <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: '0.72rem', color: tone.infoText, marginBottom: '2px' }}>
+                            <div style={{ fontSize: '0.72rem', color: '#82d0ff', marginBottom: '2px' }}>
                                 {webPreviewLoading ? 'Cargando vista previa...' : 'Enlace'}
                             </div>
-                            <div style={{ fontSize: '0.84rem', color: tone.text, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <div style={{ fontSize: '0.84rem', color: '#e8f1f6', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {webPreview?.title || webPreview?.siteName || firstNonMapUrl}
                             </div>
                             {webPreview?.description && (
-                                <div style={{ fontSize: '0.74rem', color: tone.textSoft, marginTop: '2px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                <div style={{ fontSize: '0.74rem', color: '#9cb1ba', marginTop: '2px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                                     {webPreview.description}
                                 </div>
                             )}
@@ -765,23 +732,23 @@ const MessageBubble = ({
                         )}
                         {renderedTemplate.headerText ? (
                             <div className="message-template-preview__header">
-                        {renderWhatsAppFormattedText(renderedTemplate.headerText, { allowCodeFormatting: true })}
+                                {renderWhatsAppFormattedText(renderedTemplate.headerText)}
                             </div>
                         ) : null}
                         <div className="message-template-preview__body">
-                            {renderWhatsAppFormattedText(renderedTemplate.bodyText || renderedTemplate.previewText, { allowCodeFormatting: true })}
+                            {renderWhatsAppFormattedText(renderedTemplate.bodyText || renderedTemplate.previewText)}
                         </div>
                         {renderedTemplate.footerText ? (
                             <div className="message-template-preview__footer">
-                                {renderWhatsAppFormattedText(renderedTemplate.footerText, { allowCodeFormatting: true })}
+                                {renderWhatsAppFormattedText(renderedTemplate.footerText)}
                             </div>
                         ) : null}
                     </div>
                 )}
 
                 {!shouldRenderTemplateBubble && String(messageTextToRender).trim() && (
-                    <div
-                        className="message-text-block"
+                    <span
+                        style={{ fontSize: '0.9rem', wordBreak: 'break-word', whiteSpace: 'normal' }}
                         onMouseUp={() => {
                             const selected = String(window.getSelection?.()?.toString?.() || '').trim();
                             if (selected.length >= 4 && selected.length <= 180) {
@@ -791,8 +758,8 @@ const MessageBubble = ({
                             setSelectedLocationText('');
                         }}
                     >
-                        {renderWhatsAppFormattedText(messageTextToRender, { allowCodeFormatting: isOut })}
-                    </div>
+                        {renderWhatsAppFormattedText(messageTextToRender)}
+                    </span>
                 )}
 
                 {phoneCandidates.length > 0 && typeof onOpenPhoneChat === 'function' && (
@@ -818,9 +785,9 @@ const MessageBubble = ({
                         }}
                         style={{
                             marginTop: '6px',
-                            border: `1px solid ${tone.successBorder}`,
-                            background: tone.successSurface,
-                            color: tone.successText,
+                            border: '1px solid rgba(0,168,132,0.45)',
+                            background: 'rgba(0,168,132,0.14)',
+                            color: '#baf6e8',
                             borderRadius: '999px',
                             padding: '4px 10px',
                             fontSize: '0.73rem',
@@ -916,15 +883,15 @@ const MessageBubble = ({
                 {showForwardPicker && canForwardMessage && (
                     <div style={{
                         marginTop: '6px',
-                        border: `1px solid ${tone.infoBorder}`,
-                        background: tone.cardSurface,
+                        border: '1px solid rgba(124,200,255,0.32)',
+                        background: 'rgba(15,26,34,0.96)',
                         borderRadius: '10px',
                         padding: '8px',
                         minWidth: '220px',
                         maxWidth: '320px',
                         alignSelf: isOut ? 'flex-end' : 'flex-start'
                     }}>
-                        <div style={{ fontSize: '0.72rem', color: tone.infoText, fontWeight: 700, marginBottom: '6px' }}>
+                        <div style={{ fontSize: '0.72rem', color: '#7cc8ff', fontWeight: 700, marginBottom: '6px' }}>
                             Reenviar a...
                         </div>
                         <input
@@ -935,9 +902,9 @@ const MessageBubble = ({
                             style={{
                                 width: '100%',
                                 borderRadius: '8px',
-                                border: `1px solid ${tone.controlBorder}`,
-                                background: tone.controlStrongSurface,
-                                color: tone.text,
+                                border: '1px solid rgba(255,255,255,0.18)',
+                                background: 'rgba(255,255,255,0.04)',
+                                color: '#e8f1f6',
                                 padding: '5px 8px',
                                 fontSize: '0.75rem',
                                 marginBottom: '6px'
@@ -951,9 +918,9 @@ const MessageBubble = ({
                                     onClick={() => handleForwardSelect(chat.id)}
                                     style={{
                                         textAlign: 'left',
-                                        border: `1px solid ${tone.cardBorder}`,
-                                        background: tone.cardSurfaceAlt,
-                                        color: tone.text,
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        background: 'rgba(255,255,255,0.02)',
+                                        color: '#e8f1f6',
                                         borderRadius: '8px',
                                         padding: '5px 7px',
                                         cursor: 'pointer'
@@ -963,13 +930,13 @@ const MessageBubble = ({
                                         {chat.name || chat.phone || 'Chat'}
                                     </div>
                                     {(chat.phone || chat.subtitle) && (
-                                        <div style={{ fontSize: '0.68rem', color: tone.textSoft, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        <div style={{ fontSize: '0.68rem', color: '#9db0ba', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                             {chat.phone || chat.subtitle}
                                         </div>
                                     )}
                                 </button>
                             )) : (
-                                <div style={{ fontSize: '0.72rem', color: tone.textSoft }}>No se encontraron chats.</div>
+                                <div style={{ fontSize: '0.72rem', color: '#9db0ba' }}>No se encontraron chats.</div>
                             )}
                         </div>
                     </div>
@@ -980,13 +947,13 @@ const MessageBubble = ({
                         marginTop: '4px',
                         marginBottom: '2px',
                         fontSize: '0.68rem',
-                        color: tone.textSoft,
+                        color: 'rgba(214,231,240,0.82)',
                         alignSelf: 'flex-end',
                         textAlign: 'right'
                     }}>
-                        Respondio: <strong style={{ color: tone.text, fontWeight: 600 }}>{displaySentByName}</strong>
+                        Respondio: <strong style={{ color: '#e8f3f8', fontWeight: 600 }}>{displaySentByName}</strong>
                         {safeSentViaLabel && (
-                            <span style={{ color: tone.textSoft }}>
+                            <span style={{ color: '#9eb2bf' }}>
                                 {' - '}{safeSentViaLabel}
                             </span>
                         )}
@@ -1021,4 +988,4 @@ const MessageBubble = ({
     );
 };
 
-export default React.memo(MessageBubble);
+export default MessageBubble;

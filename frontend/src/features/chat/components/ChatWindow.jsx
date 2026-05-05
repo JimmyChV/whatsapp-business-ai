@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef } from 'react';
+import React from 'react';
 import { Search, MoreVertical, ChevronUp, ChevronDown, Tag, MapPin, Share2, X } from 'lucide-react';
 import MessageBubble from './message-bubble/MessageBubble';
 import moment from 'moment';
@@ -97,8 +97,6 @@ const ChatWindow = ({
         jumpToMatch
     } = useChatWindowSearchController({ messages });
 
-    const messageRefCallbacks = useRef({});
-
     const {
         avatarColor,
         resolveGroupSenderName,
@@ -136,39 +134,14 @@ const ChatWindow = ({
     const visibleHeaderLabels = headerLabels.slice(0, 2);
     const hiddenHeaderLabelsCount = Math.max(0, headerLabels.length - visibleHeaderLabels.length);
     const conversationWindowOpen = activeChatDetails?.windowOpen !== false;
-
-    const activeLabelIdSet = useMemo(() => {
-        const ids = (activeChatDetails?.labels || [])
-            .map(l => String(l?.id || l?.labelId || '').trim())
-            .filter(Boolean);
-        return new Set(ids);
-    }, [activeChatDetails?.labels]);
-
-    const dayBoundarySet = useMemo(() => {
-        const set = new Set();
-        let prevDay = null;
-        messages.forEach((msg, idx) => {
-            const currentDay = moment.unix(msg.timestamp || 0).format('YYYY-MM-DD');
-            if (idx === 0 || currentDay !== prevDay) set.add(idx);
-            prevDay = currentDay;
-        });
-        return set;
-    }, [messages]);
-
-    const handleJumpToMessage = useCallback((targetMessageId) => {
+    const handleJumpToMessage = (targetMessageId) => {
         const safeTargetMessageId = String(targetMessageId || '').trim();
         if (!safeTargetMessageId) return;
         const targetNode = messageRefs.current?.[safeTargetMessageId]
             || document.querySelector(`[data-message-id="${safeTargetMessageId}"]`);
         if (!targetNode || typeof targetNode.scrollIntoView !== 'function') return;
         targetNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, [messageRefs]);
-
-    const handlePrefillMessage = useCallback((text) => {
-        if (typeof inputProps?.setInputText === 'function') inputProps.setInputText(text);
-    // inputProps is a rest spread; setInputText is stable from parent useState
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [inputProps?.setInputText]);
+    };
 
     return (
         <div
@@ -230,14 +203,14 @@ const ChatWindow = ({
                             </span>
                         )}
                         {activeChatDetails?.isBusiness && <span className="chat-header-secondary-pill">Business</span>}
-                                {visibleHeaderLabels.map((label, index) => (
-                                    <span
-                                        key={`${label?.id || label?.name || 'h'}_${index}`}
-                                        className="chat-header-label-chip chat-header-label-chip--compact"
-                                        style={{ '--label-color': label?.color || 'var(--chat-control-text-soft)' }}
-                                        title={label?.name || 'Etiqueta'}
-                                    >
-                                        {label?.name || 'Etiqueta'}
+                        {visibleHeaderLabels.map((label, index) => (
+                            <span
+                                key={`${label?.id || label?.name || 'h'}_${index}`}
+                                className="chat-header-label-chip chat-header-label-chip--compact"
+                                style={{ '--label-color': label?.color || '#7a8f9a' }}
+                                title={label?.name || 'Etiqueta'}
+                            >
+                                {label?.name || 'Etiqueta'}
                             </span>
                         ))}
                         {hiddenHeaderLabelsCount > 0 && (
@@ -289,11 +262,11 @@ const ChatWindow = ({
                                 {labelDefinitions.length === 0 && <div className="chat-header-popover-empty">No hay etiquetas disponibles.</div>}
                                 {labelDefinitions.map((label) => {
                                     const labelId = String(label?.id || label?.labelId || '').trim();
-                                    const isActive = activeLabelIdSet.has(labelId);
+                                    const isActive = (activeChatDetails?.labels || []).some((l) => String(l?.id || l?.labelId || '').trim() === labelId);
                                     return (
                                         <label key={labelId || label.name} className="chat-header-label-option">
                                             <input type="checkbox" checked={isActive} onChange={() => onToggleChatLabel?.(activeChatDetails?.id, labelId)} />
-                                            <span className="chat-header-label-color" style={{ background: label.color || 'var(--chat-control-text-soft)' }} />
+                                            <span className="chat-header-label-color" style={{ background: label.color || '#8696a0' }} />
                                             <span className="chat-header-label-name">{label.name}</span>
                                         </label>
                                     );
@@ -342,7 +315,7 @@ const ChatWindow = ({
             {/* In-chat Search Bar */}
             {searchVisible && (
                 <div className="chat-searchbar">
-                    <Search size={16} color="var(--chat-control-text-soft)" />
+                    <Search size={16} color="#8696a0" />
                     <input
                         autoFocus
                         type="text"
@@ -352,22 +325,22 @@ const ChatWindow = ({
                         style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text-primary)', fontSize: '0.9rem' }}
                     />
                     {matchIndexes.length > 0 && (
-                        <span style={{ fontSize: '0.75rem', color: 'var(--chat-control-text-soft)' }}>{activeMatchIdx + 1}/{matchIndexes.length}</span>
+                        <span style={{ fontSize: '0.75rem', color: '#9db0ba' }}>{activeMatchIdx + 1}/{matchIndexes.length}</span>
                     )}
                     <button disabled={matchIndexes.length === 0} onClick={() => {
                         if (!matchIndexes.length) return;
                         const next = (activeMatchIdx - 1 + matchIndexes.length) % matchIndexes.length;
                         setActiveMatchIdx(next);
                         jumpToMatch(next);
-                    }} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: matchIndexes.length ? 1 : 0.4 }}><ChevronUp size={16} color="var(--chat-control-text-soft)" /></button>
+                    }} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: matchIndexes.length ? 1 : 0.4 }}><ChevronUp size={16} color="#8696a0" /></button>
                     <button disabled={matchIndexes.length === 0} onClick={() => {
                         if (!matchIndexes.length) return;
                         const next = (activeMatchIdx + 1) % matchIndexes.length;
                         setActiveMatchIdx(next);
                         jumpToMatch(next);
-                    }} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: matchIndexes.length ? 1 : 0.4 }}><ChevronDown size={16} color="var(--chat-control-text-soft)" /></button>
+                    }} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: matchIndexes.length ? 1 : 0.4 }}><ChevronDown size={16} color="#8696a0" /></button>
                     <button onClick={() => { setSearchVisible(false); setChatSearch(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                        <X size={16} color="var(--chat-control-text-soft)" />
+                        <X size={16} color="#8696a0" />
                     </button>
                 </div>
             )}
@@ -381,21 +354,14 @@ const ChatWindow = ({
                     </div>
                 )}
                 {messages.map((msg, idx) => {
-                    const showDay = dayBoundarySet.has(idx);
+                    const currentDay = moment.unix(msg.timestamp || 0).format('YYYY-MM-DD');
+                    const prevDay = idx > 0 ? moment.unix(messages[idx - 1].timestamp || 0).format('YYYY-MM-DD') : null;
+                    const showDay = idx === 0 || currentDay !== prevDay;
                     const matchIdx = matchIndexes.indexOf(idx);
                     const isHighlighted = matchIdx !== -1;
                     const isCurrentHighlighted = isHighlighted && matchIdx === activeMatchIdx;
                     const messageKey = msg.id || `idx_${idx}`;
                     const senderDisplayName = resolveGroupSenderName(msg);
-                    if (!messageRefCallbacks.current[messageKey]) {
-                        messageRefCallbacks.current[messageKey] = (el) => {
-                            if (el) messageRefs.current[messageKey] = el;
-                            else {
-                                delete messageRefs.current[messageKey];
-                                delete messageRefCallbacks.current[messageKey];
-                            }
-                        };
-                    }
                     return (
                         <React.Fragment key={messageKey}>
                             {showDay && (
@@ -405,13 +371,19 @@ const ChatWindow = ({
                             )}
                             <div
                                 data-message-id={messageKey}
-                                ref={messageRefCallbacks.current[messageKey]}
+                                ref={(el) => {
+                                    if (el) {
+                                        messageRefs.current[messageKey] = el;
+                                    } else {
+                                        delete messageRefs.current[messageKey];
+                                    }
+                                }}
                             >
                                 <MessageBubble
                                     msg={msg}
                                     isHighlighted={isHighlighted}
                                     isCurrentHighlighted={isCurrentHighlighted}
-                                    onPrefillMessage={handlePrefillMessage}
+                                    onPrefillMessage={(text) => inputProps?.setInputText && inputProps.setInputText(text)}
                                     // TODO(bug): flujo de importacion al carrito desde cotizacion puede fallar — revisar cadena onLoadOrderToCart -> cart state
                                     onLoadOrderToCart={inputProps?.onLoadOrderToCart}
                                     onOpenMedia={setLightboxMedia}
@@ -592,4 +564,11 @@ const ChatWindow = ({
 };
 
 export { ChatInput };
-export default React.memo(ChatWindow);
+export default ChatWindow;
+
+
+
+
+
+
+
