@@ -657,19 +657,10 @@ export default function useSocketChatConversationEvents({
             if (previousCachedMessages.length > 0 && normalizedMessages.length === 0) {
                 mergedHistoryMessages = previousCachedMessages;
             } else if (previousCachedMessages.length > 0 && normalizedMessages.length > 0) {
-                const mergedById = new Map(
+                mergedHistoryMessages = normalizedMessages.reduce(
+                    (acc, message) => upsertMessageById(acc, message),
                     previousCachedMessages
-                        .map((m) => [String(m?.id || '').trim(), m])
-                        .filter(([id]) => Boolean(id))
                 );
-                normalizedMessages.forEach((message) => {
-                    const id = String(message?.id || '').trim();
-                    if (!id) return;
-                    const existing = mergedById.get(id);
-                    mergedById.set(id, existing ? { ...existing, ...message } : message);
-                });
-                mergedHistoryMessages = Array.from(mergedById.values())
-                    .sort((a, b) => Number(a?.timestamp || 0) - Number(b?.timestamp || 0));
             }
 
             setMessages(mergedHistoryMessages);

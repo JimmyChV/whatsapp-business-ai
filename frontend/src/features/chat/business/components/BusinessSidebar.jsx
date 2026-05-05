@@ -51,7 +51,7 @@ export { ClientProfilePanel };
 
 // =========================================================
 
-const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, onSendCatalogProduct = null, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null, cartDraftsByChat: externalCartDraftsByChat = {}, setCartDraftsByChat: externalSetCartDraftsByChat = null, chatAssignmentState = null }) => {
+const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messagesRef = null, activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, onSendCatalogProduct = null, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null, cartDraftsByChat: externalCartDraftsByChat = {}, setCartDraftsByChat: externalSetCartDraftsByChat = null, chatAssignmentState = null }) => {
     const { notify } = useUiFeedback();
     const [activeTab, setActiveTab] = useState('ai');
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
@@ -277,10 +277,15 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setShowCompanyProfile
     });
 
+    const getLiveMessages = useCallback(
+        () => (Array.isArray(messagesRef?.current) ? messagesRef.current : []),
+        [messagesRef]
+    );
+
     const buildBusinessContext = () => buildBusinessContextPrompt({
         catalog,
         profile,
-        messages,
+        messages: getLiveMessages(),
         cart,
         formatMoney
     });
@@ -306,7 +311,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         globalDiscountEnabled,
         globalDiscountType,
         normalizedGlobalDiscountValue,
-        messages,
+        messages: getLiveMessages(),
         currentAiScopeChatId,
         activeChatId,
         activeAiScope

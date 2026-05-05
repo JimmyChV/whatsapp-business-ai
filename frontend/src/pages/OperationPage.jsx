@@ -81,6 +81,7 @@ export default function OperationPage({
   clientContact,
   messages,
   messagesEndRef,
+  messagesRef,
   isDragOver,
   handleDragOver,
   handleDragLeave,
@@ -494,7 +495,7 @@ export default function OperationPage({
             tenantScopeKey={tenantScopeId}
             setInputText={setInputText}
             businessData={businessData}
-            messages={messages}
+            messagesRef={messagesRef}
             activeChatId={activeChatId}
             activeChatPhone={activeChatDetails?.phone || clientContact?.phone || ''}
             activeChatDetails={mergedActiveChatDetails}
