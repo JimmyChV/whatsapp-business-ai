@@ -765,15 +765,15 @@ const MessageBubble = ({
                         )}
                         {renderedTemplate.headerText ? (
                             <div className="message-template-preview__header">
-                                {renderWhatsAppFormattedText(renderedTemplate.headerText)}
+                        {renderWhatsAppFormattedText(renderedTemplate.headerText, { allowCodeFormatting: true })}
                             </div>
                         ) : null}
                         <div className="message-template-preview__body">
-                            {renderWhatsAppFormattedText(renderedTemplate.bodyText || renderedTemplate.previewText)}
+                            {renderWhatsAppFormattedText(renderedTemplate.bodyText || renderedTemplate.previewText, { allowCodeFormatting: true })}
                         </div>
                         {renderedTemplate.footerText ? (
                             <div className="message-template-preview__footer">
-                                {renderWhatsAppFormattedText(renderedTemplate.footerText)}
+                                {renderWhatsAppFormattedText(renderedTemplate.footerText, { allowCodeFormatting: true })}
                             </div>
                         ) : null}
                     </div>
@@ -791,7 +791,7 @@ const MessageBubble = ({
                             setSelectedLocationText('');
                         }}
                     >
-                        {renderWhatsAppFormattedText(messageTextToRender)}
+                        {renderWhatsAppFormattedText(messageTextToRender, { allowCodeFormatting: isOut })}
                     </div>
                 )}
 

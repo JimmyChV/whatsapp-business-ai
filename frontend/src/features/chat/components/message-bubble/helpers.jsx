@@ -2,9 +2,21 @@ import React from 'react';
 import { FileText, FileSpreadsheet, FileArchive, FileType2 } from 'lucide-react';
 
 export const INLINE_WA_PATTERN = /(https?:\/\/[^\s]+|\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~|`[^`\n]+`)/g;
+export const INLINE_WA_PATTERN_NO_CODE = /(https?:\/\/[^\s]+|\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~)/g;
 
-export const renderWhatsAppInline = (text = '') => {
-    const tokens = String(text || '').split(INLINE_WA_PATTERN).filter((token) => token !== '');
+export const unwrapWholeCodeFormatting = (text = '') => {
+    const source = String(text || '');
+    const trimmed = source.trim();
+    const fencedMatch = trimmed.match(/^```([\s\S]*?)```$/);
+    if (fencedMatch) return String(fencedMatch[1] || '').replace(/^\n+|\n+$/g, '');
+    const inlineMatch = trimmed.match(/^`([^`\n]+)`$/);
+    if (inlineMatch) return String(inlineMatch[1] || '');
+    return source;
+};
+
+export const renderWhatsAppInline = (text = '', { allowCodeFormatting = true } = {}) => {
+    const pattern = allowCodeFormatting ? INLINE_WA_PATTERN : INLINE_WA_PATTERN_NO_CODE;
+    const tokens = String(text || '').split(pattern).filter((token) => token !== '');
     return tokens.map((token, idx) => {
         if (/^https?:\/\/[^\s]+$/i.test(token)) {
             return (
@@ -16,7 +28,7 @@ export const renderWhatsAppInline = (text = '') => {
         if (/^\*[^*\n]+\*$/.test(token)) return <strong key={`b_${idx}`}>{token.slice(1, -1)}</strong>;
         if (/^_[^_\n]+_$/.test(token)) return <em key={`i_${idx}`}>{token.slice(1, -1)}</em>;
         if (/^~[^~\n]+~$/.test(token)) return <s key={`s_${idx}`}>{token.slice(1, -1)}</s>;
-        if (/^`[^`\n]+`$/.test(token)) {
+        if (allowCodeFormatting && /^`[^`\n]+`$/.test(token)) {
             return (
                 <code key={`m_${idx}`} style={{ fontFamily: 'Consolas, Monaco, monospace', fontSize: '0.88em', background: 'var(--chat-code-surface)', border: '1px solid var(--chat-code-border)', borderRadius: '4px', padding: '1px 4px' }}>
                     {token.slice(1, -1)}
@@ -27,31 +39,34 @@ export const renderWhatsAppInline = (text = '') => {
     });
 };
 
-export const renderInlineLines = (text = '', keyPrefix = 'inline') => {
+export const renderInlineLines = (text = '', keyPrefix = 'inline', options = {}) => {
     const lines = String(text || '').split('\n');
     return lines.map((line, idx) => (
         <React.Fragment key={`${keyPrefix}_line_${idx}`}>
-            {renderWhatsAppInline(line)}
+            {renderWhatsAppInline(line, options)}
             {idx < lines.length - 1 && <br />}
         </React.Fragment>
     ));
 };
 
-export const renderWhatsAppFormattedText = (text = '') => {
-    const source = String(text || '');
+export const renderWhatsAppFormattedText = (text = '', options = {}) => {
+    const { allowCodeFormatting = true } = options || {};
+    const source = allowCodeFormatting
+        ? String(text || '')
+        : unwrapWholeCodeFormatting(text);
     const codeFencePattern = /```([\s\S]*?)```/g;
     const chunks = [];
     let lastIndex = 0;
     let match;
     let chunkIndex = 0;
 
-    while ((match = codeFencePattern.exec(source)) !== null) {
+    while (allowCodeFormatting && (match = codeFencePattern.exec(source)) !== null) {
         const before = source.slice(lastIndex, match.index);
         if (before) {
             const textKey = chunkIndex++;
             chunks.push(
                 <React.Fragment key={`txt_${textKey}`}>
-                    {renderInlineLines(before, `txt_${textKey}`)}
+                    {renderInlineLines(before, `txt_${textKey}`, { allowCodeFormatting })}
                 </React.Fragment>
             );
         }
@@ -85,12 +100,12 @@ export const renderWhatsAppFormattedText = (text = '') => {
         const tailKey = chunkIndex++;
         chunks.push(
             <React.Fragment key={`tail_${tailKey}`}>
-                {renderInlineLines(tail, `tail_${tailKey}`)}
+                {renderInlineLines(tail, `tail_${tailKey}`, { allowCodeFormatting })}
             </React.Fragment>
         );
     }
 
-    if (!chunks.length) return renderInlineLines(source, 'plain');
+    if (!chunks.length) return renderInlineLines(source, 'plain', { allowCodeFormatting });
     return chunks;
 };
 export const parseOrderMoneyValue = (value) => {
