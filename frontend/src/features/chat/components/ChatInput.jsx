@@ -1,4 +1,4 @@
-import React, { startTransition, useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Smile, Bot, Sparkles, X, Paperclip, Send, MapPin, LayoutTemplate } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { EmojiStyle, SkinTonePickerLocation, SkinTones, SuggestionMode, Theme } from 'emoji-picker-react';
@@ -46,6 +46,9 @@ const ChatInput = ({
 }) => {
     const [showEmoji, setShowEmoji] = useState(false);
     const [showCommands, setShowCommands] = useState(false);
+    const [slashQuery, setSlashQuery] = useState('');
+    const [hasLocalText, setHasLocalText] = useState(Boolean(String(inputText || '').trim()));
+    const [linkPreviewSource, setLinkPreviewSource] = useState('');
     const [linkPreview, setLinkPreview] = useState(null);
     const [isLoadingPreview, setIsLoadingPreview] = useState(false);
     const [selectionState, setSelectionState] = useState(null);
@@ -57,11 +60,6 @@ const ChatInput = ({
     ));
     const inputRef = useRef(null);
     const chatInputRef = useRef(null);
-    // localText drives the controlled textarea so the 'input' handler stays fast.
-    // setInputText (parent state) is deferred via startTransition so expensive
-    // ancestor re-renders don't block the keystroke paint.
-    const lastUserInputRef = useRef(inputText);
-    const [localText, setLocalText] = useState(() => inputText);
     const draftQuickReplyLabel = String(quickReplyDraft?.label || '').trim();
     const draftQuickReplyText = String(quickReplyDraft?.text || '').trim();
     const draftQuickReplyAssets = Array.isArray(quickReplyDraft?.mediaAssets)
@@ -80,21 +78,53 @@ const ChatInput = ({
     const isTemplateOnlyMode = windowOpen === false;
     const isBlockedByEditState = Boolean(editingMessage?.id);
     const disableFreeformComposer = isTemplateOnlyMode || isBlockedByEditState;
-    const canSendFreeform = !isTemplateOnlyMode && (Boolean(localText.trim()) || Boolean(attachment) || Boolean(hasDraftQuickReply));
+    const canSendFreeform = !isTemplateOnlyMode && (hasLocalText || Boolean(attachment) || Boolean(hasDraftQuickReply));
+
+    const getInputValue = useCallback(() => String(inputRef.current?.value || ''), []);
+    const extractFirstUrl = useCallback((text) => {
+        const match = String(text || '').match(/https?:\/\/[^\s]+/i);
+        return match ? match[0] : null;
+    }, []);
+    const resizeInput = useCallback(() => {
+        const el = inputRef.current;
+        if (!el) return;
+        el.style.height = '24px';
+        const next = Math.min(el.scrollHeight, 220);
+        el.style.height = `${next}px`;
+    }, []);
+    const updateDerivedInputState = useCallback((rawValue = '') => {
+        const val = String(rawValue || '');
+        const startsWithSlash = val.startsWith('/');
+        setShowCommands(startsWithSlash);
+        setHasLocalText(Boolean(val.trim()));
+        if (startsWithSlash) setSlashQuery(val);
+        else setSlashQuery('');
+        setLinkPreviewSource(extractFirstUrl(val) || '');
+    }, [extractFirstUrl]);
+    const syncToParent = useCallback(() => {
+        const val = getInputValue();
+        if (typeof setInputText === 'function') setInputText(val);
+        return val;
+    }, [getInputValue, setInputText]);
 
     const handleInputChange = (e) => {
         const val = e.target.value;
-        lastUserInputRef.current = val;
-        setLocalText(val);                          // fast — only re-renders ChatInput
-        setShowCommands(val.startsWith('/'));
+        updateDerivedInputState(val);
+        resizeInput();
         if (showEmoji) setShowEmoji(false);
     };
 
-    // Used by one-off format actions (emoji, bold, etc.) to keep the local draft in sync.
-    const setTextBoth = (val) => {
-        lastUserInputRef.current = val;
-        setLocalText(val);
+    const setTextBoth = (val, { syncParent = true } = {}) => {
+        if (inputRef.current) inputRef.current.value = val;
+        updateDerivedInputState(val);
+        resizeInput();
+        if (syncParent && typeof setInputText === 'function') setInputText(val);
     };
+    const resetInputDom = useCallback(() => {
+        if (inputRef.current) inputRef.current.value = '';
+        updateDerivedInputState('');
+        resizeInput();
+    }, [resizeInput, updateDerivedInputState]);
 
     const updateSelectionState = () => {
         const el = inputRef.current;
@@ -114,7 +144,7 @@ const ChatInput = ({
     const insertEmoji = (emoji) => {
         const el = inputRef.current;
         if (!el) {
-            setTextBoth(`${localText}${emoji}`);
+            setTextBoth(`${getInputValue()}${emoji}`);
             setShowEmoji(false);
             return;
         }
@@ -256,10 +286,10 @@ const ChatInput = ({
     };
 
     const normalizedSlashQuery = useMemo(() =>
-        String(localText || '').startsWith('/')
-            ? String(localText || '').slice(1).trim().toLowerCase()
+        String(slashQuery || '').startsWith('/')
+            ? String(slashQuery || '').slice(1).trim().toLowerCase()
             : '',
-    [localText]);
+    [slashQuery]);
 
     const slashTokens = useMemo(() =>
         normalizedSlashQuery
@@ -315,40 +345,15 @@ const ChatInput = ({
         setShowCommands(false);
     };
 
-    const extractFirstUrl = (text) => {
-        const match = String(text || '').match(/https?:\/\/[^\s]+/i);
-        return match ? match[0] : null;
-    };
-
-
     useEffect(() => {
-        const el = inputRef.current;
-        if (!el) return;
-        // Defer the reflow to the next animation frame so it doesn't block the keystroke paint.
-        const raf = requestAnimationFrame(() => {
-            el.style.height = '24px';
-            const next = Math.min(el.scrollHeight, 220);
-            el.style.height = `${next}px`;
-        });
-        return () => cancelAnimationFrame(raf);
-    }, [localText]);
-
-    useEffect(() => {
-        if (localText === inputText) return undefined;
-        const timer = setTimeout(() => {
-            startTransition(() => setInputText(localText));
-        }, 180);
-        return () => clearTimeout(timer);
-    }, [inputText, localText, setInputText]);
-
-    // Sync localText when the parent changes inputText externally (AI suggestion,
-    // reply prefill, chat switch clearing the field, etc.).
-    // Skip if the change came from our own typing (lastUserInputRef tracks that).
-    useEffect(() => {
-        if (inputText === lastUserInputRef.current) return;
-        lastUserInputRef.current = inputText;
-        setLocalText(inputText);
-    }, [inputText]); // eslint-disable-line react-hooks/exhaustive-deps
+        if (!inputRef.current) return;
+        const nextValue = String(inputText || '');
+        if (inputRef.current.value !== nextValue) {
+            inputRef.current.value = nextValue;
+            updateDerivedInputState(nextValue);
+            resizeInput();
+        }
+    }, [inputText, resizeInput, updateDerivedInputState]);
 
     useEffect(() => {
         if (!editingMessage?.id) return;
@@ -364,11 +369,11 @@ const ChatInput = ({
 
     useEffect(() => {
         if (!selectionState) return;
-        const inputLen = String(localText || '').length;
+        const inputLen = getInputValue().length;
         if (selectionState.start >= inputLen || selectionState.end > inputLen) {
             setSelectionState(null);
         }
-    }, [localText, selectionState]);
+    }, [getInputValue, inputText, selectionState]);
 
     useEffect(() => {
         if (!showEmoji) return;
@@ -410,7 +415,7 @@ const ChatInput = ({
     }, []);
 
     useEffect(() => {
-        const url = extractFirstUrl(localText);
+        const url = linkPreviewSource;
         if (!url) {
             setLinkPreview(prev => (prev !== null ? null : prev));
             setIsLoadingPreview(prev => (prev ? false : prev));
@@ -438,7 +443,7 @@ const ChatInput = ({
             cancelled = true;
             clearTimeout(timer);
         };
-    }, [localText]);
+    }, [linkPreviewSource]);
 
     return (
         <div className="chat-input-area chat-input-area-pro" style={{ position: 'relative' }} ref={chatInputRef}>
@@ -736,7 +741,6 @@ const ChatInput = ({
                             ? 'Usa un template aprobado para contactar a este cliente...'
                             : (editingMessage?.id ? 'Edita el mensaje y presiona Enter...' : (replyingMessage?.id ? 'Escribe tu respuesta y presiona Enter...' : 'Escribe un mensaje...'))
                     }
-                    value={localText}
                     onChange={handleInputChange}
                     disabled={isTemplateOnlyMode}
                     onKeyDown={(e) => {
@@ -769,12 +773,9 @@ const ChatInput = ({
                         if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
                             e.preventDefault();
                             if (isTemplateOnlyMode) return;
-                            const didSend = onSendMessage(localText);
-                            if (didSend !== false) {
-                                lastUserInputRef.current = '';
-                                setLocalText('');
-                                setShowCommands(false);
-                            }
+                            const syncedValue = syncToParent();
+                            const didSend = onSendMessage(syncedValue);
+                            if (didSend !== false) resetInputDom();
                             return;
                         }
                         onKeyDown && onKeyDown(e);
@@ -803,12 +804,9 @@ const ChatInput = ({
                     className="send-button send-button-modern"
                     onClick={() => {
                         if (!canSendFreeform) return;
-                        const didSend = onSendMessage(localText);
-                        if (didSend !== false) {
-                            lastUserInputRef.current = '';
-                            setLocalText('');
-                            setShowCommands(false);
-                        }
+                        const syncedValue = syncToParent();
+                        const didSend = onSendMessage(syncedValue);
+                        if (didSend !== false) resetInputDom();
                     }}
 
                     title={editingMessage?.id ? 'Guardar edicion' : (replyingMessage?.id ? 'Enviar respuesta' : 'Enviar')}
