@@ -27,6 +27,7 @@ function RoleProfilesSection(props = {}) {
     const context = props.context && typeof props.context === 'object' ? props.context : props;
     const {
         isRolesSection,
+        loadAccessCatalog,
         busy,
         canManageRoles,
         openRoleCreate,
@@ -49,7 +50,7 @@ function RoleProfilesSection(props = {}) {
     } = context;
 
     const isEditing = rolePanelMode === 'create' || rolePanelMode === 'edit';
-    const selectedId = rolePanelMode === 'create' ? '__create_role' : selectedRoleProfile?.role || selectedRoleKey || '';
+    const selectedId = rolePanelMode === 'create' ? '__create_role' : selectedRoleKey || '';
 
     const rows = React.useMemo(() => roleProfiles.map((profile) => {
         const role = String(profile?.role || '').trim().toLowerCase();
@@ -125,7 +126,7 @@ function RoleProfilesSection(props = {}) {
         );
     }, [permissionLabelMap, selectedRoleProfile]);
 
-    const renderForm = React.useCallback(() => (
+    const renderForm = React.useCallback(({ close: requestClose } = {}) => (
         <>
             <div className="saas-admin-form-row">
                 <input
@@ -187,12 +188,11 @@ function RoleProfilesSection(props = {}) {
                 <button type="button" disabled={busy || !String(roleForm.role || selectedRoleKey || '').trim()} onClick={saveRoleProfile}>
                     {rolePanelMode === 'create' ? 'Crear rol' : 'Guardar cambios'}
                 </button>
-                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelRoleEdit}>CANCELAR</button>
+                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { void requestClose?.(); }}>Volver</button>
             </div>
         </>
     ), [
         busy,
-        cancelRoleEdit,
         roleForm,
         rolePanelMode,
         rolePermissionOptions,
@@ -206,7 +206,7 @@ function RoleProfilesSection(props = {}) {
 
     const detailActions = React.useMemo(() => {
         if (rolePanelMode !== 'view' || !selectedRoleProfile || !canManageRoles) return null;
-        return <button type="button" disabled={busy} onClick={openRoleEdit}>EDITAR</button>;
+        return <button type="button" disabled={busy} onClick={openRoleEdit}>Editar</button>;
     }, [busy, canManageRoles, openRoleEdit, rolePanelMode, selectedRoleProfile]);
 
     if (!isRolesSection) return null;
@@ -227,7 +227,10 @@ function RoleProfilesSection(props = {}) {
             dirty={isEditing}
             emptyText="No hay perfiles de rol cargados."
             searchPlaceholder="Buscar rol por nombre, código o estado..."
-            actions={canManageRoles ? [{ key: 'create', label: 'Nuevo rol', onClick: openRoleCreate, disabled: busy }] : []}
+            actions={[
+                { key: 'reload', label: 'Recargar', onClick: () => loadAccessCatalog?.(), disabled: busy || typeof loadAccessCatalog !== 'function' },
+                ...(canManageRoles ? [{ key: 'create', label: 'Nuevo rol', onClick: openRoleCreate, disabled: busy }] : [])
+            ]}
             filters={filters}
             detailTitle={rolePanelMode === 'create' ? 'Nuevo rol' : rolePanelMode === 'edit' ? `Editando rol: ${roleForm.role || selectedRoleKey}` : selectedRoleProfile?.label || selectedRoleProfile?.role || 'Rol'}
             detailSubtitle={isEditing ? 'Define permisos obligatorios, opcionales y bloqueados por perfil.' : 'Catálogo global de perfiles de acceso.'}

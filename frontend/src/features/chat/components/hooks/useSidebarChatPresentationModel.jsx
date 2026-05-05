@@ -65,10 +65,12 @@ const useSidebarChatPresentationModel = () => {
 
   const renderStatus = (chat) => {
     if (!chat.lastMessageFromMe) return null;
-    const color = chat.ack === 3 ? '#53bdeb' : '#8696a0';
+    const readColor = 'var(--chat-info-text)';
+    const mutedColor = 'var(--chat-control-text-soft)';
+    const color = chat.ack === 3 ? readColor : mutedColor;
     return (
       <span className="chat-last-status-icon">
-        {chat.ack >= 2 ? <CheckCheck size={16} color={color} /> : <Check size={16} color="#8696a0" />}
+        {chat.ack >= 2 ? <CheckCheck size={16} color={color} /> : <Check size={16} color={mutedColor} />}
       </span>
     );
   };

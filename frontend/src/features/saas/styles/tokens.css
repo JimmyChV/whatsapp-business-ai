@@ -1,0 +1,171 @@
+:root {
+  --saas-font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  --saas-font-size-xs: 11px;
+  --saas-font-size-sm: 12px;
+  --saas-font-size-base: 14px;
+  --saas-font-size-md: 15px;
+  --saas-font-size-lg: 17px;
+  --saas-font-size-xl: 22px;
+  --saas-font-size-2xl: 28px;
+  --saas-font-weight-normal: 400;
+  --saas-font-weight-medium: 500;
+  --saas-font-weight-semibold: 600;
+  --saas-font-weight-bold: 700;
+  --saas-line-height-tight: 1.2;
+  --saas-line-height-normal: 1.55;
+  --saas-space-1: 4px;
+  --saas-space-2: 8px;
+  --saas-space-3: 12px;
+  --saas-space-4: 16px;
+  --saas-space-5: 22px;
+  --saas-space-6: 28px;
+  --saas-space-8: 36px;
+  --saas-radius-sm: 4px;
+  --saas-radius-md: 10px;
+  --saas-radius-lg: 14px;
+  --saas-radius-xl: 18px;
+  --saas-radius-full: 9999px;
+  --saas-border-width: 1px;
+  --saas-shadow-sm: 0 8px 18px rgba(0, 0, 0, 0.12);
+  --saas-shadow-md: 0 18px 34px rgba(0, 0, 0, 0.16);
+  --saas-shadow-lg: 0 28px 64px rgba(0, 0, 0, 0.22);
+  --saas-transition-fast: 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  --saas-transition-normal: 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  --saas-btn-height-sm: 32px;
+  --saas-btn-height-md: 40px;
+  --saas-btn-height-lg: 46px;
+  --saas-btn-padding-x: 16px;
+  --saas-btn-font-size: var(--saas-font-size-base);
+  --saas-btn-font-weight: var(--saas-font-weight-medium);
+  --saas-btn-radius: var(--saas-radius-md);
+  --saas-input-height: 42px;
+  --saas-input-padding: 0 14px;
+  --saas-input-font-size: var(--saas-font-size-base);
+  --saas-input-radius: var(--saas-radius-md);
+  --saas-table-row-height: 48px;
+  --saas-table-header-height: 40px;
+  --saas-table-font-size: var(--saas-font-size-base);
+  --saas-table-cell-padding: 0 14px;
+  --saas-z-dropdown: 1000;
+  --saas-z-modal: 2000;
+  --saas-z-toast: 3000;
+  --saas-panel-radius: var(--saas-radius-xl);
+  --saas-control-gap: var(--saas-space-2);
+  --saas-header-gap: var(--saas-space-3);
+  --saas-header-min-height: 78px;
+  --saas-header-padding-y: 16px;
+  --saas-header-padding-x: 26px;
+  --saas-search-min-width: 240px;
+  --saas-focus-ring: 0 0 0 3px color-mix(in srgb, var(--saas-accent-primary) 18%, transparent);
+  --saas-control-shadow: inset 0 1px 0 color-mix(in srgb, var(--saas-text-inverse) 4%, transparent);
+  --saas-panel-shadow: 0 24px 52px rgba(0, 0, 0, 0.18);
+  --saas-card-padding: 16px;
+  --saas-section-gap: 16px;
+}
+
+:root,
+:root[data-theme="dark"] {
+  --saas-bg-base: #0d1117;
+  --saas-bg-surface: #161b22;
+  --saas-bg-elevated: #1c2128;
+  --saas-bg-hover: #21262d;
+  --saas-bg-selected: #1f6feb22;
+  --saas-bg-input: #0d1117;
+  --saas-border-color: #30363d;
+  --saas-border-color-focus: #388bfd;
+  --saas-text-primary: #e6edf3;
+  --saas-text-secondary: #8b949e;
+  --saas-text-tertiary: var(--saas-text-secondary);
+  --saas-text-disabled: #484f58;
+  --saas-text-inverse: #0d1117;
+  --saas-accent-primary: #238636;
+  --saas-accent-primary-hover: #2ea043;
+  --saas-accent-primary-text: #ffffff;
+  --saas-accent-danger: #da3633;
+  --saas-accent-danger-hover: #f85149;
+  --saas-accent-warning: #d29922;
+  --saas-accent-info: #388bfd;
+  --saas-sidebar-bg: #0d1117;
+  --saas-sidebar-text: #8b949e;
+  --saas-sidebar-active-bg: #21262d;
+  --saas-sidebar-active-text: #e6edf3;
+  --saas-header-bg: #161b22;
+  --saas-header-border: #30363d;
+  --saas-table-header-bg: #161b22;
+  --saas-table-row-bg: transparent;
+  --saas-table-row-hover: #21262d;
+  --saas-table-row-selected: #1f6feb22;
+  --saas-table-border: #21262d;
+  --saas-scrollbar-thumb: #30363d;
+  --saas-scrollbar-thumb-hover: #3f4852;
+  --saas-scrollbar-track: transparent;
+  --saas-chip-bg: #21262d;
+  --saas-chip-text: #8b949e;
+  --saas-chip-border: #30363d;
+  --saas-surface-soft: color-mix(in srgb, var(--saas-bg-surface) 90%, var(--saas-bg-elevated));
+  --saas-surface-strong: color-mix(in srgb, var(--saas-bg-elevated) 88%, var(--saas-bg-base));
+  --saas-surface-floating: color-mix(in srgb, var(--saas-bg-surface) 84%, transparent);
+  --saas-divider-soft: color-mix(in srgb, var(--saas-border-color) 72%, transparent);
+}
+
+:root[data-theme="light"] {
+  /* Fondos — paleta crema off-white */
+  --saas-bg-base:       #f5f2ed;
+  --saas-bg-surface:    #ffffff;
+  --saas-bg-elevated:   #ede9e3;
+  --saas-bg-hover:      #e8e4de;
+  --saas-bg-selected:   rgba(46, 160, 67, 0.08);
+  --saas-bg-input:      #ffffff;
+
+  /* Bordes */
+  --saas-border-color:       #d4cfc8;
+  --saas-border-color-focus: #2ea043;
+
+  /* Textos */
+  --saas-text-primary:   #1c1917;
+  --saas-text-secondary: #6b6560;
+  --saas-text-tertiary:  #9c948c;
+  --saas-text-disabled:  #c4bdb6;
+  --saas-text-inverse:   #ffffff;
+
+  /* Acentos — mismos que dark para consistencia de marca */
+  --saas-accent-primary:       #2ea043;
+  --saas-accent-primary-hover: #238636;
+  --saas-accent-primary-text:  #ffffff;
+  --saas-accent-danger:        #cf222e;
+  --saas-accent-danger-hover:  #a40e26;
+  --saas-accent-warning:       #9a6700;
+  --saas-accent-info:          #0969da;
+
+  /* Sidebar */
+  --saas-sidebar-bg:          #ede9e3;
+  --saas-sidebar-text:        #6b6560;
+  --saas-sidebar-active-bg:   #e0dbd4;
+  --saas-sidebar-active-text: #1c1917;
+
+  /* Header */
+  --saas-header-bg:     #ffffff;
+  --saas-header-border: #d4cfc8;
+
+  /* Tabla */
+  --saas-table-header-bg:   #f0ece6;
+  --saas-table-row-bg:      #ffffff;
+  --saas-table-row-hover:   #f5f2ed;
+  --saas-table-row-selected:rgba(46, 160, 67, 0.06);
+  --saas-table-border:      #e8e4de;
+
+  /* Scrollbar */
+  --saas-scrollbar-thumb:   #d4cfc8;
+  --saas-scrollbar-thumb-hover: #bdb4ab;
+  --saas-scrollbar-track:   transparent;
+
+  /* Chips */
+  --saas-chip-bg:     #e8e4de;
+  --saas-chip-text:   #6b6560;
+  --saas-chip-border: #d4cfc8;
+  --saas-surface-soft: color-mix(in srgb, var(--saas-bg-surface) 84%, var(--saas-bg-elevated));
+  --saas-surface-strong: color-mix(in srgb, var(--saas-bg-elevated) 94%, var(--saas-bg-base));
+  --saas-surface-floating: color-mix(in srgb, var(--saas-bg-surface) 92%, transparent);
+  --saas-divider-soft: color-mix(in srgb, var(--saas-border-color) 78%, transparent);
+}
+

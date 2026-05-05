@@ -1,4 +1,7 @@
+import { useEffect, useState } from 'react';
 import { MessageCircle, Moon, Sun, X } from 'lucide-react';
+
+const normalizeThemeMode = (value = '') => (String(value || '').trim().toLowerCase() === 'light' ? 'light' : 'dark');
 
 export default function SaasPanelHeader({
     showHeader = true,
@@ -20,12 +23,18 @@ export default function SaasPanelHeader({
 }) {
     if (!showHeader) return null;
 
+    const [activeThemeMode, setActiveThemeMode] = useState(() => normalizeThemeMode(themeMode));
+
+    useEffect(() => {
+        setActiveThemeMode(normalizeThemeMode(themeMode));
+    }, [themeMode]);
+
     return (
         <div className="saas-admin-header">
             <div>
                 <h2>{title}</h2>
                 <div className="saas-admin-header-subrow">
-                    {subtitle ? <span>{subtitle}</span> : null}
+                    {subtitle ? <span className="saas-admin-header-subtitle">{subtitle}</span> : null}
                     {tenantPicker && tenantPicker.visible ? (
                         <div className="saas-admin-header-tenant-inline">
                             <span className="saas-admin-header-tenant-label">EMPRESA</span>
@@ -38,6 +47,7 @@ export default function SaasPanelHeader({
                                 }}
                                 disabled={Boolean(tenantPicker.disabled)}
                                 title="Empresa activa"
+                                aria-label="Empresa activa"
                             >
                                 <option value="">
                                     Seleccionar empresa
@@ -53,11 +63,13 @@ export default function SaasPanelHeader({
                             {tenantPicker.canClear ? (
                                 <button
                                     type="button"
-                                    className="saas-header-btn saas-header-btn--secondary saas-admin-header-tenant-clear"
+                                    className="saas-btn saas-header-btn saas-header-btn--secondary saas-admin-header-tenant-clear"
                                     disabled={Boolean(tenantPicker.disabled)}
                                     onClick={() => tenantPicker.onClear?.()}
+                                    title="Limpiar empresa activa"
+                                    aria-label="Limpiar empresa activa"
                                 >
-                                    Limpiar
+                                    <X size={14} strokeWidth={2} />
                                 </button>
                             ) : null}
                         </div>
@@ -69,7 +81,7 @@ export default function SaasPanelHeader({
                     {typeof onOpenOperation === 'function' && (
                         <button
                             type="button"
-                            className="saas-header-btn saas-header-btn--primary saas-admin-header-open-operation"
+                            className="saas-btn saas-header-btn saas-header-btn--secondary saas-admin-header-open-operation"
                             disabled={isBusy || !canOpenOperation}
                             onClick={onOpenOperation}
                             title="Ir al chat"
@@ -81,9 +93,10 @@ export default function SaasPanelHeader({
                     <div className="saas-admin-theme-toggle" role="group" aria-label="Cambiar tema">
                         <button
                             type="button"
-                            className="saas-admin-theme-toggle__button"
+                            className="saas-admin-theme-toggle__button saas-btn saas-header-btn saas-header-btn--secondary"
                             onClick={() => {
-                                const next = themeMode === 'dark' ? 'light' : 'dark';
+                                const next = activeThemeMode === 'dark' ? 'light' : 'dark';
+                                setActiveThemeMode(next);
                                 document.documentElement.setAttribute('data-theme', next);
                                 try {
                                     window.localStorage.setItem('saas-theme', next);
@@ -91,30 +104,15 @@ export default function SaasPanelHeader({
                                 } catch {}
                                 onThemeChange?.(next);
                             }}
-                            title={themeMode === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-                            aria-label={themeMode === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-                            style={{
-                                background: 'transparent',
-                                border: '1px solid var(--saas-border-color)',
-                                borderRadius: '20px',
-                                padding: '4px 10px',
-                                cursor: 'pointer',
-                                color: 'var(--saas-text-primary)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                fontSize: '13px',
-                                pointerEvents: 'auto',
-                                zIndex: 10,
-                                position: 'relative'
-                            }}
+                            title={activeThemeMode === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+                            aria-label={activeThemeMode === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
                         >
-                            {themeMode === 'dark'
-                                ? <><Sun size={14} strokeWidth={2} /> Claro</>
-                                : <><Moon size={14} strokeWidth={2} /> Oscuro</>}
+                            {activeThemeMode === 'dark'
+                                ? <><Sun size={14} strokeWidth={2} /><span className="saas-admin-theme-toggle__button-label">Claro</span></>
+                                : <><Moon size={14} strokeWidth={2} /><span className="saas-admin-theme-toggle__button-label">Oscuro</span></>}
                         </button>
                     </div>
-                    <div className="saas-admin-header-profile" role="status" aria-label="Usuario en sesión">
+                    <div className="saas-admin-header-profile" role="status" aria-label="Usuario en sesion">
                         <div className="saas-admin-header-profile-avatar">
                             {currentUserAvatarUrl
                                 ? <img src={currentUserAvatarUrl} alt={currentUserDisplayName} />
@@ -127,7 +125,7 @@ export default function SaasPanelHeader({
                     </div>
                     <button
                         type="button"
-                        className="saas-header-btn saas-header-btn--danger saas-admin-header-close-danger"
+                        className="saas-btn saas-header-btn saas-header-btn--danger saas-admin-header-close-danger"
                         onClick={onClose}
                         title={closeLabel}
                     >

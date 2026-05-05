@@ -13,6 +13,7 @@ export default function buildEntitySectionContext(c) {
         tenantScopeId: c.tenantScopeId,
         tenantOptions: c.tenantOptions,
         overview: c.overview,
+        refreshOverview: c.refreshOverview,
         scopedUsers: c.scopedUsers,
         waModules: c.waModules,
         busy: c.busy,

@@ -24,37 +24,55 @@ export default function BusinessCatalogProductCard({
     const cartLine = cartItems.find((cartItem) => String(cartItem?.id || '') === String(item?.id || ''));
     const cartQty = Math.max(0, Number(cartLine?.qty || 0));
     const inCart = cartQty > 0;
+    const tone = {
+        cardSurface: 'var(--chat-card-surface)',
+        cardSurfaceAlt: 'var(--chat-card-surface-alt)',
+        controlSurface: 'var(--chat-control-surface)',
+        controlSurfaceStrong: 'var(--chat-control-surface-strong)',
+        controlBorder: 'var(--chat-control-border)',
+        textMuted: 'var(--chat-control-text-soft)',
+        successSurface: 'var(--chat-success-surface)',
+        successBorder: 'var(--chat-success-border)',
+        successText: 'var(--chat-success-text)',
+        infoSurface: 'var(--chat-info-surface)',
+        infoBorder: 'var(--chat-info-border)',
+        infoText: 'var(--chat-info-text)',
+        dangerSurface: 'var(--chat-danger-soft)',
+        dangerBorder: 'var(--chat-danger-border)',
+        dangerText: 'var(--chat-danger-text)',
+        priceText: 'var(--chat-price-text)'
+    };
 
     return (
-        <div style={{ background: '#1b2730', borderRadius: '11px', border: '1px solid #2a3a45', padding: '8px', display: 'grid', gridTemplateColumns: '74px 1fr', gap: '8px', alignItems: 'start' }}>
-            <div style={{ width: '74px', height: '74px', borderRadius: '9px', background: '#2a3942', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div style={{ background: tone.cardSurface, borderRadius: '11px', border: `1px solid ${tone.controlBorder}`, padding: '8px', display: 'grid', gridTemplateColumns: '74px 1fr', gap: '8px', alignItems: 'start' }}>
+            <div style={{ width: '74px', height: '74px', borderRadius: '9px', background: tone.cardSurfaceAlt, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${tone.controlBorder}` }}>
                 {item.imageUrl
                     ? <img src={item.imageUrl} alt={item.title || 'Producto'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    : <Package size={24} color="#98adba" />}
+                    : <Package size={24} color="var(--chat-control-text-soft)" />}
             </div>
 
             <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '5px', justifyContent: 'flex-start' }}>
-                <div style={{ fontSize: '0.84rem', color: '#eef5f9', fontWeight: 700, lineHeight: 1.24, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                <div style={{ fontSize: '0.84rem', color: 'var(--text-primary)', fontWeight: 700, lineHeight: 1.24, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
                     {String(item.title || `Producto ${index + 1}`)}
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' }}>
                     {hasDiscount && (
-                        <span style={{ fontSize: '0.72rem', color: '#8fa1ad', textDecoration: 'line-through' }}>S/ {formatMoney(regularPrice)}</span>
+                        <span style={{ fontSize: '0.72rem', color: tone.textMuted, textDecoration: 'line-through' }}>S/ {formatMoney(regularPrice)}</span>
                     )}
                     {hasDiscount && (
-                        <span style={{ fontSize: '0.7rem', color: '#d5fff4', background: 'rgba(0,168,132,0.26)', border: '1px solid rgba(0,168,132,0.44)', borderRadius: '999px', padding: '2px 7px', fontWeight: 700 }}>
+                        <span style={{ fontSize: '0.7rem', color: tone.successText, background: tone.successSurface, border: `1px solid ${tone.successBorder}`, borderRadius: '999px', padding: '2px 7px', fontWeight: 700 }}>
                             -{effectiveDiscount.toFixed(effectiveDiscount % 1 === 0 ? 0 : 1)}%
                         </span>
                     )}
                 </div>
 
-                <div style={{ fontSize: '1rem', color: '#00d7ad', fontWeight: 800 }}>
+                <div style={{ fontSize: '1rem', color: tone.priceText, fontWeight: 800 }}>
                     {finalPrice > 0 ? `S/ ${formatMoney(finalPrice)}` : 'Precio: Consultar'}
                 </div>
 
                 {inCart && (
-                    <div style={{ width: 'fit-content', display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.68rem', color: '#d9fff4', background: 'rgba(0,168,132,0.22)', border: '1px solid rgba(0,168,132,0.45)', borderRadius: '999px', padding: '3px 8px', fontWeight: 700 }}>
+                    <div style={{ width: 'fit-content', display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.68rem', color: tone.successText, background: tone.successSurface, border: `1px solid ${tone.successBorder}`, borderRadius: '999px', padding: '3px 8px', fontWeight: 700 }}>
                         <Check size={11} />
                         En carrito: {cartQty}
                     </div>
@@ -64,24 +82,24 @@ export default function BusinessCatalogProductCard({
                     <button
                         onClick={() => sendCatalogProduct(item, index)}
                         disabled={!canWriteByAssignment}
-                        style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '7px 9px', background: canWriteByAssignment ? '#17323f' : '#3f474b', border: '1px solid rgba(0,168,132,0.45)', borderRadius: '9px', color: '#d6f7ee', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontSize: '0.73rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: canWriteByAssignment ? 1 : 0.75 }}
+                        style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '7px 9px', background: canWriteByAssignment ? tone.infoSurface : 'var(--chat-control-disabled)', border: `1px solid ${tone.infoBorder}`, borderRadius: '9px', color: canWriteByAssignment ? tone.infoText : 'var(--saas-text-inverse)', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontSize: '0.73rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: canWriteByAssignment ? 1 : 0.75 }}
                     >
                         <Send size={12} /> Enviar
                     </button>
                     {inCart ? (
-                        <div style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', background: '#0f322b', border: '1px solid rgba(0,168,132,0.45)', borderRadius: '9px', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                        <div style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', background: tone.successSurface, border: `1px solid ${tone.successBorder}`, borderRadius: '9px', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
                             <button
                                 onClick={() => onCatalogQtyDelta && onCatalogQtyDelta(item.id, -1)}
                                 disabled={!canWriteByAssignment}
-                                style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#20423a', border: 'none', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', color: '#d6f7ee', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: canWriteByAssignment ? 1 : 0.75 }}
+                                style={{ width: '22px', height: '22px', borderRadius: '50%', background: tone.controlSurfaceStrong, border: `1px solid ${tone.controlBorder}`, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: canWriteByAssignment ? 1 : 0.75 }}
                             >
                                 <Minus size={11} />
                             </button>
-                            <span style={{ minWidth: '20px', textAlign: 'center', color: '#d9fff4', fontSize: '0.78rem', fontWeight: 800 }}>{cartQty}</span>
+                            <span style={{ minWidth: '20px', textAlign: 'center', color: tone.successText, fontSize: '0.78rem', fontWeight: 800 }}>{cartQty}</span>
                             <button
                                 onClick={() => onCatalogQtyDelta && onCatalogQtyDelta(item.id, 1)}
                                 disabled={!canWriteByAssignment}
-                                style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#00a884', border: 'none', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: canWriteByAssignment ? 1 : 0.75 }}
+                                style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'var(--saas-accent-primary)', border: '1px solid color-mix(in srgb, var(--saas-accent-primary) 70%, transparent)', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', color: 'var(--saas-accent-primary-text)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: canWriteByAssignment ? 1 : 0.75 }}
                             >
                                 <Plus size={11} />
                             </button>
@@ -90,7 +108,7 @@ export default function BusinessCatalogProductCard({
                         <button
                             onClick={() => addToCart(item, 1)}
                             disabled={!canWriteByAssignment}
-                            style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '7px 9px', background: canWriteByAssignment ? 'linear-gradient(90deg, #00a884 0%, #02c39a 100%)' : '#4b5b63', border: 'none', borderRadius: '9px', color: 'white', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontSize: '0.73rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: canWriteByAssignment ? 1 : 0.75 }}
+                            style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '7px 9px', background: canWriteByAssignment ? 'var(--saas-accent-primary)' : 'var(--chat-control-disabled)', border: '1px solid color-mix(in srgb, var(--saas-accent-primary) 68%, transparent)', borderRadius: '9px', color: 'var(--saas-accent-primary-text)', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontSize: '0.73rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: canWriteByAssignment ? 1 : 0.75 }}
                         >
                             <ShoppingCart size={12} /> Carrito
                         </button>
@@ -99,10 +117,10 @@ export default function BusinessCatalogProductCard({
 
                 {!chatCatalogReadOnly && !isExternalCatalog && (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px', alignItems: 'stretch' }}>
-                        <button onClick={() => handleEditClick(item)} style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', background: '#23323c', border: '1px solid rgba(255,255,255,0.13)', borderRadius: '8px', color: '#d8e6ef', cursor: 'pointer', fontSize: '0.71rem', padding: '6px 8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <button onClick={() => handleEditClick(item)} style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', background: tone.controlSurface, border: `1px solid ${tone.controlBorder}`, borderRadius: '8px', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.71rem', padding: '6px 8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             Editar
                         </button>
-                        <button onClick={() => handleDelete(item.id)} style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', background: '#2e1f26', border: '1px solid rgba(220,74,95,0.45)', borderRadius: '8px', color: '#ffb8c7', cursor: 'pointer', fontSize: '0.71rem', padding: '6px 8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <button onClick={() => handleDelete(item.id)} style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', background: tone.dangerSurface, border: `1px solid ${tone.dangerBorder}`, borderRadius: '8px', color: tone.dangerText, cursor: 'pointer', fontSize: '0.71rem', padding: '6px 8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             Eliminar
                         </button>
                     </div>

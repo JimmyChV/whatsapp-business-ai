@@ -141,8 +141,8 @@ export const ClientProfilePanel = ({ contact, chats = [], onClose, onQuickAiActi
             </div>
 
             <div className="client-profile-hero">
-                <div className="client-profile-avatar" style={{ background: contact.profilePicUrl ? `url(${contact.profilePicUrl}) center/cover` : avatarColorForName(displayName) }}>
-                    {!contact.profilePicUrl && displayName.charAt(0).toUpperCase()}
+                <div className="client-profile-avatar" style={{ background: avatarColorForName(displayName) }}>
+                    {displayName.charAt(0).toUpperCase()}
                 </div>
                 <div className="client-profile-name">{displayName}</div>
                 <div className="client-profile-phone">{displayPhone}</div>
@@ -165,7 +165,7 @@ export const ClientProfilePanel = ({ contact, chats = [], onClose, onQuickAiActi
                         <div className="client-profile-card-title">Etiquetas</div>
                         <div className="client-profile-labels">
                             {contact.labels.map((label, idx) => (
-                                <span key={idx} className="client-profile-label-chip" style={{ '--label-color': label.color || '#5f7380' }}>
+                                <span key={idx} className="client-profile-label-chip" style={{ '--label-color': label.color || 'var(--chat-control-text-soft)' }}>
                                     {label.name}
                                 </span>
                             ))}
@@ -344,8 +344,8 @@ export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout, p
             </div>
 
             <div className="client-profile-hero company-profile-hero">
-                <div className="client-profile-avatar" style={{ background: profile.profilePicUrl ? `url(${profile.profilePicUrl}) center/cover` : avatarColorForName(displayName) }}>
-                    {!profile.profilePicUrl && displayName.charAt(0).toUpperCase()}
+                <div className="client-profile-avatar" style={{ background: avatarColorForName(displayName) }}>
+                    {displayName.charAt(0).toUpperCase()}
                 </div>
                 <div className="client-profile-name">{displayName}</div>
                 <div className="client-profile-phone">{displayPhone}</div>
@@ -357,7 +357,7 @@ export const CompanyProfilePanel = ({ profile, labels = [], onClose, onLogout, p
                         <div className="client-profile-card-title">Etiquetas del negocio</div>
                         <div className="client-profile-labels">
                             {labels.map((label) => (
-                                <span key={String(label?.id || label?.name)} className="client-profile-label-chip" style={{ '--label-color': label?.color || '#5f7380' }}>
+                                <span key={String(label?.id || label?.name)} className="client-profile-label-chip" style={{ '--label-color': label?.color || 'var(--chat-control-text-soft)' }}>
                                     {label?.name || `Etiqueta ${label?.id || ''}`}
                                 </span>
                             ))}

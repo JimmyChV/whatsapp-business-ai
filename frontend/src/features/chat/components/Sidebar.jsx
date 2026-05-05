@@ -180,13 +180,9 @@ const Sidebar = ({
                 >
                     <div
                         className="sidebar-account-avatar"
-                        style={{
-                            background: myProfile?.profilePicUrl
-                                ? `url(${myProfile.profilePicUrl}) center/cover`
-                                : '#3b4a54',
-                        }}
+                        style={{ background: 'var(--chat-control-surface-strong)' }}
                     >
-                        {!myProfile?.profilePicUrl && (myProfile?.pushname?.charAt(0)?.toUpperCase() || '?')}
+                        {myProfile?.pushname?.charAt(0)?.toUpperCase() || '?'}
                     </div>
                     {myProfile?.pushname && (
                         <span className="sidebar-account-name">{myProfile.pushname}</span>
@@ -538,7 +534,7 @@ const Sidebar = ({
                                                     className={`sidebar-label-item ${isSelected ? 'active' : ''}`}
                                                     onClick={() => toggleLabel(label.token)}
                                                 >
-                                                    <span className="sidebar-label-color" style={{ background: label.color || '#7D8D95' }} />
+                                                    <span className="sidebar-label-color" style={{ background: label.color || 'var(--chat-control-text-soft)' }} />
                                                     <span className="sidebar-label-name">{label.name}</span>
                                                     <span className="sidebar-label-count">{label.count}</span>
                                                 </button>
@@ -634,7 +630,7 @@ const Sidebar = ({
                                                     <span
                                                         key={`${label?.id || label?.name || 'l'}_${idx}`}
                                                         className="chat-inline-label-dot"
-                                                        style={{ '--label-color': label?.color || '#7D8D95' }}
+                                                        style={{ '--label-color': label?.color || 'var(--chat-control-text-soft)' }}
                                                     />
                                                 ))}
                                                 {labels.length > 4 && <span className="chat-inline-label-more">+{labels.length - 4}</span>}
@@ -682,7 +678,7 @@ const Sidebar = ({
     );
 };
 
-export default Sidebar;
+export default React.memo(Sidebar);
 
 
 

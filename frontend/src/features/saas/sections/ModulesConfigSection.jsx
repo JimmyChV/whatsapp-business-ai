@@ -9,6 +9,8 @@ function ModulesConfigSection(props = {}) {
     isGeneralConfigSection,
     isModulesSection,
     settingsTenantId,
+    loadTenantSettings,
+    loadWaModules,
     toTenantDisplayName,
     tenantOptions,
     busy,
@@ -105,6 +107,20 @@ function ModulesConfigSection(props = {}) {
         if (isModulesSection && waModulePanelMode === 'create') return '__create_module__';
         return selectedConfigKey || '';
     }, [isModulesSection, selectedConfigKey, waModulePanelMode]);
+
+    const reloadSection = React.useCallback(async () => {
+        if (!settingsTenantId) return;
+        if (isGeneralConfigSection) {
+            await loadTenantSettings?.(settingsTenantId);
+            return;
+        }
+        if (isModulesSection) {
+            await Promise.all([
+                loadTenantSettings?.(settingsTenantId),
+                loadWaModules?.(settingsTenantId)
+            ]);
+        }
+    }, [isGeneralConfigSection, isModulesSection, loadTenantSettings, loadWaModules, settingsTenantId]);
 
     const renderDetail = React.useCallback(() => (
         <>
@@ -260,6 +276,7 @@ function ModulesConfigSection(props = {}) {
             filters={filters}
             emptyText={isModulesSection ? 'No hay modulos registrados.' : 'No hay configuracion disponible.'}
             actions={[
+                { label: 'Recargar', onClick: () => { void reloadSection(); }, disabled: busy || !settingsTenantId },
                 isModulesSection && canEditModules
                     ? { label: 'Nuevo', onClick: openConfigModuleCreate, disabled: busy || !settingsTenantId }
                     : null,

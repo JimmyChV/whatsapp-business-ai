@@ -8,6 +8,7 @@ import {
     useSaasViewPreferences
 } from '../layout';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
+import { applyMultiSort, normalizeSortState } from '../layout/sortUtils';
 
 const EMPTY_ARRAY = [];
 
@@ -77,17 +78,6 @@ function applySearch(rows = [], columns = [], search = '') {
     return rows.filter((row) => defaultRowText(row, columns).includes(query));
 }
 
-function applySort(rows = [], sort = {}) {
-    const columnKey = String(sort?.columnKey || '').trim();
-    if (!columnKey) return rows;
-    const direction = String(sort?.direction || 'asc') === 'desc' ? -1 : 1;
-    return [...rows].sort((a, b) => {
-        const left = String(a?.[columnKey] ?? '').trim();
-        const right = String(b?.[columnKey] ?? '').trim();
-        return left.localeCompare(right, 'es', { numeric: true, sensitivity: 'base' }) * direction;
-    });
-}
-
 function normalizeEntityFilters(filters = null, columns = []) {
     const explicitFilters = Array.isArray(filters) ? filters.filter((filter) => filter && filter.key) : [];
     const explicitByKey = new Map(explicitFilters.map((filter) => [String(filter.key), filter]));
@@ -129,6 +119,36 @@ function applyStructuredFilter(rows = [], filterValue = {}) {
     return rows.filter((row) => matchesFilterValue(row?.[columnKey], filterValue));
 }
 
+function normalizeFilterItem(filterValue = {}) {
+    return {
+        id: String(filterValue?.id || ''),
+        columnKey: String(filterValue?.columnKey || '').trim(),
+        operator: String(filterValue?.operator || 'contains').trim().toLowerCase() || 'contains',
+        value: filterValue?.value ?? ''
+    };
+}
+
+function normalizeFilterItems(items = null) {
+    if (!Array.isArray(items)) return [{ id: 'filter_1', columnKey: '', operator: 'contains', value: '' }];
+    if (items.length === 0) return [{ id: 'filter_1', columnKey: '', operator: 'contains', value: '' }];
+    return items.map((item, index) => {
+        const normalized = normalizeFilterItem(item);
+        return { ...normalized, id: normalized.id || `filter_${index + 1}` };
+    });
+}
+
+function isActiveFilterItem(filterValue = {}) {
+    const normalized = normalizeFilterItem(filterValue);
+    if (!normalized.columnKey) return false;
+    if (normalized.operator === 'is_empty' || normalized.operator === 'not_empty') return true;
+    return Boolean(String(normalized.value ?? '').trim());
+}
+
+function applyStructuredFilters(rows = [], filterItems = []) {
+    const activeFilters = normalizeFilterItems(filterItems).filter(isActiveFilterItem);
+    return activeFilters.reduce((acc, filterValue) => applyStructuredFilter(acc, filterValue), rows);
+}
+
 function ColumnMenu({
     columns = EMPTY_ARRAY,
     preferences,
@@ -139,7 +159,7 @@ function ColumnMenu({
     const visible = new Set(preferences?.visibleColumnKeys || []);
     return (
         <div className={['saas-entity-columns', className].filter(Boolean).join(' ')}>
-            <button type="button" className="saas-header-btn saas-header-btn--secondary saas-btn-columns" onClick={() => setOpen((prev) => !prev)}>
+            <button type="button" className="saas-btn saas-header-btn saas-header-btn--secondary saas-btn-columns" onClick={() => setOpen((prev) => !prev)}>
                 <Columns3 size={15} strokeWidth={2} />
                 <span className="saas-btn-text">Columnas</span>
             </button>
@@ -209,38 +229,35 @@ export default function SaasEntityPage({
     const { confirm } = useUiFeedback();
     const preferences = useSaasViewPreferences(sectionKey || id || title, columns, { requestJson });
     const [search, setSearch] = useState('');
-    const [activeFilter, setActiveFilter] = useState({ columnKey: '', operator: 'contains', value: '' });
+    const [activeFilters, setActiveFilters] = useState([{ id: 'filter_1', columnKey: '', operator: 'contains', value: '' }]);
     const filterColumns = useMemo(() => normalizeEntityFilters(filters, columns), [columns, filters]);
     const filterConfig = useMemo(() => {
         if (filterColumns.length === 0) return null;
         return {
             columns: filterColumns,
-            value: activeFilter,
-            onChange: (nextFilter) => {
-                const normalized = {
-                    columnKey: String(nextFilter?.columnKey || '').trim(),
-                    operator: String(nextFilter?.operator || 'contains').trim(),
-                    value: nextFilter?.value ?? ''
-                };
-                setActiveFilter(normalized);
+            items: activeFilters,
+            onItemsChange: (nextFilters) => {
+                const normalized = normalizeFilterItems(nextFilters);
+                setActiveFilters(normalized);
                 if (typeof onFilterChange === 'function') onFilterChange(normalized);
             },
             onClear: () => {
-                const cleared = { columnKey: '', operator: 'contains', value: '' };
-                setActiveFilter(cleared);
+                const cleared = [{ id: 'filter_1', columnKey: '', operator: 'contains', value: '' }];
+                setActiveFilters(cleared);
                 if (typeof onFilterChange === 'function') onFilterChange(cleared);
             }
         };
-    }, [activeFilter, filterColumns, onFilterChange]);
+    }, [activeFilters, filterColumns, onFilterChange]);
     const effectiveColumns = useMemo(
         () => normalizeColumns(columns, preferences.visibleColumnKeys, preferences.columnOrder),
         [columns, preferences.columnOrder, preferences.visibleColumnKeys]
     );
     const sortableColumns = useMemo(() => getSortableColumns(columns), [columns]);
     const visibleRows = useMemo(
-        () => applySort(applyStructuredFilter(applySearch(rows, columns, search), activeFilter), preferences.sort),
-        [activeFilter, columns, preferences.sort, rows, search]
+        () => applyMultiSort(applyStructuredFilters(applySearch(rows, columns, search), activeFilters), preferences.sort),
+        [activeFilters, columns, preferences.sort, rows, search]
     );
+    const normalizedSort = useMemo(() => normalizeSortState(preferences.sort), [preferences.sort]);
     const hasSelection = Boolean(selectedId);
     const close = async () => {
         if (dirty) {
@@ -305,7 +322,7 @@ export default function SaasEntityPage({
         <>
             {resolvedDetailActions}
             <button type="button" className="saas-btn-cancel" onClick={() => { void close(); }}>
-                CERRAR
+                Volver
             </button>
         </>
     );
@@ -342,8 +359,9 @@ export default function SaasEntityPage({
                         filters={filterConfig}
                         sortConfig={{
                             columns: sortableColumns,
-                            columnKey: preferences.sort?.columnKey || '',
-                            direction: preferences.sort?.direction || 'asc'
+                            items: normalizedSort.items,
+                            columnKey: normalizedSort.columnKey,
+                            direction: normalizedSort.direction
                         }}
                         onSortChange={preferences.setSort}
                         actionsExtra={<ColumnMenu columns={columns} preferences={preferences} />}
@@ -356,6 +374,8 @@ export default function SaasEntityPage({
                         rows={visibleRows}
                         selectedId={selectedId}
                         onSelect={onSelect}
+                        sortConfig={preferences.sort}
+                        onSortChange={preferences.setSort}
                         loading={loading}
                         emptyText={emptyText}
                     />

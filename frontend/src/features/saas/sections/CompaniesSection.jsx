@@ -7,6 +7,7 @@ function CompaniesSection(props = {}) {
     const {
         selectedSectionId,
         tenantOptions = [],
+        refreshOverview,
         busy,
         canManageTenants,
         openTenantCreate,
@@ -136,9 +137,16 @@ function CompaniesSection(props = {}) {
                             <div className="saas-admin-empty-inline">Sin usuarios vinculados.</div>
                         ) : null}
                         {(usersByTenant.get(selectedTenant.id) || []).map((user) => (
-                            <button key={`${selectedTenant.id}_${user.id}`} type="button" className="saas-admin-related-row" onClick={() => openUserFromTenant?.(user.id)}>
+                            <button
+                                key={`${selectedTenant.id}_${user.id}`}
+                                type="button"
+                                className="saas-admin-related-row"
+                                data-link-label="Abrir usuario"
+                                title={`Abrir usuario ${toUserDisplayName(user)}`}
+                                aria-label={`Abrir usuario ${toUserDisplayName(user)}`}
+                                onClick={() => openUserFromTenant?.(user.id)}
+                            >
                                 <span>{toUserDisplayName(user)}</span>
-                                <small>{user.membershipRole || 'seller'}{user.membershipActive ? '' : ' (inactivo)'}</small>
                             </button>
                         ))}
                     </div>
@@ -147,7 +155,7 @@ function CompaniesSection(props = {}) {
         );
     }, [buildInitials, formatDateTimeLabel, openUserFromTenant, selectedTenant, toTenantDisplayName, toUserDisplayName, usersByTenant]);
 
-    const renderForm = React.useCallback(() => (
+    const renderForm = React.useCallback(({ close: requestClose } = {}) => (
         <>
             <div className="saas-admin-form-row">
                 <input
@@ -246,14 +254,13 @@ function CompaniesSection(props = {}) {
                 >
                     {tenantPanelMode === 'create' ? 'Guardar empresa' : 'Actualizar empresa'}
                 </button>
-                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelTenantEdit}>CANCELAR</button>
+                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { void requestClose?.(); }}>Cancelar</button>
             </div>
         </>
     ), [
         PLAN_OPTIONS,
         activeTenantId,
         busy,
-        cancelTenantEdit,
         handleFormImageUpload,
         requestJson,
         runAction,
@@ -271,7 +278,7 @@ function CompaniesSection(props = {}) {
         if (tenantPanelMode !== 'view' || !selectedTenant || !canManageTenants) return null;
         return (
             <>
-                <button type="button" disabled={busy} onClick={openTenantEdit}>EDITAR</button>
+                <button type="button" disabled={busy} onClick={openTenantEdit}>Editar</button>
                 <button
                     type="button"
                     disabled={busy}
@@ -289,7 +296,7 @@ function CompaniesSection(props = {}) {
                         });
                     })}
                 >
-                    {selectedTenant.active === false ? 'ACTIVAR' : 'DESACTIVAR'}
+                    {selectedTenant.active === false ? 'Activar' : 'Desactivar'}
                 </button>
             </>
         );
@@ -315,7 +322,10 @@ function CompaniesSection(props = {}) {
                 requestJson={requestJson}
                 emptyText="No hay empresas registradas."
                 searchPlaceholder="Buscar empresa por nombre, slug, plan o estado..."
-                actions={canManageTenants ? [{ key: 'create', label: 'Agregar', onClick: openTenantCreate, disabled: busy }] : []}
+                actions={[
+                    { key: 'reload', label: 'Recargar', onClick: () => refreshOverview?.(), disabled: busy || typeof refreshOverview !== 'function' },
+                    ...(canManageTenants ? [{ key: 'create', label: 'Agregar', onClick: openTenantCreate, disabled: busy }] : [])
+                ]}
                 filters={filters}
                 detailTitle={tenantPanelMode === 'create' ? 'Nueva empresa' : tenantPanelMode === 'edit' ? `Editando: ${toTenantDisplayName(selectedTenant || {})}` : toTenantDisplayName(selectedTenant || {})}
                 detailSubtitle={tenantPanelMode === 'view' ? 'Campos bloqueados. Usa Editar para modificar.' : 'ID fijo después de crear. Ajusta solo campos permitidos.'}

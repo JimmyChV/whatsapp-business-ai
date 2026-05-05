@@ -11,6 +11,7 @@ function UsersSection(props = {}) {
     const {
         selectedSectionId,
         tenantScopeLocked,
+        refreshOverview,
         busy,
         canManageUsers,
         openUserCreate,
@@ -218,10 +219,12 @@ function UsersSection(props = {}) {
                                     key={`${selectedUser.id}_membership_view_${index}`}
                                     type="button"
                                     className="saas-admin-related-row"
+                                    data-link-label="Abrir empresa"
+                                    title={`Abrir empresa ${tenantLabel}`}
+                                    aria-label={`Abrir empresa ${tenantLabel}`}
                                     onClick={() => openTenantFromUserMembership?.(membership.tenantId)}
                                 >
                                     <span>{tenantLabel}</span>
-                                    <small>{membership.role}{membership.active ? '' : ' (inactivo)'}</small>
                                 </button>
                             );
                         })}
@@ -269,7 +272,7 @@ function UsersSection(props = {}) {
         return (
             <>
                 <button type="button" disabled={busy || !canEditSelectedUser} onClick={openUserEdit}>
-                    EDITAR
+                    Editar
                 </button>
                 <button
                     type="button"
@@ -284,7 +287,7 @@ function UsersSection(props = {}) {
                         });
                     })}
                 >
-                    {selectedUser.active === false ? 'ACTIVAR' : 'DESACTIVAR'}
+                    {selectedUser.active === false ? 'Activar' : 'Desactivar'}
                 </button>
             </>
         );
@@ -300,7 +303,7 @@ function UsersSection(props = {}) {
         userPanelMode
     ]);
 
-    const renderForm = React.useCallback(() => {
+    const renderForm = React.useCallback(({ close: requestClose } = {}) => {
         if (!canManageUsers || (userPanelMode === 'edit' && !canEditSelectedUser)) {
             return <div className="saas-admin-empty-inline">No tienes permisos para editar este usuario.</div>;
         }
@@ -473,7 +476,7 @@ function UsersSection(props = {}) {
                     >
                         {userPanelMode === 'create' ? 'Guardar usuario' : 'Actualizar usuario'}
                     </button>
-                    <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelUserEdit}>CANCELAR</button>
+                    <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { void requestClose?.(); }}>Cancelar</button>
                 </div>
             </>
         );
@@ -489,7 +492,6 @@ function UsersSection(props = {}) {
         canEditSelectedUser,
         canManageUsers,
         canToggleSelectedUserStatus,
-        cancelUserEdit,
         getAllowedPackIdsForRole,
         getOptionalPermissionKeysForRole,
         handleFormImageUpload,
@@ -532,6 +534,7 @@ function UsersSection(props = {}) {
                 searchPlaceholder="Buscar usuario por nombre, correo, rol o estado..."
                 filters={filters}
                 actions={[
+                    { label: 'Recargar', onClick: () => refreshOverview?.(), disabled: busy || typeof refreshOverview !== 'function' },
                     canManageUsers
                         ? { label: 'Agregar', onClick: openUserCreate, disabled: busy || tenantScopeLocked }
                         : null

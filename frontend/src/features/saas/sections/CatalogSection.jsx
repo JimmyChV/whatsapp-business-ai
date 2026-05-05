@@ -159,7 +159,7 @@ function CatalogSection(props = {}) {
         tenantCatalogForm
     ]);
 
-    const renderCatalogForm = React.useCallback(() => (
+    const renderCatalogForm = React.useCallback(({ close: requestClose } = {}) => (
         <>
             <div className="saas-admin-form-row">
                 <div className="saas-admin-field">
@@ -247,20 +247,19 @@ function CatalogSection(props = {}) {
                 <button type="button" disabled={busy || !canEditCatalog || !text(tenantCatalogForm.name)} onClick={saveCatalog}>
                     {catalogPanelMode === 'create' ? 'Guardar catálogo' : 'Actualizar catálogo'}
                 </button>
-                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={close}>CANCELAR</button>
+                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { void requestClose?.(); }}>Cancelar</button>
             </div>
         </>
     ), [
         busy,
         canEditCatalog,
         catalogPanelMode,
-        close,
         saveCatalog,
         setTenantCatalogForm,
         tenantCatalogForm
     ]);
 
-    const renderProductForm = React.useCallback(() => (
+    const renderProductForm = React.useCallback(({ close: requestClose } = {}) => (
         <div className="saas-admin-related-block">
             <h4>{catalogProductPanelMode === 'create' ? 'Nuevo producto' : 'Editar producto'}</h4>
             <div className="saas-admin-form-row">
@@ -292,13 +291,12 @@ function CatalogSection(props = {}) {
                 <button type="button" disabled={busy || !canEditCatalog || !text(catalogProductForm.title) || !text(catalogProductForm.price)} onClick={() => runAction?.(catalogProductPanelMode === 'create' ? 'Producto creado' : 'Producto actualizado', async () => saveCatalogProduct?.())}>
                     {catalogProductPanelMode === 'create' ? 'Guardar producto' : 'Actualizar producto'}
                 </button>
-                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelCatalogProductEdit}>CANCELAR</button>
+                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { void requestClose?.(); }}>Cancelar</button>
             </div>
         </div>
     ), [
         busy,
         canEditCatalog,
-        cancelCatalogProductEdit,
         catalogProductForm,
         catalogProductImageError,
         catalogProductImageUploading,
@@ -318,7 +316,7 @@ function CatalogSection(props = {}) {
                 </div>
             );
         }
-        if (isCatalogEditing) return renderCatalogForm();
+        if (isCatalogEditing) return renderCatalogForm({ close });
         if (!selectedTenantCatalog) {
             return (
                 <div className="saas-admin-empty-state saas-admin-empty-state--detail">
@@ -387,7 +385,7 @@ function CatalogSection(props = {}) {
                                 </div>
                             </div>
                         ) : null}
-                        {isProductEditing ? renderProductForm() : null}
+                        {isProductEditing ? renderProductForm({ close }) : null}
                     </div>
                 ) : null}
                 {selectedTenantCatalog.sourceType === 'woocommerce' ? (
@@ -438,7 +436,7 @@ function CatalogSection(props = {}) {
         if (!selectedTenantCatalog || isCatalogEditing) return null;
         return (
             <>
-                <button type="button" disabled={busy || !canEditCatalog} onClick={openCatalogEdit}>EDITAR</button>
+                <button type="button" disabled={busy || !canEditCatalog} onClick={openCatalogEdit}>Editar</button>
                 <button type="button" disabled={busy || !canEditCatalog || selectedTenantCatalog.isDefault === true} onClick={() => runAction?.('Catalogo marcado como principal', async () => {
                     await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/catalogs/${encodeURIComponent(selectedTenantCatalog.catalogId)}`, {
                         method: 'PUT',
@@ -450,7 +448,7 @@ function CatalogSection(props = {}) {
                     await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/catalogs/${encodeURIComponent(selectedTenantCatalog.catalogId)}`, { method: 'DELETE' });
                     await loadTenantCatalogs(settingsTenantId);
                     close();
-                })}>DESACTIVAR</button>
+                })}>Desactivar</button>
             </>
         );
     }, [

@@ -13,6 +13,45 @@ const toTitleCaseLabel = (value = '') => {
         .join(' ');
 };
 
+const extractTextContent = (node) => {
+    if (node == null || typeof node === 'boolean') return '';
+    if (typeof node === 'string' || typeof node === 'number') return String(node);
+    if (Array.isArray(node)) return node.map(extractTextContent).join(' ');
+    if (React.isValidElement(node)) return extractTextContent(node.props?.children);
+    return '';
+};
+
+const deriveActionVariant = (item) => {
+    const className = String(item?.props?.className || '').toLowerCase();
+    const label = extractTextContent(item?.props?.children).trim().toLowerCase();
+    if (className.includes('saas-header-btn--') || className.includes('saas-btn--')) return null;
+    if (className.includes('danger') || /(cerrar sesión|logout|eliminar|descartar)/.test(label)) return 'danger';
+    if (className.includes('cancel') || /(cancelar|limpiar|volver|cerrar|desactivar)/.test(label)) return 'secondary';
+    if (/(editar|guardar|crear|nuevo|nueva|agregar|activar|sincronizar)/.test(label)) return 'primary';
+    return 'secondary';
+};
+
+const decorateActionItem = (item) => {
+    if (!React.isValidElement(item) || item.type !== 'button') return item;
+    const variant = deriveActionVariant(item);
+    const nextClassName = [
+        'saas-btn',
+        'saas-header-btn',
+        variant ? `saas-header-btn--${variant}` : '',
+        item.props.className || ''
+    ].filter(Boolean).join(' ');
+    return React.cloneElement(item, { className: nextClassName });
+};
+
+const decorateActionTree = (node) => {
+    if (!React.isValidElement(node)) return node;
+    if (node.type === 'button') return decorateActionItem(node);
+    const childNodes = React.Children.toArray(node.props?.children);
+    if (childNodes.length === 0) return node;
+    const nextChildren = childNodes.map(decorateActionTree);
+    return React.cloneElement(node, undefined, nextChildren);
+};
+
 export const SaasDetailPanelSection = ({
     title,
     defaultOpen = true,
@@ -60,7 +99,10 @@ const SaasDetailPanel = ({
         () => ['saas-detail-panel', className].filter(Boolean).join(' '),
         [className]
     );
-    const actionItems = useMemo(() => React.Children.toArray(actions).filter(Boolean), [actions]);
+    const actionItems = useMemo(
+        () => React.Children.toArray(actions).filter(Boolean).map(decorateActionTree),
+        [actions]
+    );
     const inlineActionItems = useMemo(
         () => (compactActions ? actionItems.slice(0, 2) : actionItems),
         [compactActions, actionItems]
@@ -101,7 +143,7 @@ const SaasDetailPanel = ({
                             <div className="saas-header-actions-overflow">
                                 <button
                                     type="button"
-                                    className="saas-header-btn saas-header-btn--secondary"
+                                    className="saas-btn saas-header-btn saas-header-btn--secondary"
                                     onClick={() => setOverflowOpen((prev) => !prev)}
                                     aria-expanded={overflowOpen}
                                 >

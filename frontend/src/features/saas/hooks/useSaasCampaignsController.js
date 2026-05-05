@@ -109,6 +109,7 @@ export default function useSaasCampaignsController({
     const tenantCacheKey = toLower(tenantId || 'default');
     const cacheRef = useRef(resolveCampaignsCache(requestJson, tenantCacheKey));
     const campaignsRef = useRef(cacheRef.current.items);
+    const selectionRequestRef = useRef(0);
     const [filters, setFilters] = useState(() => normalizeFilters({ ...DEFAULT_FILTERS, ...initialFilters }));
     const filtersRef = useRef(filters);
     const [campaigns, setCampaigns] = useState(() => cacheRef.current.items);
@@ -263,8 +264,11 @@ export default function useSaasCampaignsController({
     }, [requestJson]);
 
     const selectCampaign = useCallback(async (campaignId = '', { loadDetail = true } = {}) => {
+        const requestId = selectionRequestRef.current + 1;
+        selectionRequestRef.current = requestId;
         const cleanCampaignId = toText(campaignId);
         if (!cleanCampaignId) {
+            setLoadingAction(false);
             setSelectedCampaign(null);
             return null;
         }
@@ -272,7 +276,9 @@ export default function useSaasCampaignsController({
         const fromList = (Array.isArray(campaignsRef.current) ? campaignsRef.current : [])
             .find((item) => toText(item?.campaignId || '') === cleanCampaignId) || null;
         if (!loadDetail || typeof requestJson !== 'function') {
-            setSelectedCampaign(fromList);
+            if (selectionRequestRef.current === requestId) {
+                setSelectedCampaign(fromList);
+            }
             return fromList;
         }
 
@@ -280,6 +286,7 @@ export default function useSaasCampaignsController({
         setError('');
         try {
             const response = await getCampaignDetail(requestJson, { campaignId: cleanCampaignId }, { tenantId });
+            if (selectionRequestRef.current !== requestId) return null;
             const campaign = response?.campaign && typeof response.campaign === 'object' ? response.campaign : fromList;
             if (campaign) {
                 patchCampaignState(campaign);
@@ -291,9 +298,11 @@ export default function useSaasCampaignsController({
             setError(message);
             throw err;
         } finally {
-            setLoadingAction(false);
+            if (selectionRequestRef.current === requestId) {
+                setLoadingAction(false);
+            }
         }
-    }, [patchCampaignState, requestJson]);
+    }, [patchCampaignState, requestJson, tenantId]);
 
     const createCampaign = useCallback(async (payload = {}) => {
         if (typeof requestJson !== 'function') throw new Error('requestJson no disponible.');

@@ -633,12 +633,63 @@ export const isVisibleChatId = (chatId = '') => {
   return true;
 };
 
+const getChatTimestampValue = (chat = null) => {
+  const timestamp = Number(chat?.timestamp || 0);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const insertChatSorted = (chats = [], nextChat = null) => {
+  const safeChats = Array.isArray(chats) ? chats : [];
+  const safeNextChat = nextChat && typeof nextChat === 'object' ? nextChat : null;
+  if (!safeNextChat) return safeChats;
+  if (safeChats.length === 0) return [safeNextChat];
+
+  const nextTimestamp = getChatTimestampValue(safeNextChat);
+  const firstTimestamp = getChatTimestampValue(safeChats[0]);
+  if (nextTimestamp >= firstTimestamp) {
+    return [safeNextChat, ...safeChats];
+  }
+
+  const lastTimestamp = getChatTimestampValue(safeChats[safeChats.length - 1]);
+  if (nextTimestamp <= lastTimestamp) {
+    return [...safeChats, safeNextChat];
+  }
+
+  let insertAt = safeChats.length;
+  for (let idx = 0; idx < safeChats.length; idx += 1) {
+    if (getChatTimestampValue(safeChats[idx]) < nextTimestamp) {
+      insertAt = idx;
+      break;
+    }
+  }
+
+  return [
+    ...safeChats.slice(0, insertAt),
+    safeNextChat,
+    ...safeChats.slice(insertAt)
+  ];
+};
+
 export const upsertAndSortChat = (list = [], incoming = null) => {
   if (!incoming?.id) return list;
   const incomingKey = chatIdentityKey(incoming);
-  const without = list.filter((c) => c.id !== incoming.id && chatIdentityKey(c) !== incomingKey);
-  const merged = [incoming, ...without].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-  return dedupeChats(merged);
+  const existingIndex = list.findIndex((chat) => chat?.id === incoming.id || chatIdentityKey(chat) === incomingKey);
+  if (existingIndex < 0) {
+    return dedupeChats(insertChatSorted(list, incoming));
+  }
+
+  const next = [...list];
+  const previousChat = next[existingIndex] || {};
+  const mergedChat = { ...previousChat, ...incoming };
+  next[existingIndex] = mergedChat;
+  const previousTimestamp = getChatTimestampValue(previousChat);
+  const nextTimestamp = getChatTimestampValue(mergedChat);
+  if (previousTimestamp === nextTimestamp) {
+    return dedupeChats(next);
+  }
+
+  const withoutCurrent = [...next.slice(0, existingIndex), ...next.slice(existingIndex + 1)];
+  return dedupeChats(insertChatSorted(withoutCurrent, mergedChat));
 };
 
 export const CHAT_PAGE_SIZE = 80;

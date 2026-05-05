@@ -4,11 +4,43 @@ function toText(value = '') {
     return String(value ?? '').trim();
 }
 
+const tone = {
+    overlay: 'var(--chat-overlay-backdrop)',
+    card: 'var(--chat-shell-panel-gradient)',
+    cardAlt: 'var(--chat-card-surface-alt)',
+    border: 'var(--chat-card-border)',
+    controlBorder: 'var(--chat-control-border)',
+    menuBorder: 'var(--chat-pill-border)',
+    title: 'var(--text-primary)',
+    text: 'var(--text-primary)',
+    textSoft: 'var(--chat-control-text-soft)',
+    infoSurface: 'var(--chat-info-surface)',
+    infoBorder: 'var(--chat-info-border)',
+    infoText: 'var(--chat-info-text)',
+    successSurface: 'var(--chat-success-surface)',
+    successBorder: 'var(--chat-success-border)',
+    successText: 'var(--chat-success-text)',
+    warningSurface: 'var(--chat-warning-bg)',
+    warningBorder: 'var(--chat-warning-border)',
+    warningText: 'var(--chat-warning-text-strong)',
+    dangerSurface: 'var(--chat-danger-soft)',
+    dangerBorder: 'var(--chat-danger-border)',
+    dangerText: 'var(--chat-danger-text)',
+    primaryBg: 'var(--saas-accent-primary)',
+    primaryBorder: 'var(--saas-accent-primary)',
+    primaryText: 'var(--saas-accent-primary-text)',
+    ghostBg: 'var(--chat-control-surface)',
+    ghostBorder: 'var(--chat-control-border)',
+    ghostText: 'var(--text-primary)',
+    disabledBg: 'var(--chat-control-disabled)',
+    panelShadow: 'var(--chat-panel-shadow)'
+};
+
 const overlayStyle = {
-    position: 'absolute',
+    position: 'fixed',
     inset: 0,
-    zIndex: 120,
-    background: 'rgba(6, 18, 24, 0.72)',
+    zIndex: 4200,
+    background: tone.overlay,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -18,13 +50,14 @@ const overlayStyle = {
 const cardStyle = {
     width: 'min(960px, 100%)',
     maxHeight: 'min(82vh, 860px)',
-    background: '#10212a',
-    border: '1px solid rgba(124, 200, 255, 0.18)',
+    background: tone.card,
+    border: `1px solid ${tone.border}`,
     borderRadius: '18px',
-    boxShadow: '0 24px 60px rgba(0,0,0,0.34)',
+    boxShadow: tone.panelShadow,
     display: 'flex',
     flexDirection: 'column',
-    overflow: 'hidden'
+    overflow: 'hidden',
+    backdropFilter: 'blur(18px)'
 };
 
 export default function SendTemplateModal({
@@ -48,39 +81,39 @@ export default function SendTemplateModal({
     return (
         <div style={overlayStyle} onClick={() => onClose?.()}>
             <div style={cardStyle} onClick={(event) => event.stopPropagation()}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '18px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '18px 20px', borderBottom: `1px solid ${tone.menuBorder}` }}>
                     <div>
-                        <div style={{ fontSize: '1rem', fontWeight: 800, color: '#f1f7fb' }}>Enviar template</div>
-                        <div style={{ fontSize: '0.8rem', color: '#8fb3c5', marginTop: '4px' }}>
+                        <div style={{ fontSize: '1rem', fontWeight: 800, color: tone.title }}>Enviar template</div>
+                        <div style={{ fontSize: '0.8rem', color: tone.textSoft, marginTop: '4px' }}>
                             Selecciona un template individual y revisa sus variables resueltas con el contexto real del chat.
                         </div>
                     </div>
                     <button
                         type="button"
                         onClick={() => onClose?.()}
-                        style={{ border: '1px solid rgba(255,255,255,0.14)', background: 'transparent', color: '#d9e7ee', borderRadius: '10px', padding: '8px 12px', cursor: 'pointer' }}
+                        style={{ border: `1px solid ${tone.ghostBorder}`, background: tone.ghostBg, color: tone.ghostText, borderRadius: '10px', padding: '8px 12px', cursor: 'pointer' }}
                     >
                         Cerrar
                     </button>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '300px minmax(0, 1fr)', gap: '0', minHeight: 0, flex: 1 }}>
-                    <div style={{ borderRight: '1px solid rgba(255,255,255,0.06)', padding: '16px', overflowY: 'auto' }}>
-                        <div style={{ fontSize: '0.74rem', color: '#7cc8ff', fontWeight: 800, letterSpacing: '0.08em', marginBottom: '10px' }}>
+                    <div style={{ borderRight: `1px solid ${tone.menuBorder}`, padding: '16px', overflowY: 'auto' }}>
+                        <div style={{ fontSize: '0.74rem', color: tone.infoText, fontWeight: 800, letterSpacing: '0.08em', marginBottom: '10px' }}>
                             TEMPLATES DISPONIBLES
                         </div>
                         {templatesLoading && (
-                            <div style={{ padding: '14px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', color: '#a7bfcc', fontSize: '0.82rem' }}>
+                            <div style={{ padding: '14px', borderRadius: '12px', background: tone.cardAlt, color: tone.textSoft, fontSize: '0.82rem', border: `1px solid ${tone.border}` }}>
                                 Cargando templates aprobados...
                             </div>
                         )}
                         {!templatesLoading && templatesError && (
-                            <div style={{ padding: '14px', borderRadius: '12px', background: 'rgba(160, 32, 32, 0.16)', border: '1px solid rgba(255, 116, 116, 0.24)', color: '#ffd0d0', fontSize: '0.82rem' }}>
+                            <div style={{ padding: '14px', borderRadius: '12px', background: tone.dangerSurface, border: `1px solid ${tone.dangerBorder}`, color: tone.dangerText, fontSize: '0.82rem' }}>
                                 {templatesError}
                             </div>
                         )}
                         {!templatesLoading && !templatesError && templates.length === 0 && (
-                            <div style={{ padding: '14px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', color: '#a7bfcc', fontSize: '0.82rem' }}>
+                            <div style={{ padding: '14px', borderRadius: '12px', background: tone.cardAlt, color: tone.textSoft, fontSize: '0.82rem', border: `1px solid ${tone.border}` }}>
                                 No hay templates `individual` o `both` aprobados para este modulo.
                             </div>
                         )}
@@ -95,19 +128,19 @@ export default function SendTemplateModal({
                                             onClick={() => onSelectTemplate?.(template)}
                                             style={{
                                                 textAlign: 'left',
-                                                border: isSelected ? '1px solid rgba(0, 212, 170, 0.72)' : '1px solid rgba(255,255,255,0.08)',
-                                                background: isSelected ? 'rgba(0, 168, 132, 0.16)' : 'rgba(255,255,255,0.02)',
+                                                border: isSelected ? `1px solid ${tone.successBorder}` : `1px solid ${tone.border}`,
+                                                background: isSelected ? tone.successSurface : tone.cardAlt,
                                                 borderRadius: '12px',
                                                 padding: '12px',
                                                 cursor: 'pointer'
                                             }}
                                         >
-                                            <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#eef7fb' }}>{toText(template?.templateName) || 'Template'}</div>
+                                            <div style={{ fontSize: '0.9rem', fontWeight: 700, color: tone.title }}>{toText(template?.templateName) || 'Template'}</div>
                                             <div style={{ display: 'flex', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
-                                                <span style={{ fontSize: '0.68rem', color: '#94bdd1', border: '1px solid rgba(124, 200, 255, 0.18)', borderRadius: '999px', padding: '3px 8px' }}>
+                                                <span style={{ fontSize: '0.68rem', color: tone.textSoft, border: `1px solid ${tone.controlBorder}`, borderRadius: '999px', padding: '3px 8px', background: tone.ghostBg }}>
                                                     {toText(template?.templateLanguage).toUpperCase() || 'ES'}
                                                 </span>
-                                                <span style={{ fontSize: '0.68rem', color: '#94bdd1', border: '1px solid rgba(124, 200, 255, 0.18)', borderRadius: '999px', padding: '3px 8px' }}>
+                                                <span style={{ fontSize: '0.68rem', color: tone.textSoft, border: `1px solid ${tone.controlBorder}`, borderRadius: '999px', padding: '3px 8px', background: tone.ghostBg }}>
                                                     {toText(template?.useCase) || 'both'}
                                                 </span>
                                             </div>
@@ -120,7 +153,7 @@ export default function SendTemplateModal({
 
                     <div style={{ padding: '18px', overflowY: 'auto' }}>
                         {!selectedTemplate && (
-                            <div style={{ border: '1px dashed rgba(255,255,255,0.16)', borderRadius: '14px', padding: '22px', color: '#8fb3c5', fontSize: '0.9rem' }}>
+                            <div style={{ border: `1px dashed ${tone.controlBorder}`, borderRadius: '14px', padding: '22px', color: tone.textSoft, fontSize: '0.9rem', background: tone.cardAlt }}>
                                 Elige un template para ver la preview resuelta con el cliente, cotizacion y agente del chat actual.
                             </div>
                         )}
@@ -129,32 +162,32 @@ export default function SendTemplateModal({
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
                                     <div>
-                                        <div style={{ fontSize: '1rem', fontWeight: 800, color: '#f3fbff' }}>{toText(selectedTemplate?.templateName) || 'Template'}</div>
-                                        <div style={{ marginTop: '4px', fontSize: '0.78rem', color: '#8fb3c5' }}>
+                                        <div style={{ fontSize: '1rem', fontWeight: 800, color: tone.title }}>{toText(selectedTemplate?.templateName) || 'Template'}</div>
+                                        <div style={{ marginTop: '4px', fontSize: '0.78rem', color: tone.textSoft }}>
                                             {toText(selectedTemplate?.moduleId) || 'Sin modulo'} | {toText(selectedTemplate?.templateLanguage).toUpperCase() || 'ES'}
                                         </div>
                                     </div>
                                 </div>
 
                                 {previewLoading && (
-                                    <div style={{ padding: '16px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', color: '#a7bfcc', fontSize: '0.84rem' }}>
+                                    <div style={{ padding: '16px', borderRadius: '12px', background: tone.cardAlt, color: tone.textSoft, fontSize: '0.84rem', border: `1px solid ${tone.border}` }}>
                                         Resolviendo variables reales del chat...
                                     </div>
                                 )}
 
                                 {!previewLoading && previewError && (
-                                    <div style={{ padding: '16px', borderRadius: '12px', background: 'rgba(160, 32, 32, 0.16)', border: '1px solid rgba(255, 116, 116, 0.24)', color: '#ffd0d0', fontSize: '0.84rem' }}>
+                                    <div style={{ padding: '16px', borderRadius: '12px', background: tone.dangerSurface, border: `1px solid ${tone.dangerBorder}`, color: tone.dangerText, fontSize: '0.84rem' }}>
                                         {previewError}
                                     </div>
                                 )}
 
                                 {!previewLoading && !previewError && preview && (
                                     <>
-                                        <div style={{ border: '1px solid rgba(0, 212, 170, 0.2)', background: 'rgba(0, 168, 132, 0.08)', borderRadius: '14px', padding: '16px' }}>
-                                            <div style={{ fontSize: '0.74rem', color: '#00d4aa', fontWeight: 800, letterSpacing: '0.08em', marginBottom: '8px' }}>
+                                        <div style={{ border: `1px solid ${tone.successBorder}`, background: tone.successSurface, borderRadius: '14px', padding: '16px' }}>
+                                            <div style={{ fontSize: '0.74rem', color: tone.successText, fontWeight: 800, letterSpacing: '0.08em', marginBottom: '8px' }}>
                                                 PREVIEW DEL MENSAJE
                                             </div>
-                                            <div style={{ whiteSpace: 'pre-wrap', color: '#f2fbff', fontSize: '0.92rem', lineHeight: 1.5 }}>
+                                            <div style={{ whiteSpace: 'pre-wrap', color: tone.text, fontSize: '0.92rem', lineHeight: 1.5 }}>
                                                 {toText(preview?.previewText) || 'Sin contenido visible'}
                                             </div>
                                         </div>
@@ -163,12 +196,12 @@ export default function SendTemplateModal({
                                             {(Array.isArray(preview?.components) ? preview.components : []).map((component, index) => (
                                                 <div
                                                     key={`${component?.type || 'component'}_${index}`}
-                                                    style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px', padding: '14px', background: 'rgba(255,255,255,0.02)' }}
+                                                    style={{ border: `1px solid ${tone.border}`, borderRadius: '14px', padding: '14px', background: tone.cardAlt }}
                                                 >
-                                                    <div style={{ fontSize: '0.72rem', color: '#7cc8ff', fontWeight: 800, letterSpacing: '0.08em', marginBottom: '8px' }}>
+                                                    <div style={{ fontSize: '0.72rem', color: tone.infoText, fontWeight: 800, letterSpacing: '0.08em', marginBottom: '8px' }}>
                                                         {toText(component?.type) || 'BODY'}
                                                     </div>
-                                                    <div style={{ whiteSpace: 'pre-wrap', color: '#e8f4fa', fontSize: '0.88rem', lineHeight: 1.45 }}>
+                                                    <div style={{ whiteSpace: 'pre-wrap', color: tone.text, fontSize: '0.88rem', lineHeight: 1.45 }}>
                                                         {toText(component?.resolvedText || component?.text) || 'Sin texto'}
                                                     </div>
                                                     {Array.isArray(component?.parameters) && component.parameters.length > 0 && (
@@ -180,9 +213,9 @@ export default function SendTemplateModal({
                                                                         fontSize: '0.72rem',
                                                                         borderRadius: '999px',
                                                                         padding: '4px 9px',
-                                                                        border: '1px solid rgba(255,255,255,0.1)',
-                                                                        background: parameter?.resolved ? 'rgba(0, 168, 132, 0.12)' : 'rgba(255, 170, 64, 0.12)',
-                                                                        color: parameter?.resolved ? '#c9fff0' : '#ffe0b5'
+                                                                        border: `1px solid ${parameter?.resolved ? tone.successBorder : tone.warningBorder}`,
+                                                                        background: parameter?.resolved ? tone.successSurface : tone.warningSurface,
+                                                                        color: parameter?.resolved ? tone.successText : tone.warningText
                                                                     }}
                                                                 >
                                                                     {`{{${parameter?.placeholderIndex}}}`} {toText(parameter?.label || parameter?.key || 'Variable')}: {toText(parameter?.value) || '(vacio)'}
@@ -200,11 +233,11 @@ export default function SendTemplateModal({
                     </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '10px', padding: '16px 20px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '10px', padding: '16px 20px', borderTop: `1px solid ${tone.menuBorder}` }}>
                     <button
                         type="button"
                         onClick={() => onClose?.()}
-                        style={{ border: '1px solid rgba(255,255,255,0.14)', background: 'transparent', color: '#d9e7ee', borderRadius: '10px', padding: '10px 14px', cursor: 'pointer' }}
+                        style={{ border: `1px solid ${tone.ghostBorder}`, background: tone.ghostBg, color: tone.ghostText, borderRadius: '10px', padding: '10px 14px', cursor: 'pointer' }}
                     >
                         Cancelar
                     </button>
@@ -214,9 +247,9 @@ export default function SendTemplateModal({
                             onClick={() => onConfirm?.()}
                             disabled={confirmDisabled || confirmBusy}
                             style={{
-                                border: '1px solid rgba(0, 212, 170, 0.6)',
-                                background: confirmDisabled || confirmBusy ? 'rgba(0, 168, 132, 0.18)' : 'rgba(0, 168, 132, 0.28)',
-                                color: '#e9fffb',
+                                border: `1px solid ${confirmDisabled || confirmBusy ? tone.ghostBorder : tone.primaryBorder}`,
+                                background: confirmDisabled || confirmBusy ? tone.disabledBg : tone.primaryBg,
+                                color: confirmDisabled || confirmBusy ? tone.ghostText : tone.primaryText,
                                 borderRadius: '10px',
                                 padding: '10px 14px',
                                 cursor: confirmDisabled || confirmBusy ? 'not-allowed' : 'pointer',

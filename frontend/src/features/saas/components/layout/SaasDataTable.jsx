@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowUpDown, ChevronDown, ChevronUp } from 'lucide-react';
+import { normalizeSortState, promoteSortColumn } from './sortUtils';
 
 const resolveRowId = (row, index) => {
     if (row && typeof row === 'object') {
@@ -15,6 +17,8 @@ const SaasDataTable = ({
     rows = [],
     selectedId = null,
     onSelect,
+    sortConfig = null,
+    onSortChange = null,
     loading = false,
     emptyText = 'No hay datos para mostrar.',
     containerProps = null,
@@ -32,6 +36,8 @@ const SaasDataTable = ({
     );
 
     const safeRows = Array.isArray(rows) ? rows : [];
+    const normalizedSort = useMemo(() => normalizeSortState(sortConfig), [sortConfig]);
+    const activeSortItems = normalizedSort.activeItems;
     const [visibleCount, setVisibleCount] = useState(() => (
         enableInfinite ? Math.min(Math.max(1, initialBatch), safeRows.length) : safeRows.length
     ));
@@ -77,6 +83,12 @@ const SaasDataTable = ({
         () => (enableInfinite ? safeRows.slice(0, visibleCount) : safeRows),
         [enableInfinite, safeRows, visibleCount]
     );
+    const handleSortToggle = useCallback((column = null) => {
+        if (typeof onSortChange !== 'function' || !column?.key || column.sortable === false) return;
+        const nextColumnKey = String(column.key || '').trim();
+        if (!nextColumnKey) return;
+        onSortChange(promoteSortColumn(sortConfig, nextColumnKey));
+    }, [onSortChange, sortConfig]);
 
     const hasRows = renderedRows.length > 0;
     const colSpan = Math.max(visibleColumns.length, 1);
@@ -103,21 +115,53 @@ const SaasDataTable = ({
             <table className="saas-data-table" style={{ minWidth: `${resolvedTableMinWidth}px`, width: '100%' }}>
                 <thead>
                     <tr>
-                        {visibleColumns.map((column) => (
-                            <th
-                                key={column.key}
-                                style={(() => {
-                                    const style = {};
-                                    if (column.width) style.width = column.width;
-                                    if (column.minWidth) style.minWidth = column.minWidth;
-                                    if (column.maxWidth) style.maxWidth = column.maxWidth;
-                                    return Object.keys(style).length > 0 ? style : undefined;
-                                })()}
-                                className={column.align ? `is-${column.align}` : ''}
-                            >
-                                {column.label || column.key}
-                            </th>
-                        ))}
+                        {visibleColumns.map((column) => {
+                            const isSortable = typeof onSortChange === 'function' && column.sortable !== false;
+                            const normalizedColumnKey = String(column.key || '').trim();
+                            const sortPriorityIndex = activeSortItems.findIndex((item) => item.columnKey === normalizedColumnKey);
+                            const isActiveSort = sortPriorityIndex >= 0;
+                            const SortIcon = !isSortable
+                                ? null
+                                : (isActiveSort
+                                    ? ((activeSortItems[sortPriorityIndex]?.direction || 'asc') === 'desc' ? ChevronDown : ChevronUp)
+                                    : ArrowUpDown);
+                            return (
+                                <th
+                                    key={column.key}
+                                    style={(() => {
+                                        const style = {};
+                                        if (column.width) style.width = column.width;
+                                        if (column.minWidth) style.minWidth = column.minWidth;
+                                        if (column.maxWidth) style.maxWidth = column.maxWidth;
+                                        return Object.keys(style).length > 0 ? style : undefined;
+                                    })()}
+                                    className={[
+                                        column.align ? `is-${column.align}` : '',
+                                        isSortable ? 'is-sortable' : '',
+                                        isActiveSort ? 'is-sorted' : ''
+                                    ].filter(Boolean).join(' ')}
+                                >
+                                    {isSortable ? (
+                                        <button
+                                            type="button"
+                                            className="saas-data-table__sort-button"
+                                            onClick={() => handleSortToggle(column)}
+                                            title={`Ordenar por ${column.label || column.key}`}
+                                        >
+                                            <span>{column.label || column.key}</span>
+                                            <span className="saas-data-table__sort-meta">
+                                                {SortIcon ? <SortIcon size={14} strokeWidth={2} /> : null}
+                                                {isActiveSort ? (
+                                                    <span className="saas-data-table__sort-priority" aria-hidden="true">
+                                                        {sortPriorityIndex + 1}
+                                                    </span>
+                                                ) : null}
+                                            </span>
+                                        </button>
+                                    ) : (column.label || column.key)}
+                                </th>
+                            );
+                        })}
                     </tr>
                 </thead>
                 <tbody>
