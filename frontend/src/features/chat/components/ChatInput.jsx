@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Smile, Bot, Sparkles, X, Paperclip, Send, MapPin, LayoutTemplate } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { EmojiStyle, SkinTonePickerLocation, SkinTones, SuggestionMode, Theme } from 'emoji-picker-react';
@@ -46,18 +46,10 @@ const ChatInput = ({
 }) => {
     const [showEmoji, setShowEmoji] = useState(false);
     const [showCommands, setShowCommands] = useState(false);
-    const [slashQuery, setSlashQuery] = useState('');
-    const [hasLocalText, setHasLocalText] = useState(Boolean(String(inputText || '').trim()));
-    const [linkPreviewSource, setLinkPreviewSource] = useState('');
     const [linkPreview, setLinkPreview] = useState(null);
     const [isLoadingPreview, setIsLoadingPreview] = useState(false);
     const [selectionState, setSelectionState] = useState(null);
     const [preferredSkinTone, setPreferredSkinTone] = useState(SkinTones.NEUTRAL);
-    const [emojiTheme, setEmojiTheme] = useState(() => (
-        typeof document !== 'undefined' && document.documentElement?.getAttribute('data-theme') === 'light'
-            ? Theme.LIGHT
-            : Theme.DARK
-    ));
     const inputRef = useRef(null);
     const chatInputRef = useRef(null);
     const draftQuickReplyLabel = String(quickReplyDraft?.label || '').trim();
@@ -78,53 +70,14 @@ const ChatInput = ({
     const isTemplateOnlyMode = windowOpen === false;
     const isBlockedByEditState = Boolean(editingMessage?.id);
     const disableFreeformComposer = isTemplateOnlyMode || isBlockedByEditState;
-    const canSendFreeform = !isTemplateOnlyMode && (hasLocalText || Boolean(attachment) || Boolean(hasDraftQuickReply));
-
-    const getInputValue = useCallback(() => String(inputRef.current?.value || ''), []);
-    const extractFirstUrl = useCallback((text) => {
-        const match = String(text || '').match(/https?:\/\/[^\s]+/i);
-        return match ? match[0] : null;
-    }, []);
-    const resizeInput = useCallback(() => {
-        const el = inputRef.current;
-        if (!el) return;
-        el.style.height = '24px';
-        const next = Math.min(el.scrollHeight, 220);
-        el.style.height = `${next}px`;
-    }, []);
-    const updateDerivedInputState = useCallback((rawValue = '') => {
-        const val = String(rawValue || '');
-        const startsWithSlash = val.startsWith('/');
-        setShowCommands(startsWithSlash);
-        setHasLocalText(Boolean(val.trim()));
-        if (startsWithSlash) setSlashQuery(val);
-        else setSlashQuery('');
-        setLinkPreviewSource(extractFirstUrl(val) || '');
-    }, [extractFirstUrl]);
-    const syncToParent = useCallback(() => {
-        const val = getInputValue();
-        if (typeof setInputText === 'function') setInputText(val);
-        return val;
-    }, [getInputValue, setInputText]);
+    const canSendFreeform = !isTemplateOnlyMode && (Boolean(inputText.trim()) || Boolean(attachment) || Boolean(hasDraftQuickReply));
 
     const handleInputChange = (e) => {
         const val = e.target.value;
-        updateDerivedInputState(val);
-        resizeInput();
+        setInputText(val);
+        setShowCommands(val.startsWith('/'));
         if (showEmoji) setShowEmoji(false);
     };
-
-    const setTextBoth = (val, { syncParent = true } = {}) => {
-        if (inputRef.current) inputRef.current.value = val;
-        updateDerivedInputState(val);
-        resizeInput();
-        if (syncParent && typeof setInputText === 'function') setInputText(val);
-    };
-    const resetInputDom = useCallback(() => {
-        if (inputRef.current) inputRef.current.value = '';
-        updateDerivedInputState('');
-        resizeInput();
-    }, [resizeInput, updateDerivedInputState]);
 
     const updateSelectionState = () => {
         const el = inputRef.current;
@@ -144,15 +97,15 @@ const ChatInput = ({
     const insertEmoji = (emoji) => {
         const el = inputRef.current;
         if (!el) {
-            setTextBoth(`${getInputValue()}${emoji}`);
+            setInputText(prev => `${prev}${emoji}`);
             setShowEmoji(false);
             return;
         }
         const start = Number(el.selectionStart || 0);
         const end = Number(el.selectionEnd || 0);
-        const current = el.value;
+        const current = String(inputText || '');
         const next = `${current.slice(0, start)}${emoji}${current.slice(end)}`;
-        setTextBoth(next);
+        setInputText(next);
         setShowEmoji(false);
         requestAnimationFrame(() => {
             if (!inputRef.current) return;
@@ -178,11 +131,11 @@ const ChatInput = ({
         const start = Number(el.selectionStart || 0);
         const end = Number(el.selectionEnd || 0);
         if (end <= start) return;
-        const current = el.value;
+        const current = String(inputText || '');
         const selected = current.slice(start, end);
         const wrapped = `${openToken}${selected}${closeToken}`;
         const next = `${current.slice(0, start)}${wrapped}${current.slice(end)}`;
-        setTextBoth(next);
+        setInputText(next);
         requestAnimationFrame(() => {
             if (!inputRef.current) return;
             const selStart = start + openToken.length;
@@ -200,7 +153,7 @@ const ChatInput = ({
         const end = Number(el.selectionEnd || 0);
         if (end <= start) return;
 
-        const current = el.value;
+        const current = String(inputText || '');
         const blockStart = current.lastIndexOf('\n', start - 1) + 1;
         const nextBreak = current.indexOf('\n', end);
         const blockEnd = nextBreak === -1 ? current.length : nextBreak;
@@ -217,7 +170,7 @@ const ChatInput = ({
             .join('\n');
 
         const next = `${current.slice(0, blockStart)}${formattedBlock}${current.slice(blockEnd)}`;
-        setTextBoth(next);
+        setInputText(next);
         requestAnimationFrame(() => {
             if (!inputRef.current) return;
             inputRef.current.focus();
@@ -233,11 +186,11 @@ const ChatInput = ({
         const end = Number(el.selectionEnd || 0);
         if (end <= start) return;
 
-        const current = el.value;
+        const current = String(inputText || '');
         const selected = current.slice(start, end);
         const wrapped = `\`\`\`\n${selected}\n\`\`\``;
         const next = `${current.slice(0, start)}${wrapped}${current.slice(end)}`;
-        setTextBoth(next);
+        setInputText(next);
         requestAnimationFrame(() => {
             if (!inputRef.current) return;
             inputRef.current.focus();
@@ -253,7 +206,7 @@ const ChatInput = ({
         const end = Number(el.selectionEnd || 0);
         if (start !== end) return false;
 
-        const current = el.value;
+        const current = String(inputText || '');
         const lineStart = current.lastIndexOf('\n', start - 1) + 1;
         const nextBreak = current.indexOf('\n', start);
         const lineEnd = nextBreak === -1 ? current.length : nextBreak;
@@ -275,7 +228,7 @@ const ChatInput = ({
         const insertion = `\n${continuation}`;
         const next = `${current.slice(0, start)}${insertion}${current.slice(end)}`;
         const nextCursor = start + insertion.length;
-        setTextBoth(next);
+        setInputText(next);
         requestAnimationFrame(() => {
             if (!inputRef.current) return;
             inputRef.current.focus();
@@ -285,75 +238,72 @@ const ChatInput = ({
         return true;
     };
 
-    const normalizedSlashQuery = useMemo(() =>
-        String(slashQuery || '').startsWith('/')
-            ? String(slashQuery || '').slice(1).trim().toLowerCase()
-            : '',
-    [slashQuery]);
+    const normalizedSlashQuery = String(inputText || '').startsWith('/')
+        ? String(inputText || '').slice(1).trim().toLowerCase()
+        : '';
+    const slashTokens = normalizedSlashQuery
+        ? normalizedSlashQuery.split(/\s+/).map((entry) => entry.trim()).filter(Boolean)
+        : [];
 
-    const slashTokens = useMemo(() =>
-        normalizedSlashQuery
-            ? normalizedSlashQuery.split(/\s+/).map((entry) => entry.trim()).filter(Boolean)
-            : [],
-    [normalizedSlashQuery]);
+    const filteredQuickReplies = (Array.isArray(quickReplies) ? quickReplies : [])
+        .map((item) => {
+            const label = String(item?.label || '').trim().toLowerCase();
+            const text = String(item?.text || '').trim().toLowerCase();
+            const libraryName = String(item?.libraryName || '').trim().toLowerCase();
+            const haystack = `${label} ${libraryName} ${text}`.trim();
+            if (!slashTokens.length) {
+                return {
+                    item,
+                    rank: Number(label.length > 0) * 100 + Number(libraryName.length > 0) * 10
+                };
+            }
+            const containsAll = slashTokens.every((token) => haystack.includes(token));
+            if (!containsAll) return null;
 
-    const filteredQuickReplies = useMemo(() =>
-        (Array.isArray(quickReplies) ? quickReplies : [])
-            .map((item) => {
-                const label = String(item?.label || '').trim().toLowerCase();
-                const text = String(item?.text || '').trim().toLowerCase();
-                const libraryName = String(item?.libraryName || '').trim().toLowerCase();
-                const haystack = `${label} ${libraryName} ${text}`.trim();
-                if (!slashTokens.length) {
-                    return {
-                        item,
-                        rank: Number(label.length > 0) * 100 + Number(libraryName.length > 0) * 10
-                    };
-                }
-                const containsAll = slashTokens.every((token) => haystack.includes(token));
-                if (!containsAll) return null;
+            let rank = 0;
+            if (normalizedSlashQuery && label.startsWith(normalizedSlashQuery)) rank += 400;
+            if (normalizedSlashQuery && libraryName.startsWith(normalizedSlashQuery)) rank += 280;
+            if (normalizedSlashQuery && text.startsWith(normalizedSlashQuery)) rank += 220;
+            slashTokens.forEach((token) => {
+                if (label.includes(token)) rank += 80;
+                if (libraryName.includes(token)) rank += 50;
+                if (text.includes(token)) rank += 20;
+            });
 
-                let rank = 0;
-                if (normalizedSlashQuery && label.startsWith(normalizedSlashQuery)) rank += 400;
-                if (normalizedSlashQuery && libraryName.startsWith(normalizedSlashQuery)) rank += 280;
-                if (normalizedSlashQuery && text.startsWith(normalizedSlashQuery)) rank += 220;
-                slashTokens.forEach((token) => {
-                    if (label.includes(token)) rank += 80;
-                    if (libraryName.includes(token)) rank += 50;
-                    if (text.includes(token)) rank += 20;
-                });
-
-                return { item, rank };
-            })
-            .filter(Boolean)
-            .sort((left, right) => {
-                const rankDelta = Number(right?.rank || 0) - Number(left?.rank || 0);
-                if (rankDelta !== 0) return rankDelta;
-                const leftLabel = String(left?.item?.label || '').trim();
-                const rightLabel = String(right?.item?.label || '').trim();
-                return leftLabel.localeCompare(rightLabel, 'es', { sensitivity: 'base' });
-            })
-            .slice(0, 10)
-            .map((entry) => entry.item),
-    [quickReplies, slashTokens, normalizedSlashQuery]);
+            return { item, rank };
+        })
+        .filter(Boolean)
+        .sort((left, right) => {
+            const rankDelta = Number(right?.rank || 0) - Number(left?.rank || 0);
+            if (rankDelta !== 0) return rankDelta;
+            const leftLabel = String(left?.item?.label || '').trim();
+            const rightLabel = String(right?.item?.label || '').trim();
+            return leftLabel.localeCompare(rightLabel, 'es', { sensitivity: 'base' });
+        })
+        .slice(0, 10)
+        .map((entry) => entry.item);
 
     const selectQuickReply = (item = {}) => {
         const entry = item && typeof item === 'object' ? item : null;
         if (!entry) return;
         if (typeof onSendQuickReply === 'function') onSendQuickReply(entry);
-        else setTextBoth(String(entry?.text || '').trim());
+        else setInputText(String(entry?.text || '').trim());
         setShowCommands(false);
     };
 
+    const extractFirstUrl = (text) => {
+        const match = String(text || '').match(/https?:\/\/[^\s]+/i);
+        return match ? match[0] : null;
+    };
+
+
     useEffect(() => {
-        if (!inputRef.current) return;
-        const nextValue = String(inputText || '');
-        if (inputRef.current.value !== nextValue) {
-            inputRef.current.value = nextValue;
-            updateDerivedInputState(nextValue);
-            resizeInput();
-        }
-    }, [inputText, resizeInput, updateDerivedInputState]);
+        const el = inputRef.current;
+        if (!el) return;
+        el.style.height = '24px';
+        const next = Math.min(el.scrollHeight, 220);
+        el.style.height = `${next}px`;
+    }, [inputText]);
 
     useEffect(() => {
         if (!editingMessage?.id) return;
@@ -369,11 +319,11 @@ const ChatInput = ({
 
     useEffect(() => {
         if (!selectionState) return;
-        const inputLen = getInputValue().length;
+        const inputLen = String(inputText || '').length;
         if (selectionState.start >= inputLen || selectionState.end > inputLen) {
             setSelectionState(null);
         }
-    }, [getInputValue, inputText, selectionState]);
+    }, [inputText, selectionState]);
 
     useEffect(() => {
         if (!showEmoji) return;
@@ -402,23 +352,10 @@ const ChatInput = ({
     }, []);
 
     useEffect(() => {
-        if (typeof document === 'undefined') return undefined;
-        const root = document.documentElement;
-        if (!root) return undefined;
-        const syncTheme = () => {
-            setEmojiTheme(root.getAttribute('data-theme') === 'light' ? Theme.LIGHT : Theme.DARK);
-        };
-        syncTheme();
-        const observer = new MutationObserver(syncTheme);
-        observer.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
-        return () => observer.disconnect();
-    }, []);
-
-    useEffect(() => {
-        const url = linkPreviewSource;
+        const url = extractFirstUrl(inputText);
         if (!url) {
-            setLinkPreview(prev => (prev !== null ? null : prev));
-            setIsLoadingPreview(prev => (prev ? false : prev));
+            setLinkPreview(null);
+            setIsLoadingPreview(false);
             return;
         }
 
@@ -443,19 +380,19 @@ const ChatInput = ({
             cancelled = true;
             clearTimeout(timer);
         };
-    }, [linkPreviewSource]);
+    }, [inputText]);
 
     return (
         <div className="chat-input-area chat-input-area-pro" style={{ position: 'relative' }} ref={chatInputRef}>
             {editingMessage?.id && (
-                <div className="chat-draft-banner chat-draft-banner--edit" style={{
+                <div style={{
                     position: 'absolute',
                     left: '12px',
                     right: '12px',
                     bottom: '100%',
                     marginBottom: '8px',
-                    border: '1px solid var(--chat-success-border)',
-                    background: 'var(--chat-success-surface)',
+                    border: '1px solid rgba(0, 168, 132, 0.45)',
+                    background: '#1f2c34',
                     borderRadius: '10px',
                     padding: '8px 10px',
                     display: 'flex',
@@ -465,16 +402,15 @@ const ChatInput = ({
                     zIndex: 40
                 }}>
                     <div style={{ minWidth: 0 }}>
-                        <div className="chat-draft-banner__title" style={{ fontSize: '0.72rem', color: 'var(--chat-success-text)', fontWeight: 700, marginBottom: '2px' }}>Editando mensaje</div>
-                        <div className="chat-draft-banner__text" style={{ fontSize: '0.78rem', color: 'var(--chat-control-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontSize: '0.72rem', color: '#00a884', fontWeight: 700, marginBottom: '2px' }}>Editando mensaje</div>
+                        <div style={{ fontSize: '0.78rem', color: '#b6c7cf', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {String(editingMessage?.originalBody || '').trim() || 'Mensaje sin texto'}
                         </div>
                     </div>
                     <button
                         type="button"
-                        className="chat-draft-banner__action"
                         onClick={() => onCancelEditMessage && onCancelEditMessage()}
-                        style={{ border: '1px solid var(--chat-card-border)', background: 'transparent', color: 'var(--chat-control-text)', borderRadius: '8px', padding: '4px 10px', fontSize: '0.78rem', cursor: 'pointer' }}
+                        style={{ border: '1px solid rgba(255,255,255,0.18)', background: 'transparent', color: '#d8e3e8', borderRadius: '8px', padding: '4px 10px', fontSize: '0.78rem', cursor: 'pointer' }}
                     >
                         Cancelar
                     </button>
@@ -482,14 +418,14 @@ const ChatInput = ({
             )}
 
             {!editingMessage?.id && replyingMessage?.id && (
-                <div className="chat-draft-banner chat-draft-banner--reply" style={{
+                <div style={{
                     position: 'absolute',
                     left: '12px',
                     right: '12px',
                     bottom: '100%',
                     marginBottom: '8px',
-                    border: '1px solid var(--chat-info-border)',
-                    background: 'var(--chat-info-surface)',
+                    border: '1px solid rgba(124, 200, 255, 0.45)',
+                    background: '#1b2831',
                     borderRadius: '10px',
                     padding: '8px 10px',
                     display: 'flex',
@@ -499,18 +435,17 @@ const ChatInput = ({
                     zIndex: 39
                 }}>
                     <div style={{ minWidth: 0 }}>
-                        <div className="chat-draft-banner__title" style={{ fontSize: '0.72rem', color: 'var(--chat-info-text)', fontWeight: 700, marginBottom: '2px' }}>
+                        <div style={{ fontSize: '0.72rem', color: '#7cc8ff', fontWeight: 700, marginBottom: '2px' }}>
                             Respondiendo {replyingMessage?.fromMe ? 'tu mensaje' : 'mensaje del cliente'}
                         </div>
-                        <div className="chat-draft-banner__text" style={{ fontSize: '0.78rem', color: 'var(--chat-control-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontSize: '0.78rem', color: '#b6c7cf', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {String(replyingMessage?.body || '').trim() || 'Mensaje sin texto'}
                         </div>
                     </div>
                     <button
                         type="button"
-                        className="chat-draft-banner__action"
                         onClick={() => onCancelReplyMessage && onCancelReplyMessage()}
-                        style={{ border: '1px solid var(--chat-card-border)', background: 'transparent', color: 'var(--chat-control-text)', borderRadius: '8px', padding: '4px 10px', fontSize: '0.78rem', cursor: 'pointer' }}
+                        style={{ border: '1px solid rgba(255,255,255,0.18)', background: 'transparent', color: '#d8e3e8', borderRadius: '8px', padding: '4px 10px', fontSize: '0.78rem', cursor: 'pointer' }}
                     >
                         Cancelar
                     </button>
@@ -518,14 +453,14 @@ const ChatInput = ({
             )}
 
             {!editingMessage?.id && hasDraftQuickReply && (
-                <div className="chat-draft-banner chat-draft-banner--quick-reply" style={{
+                <div style={{
                     position: 'absolute',
                     left: '12px',
                     right: '12px',
                     bottom: '100%',
                     marginBottom: replyingMessage?.id ? '74px' : '8px',
-                    border: '1px solid var(--chat-success-border)',
-                    background: 'var(--chat-success-surface)',
+                    border: '1px solid rgba(0, 168, 132, 0.55)',
+                    background: '#173138',
                     borderRadius: '10px',
                     padding: '8px 10px',
                     display: 'flex',
@@ -535,28 +470,28 @@ const ChatInput = ({
                     zIndex: 38
                 }}>
                     <div style={{ minWidth: 0 }}>
-                        <div className="chat-draft-banner__title" style={{ fontSize: '0.72rem', color: 'var(--chat-success-text)', fontWeight: 700, marginBottom: '2px' }}>
+                        <div style={{ fontSize: '0.72rem', color: '#00d4aa', fontWeight: 700, marginBottom: '2px' }}>
                             Respuesta rapida cargada{draftQuickReplyLabel ? `: ${draftQuickReplyLabel}` : ''}
                         </div>
-                        <div className="chat-draft-banner__text" style={{ fontSize: '0.78rem', color: 'var(--chat-control-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontSize: '0.78rem', color: '#d4e2e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {draftQuickReplyText || `Adjuntos: ${draftQuickReplyAssets.length}`}
                         </div>
                         {draftQuickReplyPreviewAssets.length > 0 && (
-                            <div className="chat-draft-banner__attachments" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
                                 {draftQuickReplyPreviewAssets.slice(0, 3).map((asset, assetIdx) => (
-                                    <div key={`draft_qr_preview_${assetIdx}`} className="chat-draft-banner__attachment" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 8px', borderRadius: '8px', border: '1px solid var(--chat-card-border)', background: 'var(--chat-card-surface-alt)', maxWidth: '230px' }}>
+                                    <div key={`draft_qr_preview_${assetIdx}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 8px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.14)', background: 'rgba(0,0,0,0.18)', maxWidth: '230px' }}>
                                         {asset.isImage ? (
                                             <img src={asset.previewUrl} alt={asset.name} style={{ width: '28px', height: '28px', borderRadius: '6px', objectFit: 'cover', flexShrink: 0 }} />
                                         ) : (
-                                            <span style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px dashed var(--chat-card-border)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', color: 'var(--chat-control-text-soft)', flexShrink: 0 }}>
+                                            <span style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px dashed rgba(255,255,255,0.3)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', color: '#b8ccd8', flexShrink: 0 }}>
                                                 {String(asset?.mimeType || 'file').split('/')[1] || 'file'}
                                             </span>
                                         )}
                                         <div style={{ minWidth: 0 }}>
-                                            <div className="chat-draft-banner__attachment-name" style={{ fontSize: '0.72rem', color: 'var(--chat-control-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            <div style={{ fontSize: '0.72rem', color: '#d4e2e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                 {asset.name}
                                             </div>
-                                            <div className="chat-draft-banner__attachment-meta" style={{ fontSize: '0.66rem', color: 'var(--chat-control-text-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            <div style={{ fontSize: '0.66rem', color: '#9fb6c1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                 {(asset.mimeType || 'archivo').replace('application/', '')}
                                                 {asset.sizeBytes ? ` | ${formatAssetBytes(asset.sizeBytes)}` : ''}
                                             </div>
@@ -564,16 +499,15 @@ const ChatInput = ({
                                     </div>
                                 ))}
                                 {draftQuickReplyPreviewAssets.length > 3 && (
-                                    <div style={{ fontSize: '0.68rem', color: 'var(--chat-control-text-soft)' }}>+{draftQuickReplyPreviewAssets.length - 3} adjuntos</div>
+                                    <div style={{ fontSize: '0.68rem', color: '#9fb6c1' }}>+{draftQuickReplyPreviewAssets.length - 3} adjuntos</div>
                                 )}
                             </div>
                         )}
                     </div>
                     <button
                         type="button"
-                        className="chat-draft-banner__action"
                         onClick={() => onClearQuickReplyDraft && onClearQuickReplyDraft()}
-                        style={{ border: '1px solid var(--chat-card-border)', background: 'transparent', color: 'var(--chat-control-text)', borderRadius: '8px', padding: '4px 10px', fontSize: '0.78rem', cursor: 'pointer' }}
+                        style={{ border: '1px solid rgba(255,255,255,0.18)', background: 'transparent', color: '#d8e3e8', borderRadius: '8px', padding: '4px 10px', fontSize: '0.78rem', cursor: 'pointer' }}
                     >
                         Limpiar
                     </button>
@@ -583,24 +517,24 @@ const ChatInput = ({
             {/* Commands popover */}
             {showCommands && (
                 <div className="floating-panel commands-panel">
-                    <div style={{ padding: '6px 14px', color: 'var(--chat-success-text)', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em' }}>RESPUESTAS RAPIDAS</div>
+                    <div style={{ padding: '6px 14px', color: '#00a884', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em' }}>RESPUESTAS RAPIDAS</div>
                     {filteredQuickReplies.length === 0 && (
-                        <div style={{ padding: '10px 14px', color: 'var(--chat-control-text-soft)', fontSize: '0.78rem' }}>
+                        <div style={{ padding: '10px 14px', color: '#9db0ba', fontSize: '0.78rem' }}>
                             No hay respuestas rapidas para este modulo.
                         </div>
                     )}
                     {filteredQuickReplies.map((item) => (
                         <div key={String(item?.id || item?.label || Math.random())} onClick={() => selectQuickReply(item)}
                             style={{ padding: '10px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}
-                            onMouseEnter={e => e.currentTarget.style.background = 'var(--chat-button-ghost-hover)'}
+                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                         >
-                            <Sparkles size={15} color="var(--chat-success-text)" />
+                            <Sparkles size={15} color="#00a884" />
                             <div style={{ minWidth: 0 }}>
                                 <div style={{ fontSize: '0.9rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                     {String(item?.label || 'Respuesta rapida')}
                                 </div>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--chat-control-text-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                <div style={{ fontSize: '0.75rem', color: '#8696a0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                     {String(item?.text || item?.mediaFileName || 'Adjunto').split('\n')[0]}
                                 </div>
                             </div>
@@ -626,7 +560,7 @@ const ChatInput = ({
                         skinTonePickerLocation={SkinTonePickerLocation.SEARCH}
                         emojiStyle={EmojiStyle.APPLE}
                         previewConfig={{ showPreview: false }}
-                        theme={emojiTheme}
+                        theme={Theme.DARK}
                     />
                 </div>
             )}
@@ -670,14 +604,14 @@ const ChatInput = ({
                         <img src={linkPreview.image} alt="preview" style={{ width: '64px', height: '64px', borderRadius: '8px', objectFit: 'cover', flexShrink: 0 }} />
                     )}
                     <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--chat-success-text)', marginBottom: '2px' }}>
+                        <div style={{ fontSize: '0.72rem', color: '#00a884', marginBottom: '2px' }}>
                             {isLoadingPreview ? 'Cargando vista previa...' : 'Vista previa del enlace'}
                         </div>
                         <div style={{ fontSize: '0.84rem', color: 'var(--text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {linkPreview?.title || linkPreview?.siteName || linkPreview?.url}
                         </div>
                         {linkPreview?.description && (
-                            <div style={{ fontSize: '0.75rem', color: 'var(--chat-control-text-soft)', marginTop: '2px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                            <div style={{ fontSize: '0.75rem', color: '#8696a0', marginTop: '2px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                                 {linkPreview.description}
                             </div>
                         )}
@@ -692,7 +626,7 @@ const ChatInput = ({
                     {attachmentPreview !== 'document' ? (
                         <img src={attachmentPreview} alt="Preview" style={{ maxWidth: '160px', maxHeight: '160px', borderRadius: '8px' }} />
                     ) : (
-                        <div style={{ padding: '15px', background: 'var(--chat-card-surface-alt)', border: '1px solid var(--chat-card-border)', borderRadius: '8px', fontSize: '0.8rem', color: 'var(--chat-control-text)' }}>
+                        <div style={{ padding: '15px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', fontSize: '0.8rem' }}>
                             Archivo: {attachment.filename}
                         </div>
                     )}
@@ -741,6 +675,7 @@ const ChatInput = ({
                             ? 'Usa un template aprobado para contactar a este cliente...'
                             : (editingMessage?.id ? 'Edita el mensaje y presiona Enter...' : (replyingMessage?.id ? 'Escribe tu respuesta y presiona Enter...' : 'Escribe un mensaje...'))
                     }
+                    value={inputText}
                     onChange={handleInputChange}
                     disabled={isTemplateOnlyMode}
                     onKeyDown={(e) => {
@@ -773,9 +708,7 @@ const ChatInput = ({
                         if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
                             e.preventDefault();
                             if (isTemplateOnlyMode) return;
-                            const syncedValue = syncToParent();
-                            const didSend = onSendMessage(syncedValue);
-                            if (didSend !== false) resetInputDom();
+                            onSendMessage();
                             return;
                         }
                         onKeyDown && onKeyDown(e);
@@ -792,7 +725,7 @@ const ChatInput = ({
                 {/* AI button */}
                 <button
                     className="btn-icon"
-                    style={{ color: isAiLoading ? 'var(--saas-accent-info)' : 'var(--chat-control-text-soft)', animation: isAiLoading ? 'spin 2s linear infinite' : 'none' }}
+                    style={{ color: isAiLoading ? '#8a2be2' : '#8696a0', animation: isAiLoading ? 'spin 2s linear infinite' : 'none' }}
                     onClick={onRequestAiSuggestion}
                     title="Sugerencia IA (/ayudar)"
                     disabled={isTemplateOnlyMode}
@@ -804,9 +737,7 @@ const ChatInput = ({
                     className="send-button send-button-modern"
                     onClick={() => {
                         if (!canSendFreeform) return;
-                        const syncedValue = syncToParent();
-                        const didSend = onSendMessage(syncedValue);
-                        if (didSend !== false) resetInputDom();
+                        onSendMessage();
                     }}
 
                     title={editingMessage?.id ? 'Guardar edicion' : (replyingMessage?.id ? 'Enviar respuesta' : 'Enviar')}

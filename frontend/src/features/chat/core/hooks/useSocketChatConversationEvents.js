@@ -4,7 +4,6 @@ import { openOrFocusWorkspaceTab } from '../helpers/workspaceTabs.helpers';
 import { queueChatNotificationOpenRequest } from '../helpers/notificationWorkspace.helpers';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 import {
-    getCachedMessages,
     patchCachedMessages,
     replaceMessageByClientTempId,
     upsertMessageById,
@@ -634,39 +633,32 @@ export default function useSocketChatConversationEvents({
                     };
                 })
                 : [];
-            const cacheKeys = [];
-            const pushCacheKey = (value = '') => {
-                const safeValue = String(value || '').trim();
-                if (safeValue && !cacheKeys.includes(safeValue)) cacheKeys.push(safeValue);
-            };
-            pushCacheKey(activeChatIdRef.current || '');
-            pushCacheKey(resolvedChatId);
-            pushCacheKey(requestedChatId);
-            const { baseChatId: resolvedBaseChatId } = parseScopedChatId(resolvedChatId);
-            const { baseChatId: requestedBaseChatId } = parseScopedChatId(requestedChatId);
-            pushCacheKey(resolvedBaseChatId);
-            pushCacheKey(requestedBaseChatId);
+            setMessages((prev) => {
+                const previous = Array.isArray(prev) ? prev : [];
+                if (previous.length === 0) return normalizedMessages;
+                if (normalizedMessages.length === 0) return previous;
 
-            const previousCachedMessages = cacheKeys.reduce((acc, key) => {
-                if (Array.isArray(acc) && acc.length > 0) return acc;
-                const found = getCachedMessages(messagesCacheRef, key);
-                return Array.isArray(found) ? found : [];
-            }, []);
-
-            let mergedHistoryMessages = normalizedMessages;
-            if (previousCachedMessages.length > 0 && normalizedMessages.length === 0) {
-                mergedHistoryMessages = previousCachedMessages;
-            } else if (previousCachedMessages.length > 0 && normalizedMessages.length > 0) {
-                mergedHistoryMessages = normalizedMessages.reduce(
-                    (acc, message) => upsertMessageById(acc, message),
-                    previousCachedMessages
+                const mergedById = new Map(
+                    previous
+                        .map((m) => [String(m?.id || '').trim(), m])
+                        .filter(([id]) => Boolean(id))
                 );
-            }
 
-            setMessages(mergedHistoryMessages);
-            cacheKeys.forEach((key) => {
-                writeCachedMessages(messagesCacheRef, key, mergedHistoryMessages);
+                normalizedMessages.forEach((message) => {
+                    const id = String(message?.id || '').trim();
+                    if (!id) return;
+                    const existing = mergedById.get(id);
+                    mergedById.set(id, existing ? { ...existing, ...message } : message);
+                });
+
+                const merged = Array.from(mergedById.values());
+                merged.sort((a, b) => Number(a?.timestamp || 0) - Number(b?.timestamp || 0));
+                return merged;
             });
+            const activeChatId = String(activeChatIdRef.current || '').trim();
+            if (activeChatId) {
+                writeCachedMessages(messagesCacheRef, activeChatId, normalizedMessages);
+            }
             const nextWindowOpen = Boolean(data?.windowOpen);
             const nextWindowExpiresAt = String(data?.windowExpiresAt || '').trim() || null;
             setChats((prev) => prev.map((chat) => (
@@ -1169,16 +1161,6 @@ export default function useSocketChatConversationEvents({
                 quotedMessage: normalizeQuotedMessage(msg?.quotedMessage),
                 reactions: Array.isArray(msg?.reactions) ? msg.reactions : []
             };
-
-            if (!normalizedIncoming?.fromMe) {
-                normalizedIncoming.type = String(normalizedIncoming?.type || '').trim().toLowerCase() === 'template'
-                    ? 'chat'
-                    : normalizedIncoming.type;
-                normalizedIncoming.templateName = null;
-                normalizedIncoming.templateLanguage = null;
-                normalizedIncoming.templatePreviewText = null;
-                normalizedIncoming.templateComponents = [];
-            }
 
             const fallbackSessionName = normalizedIncoming?.fromMe
                 ? String(sessionSenderIdentity?.name || '').trim()

@@ -1,49 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Sidebar, BusinessSidebar, ClientProfilePanel, ChatWindow, NewChatModal } from '../features/chat/components';
 import { sanitizeDisplayText } from '../features/chat/core';
-import { API_BASE } from '../features/saas/helpers';
-import { fetchSaasUiPreference, saveSaasUiPreference } from '../features/saas/services/uiPreferences.service';
 import {
   CHAT_NOTIFICATION_OPEN_EVENT,
   CHAT_NOTIFICATION_OPEN_REQUEST_KEY,
   clearChatNotificationOpenRequest,
   readChatNotificationOpenRequest
 } from '../features/chat/core/helpers/notificationWorkspace.helpers';
-
-const SAAS_THEME_STORAGE_KEY = 'saas.theme.mode';
-const SAAS_THEME_STORAGE_LEGACY_KEY = 'saas-theme';
-const SAAS_THEME_SECTION_KEY = 'theme';
-
-const normalizeThemeMode = (value = '') => (String(value || '').trim().toLowerCase() === 'light' ? 'light' : 'dark');
-
-const applyDocumentTheme = (mode = 'dark') => {
-  if (typeof document === 'undefined') return;
-  document.documentElement.setAttribute('data-theme', normalizeThemeMode(mode));
-};
-
-const resolveStoredThemeMode = (fallback = 'dark') => {
-  if (typeof window === 'undefined') return normalizeThemeMode(fallback);
-  try {
-    return normalizeThemeMode(
-      window.localStorage.getItem(SAAS_THEME_STORAGE_LEGACY_KEY)
-      || window.localStorage.getItem(SAAS_THEME_STORAGE_KEY)
-      || fallback
-    );
-  } catch {
-    return normalizeThemeMode(fallback);
-  }
-};
-
-const persistThemeMode = (mode = 'dark') => {
-  if (typeof window === 'undefined') return;
-  const normalizedMode = normalizeThemeMode(mode);
-  try {
-    window.localStorage.setItem(SAAS_THEME_STORAGE_LEGACY_KEY, normalizedMode);
-    window.localStorage.setItem(SAAS_THEME_STORAGE_KEY, normalizedMode);
-  } catch {
-    // ignore storage failures
-  }
-};
 
 export default function OperationPage({
   forceOperationLaunch,
@@ -81,7 +44,6 @@ export default function OperationPage({
   clientContact,
   messages,
   messagesEndRef,
-  messagesRef,
   isDragOver,
   handleDragOver,
   handleDragLeave,
@@ -163,98 +125,28 @@ export default function OperationPage({
   SaasPanelComponent,
 }) {
   const [cartDraftsByChat, setCartDraftsByChat] = useState({});
-  const [themeMode, setThemeMode] = useState(() => {
-    if (typeof window === 'undefined') {
-      applyDocumentTheme('dark');
-      return 'dark';
-    }
-    const initialMode = resolveStoredThemeMode('dark');
-    applyDocumentTheme(initialMode);
-    return initialMode;
-  });
   const originalDocumentTitleRef = useRef(typeof document !== 'undefined' ? document.title : 'WhatsApp Business Pro');
-  const saasRequestJson = useCallback(async (path, { method = 'GET', body = null } = {}) => {
-    if (typeof buildApiHeaders !== 'function') return null;
-    const response = await fetch(`${API_BASE}${path}`, {
-      method,
-      cache: 'no-store',
-      headers: buildApiHeaders({ includeJson: body !== null }),
-      body: body !== null ? JSON.stringify(body) : undefined
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload?.ok === false) {
-      throw new Error(String(payload?.error || 'No se pudo completar la operación.'));
+  const activeChatDetails = chats.find((c) => c.id === activeChatId) || null;
+  const mergedActiveChatDetails = activeChatDetails || clientContact
+    ? {
+      ...(clientContact || {}),
+      ...(activeChatDetails || {}),
+      windowOpen: typeof activeChatDetails?.windowOpen === 'boolean'
+        ? activeChatDetails.windowOpen
+        : (typeof clientContact?.windowOpen === 'boolean' ? clientContact.windowOpen : true),
+      windowExpiresAt: activeChatDetails?.windowExpiresAt || clientContact?.windowExpiresAt || null
     }
-    return payload;
-  }, [buildApiHeaders]);
-  const activeChatDetails = useMemo(
-    () => chats.find((c) => c.id === activeChatId) || null,
-    [activeChatId, chats]
-  );
-  const mergedActiveChatDetails = useMemo(() => (
-    activeChatDetails || clientContact
-      ? {
-        ...(clientContact || {}),
-        ...(activeChatDetails || {}),
-        windowOpen: typeof activeChatDetails?.windowOpen === 'boolean'
-          ? activeChatDetails.windowOpen
-          : (typeof clientContact?.windowOpen === 'boolean' ? clientContact.windowOpen : true),
-        windowExpiresAt: activeChatDetails?.windowExpiresAt || clientContact?.windowExpiresAt || null
-      }
-      : null
-  ), [activeChatDetails, clientContact]);
-  const forwardChatOptions = useMemo(() => (
-    chats
-      .filter((chat) => chat?.id && String(chat.id) !== String(activeChatId || ''))
-      .map((chat) => ({
-        id: chat.id,
-        name: sanitizeDisplayText(chat?.name || '') || 'Contacto',
-        phone: sanitizeDisplayText(chat?.phone || ''),
-        subtitle: sanitizeDisplayText(chat?.subtitle || ''),
-        timestamp: Number(chat?.timestamp || 0) || 0,
-      }))
-      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
-  ), [activeChatId, chats]);
-  const activeSidebarProfile = useMemo(
-    () => myProfile || businessData?.profile,
-    [businessData?.profile, myProfile]
-  );
-  const clientProfileContact = useMemo(
-    () => ({ ...activeChatDetails, ...clientContact }),
-    [activeChatDetails, clientContact]
-  );
-
-  useEffect(() => {
-    applyDocumentTheme(themeMode);
-    persistThemeMode(themeMode);
-  }, [themeMode]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!saasAuthEnabled || !saasSession?.user || typeof buildApiHeaders !== 'function') {
-      return undefined;
-    }
-    fetchSaasUiPreference(saasRequestJson, SAAS_THEME_SECTION_KEY)
-      .then((item) => {
-        const remoteMode = normalizeThemeMode(item?.preferencesJson?.mode || 'dark');
-        if (cancelled) return;
-        setThemeMode(remoteMode);
-        applyDocumentTheme(remoteMode);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [buildApiHeaders, saasAuthEnabled, saasRequestJson, saasSession?.user]);
-
-  const handleThemeChange = useCallback((nextMode) => {
-    const normalizedMode = normalizeThemeMode(nextMode);
-    setThemeMode(normalizedMode);
-    applyDocumentTheme(normalizedMode);
-    persistThemeMode(normalizedMode);
-    if (!saasAuthEnabled || typeof buildApiHeaders !== 'function') return;
-    saveSaasUiPreference(saasRequestJson, SAAS_THEME_SECTION_KEY, { mode: normalizedMode }).catch(() => {});
-  }, [buildApiHeaders, saasAuthEnabled, saasRequestJson]);
+    : null;
+  const forwardChatOptions = chats
+    .filter((chat) => chat?.id && String(chat.id) !== String(activeChatId || ''))
+    .map((chat) => ({
+      id: chat.id,
+      name: sanitizeDisplayText(chat?.name || '') || 'Contacto',
+      phone: sanitizeDisplayText(chat?.phone || ''),
+      subtitle: sanitizeDisplayText(chat?.subtitle || ''),
+      timestamp: Number(chat?.timestamp || 0) || 0,
+    }))
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
   const appContainerClassName = forceOperationLaunch ? 'app-container app-container--operation' : 'app-container';
 
@@ -321,7 +213,7 @@ export default function OperationPage({
         chatsLoaded={chatsLoaded}
         activeChatId={activeChatId}
         onChatSelect={handleChatSelect}
-        myProfile={activeSidebarProfile}
+        myProfile={myProfile || businessData?.profile}
         onLogout={handleLogoutWhatsapp}
         onRefreshChats={handleRefreshChats}
         onStartNewChat={handleStartNewChat}
@@ -347,9 +239,7 @@ export default function OperationPage({
         chatAssignmentState={chatAssignmentState}
         chatCommercialStatusState={chatCommercialStatusState}
         showBackToPanel={Boolean(forceOperationLaunch && canManageSaas)}
-        onBackToPanel={() => setShowSaasAdminPanel(true)}
-        themeMode={themeMode}
-        onThemeChange={handleThemeChange}
+        onBackToPanel={() => handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId })}
       />
 
       <div className="main-workspace">
@@ -422,7 +312,7 @@ export default function OperationPage({
 
             {showClientProfile && (
               <ClientProfilePanel
-                contact={clientProfileContact}
+                contact={{ ...activeChatDetails, ...clientContact }}
                 chats={chats}
                 onClose={() => setShowClientProfile(false)}
                 onQuickAiAction={requestAiSuggestion}
@@ -438,8 +328,7 @@ export default function OperationPage({
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              background: 'var(--chat-window-background)',
-              color: 'var(--saas-text-primary)'
+              background: '#222e35',
             }}
           >
             <div className="conversation-empty-card">
@@ -495,12 +384,12 @@ export default function OperationPage({
             tenantScopeKey={tenantScopeId}
             setInputText={setInputText}
             businessData={businessData}
-            messagesRef={messagesRef}
+            messages={messages}
             activeChatId={activeChatId}
             activeChatPhone={activeChatDetails?.phone || clientContact?.phone || ''}
             activeChatDetails={mergedActiveChatDetails}
             socket={socket}
-            myProfile={activeSidebarProfile}
+            myProfile={myProfile || businessData?.profile}
             onLogout={handleLogoutWhatsapp}
             quickReplies={quickReplies}
             onSendQuickReply={handleSendQuickReply}
@@ -549,8 +438,6 @@ export default function OperationPage({
         launchSource={requestedLaunchSource || ''}
         initialSection={requestedWaSectionFromUrl || 'saas_resumen'}
         resetKeys={[showSaasAdminPanel, tenantScopeId, saasSession?.user?.userId, requestedWaSectionFromUrl]}
-        themeMode={themeMode}
-        onThemeChange={handleThemeChange}
       />
     </div>
   );

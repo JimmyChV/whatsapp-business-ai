@@ -21,6 +21,8 @@ import {
 import { appSocketSingleton } from './app/hooks/useAppSocketChatController';
 import AppRuntimeGate from './app/components/AppRuntimeGate';
 
+import './index.css';
+
 const SaasPanelPage = lazy(() => import('./pages/SaasPanelPage'));
 
 function App() {

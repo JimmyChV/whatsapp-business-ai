@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { normalizeChatFilters } from '../helpers/appChat.helpers';
 
 const DEFAULT_CHAT_FILTERS = {
@@ -96,7 +96,6 @@ export default function useOperationWorkspaceState({
 
   const [isDragOver, setIsDragOver] = useState(false);
   const messagesEndRef = useRef(null);
-  const messagesRef = useRef([]);
   const clientProfilePanelRef = useRef(null);
   const activeChatIdRef = useRef(null);
   const chatsRef = useRef([]);
@@ -127,10 +126,6 @@ export default function useOperationWorkspaceState({
   const businessDataScopeCacheRef = useRef(new Map());
   const businessDataRequestDebounceRef = useRef({ key: '', at: 0 });
   const quickRepliesRequestRef = useRef({ key: '', at: 0 });
-
-  useEffect(() => {
-    messagesRef.current = Array.isArray(messages) ? messages : [];
-  }, [messages]);
 
   return {
     chats,
@@ -226,7 +221,6 @@ export default function useOperationWorkspaceState({
     isDragOver,
     setIsDragOver,
     messagesEndRef,
-    messagesRef,
     clientProfilePanelRef,
     activeChatIdRef,
     chatsRef,

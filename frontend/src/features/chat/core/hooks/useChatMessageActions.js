@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback } from 'react';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 import { buildTemplateResolvedPreview } from '../helpers/templateMessages.helpers';
 import { getTemplateVariablesPreview, listApprovedIndividualTemplates } from '../services/templateMessages.service';
@@ -49,8 +49,6 @@ export default function useChatMessageActions({
   setSendTemplateSubmitting
 } = {}) {
   const { notify } = useUiFeedback();
-  const inputTextRef = useRef(inputText);
-  inputTextRef.current = inputText;
 
   const buildCatalogProductCaptionPreview = useCallback((product = {}) => {
     const title = String(product?.title || product?.name || 'Producto').trim() || 'Producto';
@@ -560,49 +558,42 @@ export default function useChatMessageActions({
     socket
   ]);
 
-  const handleSendMessage = useCallback((eventOrText = null, textOverride = null) => {
-    const event = eventOrText && typeof eventOrText === 'object' && typeof eventOrText.preventDefault === 'function'
-      ? eventOrText
-      : null;
-    const explicitText = typeof eventOrText === 'string'
-      ? eventOrText
-      : (typeof textOverride === 'string' ? textOverride : null);
+  const handleSendMessage = useCallback((event) => {
     event?.preventDefault();
-    const resolvedInputText = explicitText !== null ? explicitText : inputTextRef.current;
-    const text = String(resolvedInputText || '').trim();
+    const text = inputText.trim();
 
     if (editingMessage?.id) {
       if (!waCapabilities.messageEdit) {
         notify({ type: 'warn', message: 'La edicion de mensajes no esta disponible en esta sesion de WhatsApp.' });
-        return false;
+        return;
       }
       if (attachment) {
         notify({ type: 'warn', message: 'No puedes adjuntar archivos mientras editas un mensaje.' });
-        return false;
+        return;
       }
-      if (!text) return false;
+      if (!text) return;
 
       const original = String(editingMessage.originalBody || '').trim();
       if (text === original) {
         setEditingMessage(null);
         setInputText('');
-        return true;
+        return;
       }
 
       const activeId = String(activeChatIdRef.current || '');
-      if (!activeId) return false;
+      if (!activeId) return;
       socket.emit('edit_message', { chatId: activeId, messageId: String(editingMessage.id), body: text });
       setEditingMessage(null);
       setInputText('');
-      return true;
+      return;
     }
 
-    if (!text && !attachment && !quickReplyDraft) return false;
+    if (!text && !attachment && !quickReplyDraft) return;
 
     if (text === '/ayudar') {
       requestAiSuggestion();
       setInputText('');
-      return true;
+      return;
     }
 
     const quotedMessageId = String(replyingMessage?.id || '').trim() || null;
@@ -667,14 +658,14 @@ export default function useChatMessageActions({
       setQuickReplyDraft(null);
       setInputText('');
       setReplyingMessage(null);
-      return true;
+      return;
     }
 
     if (attachment) {
       const sendPayload = {
         to: activeChatId,
         toPhone,
-        body: resolvedInputText,
+        body: inputText,
         mediaData: attachment.data,
         mimetype: attachment.mimetype,
         filename: attachment.filename,
@@ -682,7 +673,7 @@ export default function useChatMessageActions({
       };
       insertOptimisticOutgoing({
         chatId: activeChatId,
-        body: String(resolvedInputText || '').trim() || String(attachment.filename || '').trim() || 'Adjunto',
+        body: String(inputText || '').trim() || String(attachment.filename || '').trim() || 'Adjunto',
         hasMedia: true,
         type: resolveOptimisticMediaType(attachment.mimetype, attachment.filename),
         mimetype: attachment.mimetype,
@@ -697,10 +688,10 @@ export default function useChatMessageActions({
       socket.emit('send_media_message', sendPayload);
       removeAttachment();
     } else {
-      const sendPayload = { to: activeChatId, toPhone, body: resolvedInputText, quotedMessageId };
+      const sendPayload = { to: activeChatId, toPhone, body: inputText, quotedMessageId };
       insertOptimisticOutgoing({
         chatId: activeChatId,
-        body: resolvedInputText,
+        body: inputText,
         quotedMessage,
         retryPayload: {
           eventName: 'send_message',
@@ -711,7 +702,6 @@ export default function useChatMessageActions({
     }
     setInputText('');
     setReplyingMessage(null);
-    return true;
   }, [
     activeChatId,
     activeChatIdRef,
@@ -719,6 +709,7 @@ export default function useChatMessageActions({
     buildQuotedMessagePayload,
     chatsRef,
     editingMessage,
+    inputText,
     insertOptimisticOutgoing,
     normalizeDigits,
     normalizeQuickReplyDraft,
