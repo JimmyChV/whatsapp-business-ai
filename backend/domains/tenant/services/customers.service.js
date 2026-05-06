@@ -1003,10 +1003,7 @@ function buildAddressSignature(address = {}) {
 }
 
 async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}) {
-    if (getStorageDriver() !== 'postgres') {
-        throw new Error('La importacion ERP requiere SAAS_STORAGE_DRIVER=postgres.');
-    }
-
+    const pool = getPostgresPool();
     await ensurePostgresSchema();
 
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
@@ -1080,7 +1077,6 @@ async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}
     const existingIds = new Set((existingIdsRows?.rows || []).map((row) => String(row?.customer_id || '').trim().toUpperCase()).filter(Boolean));
     const customerCounts = { inserted: 0, updated: 0, errors: errors.length };
     const addressCounts = { inserted: 0, updated: 0, errors: 0, unmatched: addressSummary.unmatched };
-    const pool = getPostgresPool();
     const client = await pool.connect();
 
     try {
