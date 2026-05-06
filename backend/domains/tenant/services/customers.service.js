@@ -765,6 +765,7 @@ async function updateCustomer(tenantId = DEFAULT_TENANT_ID, customerId = '', pat
 
 function normalizeErpHeaderKey(value = '') {
     return String(value || '')
+        .replace(/\uFEFF/g, '')
         .trim()
         .toLowerCase()
         .normalize('NFD')
@@ -779,8 +780,25 @@ function getErpRowValue(row = {}, ...keys) {
         if (value !== undefined && value !== null && String(value).trim() !== '') {
             return String(value).trim();
         }
+
+        const rawMatchKey = Object.keys(row || {}).find((rowKey) => normalizeErpHeaderKey(rowKey) === normalizedKey);
+        if (rawMatchKey) {
+            const rawValue = row?.[rawMatchKey];
+            if (rawValue !== undefined && rawValue !== null && String(rawValue).trim() !== '') {
+                return String(rawValue).trim();
+            }
+        }
     }
     return '';
+}
+
+function normalizeErpContactType(value = '') {
+    const raw = normalizeImportTextUpper(value);
+    return raw || 'PROSPECTO';
+}
+
+function normalizeErpMatchValue(value = '') {
+    return String(value || '').replace(/\uFEFF/g, '').trim().toUpperCase() || null;
 }
 
 function normalizeErpPhone(value = '') {
@@ -865,6 +883,7 @@ function buildErpCustomerPreview(candidate = {}) {
 
 function buildErpCustomerCandidate(row = {}, moduleId = '') {
     const erpId = normalizeImportTextUpper(getErpRowValue(row, 'IdCliente'));
+    const contactType = normalizeErpContactType(getErpRowValue(row, 'TipoContacto'));
     const treatmentId = normalizeErpTreatmentId(getErpRowValue(row, 'IdTratamientoCliente'));
     const lastNamePaternal = normalizeImportTextUpper(getErpRowValue(row, 'ApellidoPaterno'));
     const lastNameMaternal = normalizeImportTextUpper(getErpRowValue(row, 'ApellidoMaterno'));
@@ -882,14 +901,23 @@ function buildErpCustomerCandidate(row = {}, moduleId = '') {
     const createdAtSource = getErpRowValue(row, 'Fecha Registro', 'FechaRegistro');
     const createdAt = parseErpDate(createdAtSource);
     const marketingOptInStatus = normalizeErpOptInStatus(getErpRowValue(row, 'Autorizacion'));
-    const fullName = [lastNamePaternal, lastNameMaternal, firstName].filter(Boolean).join(' ').trim() || [lastNamePaternal, firstName].filter(Boolean).join(' ').trim();
+    const fullName = [lastNamePaternal, lastNameMaternal, firstName].filter(Boolean).join(' ').trim()
+        || [lastNamePaternal, firstName].filter(Boolean).join(' ').trim()
+        || contactName
+        || erpId
+        || '';
     const rowNumber = Number(row?.__rowNumber || 0) || 0;
+    const isProspect = contactType === 'PROSPECTO';
 
     const errors = [];
     if (!erpId) {
         errors.push({ row: rowNumber, erp_id: null, field: 'IdCliente', message: 'ERP ID vacio.' });
     }
-    if (!firstName && !lastNamePaternal) {
+    if (isProspect) {
+        if (!phoneE164 && !phoneAlt) {
+            errors.push({ row: rowNumber, erp_id: erpId, field: 'Telefono/Telefono2', message: 'Prospecto sin telefono' });
+        }
+    } else if (!firstName && !lastNamePaternal) {
         errors.push({ row: rowNumber, erp_id: erpId, field: 'Nombres/ApellidoPaterno', message: 'Debe existir nombres o apellido paterno.' });
     }
     if (email && !isValidEmailAddress(email)) {
@@ -929,6 +957,7 @@ function buildErpCustomerCandidate(row = {}, moduleId = '') {
         customerTypeId,
         acquisitionSourceId,
         referralCustomerId: dbFields.referral_customer_id || null,
+        contactType,
         createdAt,
         marketingOptInStatus,
         moduleId: toText(moduleId || '') || null,
@@ -939,7 +968,8 @@ function buildErpCustomerCandidate(row = {}, moduleId = '') {
 
 function buildErpAddressCandidate(row = {}, customerMatch = null) {
     const rowNumber = Number(row?.__rowNumber || 0) || 0;
-    const erpId = normalizeImportTextUpper(getErpRowValue(row, 'IdCliente'));
+    console.log('[IMPORT-DEBUG] direccion IdCliente:', row['IdCliente'], '| keys:', Object.keys(row || {}).join(','));
+    const erpId = normalizeErpMatchValue(getErpRowValue(row, 'IdCliente'));
     const street = normalizeImportTextUpper(getErpRowValue(row, 'Direccion'));
     const reference = normalizeImportTextUpper(getErpRowValue(row, 'Referencia'));
     const mapsUrl = String(getErpRowValue(row, 'UbicacionMaps') || '').trim() || null;
@@ -1020,7 +1050,10 @@ async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}
         });
     });
 
-    const addressCandidatesAll = direccionesRows.map((row) => buildErpAddressCandidate(row, importedCustomerMap.get(normalizeImportTextUpper(getErpRowValue(row, 'IdCliente'))) || null));
+    const addressCandidatesAll = direccionesRows.map((row) => {
+        const direccionErpId = normalizeErpMatchValue(getErpRowValue(row, 'IdCliente'));
+        return buildErpAddressCandidate(row, importedCustomerMap.get(direccionErpId) || null);
+    });
     const matchedAddressCandidates = addressCandidatesAll.filter((address) => address.customerId);
     const addressSummary = {
         total: direccionesRows.length,
@@ -1066,14 +1099,17 @@ async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}
                 sourceId: candidate.acquisitionSourceId,
                 employeeId: candidate.erpEmployeeId,
                 referredById: candidate.referralCustomerId,
-                erpId: candidate.erpId
+                erpId: candidate.erpId,
+                contactType: candidate.contactType
             };
             const metadata = {
                 erpImport: {
                     erpId: candidate.erpId,
                     importedAt: nowIso(),
-                    source: 'erp_csv'
-                }
+                    source: 'erp_csv',
+                    contactType: candidate.contactType
+                },
+                contactType: candidate.contactType
             };
 
             if (existing) {
