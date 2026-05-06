@@ -801,6 +801,13 @@ function normalizeErpMatchValue(value = '') {
     return String(value || '').replace(/\uFEFF/g, '').trim().toUpperCase() || null;
 }
 
+function getErpAddressField(row = {}, fieldName = '') {
+    const target = String(fieldName || '').replace(/\uFEFF/g, '').trim().toLowerCase();
+    if (!target) return '';
+    const key = Object.keys(row || {}).find((entry) => String(entry || '').replace(/\uFEFF/g, '').trim().toLowerCase() === target);
+    return key ? String(row?.[key] || '').trim() : '';
+}
+
 function normalizeErpPhone(value = '') {
     const raw = String(value || '').trim();
     if (!raw) return null;
@@ -968,14 +975,15 @@ function buildErpCustomerCandidate(row = {}, moduleId = '') {
 
 function buildErpAddressCandidate(row = {}, customerMatch = null) {
     const rowNumber = Number(row?.__rowNumber || 0) || 0;
-    console.log('[IMPORT-DEBUG] direccion IdCliente:', row['IdCliente'], '| keys:', Object.keys(row || {}).join(','));
-    const erpId = normalizeErpMatchValue(getErpRowValue(row, 'IdCliente'));
-    const street = normalizeImportTextUpper(getErpRowValue(row, 'Direccion'));
-    const reference = normalizeImportTextUpper(getErpRowValue(row, 'Referencia'));
-    const mapsUrl = String(getErpRowValue(row, 'UbicacionMaps') || '').trim() || null;
-    const wkt = String(getErpRowValue(row, 'WKT') || '').trim() || null;
-    const districtId = normalizeImportTextUpper(getErpRowValue(row, 'IdDistrito'));
-    const isPrimary = normalizeErpBoolean(getErpRowValue(row, 'EsPrincipal'));
+    const erpId = normalizeErpMatchValue(getErpAddressField(row, 'IdCliente'));
+    const street = normalizeImportTextUpper(getErpAddressField(row, 'Direccion'));
+    const reference = normalizeImportTextUpper(getErpAddressField(row, 'Referencia'));
+    const mapsUrl = String(getErpAddressField(row, 'UbicacionMaps') || '').trim() || null;
+    const wkt = String(getErpAddressField(row, 'WKT') || '').trim() || null;
+    const districtId = normalizeImportTextUpper(getErpAddressField(row, 'IdDistrito'));
+    const isPrimary = normalizeErpBoolean(getErpAddressField(row, 'EsPrincipal'));
+    const tipoZona = normalizeImportTextUpper(getErpAddressField(row, 'TipoZona'));
+    const tipoVia = normalizeImportTextUpper(getErpAddressField(row, 'TipoVia'));
     const customerId = String(customerMatch?.customerId || '').trim() || null;
 
     return {
@@ -987,7 +995,9 @@ function buildErpAddressCandidate(row = {}, customerMatch = null) {
         mapsUrl,
         wkt,
         districtId,
-        isPrimary
+        isPrimary,
+        tipoZona,
+        tipoVia
     };
 }
 
@@ -1048,14 +1058,14 @@ async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}
     });
 
     const addressCandidatesAll = direccionesRows.map((row) => {
-        const direccionErpId = normalizeErpMatchValue(getErpRowValue(row, 'IdCliente'));
+        const direccionErpId = normalizeErpMatchValue(getErpAddressField(row, 'IdCliente'));
         return buildErpAddressCandidate(row, importedCustomerMap.get(direccionErpId) || null);
     });
-    const matchedAddressCandidates = addressCandidatesAll.filter((address) => address.customerId);
+    const previewMatchedAddressCandidates = addressCandidatesAll.filter((address) => address.erpId && importedCustomerMap.has(address.erpId));
     const addressSummary = {
         total: direccionesRows.length,
-        matched: matchedAddressCandidates.length,
-        unmatched: Math.max(0, direccionesRows.length - matchedAddressCandidates.length)
+        matched: previewMatchedAddressCandidates.length,
+        unmatched: Math.max(0, direccionesRows.length - previewMatchedAddressCandidates.length)
     };
 
     if (mode === 'preview') {
@@ -1224,6 +1234,17 @@ async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}
             }
         }
 
+        const matchedAddressCandidates = addressCandidatesAll
+            .map((address) => {
+                if (!address.erpId) return address;
+                const importedCustomer = importedCustomerMap.get(address.erpId) || null;
+                return {
+                    ...address,
+                    customerId: String(importedCustomer?.customerId || '').trim() || null
+                };
+            })
+            .filter((address) => address.customerId);
+
         if (matchedAddressCandidates.length > 0) {
             const customerIds = Array.from(new Set(matchedAddressCandidates.map((candidate) => candidate.customerId).filter(Boolean)));
             const existingAddressesResult = await client.query(
@@ -1250,6 +1271,12 @@ async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}
                     maps_url: address.mapsUrl,
                     wkt: address.wkt,
                     district_id: normalizeImportTextUpper(address.districtId)
+                };
+                const addressMetadata = {
+                    erpImport: {
+                        tipoZona: address.tipoZona,
+                        tipoVia: address.tipoVia
+                    }
                 };
                 const addressSignature = buildAddressSignature({
                     ...address,
@@ -1289,6 +1316,7 @@ async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}
                             wkt = $8,
                             is_primary = $9,
                             district_id = $10,
+                            metadata = COALESCE(metadata, '{}'::jsonb) || $11::jsonb,
                             updated_at = NOW()
                          WHERE tenant_id = $1 AND customer_id = $2 AND address_id = $3`,
                         [
@@ -1301,7 +1329,8 @@ async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}
                             normalizedFields.maps_url,
                             normalizedFields.wkt,
                             address.isPrimary,
-                            normalizedFields.district_id
+                            normalizedFields.district_id,
+                            JSON.stringify(addressMetadata)
                         ]
                     );
                     addressCounts.updated += 1;
@@ -1322,7 +1351,7 @@ async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}
                         ) VALUES (
                             $1, $2, $3, $4, $5, $6, $7, $8,
                             NULL, NULL, $9, $10, NULL, NULL, NULL,
-                            '{}'::jsonb, NOW(), NOW()
+                            $11::jsonb, NOW(), NOW()
                         )`,
                         [
                             createErpAddressId(),
@@ -1334,7 +1363,8 @@ async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}
                             normalizedFields.maps_url,
                             normalizedFields.wkt,
                             address.isPrimary,
-                            normalizedFields.district_id
+                            normalizedFields.district_id,
+                            JSON.stringify(addressMetadata)
                         ]
                     );
                     addressCounts.inserted += 1;
