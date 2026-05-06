@@ -19,6 +19,8 @@ function createSocketChatHistoryMediaService({
     getSortedVisibleChats
 } = {}) {
     const MESSAGE_WINDOW_MS = 24 * 60 * 60 * 1000;
+    const HISTORY_FETCH_LIMIT = 300;
+    const RUNTIME_FETCH_LIMIT = 120;
 
     const buildConversationWindowStateFromRows = (rows = []) => {
         const lastInbound = (Array.isArray(rows) ? rows : []).find((message) => message?.fromMe === false);
@@ -100,9 +102,9 @@ function createSocketChatHistoryMediaService({
         };
     };
 
-    const getHistoryChatHistory = async (tenantId, { chatId = '', limit = 60, scopeModuleId = '' } = {}) => {
+    const getHistoryChatHistory = async (tenantId, { chatId = '', limit = HISTORY_FETCH_LIMIT, scopeModuleId = '' } = {}) => {
         const requestedChatId = String(chatId || '').trim();
-        const safeLimit = Number.isFinite(Number(limit)) ? Math.min(300, Math.max(20, Math.floor(Number(limit)))) : 60;
+        const safeLimit = Number.isFinite(Number(limit)) ? Math.min(500, Math.max(20, Math.floor(Number(limit)))) : HISTORY_FETCH_LIMIT;
         const normalizedScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
 
         const filterRowsByScope = (rows = []) => {
@@ -199,7 +201,7 @@ function createSocketChatHistoryMediaService({
                 if (!transportOrchestrator.ensureTransportReady(socket, { action: 'abrir historial', errorEvent: 'transport_info' })) {
                     const fallbackHistory = await getHistoryChatHistory(tenantId, {
                         chatId: historyChatId,
-                        limit: 60,
+                        limit: HISTORY_FETCH_LIMIT,
                         scopeModuleId
                     });
                     socket.emit('chat_history', {
@@ -214,7 +216,7 @@ function createSocketChatHistoryMediaService({
 
                 let messages = [];
                 try {
-                    messages = await waClient.getMessages(historyChatId, 30);
+                    messages = await waClient.getMessages(historyChatId, RUNTIME_FETCH_LIMIT);
                 } catch (directErr) {
                     const requestedDigits = normalizePhoneDigits(historyChatId.split('@')[0] || '');
                     if (requestedDigits) {
@@ -222,7 +224,7 @@ function createSocketChatHistoryMediaService({
                         const byPhone = visibleChats.find((c) => normalizePhoneDigits(extractPhoneFromChat(c) || '') === requestedDigits);
                         if (byPhone?.id?._serialized) {
                             historyChatId = byPhone.id._serialized;
-                            messages = await waClient.getMessages(historyChatId, 30);
+                            messages = await waClient.getMessages(historyChatId, RUNTIME_FETCH_LIMIT);
                         } else {
                             throw directErr;
                         }
@@ -331,7 +333,7 @@ function createSocketChatHistoryMediaService({
 
                 const historyFallback = await getHistoryChatHistory(tenantId, {
                     chatId: historyChatId,
-                    limit: 60,
+                    limit: HISTORY_FETCH_LIMIT,
                     scopeModuleId
                 });
                 const fallbackMessages = Array.isArray(historyFallback?.messages) ? historyFallback.messages : [];
@@ -381,7 +383,7 @@ function createSocketChatHistoryMediaService({
                     const scopeModuleId = normalizeScopedModuleId(scopedTarget.moduleId || selectedScopeModuleId || '');
                     const fallbackHistory = await getHistoryChatHistory(tenantId, {
                         chatId: String(scopedTarget.baseChatId || requestedRawChatId || '').trim(),
-                        limit: 60,
+                        limit: HISTORY_FETCH_LIMIT,
                         scopeModuleId
                     });
                     const requestedScopedChatId = scopedTarget.scopedChatId

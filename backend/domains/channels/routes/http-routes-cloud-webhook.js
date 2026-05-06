@@ -164,6 +164,7 @@ function summarizeMetaWebhookPayload(payload = {}) {
     let messagesCount = 0;
     let statusesCount = 0;
     let deliveryErrorsCount = 0;
+    const statusKinds = new Set();
     let templateStatusUpdatesCount = 0;
     let templateQualityUpdatesCount = 0;
     let templateCategoryUpdatesCount = 0;
@@ -180,6 +181,8 @@ function summarizeMetaWebhookPayload(payload = {}) {
             statusesCount += statuses.length;
 
             statuses.forEach((status) => {
+                const statusKind = String(status?.status || '').trim().toLowerCase();
+                if (statusKind) statusKinds.add(statusKind);
                 const errors = Array.isArray(status?.errors) ? status.errors : [];
                 deliveryErrorsCount += errors.length;
             });
@@ -196,6 +199,7 @@ function summarizeMetaWebhookPayload(payload = {}) {
         changesCount,
         messagesCount,
         statusesCount,
+        statusKinds: Array.from(statusKinds),
         deliveryErrorsCount,
         templateStatusUpdatesCount,
         templateQualityUpdatesCount,
@@ -335,6 +339,7 @@ function registerCloudWebhookHttpRoutes({
                     + ' changes=' + String(summary.changesCount)
                     + ' messages=' + String(summary.messagesCount)
                     + ' statuses=' + String(summary.statusesCount)
+                    + ' statusKinds=' + String((summary.statusKinds || []).join('|') || 'n/a')
                     + ' statusErrors=' + String(summary.deliveryErrorsCount)
                     + ' tmplStatus=' + String(summary.templateStatusUpdatesCount)
                     + ' tmplQuality=' + String(summary.templateQualityUpdatesCount)
