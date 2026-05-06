@@ -9728,3 +9728,73 @@ textarea:focus {
   background-clip: padding-box !important;
 }
 
+.saas-customers-import-shell {
+  width: min(1040px, 100%);
+}
+
+.saas-customers-import-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.saas-customers-import-progress {
+  margin-bottom: 4px;
+}
+
+.saas-customers-import-step {
+  gap: 16px;
+}
+
+.saas-customers-import-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.saas-customers-import-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px dashed var(--saas-border-color);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--saas-bg-surface) 94%, transparent);
+}
+
+.saas-customers-import-upload span {
+  font-weight: var(--saas-font-weight-semibold);
+  color: var(--saas-text-primary);
+}
+
+.saas-customers-import-upload small {
+  color: var(--saas-text-secondary);
+}
+
+.saas-customers-import-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.saas-customers-import-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--saas-border-color);
+  border-radius: 16px;
+  background: var(--saas-bg-surface);
+}
+
+.saas-customers-import-table-wrap .saas-data-table {
+  width: 100%;
+}
+
+.saas-customers-import-step--result .saas-admin-empty-state {
+  margin-bottom: 14px;
+}
+
+@media (max-width: 900px) {
+  .saas-customers-import-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

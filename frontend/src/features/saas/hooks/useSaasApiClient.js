@@ -7,10 +7,11 @@ export default function useSaasApiClient({ apiBase, buildApiHeaders }) {
         setPendingRequests((prev) => prev + 1);
         try {
             const url = `${apiBase}${path}`;
+            const isFormDataBody = typeof FormData !== 'undefined' && body instanceof FormData;
             const baseHeaders = buildApiHeaders?.({
-                includeJson: body !== null,
+                includeJson: body !== null && !isFormDataBody,
                 tenantIdOverride
-            }) || (body !== null ? { 'Content-Type': 'application/json' } : {});
+            }) || (body !== null && !isFormDataBody ? { 'Content-Type': 'application/json' } : {});
             const headers = {
                 ...baseHeaders,
                 ...(extraHeaders && typeof extraHeaders === 'object' ? extraHeaders : {})
@@ -19,7 +20,7 @@ export default function useSaasApiClient({ apiBase, buildApiHeaders }) {
                 method,
                 cache: 'no-store',
                 headers,
-                body: body !== null ? JSON.stringify(body) : undefined
+                body: body === null ? undefined : (isFormDataBody ? body : JSON.stringify(body))
             });
             const payload = await response.json().catch(() => ({}));
             if (!response.ok || payload?.ok === false) {

@@ -793,6 +793,25 @@ function customerMatchesAnyPhone(customer = null, phoneCandidates = []) {
     return customerPhones.some((value) => targetSet.has(value));
 }
 
+function buildImportErrorsCsv(errors = []) {
+    const rows = [['fila', 'erp_id', 'campo', 'motivo']];
+    (Array.isArray(errors) ? errors : []).forEach((item = {}) => {
+        rows.push([
+            String(item?.row ?? '').trim(),
+            String(item?.erp_id ?? '').trim(),
+            String(item?.field ?? '').trim(),
+            String(item?.message ?? item?.motivo ?? '').trim()
+        ]);
+    });
+    return rows.map((row) => row.map((cell) => {
+        const value = String(cell ?? '');
+        if (/[",\n]/.test(value)) {
+            return `"${value.replace(/"/g, '""')}"`;
+        }
+        return value;
+    }).join(',')).join('\n');
+}
+
 function CustomersSection(props = {}) {
     const { confirm, notify } = useUiFeedback();
     const context = props.context && typeof props.context === 'object' ? props.context : props;
@@ -888,6 +907,15 @@ function CustomersSection(props = {}) {
     const [campaignTemplateSubmitting, setCampaignTemplateSubmitting] = useState(false);
     const [zoneRules, setZoneRules] = useState([]);
     const [customerZoneLabels, setCustomerZoneLabels] = useState([]);
+    const [showImportModal, setShowImportModal] = useState(false);
+    const [importStep, setImportStep] = useState(1);
+    const [importFileClientes, setImportFileClientes] = useState(null);
+    const [importFileDirecciones, setImportFileDirecciones] = useState(null);
+    const [importPreview, setImportPreview] = useState(null);
+    const [importResult, setImportResult] = useState(null);
+    const [importLoading, setImportLoading] = useState(false);
+    const [importModuleId, setImportModuleId] = useState('');
+    const [showAllImportErrors, setShowAllImportErrors] = useState(false);
     const syncedIndicatorTimeoutRef = useRef(null);
     const customersRealtimeSyncTimeoutRef = useRef(null);
     const customersRealtimeSyncInFlightRef = useRef(false);
@@ -928,6 +956,15 @@ function CustomersSection(props = {}) {
             }
         };
     }, []);
+
+    useEffect(() => {
+        if (!showImportModal) return;
+        if (importModuleId) return;
+        const defaultModuleId = String(outreachModuleOptions?.[0]?.moduleId || '').trim();
+        if (defaultModuleId) {
+            setImportModuleId(defaultModuleId);
+        }
+    }, [importModuleId, outreachModuleOptions, showImportModal]);
 
     const getCustomerOverride = useCallback((customerId = '') => {
         const normalizedId = normalizeCatalogLookupKey(customerId);
@@ -990,6 +1027,10 @@ function CustomersSection(props = {}) {
             .filter((moduleItem) => moduleItem.moduleId),
         [waModules]
     );
+    const importErrorsVisible = useMemo(() => {
+        const items = Array.isArray(importPreview?.errors) ? importPreview.errors : [];
+        return showAllImportErrors ? items : items.slice(0, 10);
+    }, [importPreview?.errors, showAllImportErrors]);
     const selectedCustomerPreferredModuleIds = useMemo(
         () => Array.from(new Set(
             (Array.isArray(moduleContexts) ? moduleContexts : [])
@@ -2015,6 +2056,18 @@ function CustomersSection(props = {}) {
         setCampaignTemplateSubmitting(false);
     }, []);
 
+    const resetImportFlow = useCallback(() => {
+        setShowImportModal(false);
+        setImportStep(1);
+        setImportFileClientes(null);
+        setImportFileDirecciones(null);
+        setImportPreview(null);
+        setImportResult(null);
+        setImportLoading(false);
+        setImportModuleId('');
+        setShowAllImportErrors(false);
+    }, []);
+
     const refreshCustomersView = useCallback(async ({ forceFullReload = false, silent = false } = {}) => {
         if (tenantScopeLocked) return;
         const cleanTenantId = String(tenantScopeId || '').trim();
@@ -2038,6 +2091,92 @@ function CustomersSection(props = {}) {
             throw error;
         }
     }, [loadCustomers, maxCustomersUpdatedAt, notify, syncCustomersDelta, tenantScopeId, tenantScopeLocked]);
+
+    const handleAnalyzeImport = useCallback(async () => {
+        if (!tenantScopeId) return;
+        if (!importFileClientes) {
+            notify({ type: 'error', message: 'Selecciona el archivo TbClientes.csv antes de analizar.' });
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file_clientes', importFileClientes);
+        if (importFileDirecciones) {
+            formData.append('file_direcciones', importFileDirecciones);
+        }
+        formData.append('moduleId', String(importModuleId || '').trim());
+        formData.append('mode', 'preview');
+
+        setImportLoading(true);
+        setShowAllImportErrors(false);
+        try {
+            const response = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers/import-erp', {
+                method: 'POST',
+                body: formData
+            });
+            setImportPreview(response || null);
+            setImportResult(null);
+            setImportStep(2);
+        } catch (error) {
+            notify({ type: 'error', message: String(error?.message || 'No se pudo analizar el archivo ERP.') });
+        } finally {
+            setImportLoading(false);
+        }
+    }, [importFileClientes, importFileDirecciones, importModuleId, notify, requestJson, tenantScopeId]);
+
+    const handleConfirmImport = useCallback(async () => {
+        if (!tenantScopeId) return;
+        if (!importFileClientes) {
+            notify({ type: 'error', message: 'Selecciona el archivo TbClientes.csv antes de confirmar.' });
+            return;
+        }
+
+        const validCount = Number(importPreview?.summary?.valid || 0);
+        if (validCount <= 0) {
+            notify({ type: 'error', message: 'No hay clientes validos para importar.' });
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file_clientes', importFileClientes);
+        if (importFileDirecciones) {
+            formData.append('file_direcciones', importFileDirecciones);
+        }
+        formData.append('moduleId', String(importModuleId || '').trim());
+        formData.append('mode', 'commit');
+
+        setImportLoading(true);
+        try {
+            const response = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers/import-erp', {
+                method: 'POST',
+                body: formData
+            });
+            setImportResult(response || null);
+            setImportStep(3);
+            await refreshCustomersView({ forceFullReload: true, silent: false });
+        } catch (error) {
+            notify({ type: 'error', message: String(error?.message || 'No se pudo completar la importacion ERP.') });
+        } finally {
+            setImportLoading(false);
+        }
+    }, [importFileClientes, importFileDirecciones, importModuleId, importPreview?.summary?.valid, notify, refreshCustomersView, requestJson, tenantScopeId]);
+
+    const handleDownloadImportErrorsCsv = useCallback(() => {
+        const errors = Array.isArray(importPreview?.errors) ? importPreview.errors : [];
+        if (!errors.length) {
+            notify({ type: 'error', message: 'No hay errores para exportar.' });
+            return;
+        }
+        const blob = new Blob([buildImportErrorsCsv(errors)], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = 'importacion_erp_errores.csv';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+    }, [importPreview?.errors, notify]);
 
     const scheduleRealtimeCustomersSync = useCallback((delayMs = 700) => {
         if (!isCustomersSection || tenantScopeLocked) return;
@@ -3295,6 +3434,13 @@ function CustomersSection(props = {}) {
             disabled: busy || tenantScopeLocked
         },
         {
+            key: 'import-erp',
+            label: 'Importar ERP',
+            onClick: () => setShowImportModal(true),
+            variant: 'primary',
+            disabled: busy || tenantScopeLocked
+        },
+        {
             key: 'toggle-selection',
             label: campaignSelectionMode ? 'Cancelar seleccion' : 'Seleccionar clientes',
             onClick: () => {
@@ -3840,6 +3986,208 @@ function CustomersSection(props = {}) {
         </div>
     );
 
+    const importModal = showImportModal ? (
+        <div className="saas-template-builder-modal-overlay" onClick={resetImportFlow}>
+            <div className="saas-template-builder-modal-shell saas-customers-import-shell" onClick={(event) => event.stopPropagation()}>
+                <SaasDetailPanel
+                    title="Importar clientes desde ERP"
+                    subtitle="Carga TbClientes.csv y, si lo tienes, TbDirecciones.csv para validar antes de escribir."
+                    className="saas-template-builder-modal-panel saas-customers-import-panel"
+                    bodyClassName="saas-template-builder-modal-panel__body saas-customers-import-panel__body"
+                    actions={(
+                        <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                            {importStep === 1 ? (
+                                <>
+                                    <button type="button" className="saas-btn saas-btn--secondary saas-btn-cancel" onClick={resetImportFlow} disabled={importLoading}>
+                                        Cancelar
+                                    </button>
+                                    <button type="button" className="saas-btn saas-btn--primary" onClick={() => { void handleAnalyzeImport(); }} disabled={importLoading || !importFileClientes}>
+                                        {importLoading ? 'Analizando...' : 'Analizar'}
+                                    </button>
+                                </>
+                            ) : null}
+                            {importStep === 2 ? (
+                                <>
+                                    <button type="button" className="saas-btn saas-btn--secondary" onClick={() => setImportStep(1)} disabled={importLoading}>
+                                        Volver
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="saas-btn saas-btn--primary"
+                                        onClick={() => { void handleConfirmImport(); }}
+                                        disabled={importLoading || Number(importPreview?.summary?.valid || 0) <= 0}
+                                    >
+                                        {importLoading ? 'Importando...' : 'Confirmar importacion'}
+                                    </button>
+                                </>
+                            ) : null}
+                            {importStep === 3 ? (
+                                <>
+                                    {(Array.isArray(importPreview?.errors) ? importPreview.errors.length : 0) > 0 ? (
+                                        <button type="button" className="saas-btn saas-btn--secondary" onClick={handleDownloadImportErrorsCsv}>
+                                            Descargar reporte de errores CSV
+                                        </button>
+                                    ) : null}
+                                    <button type="button" className="saas-btn saas-btn--primary" onClick={resetImportFlow}>
+                                        Cerrar
+                                    </button>
+                                </>
+                            ) : null}
+                        </div>
+                    )}
+                >
+                    <div className="saas-campaigns-wizard-progress saas-customers-import-progress">
+                        {[1, 2, 3].map((step) => (
+                            <div
+                                key={`customers_import_step_${step}`}
+                                className={`saas-campaigns-wizard-progress__item${importStep === step ? ' is-current' : ''}${importStep > step ? ' is-complete' : ''}`}
+                            >
+                                <span>Paso {step}</span>
+                                <strong>{step === 1 ? 'Archivos' : step === 2 ? 'Vista previa' : 'Resultado'}</strong>
+                            </div>
+                        ))}
+                    </div>
+
+                    {importStep === 1 ? (
+                        <div className="saas-campaigns-wizard-step saas-customers-import-step">
+                            <SaasDetailPanelSection title="Archivos" defaultOpen>
+                                <div className="saas-customers-import-grid">
+                                    <label className="saas-customers-import-upload">
+                                        <span>Archivo de clientes (TbClientes.csv)</span>
+                                        <input
+                                            type="file"
+                                            accept=".csv"
+                                            onChange={(event) => setImportFileClientes(event.target.files?.[0] || null)}
+                                            disabled={importLoading}
+                                        />
+                                        <small>{importFileClientes ? `✓ ${importFileClientes.name}` : 'Selecciona el CSV principal de clientes.'}</small>
+                                    </label>
+                                    <label className="saas-customers-import-upload">
+                                        <span>Archivo de direcciones - opcional (TbDirecciones.csv)</span>
+                                        <input
+                                            type="file"
+                                            accept=".csv"
+                                            onChange={(event) => setImportFileDirecciones(event.target.files?.[0] || null)}
+                                            disabled={importLoading}
+                                        />
+                                        <small>{importFileDirecciones ? `✓ ${importFileDirecciones.name}` : 'Puedes omitirlo si solo quieres clientes.'}</small>
+                                    </label>
+                                </div>
+                                <div className="saas-admin-form-row">
+                                    <label className="saas-customers-outreach-toolbar__field">
+                                        <span>Modulo</span>
+                                        <select value={importModuleId} onChange={(event) => setImportModuleId(String(event.target.value || '').trim())} disabled={importLoading}>
+                                            <option value="">Sin modulo</option>
+                                            {outreachModuleOptions.map((moduleItem) => (
+                                                <option key={`customers_import_module_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
+                                                    {moduleItem.label}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                </div>
+                            </SaasDetailPanelSection>
+                        </div>
+                    ) : null}
+
+                    {importStep === 2 ? (
+                        <div className="saas-campaigns-wizard-step saas-customers-import-step">
+                            <SaasDetailPanelSection title="Resumen" defaultOpen>
+                                <div className="saas-customers-import-chip-row">
+                                    <span className="saas-admin-profile-chip">{Number(importPreview?.summary?.valid || 0)} validos</span>
+                                    <span className="saas-admin-profile-chip">{Number(importPreview?.summary?.updates || 0)} actualizaciones</span>
+                                    <span className="saas-admin-profile-chip">{Number(importPreview?.summary?.inserts || 0)} inserciones</span>
+                                    <span className="saas-admin-profile-chip">{Number(importPreview?.summary?.errors || 0)} errores</span>
+                                    <span className="saas-admin-profile-chip">
+                                        {Number(importPreview?.addressSummary?.matched || 0)} direcciones con match / {Number(importPreview?.addressSummary?.unmatched || 0)} sin match
+                                    </span>
+                                </div>
+                            </SaasDetailPanelSection>
+
+                            {(Array.isArray(importPreview?.errors) ? importPreview.errors.length : 0) > 0 ? (
+                                <SaasDetailPanelSection title="Errores detectados" defaultOpen>
+                                    <div className="saas-customers-import-table-wrap">
+                                        <table className="saas-data-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Fila</th>
+                                                    <th>ERP ID</th>
+                                                    <th>Campo</th>
+                                                    <th>Motivo</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {importErrorsVisible.map((item, index) => (
+                                                    <tr key={`customers_import_error_${index}`}>
+                                                        <td>{item?.row || '-'}</td>
+                                                        <td>{item?.erp_id || '-'}</td>
+                                                        <td>{item?.field || '-'}</td>
+                                                        <td>{item?.message || '-'}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    {(Array.isArray(importPreview?.errors) ? importPreview.errors.length : 0) > 10 ? (
+                                        <button type="button" className="saas-btn saas-btn--secondary" onClick={() => setShowAllImportErrors((prev) => !prev)}>
+                                            {showAllImportErrors
+                                                ? 'Mostrar menos errores'
+                                                : `Ver todos los errores (${importPreview.errors.length})`}
+                                        </button>
+                                    ) : null}
+                                </SaasDetailPanelSection>
+                            ) : null}
+
+                            <SaasDetailPanelSection title="Preview de clientes validos" defaultOpen>
+                                <div className="saas-customers-import-table-wrap">
+                                    <table className="saas-data-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Nombre completo</th>
+                                                <th>Telefono</th>
+                                                <th>Tipo</th>
+                                                <th>Fuente</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {(Array.isArray(importPreview?.preview) ? importPreview.preview : []).map((item, index) => (
+                                                <tr key={`customers_import_preview_${index}`}>
+                                                    <td>{item?.nombre_completo || '-'}</td>
+                                                    <td>{item?.telefono || '-'}</td>
+                                                    <td>{item?.tipo_cliente || '-'}</td>
+                                                    <td>{item?.fuente || '-'}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </SaasDetailPanelSection>
+                        </div>
+                    ) : null}
+
+                    {importStep === 3 ? (
+                        <div className="saas-campaigns-wizard-step saas-customers-import-step saas-customers-import-step--result">
+                            <SaasDetailPanelSection title="Importacion completada" defaultOpen>
+                                <div className="saas-admin-empty-state">
+                                    <h4>Importacion completada</h4>
+                                    <p>Los clientes y sus direcciones ya fueron procesados.</p>
+                                </div>
+                                <div className="saas-customers-import-chip-row">
+                                    <span className="saas-admin-profile-chip">
+                                        Clientes: {Number(importResult?.customers?.inserted || 0)} insertados · {Number(importResult?.customers?.updated || 0)} actualizados · {Number(importResult?.customers?.errors || 0)} con error
+                                    </span>
+                                    <span className="saas-admin-profile-chip">
+                                        Direcciones: {Number(importResult?.addresses?.inserted || 0)} insertadas · {Number(importResult?.addresses?.updated || 0)} actualizadas · {Number(importResult?.addresses?.unmatched || 0)} sin match
+                                    </span>
+                                </div>
+                            </SaasDetailPanelSection>
+                        </div>
+                    ) : null}
+                </SaasDetailPanel>
+            </div>
+        </div>
+    ) : null;
+
     return (
         <div className="saas-admin-grid">
         <SaasEntityPage
@@ -3882,6 +4230,7 @@ function CustomersSection(props = {}) {
                 onSelectTemplate={(template) => { void handleSelectCampaignTemplate(template); }}
                 onConfirm={() => { void handleConfirmExpressCampaign(); }}
             />
+            {importModal}
         </SaasEntityPage>
         </div>
     );
