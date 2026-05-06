@@ -51,6 +51,24 @@ function buildErpPrimaryLocation(customer = null) {
     return [districtName, provinceName].filter(Boolean).join(' - ');
 }
 
+function resolveQuotedMessagePreview(quotedMessage = null, fallbackMessage = null) {
+    const normalizedQuoted = quotedMessage && typeof quotedMessage === 'object' ? quotedMessage : null;
+    if (!normalizedQuoted) return null;
+    const previewBody = String(normalizedQuoted?.body || '').trim();
+    if (previewBody && previewBody.toLowerCase() !== 'mensaje') return normalizedQuoted;
+    const safeFallbackMessage = fallbackMessage && typeof fallbackMessage === 'object' ? fallbackMessage : null;
+    if (!safeFallbackMessage) return normalizedQuoted;
+    const fallbackBody = String(safeFallbackMessage?.body || '').trim()
+        || (safeFallbackMessage?.hasMedia ? 'Adjunto' : 'Mensaje');
+    return {
+        ...normalizedQuoted,
+        body: fallbackBody,
+        fromMe: Boolean(safeFallbackMessage?.fromMe),
+        hasMedia: Boolean(safeFallbackMessage?.hasMedia),
+        type: String(normalizedQuoted?.type || safeFallbackMessage?.type || 'chat').trim() || 'chat'
+    };
+}
+
 export default function useSocketChatConversationEvents({
     socket,
     chatSearchRef,
@@ -633,10 +651,23 @@ export default function useSocketChatConversationEvents({
                     };
                 })
                 : [];
+            const normalizedMessagesById = new Map(
+                normalizedMessages
+                    .map((message) => [String(message?.id || '').trim(), message])
+                    .filter(([id]) => Boolean(id))
+            );
+            const hydratedMessages = normalizedMessages.map((message) => {
+                const quotedId = String(message?.quotedMessage?.id || '').trim();
+                if (!quotedId) return message;
+                return {
+                    ...message,
+                    quotedMessage: resolveQuotedMessagePreview(message?.quotedMessage, normalizedMessagesById.get(quotedId) || null)
+                };
+            });
             setMessages((prev) => {
                 const previous = Array.isArray(prev) ? prev : [];
-                if (previous.length === 0) return normalizedMessages;
-                if (normalizedMessages.length === 0) return previous;
+                if (previous.length === 0) return hydratedMessages;
+                if (hydratedMessages.length === 0) return previous;
 
                 const mergedById = new Map(
                     previous
@@ -644,7 +675,7 @@ export default function useSocketChatConversationEvents({
                         .filter(([id]) => Boolean(id))
                 );
 
-                normalizedMessages.forEach((message) => {
+                hydratedMessages.forEach((message) => {
                     const id = String(message?.id || '').trim();
                     if (!id) return;
                     const existing = mergedById.get(id);
@@ -657,7 +688,7 @@ export default function useSocketChatConversationEvents({
             });
             const activeChatId = String(activeChatIdRef.current || '').trim();
             if (activeChatId) {
-                writeCachedMessages(messagesCacheRef, activeChatId, normalizedMessages);
+                writeCachedMessages(messagesCacheRef, activeChatId, hydratedMessages);
             }
             const nextWindowOpen = Boolean(data?.windowOpen);
             const nextWindowExpiresAt = String(data?.windowExpiresAt || '').trim() || null;
@@ -731,7 +762,10 @@ export default function useSocketChatConversationEvents({
                     mimetype: String(mimetype || '').trim() || message?.mimetype || null,
                     filename: shouldReplaceFilename ? nextFilename : currentFilename,
                     fileSizeBytes: Number.isFinite(nextSize) ? nextSize : (Number.isFinite(Number(message?.fileSizeBytes)) ? Number(message.fileSizeBytes) : null),
-                    quotedMessage: normalizeQuotedMessage(quotedMessage || message?.quotedMessage),
+                    quotedMessage: resolveQuotedMessagePreview(
+                        normalizeQuotedMessage(quotedMessage || message?.quotedMessage),
+                        message
+                    ),
                     deliveryError: deliveryError && typeof deliveryError === 'object'
                         ? {
                             code: Number.isFinite(Number(deliveryError?.code)) ? Number(deliveryError.code) : null,
@@ -754,7 +788,10 @@ export default function useSocketChatConversationEvents({
                     mimetype: String(mimetype || '').trim() || message?.mimetype || null,
                     filename: shouldReplaceFilename ? nextFilename : currentFilename,
                     fileSizeBytes: Number.isFinite(nextSize) ? nextSize : (Number.isFinite(Number(message?.fileSizeBytes)) ? Number(message.fileSizeBytes) : null),
-                    quotedMessage: normalizeQuotedMessage(quotedMessage || message?.quotedMessage),
+                    quotedMessage: resolveQuotedMessagePreview(
+                        normalizeQuotedMessage(quotedMessage || message?.quotedMessage),
+                        message
+                    ),
                     deliveryError: deliveryError && typeof deliveryError === 'object'
                         ? {
                             code: Number.isFinite(Number(deliveryError?.code)) ? Number(deliveryError.code) : null,
@@ -1158,7 +1195,7 @@ export default function useSocketChatConversationEvents({
                 filename: normalizeMessageFilename(msg?.filename),
                 fileSizeBytes: Number.isFinite(Number(msg?.fileSizeBytes)) ? Number(msg.fileSizeBytes) : null,
                 canEdit: Boolean(msg?.canEdit),
-                quotedMessage: normalizeQuotedMessage(msg?.quotedMessage),
+                quotedMessage: resolveQuotedMessagePreview(normalizeQuotedMessage(msg?.quotedMessage), null),
                 reactions: Array.isArray(msg?.reactions) ? msg.reactions : []
             };
 
@@ -1239,7 +1276,10 @@ export default function useSocketChatConversationEvents({
                             sentViaModuleName: String(normalizedIncoming?.sentViaModuleName || existing?.sentViaModuleName || '').trim() || null,
                             sentViaModuleImageUrl: normalizeModuleImageUrl(normalizedIncoming?.sentViaModuleImageUrl || existing?.sentViaModuleImageUrl || '') || null,
                             sentViaTransport: String(normalizedIncoming?.sentViaTransport || existing?.sentViaTransport || '').trim() || null,
-                            quotedMessage: normalizeQuotedMessage(normalizedIncoming?.quotedMessage || existing?.quotedMessage),
+                            quotedMessage: resolveQuotedMessagePreview(
+                                normalizeQuotedMessage(normalizedIncoming?.quotedMessage || existing?.quotedMessage),
+                                existing
+                            ),
                             reactions: Array.isArray(normalizedIncoming?.reactions) && normalizedIncoming.reactions.length > 0
                                 ? normalizedIncoming.reactions
                                 : (Array.isArray(existing?.reactions) ? existing.reactions : []),

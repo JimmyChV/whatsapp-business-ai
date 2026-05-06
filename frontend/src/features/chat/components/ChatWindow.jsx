@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEffect, useRef } from 'react';
 import { Search, MoreVertical, ChevronUp, ChevronDown, Tag, MapPin, Share2, X } from 'lucide-react';
 import MessageBubble from './message-bubble/MessageBubble';
 import moment from 'moment';
@@ -134,14 +135,33 @@ const ChatWindow = ({
     const visibleHeaderLabels = headerLabels.slice(0, 2);
     const hiddenHeaderLabelsCount = Math.max(0, headerLabels.length - visibleHeaderLabels.length);
     const conversationWindowOpen = activeChatDetails?.windowOpen !== false;
-    const handleJumpToMessage = (targetMessageId) => {
+    const pendingJumpMessageIdRef = useRef('');
+
+    const handleJumpToMessage = (targetMessageId, attempt = 0) => {
         const safeTargetMessageId = String(targetMessageId || '').trim();
         if (!safeTargetMessageId) return;
         const targetNode = messageRefs.current?.[safeTargetMessageId]
             || document.querySelector(`[data-message-id="${safeTargetMessageId}"]`);
-        if (!targetNode || typeof targetNode.scrollIntoView !== 'function') return;
+        if (!targetNode || typeof targetNode.scrollIntoView !== 'function') {
+            pendingJumpMessageIdRef.current = safeTargetMessageId;
+            if (attempt < 8) {
+                window.setTimeout(() => handleJumpToMessage(safeTargetMessageId, attempt + 1), 90);
+            }
+            return;
+        }
+        pendingJumpMessageIdRef.current = '';
         targetNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
+
+    useEffect(() => {
+        const pendingId = String(pendingJumpMessageIdRef.current || '').trim();
+        if (!pendingId) return;
+        const targetNode = messageRefs.current?.[pendingId]
+            || document.querySelector(`[data-message-id="${pendingId}"]`);
+        if (!targetNode || typeof targetNode.scrollIntoView !== 'function') return;
+        pendingJumpMessageIdRef.current = '';
+        targetNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, [messages]);
 
     return (
         <div
@@ -565,7 +585,6 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
-
 
 
 

@@ -584,15 +584,16 @@ const MessageBubble = ({
                     </div>
                 )}
                 {quotedMessage && (
-                    <div style={{
-                        borderLeft: '3px solid ' + (quotedMessage.fromMe ? '#73dbf8' : '#00a884'),
-                        background: 'rgba(0,0,0,0.16)',
-                        borderRadius: '8px',
-                        padding: '6px 8px',
-                        marginBottom: '6px',
-                        cursor: quotedMessage.id ? 'pointer' : 'default'
-                    }}>
+                    <div
+                        className="message-quoted-context"
+                        style={{
+                            '--message-quoted-border': quotedMessage.fromMe ? '#73dbf8' : '#00a884',
+                            '--message-quoted-label': quotedMessage.fromMe ? 'var(--chat-info-text)' : 'var(--chat-success-text)',
+                            cursor: quotedMessage.id ? 'pointer' : 'default'
+                        }}
+                    >
                         <div
+                            className="message-quoted-context__inner"
                             role={quotedMessage.id ? 'button' : undefined}
                             tabIndex={quotedMessage.id ? 0 : undefined}
                             onClick={handleJumpToQuotedMessage}
@@ -605,10 +606,10 @@ const MessageBubble = ({
                             }}
                             style={{ outline: 'none' }}
                         >
-                            <div style={{ fontSize: '0.68rem', fontWeight: 700, color: quotedMessage.fromMe ? '#9fe9ff' : '#72f3d3', marginBottom: '2px' }}>
-                            {quotedMessage.fromMe ? 'Tu mensaje' : 'Mensaje respondido'}
+                            <div className="message-quoted-context__label">
+                                {quotedMessage.fromMe ? 'Tu mensaje' : 'Mensaje respondido'}
                             </div>
-                            <div style={{ fontSize: '0.78rem', color: '#c8d8e0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <div className="message-quoted-context__body">
                                 {quotedMessage.body}
                             </div>
                         </div>

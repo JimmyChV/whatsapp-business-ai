@@ -33,13 +33,18 @@ function createSocketChatHistoryMediaService({
         };
     };
 
-    const toHistoryMessagePayload = (row = {}, chatId = '') => {
+    const toHistoryMessagePayload = (row = {}, chatId = '', messageLookup = new Map()) => {
         const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
         const senderId = String(row?.senderId || row?.authorId || '').trim() || null;
         const senderPhone = String(row?.senderPhone || (senderId ? senderId.split('@')[0] : '') || '').trim() || null;
         const timestamp = Number(row?.timestampUnix || 0) || Math.floor(Date.now() / 1000);
         const type = String(row?.messageType || 'chat').trim() || 'chat';
         const fromMe = Boolean(row?.fromMe);
+        const quotedMessageId = String(row?.quotedMessageId || '').trim();
+        const quotedRow = quotedMessageId ? messageLookup.get(quotedMessageId) || null : null;
+        const quotedBody = quotedRow
+            ? (quotedRow?.body === null || quotedRow?.body === undefined ? '' : String(quotedRow.body).trim())
+            : '';
 
         return {
             id: String(row?.messageId || '').trim(),
@@ -78,7 +83,15 @@ function createSocketChatHistoryMediaService({
             canEdit: false,
             order: row?.orderPayload && typeof row.orderPayload === 'object' ? row.orderPayload : null,
             location: row?.locationPayload && typeof row.locationPayload === 'object' ? row.locationPayload : null,
-            quotedMessage: row?.quotedMessageId ? { id: String(row.quotedMessageId), body: '', fromMe: false } : null,
+            quotedMessage: quotedMessageId
+                ? {
+                    id: quotedMessageId,
+                    body: quotedBody || (quotedRow?.hasMedia ? 'Adjunto' : 'Mensaje'),
+                    fromMe: Boolean(quotedRow?.fromMe),
+                    hasMedia: Boolean(quotedRow?.hasMedia),
+                    type: String(quotedRow?.messageType || 'chat').trim() || 'chat'
+                }
+                : null,
             reactions: Array.isArray(metadata?.reactions) ? metadata.reactions : [],
             templateName: String(metadata?.templateName || '').trim() || null,
             templateLanguage: String(metadata?.templateLanguage || '').trim() || null,
@@ -130,15 +143,21 @@ function createSocketChatHistoryMediaService({
             }
         }
 
-        const messages = (Array.isArray(rows) ? rows : [])
+        const sortedRows = (Array.isArray(rows) ? rows : [])
             .slice()
             .sort((a, b) => {
                 const aTs = Number(a?.timestampUnix || 0);
                 const bTs = Number(b?.timestampUnix || 0);
                 if (aTs !== bTs) return aTs - bTs;
                 return String(a?.messageId || '').localeCompare(String(b?.messageId || ''));
-            })
-            .map((row) => toHistoryMessagePayload(row, resolvedChatId || requestedChatId))
+            });
+        const rowLookup = new Map(
+            sortedRows
+                .map((row) => [String(row?.messageId || '').trim(), row])
+                .filter(([id]) => Boolean(id))
+        );
+        const messages = sortedRows
+            .map((row) => toHistoryMessagePayload(row, resolvedChatId || requestedChatId, rowLookup))
             .filter((msg) => Boolean(msg?.id));
 
         return {

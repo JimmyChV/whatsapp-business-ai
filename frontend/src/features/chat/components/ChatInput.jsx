@@ -418,34 +418,27 @@ const ChatInput = ({
             )}
 
             {!editingMessage?.id && replyingMessage?.id && (
-                <div style={{
+                <div className="chat-draft-banner chat-draft-banner--reply" style={{
                     position: 'absolute',
                     left: '12px',
                     right: '12px',
                     bottom: '100%',
-                    marginBottom: '8px',
-                    border: '1px solid rgba(124, 200, 255, 0.45)',
-                    background: '#1b2831',
-                    borderRadius: '10px',
-                    padding: '8px 10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '10px',
+                    marginBottom: '4px',
                     zIndex: 39
                 }}>
                     <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: '0.72rem', color: '#7cc8ff', fontWeight: 700, marginBottom: '2px' }}>
+                        <div className="chat-draft-banner__title">
                             Respondiendo {replyingMessage?.fromMe ? 'tu mensaje' : 'mensaje del cliente'}
                         </div>
-                        <div style={{ fontSize: '0.78rem', color: '#b6c7cf', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div className="chat-draft-banner__text" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {String(replyingMessage?.body || '').trim() || 'Mensaje sin texto'}
                         </div>
                     </div>
                     <button
                         type="button"
                         onClick={() => onCancelReplyMessage && onCancelReplyMessage()}
-                        style={{ border: '1px solid rgba(255,255,255,0.18)', background: 'transparent', color: '#d8e3e8', borderRadius: '8px', padding: '4px 10px', fontSize: '0.78rem', cursor: 'pointer' }}
+                        className="chat-draft-banner__action"
+                        style={{ borderRadius: '8px', padding: '4px 10px', fontSize: '0.78rem', cursor: 'pointer' }}
                     >
                         Cancelar
                     </button>
@@ -458,7 +451,7 @@ const ChatInput = ({
                     left: '12px',
                     right: '12px',
                     bottom: '100%',
-                    marginBottom: replyingMessage?.id ? '74px' : '8px',
+                    marginBottom: replyingMessage?.id ? '62px' : '8px',
                     border: '1px solid rgba(0, 168, 132, 0.55)',
                     background: '#173138',
                     borderRadius: '10px',

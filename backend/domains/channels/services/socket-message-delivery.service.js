@@ -53,11 +53,12 @@ function createSocketMessageDeliveryService({
             }
         };
 
-        const emitRealtimeOutgoingMessage = async ({
+         const emitRealtimeOutgoingMessage = async ({
              sentMessage = null,
              fallbackChatId = '',
              fallbackBody = '',
              quotedMessageId = '',
+             quotedMessage = null,
              moduleContext = null,
              agentMeta = null,
              mediaPayload = null,
@@ -100,6 +101,15 @@ function createSocketMessageDeliveryService({
                  || agentMeta?.sentViaModuleId
                  || ''
              );
+             const normalizedQuotedMessage = quotedMessage && typeof quotedMessage === 'object'
+                 ? {
+                     id: String(quotedMessage?.id || quotedId || '').trim() || null,
+                     body: String(quotedMessage?.body || '').trim() || '',
+                     fromMe: Boolean(quotedMessage?.fromMe),
+                     hasMedia: Boolean(quotedMessage?.hasMedia),
+                     type: String(quotedMessage?.type || 'chat').trim() || 'chat'
+                 }
+                 : null;
              const scopedTargetChatId = buildScopedChatId(targetChatId, moduleScopeId || '');
                const payload = {
                  id: messageId,
@@ -129,7 +139,7 @@ function createSocketMessageDeliveryService({
                  canEdit: false,
                  order: normalizedOrderPayload,
                  location: null,
-                 quotedMessage: quotedId ? { id: quotedId, body: '', fromMe: false, hasMedia: false, type: 'chat' } : null,
+                quotedMessage: normalizedQuotedMessage || (quotedId ? { id: quotedId, body: '', fromMe: false, hasMedia: false, type: 'chat' } : null),
                  clientTempId: String(safeSentMessage?.clientTempId || '').trim() || null,
                  templateName,
                  templateLanguage,
@@ -304,11 +314,12 @@ function createSocketMessageDeliveryService({
                  if (sentMessageId && agentMeta) {
                      rememberOutgoingAgentMeta(sentMessageId, agentMeta);
                  }
-                   await emitRealtimeOutgoingMessage({
+                     await emitRealtimeOutgoingMessage({
                      sentMessage,
                      fallbackChatId: target.targetChatId,
                      fallbackBody: text,
                      quotedMessageId: quoted,
+                     quotedMessage: null,
                      moduleContext,
                      agentMeta,
                      mediaPayload: null
@@ -422,6 +433,7 @@ function createSocketMessageDeliveryService({
                      fallbackChatId: target.targetChatId,
                      fallbackBody: caption,
                      quotedMessageId: quoted,
+                     quotedMessage: null,
                      moduleContext,
                      agentMeta,
                      mediaPayload: {
@@ -609,7 +621,6 @@ function createSocketMessageDeliveryService({
 module.exports = {
     createSocketMessageDeliveryService
 };
-
 
 
 

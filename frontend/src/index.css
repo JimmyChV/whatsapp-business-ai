@@ -8067,6 +8067,23 @@ body {
   color: var(--saas-text-primary) !important;
 }
 
+.chat-draft-banner {
+  border: 1px solid var(--chat-card-border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+}
+
+.chat-draft-banner__title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
 .chat-draft-banner__action,
 .chat-draft-banner__attachment {
   background: var(--chat-control-surface) !important;
