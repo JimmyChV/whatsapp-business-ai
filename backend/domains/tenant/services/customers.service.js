@@ -1030,21 +1030,79 @@ async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}
     }
 
     const candidates = clientesRows.map((row) => buildErpCustomerCandidate(row, moduleId));
-    const errors = candidates.flatMap((candidate) => candidate.errors || []);
-    const validCandidates = candidates.filter((candidate) => (candidate.errors || []).length === 0 && candidate.erpId);
+    const baseValidCandidates = candidates.filter((candidate) => (candidate.errors || []).length === 0 && candidate.erpId);
     const total = clientesRows.length;
 
-    const existingResult = validCandidates.length > 0
+    const existingResult = baseValidCandidates.length > 0
         ? await queryPostgres(
             `SELECT *
              FROM tenant_customers
              WHERE tenant_id = $1
                AND erp_id = ANY($2::text[])`,
-            [cleanTenantId, validCandidates.map((candidate) => candidate.erpId)]
+            [cleanTenantId, baseValidCandidates.map((candidate) => candidate.erpId)]
         )
         : { rows: [] };
     const existingByErpId = new Map((existingResult?.rows || []).map((row) => [String(row?.erp_id || '').trim().toUpperCase(), row]));
 
+    const phoneSeen = new Map();
+    baseValidCandidates.forEach((candidate) => {
+        const phone = String(candidate?.phoneE164 || '').trim();
+        if (!phone) return;
+        if (phoneSeen.has(phone)) {
+            candidate.errors = candidate.errors || [];
+            candidate.errors.push({
+                row: candidate.rowNumber,
+                erp_id: candidate.erpId,
+                field: 'Telefono',
+                message: `Telefono duplicado en CSV (ya usado por ${phoneSeen.get(phone)})`
+            });
+            return;
+        }
+        phoneSeen.set(phone, candidate.erpId);
+    });
+
+    const allPhones = baseValidCandidates
+        .map((candidate) => String(candidate?.phoneE164 || '').trim())
+        .filter(Boolean);
+    const existingPhonesResult = allPhones.length > 0
+        ? await queryPostgres(
+            `SELECT phone_e164, erp_id, customer_id
+             FROM tenant_customers
+             WHERE tenant_id = $1 AND phone_e164 = ANY($2::text[])`,
+            [cleanTenantId, allPhones]
+        )
+        : { rows: [] };
+    const existingPhoneMap = new Map(
+        (existingPhonesResult?.rows || []).map((row) => [
+            String(row?.phone_e164 || '').trim(),
+            {
+                erpId: String(row?.erp_id || '').trim() || null,
+                customerId: String(row?.customer_id || '').trim() || null
+            }
+        ])
+    );
+
+    baseValidCandidates
+        .filter((candidate) => !existingByErpId.has(candidate.erpId))
+        .forEach((candidate) => {
+            const phone = String(candidate?.phoneE164 || '').trim();
+            if (!phone) return;
+            const existingPhone = existingPhoneMap.get(phone);
+            if (!existingPhone) return;
+            const existingOwner = existingPhone.erpId || existingPhone.customerId || null;
+            if (existingOwner && existingOwner !== candidate.erpId) {
+                candidate.errors = candidate.errors || [];
+                candidate.errors.push({
+                    row: candidate.rowNumber,
+                    erp_id: candidate.erpId,
+                    field: 'Telefono',
+                    message: `Telefono ya registrado para ${existingOwner}`
+                });
+            }
+        });
+
+    const errors = candidates.flatMap((candidate) => candidate.errors || []);
+    const validCandidates = candidates.filter((candidate) => (candidate.errors || []).length === 0 && candidate.erpId);
     const inserts = validCandidates.filter((candidate) => !existingByErpId.has(candidate.erpId));
     const updates = validCandidates.filter((candidate) => existingByErpId.has(candidate.erpId));
 
