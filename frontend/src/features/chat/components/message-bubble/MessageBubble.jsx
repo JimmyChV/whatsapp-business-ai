@@ -943,17 +943,10 @@ const MessageBubble = ({
                 )}
 
                 {showOutgoingAttribution && (
-                    <div style={{
-                        marginTop: '4px',
-                        marginBottom: '2px',
-                        fontSize: '0.68rem',
-                        color: 'rgba(214,231,240,0.82)',
-                        alignSelf: 'flex-end',
-                        textAlign: 'right'
-                    }}>
-                        Respondio: <strong style={{ color: '#e8f3f8', fontWeight: 600 }}>{displaySentByName}</strong>
+                    <div className="message-outgoing-attribution">
+                        Respondio: <strong className="message-outgoing-attribution__name">{displaySentByName}</strong>
                         {safeSentViaLabel && (
-                            <span style={{ color: '#9eb2bf' }}>
+                            <span className="message-outgoing-attribution__module">
                                 {' - '}{safeSentViaLabel}
                             </span>
                         )}

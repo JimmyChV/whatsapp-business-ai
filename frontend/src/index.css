@@ -7993,6 +7993,24 @@ body {
   color: color-mix(in srgb, var(--chat-control-text-soft) 92%, var(--saas-text-primary)) !important;
 }
 
+.message-outgoing-attribution {
+  margin-top: 4px;
+  margin-bottom: 2px;
+  align-self: flex-end;
+  text-align: right;
+  font-size: 0.68rem;
+  color: color-mix(in srgb, var(--saas-text-primary) 56%, white 44%);
+}
+
+.message-outgoing-attribution__name {
+  color: color-mix(in srgb, var(--saas-text-primary) 78%, white 22%);
+  font-weight: 700;
+}
+
+.message-outgoing-attribution__module {
+  color: color-mix(in srgb, var(--saas-text-primary) 62%, white 38%);
+}
+
 .chat-window-expired-banner,
 .business-assignment-lock-hint {
   background: linear-gradient(
