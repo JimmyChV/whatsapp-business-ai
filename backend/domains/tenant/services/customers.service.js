@@ -30,10 +30,90 @@ const { normalizeCustomerFields, toUpper } = require('../../../utils/normalize-t
 const CUSTOMERS_FILE = 'customers.json';
 const PAGE_LIMIT_DEFAULT = 50;
 const PAGE_LIMIT_MAX = 500;
+const ERP_IMPORT_PROGRESS_TTL_MS = 10 * 60 * 1000;
+const ERP_IMPORT_BATCH_SIZE = 250;
 
 let schemaPromise = null;
+let schemaReady = false;
+const erpImportProgressStore = new Map();
+const erpImportProgressCleanupTimers = new Map();
+
+function createErpImportId() {
+    return `erpimp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function scheduleErpImportProgressCleanup(importId = '') {
+    const key = String(importId || '').trim();
+    if (!key) return;
+    const previousTimer = erpImportProgressCleanupTimers.get(key);
+    if (previousTimer) clearTimeout(previousTimer);
+    const nextTimer = setTimeout(() => {
+        erpImportProgressStore.delete(key);
+        erpImportProgressCleanupTimers.delete(key);
+    }, ERP_IMPORT_PROGRESS_TTL_MS);
+    erpImportProgressCleanupTimers.set(key, nextTimer);
+}
+
+function setErpImportProgress(importId = '', patch = {}) {
+    const key = String(importId || '').trim();
+    if (!key) return null;
+    const current = erpImportProgressStore.get(key) || {};
+    const next = {
+        ...current,
+        ...patch,
+        importId: key,
+        updatedAt: nowIso()
+    };
+    erpImportProgressStore.set(key, next);
+    scheduleErpImportProgressCleanup(key);
+    return next;
+}
+
+function getErpImportProgress(importId = '', tenantId = '') {
+    const key = String(importId || '').trim();
+    if (!key) return null;
+    const item = erpImportProgressStore.get(key);
+    if (!item) return null;
+    const cleanTenantId = String(tenantId || '').trim();
+    if (cleanTenantId && String(item?.tenantId || '').trim() !== cleanTenantId) return null;
+    return item;
+}
+
+function cancelErpImportProgress(importId = '', tenantId = '') {
+    const current = getErpImportProgress(importId, tenantId);
+    if (!current) return null;
+    return setErpImportProgress(importId, {
+        ...current,
+        cancelRequested: true,
+        message: 'Cancelacion solicitada. Esperando rollback seguro...'
+    });
+}
+
+function isErpImportCancelled(importId = '') {
+    const current = getErpImportProgress(importId);
+    return Boolean(current?.cancelRequested);
+}
+
+function throwIfErpImportCancelled(importId = '') {
+    if (isErpImportCancelled(importId)) {
+        const error = new Error('Importacion ERP cancelada por el usuario.');
+        error.code = 'ERP_IMPORT_CANCELLED';
+        throw error;
+    }
+}
+
+function chunkArray(items = [], size = ERP_IMPORT_BATCH_SIZE) {
+    const source = Array.isArray(items) ? items : [];
+    const chunkSize = Math.max(1, Number(size) || ERP_IMPORT_BATCH_SIZE);
+    const chunks = [];
+    for (let index = 0; index < source.length; index += chunkSize) {
+        chunks.push(source.slice(index, index + chunkSize));
+    }
+    return chunks;
+}
 
 async function ensurePostgresSchema() {
+    if (schemaReady) return;
     if (schemaPromise) return schemaPromise;
     schemaPromise = (async () => {
         await queryPostgres(`
@@ -84,6 +164,22 @@ async function ensurePostgresSchema() {
         await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS marketing_opt_in_status TEXT NOT NULL DEFAULT 'unknown'`);
         await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS marketing_opt_in_updated_at TIMESTAMPTZ NULL`);
         await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS marketing_opt_in_source TEXT NULL`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS dias_ultima_compra INTEGER`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS ultimo_pedido_id TEXT`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS ultima_fecha_compra DATE`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS primera_fecha_compra DATE`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS primer_pedido_id TEXT`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS compras_total INTEGER`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS compras_120 INTEGER`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS monto_120 NUMERIC(12,2)`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS compras_180 INTEGER`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS monto_180 NUMERIC(12,2)`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS ticket_prom_180 NUMERIC(12,2)`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS monto_acumulado NUMERIC(12,2)`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS segmento TEXT`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS realizo_compra BOOLEAN`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS cadencia_prom_dias NUMERIC(8,2)`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS rango_compras TEXT`);
         await queryPostgres(`
             CREATE INDEX IF NOT EXISTS idx_tenant_customers_module
             ON tenant_customers(tenant_id, module_id)
@@ -200,10 +296,14 @@ async function ensurePostgresSchema() {
             CREATE INDEX IF NOT EXISTS idx_channel_events_tenant_module
             ON tenant_channel_events(tenant_id, module_id, created_at DESC)
         `);
+        schemaReady = true;
     })();
 
     try {
         await schemaPromise;
+    } catch (error) {
+        schemaReady = false;
+        throw error;
     } finally {
         schemaPromise = null;
     }
@@ -878,60 +978,183 @@ function createErpAddressId() {
     return `addr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function buildErpCustomerPreview(candidate = {}) {
+const APPSHEET_TREATMENTS = [
+    { id: '1', abbr: 'SR.' }, { id: '2', abbr: 'SRA.' }, { id: '3', abbr: 'SRTA.' },
+    { id: '4', abbr: 'DR.' }, { id: '5', abbr: 'DRA.' }, { id: '6', abbr: 'LIC.' },
+    { id: '7', abbr: 'ING.' }, { id: '8', abbr: 'ARQ.' }, { id: '9', abbr: 'PROF.' },
+    { id: '10', abbr: 'D.' }, { id: '11', abbr: 'D\u00d1A.' }, { id: '12', abbr: 'MTRO.' },
+    { id: '13', abbr: 'MTRA.' }
+];
+const APPSHEET_DOCUMENT_TYPES = [
+    { id: '1', abbr: 'DNI', label: 'DOCUMENTO NACIONAL DE IDENTIDAD' },
+    { id: '6', abbr: 'RUC', label: 'REGISTRO UNICO DE CONTRIBUYENTES' },
+    { id: '4', abbr: 'C.EXT.', label: 'CARNET DE EXTRANJERIA' },
+    { id: '7', abbr: 'PASAPORTE', label: 'PASAPORTE' },
+    { id: '0', abbr: 'TRIB.EXT.', label: 'DOC.TRIB.NO.DOM.SIN.RUC' },
+    { id: '-', abbr: 'SIN DOC.', label: 'SIN DOCUMENTO' },
+    { id: 'A', abbr: 'C.DIPL.', label: 'CEDULA DIPLOMATICA DE IDENTIDAD' },
+    { id: 'B', abbr: 'IDENT.EXT.', label: 'DOC.IDENT.PAIS.RESIDENCIA-NO.D' },
+    { id: 'C', abbr: 'TIN', label: 'TAX IDENTIFICATION NUMBER (TIN)' },
+    { id: 'D', abbr: 'IN', label: 'IDENTIFICATION NUMBER (IN)' }
+];
+const APPSHEET_CUSTOMER_TYPES = [
+    { id: '1', label: 'PERSONA NATURAL' },
+    { id: '2', label: 'PERSONA JURIDICA' },
+    { id: '3', label: 'DISTRIBUIDOR' },
+    { id: '4', label: 'MAYORISTA' },
+    { id: '5', label: 'ALIADO LAVITAT' }
+];
+const APPSHEET_ACQUISITION_SOURCES = [
+    { id: '1', label: 'CANAL DIGITAL' },
+    { id: '2', label: 'CANAL WEB' },
+    { id: '3', label: 'CANAL TRADICIONAL' }
+];
+
+function getAppSheetField(row = {}, ...names) {
+    for (const name of names) {
+        const target = String(name || '').trim().replace(/\uFEFF/g, '').toLowerCase();
+        const key = Object.keys(row || {}).find(
+            (entry) => String(entry || '').trim().replace(/\uFEFF/g, '').toLowerCase() === target
+        );
+        if (key !== undefined) return String(row?.[key] || '').trim();
+    }
+    return '';
+}
+
+function normalizeAppSheetPhone(value = '') {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (!digits) return null;
+    if (digits.length === 9 && digits.startsWith('9')) return `+51${digits}`;
+    if (digits.startsWith('51') && digits.length === 11) return `+${digits}`;
+    return null;
+}
+
+function parseAppSheetMonto(value = '') {
+    const clean = String(value || '').replace(/[^0-9.]/g, '').trim();
+    return clean ? Number.parseFloat(clean) : null;
+}
+
+function parseAppSheetDate(value = '') {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    const clean = raw.split(' ')[0];
+    const parts = clean.split('/');
+    if (parts.length !== 3) return null;
+    const [dayRaw, monthRaw, yearRaw] = parts;
+    if (!dayRaw || !monthRaw || !yearRaw || yearRaw.length !== 4) return null;
+    const iso = `${yearRaw}-${String(monthRaw).padStart(2, '0')}-${String(dayRaw).padStart(2, '0')}`;
+    const parsed = new Date(`${iso}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return iso;
+}
+
+function parseOptionalInteger(value = '') {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseOptionalFloat(value = '') {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    const parsed = Number.parseFloat(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function resolveAppSheetTreatment(value = '') {
+    const target = toUpper(value);
+    return APPSHEET_TREATMENTS.find((entry) => toUpper(entry.abbr) === target)?.id || null;
+}
+
+function resolveAppSheetDocumentType(value = '') {
+    const target = toUpper(value);
+    return APPSHEET_DOCUMENT_TYPES.find((entry) => toUpper(entry.abbr) === target || toUpper(entry.label) === target)?.id || null;
+}
+
+function resolveAppSheetCustomerType(value = '') {
+    const target = toUpper(value);
+    return APPSHEET_CUSTOMER_TYPES.find((entry) => toUpper(entry.label) === target)?.id || null;
+}
+
+function resolveAppSheetSource(value = '') {
+    const target = toUpper(value);
+    return APPSHEET_ACQUISITION_SOURCES.find((entry) => toUpper(entry.label) === target)?.id || null;
+}
+
+function normalizeAppSheetOptInStatus(value = '') {
+    return ['Y', 'SI', 'S', 'TRUE', '1'].includes(toUpper(value)) ? 'opted_in' : 'pending';
+}
+
+function normalizeAppSheetBoolean(value = '') {
+    return ['Y', 'SI', 'S', 'TRUE', '1'].includes(toUpper(value));
+}
+
+function buildAppSheetCustomerPreview(candidate = {}) {
     return {
         erp_id: candidate.erpId,
         nombre_completo: candidate.fullName,
         telefono: candidate.phoneE164,
-        tipo_cliente: candidate.customerTypeId,
-        fuente: candidate.acquisitionSourceId
+        segmento: candidate.segmento,
+        realizo_compra: candidate.realizoCompra
     };
 }
 
-function buildErpCustomerCandidate(row = {}, moduleId = '') {
-    const erpId = normalizeImportTextUpper(getErpRowValue(row, 'IdCliente'));
-    const contactType = normalizeErpContactType(getErpRowValue(row, 'TipoContacto'));
-    const treatmentId = normalizeErpTreatmentId(getErpRowValue(row, 'IdTratamientoCliente'));
-    const lastNamePaternal = normalizeImportTextUpper(getErpRowValue(row, 'ApellidoPaterno'));
-    const lastNameMaternal = normalizeImportTextUpper(getErpRowValue(row, 'ApellidoMaterno'));
-    const firstName = normalizeImportTextUpper(getErpRowValue(row, 'Nombres'));
-    const documentNumber = normalizeImportTextUpper(getErpRowValue(row, 'NumeroDocumentoIdentidad'));
-    const contactName = normalizeImportTextUpper(getErpRowValue(row, 'Contacto'));
-    const email = normalizeImportEmail(getErpRowValue(row, 'CorreoElectronico'));
-    const phoneE164 = normalizeErpPhone(getErpRowValue(row, 'Telefono'));
-    const phoneAlt = normalizeErpPhone(getErpRowValue(row, 'Telefono2'));
-    const documentTypeId = normalizeImportTextUpper(getErpRowValue(row, 'IdDocumentoIdentidad'));
-    const erpEmployeeId = normalizeImportTextUpper(getErpRowValue(row, 'IdEmpleado'));
-    const customerTypeId = normalizeImportTextUpper(getErpRowValue(row, 'IdTipoCliente'));
-    const acquisitionSourceId = normalizeImportTextUpper(getErpRowValue(row, 'IdFuenteCliente'));
-    const referralCustomerId = normalizeImportTextUpper(getErpRowValue(row, 'IdReferido'));
-    const createdAtSource = getErpRowValue(row, 'Fecha Registro', 'FechaRegistro');
-    const createdAt = parseErpDate(createdAtSource);
-    const marketingOptInStatus = normalizeErpOptInStatus(getErpRowValue(row, 'Autorizacion'));
+function buildAppSheetCustomerCandidate(row = {}, moduleId = '') {
+    const erpId = normalizeImportTextUpper(getAppSheetField(row, 'Código de Cliente', 'Codigo de Cliente'));
+    const contactType = toUpper(getAppSheetField(row, 'TipoContacto')) || 'PROSPECTO';
+    const firstName = normalizeImportTextUpper(getAppSheetField(row, 'Nombres'));
+    const lastNamePaternal = normalizeImportTextUpper(getAppSheetField(row, 'Apellido Paterno o Razón Social', 'Apellido Paterno o Razon Social'));
+    const lastNameMaternal = normalizeImportTextUpper(getAppSheetField(row, 'Apellido Materno'));
+    const contactName = normalizeImportTextUpper(getAppSheetField(row, 'Nombre de Pila'));
+    const documentNumber = normalizeImportTextUpper(getAppSheetField(row, 'N° de Documento', 'Nro de Documento', 'No de Documento'));
+    const phoneE164 = normalizeAppSheetPhone(getAppSheetField(row, 'Teléfono', 'Telefono'));
+    const phoneAlt = normalizeAppSheetPhone(getAppSheetField(row, 'Teléfono 2', 'Telefono 2'));
+    const email = normalizeImportEmail(getAppSheetField(row, 'Email'));
+    const treatmentId = resolveAppSheetTreatment(getAppSheetField(row, 'Tratamiento'));
+    const documentTypeId = resolveAppSheetDocumentType(getAppSheetField(row, 'Tipo de Documento'));
+    const customerTypeId = resolveAppSheetCustomerType(getAppSheetField(row, 'Tipo de Cliente'));
+    const acquisitionSourceId = resolveAppSheetSource(getAppSheetField(row, 'Fuente'));
+    const createdAt = parseAppSheetDate(getAppSheetField(row, 'Fecha de Registro'));
+    const marketingOptInStatus = normalizeAppSheetOptInStatus(getAppSheetField(row, 'Autorizacion'));
+    const notes = getAppSheetField(row, 'ObservacionCliente') || null;
+    const diasUltimaCompra = parseOptionalInteger(getAppSheetField(row, 'DiasUltimaCompra'));
+    const ultimoPedidoId = getAppSheetField(row, 'UltimoPedidoID') || null;
+    const ultimaFechaCompra = parseAppSheetDate(getAppSheetField(row, 'UltimaFecha'));
+    const primeraFechaCompra = parseAppSheetDate(getAppSheetField(row, 'PrimeraFecha'));
+    const primerPedidoId = getAppSheetField(row, 'PrimeraPedidoID') || null;
+    const comprasTotal = parseOptionalInteger(getAppSheetField(row, 'ComprasTotal'));
+    const compras120 = parseOptionalInteger(getAppSheetField(row, 'Compras120'));
+    const monto120 = parseAppSheetMonto(getAppSheetField(row, 'Monto120'));
+    const compras180 = parseOptionalInteger(getAppSheetField(row, 'Compras180'));
+    const monto180 = parseAppSheetMonto(getAppSheetField(row, 'Monto180'));
+    const ticketProm180 = parseAppSheetMonto(getAppSheetField(row, 'TicketProm180'));
+    const montoAcumulado = parseAppSheetMonto(getAppSheetField(row, 'MontoAcumulado'));
+    const segmento = getAppSheetField(row, 'Segmento final') || null;
+    const realizoCompra = normalizeAppSheetBoolean(getAppSheetField(row, 'Realizo Compra'));
+    const cadenciaPromDias = parseOptionalFloat(getAppSheetField(row, 'CadenciaPromDias'));
+    const rangoCompras = getAppSheetField(row, 'RangoCompras') || null;
     const fullName = [lastNamePaternal, lastNameMaternal, firstName].filter(Boolean).join(' ').trim()
         || [lastNamePaternal, firstName].filter(Boolean).join(' ').trim()
         || contactName
         || erpId
         || '';
     const rowNumber = Number(row?.__rowNumber || 0) || 0;
-    const isProspect = contactType === 'PROSPECTO';
+    const isProspect = !contactType || contactType === 'PROSPECTO';
 
     const errors = [];
     if (!erpId) {
-        errors.push({ row: rowNumber, erp_id: null, field: 'IdCliente', message: 'ERP ID vacio.' });
+        errors.push({ row: rowNumber, erp_id: null, field: 'Codigo de Cliente', message: 'Codigo de cliente vacio' });
     }
     if (isProspect) {
         if (!phoneE164 && !phoneAlt) {
-            errors.push({ row: rowNumber, erp_id: erpId, field: 'Telefono/Telefono2', message: 'Prospecto sin telefono' });
+            errors.push({ row: rowNumber, erp_id: erpId, field: 'Telefono', message: 'Prospecto sin telefono' });
         }
     } else if (!firstName && !lastNamePaternal) {
-        errors.push({ row: rowNumber, erp_id: erpId, field: 'Nombres/ApellidoPaterno', message: 'Debe existir nombres o apellido paterno.' });
+        errors.push({ row: rowNumber, erp_id: erpId, field: 'Nombres/Apellido Paterno o Razon Social', message: 'Debe existir nombres o apellido paterno.' });
     }
     if (email && !isValidEmailAddress(email)) {
-        errors.push({ row: rowNumber, erp_id: erpId, field: 'CorreoElectronico', message: 'Email invalido.' });
-    }
-    if (createdAtSource && !createdAt) {
-        errors.push({ row: rowNumber, erp_id: erpId, field: 'Fecha Registro', message: 'Fecha no parseable.' });
+        errors.push({ row: rowNumber, erp_id: erpId, field: 'Email', message: 'Email invalido' });
     }
 
     const dbFields = normalizeCustomerFields({
@@ -942,9 +1165,7 @@ function buildErpCustomerCandidate(row = {}, moduleId = '') {
         first_name: firstName,
         last_name_paternal: lastNamePaternal,
         last_name_maternal: lastNameMaternal,
-        document_number: documentNumber,
-        erp_employee_id: erpEmployeeId,
-        referral_customer_id: referralCustomerId
+        document_number: documentNumber
     });
 
     return {
@@ -960,15 +1181,32 @@ function buildErpCustomerCandidate(row = {}, moduleId = '') {
         phoneAlt: dbFields.phone_alt || null,
         email,
         documentTypeId,
-        erpEmployeeId: dbFields.erp_employee_id || null,
+        erpEmployeeId: null,
         customerTypeId,
         acquisitionSourceId,
-        referralCustomerId: dbFields.referral_customer_id || null,
+        referralCustomerId: null,
         contactType,
-        createdAt,
+        createdAt: createdAt ? `${createdAt}T00:00:00.000Z` : null,
         marketingOptInStatus,
         moduleId: toText(moduleId || '') || null,
         fullName,
+        notes,
+        diasUltimaCompra,
+        ultimoPedidoId,
+        ultimaFechaCompra,
+        primeraFechaCompra,
+        primerPedidoId,
+        comprasTotal,
+        compras120,
+        monto120,
+        compras180,
+        monto180,
+        ticketProm180,
+        montoAcumulado,
+        segmento,
+        realizoCompra,
+        cadenciaPromDias,
+        rangoCompras,
         errors
     };
 }
@@ -1012,15 +1250,93 @@ function buildAddressSignature(address = {}) {
     ].join('|');
 }
 
-async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}) {
+function buildAppSheetCustomerProfile(candidate = {}) {
+    return {
+        notes: candidate.notes || null,
+        contactType: candidate.contactType || null
+    };
+}
+
+function buildAppSheetCustomerMetadata(candidate = {}) {
+    return {
+        appsheetImport: {
+            importedAt: nowIso(),
+            source: 'appsheet_csv',
+            erpId: candidate.erpId || null,
+            diasUltimaCompra: candidate.diasUltimaCompra,
+            ultimoPedidoId: candidate.ultimoPedidoId,
+            ultimaFechaCompra: candidate.ultimaFechaCompra,
+            primeraFechaCompra: candidate.primeraFechaCompra,
+            primerPedidoId: candidate.primerPedidoId,
+            comprasTotal: candidate.comprasTotal,
+            compras120: candidate.compras120,
+            monto120: candidate.monto120,
+            compras180: candidate.compras180,
+            monto180: candidate.monto180,
+            ticketProm180: candidate.ticketProm180,
+            montoAcumulado: candidate.montoAcumulado,
+            segmento: candidate.segmento,
+            realizoCompra: candidate.realizoCompra,
+            cadenciaPromDias: candidate.cadenciaPromDias,
+            rangoCompras: candidate.rangoCompras
+        }
+    };
+}
+
+async function runChunkWithSavepoint(client, savepointName, entries, runner, fallbackRunner) {
+    if (!entries.length) return;
+    await client.query(`SAVEPOINT ${savepointName}`);
+    try {
+        await runner(entries);
+        await client.query(`RELEASE SAVEPOINT ${savepointName}`);
+    } catch (error) {
+        await client.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+        for (const entry of entries) {
+            await fallbackRunner(entry, error);
+        }
+        await client.query(`RELEASE SAVEPOINT ${savepointName}`);
+    }
+}
+
+async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload = {}) {
     const pool = getPostgresPool();
     await ensurePostgresSchema();
 
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const importId = toText(payload?.importId || '') || createErpImportId();
     const clientesRows = Array.isArray(payload?.clientesRows) ? payload.clientesRows : [];
     const direccionesRows = Array.isArray(payload?.direccionesRows) ? payload.direccionesRows : [];
     const moduleId = toText(payload?.moduleId || '');
     const mode = String(payload?.mode || 'preview').trim().toLowerCase() || 'preview';
+    console.log('[ERP-IMPORT][SERVICE] start importId=%s mode=%s tenant=%s clientes=%s direcciones=%s', importId, mode, cleanTenantId, clientesRows.length, direccionesRows.length);
+
+    setErpImportProgress(importId, {
+        tenantId: cleanTenantId,
+        mode,
+        status: mode === 'preview' ? 'analyzing' : 'running',
+        phase: 'validating',
+        message: mode === 'preview' ? 'Analizando exportacion de AppSheet.' : 'Validando exportacion de AppSheet antes de importar.',
+        startedAt: nowIso(),
+        finishedAt: null,
+        error: '',
+        counts: {
+            totalRows: clientesRows.length,
+            validRows: 0,
+            insertRows: 0,
+            updateRows: 0,
+            errorRows: 0,
+            addressTotal: direccionesRows.length,
+            addressMatched: 0,
+            addressUnmatched: 0,
+            customersProcessed: 0,
+            customersInserted: 0,
+            customersUpdated: 0,
+            addressesProcessed: 0,
+            addressesInserted: 0,
+            addressesUpdated: 0
+        },
+        percent: 0
+    });
 
     if (!clientesRows.length) {
         throw new Error('El archivo de clientes no tiene filas validas.');
@@ -1029,9 +1345,10 @@ async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}
         throw new Error('mode invalido. Usa preview o commit.');
     }
 
-    const candidates = clientesRows.map((row) => buildErpCustomerCandidate(row, moduleId));
+    const candidates = clientesRows.map((row) => buildAppSheetCustomerCandidate(row, moduleId));
     const baseValidCandidates = candidates.filter((candidate) => (candidate.errors || []).length === 0 && candidate.erpId);
     const total = clientesRows.length;
+    console.log('[ERP-IMPORT][SERVICE] candidates built importId=%s total=%s baseValid=%s', importId, total, baseValidCandidates.length);
 
     const existingResult = baseValidCandidates.length > 0
         ? await queryPostgres(
@@ -1105,6 +1422,7 @@ async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}
     const validCandidates = candidates.filter((candidate) => (candidate.errors || []).length === 0 && candidate.erpId);
     const inserts = validCandidates.filter((candidate) => !existingByErpId.has(candidate.erpId));
     const updates = validCandidates.filter((candidate) => existingByErpId.has(candidate.erpId));
+    console.log('[ERP-IMPORT][SERVICE] validation done importId=%s valid=%s inserts=%s updates=%s errors=%s', importId, validCandidates.length, inserts.length, updates.length, errors.length);
 
     const importedCustomerMap = new Map();
     validCandidates.forEach((candidate) => {
@@ -1125,9 +1443,36 @@ async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}
         matched: previewMatchedAddressCandidates.length,
         unmatched: Math.max(0, direccionesRows.length - previewMatchedAddressCandidates.length)
     };
+    console.log('[ERP-IMPORT][SERVICE] addresses prepared importId=%s matched=%s unmatched=%s', importId, addressSummary.matched, addressSummary.unmatched);
+
+    setErpImportProgress(importId, {
+        status: mode === 'preview' ? 'preview_ready' : 'running',
+        phase: mode === 'preview' ? 'preview' : 'ready',
+        message: mode === 'preview'
+            ? 'Vista previa lista.'
+            : 'Validacion lista. Preparando escritura en base de datos.',
+        counts: {
+            totalRows: total,
+            validRows: validCandidates.length,
+            insertRows: inserts.length,
+            updateRows: updates.length,
+            errorRows: errors.length,
+            addressTotal: addressSummary.total,
+            addressMatched: addressSummary.matched,
+            addressUnmatched: addressSummary.unmatched,
+            customersProcessed: 0,
+            customersInserted: 0,
+            customersUpdated: 0,
+            addressesProcessed: 0,
+            addressesInserted: 0,
+            addressesUpdated: 0
+        },
+        percent: mode === 'preview' ? 100 : 2
+    });
 
     if (mode === 'preview') {
         return {
+            importId,
             summary: {
                 total,
                 valid: validCandidates.length,
@@ -1136,7 +1481,7 @@ async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}
                 errors: errors.length
             },
             errors,
-            preview: validCandidates.slice(0, 5).map(buildErpCustomerPreview),
+            preview: validCandidates.slice(0, 5).map(buildAppSheetCustomerPreview),
             addressSummary
         };
     }
@@ -1146,150 +1491,363 @@ async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}
     const customerCounts = { inserted: 0, updated: 0, errors: errors.length };
     const addressCounts = { inserted: 0, updated: 0, errors: 0, unmatched: addressSummary.unmatched };
     const client = await pool.connect();
+    const totalWorkUnits = Math.max(1, validCandidates.length + previewMatchedAddressCandidates.length);
+
+    function updateCommitProgress(phase = 'running', message = '') {
+        const processedCustomers = customerCounts.inserted + customerCounts.updated;
+        const processedAddresses = addressCounts.inserted + addressCounts.updated;
+        const processedUnits = processedCustomers + processedAddresses;
+        const percent = Math.max(2, Math.min(99, Math.round((processedUnits / totalWorkUnits) * 100)));
+        setErpImportProgress(importId, {
+            status: 'running',
+            phase,
+            message,
+            counts: {
+                totalRows: total,
+                validRows: validCandidates.length,
+                insertRows: inserts.length,
+                updateRows: updates.length,
+                errorRows: errors.length,
+                addressTotal: addressSummary.total,
+                addressMatched: addressSummary.matched,
+                addressUnmatched: addressSummary.unmatched,
+                customersProcessed: processedCustomers,
+                customersInserted: customerCounts.inserted,
+                customersUpdated: customerCounts.updated,
+                addressesProcessed: processedAddresses,
+                addressesInserted: addressCounts.inserted,
+                addressesUpdated: addressCounts.updated
+            },
+            percent
+        });
+    }
 
     try {
+        console.log('[ERP-IMPORT][SERVICE] opening transaction importId=%s', importId);
         await client.query('BEGIN');
+        updateCommitProgress('customers', 'Importando clientes a la base de datos.');
+        console.log('[ERP-IMPORT][SERVICE] begin ok importId=%s', importId);
+        throwIfErpImportCancelled(importId);
 
+        const insertCandidates = [];
+        const updateCandidates = [];
         for (const candidate of validCandidates) {
             const existing = existingByErpId.get(candidate.erpId) || null;
-            const profile = {
-                treatmentId: candidate.treatmentId,
-                firstNames: candidate.firstName,
-                lastNamePaternal: candidate.lastNamePaternal,
-                lastNameMaternal: candidate.lastNameMaternal,
-                documentNumber: candidate.documentNumber,
-                documentTypeId: candidate.documentTypeId,
-                customerTypeId: candidate.customerTypeId,
-                sourceId: candidate.acquisitionSourceId,
-                employeeId: candidate.erpEmployeeId,
-                referredById: candidate.referralCustomerId,
-                erpId: candidate.erpId,
-                contactType: candidate.contactType
-            };
-            const metadata = {
-                erpImport: {
-                    erpId: candidate.erpId,
-                    importedAt: nowIso(),
-                    source: 'erp_csv',
-                    contactType: candidate.contactType
-                },
-                contactType: candidate.contactType
-            };
-
             if (existing) {
-                await client.query(
-                    `UPDATE tenant_customers
-                     SET
-                        module_id = $3,
-                        contact_name = $4,
-                        phone_e164 = $5,
-                        phone_alt = $6,
-                        email = $7,
-                        treatment_id = $8,
-                        first_name = $9,
-                        last_name_paternal = $10,
-                        last_name_maternal = $11,
-                        document_type_id = $12,
-                        document_number = $13,
-                        customer_type_id = $14,
-                        acquisition_source_id = $15,
-                        profile = $16::jsonb,
-                        metadata = COALESCE(metadata, '{}'::jsonb) || $17::jsonb,
-                        erp_id = $18,
-                        erp_employee_id = $19,
-                        referral_customer_id = $20,
-                        is_active = TRUE,
-                        updated_at = NOW()
-                     WHERE tenant_id = $1 AND customer_id = $2`,
-                    [
-                        cleanTenantId,
-                        existing.customer_id,
-                        candidate.moduleId,
-                        candidate.contactName,
-                        candidate.phoneE164,
-                        candidate.phoneAlt,
-                        candidate.email,
-                        candidate.treatmentId,
-                        candidate.firstName,
-                        candidate.lastNamePaternal,
-                        candidate.lastNameMaternal,
-                        candidate.documentTypeId,
-                        candidate.documentNumber,
-                        candidate.customerTypeId,
-                        candidate.acquisitionSourceId,
-                        JSON.stringify(profile),
-                        JSON.stringify(metadata),
-                        candidate.erpId,
-                        candidate.erpEmployeeId,
-                        candidate.referralCustomerId
-                    ]
-                );
-                importedCustomerMap.set(candidate.erpId, { ...candidate, customerId: existing.customer_id });
-                customerCounts.updated += 1;
-            } else {
-                const customerId = createCustomerId(existingIds);
-                existingIds.add(customerId);
-                await client.query(
-                    `INSERT INTO tenant_customers (
-                        tenant_id, customer_id, module_id, contact_name, phone_e164, phone_alt, email,
-                        treatment_id, first_name, last_name_paternal, last_name_maternal, document_type_id,
-                        document_number, customer_type_id, acquisition_source_id, notes, tags, profile, metadata,
-                        is_active, last_interaction_at, created_at, updated_at, erp_id, erp_employee_id,
-                        referral_customer_id, marketing_opt_in_status, marketing_opt_in_updated_at, marketing_opt_in_source
-                    ) VALUES (
-                        $1, $2, $3, $4, $5, $6, $7,
-                        $8, $9, $10, $11, $12,
-                        $13, $14, $15, NULL, '[]'::jsonb, $16::jsonb, $17::jsonb,
-                        TRUE, NULL, $18, NOW(), $19, $20,
-                        $21, $22, NOW(), 'erp_import'
-                    )`,
-                    [
-                        cleanTenantId,
-                        customerId,
-                        candidate.moduleId,
-                        candidate.contactName,
-                        candidate.phoneE164,
-                        candidate.phoneAlt,
-                        candidate.email,
-                        candidate.treatmentId,
-                        candidate.firstName,
-                        candidate.lastNamePaternal,
-                        candidate.lastNameMaternal,
-                        candidate.documentTypeId,
-                        candidate.documentNumber,
-                        candidate.customerTypeId,
-                        candidate.acquisitionSourceId,
-                        JSON.stringify(profile),
-                        JSON.stringify(metadata),
-                        candidate.createdAt || nowIso(),
-                        candidate.erpId,
-                        candidate.erpEmployeeId,
-                        candidate.referralCustomerId,
-                        candidate.marketingOptInStatus === 'opted_in' ? 'opted_in' : 'unknown'
-                    ]
-                );
-                if (candidate.moduleId) {
+                updateCandidates.push({ candidate, existing });
+                continue;
+            }
+            const customerId = createCustomerId(existingIds);
+            existingIds.add(customerId);
+            importedCustomerMap.set(candidate.erpId, { ...candidate, customerId });
+            insertCandidates.push({ candidate, customerId });
+        }
+
+        let insertChunkIndex = 0;
+        for (const chunk of chunkArray(insertCandidates, ERP_IMPORT_BATCH_SIZE)) {
+            throwIfErpImportCancelled(importId);
+            insertChunkIndex += 1;
+            await runChunkWithSavepoint(
+                client,
+                `sp_insert_customers_${insertChunkIndex}`,
+                chunk,
+                async (entries) => {
+                    const values = [];
+                    const placeholders = entries.map((entry, index) => {
+                        const candidate = entry.candidate;
+                        const profile = buildAppSheetCustomerProfile(candidate);
+                        const metadata = buildAppSheetCustomerMetadata(candidate);
+                        const offset = index * 38;
+                        values.push(
+                            cleanTenantId,
+                            entry.customerId,
+                            candidate.moduleId,
+                            candidate.contactName,
+                            candidate.phoneE164,
+                            candidate.phoneAlt,
+                            candidate.email,
+                            candidate.treatmentId,
+                            candidate.firstName,
+                            candidate.lastNamePaternal,
+                            candidate.lastNameMaternal,
+                            candidate.documentTypeId,
+                            candidate.documentNumber,
+                            candidate.customerTypeId,
+                            candidate.acquisitionSourceId,
+                            candidate.notes,
+                            JSON.stringify(profile),
+                            JSON.stringify(metadata),
+                            candidate.createdAt || nowIso(),
+                            candidate.erpId,
+                            candidate.erpEmployeeId,
+                            candidate.referralCustomerId,
+                            candidate.marketingOptInStatus,
+                            candidate.diasUltimaCompra,
+                            candidate.ultimoPedidoId,
+                            candidate.ultimaFechaCompra,
+                            candidate.primeraFechaCompra,
+                            candidate.primerPedidoId,
+                            candidate.comprasTotal,
+                            candidate.compras120,
+                            candidate.monto120,
+                            candidate.compras180,
+                            candidate.monto180,
+                            candidate.ticketProm180,
+                            candidate.montoAcumulado,
+                            candidate.segmento,
+                            candidate.realizoCompra,
+                            candidate.cadenciaPromDias,
+                            candidate.rangoCompras
+                        );
+                        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13}, $${offset + 14}, $${offset + 15}, $${offset + 16}, '[]'::jsonb, $${offset + 17}::jsonb, $${offset + 18}::jsonb, TRUE, NULL, $${offset + 19}, NOW(), $${offset + 20}, $${offset + 21}, $${offset + 22}, $${offset + 23}, NOW(), 'appsheet_import', $${offset + 24}, $${offset + 25}, $${offset + 26}::date, $${offset + 27}::date, $${offset + 28}, $${offset + 29}, $${offset + 30}, $${offset + 31}, $${offset + 32}, $${offset + 33}, $${offset + 34}, $${offset + 35}, $${offset + 36}, $${offset + 37}, $${offset + 38})`;
+                    });
+                    await client.query(
+                        `INSERT INTO tenant_customers (
+                            tenant_id, customer_id, module_id, contact_name, phone_e164, phone_alt, email,
+                            treatment_id, first_name, last_name_paternal, last_name_maternal, document_type_id,
+                            document_number, customer_type_id, acquisition_source_id, notes, tags, profile, metadata,
+                            is_active, last_interaction_at, created_at, updated_at, erp_id, erp_employee_id,
+                            referral_customer_id, marketing_opt_in_status, marketing_opt_in_updated_at, marketing_opt_in_source,
+                            dias_ultima_compra, ultimo_pedido_id, ultima_fecha_compra, primera_fecha_compra,
+                            primer_pedido_id, compras_total, compras_120, monto_120, compras_180, monto_180,
+                            ticket_prom_180, monto_acumulado, segmento, realizo_compra, cadencia_prom_dias, rango_compras
+                        ) VALUES ${placeholders.join(', ')}`,
+                        values
+                    );
+                    customerCounts.inserted += entries.length;
+                    updateCommitProgress('customers', `Procesando clientes ${customerCounts.inserted + customerCounts.updated} de ${validCandidates.length}.`);
+                },
+                async (entry) => {
+                    const candidate = entry.candidate;
+                    const profile = buildAppSheetCustomerProfile(candidate);
+                    const metadata = buildAppSheetCustomerMetadata(candidate);
+                    try {
+                        await client.query(
+                            `INSERT INTO tenant_customers (
+                                tenant_id, customer_id, module_id, contact_name, phone_e164, phone_alt, email,
+                                treatment_id, first_name, last_name_paternal, last_name_maternal, document_type_id,
+                                document_number, customer_type_id, acquisition_source_id, notes, tags, profile, metadata,
+                                is_active, last_interaction_at, created_at, updated_at, erp_id, erp_employee_id,
+                                referral_customer_id, marketing_opt_in_status, marketing_opt_in_updated_at, marketing_opt_in_source,
+                                dias_ultima_compra, ultimo_pedido_id, ultima_fecha_compra, primera_fecha_compra,
+                                primer_pedido_id, compras_total, compras_120, monto_120, compras_180, monto_180,
+                                ticket_prom_180, monto_acumulado, segmento, realizo_compra, cadencia_prom_dias, rango_compras
+                            ) VALUES (
+                                $1, $2, $3, $4, $5, $6, $7,
+                                $8, $9, $10, $11, $12,
+                                $13, $14, $15, $16, '[]'::jsonb, $17::jsonb, $18::jsonb,
+                                TRUE, NULL, $19, NOW(), $20, $21,
+                                $22, $23, NOW(), 'appsheet_import',
+                                $24, $25, $26::date, $27::date,
+                                $28, $29, $30, $31, $32, $33,
+                                $34, $35, $36, $37, $38, $39
+                            )`,
+                            [
+                                cleanTenantId, entry.customerId, candidate.moduleId, candidate.contactName, candidate.phoneE164, candidate.phoneAlt, candidate.email,
+                                candidate.treatmentId, candidate.firstName, candidate.lastNamePaternal, candidate.lastNameMaternal, candidate.documentTypeId,
+                                candidate.documentNumber, candidate.customerTypeId, candidate.acquisitionSourceId, candidate.notes, JSON.stringify(profile), JSON.stringify(metadata),
+                                candidate.createdAt || nowIso(), candidate.erpId, candidate.erpEmployeeId,
+                                candidate.referralCustomerId, candidate.marketingOptInStatus, candidate.diasUltimaCompra, candidate.ultimoPedidoId,
+                                candidate.ultimaFechaCompra, candidate.primeraFechaCompra, candidate.primerPedidoId, candidate.comprasTotal, candidate.compras120,
+                                candidate.monto120, candidate.compras180, candidate.monto180, candidate.ticketProm180, candidate.montoAcumulado,
+                                candidate.segmento, candidate.realizoCompra, candidate.cadenciaPromDias, candidate.rangoCompras
+                            ]
+                        );
+                        customerCounts.inserted += 1;
+                    } catch (error) {
+                        errors.push({ row: candidate.rowNumber, erp_id: candidate.erpId, field: 'commit', message: String(error?.message || error) });
+                        customerCounts.errors += 1;
+                    }
+                    updateCommitProgress('customers', `Procesando clientes ${customerCounts.inserted + customerCounts.updated} de ${validCandidates.length}.`);
+                }
+            );
+        }
+
+        const contextRows = insertCandidates
+            .filter((entry) => entry.candidate.moduleId)
+            .map((entry) => ({
+                customerId: entry.customerId,
+                moduleId: entry.candidate.moduleId,
+                marketingOptInStatus: entry.candidate.marketingOptInStatus
+            }));
+        let contextChunkIndex = 0;
+        for (const chunk of chunkArray(contextRows, ERP_IMPORT_BATCH_SIZE)) {
+            throwIfErpImportCancelled(importId);
+            contextChunkIndex += 1;
+            await runChunkWithSavepoint(
+                client,
+                `sp_insert_contexts_${contextChunkIndex}`,
+                chunk,
+                async (entries) => {
+                    const values = [];
+                    const placeholders = entries.map((entry, index) => {
+                        const offset = index * 4;
+                        values.push(cleanTenantId, entry.customerId, entry.moduleId, entry.marketingOptInStatus);
+                        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, NOW(), 'appsheet_import', 'nuevo', '[]'::jsonb, '{}'::jsonb, NOW(), NOW())`;
+                    });
                     await client.query(
                         `INSERT INTO tenant_customer_module_contexts (
                             tenant_id, customer_id, module_id, marketing_opt_in_status, marketing_opt_in_updated_at,
                             marketing_opt_in_source, commercial_status, labels, metadata, created_at, updated_at
-                        ) VALUES (
-                            $1, $2, $3, $4, NOW(), 'erp_import', 'nuevo', '[]'::jsonb, '{}'::jsonb, NOW(), NOW()
-                        )
+                        ) VALUES ${placeholders.join(', ')}
                         ON CONFLICT (tenant_id, customer_id, module_id)
-                        DO UPDATE SET
-                            updated_at = NOW()`,
-                        [
-                            cleanTenantId,
-                            customerId,
-                            candidate.moduleId,
-                            candidate.marketingOptInStatus
-                        ]
+                        DO UPDATE SET updated_at = NOW()`,
+                        values
                     );
+                },
+                async (entry) => {
+                    try {
+                        await client.query(
+                            `INSERT INTO tenant_customer_module_contexts (
+                                tenant_id, customer_id, module_id, marketing_opt_in_status, marketing_opt_in_updated_at,
+                                marketing_opt_in_source, commercial_status, labels, metadata, created_at, updated_at
+                            ) VALUES (
+                                $1, $2, $3, $4, NOW(), 'appsheet_import', 'nuevo', '[]'::jsonb, '{}'::jsonb, NOW(), NOW()
+                            )
+                            ON CONFLICT (tenant_id, customer_id, module_id)
+                            DO UPDATE SET updated_at = NOW()`,
+                            [cleanTenantId, entry.customerId, entry.moduleId, entry.marketingOptInStatus]
+                        );
+                    } catch (error) {
+                        errors.push({ row: 0, erp_id: entry.customerId, field: 'module_context', message: String(error?.message || error) });
+                        customerCounts.errors += 1;
+                    }
                 }
-                importedCustomerMap.set(candidate.erpId, { ...candidate, customerId });
-                customerCounts.inserted += 1;
-            }
+            );
+        }
+
+        let updateChunkIndex = 0;
+        for (const chunk of chunkArray(updateCandidates, ERP_IMPORT_BATCH_SIZE)) {
+            throwIfErpImportCancelled(importId);
+            updateChunkIndex += 1;
+            await runChunkWithSavepoint(
+                client,
+                `sp_update_customers_${updateChunkIndex}`,
+                chunk,
+                async (entries) => {
+                    for (const { candidate, existing } of entries) {
+                        const profile = buildAppSheetCustomerProfile(candidate);
+                        const metadata = buildAppSheetCustomerMetadata(candidate);
+                        await client.query(
+                            `UPDATE tenant_customers
+                             SET
+                                module_id = $3,
+                                contact_name = $4,
+                                phone_e164 = $5,
+                                phone_alt = $6,
+                                email = $7,
+                                treatment_id = $8,
+                                first_name = $9,
+                                last_name_paternal = $10,
+                                last_name_maternal = $11,
+                                document_type_id = $12,
+                                document_number = $13,
+                                customer_type_id = $14,
+                                acquisition_source_id = $15,
+                                notes = $16,
+                                profile = $17::jsonb,
+                                metadata = COALESCE(metadata, '{}'::jsonb) || $18::jsonb,
+                                erp_id = $19,
+                                erp_employee_id = $20,
+                                referral_customer_id = $21,
+                                dias_ultima_compra = $22,
+                                ultimo_pedido_id = $23,
+                                ultima_fecha_compra = $24::date,
+                                primera_fecha_compra = $25::date,
+                                primer_pedido_id = $26,
+                                compras_total = $27,
+                                compras_120 = $28,
+                                monto_120 = $29,
+                                compras_180 = $30,
+                                monto_180 = $31,
+                                ticket_prom_180 = $32,
+                                monto_acumulado = $33,
+                                segmento = $34,
+                                realizo_compra = $35,
+                                cadencia_prom_dias = $36,
+                                rango_compras = $37,
+                                is_active = TRUE,
+                                updated_at = NOW()
+                             WHERE tenant_id = $1 AND customer_id = $2`,
+                            [
+                                cleanTenantId, existing.customer_id, candidate.moduleId, candidate.contactName, candidate.phoneE164, candidate.phoneAlt, candidate.email,
+                                candidate.treatmentId, candidate.firstName, candidate.lastNamePaternal, candidate.lastNameMaternal, candidate.documentTypeId,
+                                candidate.documentNumber, candidate.customerTypeId, candidate.acquisitionSourceId, candidate.notes, JSON.stringify(profile),
+                                JSON.stringify(metadata), candidate.erpId, candidate.erpEmployeeId, candidate.referralCustomerId, candidate.diasUltimaCompra,
+                                candidate.ultimoPedidoId, candidate.ultimaFechaCompra, candidate.primeraFechaCompra, candidate.primerPedidoId, candidate.comprasTotal,
+                                candidate.compras120, candidate.monto120, candidate.compras180, candidate.monto180, candidate.ticketProm180,
+                                candidate.montoAcumulado, candidate.segmento, candidate.realizoCompra, candidate.cadenciaPromDias, candidate.rangoCompras
+                            ]
+                        );
+                        importedCustomerMap.set(candidate.erpId, { ...candidate, customerId: existing.customer_id });
+                        customerCounts.updated += 1;
+                        updateCommitProgress('customers', `Procesando clientes ${customerCounts.inserted + customerCounts.updated} de ${validCandidates.length}.`);
+                    }
+                },
+                async ({ candidate, existing }) => {
+                    const profile = buildAppSheetCustomerProfile(candidate);
+                    const metadata = buildAppSheetCustomerMetadata(candidate);
+                    try {
+                        await client.query(
+                            `UPDATE tenant_customers
+                             SET
+                                module_id = $3,
+                                contact_name = $4,
+                                phone_e164 = $5,
+                                phone_alt = $6,
+                                email = $7,
+                                treatment_id = $8,
+                                first_name = $9,
+                                last_name_paternal = $10,
+                                last_name_maternal = $11,
+                                document_type_id = $12,
+                                document_number = $13,
+                                customer_type_id = $14,
+                                acquisition_source_id = $15,
+                                notes = $16,
+                                profile = $17::jsonb,
+                                metadata = COALESCE(metadata, '{}'::jsonb) || $18::jsonb,
+                                erp_id = $19,
+                                erp_employee_id = $20,
+                                referral_customer_id = $21,
+                                dias_ultima_compra = $22,
+                                ultimo_pedido_id = $23,
+                                ultima_fecha_compra = $24::date,
+                                primera_fecha_compra = $25::date,
+                                primer_pedido_id = $26,
+                                compras_total = $27,
+                                compras_120 = $28,
+                                monto_120 = $29,
+                                compras_180 = $30,
+                                monto_180 = $31,
+                                ticket_prom_180 = $32,
+                                monto_acumulado = $33,
+                                segmento = $34,
+                                realizo_compra = $35,
+                                cadencia_prom_dias = $36,
+                                rango_compras = $37,
+                                is_active = TRUE,
+                                updated_at = NOW()
+                             WHERE tenant_id = $1 AND customer_id = $2`,
+                            [
+                                cleanTenantId, existing.customer_id, candidate.moduleId, candidate.contactName, candidate.phoneE164, candidate.phoneAlt, candidate.email,
+                                candidate.treatmentId, candidate.firstName, candidate.lastNamePaternal, candidate.lastNameMaternal, candidate.documentTypeId,
+                                candidate.documentNumber, candidate.customerTypeId, candidate.acquisitionSourceId, candidate.notes, JSON.stringify(profile),
+                                JSON.stringify(metadata), candidate.erpId, candidate.erpEmployeeId, candidate.referralCustomerId, candidate.diasUltimaCompra,
+                                candidate.ultimoPedidoId, candidate.ultimaFechaCompra, candidate.primeraFechaCompra, candidate.primerPedidoId, candidate.comprasTotal,
+                                candidate.compras120, candidate.monto120, candidate.compras180, candidate.monto180, candidate.ticketProm180,
+                                candidate.montoAcumulado, candidate.segmento, candidate.realizoCompra, candidate.cadenciaPromDias, candidate.rangoCompras
+                            ]
+                        );
+                        importedCustomerMap.set(candidate.erpId, { ...candidate, customerId: existing.customer_id });
+                        customerCounts.updated += 1;
+                    } catch (error) {
+                        errors.push({ row: candidate.rowNumber, erp_id: candidate.erpId, field: 'commit', message: String(error?.message || error) });
+                        customerCounts.errors += 1;
+                    }
+                    updateCommitProgress('customers', `Procesando clientes ${customerCounts.inserted + customerCounts.updated} de ${validCandidates.length}.`);
+                }
+            );
         }
 
         const matchedAddressCandidates = addressCandidatesAll
@@ -1304,6 +1862,7 @@ async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}
             .filter((address) => address.customerId);
 
         if (matchedAddressCandidates.length > 0) {
+            updateCommitProgress('addresses', 'Importando direcciones con match.');
             const customerIds = Array.from(new Set(matchedAddressCandidates.map((candidate) => candidate.customerId).filter(Boolean)));
             const existingAddressesResult = await client.query(
                 `SELECT *
@@ -1321,7 +1880,17 @@ async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}
                 addressesByCustomer.set(customerId, list);
             });
 
+            const addressUpdates = [];
+            const addressInserts = [];
+            const primaryInsertCustomerIds = new Set();
+            const primaryAssignedCustomerIds = new Set();
+
             for (const address of matchedAddressCandidates) {
+                throwIfErpImportCancelled(importId);
+                const effectiveIsPrimary = Boolean(address.isPrimary) && !primaryAssignedCustomerIds.has(address.customerId);
+                if (effectiveIsPrimary) {
+                    primaryAssignedCustomerIds.add(address.customerId);
+                }
                 const existingAddresses = addressesByCustomer.get(address.customerId) || [];
                 const normalizedFields = {
                     street: normalizeImportTextUpper(address.street),
@@ -1338,10 +1907,11 @@ async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}
                 };
                 const addressSignature = buildAddressSignature({
                     ...address,
-                    ...normalizedFields
+                    ...normalizedFields,
+                    isPrimary: effectiveIsPrimary
                 });
                 let target = null;
-                if (address.isPrimary) {
+                if (effectiveIsPrimary) {
                     target = existingAddresses.find((entry) => entry.is_primary === true) || null;
                 }
                 if (!target) {
@@ -1356,89 +1926,272 @@ async function importCustomersFromErp(tenantId = DEFAULT_TENANT_ID, payload = {}
                 }
 
                 if (target) {
-                    if (address.isPrimary) {
-                        await client.query(
-                            `UPDATE tenant_customer_addresses
-                             SET is_primary = FALSE, updated_at = NOW()
-                             WHERE tenant_id = $1 AND customer_id = $2 AND address_id <> $3 AND is_primary = TRUE`,
-                            [cleanTenantId, address.customerId, target.address_id]
-                        );
-                    }
-                    await client.query(
-                        `UPDATE tenant_customer_addresses
-                         SET
-                            address_type = $4,
-                            street = $5,
-                            reference = $6,
-                            maps_url = $7,
-                            wkt = $8,
-                            is_primary = $9,
-                            district_id = $10,
-                            metadata = COALESCE(metadata, '{}'::jsonb) || $11::jsonb,
-                            updated_at = NOW()
-                         WHERE tenant_id = $1 AND customer_id = $2 AND address_id = $3`,
-                        [
-                            cleanTenantId,
-                            address.customerId,
-                            target.address_id,
-                            address.isPrimary ? 'delivery' : 'other',
-                            normalizedFields.street,
-                            normalizedFields.reference,
-                            normalizedFields.maps_url,
-                            normalizedFields.wkt,
-                            address.isPrimary,
-                            normalizedFields.district_id,
-                            JSON.stringify(addressMetadata)
-                        ]
-                    );
-                    addressCounts.updated += 1;
+                    addressUpdates.push({
+                        address,
+                        target,
+                        normalizedFields,
+                        addressMetadata,
+                        isPrimary: effectiveIsPrimary
+                    });
                 } else {
-                    if (address.isPrimary) {
-                        await client.query(
-                            `UPDATE tenant_customer_addresses
-                             SET is_primary = FALSE, updated_at = NOW()
-                             WHERE tenant_id = $1 AND customer_id = $2 AND is_primary = TRUE`,
-                            [cleanTenantId, address.customerId]
-                        );
-                    }
-                    await client.query(
-                        `INSERT INTO tenant_customer_addresses (
-                            address_id, tenant_id, customer_id, address_type, street, reference, maps_url, wkt,
-                            latitude, longitude, is_primary, district_id, district_name, province_name, department_name,
-                            metadata, created_at, updated_at
-                        ) VALUES (
-                            $1, $2, $3, $4, $5, $6, $7, $8,
-                            NULL, NULL, $9, $10, NULL, NULL, NULL,
-                            $11::jsonb, NOW(), NOW()
-                        )`,
-                        [
-                            createErpAddressId(),
-                            cleanTenantId,
-                            address.customerId,
-                            address.isPrimary ? 'delivery' : 'other',
-                            normalizedFields.street,
-                            normalizedFields.reference,
-                            normalizedFields.maps_url,
-                            normalizedFields.wkt,
-                            address.isPrimary,
-                            normalizedFields.district_id,
-                            JSON.stringify(addressMetadata)
-                        ]
-                    );
-                    addressCounts.inserted += 1;
+                    if (effectiveIsPrimary) primaryInsertCustomerIds.add(address.customerId);
+                    addressInserts.push({
+                        addressId: createErpAddressId(),
+                        customerId: address.customerId,
+                        addressType: effectiveIsPrimary ? 'delivery' : 'other',
+                        normalizedFields,
+                        addressMetadata,
+                        isPrimary: effectiveIsPrimary
+                    });
                 }
+            }
+
+            if (primaryInsertCustomerIds.size > 0) {
+                throwIfErpImportCancelled(importId);
+                await client.query(
+                    `UPDATE tenant_customer_addresses
+                     SET is_primary = FALSE, updated_at = NOW()
+                     WHERE tenant_id = $1
+                       AND customer_id = ANY($2::text[])
+                       AND is_primary = TRUE`,
+                    [cleanTenantId, Array.from(primaryInsertCustomerIds)]
+                );
+            }
+
+            let addressInsertChunkIndex = 0;
+            for (const chunk of chunkArray(addressInserts, ERP_IMPORT_BATCH_SIZE)) {
+                throwIfErpImportCancelled(importId);
+                addressInsertChunkIndex += 1;
+                await runChunkWithSavepoint(
+                    client,
+                    `sp_insert_addresses_${addressInsertChunkIndex}`,
+                    chunk,
+                    async (entries) => {
+                        const values = [];
+                        const placeholders = entries.map((entry, index) => {
+                            const offset = index * 11;
+                            values.push(
+                                entry.addressId,
+                                cleanTenantId,
+                                entry.customerId,
+                                entry.addressType,
+                                entry.normalizedFields.street,
+                                entry.normalizedFields.reference,
+                                entry.normalizedFields.maps_url,
+                                entry.normalizedFields.wkt,
+                                entry.isPrimary,
+                                entry.normalizedFields.district_id,
+                                JSON.stringify(entry.addressMetadata)
+                            );
+                            return `(
+                                $${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8},
+                                NULL, NULL, $${offset + 9}, $${offset + 10}, NULL, NULL, NULL,
+                                $${offset + 11}::jsonb, NOW(), NOW()
+                            )`;
+                        });
+                        await client.query(
+                            `INSERT INTO tenant_customer_addresses (
+                                address_id, tenant_id, customer_id, address_type, street, reference, maps_url, wkt,
+                                latitude, longitude, is_primary, district_id, district_name, province_name, department_name,
+                                metadata, created_at, updated_at
+                            ) VALUES ${placeholders.join(', ')}`,
+                            values
+                        );
+                        addressCounts.inserted += entries.length;
+                        updateCommitProgress('addresses', `Procesando direcciones ${addressCounts.inserted + addressCounts.updated} de ${matchedAddressCandidates.length}.`);
+                    },
+                    async (entry) => {
+                        try {
+                            await client.query(
+                                `INSERT INTO tenant_customer_addresses (
+                                    address_id, tenant_id, customer_id, address_type, street, reference, maps_url, wkt,
+                                    latitude, longitude, is_primary, district_id, district_name, province_name, department_name,
+                                    metadata, created_at, updated_at
+                                ) VALUES (
+                                    $1, $2, $3, $4, $5, $6, $7, $8,
+                                    NULL, NULL, $9, $10, NULL, NULL, NULL,
+                                    $11::jsonb, NOW(), NOW()
+                                )`,
+                                [
+                                    entry.addressId,
+                                    cleanTenantId,
+                                    entry.customerId,
+                                    entry.addressType,
+                                    entry.normalizedFields.street,
+                                    entry.normalizedFields.reference,
+                                    entry.normalizedFields.maps_url,
+                                    entry.normalizedFields.wkt,
+                                    entry.isPrimary,
+                                    entry.normalizedFields.district_id,
+                                    JSON.stringify(entry.addressMetadata)
+                                ]
+                            );
+                            addressCounts.inserted += 1;
+                        } catch (error) {
+                            errors.push({ row: 0, erp_id: entry.customerId, field: 'address_insert', message: String(error?.message || error) });
+                            addressCounts.errors += 1;
+                        }
+                        updateCommitProgress('addresses', `Procesando direcciones ${addressCounts.inserted + addressCounts.updated} de ${matchedAddressCandidates.length}.`);
+                    }
+                );
+            }
+
+            let addressUpdateChunkIndex = 0;
+            for (const chunk of chunkArray(addressUpdates, ERP_IMPORT_BATCH_SIZE)) {
+                throwIfErpImportCancelled(importId);
+                addressUpdateChunkIndex += 1;
+                await runChunkWithSavepoint(
+                    client,
+                    `sp_update_addresses_${addressUpdateChunkIndex}`,
+                    chunk,
+                    async (entries) => {
+                        for (const entry of entries) {
+                            if (entry.isPrimary) {
+                                await client.query(
+                                    `UPDATE tenant_customer_addresses
+                                     SET is_primary = FALSE, updated_at = NOW()
+                                     WHERE tenant_id = $1 AND customer_id = $2 AND address_id <> $3 AND is_primary = TRUE`,
+                                    [cleanTenantId, entry.address.customerId, entry.target.address_id]
+                                );
+                            }
+                            await client.query(
+                                `UPDATE tenant_customer_addresses
+                                 SET
+                                    address_type = $4,
+                                    street = $5,
+                                    reference = $6,
+                                    maps_url = $7,
+                                    wkt = $8,
+                                    is_primary = $9,
+                                    district_id = $10,
+                                    metadata = COALESCE(metadata, '{}'::jsonb) || $11::jsonb,
+                                    updated_at = NOW()
+                                 WHERE tenant_id = $1 AND customer_id = $2 AND address_id = $3`,
+                                [
+                                    cleanTenantId,
+                                    entry.address.customerId,
+                                    entry.target.address_id,
+                                    entry.isPrimary ? 'delivery' : 'other',
+                                    entry.normalizedFields.street,
+                                    entry.normalizedFields.reference,
+                                    entry.normalizedFields.maps_url,
+                                    entry.normalizedFields.wkt,
+                                    entry.isPrimary,
+                                    entry.normalizedFields.district_id,
+                                    JSON.stringify(entry.addressMetadata)
+                                ]
+                            );
+                            addressCounts.updated += 1;
+                            updateCommitProgress('addresses', `Procesando direcciones ${addressCounts.inserted + addressCounts.updated} de ${matchedAddressCandidates.length}.`);
+                        }
+                    },
+                    async (entry) => {
+                        try {
+                            if (entry.isPrimary) {
+                                await client.query(
+                                    `UPDATE tenant_customer_addresses
+                                     SET is_primary = FALSE, updated_at = NOW()
+                                     WHERE tenant_id = $1 AND customer_id = $2 AND address_id <> $3 AND is_primary = TRUE`,
+                                    [cleanTenantId, entry.address.customerId, entry.target.address_id]
+                                );
+                            }
+                            await client.query(
+                                `UPDATE tenant_customer_addresses
+                                 SET
+                                    address_type = $4,
+                                    street = $5,
+                                    reference = $6,
+                                    maps_url = $7,
+                                    wkt = $8,
+                                    is_primary = $9,
+                                    district_id = $10,
+                                    metadata = COALESCE(metadata, '{}'::jsonb) || $11::jsonb,
+                                    updated_at = NOW()
+                                 WHERE tenant_id = $1 AND customer_id = $2 AND address_id = $3`,
+                                [
+                                    cleanTenantId,
+                                    entry.address.customerId,
+                                    entry.target.address_id,
+                                    entry.isPrimary ? 'delivery' : 'other',
+                                    entry.normalizedFields.street,
+                                    entry.normalizedFields.reference,
+                                    entry.normalizedFields.maps_url,
+                                    entry.normalizedFields.wkt,
+                                    entry.isPrimary,
+                                    entry.normalizedFields.district_id,
+                                    JSON.stringify(entry.addressMetadata)
+                                ]
+                            );
+                            addressCounts.updated += 1;
+                        } catch (error) {
+                            errors.push({ row: entry.address.rowNumber || 0, erp_id: entry.address.erpId, field: 'address_update', message: String(error?.message || error) });
+                            addressCounts.errors += 1;
+                        }
+                        updateCommitProgress('addresses', `Procesando direcciones ${addressCounts.inserted + addressCounts.updated} de ${matchedAddressCandidates.length}.`);
+                    }
+                );
             }
         }
 
         await client.query('COMMIT');
+        console.log('[ERP-IMPORT][SERVICE] commit ok importId=%s customersInserted=%s customersUpdated=%s addressesInserted=%s addressesUpdated=%s', importId, customerCounts.inserted, customerCounts.updated, addressCounts.inserted, addressCounts.updated);
+        setErpImportProgress(importId, {
+            status: 'completed',
+            phase: 'completed',
+            message: 'Importacion AppSheet completada.',
+            finishedAt: nowIso(),
+            counts: {
+                totalRows: total,
+                validRows: validCandidates.length,
+                insertRows: inserts.length,
+                updateRows: updates.length,
+                errorRows: errors.length,
+                addressTotal: addressSummary.total,
+                addressMatched: addressSummary.matched,
+                addressUnmatched: addressSummary.unmatched,
+                customersProcessed: customerCounts.inserted + customerCounts.updated,
+                customersInserted: customerCounts.inserted,
+                customersUpdated: customerCounts.updated,
+                addressesProcessed: addressCounts.inserted + addressCounts.updated,
+                addressesInserted: addressCounts.inserted,
+                addressesUpdated: addressCounts.updated
+            },
+            percent: 100
+        });
     } catch (error) {
         await client.query('ROLLBACK');
+        console.error('[ERP-IMPORT][SERVICE] rollback importId=%s error=%s', importId, error?.message || error);
+        const wasCancelled = error?.code === 'ERP_IMPORT_CANCELLED';
+        setErpImportProgress(importId, {
+            status: wasCancelled ? 'cancelled' : 'failed',
+            phase: wasCancelled ? 'cancelled' : 'failed',
+            message: wasCancelled ? 'Importacion AppSheet cancelada. No se aplicaron cambios.' : 'La importacion AppSheet fallo.',
+            finishedAt: nowIso(),
+            error: wasCancelled ? '' : String(error?.message || error || 'Error desconocido.'),
+            counts: {
+                totalRows: total,
+                validRows: validCandidates.length,
+                insertRows: inserts.length,
+                updateRows: updates.length,
+                errorRows: errors.length,
+                addressTotal: addressSummary.total,
+                addressMatched: addressSummary.matched,
+                addressUnmatched: addressSummary.unmatched,
+                customersProcessed: customerCounts.inserted + customerCounts.updated,
+                customersInserted: customerCounts.inserted,
+                customersUpdated: customerCounts.updated,
+                addressesProcessed: addressCounts.inserted + addressCounts.updated,
+                addressesInserted: addressCounts.inserted,
+                addressesUpdated: addressCounts.updated
+            }
+        });
         throw error;
     } finally {
         client.release();
     }
 
     return {
+        importId,
         customers: customerCounts,
         addresses: addressCounts,
         errors
@@ -1741,13 +2494,17 @@ async function upsertFromInteraction(tenantId = DEFAULT_TENANT_ID, payload = {})
 }
 
 module.exports = {
+    ensurePostgresSchema,
+    setErpImportProgress,
     listCustomers,
     getCustomer,
     getCustomerByPhone,
     getCustomerByPhoneWithAddresses,
     upsertCustomer,
     updateCustomer,
-    importCustomersFromErp,
+    importCustomersFromAppSheet,
+    getErpImportProgress,
+    cancelErpImportProgress,
     importCustomersCsv,
     upsertFromInteraction,
     listCustomerIdentities,

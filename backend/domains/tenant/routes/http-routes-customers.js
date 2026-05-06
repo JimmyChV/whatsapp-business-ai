@@ -12,13 +12,8 @@ const { parseCsvRows } = require('../helpers/customers-normalizers.helpers');
 
 const erpImportUpload = multer({ storage: multer.memoryStorage() });
 
-function normalizeCsvHeader(value = '') {
-    return String(value || '')
-        .trim()
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]+/g, '');
+function createImportRequestId(prefix = 'erpimp') {
+    return `${String(prefix || 'erpimp').trim() || 'erpimp'}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function decodeCsvBuffer(buffer) {
@@ -31,11 +26,11 @@ function decodeCsvBuffer(buffer) {
     }
 }
 
-function parseUploadedCsv(file) {
+function parseUploadedCsv(file, delimiter = ',') {
     if (!file?.buffer) return [];
-    const rows = parseCsvRows(decodeCsvBuffer(file.buffer), ',');
+    const rows = parseCsvRows(decodeCsvBuffer(file.buffer).replace(/^\uFEFF/, ''), delimiter);
     if (!Array.isArray(rows) || rows.length < 2) return [];
-    const headers = (rows[0] || []).map((entry) => normalizeCsvHeader(entry));
+    const headers = (rows[0] || []).map((entry) => String(entry || '').replace(/\uFEFF/g, '').trim());
     return rows.slice(1).map((row, index) => {
         const item = { __rowNumber: index + 2 };
         headers.forEach((header, headerIndex) => {
@@ -203,6 +198,10 @@ function registerTenantCustomerHttpRoutes({
 
     app.post(
         '/api/admin/saas/tenants/:tenantId/customers/import-erp',
+        (req, _res, next) => {
+            console.log('[ERP-IMPORT][HTTP] incoming multipart request');
+            next();
+        },
         erpImportUpload.fields([
             { name: 'file_clientes', maxCount: 1 },
             { name: 'file_direcciones', maxCount: 1 }
@@ -216,6 +215,7 @@ function registerTenantCustomerHttpRoutes({
 
             try {
                 const mode = String(req.body?.mode || 'preview').trim().toLowerCase();
+                console.log('[ERP-IMPORT][HTTP] multipart parsed mode=%s tenant=%s', mode, tenantId);
                 if (mode !== 'preview' && mode !== 'commit') {
                     throw new Error('mode invalido. Usa preview o commit.');
                 }
@@ -225,19 +225,126 @@ function registerTenantCustomerHttpRoutes({
                 if (!fileClientes?.buffer) {
                     throw new Error('El archivo file_clientes es obligatorio.');
                 }
+                console.log(
+                    '[ERP-IMPORT][HTTP] files ready clientesBytes=%s direccionesBytes=%s',
+                    Number(fileClientes?.buffer?.length || 0),
+                    Number(fileDirecciones?.buffer?.length || 0)
+                );
 
-                const result = await customerService.importCustomersFromErp(tenantId, {
-                    clientesRows: parseUploadedCsv(fileClientes),
-                    direccionesRows: parseUploadedCsv(fileDirecciones),
+                const importId = String(req.body?.importId || '').trim() || createImportRequestId(mode === 'commit' ? 'erpcommit' : 'erppreview');
+                if (typeof customerService.setErpImportProgress === 'function') {
+                    customerService.setErpImportProgress(importId, {
+                        tenantId,
+                        mode,
+                        status: mode === 'preview' ? 'analyzing' : 'running',
+                        phase: 'parsing_clients',
+                        message: 'Leyendo exportacion de AppSheet...',
+                        percent: mode === 'preview' ? 5 : 1,
+                        counts: {}
+                    });
+                }
+                await new Promise((resolve) => setImmediate(resolve));
+
+                console.log('[ERP-IMPORT][HTTP] parsing clientes importId=%s', importId);
+                const clientesRows = parseUploadedCsv(fileClientes, ';');
+                console.log('[ERP-IMPORT][HTTP] parsed clientes rows=%s importId=%s', clientesRows.length, importId);
+
+                if (typeof customerService.setErpImportProgress === 'function') {
+                    customerService.setErpImportProgress(importId, {
+                        tenantId,
+                        mode,
+                        status: mode === 'preview' ? 'analyzing' : 'running',
+                        phase: 'parsing_addresses',
+                        message: fileDirecciones?.buffer
+                            ? 'Leyendo archivo de direcciones ERP...'
+                            : 'Validando clientes AppSheet...',
+                        percent: mode === 'preview' ? 15 : 3,
+                        counts: {
+                            totalRows: clientesRows.length
+                        }
+                    });
+                }
+                await new Promise((resolve) => setImmediate(resolve));
+
+                console.log('[ERP-IMPORT][HTTP] parsing direcciones importId=%s', importId);
+                const direccionesRows = parseUploadedCsv(fileDirecciones, ',');
+                console.log('[ERP-IMPORT][HTTP] parsed direcciones rows=%s importId=%s', direccionesRows.length, importId);
+
+                console.log('[ERP-IMPORT][HTTP] invoking service importId=%s mode=%s', importId, mode);
+                const result = await customerService.importCustomersFromAppSheet(tenantId, {
+                    importId,
+                    clientesRows,
+                    direccionesRows,
                     moduleId: String(req.body?.moduleId || '').trim(),
                     mode
                 });
+                console.log('[ERP-IMPORT][HTTP] service completed importId=%s mode=%s', importId, mode);
                 return res.json({ ok: true, tenantId, ...result });
             } catch (error) {
+                console.error('[ERP-IMPORT][HTTP] failed', error?.message, error?.stack);
                 return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo importar ERP.') });
             }
         }
     );
+
+    app.get('/api/admin/saas/tenants/:tenantId/customers/import-erp-progress', async (req, res) => {
+        const tenantId = String(req.params?.tenantId || '').trim();
+        if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+        if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_MANAGE)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const importId = String(req.query?.importId || '').trim();
+            if (!importId) {
+                return res.status(400).json({ ok: false, error: 'importId invalido.' });
+            }
+            const progress = customerService.getErpImportProgress(importId, tenantId);
+            if (!progress) {
+                return res.json({
+                    ok: true,
+                    tenantId,
+                    progress: {
+                        importId,
+                        tenantId,
+                        status: 'pending',
+                        phase: 'starting',
+                        mode: 'commit',
+                        message: 'Preparando importacion ERP...',
+                        percent: 1,
+                        counts: {}
+                    }
+                });
+            }
+            return res.json({ ok: true, tenantId, progress });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo consultar el progreso de la importacion ERP.') });
+        }
+    });
+
+    app.post('/api/admin/saas/tenants/:tenantId/customers/import-erp-cancel', async (req, res) => {
+        const tenantId = String(req.params?.tenantId || '').trim();
+        if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+        if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_MANAGE)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const importId = String(req.body?.importId || '').trim();
+            if (!importId) {
+                return res.status(400).json({ ok: false, error: 'importId invalido.' });
+            }
+            const progress = typeof customerService.cancelErpImportProgress === 'function'
+                ? customerService.cancelErpImportProgress(importId, tenantId)
+                : null;
+            if (!progress) {
+                return res.status(404).json({ ok: false, error: 'No se encontro una importacion activa para cancelar.' });
+            }
+            return res.json({ ok: true, tenantId, progress });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cancelar la importacion ERP.') });
+        }
+    });
 
     app.get('/api/tenant/customers', async (req, res) => {
         try {
