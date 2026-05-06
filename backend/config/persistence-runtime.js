@@ -158,6 +158,7 @@ module.exports = {
     DEFAULT_TENANT_ID,
     getStorageDriver,
     isPostgresDriver,
+    getPostgresPool,
     normalizeTenantId,
     getTenantDataDir,
     getTenantDataFilePath,

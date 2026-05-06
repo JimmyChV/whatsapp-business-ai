@@ -6,6 +6,46 @@
     return true;
 }
 
+const multer = require('multer');
+const { TextDecoder } = require('util');
+const { parseCsvRows } = require('../helpers/customers-normalizers.helpers');
+
+const erpImportUpload = multer({ storage: multer.memoryStorage() });
+
+function normalizeCsvHeader(value = '') {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '');
+}
+
+function decodeCsvBuffer(buffer) {
+    const safeBuffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from([]);
+    if (!safeBuffer.length) return '';
+    try {
+        return new TextDecoder('utf-8', { fatal: true }).decode(safeBuffer);
+    } catch (_) {
+        return new TextDecoder('latin1').decode(safeBuffer);
+    }
+}
+
+function parseUploadedCsv(file) {
+    if (!file?.buffer) return [];
+    const rows = parseCsvRows(decodeCsvBuffer(file.buffer), ',');
+    if (!Array.isArray(rows) || rows.length < 2) return [];
+    const headers = (rows[0] || []).map((entry) => normalizeCsvHeader(entry));
+    return rows.slice(1).map((row, index) => {
+        const item = { __rowNumber: index + 2 };
+        headers.forEach((header, headerIndex) => {
+            if (!header) return;
+            item[header] = String(row?.[headerIndex] || '').trim();
+        });
+        return item;
+    }).filter((item) => Object.keys(item).some((key) => key !== '__rowNumber' && String(item[key] || '').trim()));
+}
+
 function registerTenantCustomerHttpRoutes({
     app,
     authService,
@@ -160,6 +200,44 @@ function registerTenantCustomerHttpRoutes({
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo importar CSV de clientes.') });
         }
     });
+
+    app.post(
+        '/api/admin/saas/tenants/:tenantId/customers/import-erp',
+        erpImportUpload.fields([
+            { name: 'file_clientes', maxCount: 1 },
+            { name: 'file_direcciones', maxCount: 1 }
+        ]),
+        async (req, res) => {
+            const tenantId = String(req.params?.tenantId || '').trim();
+            if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+            if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_MANAGE)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+
+            try {
+                const mode = String(req.body?.mode || 'preview').trim().toLowerCase();
+                if (mode !== 'preview' && mode !== 'commit') {
+                    throw new Error('mode invalido. Usa preview o commit.');
+                }
+
+                const fileClientes = Array.isArray(req.files?.file_clientes) ? req.files.file_clientes[0] : null;
+                const fileDirecciones = Array.isArray(req.files?.file_direcciones) ? req.files.file_direcciones[0] : null;
+                if (!fileClientes?.buffer) {
+                    throw new Error('El archivo file_clientes es obligatorio.');
+                }
+
+                const result = await customerService.importCustomersFromErp(tenantId, {
+                    clientesRows: parseUploadedCsv(fileClientes),
+                    direccionesRows: parseUploadedCsv(fileDirecciones),
+                    moduleId: String(req.body?.moduleId || '').trim(),
+                    mode
+                });
+                return res.json({ ok: true, tenantId, ...result });
+            } catch (error) {
+                return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo importar ERP.') });
+            }
+        }
+    );
 
     app.get('/api/tenant/customers', async (req, res) => {
         try {
