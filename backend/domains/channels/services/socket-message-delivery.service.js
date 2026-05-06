@@ -264,7 +264,7 @@ function createSocketMessageDeliveryService({
                  scopedChatId: buildScopedChatId(targetChatId, scopeModuleId || '')
              };
          };
-           socket.on('send_message', async ({ to, toPhone, body, quotedMessageId }) => {
+         socket.on('send_message', async ({ to, toPhone, body, quotedMessageId, quotedMessage }) => {
              if (!guardRateLimit(socket, 'send_message')) return;
              if (!transportOrchestrator.ensureTransportReady(socket, { action: 'enviar mensajes', errorEvent: 'error' })) return;
              try {
@@ -314,16 +314,16 @@ function createSocketMessageDeliveryService({
                  if (sentMessageId && agentMeta) {
                      rememberOutgoingAgentMeta(sentMessageId, agentMeta);
                  }
-                     await emitRealtimeOutgoingMessage({
-                     sentMessage,
-                     fallbackChatId: target.targetChatId,
-                     fallbackBody: text,
-                     quotedMessageId: quoted,
-                     quotedMessage: null,
-                     moduleContext,
-                     agentMeta,
-                     mediaPayload: null
-                 });
+                 await emitRealtimeOutgoingMessage({
+                    sentMessage,
+                    fallbackChatId: target.targetChatId,
+                    fallbackBody: text,
+                    quotedMessageId: quoted,
+                    quotedMessage,
+                    moduleContext,
+                    agentMeta,
+                    mediaPayload: null
+                });
                    await recordConversationEvent({
                      chatId: target.targetChatId,
                      scopeModuleId: target.scopeModuleId,
@@ -403,7 +403,7 @@ function createSocketMessageDeliveryService({
              if (!guardRateLimit(socket, 'send_media_message')) return;
              if (!transportOrchestrator.ensureTransportReady(socket, { action: 'enviar adjuntos', errorEvent: 'error' })) return;
              try {
-                 const { to, toPhone, body, mediaData, mimetype, filename, isPtt, quotedMessageId } = data || {};
+                 const { to, toPhone, body, mediaData, mimetype, filename, isPtt, quotedMessageId, quotedMessage } = data || {};
                  if (isPtt) {
                      socket.emit('error', 'El envio de notas de voz esta deshabilitado temporalmente.');
                      return;
@@ -428,15 +428,15 @@ function createSocketMessageDeliveryService({
                  if (sentMessageId && agentMeta) {
                      rememberOutgoingAgentMeta(sentMessageId, agentMeta);
                  }
-                   await emitRealtimeOutgoingMessage({
-                     sentMessage,
-                     fallbackChatId: target.targetChatId,
-                     fallbackBody: caption,
-                     quotedMessageId: quoted,
-                     quotedMessage: null,
-                     moduleContext,
-                     agentMeta,
-                     mediaPayload: {
+                 await emitRealtimeOutgoingMessage({
+                    sentMessage,
+                    fallbackChatId: target.targetChatId,
+                    fallbackBody: caption,
+                    quotedMessageId: quoted,
+                    quotedMessage,
+                    moduleContext,
+                    agentMeta,
+                    mediaPayload: {
                          data: String(mediaData || ''),
                          mimetype: String(mimetype || '').trim() || null,
                          filename: String(filename || '').trim() || null,
@@ -621,7 +621,6 @@ function createSocketMessageDeliveryService({
 module.exports = {
     createSocketMessageDeliveryService
 };
-
 
 
 

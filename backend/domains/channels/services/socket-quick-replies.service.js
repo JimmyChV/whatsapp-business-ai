@@ -83,6 +83,9 @@ function createSocketQuickRepliesService({
                 }
 
                 const quoted = String(payload?.quotedMessageId || '').trim();
+                const quotedMessage = payload?.quotedMessage && typeof payload.quotedMessage === 'object'
+                    ? payload.quotedMessage
+                    : null;
                 const target = await resolveScopedSendTarget({
                     rawChatId: payload?.to,
                     rawPhone: payload?.toPhone,
@@ -190,6 +193,7 @@ function createSocketQuickRepliesService({
                             fallbackChatId: target.targetChatId,
                             fallbackBody: captionText,
                             quotedMessageId: quotedMessageId || '',
+                            quotedMessage: quotedMessageId ? quotedMessage : null,
                             moduleContext,
                             agentMeta,
                             mediaPayload: currentMediaPayload
@@ -215,6 +219,7 @@ function createSocketQuickRepliesService({
                         fallbackChatId: target.targetChatId,
                         fallbackBody: bodyText,
                         quotedMessageId: quoted,
+                        quotedMessage,
                         moduleContext,
                         agentMeta,
                         mediaPayload

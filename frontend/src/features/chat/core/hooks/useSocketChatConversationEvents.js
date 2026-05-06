@@ -69,6 +69,12 @@ function resolveQuotedMessagePreview(quotedMessage = null, fallbackMessage = nul
     };
 }
 
+function resolveHighestAck(nextAck = 0, currentAck = 0) {
+    const safeNext = Number.isFinite(Number(nextAck)) ? Number(nextAck) : 0;
+    const safeCurrent = Number.isFinite(Number(currentAck)) ? Number(currentAck) : 0;
+    return Math.max(safeNext, safeCurrent);
+}
+
 export default function useSocketChatConversationEvents({
     socket,
     chatSearchRef,
@@ -679,7 +685,11 @@ export default function useSocketChatConversationEvents({
                     const id = String(message?.id || '').trim();
                     if (!id) return;
                     const existing = mergedById.get(id);
-                    mergedById.set(id, existing ? { ...existing, ...message } : message);
+                    mergedById.set(id, existing ? {
+                        ...existing,
+                        ...message,
+                        ack: resolveHighestAck(message?.ack, existing?.ack)
+                    } : message);
                 });
 
                 const merged = Array.from(mergedById.values());
@@ -1226,7 +1236,7 @@ export default function useSocketChatConversationEvents({
                 ...enrichedIncoming,
                 clientTempId: replacementClientTempId,
                 optimistic: false,
-                status: Number(enrichedIncoming?.ack || 0) >= 2 ? 'delivered' : Number(enrichedIncoming?.ack || 0) >= 1 ? 'sent' : 'sending'
+                status: Number(enrichedIncoming?.ack || 0) >= 3 ? 'read' : Number(enrichedIncoming?.ack || 0) >= 2 ? 'delivered' : Number(enrichedIncoming?.ack || 0) >= 1 ? 'sent' : 'sending'
             };
 
             if (!msg?.fromMe && chatIdsReferSameScope(relatedChatId, String(activeChatIdRef.current || ''))) {
@@ -1268,6 +1278,7 @@ export default function useSocketChatConversationEvents({
                         const merged = {
                             ...existing,
                             ...normalizedIncoming,
+                            ack: resolveHighestAck(normalizedIncoming?.ack, existing?.ack),
                             sentByUserId: String(normalizedIncoming?.sentByUserId || existing?.sentByUserId || (normalizedIncoming?.fromMe ? (sessionSenderIdentity?.id || '') : '')).trim() || null,
                             sentByName: String(normalizedIncoming?.sentByName || normalizedIncoming?.sentByEmail || existing?.sentByName || existing?.sentByEmail || fallbackSessionName).trim() || null,
                             sentByEmail: String(normalizedIncoming?.sentByEmail || existing?.sentByEmail || fallbackSessionEmail).trim() || null,
@@ -1280,6 +1291,13 @@ export default function useSocketChatConversationEvents({
                                 normalizeQuotedMessage(normalizedIncoming?.quotedMessage || existing?.quotedMessage),
                                 existing
                             ),
+                            status: resolveHighestAck(normalizedIncoming?.ack, existing?.ack) >= 3
+                                ? 'read'
+                                : resolveHighestAck(normalizedIncoming?.ack, existing?.ack) >= 2
+                                    ? 'delivered'
+                                    : resolveHighestAck(normalizedIncoming?.ack, existing?.ack) >= 1
+                                        ? 'sent'
+                                        : 'sending',
                             reactions: Array.isArray(normalizedIncoming?.reactions) && normalizedIncoming.reactions.length > 0
                                 ? normalizedIncoming.reactions
                                 : (Array.isArray(existing?.reactions) ? existing.reactions : []),

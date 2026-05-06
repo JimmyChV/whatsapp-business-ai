@@ -653,7 +653,8 @@ export default function useChatMessageActions({
         },
         to: activeChatId,
         toPhone,
-        quotedMessageId
+        quotedMessageId,
+        quotedMessage
       });
       setQuickReplyDraft(null);
       setInputText('');
@@ -669,7 +670,8 @@ export default function useChatMessageActions({
         mediaData: attachment.data,
         mimetype: attachment.mimetype,
         filename: attachment.filename,
-        quotedMessageId
+        quotedMessageId,
+        quotedMessage
       };
       insertOptimisticOutgoing({
         chatId: activeChatId,
@@ -688,7 +690,13 @@ export default function useChatMessageActions({
       socket.emit('send_media_message', sendPayload);
       removeAttachment();
     } else {
-      const sendPayload = { to: activeChatId, toPhone, body: inputText, quotedMessageId };
+      const sendPayload = {
+        to: activeChatId,
+        toPhone,
+        body: inputText,
+        quotedMessageId,
+        quotedMessage
+      };
       insertOptimisticOutgoing({
         chatId: activeChatId,
         body: inputText,
