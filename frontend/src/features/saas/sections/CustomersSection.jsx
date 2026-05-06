@@ -20,13 +20,13 @@ import { fetchTenantCustomerLabels, fetchTenantZoneRules } from '../services/lab
 import { listMetaTemplates } from '../services/metaTemplates.service';
 
 const CUSTOMER_TABLE_COLUMNS = [
-    { key: 'codigo', label: 'Código', width: '132px', minWidth: '120px', maxWidth: '152px', type: 'text' },
+    { key: 'codigo', label: 'Codigo', width: '132px', minWidth: '120px', maxWidth: '152px', type: 'text' },
     { key: 'nombreCompleto', label: 'Nombre Completo', width: '208px', minWidth: '160px', maxWidth: '260px', type: 'text' },
     { key: 'nombres', label: 'Nombres', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
     { key: 'apellidoPaterno', label: 'Apellido Paterno', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
     { key: 'apellidoMaterno', label: 'Apellido Materno', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
-    { key: 'telefono', label: 'Teléfono', width: '156px', minWidth: '132px', maxWidth: '190px', type: 'text' },
-    { key: 'telefonoAlt', label: 'Teléfono Alterno', width: '168px', minWidth: '140px', maxWidth: '208px', type: 'text' },
+    { key: 'telefono', label: 'Telefono', width: '156px', minWidth: '132px', maxWidth: '190px', type: 'text' },
+    { key: 'telefonoAlt', label: 'Telefono Alterno', width: '168px', minWidth: '140px', maxWidth: '208px', type: 'text' },
     { key: 'email', label: 'Correo', width: '220px', minWidth: '180px', maxWidth: '280px', type: 'text' },
     { key: 'tipoCliente', label: 'Tipo De Cliente', width: '146px', minWidth: '124px', maxWidth: '196px', type: 'option' },
     { key: 'tipoDocumento', label: 'Tipo De Documento', width: '162px', minWidth: '136px', maxWidth: '216px', type: 'option' },
@@ -35,9 +35,80 @@ const CUSTOMER_TABLE_COLUMNS = [
     { key: 'fuenteAdquisicion', label: 'Fuente', width: '146px', minWidth: '124px', maxWidth: '196px', type: 'option' },
     { key: 'tratamiento', label: 'Tratamiento', width: '146px', minWidth: '124px', maxWidth: '196px', type: 'option' },
     { key: 'zona', label: 'Zona', width: '154px', minWidth: '130px', maxWidth: '210px', type: 'option' },
+    {
+        key: 'segmento',
+        label: 'Segmento',
+        width: '154px',
+        minWidth: '130px',
+        maxWidth: '210px',
+        type: 'option',
+        render: (value) => {
+            if (!value) return null;
+            const palette = {
+                NUEVO: { bg: 'rgba(24, 119, 242, 0.12)', border: 'rgba(24, 119, 242, 0.28)', text: '#1764c0' },
+                FRECUENTE: { bg: 'rgba(22, 163, 74, 0.12)', border: 'rgba(22, 163, 74, 0.28)', text: '#15803d' },
+                'EN RIESGO': { bg: 'rgba(217, 119, 6, 0.12)', border: 'rgba(217, 119, 6, 0.28)', text: '#b45309' },
+                PERDIDO: { bg: 'rgba(220, 38, 38, 0.12)', border: 'rgba(220, 38, 38, 0.28)', text: '#b91c1c' }
+            };
+            const tone = palette[String(value || '').trim().toUpperCase()] || { bg: 'rgba(71, 85, 105, 0.12)', border: 'rgba(71, 85, 105, 0.24)', text: '#475569' };
+            return <span className="saas-chip" style={{ background: tone.bg, borderColor: tone.border, color: tone.text }}>{value}</span>;
+        }
+    },
+    {
+        key: 'ultima_fecha_compra',
+        label: 'Ultima Compra',
+        width: '146px',
+        minWidth: '124px',
+        maxWidth: '190px',
+        type: 'date',
+        render: (value) => value ? new Date(value).toLocaleDateString('es-PE') : null
+    },
+    {
+        key: 'dias_ultima_compra',
+        label: 'Dias sin compra',
+        width: '144px',
+        minWidth: '124px',
+        maxWidth: '180px',
+        type: 'number',
+        render: (value) => {
+            if (value === null || value === undefined || value === '') return null;
+            const color = Number(value) > 90 ? 'red' : Number(value) > 60 ? 'yellow' : 'green';
+            return <span style={{ color: `var(--saas-accent-${color})` }}>{value}d</span>;
+        }
+    },
+    { key: 'compras_180', label: 'Compras 180d', width: '132px', minWidth: '116px', maxWidth: '166px', type: 'number' },
+    {
+        key: 'monto_180',
+        label: 'Monto 180d',
+        width: '146px',
+        minWidth: '124px',
+        maxWidth: '190px',
+        type: 'number',
+        render: (value) => value != null && value !== '' ? `S/ ${Number.parseFloat(value).toFixed(2)}` : null
+    },
+    {
+        key: 'monto_acumulado',
+        label: 'Monto Acumulado',
+        width: '156px',
+        minWidth: '136px',
+        maxWidth: '200px',
+        type: 'number',
+        render: (value) => value != null && value !== '' ? `S/ ${Number.parseFloat(value).toFixed(2)}` : null
+    },
+    {
+        key: 'realizo_compra',
+        label: 'Realizo Compra',
+        width: '130px',
+        minWidth: '116px',
+        maxWidth: '166px',
+        type: 'option',
+        render: (value) => value ? '✓' : null
+    },
+    { key: 'ultimo_pedido_id', label: 'Ultimo Pedido', width: '146px', minWidth: '124px', maxWidth: '190px', type: 'text' },
+    { key: 'rango_compras', label: 'Rango Compras', width: '146px', minWidth: '124px', maxWidth: '190px', type: 'text' },
     { key: 'etiquetas', label: 'Etiquetas', width: '220px', minWidth: '180px', maxWidth: '300px', type: 'text' },
     { key: 'estadoComercial', label: 'Estado Comercial', width: '160px', minWidth: '136px', maxWidth: '210px', type: 'option' },
-    { key: 'ultimaInteraccion', label: 'Última Interacción', width: '166px', minWidth: '144px', maxWidth: '220px', type: 'date' },
+    { key: 'ultimaInteraccion', label: 'Ultima Interaccion', width: '166px', minWidth: '144px', maxWidth: '220px', type: 'date' },
     { key: 'actualizado', label: 'Actualizado', width: '166px', minWidth: '144px', maxWidth: '220px', type: 'date' },
     { key: 'estado', label: 'Estado', width: '116px', minWidth: '96px', maxWidth: '146px', type: 'option' }
 ];
@@ -48,6 +119,8 @@ const CUSTOMER_DEFAULT_COLUMN_KEYS = [
     'telefono',
     'email',
     'tipoCliente',
+    'segmento',
+    'ultima_fecha_compra',
     'estado'
 ];
 const CUSTOMER_DEFAULT_SORT = {
@@ -97,6 +170,7 @@ const FORM_LANGUAGE_OPTIONS = [
     { value: 'en', label: 'Ingles (en)' },
     { value: 'pt', label: 'Portugues (pt)' }
 ];
+const CUSTOMER_SEGMENT_OPTIONS = ['NUEVO', 'FRECUENTE', 'EN RIESGO', 'PERDIDO'];
 
 function normalizeGeoNumericId(value = '') {
     const raw = String(value || '').trim();
@@ -793,6 +867,18 @@ function customerMatchesAnyPhone(customer = null, phoneCandidates = []) {
     return customerPhones.some((value) => targetSet.has(value));
 }
 
+function normalizeErpImportErrorMessage(value = '') {
+    const message = String(value || '').trim();
+    if (!message) return 'No se pudo completar la importacion ERP.';
+    if (message.includes('idx_tenant_customer_addresses_primary_unique')) {
+        return 'El ERP envio mas de una direccion principal para al menos un cliente. Ya ajustamos el importador para dejar solo una principal por cliente. Vuelve a intentar la importacion.';
+    }
+    if (message.toLowerCase().includes('cancelada')) {
+        return 'Importacion cancelada. No se aplicaron cambios.';
+    }
+    return message;
+}
+
 function buildImportErrorsCsv(errors = []) {
     const rows = [['fila', 'erp_id', 'campo', 'motivo']];
     (Array.isArray(errors) ? errors : []).forEach((item = {}) => {
@@ -913,9 +999,21 @@ function CustomersSection(props = {}) {
     const [importFileDirecciones, setImportFileDirecciones] = useState(null);
     const [importPreview, setImportPreview] = useState(null);
     const [importResult, setImportResult] = useState(null);
+    const [importRequestId, setImportRequestId] = useState('');
+    const [importProgress, setImportProgress] = useState(null);
     const [importLoading, setImportLoading] = useState(false);
+    const [importErrorMessage, setImportErrorMessage] = useState('');
+    const [importPhase, setImportPhase] = useState('');
+    const [importStartedAt, setImportStartedAt] = useState(0);
+    const [importNow, setImportNow] = useState(() => Date.now());
     const [importModuleId, setImportModuleId] = useState('');
     const [showAllImportErrors, setShowAllImportErrors] = useState(false);
+    const [quickSegmentFilters, setQuickSegmentFilters] = useState([]);
+    const [quickPurchaseFilter, setQuickPurchaseFilter] = useState('');
+    const [quickDaysFilter, setQuickDaysFilter] = useState('');
+    const [quickMonto180Filter, setQuickMonto180Filter] = useState('');
+    const importProgressPollRef = useRef(null);
+    const importProgressStateRef = useRef(null);
     const syncedIndicatorTimeoutRef = useRef(null);
     const customersRealtimeSyncTimeoutRef = useRef(null);
     const customersRealtimeSyncInFlightRef = useRef(false);
@@ -956,15 +1054,6 @@ function CustomersSection(props = {}) {
             }
         };
     }, []);
-
-    useEffect(() => {
-        if (!showImportModal) return;
-        if (importModuleId) return;
-        const defaultModuleId = String(outreachModuleOptions?.[0]?.moduleId || '').trim();
-        if (defaultModuleId) {
-            setImportModuleId(defaultModuleId);
-        }
-    }, [importModuleId, outreachModuleOptions, showImportModal]);
 
     const getCustomerOverride = useCallback((customerId = '') => {
         const normalizedId = normalizeCatalogLookupKey(customerId);
@@ -1031,6 +1120,108 @@ function CustomersSection(props = {}) {
         const items = Array.isArray(importPreview?.errors) ? importPreview.errors : [];
         return showAllImportErrors ? items : items.slice(0, 10);
     }, [importPreview?.errors, showAllImportErrors]);
+    useEffect(() => {
+        importProgressStateRef.current = importProgress;
+    }, [importProgress]);
+    const stopImportProgressPolling = useCallback(() => {
+        if (importProgressPollRef.current) {
+            clearInterval(importProgressPollRef.current);
+            importProgressPollRef.current = null;
+        }
+    }, []);
+    const fetchImportProgress = useCallback(async (importId) => {
+        const cleanImportId = String(importId || '').trim();
+        if (!cleanImportId || !tenantScopeId) return null;
+        try {
+            const response = await requestJson(
+                `/api/admin/saas/tenants/${encodeURIComponent(tenantScopeId)}/customers/import-erp-progress?importId=${encodeURIComponent(cleanImportId)}`,
+                { method: 'GET' }
+            );
+            const progress = response?.progress || null;
+            const currentProgress = importProgressStateRef.current;
+            if (
+                progress?.status === 'pending'
+                && currentProgress
+                && String(currentProgress?.importId || '').trim() === cleanImportId
+                && String(currentProgress?.status || '').trim().toLowerCase() === 'running'
+            ) {
+                return currentProgress;
+            }
+            setImportProgress(progress);
+            if (progress?.status === 'failed' && progress?.error) {
+                setImportErrorMessage(normalizeErpImportErrorMessage(progress.error));
+            }
+            if (progress?.status === 'cancelled') {
+                setImportErrorMessage('Importacion cancelada. No se aplicaron cambios.');
+            }
+            if (progress?.status === 'completed' || progress?.status === 'failed' || progress?.status === 'cancelled') {
+                stopImportProgressPolling();
+            }
+            return progress;
+        } catch (error) {
+            const message = String(error?.message || '');
+            if (!/No se encontro progreso/i.test(message)) {
+                setImportErrorMessage(normalizeErpImportErrorMessage(message || 'No se pudo consultar el progreso de la importacion.'));
+            }
+            return null;
+        }
+    }, [requestJson, stopImportProgressPolling, tenantScopeId]);
+    const startImportProgressPolling = useCallback((importId) => {
+        const cleanImportId = String(importId || '').trim();
+        if (!cleanImportId) return;
+        stopImportProgressPolling();
+        void fetchImportProgress(cleanImportId);
+        importProgressPollRef.current = setInterval(() => {
+            void fetchImportProgress(cleanImportId);
+        }, 1200);
+    }, [fetchImportProgress, stopImportProgressPolling]);
+    useEffect(() => {
+        if (!importLoading) return undefined;
+        const timer = setInterval(() => {
+            setImportNow(Date.now());
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [importLoading]);
+    useEffect(() => () => {
+        stopImportProgressPolling();
+    }, [stopImportProgressPolling]);
+    const importElapsedSeconds = useMemo(() => {
+        if (!importLoading || !importStartedAt) return 0;
+        return Math.max(0, Math.round((importNow - importStartedAt) / 1000));
+    }, [importLoading, importNow, importStartedAt]);
+    const importStatusMessage = useMemo(() => {
+        if (!importLoading) return '';
+        if (importPhase === 'preview') {
+            return 'Analizando archivos del ERP. Esto puede tardar unos segundos.';
+        }
+        const statusMessage = String(importProgress?.message || '').trim();
+        if (statusMessage) return statusMessage;
+        const validCount = Number(importPreview?.summary?.valid || 0);
+        const matchedAddresses = Number(importPreview?.addressSummary?.matched || 0);
+        return `Importando ${validCount} clientes validos y ${matchedAddresses} direcciones con match. No cierres esta ventana.`;
+    }, [importLoading, importPhase, importPreview?.addressSummary?.matched, importPreview?.summary?.valid, importProgress?.message]);
+    const importProgressCounts = useMemo(() => importProgress?.counts || {}, [importProgress?.counts]);
+    const importProgressPercent = useMemo(() => {
+        const numeric = Number(importProgress?.percent);
+        if (Number.isFinite(numeric) && numeric >= 0) return Math.max(0, Math.min(100, numeric));
+        return importLoading && importPhase === 'commit' ? 5 : 0;
+    }, [importLoading, importPhase, importProgress?.percent]);
+    const shouldShowCommitProgress = useMemo(
+        () => importLoading && importPhase === 'commit' && String(importProgress?.mode || 'commit').trim().toLowerCase() !== 'preview',
+        [importLoading, importPhase, importProgress?.mode]
+    );
+    const createImportRequestId = useCallback(
+        (prefix = 'erpimp') => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`,
+        []
+    );
+    useEffect(() => {
+        if (!showImportModal) return;
+        if (importModuleId) return;
+        const defaultModuleId = String(outreachModuleOptions?.[0]?.moduleId || '').trim();
+        if (defaultModuleId) {
+            setImportModuleId(defaultModuleId);
+        }
+    }, [importModuleId, outreachModuleOptions, showImportModal]);
     const selectedCustomerPreferredModuleIds = useMemo(
         () => Array.from(new Set(
             (Array.isArray(moduleContexts) ? moduleContexts : [])
@@ -1316,30 +1507,6 @@ function CustomersSection(props = {}) {
         outreachModuleId,
         outreachNonEligibleCustomerIdsSet
     ]);
-    const campaignSelectableCustomerIds = useMemo(
-        () => {
-            const source = Array.isArray(filteredCustomersLive) ? filteredCustomersLive : [];
-            const scoped = (!campaignSelectionMode || !outreachModuleId)
-                ? source
-                : (outreachMode === 'assign'
-                    ? source.filter((item) => outreachNonEligibleCustomerIdsSet.has(resolveCustomerId(item)))
-                    : source.filter((item) => outreachEligibleCustomerIdsSet.has(resolveCustomerId(item))));
-            return scoped.map((item) => resolveCustomerId(item)).filter(Boolean);
-        },
-        [
-            campaignSelectionMode,
-            filteredCustomersLive,
-            outreachEligibleCustomerIdsSet,
-            outreachMode,
-            outreachModuleId,
-            outreachNonEligibleCustomerIdsSet
-        ]
-    );
-    const allCampaignSelectableCustomersSelected = useMemo(
-        () => campaignSelectableCustomerIds.length > 0 && campaignSelectableCustomerIds.every((customerId) => selectedCustomerIdsForCampaignSet.has(customerId)),
-        [campaignSelectableCustomerIds, selectedCustomerIdsForCampaignSet]
-    );
-
     const tableColumns = useMemo(
         () => ([
             ...(campaignSelectionMode ? [{
@@ -1354,10 +1521,10 @@ function CustomersSection(props = {}) {
                             onChange={() => {
                                 setSelectedCustomerIdsForCampaign((prev) => {
                                     const current = new Set((Array.isArray(prev) ? prev : []).map((item) => String(item || '').trim()).filter(Boolean));
-                                    if (campaignSelectableCustomerIds.length > 0 && campaignSelectableCustomerIds.every((customerId) => current.has(customerId))) {
-                                        campaignSelectableCustomerIds.forEach((customerId) => current.delete(customerId));
+                                    if (campaignSelectableVisibleCustomerIds.length > 0 && campaignSelectableVisibleCustomerIds.every((customerId) => current.has(customerId))) {
+                                        campaignSelectableVisibleCustomerIds.forEach((customerId) => current.delete(customerId));
                                     } else {
-                                        campaignSelectableCustomerIds.forEach((customerId) => current.add(customerId));
+                                        campaignSelectableVisibleCustomerIds.forEach((customerId) => current.add(customerId));
                                     }
                                     return Array.from(current);
                                 });
@@ -1403,47 +1570,17 @@ function CustomersSection(props = {}) {
         [
             campaignSelectionMode,
             allCampaignSelectableCustomersSelected,
-            campaignSelectableCustomerIds,
             columnPrefs,
             columnPrefs.visibleColumnKeys,
-            selectedCustomerIdsForCampaignSet
+            selectedCustomerIdsForCampaignSet,
+            campaignSelectableVisibleCustomerIds
         ]
     );
 
     const tableRows = useMemo(() => {
         const source = Array.isArray(outreachFilteredCustomers) ? outreachFilteredCustomers : [];
-        return source.map((customer = {}, index) => {
-            const customerId = resolveCustomerId(customer);
-            const safeId = customerId || String(customer.phoneE164 || customer.phone_e164 || customer.email || `customer-${index}`).trim();
-            const nameParts = buildNamePartsFromCustomer(customer);
-            const tags = Array.isArray(customer?.tags) ? customer.tags : [];
-            const zone = zoneByCustomerId.get(customerId);
-            return {
-                id: safeId,
-                codigo: customerId || '-',
-                nombreCompleto: buildCustomerDisplayName(customer),
-                nombres: nameParts.firstName || '-',
-                apellidoPaterno: nameParts.lastNamePaternal || '-',
-                apellidoMaterno: nameParts.lastNameMaternal || '-',
-                telefono: String(customer.phoneE164 || customer.phone_e164 || '-').trim() || '-',
-                telefonoAlt: String(customer.phoneAlt || customer.phone_alt || '-').trim() || '-',
-                email: String(customer.email || '-').trim() || '-',
-                tipoCliente: buildCustomerTypeLabel(customer, customerLabelMaps),
-                tipoDocumento: buildDocumentTypeLabel(customer, customerLabelMaps),
-                documento: buildDocumentNumber(customer),
-                idioma: buildLanguageLabel(customer),
-                fuenteAdquisicion: buildAcquisitionSourceLabel(customer, customerLabelMaps),
-                tratamiento: buildTreatmentLabel(customer, customerLabelMaps),
-                zona: zone?.label || '-',
-                etiquetas: tags.length ? tags.join(', ') : '-',
-                estadoComercial: String(customer.commercialStatus || customer.commercial_status || '-').trim() || '-',
-                ultimaInteraccion: formatDateTimeLabel(customer.lastInteractionAt || customer.last_interaction_at || ''),
-                actualizado: formatDateTimeLabel(customer.updatedAt || customer.updated_at || ''),
-                estado: customer.isActive === false ? 'Inactivo' : 'Activo',
-                _raw: customer
-            };
-        });
-    }, [customerLabelMaps, formatDateTimeLabel, outreachFilteredCustomers, zoneByCustomerId]);
+        return source.map((customer = {}, index) => buildCustomerTableRow(customer, index));
+    }, [buildCustomerTableRow, outreachFilteredCustomers]);
 
     const visibleColumns = useMemo(
         () => tableColumns.filter((column) => column && column.hidden !== true),
@@ -1456,6 +1593,17 @@ function CustomersSection(props = {}) {
             if (column.key === 'fuenteAdquisicion') return { ...column, options: sourceOptions };
             if (column.key === 'tratamiento') return { ...column, options: treatmentOptions };
             if (column.key === 'zona') return { ...column, options: zoneOptions };
+            if (column.key === 'segmento') return {
+                ...column,
+                options: CUSTOMER_SEGMENT_OPTIONS.map((value) => ({ value, label: value }))
+            };
+            if (column.key === 'realizo_compra') return {
+                ...column,
+                options: [
+                    { value: 'true', label: 'Si' },
+                    { value: 'false', label: 'No' }
+                ]
+            };
             if (column.key === 'estadoComercial') return {
                 ...column,
                 options: [
@@ -1491,75 +1639,208 @@ function CustomersSection(props = {}) {
         }, {}),
         [filterColumns]
     );
-
-    const sortedAndFilteredRows = useMemo(() => {
-        const sourceRows = Array.isArray(tableRows) ? [...tableRows] : [];
-        const toDateTimestamp = (value) => {
-            const raw = String(value || '').trim();
-            if (!raw || raw === '-') return NaN;
-            const parsed = new Date(raw);
-            if (Number.isNaN(parsed.getTime())) return NaN;
-            return parsed.getTime();
-        };
-        const toNumberValue = (value) => {
-            const text = String(value ?? '').replace(/,/g, '.').replace(/[^\d.-]/g, '').trim();
-            const parsed = Number(text);
-            return Number.isFinite(parsed) ? parsed : NaN;
-        };
-
-        const matchValue = (candidateValueRaw, filterItem = {}) => {
-            const filterColumnKey = String(filterItem?.columnKey || '').trim();
-            const filterOperator = String(filterItem?.operator || 'contains').trim().toLowerCase();
-            const filterValue = String(filterItem?.value || '').trim().toLowerCase();
-            const filterColumnType = String(filterColumnByKey[filterColumnKey]?.type || 'text').trim().toLowerCase();
-            const candidateValue = String(candidateValueRaw ?? '').trim().toLowerCase();
-            if (!filterColumnKey) return true;
-            if (filterOperator === 'is_empty') return candidateValue.length === 0 || candidateValue === '-';
-            if (filterOperator === 'not_empty') return candidateValue.length > 0 && candidateValue !== '-';
-            if (!filterValue) return true;
-            if (filterOperator === 'not_equals') return candidateValue !== filterValue;
-            if (filterColumnType === 'number') {
-                const left = toNumberValue(candidateValueRaw);
-                const right = toNumberValue(filterValue);
-                if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
-                if (filterOperator === 'gt') return left > right;
-                if (filterOperator === 'gte') return left >= right;
-                if (filterOperator === 'lt') return left < right;
-                if (filterOperator === 'lte') return left <= right;
-                return left === right;
-            }
-            if (filterColumnType === 'date') {
-                const left = toDateTimestamp(candidateValueRaw);
-                const right = toDateTimestamp(filterValue);
-                if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
-                if (filterOperator === 'before') return left < right;
-                if (filterOperator === 'after') return left > right;
-                const leftDate = new Date(left).toISOString().slice(0, 10);
-                const rightDate = new Date(right).toISOString().slice(0, 10);
-                return leftDate === rightDate;
-            }
-            if (filterOperator === 'equals') return candidateValue === filterValue;
-            if (filterOperator === 'starts_with') return candidateValue.startsWith(filterValue);
-            if (filterOperator === 'ends_with') return candidateValue.endsWith(filterValue);
-            return candidateValue.includes(filterValue);
-        };
-
-        const activeHeaderFilters = (Array.isArray(headerFilters) ? headerFilters : []).filter((filterItem) => {
+    const toFilterDateTimestamp = useCallback((value) => {
+        const raw = String(value || '').trim();
+        if (!raw || raw === '-') return NaN;
+        const parsed = new Date(raw);
+        if (Number.isNaN(parsed.getTime())) return NaN;
+        return parsed.getTime();
+    }, []);
+    const toFilterNumberValue = useCallback((value) => {
+        const text = String(value ?? '').replace(/,/g, '.').replace(/[^\d.-]/g, '').trim();
+        const parsed = Number(text);
+        return Number.isFinite(parsed) ? parsed : NaN;
+    }, []);
+    const matchCustomerTableFilterValue = useCallback((candidateValueRaw, filterItem = {}) => {
+        const filterColumnKey = String(filterItem?.columnKey || '').trim();
+        const filterOperator = String(filterItem?.operator || 'contains').trim().toLowerCase();
+        const filterValue = String(filterItem?.value || '').trim().toLowerCase();
+        const filterColumnType = String(filterColumnByKey[filterColumnKey]?.type || 'text').trim().toLowerCase();
+        const candidateValue = String(candidateValueRaw ?? '').trim().toLowerCase();
+        const optionAliases = filterColumnType === 'option'
+            ? (Array.isArray(filterColumnByKey[filterColumnKey]?.options) ? filterColumnByKey[filterColumnKey].options : [])
+                .filter((option) => {
+                    const optionTokens = [
+                        option?.value,
+                        option?.label,
+                        option?.id,
+                        option?.abbreviation
+                    ]
+                        .map((token) => String(token ?? '').trim().toLowerCase())
+                        .filter(Boolean);
+                    return optionTokens.includes(filterValue);
+                })
+                .flatMap((option) => [
+                    option?.value,
+                    option?.label,
+                    option?.id,
+                    option?.abbreviation
+                ])
+                .map((token) => String(token ?? '').trim().toLowerCase())
+                .filter(Boolean)
+            : [];
+        const optionAliasSet = optionAliases.length > 0 ? new Set(optionAliases) : null;
+        if (!filterColumnKey) return true;
+        if (filterOperator === 'is_empty') return candidateValue.length === 0 || candidateValue === '-';
+        if (filterOperator === 'not_empty') return candidateValue.length > 0 && candidateValue !== '-';
+        if (!filterValue) return true;
+        if (filterColumnType === 'option' && optionAliasSet) {
+            const matchesOptionAlias = optionAliasSet.has(candidateValue);
+            if (filterOperator === 'not_equals') return !matchesOptionAlias;
+            if (filterOperator === 'equals') return matchesOptionAlias;
+        }
+        if (filterOperator === 'not_equals') return candidateValue !== filterValue;
+        if (filterColumnType === 'number') {
+            const left = toFilterNumberValue(candidateValueRaw);
+            const right = toFilterNumberValue(filterValue);
+            if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
+            if (filterOperator === 'gt') return left > right;
+            if (filterOperator === 'gte') return left >= right;
+            if (filterOperator === 'lt') return left < right;
+            if (filterOperator === 'lte') return left <= right;
+            return left === right;
+        }
+        if (filterColumnType === 'date') {
+            const left = toFilterDateTimestamp(candidateValueRaw);
+            const right = toFilterDateTimestamp(filterValue);
+            if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
+            if (filterOperator === 'before') return left < right;
+            if (filterOperator === 'after') return left > right;
+            const leftDate = new Date(left).toISOString().slice(0, 10);
+            const rightDate = new Date(right).toISOString().slice(0, 10);
+            return leftDate === rightDate;
+        }
+        if (filterOperator === 'equals') return candidateValue === filterValue;
+        if (filterOperator === 'starts_with') return candidateValue.startsWith(filterValue);
+        if (filterOperator === 'ends_with') return candidateValue.endsWith(filterValue);
+        return candidateValue.includes(filterValue);
+    }, [filterColumnByKey, toFilterDateTimestamp, toFilterNumberValue]);
+    const activeHeaderFilters = useMemo(
+        () => (Array.isArray(headerFilters) ? headerFilters : []).filter((filterItem) => {
             const columnKey = String(filterItem?.columnKey || '').trim();
             const operator = String(filterItem?.operator || 'contains').trim().toLowerCase();
             if (!columnKey) return false;
             if (operator === 'is_empty' || operator === 'not_empty') return true;
             return Boolean(String(filterItem?.value || '').trim());
-        });
-
-        const filteredRows = activeHeaderFilters.reduce((currentRows, filterItem) => {
+        }),
+        [headerFilters]
+    );
+    const applyCustomerQuickFilters = useCallback((sourceRows = []) => {
+        let rows = Array.isArray(sourceRows) ? sourceRows : [];
+        if (quickSegmentFilters.length > 0) {
+            const segmentSet = new Set(quickSegmentFilters.map((value) => String(value || '').trim().toUpperCase()).filter(Boolean));
+            rows = rows.filter((row) => segmentSet.has(String(row?.segmento || '').trim().toUpperCase()));
+        }
+        if (quickPurchaseFilter) {
+            const expectPurchase = quickPurchaseFilter === 'yes';
+            rows = rows.filter((row) => Boolean(row?.realizo_compra) === expectPurchase);
+        }
+        if (quickDaysFilter) {
+            rows = rows.filter((row) => {
+                const value = Number(row?.dias_ultima_compra);
+                if (!Number.isFinite(value)) return false;
+                if (quickDaysFilter === 'lte30') return value <= 30;
+                if (quickDaysFilter === '31_60') return value >= 31 && value <= 60;
+                if (quickDaysFilter === '61_90') return value >= 61 && value <= 90;
+                if (quickDaysFilter === 'gt90') return value > 90;
+                return true;
+            });
+        }
+        if (quickMonto180Filter) {
+            rows = rows.filter((row) => {
+                const value = Number(row?.monto_180);
+                if (!Number.isFinite(value)) return false;
+                if (quickMonto180Filter === 'lt100') return value < 100;
+                if (quickMonto180Filter === '100_500') return value >= 100 && value <= 500;
+                if (quickMonto180Filter === 'gt500') return value > 500;
+                return true;
+            });
+        }
+        return rows;
+    }, [quickDaysFilter, quickMonto180Filter, quickPurchaseFilter, quickSegmentFilters]);
+    const applyCustomerHeaderFilters = useCallback((sourceRows = []) => {
+        const rows = Array.isArray(sourceRows) ? sourceRows : [];
+        const headerFilteredRows = activeHeaderFilters.reduce((currentRows, filterItem) => {
             const filterColumnKey = String(filterItem?.columnKey || '').trim();
             return currentRows.filter((row) => {
-                if (filterColumnKey === 'actualizado') return matchValue(row?._raw?.updatedAt || row?.actualizado, filterItem);
-                if (filterColumnKey === 'ultimaInteraccion') return matchValue(row?._raw?.lastInteractionAt || row?.ultimaInteraccion, filterItem);
-                return matchValue(row?.[filterColumnKey], filterItem);
+                if (filterColumnKey === 'actualizado') return matchCustomerTableFilterValue(row?._raw?.updatedAt || row?.actualizado, filterItem);
+                if (filterColumnKey === 'ultimaInteraccion') return matchCustomerTableFilterValue(row?._raw?.lastInteractionAt || row?.ultimaInteraccion, filterItem);
+                return matchCustomerTableFilterValue(row?.[filterColumnKey], filterItem);
             });
-        }, sourceRows);
+        }, rows);
+        return applyCustomerQuickFilters(headerFilteredRows);
+    }, [activeHeaderFilters, applyCustomerQuickFilters, matchCustomerTableFilterValue]);
+    function buildCustomerTableRow(customer = {}, index = 0) {
+        const customerId = resolveCustomerId(customer);
+        const safeId = customerId || String(customer.phoneE164 || customer.phone_e164 || customer.email || `customer-${index}`).trim();
+        const nameParts = buildNamePartsFromCustomer(customer);
+        const tags = Array.isArray(customer?.tags) ? customer.tags : [];
+        const zone = zoneByCustomerId.get(customerId);
+        const segmento = String(customer.segmento || customer.segment || '').trim();
+        const ultimaFechaCompra = String(customer.ultima_fecha_compra || customer.ultimaFechaCompra || '').trim();
+        const diasUltimaCompraRaw = customer.dias_ultima_compra ?? customer.diasUltimaCompra ?? null;
+        const compras180Raw = customer.compras_180 ?? customer.compras180 ?? null;
+        const monto180Raw = customer.monto_180 ?? customer.monto180 ?? null;
+        const montoAcumuladoRaw = customer.monto_acumulado ?? customer.montoAcumulado ?? null;
+        const diasUltimaCompra = Number.isFinite(Number(diasUltimaCompraRaw)) ? Number(diasUltimaCompraRaw) : null;
+        const compras180 = Number.isFinite(Number(compras180Raw)) ? Number(compras180Raw) : null;
+        const monto180 = Number.isFinite(Number(monto180Raw)) ? Number(monto180Raw) : null;
+        const montoAcumulado = Number.isFinite(Number(montoAcumuladoRaw)) ? Number(montoAcumuladoRaw) : null;
+        const realizoCompra = customer.realizo_compra === true || customer.realizoCompra === true || String(customer.realizo_compra || customer.realizoCompra || '').trim().toLowerCase() === 'true';
+        const ultimoPedidoId = String(customer.ultimo_pedido_id || customer.ultimoPedidoId || '').trim();
+        const rangoCompras = String(customer.rango_compras || customer.rangoCompras || '').trim();
+        return {
+            id: safeId,
+            codigo: customerId || '-',
+            nombreCompleto: buildCustomerDisplayName(customer),
+            nombres: nameParts.firstName || '-',
+            apellidoPaterno: nameParts.lastNamePaternal || '-',
+            apellidoMaterno: nameParts.lastNameMaternal || '-',
+            telefono: String(customer.phoneE164 || customer.phone_e164 || '-').trim() || '-',
+            telefonoAlt: String(customer.phoneAlt || customer.phone_alt || '-').trim() || '-',
+            email: String(customer.email || '-').trim() || '-',
+            tipoCliente: buildCustomerTypeLabel(customer, customerLabelMaps),
+            tipoDocumento: buildDocumentTypeLabel(customer, customerLabelMaps),
+            documento: buildDocumentNumber(customer),
+            idioma: buildLanguageLabel(customer),
+            fuenteAdquisicion: buildAcquisitionSourceLabel(customer, customerLabelMaps),
+            tratamiento: buildTreatmentLabel(customer, customerLabelMaps),
+            zona: zone?.label || '-',
+            segmento: segmento || null,
+            ultima_fecha_compra: ultimaFechaCompra || null,
+            dias_ultima_compra: diasUltimaCompra,
+            compras_180: compras180,
+            monto_180: monto180,
+            monto_acumulado: montoAcumulado,
+            realizo_compra: Boolean(realizoCompra),
+            ultimo_pedido_id: ultimoPedidoId || null,
+            rango_compras: rangoCompras || null,
+            etiquetas: tags.length ? tags.join(', ') : '-',
+            estadoComercial: String(customer.commercialStatus || customer.commercial_status || '-').trim() || '-',
+            ultimaInteraccion: formatDateTimeLabel(customer.lastInteractionAt || customer.last_interaction_at || ''),
+            actualizado: formatDateTimeLabel(customer.updatedAt || customer.updated_at || ''),
+            estado: customer.isActive === false ? 'Inactivo' : 'Activo',
+            _raw: customer
+        };
+    }
+    const campaignSelectableRows = useMemo(
+        () => (Array.isArray(outreachFilteredCustomers) ? outreachFilteredCustomers : []).map((customer, index) => buildCustomerTableRow(customer, index)),
+        [buildCustomerTableRow, outreachFilteredCustomers]
+    );
+    const campaignSelectableVisibleCustomerIds = useMemo(
+        () => applyCustomerHeaderFilters(campaignSelectableRows)
+            .map((row) => String(row?._raw?.customerId || row?.id || '').trim())
+            .filter(Boolean),
+        [applyCustomerHeaderFilters, campaignSelectableRows]
+    );
+    const allCampaignSelectableCustomersSelected = useMemo(
+        () => campaignSelectableVisibleCustomerIds.length > 0 && campaignSelectableVisibleCustomerIds.every((customerId) => selectedCustomerIdsForCampaignSet.has(customerId)),
+        [campaignSelectableVisibleCustomerIds, selectedCustomerIdsForCampaignSet]
+    );
+
+    const sortedAndFilteredRows = useMemo(() => {
+        const sourceRows = Array.isArray(tableRows) ? [...tableRows] : [];
+        const filteredRows = applyCustomerHeaderFilters(sourceRows);
 
         const activeSortItems = normalizeSortState(sortConfig).activeItems;
         if (activeSortItems.length === 0) return filteredRows;
@@ -1596,7 +1877,7 @@ function CustomersSection(props = {}) {
             }
             return 0;
         });
-    }, [filterColumnByKey, headerFilters, sortConfig, tableRows]);
+    }, [applyCustomerHeaderFilters, sortConfig, tableRows]);
 
     const visibleCustomerIdsForCampaign = useMemo(
         () => sortedAndFilteredRows
@@ -2063,10 +2344,16 @@ function CustomersSection(props = {}) {
         setImportFileDirecciones(null);
         setImportPreview(null);
         setImportResult(null);
+        setImportRequestId('');
+        setImportProgress(null);
         setImportLoading(false);
+        setImportErrorMessage('');
+        setImportPhase('');
+        setImportStartedAt(0);
         setImportModuleId('');
         setShowAllImportErrors(false);
-    }, []);
+        stopImportProgressPolling();
+    }, [stopImportProgressPolling]);
 
     const refreshCustomersView = useCallback(async ({ forceFullReload = false, silent = false } = {}) => {
         if (tenantScopeLocked) return;
@@ -2105,7 +2392,7 @@ function CustomersSection(props = {}) {
     const handleAnalyzeImport = useCallback(async () => {
         if (!tenantScopeId) return;
         if (!importFileClientes) {
-            notify({ type: 'error', message: 'Selecciona el archivo TbClientes.csv antes de analizar.' });
+            notify({ type: 'error', message: 'Selecciona la exportacion de AppSheet antes de analizar.' });
             return;
         }
 
@@ -2118,6 +2405,10 @@ function CustomersSection(props = {}) {
         formData.append('mode', 'preview');
 
         setImportLoading(true);
+        setImportErrorMessage('');
+        setImportPhase('preview');
+        setImportStartedAt(Date.now());
+        setImportNow(Date.now());
         setShowAllImportErrors(false);
         try {
             const response = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers/import-erp', {
@@ -2126,18 +2417,24 @@ function CustomersSection(props = {}) {
             });
             setImportPreview(response || null);
             setImportResult(null);
+            setImportRequestId(String(response?.importId || '').trim());
+            setImportProgress(null);
             setImportStep(2);
         } catch (error) {
-            notify({ type: 'error', message: String(error?.message || 'No se pudo analizar el archivo ERP.') });
+            const message = normalizeErpImportErrorMessage(error?.message || 'No se pudo analizar el archivo ERP.');
+            setImportErrorMessage(message);
+            notify({ type: 'error', message });
         } finally {
             setImportLoading(false);
+            setImportPhase('');
+            setImportStartedAt(0);
         }
     }, [importFileClientes, importFileDirecciones, importModuleId, notify, requestJson, tenantScopeId]);
 
     const handleConfirmImport = useCallback(async () => {
         if (!tenantScopeId) return;
         if (!importFileClientes) {
-            notify({ type: 'error', message: 'Selecciona el archivo TbClientes.csv antes de confirmar.' });
+            notify({ type: 'error', message: 'Selecciona la exportacion de AppSheet antes de confirmar.' });
             return;
         }
 
@@ -2154,22 +2451,96 @@ function CustomersSection(props = {}) {
         }
         formData.append('moduleId', String(importModuleId || '').trim());
         formData.append('mode', 'commit');
+        const commitImportId = createImportRequestId('erpcommit');
+        formData.append('importId', commitImportId);
 
         setImportLoading(true);
+        setImportErrorMessage('');
+        setImportPhase('commit');
+        setImportStartedAt(Date.now());
+        setImportNow(Date.now());
+        setImportRequestId(commitImportId);
+        setImportProgress({
+            importId: commitImportId,
+            mode: 'commit',
+            status: 'running',
+            phase: 'parsing_clients',
+            message: 'Subiendo y preparando archivos ERP antes del commit...',
+            percent: 1,
+            counts: {
+                totalRows: Number(importPreview?.summary?.total || 0),
+                validRows: Number(importPreview?.summary?.valid || 0),
+                insertRows: Number(importPreview?.summary?.inserts || 0),
+                updateRows: Number(importPreview?.summary?.updates || 0),
+                errorRows: Number(importPreview?.summary?.errors || 0),
+                addressTotal: Number(importPreview?.addressSummary?.total || 0),
+                addressMatched: Number(importPreview?.addressSummary?.matched || 0),
+                addressUnmatched: Number(importPreview?.addressSummary?.unmatched || 0),
+                customersProcessed: 0,
+                customersInserted: 0,
+                customersUpdated: 0,
+                addressesProcessed: 0,
+                addressesInserted: 0,
+                addressesUpdated: 0
+            }
+        });
+        startImportProgressPolling(commitImportId);
         try {
             const response = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers/import-erp', {
                 method: 'POST',
                 body: formData
             });
+            await fetchImportProgress(String(response?.importId || commitImportId || '').trim());
             setImportResult(response || null);
             setImportStep(3);
             await refreshCustomersView({ forceFullReload: true, silent: false });
         } catch (error) {
-            notify({ type: 'error', message: String(error?.message || 'No se pudo completar la importacion ERP.') });
+            const message = normalizeErpImportErrorMessage(error?.message || 'No se pudo completar la importacion ERP.');
+            if (message.toLowerCase().includes('cancelada')) {
+                setImportErrorMessage('Importacion cancelada. No se aplicaron cambios.');
+                setImportProgress((prev) => ({
+                    ...(prev || {}),
+                    importId: commitImportId,
+                    mode: 'commit',
+                    status: 'cancelled',
+                    phase: 'cancelled',
+                    message: 'Importacion ERP cancelada. No se aplicaron cambios.'
+                }));
+                return;
+            }
+            setImportErrorMessage(message);
+            notify({ type: 'error', message });
         } finally {
+            stopImportProgressPolling();
             setImportLoading(false);
+            setImportPhase('');
+            setImportStartedAt(0);
         }
-    }, [importFileClientes, importFileDirecciones, importModuleId, importPreview?.summary?.valid, notify, refreshCustomersView, requestJson, tenantScopeId]);
+    }, [createImportRequestId, fetchImportProgress, importFileClientes, importFileDirecciones, importModuleId, importPreview?.addressSummary?.matched, importPreview?.addressSummary?.total, importPreview?.addressSummary?.unmatched, importPreview?.summary?.errors, importPreview?.summary?.inserts, importPreview?.summary?.total, importPreview?.summary?.updates, importPreview?.summary?.valid, notify, refreshCustomersView, requestJson, startImportProgressPolling, stopImportProgressPolling, tenantScopeId]);
+
+    const handleCancelImport = useCallback(async () => {
+        if (!tenantScopeId || !importRequestId) return;
+        try {
+            await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers/import-erp-cancel', {
+                method: 'POST',
+                body: {
+                    importId: importRequestId
+                }
+            });
+            setImportProgress((prev) => ({
+                ...(prev || {}),
+                importId: importRequestId,
+                mode: 'commit',
+                status: 'running',
+                cancelRequested: true,
+                message: 'Cancelacion solicitada. Esperando rollback seguro...'
+            }));
+        } catch (error) {
+            const message = normalizeErpImportErrorMessage(error?.message || 'No se pudo cancelar la importacion ERP.');
+            setImportErrorMessage(message);
+            notify({ type: 'error', message });
+        }
+    }, [importRequestId, notify, requestJson, tenantScopeId]);
 
     const handleDownloadImportErrorsCsv = useCallback(() => {
         const errors = Array.isArray(importPreview?.errors) ? importPreview.errors : [];
@@ -3550,6 +3921,61 @@ function CustomersSection(props = {}) {
             onSortChange={setSortConfig}
             extra={(
                 <div className="saas-customers-header-extra">
+                    <div className="saas-customers-quick-filters">
+                        <div className="saas-customers-quick-filters__group">
+                            <span>Segmento</span>
+                            <div className="saas-customers-quick-filters__chips">
+                                {CUSTOMER_SEGMENT_OPTIONS.map((segment) => {
+                                    const active = quickSegmentFilters.includes(segment);
+                                    return (
+                                        <button
+                                            key={`customers-segment-filter-${segment}`}
+                                            type="button"
+                                            className="saas-chip"
+                                            style={active ? { background: 'rgba(22, 163, 74, 0.14)', borderColor: 'rgba(22, 163, 74, 0.28)', color: '#15803d' } : undefined}
+                                            onClick={() => {
+                                                setQuickSegmentFilters((prev) => {
+                                                    const current = Array.isArray(prev) ? prev : [];
+                                                    return current.includes(segment)
+                                                        ? current.filter((item) => item !== segment)
+                                                        : [...current, segment];
+                                                });
+                                            }}
+                                        >
+                                            {segment}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                        <label className="saas-customers-quick-filters__field">
+                            <span>Realizo Compra</span>
+                            <select value={quickPurchaseFilter} onChange={(event) => setQuickPurchaseFilter(String(event.target.value || '').trim())}>
+                                <option value="">Todos</option>
+                                <option value="yes">Si</option>
+                                <option value="no">No</option>
+                            </select>
+                        </label>
+                        <label className="saas-customers-quick-filters__field">
+                            <span>Dias sin compra</span>
+                            <select value={quickDaysFilter} onChange={(event) => setQuickDaysFilter(String(event.target.value || '').trim())}>
+                                <option value="">Todos</option>
+                                <option value="lte30">≤30</option>
+                                <option value="31_60">31-60</option>
+                                <option value="61_90">61-90</option>
+                                <option value="gt90">{`>90`}</option>
+                            </select>
+                        </label>
+                        <label className="saas-customers-quick-filters__field">
+                            <span>Monto 180d</span>
+                            <select value={quickMonto180Filter} onChange={(event) => setQuickMonto180Filter(String(event.target.value || '').trim())}>
+                                <option value="">Todos</option>
+                                <option value="lt100">{`<S/100`}</option>
+                                <option value="100_500">S/100-500</option>
+                                <option value="gt500">{`>S/500`}</option>
+                            </select>
+                        </label>
+                    </div>
                     {campaignSelectionMode ? (
                         <div className="saas-customers-outreach-toolbar">
                             <label className="saas-customers-outreach-toolbar__field">
@@ -3997,11 +4423,11 @@ function CustomersSection(props = {}) {
     );
 
     const importModal = showImportModal ? (
-        <div className="saas-template-builder-modal-overlay" onClick={resetImportFlow}>
+        <div className="saas-template-builder-modal-overlay" onClick={() => { if (!importLoading) resetImportFlow(); }}>
             <div className="saas-template-builder-modal-shell saas-customers-import-shell" onClick={(event) => event.stopPropagation()}>
                 <SaasDetailPanel
-                    title="Importar clientes desde ERP"
-                    subtitle="Carga TbClientes.csv y, si lo tienes, TbDirecciones.csv para validar antes de escribir."
+                    title="Importar clientes desde AppSheet"
+                    subtitle="Carga la exportacion de AppSheet y, si lo tienes, TbDirecciones.csv para validar antes de escribir."
                     className="saas-template-builder-modal-panel saas-customers-import-panel"
                     bodyClassName="saas-template-builder-modal-panel__body saas-customers-import-panel__body"
                     actions={(
@@ -4021,6 +4447,16 @@ function CustomersSection(props = {}) {
                                     <button type="button" className="saas-btn saas-btn--secondary" onClick={() => setImportStep(1)} disabled={importLoading}>
                                         Volver
                                     </button>
+                                    {importLoading ? (
+                                        <button
+                                            type="button"
+                                            className="saas-btn saas-btn--secondary saas-btn-cancel"
+                                            onClick={() => { void handleCancelImport(); }}
+                                            disabled={Boolean(importProgress?.cancelRequested)}
+                                        >
+                                            {importProgress?.cancelRequested ? 'Cancelando...' : 'Cancelar importacion'}
+                                        </button>
+                                    ) : null}
                                     <button
                                         type="button"
                                         className="saas-btn saas-btn--primary"
@@ -4058,22 +4494,58 @@ function CustomersSection(props = {}) {
                         ))}
                     </div>
 
+                    {importLoading ? (
+                        <div className="saas-customers-import-live-status">
+                            <div className="saas-admin-inline-feedback">
+                                {importStatusMessage}
+                                {importElapsedSeconds > 0 ? ` Tiempo transcurrido: ${importElapsedSeconds}s.` : ''}
+                            </div>
+                            {shouldShowCommitProgress ? (
+                                <div className="saas-customers-import-live-progress">
+                                    <div className="saas-customers-import-live-progress__bar">
+                                        <span
+                                            className="saas-customers-import-live-progress__fill"
+                                            style={{ width: `${importProgressPercent}%` }}
+                                        />
+                                    </div>
+                                    <div className="saas-customers-import-live-progress__meta">
+                                        <strong>{importProgressPercent}%</strong>
+                                        <span>
+                                            Clientes: {Number(importProgressCounts.customersProcessed || 0)} / {Number(importProgressCounts.validRows || importPreview?.summary?.valid || 0)}
+                                        </span>
+                                        <span>
+                                            Direcciones: {Number(importProgressCounts.addressesProcessed || 0)} / {Number(importProgressCounts.addressMatched || importPreview?.addressSummary?.matched || 0)}
+                                        </span>
+                                        <span>
+                                            Fase: {String(importProgress?.phase || 'parsing_clients')}
+                                        </span>
+                                    </div>
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : null}
+                    {importErrorMessage ? (
+                        <div className="saas-admin-inline-feedback error">
+                            {importErrorMessage}
+                        </div>
+                    ) : null}
+
                     {importStep === 1 ? (
                         <div className="saas-campaigns-wizard-step saas-customers-import-step">
                             <SaasDetailPanelSection title="Archivos" defaultOpen>
                                 <div className="saas-customers-import-grid">
                                     <label className="saas-customers-import-upload">
-                                        <span>Archivo de clientes (TbClientes.csv)</span>
+                                        <span>Exportacion de AppSheet (clientes)</span>
                                         <input
                                             type="file"
                                             accept=".csv"
                                             onChange={(event) => setImportFileClientes(event.target.files?.[0] || null)}
                                             disabled={importLoading}
                                         />
-                                        <small>{importFileClientes ? `✓ ${importFileClientes.name}` : 'Selecciona el CSV principal de clientes.'}</small>
+                                        <small>{importFileClientes ? `✓ ${importFileClientes.name}` : 'Selecciona el CSV principal exportado desde AppSheet.'}</small>
                                     </label>
                                     <label className="saas-customers-import-upload">
-                                        <span>Archivo de direcciones - opcional (TbDirecciones.csv)</span>
+                                        <span>Archivo de direcciones ERP - opcional (TbDirecciones.csv)</span>
                                         <input
                                             type="file"
                                             accept=".csv"
