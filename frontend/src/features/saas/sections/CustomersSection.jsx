@@ -2092,6 +2092,16 @@ function CustomersSection(props = {}) {
         }
     }, [loadCustomers, maxCustomersUpdatedAt, notify, syncCustomersDelta, tenantScopeId, tenantScopeLocked]);
 
+    const handleCloseImportModal = useCallback(async () => {
+        resetImportFlow();
+        if (tenantScopeLocked || !tenantScopeId) return;
+        try {
+            await refreshCustomersView({ forceFullReload: true, silent: true });
+        } catch {
+            // no-op on close
+        }
+    }, [refreshCustomersView, resetImportFlow, tenantScopeId, tenantScopeLocked]);
+
     const handleAnalyzeImport = useCallback(async () => {
         if (!tenantScopeId) return;
         if (!importFileClientes) {
@@ -4028,7 +4038,7 @@ function CustomersSection(props = {}) {
                                             Descargar reporte de errores CSV
                                         </button>
                                     ) : null}
-                                    <button type="button" className="saas-btn saas-btn--primary" onClick={resetImportFlow}>
+                                    <button type="button" className="saas-btn saas-btn--primary" onClick={() => { void handleCloseImportModal(); }}>
                                         Cerrar
                                     </button>
                                 </>
@@ -4168,7 +4178,8 @@ function CustomersSection(props = {}) {
                     {importStep === 3 ? (
                         <div className="saas-campaigns-wizard-step saas-customers-import-step saas-customers-import-step--result">
                             <SaasDetailPanelSection title="Importacion completada" defaultOpen>
-                                <div className="saas-admin-empty-state">
+                                <div className="saas-admin-empty-state saas-customers-import-success">
+                                    <div className="saas-customers-import-success__icon">✓</div>
                                     <h4>Importacion completada</h4>
                                     <p>Los clientes y sus direcciones ya fueron procesados.</p>
                                 </div>
