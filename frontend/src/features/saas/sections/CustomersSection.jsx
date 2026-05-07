@@ -46,9 +46,13 @@ const CUSTOMER_TABLE_COLUMNS = [
             if (!value) return null;
             const palette = {
                 NUEVO: { bg: 'rgba(24, 119, 242, 0.12)', border: 'rgba(24, 119, 242, 0.28)', text: '#1764c0' },
-                FRECUENTE: { bg: 'rgba(22, 163, 74, 0.12)', border: 'rgba(22, 163, 74, 0.28)', text: '#15803d' },
                 'EN RIESGO': { bg: 'rgba(217, 119, 6, 0.12)', border: 'rgba(217, 119, 6, 0.28)', text: '#b45309' },
-                PERDIDO: { bg: 'rgba(220, 38, 38, 0.12)', border: 'rgba(220, 38, 38, 0.28)', text: '#b91c1c' }
+                PERDIDO: { bg: 'rgba(220, 38, 38, 0.12)', border: 'rgba(220, 38, 38, 0.28)', text: '#b91c1c' },
+                'UNA VEZ': { bg: 'rgba(125, 211, 252, 0.18)', border: 'rgba(14, 165, 233, 0.28)', text: '#0369a1' },
+                'RECURRENTE MEDIO': { bg: 'rgba(34, 197, 94, 0.14)', border: 'rgba(22, 163, 74, 0.28)', text: '#15803d' },
+                'RECURRENTE FUERTE': { bg: 'rgba(16, 185, 129, 0.16)', border: 'rgba(5, 150, 105, 0.3)', text: '#047857' },
+                DORMIDO: { bg: 'rgba(148, 163, 184, 0.16)', border: 'rgba(100, 116, 139, 0.28)', text: '#475569' },
+                VIP: { bg: 'rgba(168, 85, 247, 0.12)', border: 'rgba(147, 51, 234, 0.28)', text: '#7e22ce' }
             };
             const tone = palette[String(value || '').trim().toUpperCase()] || { bg: 'rgba(71, 85, 105, 0.12)', border: 'rgba(71, 85, 105, 0.24)', text: '#475569' };
             return <span className="saas-chip" style={{ background: tone.bg, borderColor: tone.border, color: tone.text }}>{value}</span>;
@@ -170,7 +174,31 @@ const FORM_LANGUAGE_OPTIONS = [
     { value: 'en', label: 'Ingles (en)' },
     { value: 'pt', label: 'Portugues (pt)' }
 ];
-const CUSTOMER_SEGMENT_OPTIONS = ['NUEVO', 'FRECUENTE', 'EN RIESGO', 'PERDIDO'];
+const CUSTOMER_SEGMENT_OPTIONS = [
+    { value: 'NUEVO', label: 'Nuevo' },
+    { value: 'EN RIESGO', label: 'En riesgo' },
+    { value: 'PERDIDO', label: 'Perdido' },
+    { value: 'UNA VEZ', label: 'Una vez' },
+    { value: 'RECURRENTE MEDIO', label: 'Recurrente medio' },
+    { value: 'RECURRENTE FUERTE', label: 'Recurrente fuerte' },
+    { value: 'DORMIDO', label: 'Dormido' },
+    { value: 'VIP', label: 'Vip' }
+];
+const CUSTOMER_PURCHASE_FILTER_OPTIONS = [
+    { value: 'true', label: 'Si' },
+    { value: 'false', label: 'No' }
+];
+const CUSTOMER_DAYS_WITHOUT_PURCHASE_OPTIONS = [
+    { value: 'lte30', label: 'Hasta 30' },
+    { value: '31_60', label: '31 a 60' },
+    { value: '61_90', label: '61 a 90' },
+    { value: 'gt90', label: 'Mas de 90' }
+];
+const CUSTOMER_MONTO_180_OPTIONS = [
+    { value: 'lt100', label: 'Menos de S/100' },
+    { value: '100_500', label: 'S/100 a S/500' },
+    { value: 'gt500', label: 'Mas de S/500' }
+];
 
 function normalizeGeoNumericId(value = '') {
     const raw = String(value || '').trim();
@@ -1008,10 +1036,6 @@ function CustomersSection(props = {}) {
     const [importNow, setImportNow] = useState(() => Date.now());
     const [importModuleId, setImportModuleId] = useState('');
     const [showAllImportErrors, setShowAllImportErrors] = useState(false);
-    const [quickSegmentFilters, setQuickSegmentFilters] = useState([]);
-    const [quickPurchaseFilter, setQuickPurchaseFilter] = useState('');
-    const [quickDaysFilter, setQuickDaysFilter] = useState('');
-    const [quickMonto180Filter, setQuickMonto180Filter] = useState('');
     const importProgressPollRef = useRef(null);
     const importProgressStateRef = useRef(null);
     const syncedIndicatorTimeoutRef = useRef(null);
@@ -1507,7 +1531,7 @@ function CustomersSection(props = {}) {
         outreachModuleId,
         outreachNonEligibleCustomerIdsSet
     ]);
-    const tableColumns = useMemo(
+    /* const tableColumnsOld = useMemo(
         () => ([
             ...(campaignSelectionMode ? [{
                 key: 'selectForCampaign',
@@ -1517,14 +1541,14 @@ function CustomersSection(props = {}) {
                     <span className="saas-customers-select-cell">
                         <input
                             type="checkbox"
-                            checked={allCampaignSelectableCustomersSelected}
+                            checked={campaignSelectableCustomerIds.length > 0 && campaignSelectableCustomerIds.every((customerId) => selectedCustomerIdsForCampaignSet.has(customerId))}
                             onChange={() => {
                                 setSelectedCustomerIdsForCampaign((prev) => {
                                     const current = new Set((Array.isArray(prev) ? prev : []).map((item) => String(item || '').trim()).filter(Boolean));
-                                    if (campaignSelectableVisibleCustomerIds.length > 0 && campaignSelectableVisibleCustomerIds.every((customerId) => current.has(customerId))) {
-                                        campaignSelectableVisibleCustomerIds.forEach((customerId) => current.delete(customerId));
+                                    if (campaignSelectableCustomerIds.length > 0 && campaignSelectableCustomerIds.every((customerId) => current.has(customerId))) {
+                                        campaignSelectableCustomerIds.forEach((customerId) => current.delete(customerId));
                                     } else {
-                                        campaignSelectableVisibleCustomerIds.forEach((customerId) => current.add(customerId));
+                                        campaignSelectableCustomerIds.forEach((customerId) => current.add(customerId));
                                     }
                                     return Array.from(current);
                                 });
@@ -1569,23 +1593,14 @@ function CustomersSection(props = {}) {
         ]),
         [
             campaignSelectionMode,
-            allCampaignSelectableCustomersSelected,
+            campaignSelectableCustomerIds,
             columnPrefs,
             columnPrefs.visibleColumnKeys,
-            selectedCustomerIdsForCampaignSet,
-            campaignSelectableVisibleCustomerIds
+            selectedCustomerIdsForCampaignSet
         ]
     );
 
-    const tableRows = useMemo(() => {
-        const source = Array.isArray(outreachFilteredCustomers) ? outreachFilteredCustomers : [];
-        return source.map((customer = {}, index) => buildCustomerTableRow(customer, index));
-    }, [buildCustomerTableRow, outreachFilteredCustomers]);
-
-    const visibleColumns = useMemo(
-        () => tableColumns.filter((column) => column && column.hidden !== true),
-        [tableColumns]
-    );
+    ); */
     const filterColumns = useMemo(() => (
         CUSTOMER_TABLE_COLUMNS.map((column) => {
             if (column.key === 'tipoCliente') return { ...column, options: customerTypeOptions };
@@ -1595,14 +1610,21 @@ function CustomersSection(props = {}) {
             if (column.key === 'zona') return { ...column, options: zoneOptions };
             if (column.key === 'segmento') return {
                 ...column,
-                options: CUSTOMER_SEGMENT_OPTIONS.map((value) => ({ value, label: value }))
+                options: CUSTOMER_SEGMENT_OPTIONS
             };
             if (column.key === 'realizo_compra') return {
                 ...column,
-                options: [
-                    { value: 'true', label: 'Si' },
-                    { value: 'false', label: 'No' }
-                ]
+                options: CUSTOMER_PURCHASE_FILTER_OPTIONS
+            };
+            if (column.key === 'dias_ultima_compra') return {
+                ...column,
+                type: 'option',
+                options: CUSTOMER_DAYS_WITHOUT_PURCHASE_OPTIONS
+            };
+            if (column.key === 'monto_180') return {
+                ...column,
+                type: 'option',
+                options: CUSTOMER_MONTO_180_OPTIONS
             };
             if (column.key === 'estadoComercial') return {
                 ...column,
@@ -1684,6 +1706,23 @@ function CustomersSection(props = {}) {
         if (filterOperator === 'is_empty') return candidateValue.length === 0 || candidateValue === '-';
         if (filterOperator === 'not_empty') return candidateValue.length > 0 && candidateValue !== '-';
         if (!filterValue) return true;
+        if (filterColumnKey === 'dias_ultima_compra') {
+            const value = Number(candidateValueRaw);
+            if (!Number.isFinite(value)) return false;
+            if (filterValue === 'lte30') return value <= 30;
+            if (filterValue === '31_60') return value >= 31 && value <= 60;
+            if (filterValue === '61_90') return value >= 61 && value <= 90;
+            if (filterValue === 'gt90') return value > 90;
+            return true;
+        }
+        if (filterColumnKey === 'monto_180') {
+            const value = Number(candidateValueRaw);
+            if (!Number.isFinite(value)) return false;
+            if (filterValue === 'lt100') return value < 100;
+            if (filterValue === '100_500') return value >= 100 && value <= 500;
+            if (filterValue === 'gt500') return value > 500;
+            return true;
+        }
         if (filterColumnType === 'option' && optionAliasSet) {
             const matchesOptionAlias = optionAliasSet.has(candidateValue);
             if (filterOperator === 'not_equals') return !matchesOptionAlias;
@@ -1725,42 +1764,9 @@ function CustomersSection(props = {}) {
         }),
         [headerFilters]
     );
-    const applyCustomerQuickFilters = useCallback((sourceRows = []) => {
-        let rows = Array.isArray(sourceRows) ? sourceRows : [];
-        if (quickSegmentFilters.length > 0) {
-            const segmentSet = new Set(quickSegmentFilters.map((value) => String(value || '').trim().toUpperCase()).filter(Boolean));
-            rows = rows.filter((row) => segmentSet.has(String(row?.segmento || '').trim().toUpperCase()));
-        }
-        if (quickPurchaseFilter) {
-            const expectPurchase = quickPurchaseFilter === 'yes';
-            rows = rows.filter((row) => Boolean(row?.realizo_compra) === expectPurchase);
-        }
-        if (quickDaysFilter) {
-            rows = rows.filter((row) => {
-                const value = Number(row?.dias_ultima_compra);
-                if (!Number.isFinite(value)) return false;
-                if (quickDaysFilter === 'lte30') return value <= 30;
-                if (quickDaysFilter === '31_60') return value >= 31 && value <= 60;
-                if (quickDaysFilter === '61_90') return value >= 61 && value <= 90;
-                if (quickDaysFilter === 'gt90') return value > 90;
-                return true;
-            });
-        }
-        if (quickMonto180Filter) {
-            rows = rows.filter((row) => {
-                const value = Number(row?.monto_180);
-                if (!Number.isFinite(value)) return false;
-                if (quickMonto180Filter === 'lt100') return value < 100;
-                if (quickMonto180Filter === '100_500') return value >= 100 && value <= 500;
-                if (quickMonto180Filter === 'gt500') return value > 500;
-                return true;
-            });
-        }
-        return rows;
-    }, [quickDaysFilter, quickMonto180Filter, quickPurchaseFilter, quickSegmentFilters]);
     const applyCustomerHeaderFilters = useCallback((sourceRows = []) => {
         const rows = Array.isArray(sourceRows) ? sourceRows : [];
-        const headerFilteredRows = activeHeaderFilters.reduce((currentRows, filterItem) => {
+        return activeHeaderFilters.reduce((currentRows, filterItem) => {
             const filterColumnKey = String(filterItem?.columnKey || '').trim();
             return currentRows.filter((row) => {
                 if (filterColumnKey === 'actualizado') return matchCustomerTableFilterValue(row?._raw?.updatedAt || row?.actualizado, filterItem);
@@ -1768,9 +1774,8 @@ function CustomersSection(props = {}) {
                 return matchCustomerTableFilterValue(row?.[filterColumnKey], filterItem);
             });
         }, rows);
-        return applyCustomerQuickFilters(headerFilteredRows);
-    }, [activeHeaderFilters, applyCustomerQuickFilters, matchCustomerTableFilterValue]);
-    function buildCustomerTableRow(customer = {}, index = 0) {
+    }, [activeHeaderFilters, matchCustomerTableFilterValue]);
+    const buildCustomerTableRow = useCallback((customer = {}, index = 0) => {
         const customerId = resolveCustomerId(customer);
         const safeId = customerId || String(customer.phoneE164 || customer.phone_e164 || customer.email || `customer-${index}`).trim();
         const nameParts = buildNamePartsFromCustomer(customer);
@@ -1822,20 +1827,93 @@ function CustomersSection(props = {}) {
             estado: customer.isActive === false ? 'Inactivo' : 'Activo',
             _raw: customer
         };
-    }
-    const campaignSelectableRows = useMemo(
+    }, [customerLabelMaps, formatDateTimeLabel, zoneByCustomerId]);
+    const tableRows = useMemo(
         () => (Array.isArray(outreachFilteredCustomers) ? outreachFilteredCustomers : []).map((customer, index) => buildCustomerTableRow(customer, index)),
         [buildCustomerTableRow, outreachFilteredCustomers]
     );
     const campaignSelectableVisibleCustomerIds = useMemo(
-        () => applyCustomerHeaderFilters(campaignSelectableRows)
+        () => applyCustomerHeaderFilters(tableRows)
             .map((row) => String(row?._raw?.customerId || row?.id || '').trim())
             .filter(Boolean),
-        [applyCustomerHeaderFilters, campaignSelectableRows]
+        [applyCustomerHeaderFilters, tableRows]
     );
     const allCampaignSelectableCustomersSelected = useMemo(
         () => campaignSelectableVisibleCustomerIds.length > 0 && campaignSelectableVisibleCustomerIds.every((customerId) => selectedCustomerIdsForCampaignSet.has(customerId)),
         [campaignSelectableVisibleCustomerIds, selectedCustomerIdsForCampaignSet]
+    );
+    const tableColumns = useMemo(
+        () => ([
+            ...(campaignSelectionMode ? [{
+                key: 'selectForCampaign',
+                configurable: false,
+                sortable: false,
+                label: (
+                    <span className="saas-customers-select-cell">
+                        <input
+                            type="checkbox"
+                            checked={allCampaignSelectableCustomersSelected}
+                            onChange={() => {
+                                setSelectedCustomerIdsForCampaign((prev) => {
+                                    const current = new Set((Array.isArray(prev) ? prev : []).map((item) => String(item || '').trim()).filter(Boolean));
+                                    if (allCampaignSelectableCustomersSelected) {
+                                        campaignSelectableVisibleCustomerIds.forEach((customerId) => current.delete(customerId));
+                                    } else {
+                                        campaignSelectableVisibleCustomerIds.forEach((customerId) => current.add(customerId));
+                                    }
+                                    return Array.from(current);
+                                });
+                            }}
+                            onClick={(event) => event.stopPropagation()}
+                            aria-label="Seleccionar clientes visibles para campana"
+                        />
+                    </span>
+                ),
+                width: '54px',
+                minWidth: '54px',
+                maxWidth: '54px',
+                align: 'center',
+                render: (_, row) => {
+                    const customerId = String(row?._raw?.customerId || row?.id || '').trim();
+                    const checked = selectedCustomerIdsForCampaignSet.has(customerId);
+                    return (
+                        <span className="saas-customers-select-cell">
+                            <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => {
+                                    setSelectedCustomerIdsForCampaign((prev) => {
+                                        const current = Array.isArray(prev) ? prev : [];
+                                        if (current.includes(customerId)) {
+                                            return current.filter((item) => item !== customerId);
+                                        }
+                                        return [...current, customerId];
+                                    });
+                                }}
+                                onClick={(event) => event.stopPropagation()}
+                                aria-label={`Seleccionar ${String(row?.nombreCompleto || customerId || 'cliente')}`}
+                            />
+                        </span>
+                    );
+                }
+            }] : []),
+            ...CUSTOMER_TABLE_COLUMNS.map((column) => ({
+                ...column,
+                hidden: !columnPrefs.isColumnVisible(column.key)
+            }))
+        ]),
+        [
+            allCampaignSelectableCustomersSelected,
+            campaignSelectableVisibleCustomerIds,
+            campaignSelectionMode,
+            columnPrefs,
+            columnPrefs.visibleColumnKeys,
+            selectedCustomerIdsForCampaignSet
+        ]
+    );
+    const visibleColumns = useMemo(
+        () => tableColumns.filter((column) => column && column.hidden !== true),
+        [tableColumns]
     );
 
     const sortedAndFilteredRows = useMemo(() => {
@@ -3921,6 +3999,7 @@ function CustomersSection(props = {}) {
             onSortChange={setSortConfig}
             extra={(
                 <div className="saas-customers-header-extra">
+                    {/* Legacy quick filters removed in favor of the standard Filters panel.
                     <div className="saas-customers-quick-filters">
                         <div className="saas-customers-quick-filters__group">
                             <span>Segmento</span>
@@ -3975,7 +4054,7 @@ function CustomersSection(props = {}) {
                                 <option value="gt500">{`>S/500`}</option>
                             </select>
                         </label>
-                    </div>
+                    </div> */}
                     {campaignSelectionMode ? (
                         <div className="saas-customers-outreach-toolbar">
                             <label className="saas-customers-outreach-toolbar__field">

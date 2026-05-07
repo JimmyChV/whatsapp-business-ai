@@ -371,6 +371,27 @@ function registerTenantCustomerHttpRoutes({
         }
     });
 
+    app.get('/api/tenant/customers/chat-search', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const query = String(req.query?.q || req.query?.query || '').trim();
+            const includeInactive = String(req.query?.includeInactive || '').trim().toLowerCase() !== 'false';
+            const limit = Number(req.query?.limit || 24);
+
+            const result = await customerService.searchCustomersForChat(tenantId, {
+                query,
+                includeInactive,
+                limit
+            });
+
+            return res.json({ ok: true, tenantId, ...result });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron buscar clientes para chat.') });
+        }
+    });
+
     app.get('/api/tenant/zone-rules', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;

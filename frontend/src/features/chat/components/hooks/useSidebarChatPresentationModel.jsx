@@ -53,6 +53,36 @@ const sanitizeDisplayText = (value = '') => repairMojibake(value)
   .replace(/\s+/g, ' ')
   .trim();
 
+const toTitleCaseChatText = (value = '') => String(value || '')
+  .trim()
+  .toLowerCase()
+  .split(/\s+/)
+  .filter(Boolean)
+  .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+  .join(' ');
+
+const splitBulletParts = (value = '') => String(value || '')
+  .split(/(?:•|â€¢|Ã¢â‚¬Â¢)/)
+  .map((part) => sanitizeDisplayText(part))
+  .filter(Boolean);
+
+const buildPreferredCustomerName = (chat = {}) => {
+  const fullName = [
+    chat?.firstName || chat?.first_name,
+    chat?.lastNamePaternal || chat?.last_name_paternal,
+    chat?.lastNameMaternal || chat?.last_name_maternal
+  ]
+    .map((part) => toTitleCaseChatText(part))
+    .filter(Boolean)
+    .join(' ');
+
+  const erpCustomerName = toTitleCaseChatText(chat?.erpCustomerName || '');
+  const contactName = toTitleCaseChatText(chat?.contactName || chat?.contact_name || '');
+  const rawName = sanitizeDisplayText(chat?.name || '');
+
+  return fullName || erpCustomerName || contactName || rawName;
+};
+
 const useSidebarChatPresentationModel = () => {
   const formatTime = (ts) => {
     if (!Number.isFinite(Number(ts)) || Number(ts) <= 0) return '';
@@ -90,7 +120,7 @@ const useSidebarChatPresentationModel = () => {
   };
 
   const getDisplayName = (chat) => {
-    const rawName = sanitizeDisplayText(chat?.name || '');
+    const rawName = sanitizeDisplayText(buildPreferredCustomerName(chat));
     const phone = formatPhone(chat?.phone || chat?.id || '');
     if (rawName && !isInternalIdentifier(rawName)) return rawName;
     if (phone) return phone;
@@ -127,10 +157,7 @@ const useSidebarChatPresentationModel = () => {
       return { subtitle: '', alias: '', location: '' };
     }
 
-    const parts = String(subtitle)
-      .split('•')
-      .map((part) => sanitizeDisplayText(part))
-      .filter(Boolean);
+    const parts = splitBulletParts(subtitle);
 
     if (parts.length <= 1) {
       const onlyPart = parts[0] || '';

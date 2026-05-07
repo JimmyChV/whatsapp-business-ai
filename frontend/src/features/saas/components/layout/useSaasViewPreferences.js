@@ -12,6 +12,35 @@ const normalizeKeys = (columns = []) => (
         .filter(Boolean)
 );
 
+const sameArray = (left = [], right = []) => {
+    if (left === right) return true;
+    if (!Array.isArray(left) || !Array.isArray(right)) return false;
+    if (left.length !== right.length) return false;
+    for (let index = 0; index < left.length; index += 1) {
+        if (left[index] !== right[index]) return false;
+    }
+    return true;
+};
+
+const sameSort = (left = null, right = null) => {
+    const normalizedLeft = normalizeSortState(left);
+    const normalizedRight = normalizeSortState(right);
+    return (
+        normalizedLeft.columnKey === normalizedRight.columnKey
+        && normalizedLeft.direction === normalizedRight.direction
+        && sameArray(
+            (normalizedLeft.activeItems || []).map((item) => `${item.columnKey}:${item.direction}`),
+            (normalizedRight.activeItems || []).map((item) => `${item.columnKey}:${item.direction}`)
+        )
+    );
+};
+
+const samePrefs = (left = {}, right = {}) => (
+    sameArray(left?.visibleColumnKeys || [], right?.visibleColumnKeys || [])
+    && sameArray(left?.columnOrder || [], right?.columnOrder || [])
+    && sameSort(left?.sort, right?.sort)
+);
+
 const normalizePrefs = (value = {}, defaultKeys = [], availableKeys = defaultKeys) => {
     const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
     const allowedKeys = Array.isArray(availableKeys) && availableKeys.length ? availableKeys : defaultKeys;
@@ -57,6 +86,10 @@ const writeLocal = (storageKey, prefs) => {
 
 export default function useSaasViewPreferences(sectionKey, defaultColumns = [], options = {}) {
     const requestJson = typeof options?.requestJson === 'function' ? options.requestJson : null;
+    const requestJsonRef = useRef(requestJson);
+    useEffect(() => {
+        requestJsonRef.current = requestJson;
+    }, [requestJson]);
     const defaultKeys = useMemo(() => normalizeKeys(defaultColumns), [defaultColumns]);
     const availableKeys = useMemo(
         () => normalizeKeys(options?.availableColumns || options?.allColumns || defaultColumns),
@@ -69,7 +102,10 @@ export default function useSaasViewPreferences(sectionKey, defaultColumns = [], 
     const userTouchedRef = useRef(false);
 
     useEffect(() => {
-        setPreferences((prev) => normalizePrefs(prev, defaultKeys, availableKeys));
+        setPreferences((prev) => {
+            const next = normalizePrefs(prev, defaultKeys, availableKeys);
+            return samePrefs(prev, next) ? prev : next;
+        });
     }, [availableKeys, defaultKeys]);
 
     useEffect(() => {
@@ -78,17 +114,22 @@ export default function useSaasViewPreferences(sectionKey, defaultColumns = [], 
         userTouchedRef.current = false;
         const load = async () => {
             const localPrefs = readLocal(storageKey, fallbackPrefs, availableKeys);
-            if (!cancelled) setPreferences(localPrefs);
-            if (!requestJson) {
+            if (!cancelled) {
+                setPreferences((prev) => (samePrefs(prev, localPrefs) ? prev : localPrefs));
+            }
+            if (!requestJsonRef.current) {
                 loadedRef.current = true;
                 return;
             }
             try {
-                const remote = await fetchSaasUiPreference(requestJson, sectionKey);
+                const remote = await fetchSaasUiPreference(requestJsonRef.current, sectionKey);
                 const remotePrefs = normalizePrefs(remote?.preferencesJson || {}, defaultKeys, availableKeys);
                 if (!cancelled && !userTouchedRef.current) {
-                    setPreferences(remotePrefs);
-                    writeLocal(storageKey, remotePrefs);
+                    setPreferences((prev) => {
+                        if (samePrefs(prev, remotePrefs)) return prev;
+                        writeLocal(storageKey, remotePrefs);
+                        return remotePrefs;
+                    });
                 }
             } catch {
                 // keep local fallback
@@ -98,16 +139,16 @@ export default function useSaasViewPreferences(sectionKey, defaultColumns = [], 
         };
         load();
         return () => { cancelled = true; };
-    }, [availableKeys, defaultKeys, fallbackPrefs, requestJson, sectionKey, storageKey]);
+    }, [availableKeys, defaultKeys, fallbackPrefs, sectionKey, storageKey]);
 
     useEffect(() => {
         writeLocal(storageKey, preferences);
-        if (!requestJson || !loadedRef.current) return undefined;
+        if (!requestJsonRef.current || !loadedRef.current) return undefined;
         const timer = setTimeout(() => {
-            saveSaasUiPreference(requestJson, sectionKey, preferences).catch(() => {});
+            saveSaasUiPreference(requestJsonRef.current, sectionKey, preferences).catch(() => {});
         }, 1000);
         return () => clearTimeout(timer);
-    }, [preferences, requestJson, sectionKey, storageKey]);
+    }, [preferences, sectionKey, storageKey]);
 
     const setVisibleColumnKeys = useCallback((nextValue) => {
         userTouchedRef.current = true;

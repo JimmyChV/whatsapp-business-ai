@@ -1,5 +1,6 @@
 const {
     DEFAULT_TENANT_ID,
+    getPostgresPool,
     getStorageDriver,
     normalizeTenantId,
     queryPostgres,
@@ -58,6 +59,16 @@ function normalizeObject(value = {}) {
 
 function ensureArray(value = []) {
     return Array.isArray(value) ? value : [];
+}
+
+function chunkArray(items = [], size = 250) {
+    const safeItems = ensureArray(items);
+    const chunkSize = Math.max(1, Number(size) || 250);
+    const chunks = [];
+    for (let index = 0; index < safeItems.length; index += chunkSize) {
+        chunks.push(safeItems.slice(index, index + chunkSize));
+    }
+    return chunks;
 }
 
 function sanitizeRule(source = {}) {
@@ -461,6 +472,9 @@ async function recalculateZonesForTenant(tenantId = DEFAULT_TENANT_ID) {
             [cleanTenantId]
         );
         const primaryAddresses = ensureArray(addressesResult?.rows);
+        const addressUpdates = [];
+        const desiredAssignments = [];
+        const affectedCustomerIds = [];
 
         for (const address of primaryAddresses) {
             const customerId = toText(address?.customer_id || '');
@@ -495,31 +509,101 @@ async function recalculateZonesForTenant(tenantId = DEFAULT_TENANT_ID) {
                 || nextProvinceName !== prevProvinceName
                 || nextDepartmentName !== prevDepartmentName
             ) {
-                await queryPostgres(
-                    `UPDATE tenant_customer_addresses
-                        SET district_name = $3,
-                            province_name = $4,
-                            department_name = $5,
-                            updated_at = NOW()
-                      WHERE tenant_id = $1
-                        AND address_id = $2`,
-                    [
-                        cleanTenantId,
-                        addressId,
-                        normalizedGeoFields.district_name,
-                        normalizedGeoFields.province_name,
-                        normalizedGeoFields.department_name
-                    ]
-                );
+                addressUpdates.push({
+                    addressId,
+                    districtName: normalizedGeoFields.district_name,
+                    provinceName: normalizedGeoFields.province_name,
+                    departmentName: normalizedGeoFields.department_name
+                });
             }
 
             const rule = resolveZoneFromAddress(enriched, rules);
-            const assignment = await replaceCustomerZoneLabel(cleanTenantId, {
-                customerId,
-                addressId,
-                rule
-            });
-            if (assignment?.labelId) assigned += 1;
+            const labelId = rule ? normalizeRuleId(rule.ruleId || rule.rule_id || '') : '';
+            affectedCustomerIds.push(customerId);
+            if (labelId) {
+                desiredAssignments.push({
+                    customerId,
+                    addressId,
+                    labelId
+                });
+                assigned += 1;
+            }
+        }
+
+        const pool = getPostgresPool();
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            for (const chunk of chunkArray(addressUpdates, 250)) {
+                const values = [];
+                const params = [cleanTenantId];
+                chunk.forEach((item, index) => {
+                    const base = 2 + (index * 4);
+                    values.push(`($${base}, $${base + 1}, $${base + 2}, $${base + 3})`);
+                    params.push(
+                        item.addressId,
+                        item.districtName,
+                        item.provinceName,
+                        item.departmentName
+                    );
+                });
+                await client.query(
+                    `UPDATE tenant_customer_addresses AS t
+                        SET district_name = v.district_name,
+                            province_name = v.province_name,
+                            department_name = v.department_name,
+                            updated_at = NOW()
+                       FROM (
+                            VALUES ${values.join(', ')}
+                       ) AS v(address_id, district_name, province_name, department_name)
+                      WHERE t.tenant_id = $1
+                        AND t.address_id = v.address_id`,
+                    params
+                );
+            }
+
+            const uniqueCustomerIds = Array.from(new Set(affectedCustomerIds.filter(Boolean)));
+            for (const chunk of chunkArray(uniqueCustomerIds, 1000)) {
+                await client.query(
+                    `DELETE FROM tenant_customer_labels
+                      WHERE tenant_id = $1
+                        AND source = 'zone'
+                        AND customer_id = ANY($2::text[])`,
+                    [cleanTenantId, chunk]
+                );
+            }
+
+            for (const chunk of chunkArray(desiredAssignments, 500)) {
+                const values = [];
+                const params = [cleanTenantId];
+                chunk.forEach((item, index) => {
+                    const base = 2 + (index * 3);
+                    values.push(`($1, $${base}, $${base + 1}, $${base + 2}, 'zone', NOW())`);
+                    params.push(item.customerId, item.labelId, toText(item.addressId) || null);
+                });
+                await client.query(
+                    `INSERT INTO tenant_customer_labels (
+                        tenant_id,
+                        customer_id,
+                        label_id,
+                        address_id,
+                        source,
+                        created_at
+                     )
+                     VALUES ${values.join(', ')}
+                     ON CONFLICT (tenant_id, customer_id, label_id, source)
+                     DO UPDATE SET address_id = EXCLUDED.address_id, created_at = NOW()`,
+                    params
+                );
+            }
+
+            await client.query('COMMIT');
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
         }
 
         return { scanned, assigned, totalCustomers };

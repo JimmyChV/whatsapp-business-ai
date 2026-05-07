@@ -3,6 +3,7 @@ function NewChatModal({
   dialog,
   availableModules,
   onChange,
+  onSelectCustomerOption,
   onConfirm,
   onCancel
 }) {
@@ -15,25 +16,53 @@ function NewChatModal({
           <h3>Nuevo chat</h3>
           <button type="button" className="new-chat-modal-close" onClick={onCancel} aria-label="Cerrar">x</button>
         </div>
-        <p className="new-chat-modal-subtitle">Selecciona el modulo y abre una conversacion sin mezclar chats entre canales.</p>
+        <p className="new-chat-modal-subtitle">Busca por nombre o numero, elige el modulo correcto y abre una conversacion sin mezclar chats entre canales.</p>
 
-        <label className="new-chat-modal-label" htmlFor="new-chat-phone">Numero (con codigo de pais)</label>
+        <label className="new-chat-modal-label" htmlFor="new-chat-query">Buscar cliente o numero</label>
+        <input
+          id="new-chat-query"
+          type="text"
+          value={dialog.query || ''}
+          onChange={(event) => onChange({ query: event.target.value, phone: event.target.value, error: '' })}
+          onKeyDown={(event) => { if (event.key === 'Enter') onConfirm(); }}
+          className="new-chat-modal-input"
+          placeholder="Ej: 51955123456 o Maria Perez"
+          autoFocus
+        />
+
+        {dialog.loading && <div className="new-chat-modal-hint">Buscando clientes...</div>}
+        {!dialog.loading && Array.isArray(dialog.customerOptions) && dialog.customerOptions.length > 0 && (
+          <div className="new-chat-modal-suggestions" role="listbox" aria-label="Clientes encontrados">
+            {dialog.customerOptions.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                className={`new-chat-modal-suggestion ${dialog.selectedCustomerOptionKey === option.key ? 'is-active' : ''}`.trim()}
+                onClick={() => onSelectCustomerOption?.(option)}
+              >
+                <strong>{option.label}</strong>
+                {option.sublabel ? <small>{option.sublabel}</small> : null}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <label className="new-chat-modal-label" htmlFor="new-chat-phone">Numero seleccionado</label>
         <input
           id="new-chat-phone"
           type="text"
           value={dialog.phone}
-          onChange={(event) => onChange({ phone: event.target.value, error: '' })}
+          onChange={(event) => onChange({ phone: event.target.value, selectedCustomerOptionKey: '', error: '' })}
           onKeyDown={(event) => { if (event.key === 'Enter') onConfirm(); }}
           className="new-chat-modal-input"
           placeholder="Ej: 51955123456"
-          autoFocus
         />
 
         <label className="new-chat-modal-label" htmlFor="new-chat-module">Modulo</label>
         <select
           id="new-chat-module"
           value={dialog.moduleId}
-          onChange={(event) => onChange({ moduleId: event.target.value, error: '' })}
+          onChange={(event) => onChange({ moduleId: event.target.value, selectedCustomerOptionKey: '', error: '' })}
           className="new-chat-modal-select"
           disabled={availableModules.length === 0}
         >

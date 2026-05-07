@@ -7,6 +7,8 @@ import useSidebarFiltersController from './hooks/useSidebarFiltersController';
 import useSidebarChatPresentationModel from './hooks/useSidebarChatPresentationModel';
 import useSidebarInfiniteScroll from './hooks/useSidebarInfiniteScroll';
 import useSidebarUiToggles from './hooks/useSidebarUiToggles';
+import { API_URL } from '../../../config/runtime';
+import { searchTenantCustomersForChat } from '../core/services/customerSearch.service';
 
 
 const normalizePhoneDigits = (value = '') => String(value || '').replace(/\D/g, '');
@@ -32,6 +34,12 @@ const sanitizeDisplayText = (value = '') => repairMojibake(value)
     .replace(/\s+/g, ' ')
     .trim();
 
+const normalizeSearchText = (value = '') => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+
 const Sidebar = ({
     chats,
     chatsLoaded = false,
@@ -52,6 +60,7 @@ const Sidebar = ({
     activeFilters = {},
     onFiltersChange,
     onOpenCompanyProfile,
+    buildApiHeaders = null,
     saasAuthEnabled = false,
     tenantOptions = [],
     activeTenantId = '',
@@ -133,8 +142,11 @@ const Sidebar = ({
     const statusesLoaded = Boolean(chatCommercialStatusState?.statusesLoaded);
     const [showAssigneeFilterMenu, setShowAssigneeFilterMenu] = React.useState(false);
     const [showCommercialFilterMenu, setShowCommercialFilterMenu] = React.useState(false);
+    const [customerSearchResults, setCustomerSearchResults] = React.useState([]);
+    const [customerSearchLoading, setCustomerSearchLoading] = React.useState(false);
     const assigneeMenuRef = React.useRef(null);
     const commercialMenuRef = React.useRef(null);
+    const customerSearchRequestRef = React.useRef(0);
 
     React.useEffect(() => {
         const handlePointerDown = (event) => {
@@ -168,6 +180,70 @@ const Sidebar = ({
         : [];
     const activeTenantOption = sortedTenantOptions.find((tenant) => String(tenant?.id || '').trim() === currentTenantId) || sortedTenantOptions[0] || null;
     const activeTenantLabel = activeTenantOption?.name || activeTenantOption?.id || currentTenantId || 'default';
+    const moduleConfigById = React.useMemo(() => new Map(
+        (Array.isArray(waModules) ? waModules : []).map((module) => [
+            String(module?.moduleId || module?.id || '').trim().toLowerCase(),
+            module || {}
+        ])
+    ), [waModules]);
+
+    React.useEffect(() => {
+        const query = String(searchQuery || '').trim();
+        if (!query || query.length < 2 || !currentTenantId || typeof buildApiHeaders !== 'function') {
+            setCustomerSearchResults([]);
+            setCustomerSearchLoading(false);
+            return undefined;
+        }
+        const requestId = customerSearchRequestRef.current + 1;
+        customerSearchRequestRef.current = requestId;
+        const timerId = window.setTimeout(() => {
+            setCustomerSearchLoading(true);
+            searchTenantCustomersForChat({
+                apiUrl: API_URL,
+                buildApiHeaders,
+                tenantId: currentTenantId,
+                query,
+                waModules
+            }).then((results) => {
+                if (customerSearchRequestRef.current !== requestId) return;
+                setCustomerSearchResults(Array.isArray(results) ? results : []);
+            }).catch(() => {
+                if (customerSearchRequestRef.current !== requestId) return;
+                setCustomerSearchResults([]);
+            }).finally(() => {
+                if (customerSearchRequestRef.current !== requestId) return;
+                setCustomerSearchLoading(false);
+            });
+        }, 180);
+        return () => window.clearTimeout(timerId);
+    }, [buildApiHeaders, currentTenantId, searchQuery, waModules]);
+
+    const hasActiveSearch = String(localQuery || '').trim().length >= 2;
+    const dedupedCustomerSearchResults = React.useMemo(() => {
+        if (!hasActiveSearch || customerSearchResults.length === 0) return [];
+        const existingChatKeys = new Set(
+            filteredChats.map((chat) => {
+                const phoneDigits = normalizePhoneDigits(chat?.phone || chat?.id || chat?.subtitle || '');
+                const moduleId = String(chat?.scopeModuleId || chat?.moduleId || '').trim().toLowerCase();
+                return `${phoneDigits}::${moduleId}`;
+            })
+        );
+        return customerSearchResults.filter((result) => {
+            const phoneDigits = normalizePhoneDigits(result?.phone || result?.phoneAlt || '');
+            const moduleId = String(result?.moduleId || '').trim().toLowerCase();
+            return !existingChatKeys.has(`${phoneDigits}::${moduleId}`);
+        });
+    }, [customerSearchResults, filteredChats, hasActiveSearch]);
+
+    const customerSearchTitle = React.useMemo(() => {
+        const normalized = normalizeSearchText(localQuery);
+        if (!normalized) return '';
+        const prioritizedMatches = dedupedCustomerSearchResults.filter((result) => {
+            const name = normalizeSearchText(result?.displayName || '');
+            return name === normalized || name.startsWith(normalized);
+        });
+        return `Clientes CRM (${prioritizedMatches.length || dedupedCustomerSearchResults.length})`;
+    }, [dedupedCustomerSearchResults, localQuery]);
 
     return (
         <div className="sidebar sidebar-pro">
@@ -556,12 +632,13 @@ const Sidebar = ({
                             </div>
                         </div>
                     ))
-                ) : filteredChats.length === 0 ? (
+                ) : filteredChats.length === 0 && !hasActiveSearch ? (
                     <div className="sidebar-empty-search">
                         Sin resultados para "{localQuery || 'los filtros actuales'}"
                     </div>
                 ) : (
-                    filteredChats.map((chat) => {
+                    <>
+                    {filteredChats.map((chat) => {
                         const displayName = getDisplayName(chat);
                         const contactHint = getContactHint(chat, displayName);
                         const contactMeta = getContactMeta(chat, displayName);
@@ -659,7 +736,85 @@ const Sidebar = ({
                                 </div>
                             </div>
                         );
-                    })
+                    })}
+                    {hasActiveSearch && customerSearchLoading && (
+                        <div className="sidebar-empty-search">Buscando clientes...</div>
+                    )}
+                    {hasActiveSearch && !customerSearchLoading && dedupedCustomerSearchResults.length > 0 && (
+                        <>
+                            {filteredChats.length > 0 && (
+                                <div className="sidebar-empty-search" style={{ paddingTop: 8, paddingBottom: 6 }}>
+                                    {customerSearchTitle}
+                                </div>
+                            )}
+                            {dedupedCustomerSearchResults.map((result) => {
+                                const resultModuleConfig = moduleConfigById.get(String(result?.moduleId || '').trim().toLowerCase()) || null;
+                                const resultChannelMarker = getChannelMarker(result?.channelType || resultModuleConfig?.channelType || 'whatsapp');
+                                const resultAvatarLabel = result.moduleName || result.displayName;
+                                const resultSecondaryLine = result.sublabel || result.phone || result.phoneAlt || 'Sin telefono';
+                                return (
+                                    <button
+                                        key={`crm_${result.key}`}
+                                        type="button"
+                                        className="chat-item chat-item-modern chat-item-modern--crm"
+                                        onClick={() => {
+                                            onStartNewChat?.(result.phone || result.phoneAlt || '', '', {
+                                                moduleId: result.moduleId || '',
+                                                autoConfirm: true
+                                            });
+                                            onSearchQueryChange?.('');
+                                        }}
+                                    >
+                                        <div
+                                            className="chat-avatar-modern chat-avatar-modern--module"
+                                            style={{ background: avatarColor(resultAvatarLabel) }}
+                                        >
+                                            {avatarLetter(resultAvatarLabel)}
+                                            <span
+                                                className={`chat-avatar-channel-tag chat-avatar-channel-tag--${resultChannelMarker.key}`}
+                                                title={resultChannelMarker.label}
+                                            >
+                                                <ChannelBrandIcon
+                                                    channelType={resultChannelMarker.key}
+                                                    className="chat-avatar-channel-icon"
+                                                    size={11}
+                                                    title={resultChannelMarker.label}
+                                                />
+                                            </span>
+                                        </div>
+                                        <div className="chat-info chat-info-modern">
+                                            <div className="chat-row-top">
+                                                <div className="chat-name-stack">
+                                                    <span className="chat-display-name" title={result.displayName}>{result.displayName}</span>
+                                                    {result.locationLabel ? (
+                                                        <span className="chat-contact-hint" title={result.locationLabel}>
+                                                            <span className="chat-contact-location-chip">{result.locationLabel}</span>
+                                                        </span>
+                                                    ) : (
+                                                        <span className="chat-contact-hint" title={result.moduleName || 'Sin modulo'}>
+                                                            <span className="chat-contact-location-chip">{result.moduleName || 'Sin modulo'}</span>
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <span className="chat-time chat-time-muted">CRM</span>
+                                            </div>
+                                            <div className="chat-row-bottom">
+                                                <p className="chat-last-message">
+                                                    <span title={resultSecondaryLine}>{resultSecondaryLine}</span>
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </>
+                    )}
+                    {hasActiveSearch && !customerSearchLoading && filteredChats.length === 0 && dedupedCustomerSearchResults.length === 0 && (
+                        <div className="sidebar-empty-search">
+                            Sin resultados para "{localQuery}"
+                        </div>
+                    )}
+                    </>
                 )}
 
                 {chats.length > 0 && (

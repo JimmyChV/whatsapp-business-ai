@@ -103,6 +103,7 @@ export function buildOperationPageProps(input = {}) {
     newChatDialog: input.newChatDialog,
     setNewChatDialog: input.setNewChatDialog,
     newChatAvailableModules: input.newChatAvailableModules,
+    handleSelectNewChatCustomerOption: input.handleSelectNewChatCustomerOption,
     handleConfirmNewChat: input.handleConfirmNewChat,
     handleCancelNewChatDialog: input.handleCancelNewChatDialog,
     showSaasAdminPanel: input.showSaasAdminPanel,

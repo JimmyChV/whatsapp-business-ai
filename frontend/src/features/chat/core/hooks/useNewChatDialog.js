@@ -1,12 +1,16 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   getBestChatPhone,
   normalizeDigits,
   normalizeWaModules,
   parseScopedChatId
 } from '../helpers/appChat.helpers';
+import { searchTenantCustomersForChat } from '../services/customerSearch.service';
 
 export function useNewChatDialog({
+  apiUrl = '',
+  buildApiHeaders,
+  activeTenantId = '',
   waModulesRef,
   selectedWaModuleRef,
   chatsRef,
@@ -15,11 +19,16 @@ export function useNewChatDialog({
 }) {
   const [newChatDialog, setNewChatDialog] = useState({
     open: false,
+    query: '',
     phone: '',
     firstMessage: '',
     moduleId: '',
-    error: ''
+    error: '',
+    loading: false,
+    selectedCustomerOptionKey: '',
+    customerOptions: []
   });
+  const searchRequestRef = useRef(0);
 
   const resolveNewChatAvailableModules = useCallback(() => (
     normalizeWaModules(waModulesRef.current).filter((module) => module.isActive !== false)
@@ -40,12 +49,24 @@ export function useNewChatDialog({
   const resetNewChatDialog = useCallback(() => {
     setNewChatDialog({
       open: false,
+      query: '',
       phone: '',
       firstMessage: '',
       moduleId: '',
-      error: ''
+      error: '',
+      loading: false,
+      selectedCustomerOptionKey: '',
+      customerOptions: []
     });
   }, []);
+
+  const loadCustomerSearchResults = useCallback(async (query) => searchTenantCustomersForChat({
+    apiUrl,
+    buildApiHeaders,
+    tenantId: activeTenantId,
+    query,
+    waModules: resolveNewChatAvailableModules()
+  }), [activeTenantId, apiUrl, buildApiHeaders, resolveNewChatAvailableModules]);
 
   const executeStartNewChat = useCallback(({ normalizedPhone = '', firstMessage = '', targetModuleId = '' } = {}) => {
     const cleanPhone = normalizeDigits(normalizedPhone);
@@ -88,22 +109,49 @@ export function useNewChatDialog({
   const openStartNewChatDialog = useCallback((phoneArg = '', firstMessageArg = '') => {
     const availableModules = resolveNewChatAvailableModules();
     const defaultModuleId = resolveDefaultNewChatModuleId(availableModules);
+    const initialQuery = String(phoneArg || '').trim();
     setNewChatDialog({
       open: true,
-      phone: String(phoneArg || '').trim(),
+      query: initialQuery,
+      phone: initialQuery,
       firstMessage: typeof firstMessageArg === 'string' ? firstMessageArg : '',
       moduleId: defaultModuleId || '',
-      error: ''
+      error: '',
+      loading: false,
+      selectedCustomerOptionKey: '',
+      customerOptions: []
     });
   }, [resolveDefaultNewChatModuleId, resolveNewChatAvailableModules]);
 
-  const handleStartNewChat = useCallback((phoneArg = '', firstMessageArg = '') => {
+  const handleStartNewChat = useCallback((phoneArg = '', firstMessageArg = '', options = {}) => {
+    const targetModuleId = String(options?.moduleId || '').trim().toLowerCase();
+    const autoConfirm = options?.autoConfirm === true;
+    if (autoConfirm) {
+      executeStartNewChat({
+        normalizedPhone: phoneArg,
+        firstMessage: firstMessageArg,
+        targetModuleId
+      });
+      return;
+    }
     openStartNewChatDialog(phoneArg, firstMessageArg);
-  }, [openStartNewChatDialog]);
+  }, [executeStartNewChat, openStartNewChatDialog]);
 
   const handleCancelNewChatDialog = useCallback(() => {
     resetNewChatDialog();
   }, [resetNewChatDialog]);
+
+  const handleSelectNewChatCustomerOption = useCallback((option = null) => {
+    const nextPhone = String(option?.phone || option?.phoneAlt || '').trim();
+    const nextModuleId = String(option?.moduleId || '').trim().toLowerCase();
+    setNewChatDialog((prev) => ({
+      ...prev,
+      selectedCustomerOptionKey: String(option?.key || '').trim(),
+      phone: nextPhone || prev.phone,
+      moduleId: nextModuleId || prev.moduleId,
+      error: ''
+    }));
+  }, []);
 
   const handleConfirmNewChat = useCallback(() => {
     const normalizedPhone = normalizeDigits(newChatDialog.phone || '');
@@ -145,6 +193,52 @@ export function useNewChatDialog({
     selectedWaModuleRef
   ]);
 
+  useEffect(() => {
+    if (!newChatDialog.open) return undefined;
+    const query = String(newChatDialog.query || '').trim();
+    if (query.length < 2) {
+      setNewChatDialog((prev) => (
+        prev.customerOptions.length === 0 && prev.loading === false
+          ? prev
+          : { ...prev, loading: false, customerOptions: [], selectedCustomerOptionKey: '' }
+      ));
+      return undefined;
+    }
+
+    const requestId = searchRequestRef.current + 1;
+    searchRequestRef.current = requestId;
+    const timerId = setTimeout(() => {
+      setNewChatDialog((prev) => ({ ...prev, loading: true, error: '' }));
+      loadCustomerSearchResults(query)
+        .then((options) => {
+          if (searchRequestRef.current !== requestId) return;
+          setNewChatDialog((prev) => {
+            const selectedKey = options.some((entry) => entry.key === prev.selectedCustomerOptionKey)
+              ? prev.selectedCustomerOptionKey
+              : '';
+            return {
+              ...prev,
+              loading: false,
+              customerOptions: options,
+              selectedCustomerOptionKey: selectedKey
+            };
+          });
+        })
+        .catch((error) => {
+          if (searchRequestRef.current !== requestId) return;
+          setNewChatDialog((prev) => ({
+            ...prev,
+            loading: false,
+            customerOptions: [],
+            selectedCustomerOptionKey: '',
+            error: String(error?.message || 'No se pudieron buscar clientes.')
+          }));
+        });
+    }, 250);
+
+    return () => clearTimeout(timerId);
+  }, [loadCustomerSearchResults, newChatDialog.open, newChatDialog.query]);
+
   const newChatAvailableModules = useMemo(() => resolveNewChatAvailableModules(), [resolveNewChatAvailableModules]);
 
   return {
@@ -152,6 +246,7 @@ export function useNewChatDialog({
     setNewChatDialog,
     newChatAvailableModules,
     handleStartNewChat,
+    handleSelectNewChatCustomerOption,
     handleCancelNewChatDialog,
     handleConfirmNewChat
   };

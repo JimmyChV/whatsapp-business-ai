@@ -532,22 +532,30 @@ const campaignDispatcherJob = campaignDispatcherJobService.createCampaignDispatc
 
 registerProcessHandlers();
 
-preloadRuntimeServices({
-    saasControlService,
-    planLimitsStoreService,
-    accessPolicyService,
-    logger
-});
+async function startServer() {
+    await preloadRuntimeServices({
+        saasControlService,
+        planLimitsStoreService,
+        accessPolicyService,
+        customerService,
+        logger
+    });
 
-server.listen(PORT, () => {
-    logger.info(`Server running on port ${PORT}`);
-    const runtime = typeof waClient.getRuntimeInfo === 'function'
-        ? waClient.getRuntimeInfo()
-        : { requestedTransport: 'idle', activeTransport: 'idle', cloudConfigured: false };
-    logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
-    chatAssignmentInactivityJob.start();
-    campaignDispatcherJob.start();
-    scheduleWaInitialize();
+    server.listen(PORT, () => {
+        logger.info(`Server running on port ${PORT}`);
+        const runtime = typeof waClient.getRuntimeInfo === 'function'
+            ? waClient.getRuntimeInfo()
+            : { requestedTransport: 'idle', activeTransport: 'idle', cloudConfigured: false };
+        logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
+        chatAssignmentInactivityJob.start();
+        campaignDispatcherJob.start();
+        scheduleWaInitialize();
+    });
+}
+
+startServer().catch((error) => {
+    logger.error('[Startup] failed to preload runtime services: ' + String(error?.stack || error?.message || error));
+    process.exit(1);
 });
 
 

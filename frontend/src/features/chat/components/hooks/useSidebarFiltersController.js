@@ -15,6 +15,16 @@ const COMMERCIAL_STATUS_LABEL_BY_VALUE = COMMERCIAL_STATUS_OPTIONS.reduce((acc, 
 }, {});
 
 const normalizePhoneDigits = (value = '') => String(value || '').replace(/\D/g, '');
+const normalizeSearchText = (value = '') => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .trim()
+  .toLowerCase();
+const isSavedCustomerChat = (chat = {}) => (
+  chat?.isMyContact === true
+  || Boolean(String(chat?.customerId || '').trim())
+  || Boolean(String(chat?.erpCustomerName || '').trim())
+);
 const normalizeFilterToken = (value = '') => String(value || '').trim().toLowerCase();
 const normalizeCommercialStatus = (value = 'all') => {
   const clean = normalizeFilterToken(value || 'all');
@@ -72,6 +82,36 @@ const getChatLabelTokenSet = (chat = {}) => {
   });
   return set;
 };
+
+const buildChatSearchHaystack = (chat = {}) => normalizeSearchText([
+  chat?.name,
+  chat?.subtitle,
+  chat?.status,
+  chat?.lastMessage,
+  chat?.erpCustomerName,
+  chat?.contactName,
+  chat?.contact_name,
+  chat?.firstName,
+  chat?.first_name,
+  chat?.lastNamePaternal,
+  chat?.last_name_paternal,
+  chat?.lastNameMaternal,
+  chat?.last_name_maternal,
+  chat?.fullName,
+  chat?.documentNumber,
+  chat?.document_number,
+  chat?.phone,
+  chat?.email,
+  chat?.customerId
+].filter(Boolean).join(' '));
+
+const buildChatPhoneHaystack = (chat = {}) => [
+  chat?.phone,
+  chat?.id,
+  chat?.subtitle,
+  chat?.contactName,
+  chat?.contact_name
+].map((value) => normalizePhoneDigits(value)).filter(Boolean).join(' ');
 
 const useSidebarFiltersController = ({
   chats = [],
@@ -216,8 +256,8 @@ const useSidebarFiltersController = ({
   const quickStats = useMemo(() => {
     const unread = chats.filter((c) => Number(c?.unreadCount || 0) > 0).length;
     const unlabeled = chats.filter((c) => (Array.isArray(c?.labels) ? c.labels.length : 0) === 0).length;
-    const myContacts = chats.filter((c) => c?.isMyContact === true).length;
-    const unknown = chats.filter((c) => c?.isMyContact !== true).length;
+    const myContacts = chats.filter((c) => isSavedCustomerChat(c)).length;
+    const unknown = chats.filter((c) => !isSavedCustomerChat(c)).length;
     const archived = chats.filter((c) => Boolean(c?.archived)).length;
     const pinned = chats.filter((c) => Boolean(c?.pinned)).length;
     const assignedToMe = assignmentsLoaded
@@ -267,8 +307,8 @@ const useSidebarFiltersController = ({
       const statusToken = normalizeFilterToken(chatCommercialStatus?.status || 'nuevo') || 'nuevo';
       if (statusToken !== filters.commercialStatus) return false;
     }
-    if (filters.contactMode === 'my' && !chat?.isMyContact) return false;
-    if (filters.contactMode === 'unknown' && chat?.isMyContact) return false;
+    if (filters.contactMode === 'my' && !isSavedCustomerChat(chat)) return false;
+    if (filters.contactMode === 'unknown' && isSavedCustomerChat(chat)) return false;
     if (filters.archivedMode === 'archived' && !chat?.archived) return false;
     if (filters.archivedMode === 'active' && chat?.archived) return false;
     if (filters.pinnedMode === 'pinned' && !chat?.pinned) return false;
@@ -281,22 +321,19 @@ const useSidebarFiltersController = ({
       if (!hasLabel) return false;
     }
 
-    const q = String(localQuery || '').trim().toLowerCase();
+    const q = normalizeSearchText(localQuery || '');
     if (!q) return true;
 
     const qDigits = normalizePhoneDigits(q);
-    const name = String(chat?.name || '').toLowerCase();
-    const subtitle = String(chat?.subtitle || '').toLowerCase();
-    const status = String(chat?.status || '').toLowerCase();
-    const lastMessage = String(chat?.lastMessage || '').toLowerCase();
-    const phone = normalizePhoneDigits(chat?.phone || chat?.id || '');
+    const phoneHaystack = buildChatPhoneHaystack(chat);
+    const textHaystack = buildChatSearchHaystack(chat);
 
     if (qDigits) {
-      return phone.includes(qDigits) || normalizePhoneDigits(subtitle).includes(qDigits);
+      return phoneHaystack.includes(qDigits);
     }
 
     // TODO(bug): filtro sin resultados queda en estado "cargando" indefinidamente — falta estado de "sin resultados"
-    return name.includes(q) || subtitle.includes(q) || status.includes(q) || lastMessage.includes(q);
+    return textHaystack.includes(q);
   }), [assignmentsLoaded, chats, filters, localQuery, isAssignedToMeResolver, resolveChatAssignment, resolveChatCommercialStatus, statusesLoaded]);
 
   const resetFilters = () => {

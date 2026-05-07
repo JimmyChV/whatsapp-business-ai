@@ -112,6 +112,7 @@ export default function OperationPage({
   newChatDialog,
   setNewChatDialog,
   newChatAvailableModules,
+  handleSelectNewChatCustomerOption,
   handleConfirmNewChat,
   handleCancelNewChatDialog,
   showSaasAdminPanel,
@@ -228,6 +229,7 @@ export default function OperationPage({
         activeFilters={chatFilters}
         onFiltersChange={handleChatFiltersChange}
         onOpenCompanyProfile={handleOpenCompanyProfile}
+        buildApiHeaders={buildApiHeaders}
         saasAuthEnabled={saasAuthEnabled}
         tenantOptions={availableTenantOptions}
         activeTenantId={tenantScopeId}
@@ -418,6 +420,7 @@ export default function OperationPage({
         dialog={newChatDialog}
         availableModules={newChatAvailableModules}
         onChange={(patch) => setNewChatDialog((prev) => ({ ...prev, ...patch }))}
+        onSelectCustomerOption={handleSelectNewChatCustomerOption}
         onConfirm={handleConfirmNewChat}
         onCancel={handleCancelNewChatDialog}
       />

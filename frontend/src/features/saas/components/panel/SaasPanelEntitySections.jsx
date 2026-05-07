@@ -158,13 +158,15 @@ export default function SaasPanelEntitySections(props = {}) {
     return (
         <>
             <SummarySection context={summaryContext} />
-            {selectedSectionId !== 'saas_resumen' && (
-                <>
-                    <CompaniesSection context={companiesContext} />
-                    <UsersSection context={usersContext} />
-                    <CustomersSection context={customersContext} />
-                </>
-            )}
+            {selectedSectionId === 'saas_empresas' ? (
+                <CompaniesSection context={companiesContext} />
+            ) : null}
+            {selectedSectionId === 'saas_usuarios' ? (
+                <UsersSection context={usersContext} />
+            ) : null}
+            {selectedSectionId === 'saas_clientes' ? (
+                <CustomersSection context={customersContext} />
+            ) : null}
         </>
     );
 }

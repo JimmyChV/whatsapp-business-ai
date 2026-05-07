@@ -1,6 +1,39 @@
 import moment from 'moment';
 import { normalizeModuleImageUrl } from '../../core/helpers/appChat.helpers';
 
+const toTitleCaseChatText = (value = '') => String(value || '')
+  .trim()
+  .toLowerCase()
+  .split(/\s+/)
+  .filter(Boolean)
+  .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+  .join(' ');
+
+const splitBulletParts = (value = '') => String(value || '')
+  .split(/(?:•|â€¢|Ã¢â‚¬Â¢)/)
+  .map((part) => String(part || '').trim())
+  .filter(Boolean);
+
+const buildHeaderPreferredName = (chat = {}) => {
+  const fullName = [
+    chat?.firstName || chat?.first_name,
+    chat?.lastNamePaternal || chat?.last_name_paternal,
+    chat?.lastNameMaternal || chat?.last_name_maternal
+  ]
+    .map((part) => toTitleCaseChatText(part))
+    .filter(Boolean)
+    .join(' ');
+
+  const erpCustomerName = toTitleCaseChatText(
+    chat?.erpCustomerName
+    || chat?.erpCustomer?.contactName
+    || chat?.erpCustomer?.contact_name
+    || ''
+  );
+
+  return fullName || erpCustomerName || '';
+};
+
 const useChatWindowHeaderModel = ({
   activeChat = null,
   waModules = []
@@ -46,17 +79,15 @@ const useChatWindowHeaderModel = ({
     if (leftDigits && rightDigits) return leftDigits === rightDigits;
     return normalizeHeaderText(left) === normalizeHeaderText(right);
   };
-  const rawHeaderName = String(activeChat?.name || '').trim();
+  const preferredHeaderName = buildHeaderPreferredName(activeChat);
+  const rawHeaderName = String(preferredHeaderName || activeChat?.name || '').trim();
   const rawHeaderPushname = String(activeChat?.pushname || '').trim();
   const cleanHeaderPushname = isPhoneLikeHeaderValue(rawHeaderPushname) ? '' : rawHeaderPushname;
   const headerDisplayName = (!activeChat?.isGroup && cleanHeaderPushname && (isPhoneLikeHeaderValue(rawHeaderName) || !rawHeaderName))
     ? cleanHeaderPushname
     : (rawHeaderName || headerPhone || rawHeaderPushname || 'Sin nombre');
   const rawHeaderSubtitle = String(activeChat?.subtitle || '').trim();
-  const headerSubtitleParts = rawHeaderSubtitle
-    .split('•')
-    .map((part) => String(part || '').trim())
-    .filter(Boolean);
+  const headerSubtitleParts = splitBulletParts(rawHeaderSubtitle);
   const headerAlias = headerSubtitleParts.find((part) => !part.includes(' - ')) || '';
   const headerLocation = headerSubtitleParts.find((part) => part.includes(' - ')) || '';
   const headerMetaItems = [];
@@ -97,7 +128,7 @@ const useChatWindowHeaderModel = ({
   const showHeaderModule = Boolean(headerModuleName || headerModuleChannel);
   const headerChannelMarker = getChannelMarker(headerModuleChannelType);
   const headerAvatarImageUrl = headerModuleImageUrl || null;
-  const headerAvatarFallback = headerChannelMarker.short || (headerModuleName ? String(headerModuleName).charAt(0).toUpperCase() : (activeChat?.name?.charAt(0)?.toUpperCase() || '?'));
+  const headerAvatarFallback = headerChannelMarker.short || (headerModuleName ? String(headerModuleName).charAt(0).toUpperCase() : (headerDisplayName?.charAt(0)?.toUpperCase() || '?'));
   const normalizeSenderDigits = (value = '') => String(value || '').replace(/\D/g, '');
   const participantRecords = Array.isArray(activeChat?.participantsList) ? activeChat.participantsList : [];
   const participantNameById = new Map();

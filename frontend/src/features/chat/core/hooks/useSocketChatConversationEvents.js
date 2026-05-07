@@ -48,7 +48,8 @@ function buildErpPrimaryLocation(customer = null) {
     if (!primary) return '';
     const districtName = toTitleCaseChatText(primary?.districtName || primary?.district_name || '');
     const provinceName = toTitleCaseChatText(primary?.provinceName || primary?.province_name || '');
-    return [districtName, provinceName].filter(Boolean).join(' - ');
+    const departmentName = toTitleCaseChatText(primary?.departmentName || primary?.department_name || '');
+    return [districtName, provinceName, departmentName].filter(Boolean).join(' - ');
 }
 
 function resolveQuotedMessagePreview(quotedMessage = null, fallbackMessage = null) {
@@ -1007,6 +1008,11 @@ export default function useSocketChatConversationEvents({
                     participantsList: normalizedContact.participantsList || existing?.participantsList || [],
                     customerId: erpCustomer?.customerId || existing?.customerId || null,
                     erpCustomerName: erpDisplayName || existing?.erpCustomerName || null,
+                    firstName: erpCustomer?.firstName || erpCustomer?.first_name || existing?.firstName || existing?.first_name || null,
+                    lastNamePaternal: erpCustomer?.lastNamePaternal || erpCustomer?.last_name_paternal || existing?.lastNamePaternal || existing?.last_name_paternal || null,
+                    lastNameMaternal: erpCustomer?.lastNameMaternal || erpCustomer?.last_name_maternal || existing?.lastNameMaternal || existing?.last_name_maternal || null,
+                    contactName: erpCustomer?.contactName || erpCustomer?.contact_name || existing?.contactName || existing?.contact_name || null,
+                    erpCustomer: erpCustomer || existing?.erpCustomer || null,
                     windowOpen: typeof normalizedContact?.windowOpen === 'boolean' ? normalizedContact.windowOpen : existing?.windowOpen,
                     windowExpiresAt: normalizedContact?.windowExpiresAt || existing?.windowExpiresAt || null
                 };

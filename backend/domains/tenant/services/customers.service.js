@@ -345,7 +345,12 @@ function buildWhereClause(tenantId = DEFAULT_TENANT_ID, options = {}) {
     if (query) {
         where.push(`(
             LOWER(customer_id) LIKE $${idx}
+            OR LOWER(COALESCE(erp_id, '')) LIKE $${idx}
             OR LOWER(COALESCE(contact_name, '')) LIKE $${idx}
+            OR LOWER(COALESCE(first_name, '')) LIKE $${idx}
+            OR LOWER(COALESCE(last_name_paternal, '')) LIKE $${idx}
+            OR LOWER(COALESCE(last_name_maternal, '')) LIKE $${idx}
+            OR LOWER(COALESCE(document_number, '')) LIKE $${idx}
             OR LOWER(COALESCE(phone_e164, '')) LIKE $${idx}
             OR LOWER(COALESCE(email, '')) LIKE $${idx}
             OR LOWER(COALESCE(profile ->> 'firstNames', '')) LIKE $${idx}
@@ -457,6 +462,154 @@ async function listCustomers(tenantId = DEFAULT_TENANT_ID, options = {}) {
         return listCustomersPostgres(cleanTenantId, options);
     }
     return listCustomersFile(cleanTenantId, options);
+}
+
+async function searchCustomersForChatPostgres(tenantId = DEFAULT_TENANT_ID, options = {}) {
+    await ensurePostgresSchema();
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const rawQuery = toLower(options.query || '');
+    const cleanQuery = rawQuery.trim();
+    if (!cleanQuery) return { items: [] };
+
+    const limit = Math.max(1, Math.min(50, Number(options.limit || 24) || 24));
+    const includeInactive = options.includeInactive !== false;
+    const likeQuery = `%${cleanQuery}%`;
+    const prefixQuery = `${cleanQuery}%`;
+
+    const params = [cleanTenantId, likeQuery, cleanQuery, prefixQuery, limit];
+    const activeSql = includeInactive ? '' : 'AND c.is_active = TRUE';
+
+    const result = await queryPostgres(
+        `SELECT
+            c.customer_id,
+            c.erp_id,
+            c.contact_name,
+            c.first_name,
+            c.last_name_paternal,
+            c.last_name_maternal,
+            c.document_number,
+            c.phone_e164,
+            c.phone_alt,
+            c.email,
+            c.updated_at,
+            mc.module_id,
+            addr.district_name,
+            addr.province_name,
+            addr.department_name
+         FROM tenant_customers c
+         LEFT JOIN tenant_customer_module_contexts mc
+           ON mc.tenant_id = c.tenant_id
+          AND mc.customer_id = c.customer_id
+         LEFT JOIN LATERAL (
+            SELECT
+                a.district_name,
+                a.province_name,
+                a.department_name
+            FROM tenant_customer_addresses a
+            WHERE a.tenant_id = c.tenant_id
+              AND a.customer_id = c.customer_id
+            ORDER BY
+                CASE WHEN a.is_primary = TRUE THEN 0 ELSE 1 END,
+                a.updated_at DESC NULLS LAST,
+                a.created_at DESC NULLS LAST
+            LIMIT 1
+         ) addr ON TRUE
+         WHERE c.tenant_id = $1
+           ${activeSql}
+           AND (
+                LOWER(CONCAT_WS(' ',
+                    COALESCE(c.first_name, ''),
+                    COALESCE(c.last_name_paternal, ''),
+                    COALESCE(c.last_name_maternal, '')
+                )) LIKE $2
+                OR LOWER(COALESCE(c.contact_name, '')) LIKE $2
+                OR LOWER(COALESCE(c.erp_id, '')) LIKE $2
+                OR LOWER(COALESCE(c.document_number, '')) LIKE $2
+                OR LOWER(COALESCE(c.phone_e164, '')) LIKE $2
+                OR LOWER(COALESCE(c.phone_alt, '')) LIKE $2
+                OR LOWER(COALESCE(c.email, '')) LIKE $2
+           )
+         ORDER BY
+            CASE
+                WHEN LOWER(CONCAT_WS(' ',
+                    COALESCE(c.first_name, ''),
+                    COALESCE(c.last_name_paternal, ''),
+                    COALESCE(c.last_name_maternal, '')
+                )) = $3 THEN 0
+                WHEN LOWER(COALESCE(c.contact_name, '')) = $3 THEN 0
+                WHEN LOWER(COALESCE(c.erp_id, '')) = $3 THEN 0
+                WHEN LOWER(CONCAT_WS(' ',
+                    COALESCE(c.first_name, ''),
+                    COALESCE(c.last_name_paternal, ''),
+                    COALESCE(c.last_name_maternal, '')
+                )) LIKE $4 THEN 1
+                WHEN LOWER(COALESCE(c.contact_name, '')) LIKE $4 THEN 1
+                WHEN LOWER(COALESCE(c.last_name_paternal, '')) LIKE $4 THEN 1
+                WHEN LOWER(COALESCE(c.last_name_maternal, '')) LIKE $4 THEN 1
+                ELSE 2
+            END,
+            c.updated_at DESC,
+            c.customer_id ASC,
+            mc.module_id ASC NULLS LAST
+         LIMIT $5`,
+        params
+    );
+
+    return {
+        items: (result?.rows || []).map((row) => ({
+            customerId: toText(row?.customer_id || ''),
+            erpId: toText(row?.erp_id || ''),
+            contactName: toText(row?.contact_name || ''),
+            firstName: toText(row?.first_name || ''),
+            lastNamePaternal: toText(row?.last_name_paternal || ''),
+            lastNameMaternal: toText(row?.last_name_maternal || ''),
+            documentNumber: toText(row?.document_number || ''),
+            phoneE164: toText(row?.phone_e164 || ''),
+            phoneAlt: toText(row?.phone_alt || ''),
+            email: toText(row?.email || ''),
+            moduleId: toText(row?.module_id || ''),
+            districtName: toText(row?.district_name || ''),
+            provinceName: toText(row?.province_name || ''),
+            departmentName: toText(row?.department_name || ''),
+            updatedAt: toIsoText(row?.updated_at || '') || null
+        }))
+    };
+}
+
+async function searchCustomersForChatFile(tenantId = DEFAULT_TENANT_ID, options = {}) {
+    const result = await listCustomersFile(tenantId, {
+        query: options.query,
+        includeInactive: options.includeInactive,
+        limit: options.limit || 24,
+        offset: 0
+    });
+    return {
+        items: (Array.isArray(result?.items) ? result.items : []).map((item) => ({
+            customerId: toText(item?.customerId || ''),
+            erpId: toText(item?.erpId || item?.erp_id || ''),
+            contactName: toText(item?.contactName || item?.contact_name || ''),
+            firstName: toText(item?.firstName || item?.first_name || ''),
+            lastNamePaternal: toText(item?.lastNamePaternal || item?.last_name_paternal || ''),
+            lastNameMaternal: toText(item?.lastNameMaternal || item?.last_name_maternal || ''),
+            documentNumber: toText(item?.documentNumber || item?.document_number || ''),
+            phoneE164: toText(item?.phoneE164 || item?.phone_e164 || ''),
+            phoneAlt: toText(item?.phoneAlt || item?.phone_alt || ''),
+            email: toText(item?.email || ''),
+            moduleId: toText(item?.moduleId || item?.module_id || ''),
+            districtName: '',
+            provinceName: '',
+            departmentName: '',
+            updatedAt: toIsoText(item?.updatedAt || item?.updated_at || '') || null
+        }))
+    };
+}
+
+async function searchCustomersForChat(tenantId = DEFAULT_TENANT_ID, options = {}) {
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    if (getStorageDriver() === 'postgres') {
+        return searchCustomersForChatPostgres(cleanTenantId, options);
+    }
+    return searchCustomersForChatFile(cleanTenantId, options);
 }
 
 async function findCustomerPostgres(tenantId = DEFAULT_TENANT_ID, { customerId = '', phoneE164 = '' } = {}) {
@@ -1399,24 +1552,28 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
         ])
     );
 
-    baseValidCandidates
-        .filter((candidate) => !existingByErpId.has(candidate.erpId))
-        .forEach((candidate) => {
-            const phone = String(candidate?.phoneE164 || '').trim();
-            if (!phone) return;
-            const existingPhone = existingPhoneMap.get(phone);
-            if (!existingPhone) return;
-            const existingOwner = existingPhone.erpId || existingPhone.customerId || null;
-            if (existingOwner && existingOwner !== candidate.erpId) {
-                candidate.errors = candidate.errors || [];
-                candidate.errors.push({
-                    row: candidate.rowNumber,
-                    erp_id: candidate.erpId,
-                    field: 'Telefono',
-                    message: `Telefono ya registrado para ${existingOwner}`
-                });
-            }
-        });
+    baseValidCandidates.forEach((candidate) => {
+        const phone = String(candidate?.phoneE164 || '').trim();
+        if (!phone) return;
+        const existingPhone = existingPhoneMap.get(phone);
+        if (!existingPhone) return;
+        const existingCustomer = existingByErpId.get(candidate.erpId) || null;
+        const existingOwnerCustomerId = String(existingPhone?.customerId || '').trim() || null;
+        const currentCustomerId = String(existingCustomer?.customer_id || '').trim() || null;
+        if (existingOwnerCustomerId && currentCustomerId && existingOwnerCustomerId === currentCustomerId) {
+            return;
+        }
+        const existingOwner = existingPhone.erpId || existingPhone.customerId || null;
+        if (existingOwner && existingOwner !== candidate.erpId) {
+            candidate.errors = candidate.errors || [];
+            candidate.errors.push({
+                row: candidate.rowNumber,
+                erp_id: candidate.erpId,
+                field: 'Telefono',
+                message: `Telefono ya registrado para ${existingOwner}`
+            });
+        }
+    });
 
     const errors = candidates.flatMap((candidate) => candidate.errors || []);
     const validCandidates = candidates.filter((candidate) => (candidate.errors || []).length === 0 && candidate.erpId);
@@ -1725,64 +1882,117 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                 `sp_update_customers_${updateChunkIndex}`,
                 chunk,
                 async (entries) => {
-                    for (const { candidate, existing } of entries) {
+                    const values = [];
+                    const placeholders = entries.map(({ candidate, existing }, index) => {
+                        const offset = index * 36;
                         const profile = buildAppSheetCustomerProfile(candidate);
                         const metadata = buildAppSheetCustomerMetadata(candidate);
-                        await client.query(
-                            `UPDATE tenant_customers
-                             SET
-                                module_id = $3,
-                                contact_name = $4,
-                                phone_e164 = $5,
-                                phone_alt = $6,
-                                email = $7,
-                                treatment_id = $8,
-                                first_name = $9,
-                                last_name_paternal = $10,
-                                last_name_maternal = $11,
-                                document_type_id = $12,
-                                document_number = $13,
-                                customer_type_id = $14,
-                                acquisition_source_id = $15,
-                                notes = $16,
-                                profile = $17::jsonb,
-                                metadata = COALESCE(metadata, '{}'::jsonb) || $18::jsonb,
-                                erp_id = $19,
-                                erp_employee_id = $20,
-                                referral_customer_id = $21,
-                                dias_ultima_compra = $22,
-                                ultimo_pedido_id = $23,
-                                ultima_fecha_compra = $24::date,
-                                primera_fecha_compra = $25::date,
-                                primer_pedido_id = $26,
-                                compras_total = $27,
-                                compras_120 = $28,
-                                monto_120 = $29,
-                                compras_180 = $30,
-                                monto_180 = $31,
-                                ticket_prom_180 = $32,
-                                monto_acumulado = $33,
-                                segmento = $34,
-                                realizo_compra = $35,
-                                cadencia_prom_dias = $36,
-                                rango_compras = $37,
-                                is_active = TRUE,
-                                updated_at = NOW()
-                             WHERE tenant_id = $1 AND customer_id = $2`,
-                            [
-                                cleanTenantId, existing.customer_id, candidate.moduleId, candidate.contactName, candidate.phoneE164, candidate.phoneAlt, candidate.email,
-                                candidate.treatmentId, candidate.firstName, candidate.lastNamePaternal, candidate.lastNameMaternal, candidate.documentTypeId,
-                                candidate.documentNumber, candidate.customerTypeId, candidate.acquisitionSourceId, candidate.notes, JSON.stringify(profile),
-                                JSON.stringify(metadata), candidate.erpId, candidate.erpEmployeeId, candidate.referralCustomerId, candidate.diasUltimaCompra,
-                                candidate.ultimoPedidoId, candidate.ultimaFechaCompra, candidate.primeraFechaCompra, candidate.primerPedidoId, candidate.comprasTotal,
-                                candidate.compras120, candidate.monto120, candidate.compras180, candidate.monto180, candidate.ticketProm180,
-                                candidate.montoAcumulado, candidate.segmento, candidate.realizoCompra, candidate.cadenciaPromDias, candidate.rangoCompras
-                            ]
+                        values.push(
+                            existing.customer_id,
+                            candidate.moduleId,
+                            candidate.contactName,
+                            candidate.phoneE164,
+                            candidate.phoneAlt,
+                            candidate.email,
+                            candidate.treatmentId,
+                            candidate.firstName,
+                            candidate.lastNamePaternal,
+                            candidate.lastNameMaternal,
+                            candidate.documentTypeId,
+                            candidate.documentNumber,
+                            candidate.customerTypeId,
+                            candidate.acquisitionSourceId,
+                            candidate.notes,
+                            JSON.stringify(profile),
+                            JSON.stringify(metadata),
+                            candidate.erpId,
+                            candidate.erpEmployeeId,
+                            candidate.referralCustomerId,
+                            candidate.diasUltimaCompra,
+                            candidate.ultimoPedidoId,
+                            candidate.ultimaFechaCompra,
+                            candidate.primeraFechaCompra,
+                            candidate.primerPedidoId,
+                            candidate.comprasTotal,
+                            candidate.compras120,
+                            candidate.monto120,
+                            candidate.compras180,
+                            candidate.monto180,
+                            candidate.ticketProm180,
+                            candidate.montoAcumulado,
+                            candidate.segmento,
+                            candidate.realizoCompra,
+                            candidate.cadenciaPromDias,
+                            candidate.rangoCompras
                         );
+                        return `(
+                            $${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8},
+                            $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13}, $${offset + 14}, $${offset + 15},
+                            $${offset + 16}::jsonb, $${offset + 17}::jsonb, $${offset + 18}, $${offset + 19}, $${offset + 20}, $${offset + 21},
+                            $${offset + 22}, $${offset + 23}::date, $${offset + 24}::date, $${offset + 25}, $${offset + 26}, $${offset + 27},
+                            $${offset + 28}, $${offset + 29}, $${offset + 30}, $${offset + 31}, $${offset + 32}, $${offset + 33}, $${offset + 34},
+                            $${offset + 35}, $${offset + 36}
+                        )`;
+                    });
+                    await client.query(
+                        `UPDATE tenant_customers AS customers
+                         SET
+                            module_id = payload.module_id,
+                            contact_name = payload.contact_name,
+                            phone_e164 = COALESCE(payload.phone_e164, customers.phone_e164),
+                            phone_alt = COALESCE(payload.phone_alt, customers.phone_alt),
+                            email = COALESCE(payload.email, customers.email),
+                            treatment_id = payload.treatment_id,
+                            first_name = payload.first_name,
+                            last_name_paternal = payload.last_name_paternal,
+                            last_name_maternal = payload.last_name_maternal,
+                            document_type_id = payload.document_type_id,
+                            document_number = payload.document_number,
+                            customer_type_id = payload.customer_type_id,
+                            acquisition_source_id = payload.acquisition_source_id,
+                            notes = payload.notes,
+                            profile = payload.profile,
+                            metadata = COALESCE(customers.metadata, '{}'::jsonb) || payload.metadata,
+                            erp_id = payload.erp_id,
+                            erp_employee_id = payload.erp_employee_id,
+                            referral_customer_id = payload.referral_customer_id,
+                            dias_ultima_compra = payload.dias_ultima_compra,
+                            ultimo_pedido_id = payload.ultimo_pedido_id,
+                            ultima_fecha_compra = payload.ultima_fecha_compra,
+                            primera_fecha_compra = payload.primera_fecha_compra,
+                            primer_pedido_id = payload.primer_pedido_id,
+                            compras_total = payload.compras_total,
+                            compras_120 = payload.compras_120,
+                            monto_120 = payload.monto_120,
+                            compras_180 = payload.compras_180,
+                            monto_180 = payload.monto_180,
+                            ticket_prom_180 = payload.ticket_prom_180,
+                            monto_acumulado = payload.monto_acumulado,
+                            segmento = payload.segmento,
+                            realizo_compra = payload.realizo_compra,
+                            cadencia_prom_dias = payload.cadencia_prom_dias,
+                            rango_compras = payload.rango_compras,
+                            is_active = TRUE,
+                            updated_at = NOW()
+                         FROM (
+                            VALUES ${placeholders.join(', ')}
+                         ) AS payload(
+                            customer_id, module_id, contact_name, phone_e164, phone_alt, email, treatment_id, first_name,
+                            last_name_paternal, last_name_maternal, document_type_id, document_number, customer_type_id,
+                            acquisition_source_id, notes, profile, metadata, erp_id, erp_employee_id, referral_customer_id,
+                            dias_ultima_compra, ultimo_pedido_id, ultima_fecha_compra, primera_fecha_compra, primer_pedido_id,
+                            compras_total, compras_120, monto_120, compras_180, monto_180, ticket_prom_180, monto_acumulado,
+                            segmento, realizo_compra, cadencia_prom_dias, rango_compras
+                         )
+                         WHERE customers.tenant_id = $${values.length + 1}
+                           AND customers.customer_id = payload.customer_id`,
+                        [...values, cleanTenantId]
+                    );
+                    entries.forEach(({ candidate, existing }) => {
                         importedCustomerMap.set(candidate.erpId, { ...candidate, customerId: existing.customer_id });
-                        customerCounts.updated += 1;
-                        updateCommitProgress('customers', `Procesando clientes ${customerCounts.inserted + customerCounts.updated} de ${validCandidates.length}.`);
-                    }
+                    });
+                    customerCounts.updated += entries.length;
+                    updateCommitProgress('customers', `Procesando clientes ${customerCounts.inserted + customerCounts.updated} de ${validCandidates.length}.`);
                 },
                 async ({ candidate, existing }) => {
                     const profile = buildAppSheetCustomerProfile(candidate);
@@ -1793,9 +2003,9 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                              SET
                                 module_id = $3,
                                 contact_name = $4,
-                                phone_e164 = $5,
-                                phone_alt = $6,
-                                email = $7,
+                                phone_e164 = COALESCE($5, phone_e164),
+                                phone_alt = COALESCE($6, phone_alt),
+                                email = COALESCE($7, email),
                                 treatment_id = $8,
                                 first_name = $9,
                                 last_name_paternal = $10,
@@ -2497,6 +2707,7 @@ module.exports = {
     ensurePostgresSchema,
     setErpImportProgress,
     listCustomers,
+    searchCustomersForChat,
     getCustomer,
     getCustomerByPhone,
     getCustomerByPhoneWithAddresses,

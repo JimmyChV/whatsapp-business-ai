@@ -8540,3 +8540,104 @@ body {
 :root[data-theme="light"] .client-profile-action-btn {
   box-shadow: none !important;
 }
+.app-container--operation .sidebar.sidebar-pro {
+  overflow: hidden !important;
+}
+
+.app-container--operation .sidebar-main-content {
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  align-items: stretch;
+}
+
+.app-container--operation .sidebar-main-column {
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+.app-container--operation .sidebar-main-column .chat-list,
+.app-container--operation .sidebar-main-content .chat-list {
+  flex: 1 1 auto;
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding-right: 6px;
+}
+
+.app-container--operation .chat-item-modern {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 72px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  gap: 12px;
+}
+
+.app-container--operation .chat-info-modern,
+.app-container--operation .chat-name-stack,
+.app-container--operation .chat-contact-hint,
+.app-container--operation .chat-contact-location-chip,
+.app-container--operation .chat-last-message {
+  min-width: 0;
+}
+
+.app-container--operation .chat-row-top {
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.app-container--operation .chat-display-name {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+  max-width: 100%;
+}
+
+.app-container--operation .chat-contact-location-chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-container--operation .chat-name-stack {
+  gap: 4px;
+}
+
+.app-container--operation .chat-last-message {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-container--operation .chat-time-muted {
+  color: var(--chat-control-text-soft);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.app-container--operation .chat-empty-state-pill {
+  background: color-mix(in srgb, var(--chat-control-surface-strong) 78%, transparent);
+  color: var(--chat-control-text);
+  border-color: color-mix(in srgb, var(--chat-control-border) 92%, transparent);
+  box-shadow: 0 12px 28px rgba(8, 15, 20, 0.18);
+  padding: 10px 16px;
+}
+
+:root[data-theme="light"] .app-container--operation .sidebar.sidebar-pro,
+:root[data-theme="light"] .app-container--operation .sidebar-main-content,
+:root[data-theme="light"] .app-container--operation .sidebar-main-column {
+  overflow: hidden !important;
+}
+
+:root[data-theme="light"] .app-container--operation .chat-empty-state-pill {
+  background: rgba(77, 93, 104, 0.9);
+  color: #f9fcff !important;
+  border-color: rgba(77, 93, 104, 0.72);
+  box-shadow: 0 10px 24px rgba(77, 93, 104, 0.18);
+}
