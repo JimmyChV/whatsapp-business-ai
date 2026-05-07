@@ -671,6 +671,16 @@ export default function useSocketChatConversationEvents({
                     quotedMessage: resolveQuotedMessagePreview(message?.quotedMessage, normalizedMessagesById.get(quotedId) || null)
                 };
             });
+            const latestHistoryMessage = [...hydratedMessages]
+                .reverse()
+                .find((message) => {
+                    const preview = String(getMessagePreviewText(message) || '').trim();
+                    return Boolean(preview) || Number(message?.timestamp || 0) > 0;
+                }) || hydratedMessages[hydratedMessages.length - 1] || null;
+            const latestHistoryPreview = latestHistoryMessage
+                ? String(getMessagePreviewText(latestHistoryMessage) || '').trim()
+                : '';
+            const latestHistoryTimestamp = Number(latestHistoryMessage?.timestamp || 0) || 0;
             setMessages((prev) => {
                 const previous = Array.isArray(prev) ? prev : [];
                 if (previous.length === 0) return hydratedMessages;
@@ -707,6 +717,29 @@ export default function useSocketChatConversationEvents({
                 chatIdsReferSameScope(String(chat?.id || ''), resolvedChatId)
                     ? {
                         ...chat,
+                        timestamp: latestHistoryTimestamp || Number(chat?.timestamp || 0) || 0,
+                        lastMessage: latestHistoryPreview || String(chat?.lastMessage || '').trim(),
+                        lastMessageFromMe: latestHistoryMessage
+                            ? Boolean(latestHistoryMessage?.fromMe)
+                            : Boolean(chat?.lastMessageFromMe),
+                        ack: latestHistoryMessage
+                            ? resolveHighestAck(latestHistoryMessage?.ack, chat?.ack)
+                            : chat?.ack,
+                        lastMessageModuleId: latestHistoryMessage
+                            ? (String(latestHistoryMessage?.sentViaModuleId || chat?.lastMessageModuleId || '').trim().toLowerCase() || null)
+                            : chat?.lastMessageModuleId,
+                        lastMessageModuleName: latestHistoryMessage
+                            ? (String(latestHistoryMessage?.sentViaModuleName || chat?.lastMessageModuleName || '').trim() || null)
+                            : chat?.lastMessageModuleName,
+                        lastMessageModuleImageUrl: latestHistoryMessage
+                            ? (normalizeModuleImageUrl(latestHistoryMessage?.sentViaModuleImageUrl || chat?.lastMessageModuleImageUrl || '') || null)
+                            : chat?.lastMessageModuleImageUrl,
+                        lastMessageTransport: latestHistoryMessage
+                            ? (String(latestHistoryMessage?.sentViaTransport || chat?.lastMessageTransport || '').trim().toLowerCase() || null)
+                            : chat?.lastMessageTransport,
+                        lastMessageChannelType: latestHistoryMessage
+                            ? (String(latestHistoryMessage?.sentViaChannelType || chat?.lastMessageChannelType || '').trim().toLowerCase() || null)
+                            : chat?.lastMessageChannelType,
                         windowOpen: nextWindowOpen,
                         windowExpiresAt: nextWindowExpiresAt
                     }

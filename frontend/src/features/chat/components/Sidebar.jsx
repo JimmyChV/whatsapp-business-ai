@@ -651,7 +651,9 @@ const Sidebar = ({
                         const avatarFallback = moduleBadge?.moduleName
                             ? avatarLetter(moduleBadge.moduleName)
                             : avatarLetter(displayName);
-                        const lastMessage = sanitizeDisplayText(chat.lastMessage || '') || 'Haz clic para chatear';
+                        const safeLastMessage = sanitizeDisplayText(chat.lastMessage || '');
+                        const hasInteraction = Number(chat?.timestamp || 0) > 0;
+                        const lastMessage = safeLastMessage || (hasInteraction ? 'Adjunto o evento sin vista previa' : 'Haz clic para chatear');
                         const labels = Array.isArray(chat?.labels) ? chat.labels : [];
                         return (
                             <div

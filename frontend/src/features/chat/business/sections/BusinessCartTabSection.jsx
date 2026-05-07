@@ -73,26 +73,26 @@ export default function BusinessCartTabSection({
                         const line = getLineBreakdown(item);
                         const lineDiscountMode = line.lineDiscountEnabled ? (line.lineDiscountType === 'amount' ? 'amount' : 'percent') : 'none';
                         return (
-                            <div key={item.id || i} style={{ background: tone.cardSurface, borderRadius: '9px', border: `1px solid ${tone.controlBorder}`, padding: '7px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'start' }}>
+                            <div key={item.id || i} className="business-cart-item-card" style={{ background: tone.cardSurface, borderRadius: '9px', border: `1px solid ${tone.controlBorder}`, padding: '7px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                <div className="business-cart-item-card__header" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '8px', alignItems: 'start' }}>
                                     <div style={{ minWidth: 0 }}>
-                                        <div style={{ fontSize: '0.82rem', color: 'var(--text-primary)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
+                                        <div className="business-cart-item-card__title" title={item.title} style={{ fontSize: '0.82rem', color: 'var(--text-primary)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title}</div>
                                         {(line.regularSubtotal > line.lineFinal || line.includedDiscount > 0 || line.additionalDiscountApplied > 0) && (
-                                            <div style={{ marginTop: '2px', fontSize: '0.68rem', color: tone.textMuted, display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                            <div className="business-cart-item-card__badges" style={{ marginTop: '2px', fontSize: '0.68rem', color: tone.textMuted, display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                                                 {line.regularSubtotal > line.lineFinal && <span>Regular: S/ {formatMoney(line.regularSubtotal)}</span>}
                                                 {line.includedDiscount > 0 && <span style={{ color: tone.successText }}>Kit: -S/ {formatMoney(line.includedDiscount)}</span>}
                                                 {line.additionalDiscountApplied > 0 && <span style={{ color: tone.successText }}>Linea: -S/ {formatMoney(line.additionalDiscountApplied)}</span>}
                                             </div>
                                         )}
                                     </div>
-                                    <div style={{ textAlign: 'right', minWidth: '98px' }}>
+                                    <div className="business-cart-item-card__price" style={{ textAlign: 'right', minWidth: '88px' }}>
                                         <div style={{ fontSize: '0.66rem', color: tone.textMuted, textTransform: 'uppercase', letterSpacing: '0.03em' }}>Precio final</div>
                                         <div style={{ fontSize: '0.96rem', color: tone.totalText, fontWeight: 800, lineHeight: 1.1 }}>S/ {formatMoney(line.lineFinal)}</div>
                                     </div>
                                 </div>
 
-                                <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', alignItems: 'center', gap: '6px', background: tone.cardSurfaceAlt, border: `1px solid ${tone.controlBorder}`, borderRadius: '8px', padding: '5px 6px' }}>
-                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                <div className="business-cart-item-card__controls" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', background: tone.cardSurfaceAlt, border: `1px solid ${tone.controlBorder}`, borderRadius: '8px', padding: '5px 6px' }}>
+                                    <div className="business-cart-item-card__qty" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
                                         <button disabled={!canWriteByAssignment} onClick={() => (line.qty <= 1 ? removeFromCart(item.id) : updateQty(item.id, -1))} style={{ width: '21px', height: '21px', borderRadius: '50%', background: tone.controlSurfaceStrong, border: `1px solid ${tone.controlBorder}`, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: canWriteByAssignment ? 1 : 0.75 }}><Minus size={9} /></button>
                                         <span style={{ fontSize: '0.8rem', color: 'var(--text-primary)', fontWeight: 700, minWidth: '18px', textAlign: 'center' }}>{line.qty}</span>
                                         <button disabled={!canWriteByAssignment} onClick={() => updateQty(item.id, 1)} style={{ width: '21px', height: '21px', borderRadius: '50%', background: 'var(--saas-accent-primary)', border: '1px solid color-mix(in srgb, var(--saas-accent-primary) 74%, transparent)', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', color: 'var(--saas-accent-primary-text)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: canWriteByAssignment ? 1 : 0.75 }}><Plus size={9} /></button>
@@ -101,7 +101,7 @@ export default function BusinessCartTabSection({
                                         </button>
                                     </div>
 
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '5px', minWidth: 0 }}>
+                                    <div className="business-cart-item-card__discounts" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '5px', minWidth: 0, flex: '1 1 180px', flexWrap: 'wrap' }}>
                                         <select
                                             value={lineDiscountMode}
                                             disabled={!canWriteByAssignment}
@@ -115,7 +115,7 @@ export default function BusinessCartTabSection({
                                                 updateItemDiscountEnabled(item.id, true);
                                                 updateItemDiscountType(item.id, mode);
                                             }}
-                                            style={{ background: tone.controlSurface, border: `1px solid ${tone.controlBorder}`, color: 'var(--text-primary)', borderRadius: '6px', padding: '4px 6px', fontSize: '0.74rem', outline: 'none', minWidth: '98px', opacity: canWriteByAssignment ? 1 : 0.75, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed' }}
+                                            style={{ background: tone.controlSurface, border: `1px solid ${tone.controlBorder}`, color: 'var(--text-primary)', borderRadius: '6px', padding: '4px 6px', fontSize: '0.74rem', outline: 'none', minWidth: '92px', maxWidth: '100%', opacity: canWriteByAssignment ? 1 : 0.75, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed' }}
                                         >
                                             <option value="none">Sin desc.</option>
                                             <option value="percent">Desc. %</option>
@@ -131,7 +131,7 @@ export default function BusinessCartTabSection({
                                                 disabled={!canWriteByAssignment}
                                                 onChange={e => updateItemDiscountValue(item.id, e.target.value)}
                                                 placeholder="0"
-                                                style={{ width: '70px', background: tone.controlSurface, border: `1px solid ${tone.controlBorder}`, color: 'var(--text-primary)', borderRadius: '6px', padding: '4px 6px', fontSize: '0.74rem', outline: 'none', opacity: canWriteByAssignment ? 1 : 0.75, cursor: canWriteByAssignment ? 'text' : 'not-allowed' }}
+                                                style={{ width: '70px', maxWidth: '100%', background: tone.controlSurface, border: `1px solid ${tone.controlBorder}`, color: 'var(--text-primary)', borderRadius: '6px', padding: '4px 6px', fontSize: '0.74rem', outline: 'none', opacity: canWriteByAssignment ? 1 : 0.75, cursor: canWriteByAssignment ? 'text' : 'not-allowed' }}
                                             />
                                         )}
                                     </div>
@@ -163,7 +163,7 @@ export default function BusinessCartTabSection({
                                 </label>
 
                                 {globalDiscountEnabled && (
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                    <div className="business-cart-adjustments-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
                                         <select
                                             value={globalDiscountType}
                                             disabled={!canWriteByAssignment}
@@ -189,7 +189,7 @@ export default function BusinessCartTabSection({
 
                             <div style={{ background: tone.cardSurfaceAlt, border: `1px solid ${tone.controlBorder}`, borderRadius: '8px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                 <div style={{ fontSize: '0.75rem', color: tone.textMuted }}>Delivery / envio</div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                <div className="business-cart-adjustments-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
                                     <select
                                         value={deliveryType}
                                         disabled={!canWriteByAssignment}
