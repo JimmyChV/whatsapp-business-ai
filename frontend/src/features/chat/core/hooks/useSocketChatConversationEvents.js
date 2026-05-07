@@ -76,6 +76,31 @@ function resolveHighestAck(nextAck = 0, currentAck = 0) {
     return Math.max(safeNext, safeCurrent);
 }
 
+function mergeRealtimeSenderAttribution(existingMessage = null, incomingMessage = null) {
+    const safeExisting = existingMessage && typeof existingMessage === 'object' ? existingMessage : {};
+    const safeIncoming = incomingMessage && typeof incomingMessage === 'object' ? incomingMessage : {};
+    if (!safeIncoming?.fromMe && !safeExisting?.fromMe) return safeIncoming;
+
+    const resolvedSentByUserId = String(safeIncoming?.sentByUserId || safeExisting?.sentByUserId || '').trim() || null;
+    const resolvedSentByName = String(
+        safeIncoming?.sentByName
+        || safeIncoming?.sentByEmail
+        || safeExisting?.sentByName
+        || safeExisting?.sentByEmail
+        || ''
+    ).trim() || null;
+    const resolvedSentByEmail = String(safeIncoming?.sentByEmail || safeExisting?.sentByEmail || '').trim() || null;
+    const resolvedSentByRole = String(safeIncoming?.sentByRole || safeExisting?.sentByRole || '').trim() || null;
+
+    return {
+        ...safeIncoming,
+        sentByUserId: resolvedSentByUserId,
+        sentByName: resolvedSentByName,
+        sentByEmail: resolvedSentByEmail,
+        sentByRole: resolvedSentByRole
+    };
+}
+
 export default function useSocketChatConversationEvents({
     socket,
     chatSearchRef,
@@ -1320,10 +1345,12 @@ export default function useSocketChatConversationEvents({
                 if (!incomingId) return prev;
                 if (replacementClientTempId) {
                     const existing = (Array.isArray(prev) ? prev : []).find((message) => String(message?.clientTempId || '').trim() === replacementClientTempId);
-                    return replaceMessageByClientTempId(prev, replacementClientTempId, mergeTemplateMessageContent(existing, reconciledIncoming));
+                    const mergedIncoming = mergeRealtimeSenderAttribution(existing, reconciledIncoming);
+                    return replaceMessageByClientTempId(prev, replacementClientTempId, mergeTemplateMessageContent(existing, mergedIncoming));
                 }
                 const existing = (Array.isArray(prev) ? prev : []).find((message) => String(message?.id || '').trim() === incomingId);
-                return upsertMessageById(prev, mergeTemplateMessageContent(existing, reconciledIncoming));
+                const mergedIncoming = mergeRealtimeSenderAttribution(existing, reconciledIncoming);
+                return upsertMessageById(prev, mergeTemplateMessageContent(existing, mergedIncoming));
             });
 
             syncActiveMessages(relatedChatId, (prev) => {
@@ -1336,49 +1363,36 @@ export default function useSocketChatConversationEvents({
                     const existingIndex = prev.findIndex((m) => String(m?.id || '').trim() === incomingId);
                     if (existingIndex >= 0) {
                         const existing = prev[existingIndex] || {};
-                        const preserveOptimisticAttribution = Boolean(existing?.optimistic);
+                        const attributedIncoming = mergeRealtimeSenderAttribution(existing, normalizedIncoming);
                         const existingOrder = existing?.order && typeof existing.order === 'object' ? existing.order : null;
-                        const incomingOrder = normalizedIncoming?.order && typeof normalizedIncoming.order === 'object'
-                            ? normalizedIncoming.order
+                        const incomingOrder = attributedIncoming?.order && typeof attributedIncoming.order === 'object'
+                            ? attributedIncoming.order
                             : null;
                         const merged = {
                             ...existing,
-                            ...normalizedIncoming,
-                            ack: resolveHighestAck(normalizedIncoming?.ack, existing?.ack),
-                            sentByUserId: String(
-                                normalizedIncoming?.sentByUserId
-                                || (preserveOptimisticAttribution ? existing?.sentByUserId : '')
-                            ).trim() || null,
-                            sentByName: String(
-                                normalizedIncoming?.sentByName
-                                || normalizedIncoming?.sentByEmail
-                                || (preserveOptimisticAttribution ? (existing?.sentByName || existing?.sentByEmail) : '')
-                            ).trim() || null,
-                            sentByEmail: String(
-                                normalizedIncoming?.sentByEmail
-                                || (preserveOptimisticAttribution ? existing?.sentByEmail : '')
-                            ).trim() || null,
-                            sentByRole: String(
-                                normalizedIncoming?.sentByRole
-                                || (preserveOptimisticAttribution ? existing?.sentByRole : '')
-                            ).trim() || null,
-                            sentViaModuleId: String(normalizedIncoming?.sentViaModuleId || existing?.sentViaModuleId || '').trim() || null,
-                            sentViaModuleName: String(normalizedIncoming?.sentViaModuleName || existing?.sentViaModuleName || '').trim() || null,
-                            sentViaModuleImageUrl: normalizeModuleImageUrl(normalizedIncoming?.sentViaModuleImageUrl || existing?.sentViaModuleImageUrl || '') || null,
-                            sentViaTransport: String(normalizedIncoming?.sentViaTransport || existing?.sentViaTransport || '').trim() || null,
+                            ...attributedIncoming,
+                            ack: resolveHighestAck(attributedIncoming?.ack, existing?.ack),
+                            sentByUserId: attributedIncoming?.sentByUserId,
+                            sentByName: attributedIncoming?.sentByName,
+                            sentByEmail: attributedIncoming?.sentByEmail,
+                            sentByRole: attributedIncoming?.sentByRole,
+                            sentViaModuleId: String(attributedIncoming?.sentViaModuleId || existing?.sentViaModuleId || '').trim() || null,
+                            sentViaModuleName: String(attributedIncoming?.sentViaModuleName || existing?.sentViaModuleName || '').trim() || null,
+                            sentViaModuleImageUrl: normalizeModuleImageUrl(attributedIncoming?.sentViaModuleImageUrl || existing?.sentViaModuleImageUrl || '') || null,
+                            sentViaTransport: String(attributedIncoming?.sentViaTransport || existing?.sentViaTransport || '').trim() || null,
                             quotedMessage: resolveQuotedMessagePreview(
-                                normalizeQuotedMessage(normalizedIncoming?.quotedMessage || existing?.quotedMessage),
+                                normalizeQuotedMessage(attributedIncoming?.quotedMessage || existing?.quotedMessage),
                                 existing
                             ),
-                            status: resolveHighestAck(normalizedIncoming?.ack, existing?.ack) >= 3
+                            status: resolveHighestAck(attributedIncoming?.ack, existing?.ack) >= 3
                                 ? 'read'
-                                : resolveHighestAck(normalizedIncoming?.ack, existing?.ack) >= 2
+                                : resolveHighestAck(attributedIncoming?.ack, existing?.ack) >= 2
                                     ? 'delivered'
-                                    : resolveHighestAck(normalizedIncoming?.ack, existing?.ack) >= 1
+                                    : resolveHighestAck(attributedIncoming?.ack, existing?.ack) >= 1
                                         ? 'sent'
                                         : 'sending',
-                            reactions: Array.isArray(normalizedIncoming?.reactions) && normalizedIncoming.reactions.length > 0
-                                ? normalizedIncoming.reactions
+                            reactions: Array.isArray(attributedIncoming?.reactions) && attributedIncoming.reactions.length > 0
+                                ? attributedIncoming.reactions
                                 : (Array.isArray(existing?.reactions) ? existing.reactions : []),
                             order: incomingOrder
                                 ? {
@@ -1401,7 +1415,8 @@ export default function useSocketChatConversationEvents({
 
                 if (replacementClientTempId) {
                     const existing = prev.find((message) => String(message?.clientTempId || '').trim() === replacementClientTempId);
-                    return replaceMessageByClientTempId(prev, replacementClientTempId, mergeTemplateMessageContent(existing, normalizedIncoming));
+                    const mergedIncoming = mergeRealtimeSenderAttribution(existing, normalizedIncoming);
+                    return replaceMessageByClientTempId(prev, replacementClientTempId, mergeTemplateMessageContent(existing, mergedIncoming));
                 }
                 return [...prev, mergeTemplateMessageContent(null, normalizedIncoming)];
             });
