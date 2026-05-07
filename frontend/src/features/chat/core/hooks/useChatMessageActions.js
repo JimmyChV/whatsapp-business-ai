@@ -19,6 +19,8 @@ export default function useChatMessageActions({
   normalizeDigits,
   normalizeQuickReplyDraft,
   buildApiHeaders,
+  saasSessionRef,
+  saasRuntimeRef,
   activeChatScopeModuleId,
   clientContact,
   prevMessagesMetaRef,
@@ -49,6 +51,27 @@ export default function useChatMessageActions({
   setSendTemplateSubmitting
 } = {}) {
   const { notify } = useUiFeedback();
+
+  const resolveSessionSenderIdentity = useCallback(() => {
+    const sessionUser = (saasSessionRef?.current?.user && typeof saasSessionRef.current.user === 'object')
+      ? saasSessionRef.current.user
+      : null;
+    const runtimeAuthUser = (saasRuntimeRef?.current?.authContext?.user && typeof saasRuntimeRef.current.authContext.user === 'object')
+      ? saasRuntimeRef.current.authContext.user
+      : null;
+    const user = sessionUser || runtimeAuthUser;
+    const id = String(user?.id || user?.userId || '').trim();
+    const email = String(user?.email || '').trim();
+    const role = String(user?.role || '').trim().toLowerCase();
+    const explicitName = String(user?.name || user?.displayName || user?.fullName || '').trim();
+    const name = String(explicitName || email || id || '').trim();
+    return {
+      id: id || null,
+      email: email || null,
+      role: role || null,
+      name: name || null
+    };
+  }, [saasRuntimeRef, saasSessionRef]);
 
   const buildCatalogProductCaptionPreview = useCallback((product = {}) => {
     const title = String(product?.title || product?.name || 'Producto').trim() || 'Producto';
@@ -164,6 +187,7 @@ export default function useChatMessageActions({
 
     const clientTempId = `tmp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     const timestamp = Math.floor(Date.now() / 1000);
+    const sessionSenderIdentity = resolveSessionSenderIdentity();
     const optimisticMessage = {
       id: clientTempId,
       clientTempId,
@@ -183,6 +207,10 @@ export default function useChatMessageActions({
       canEdit: false,
       quotedMessage: quotedMessage || null,
       reactions: [],
+      sentByUserId: String(sessionSenderIdentity?.id || '').trim() || null,
+      sentByName: String(sessionSenderIdentity?.name || sessionSenderIdentity?.email || '').trim() || null,
+      sentByEmail: String(sessionSenderIdentity?.email || '').trim() || null,
+      sentByRole: String(sessionSenderIdentity?.role || '').trim() || null,
       retryPayload: retryPayload && typeof retryPayload === 'object' ? retryPayload : null,
       ...(extraFields && typeof extraFields === 'object' ? extraFields : {})
     };
@@ -203,7 +231,7 @@ export default function useChatMessageActions({
     )));
     rememberPendingOutgoing(safeChatId, clientTempId, retryPayload);
     return optimisticMessage;
-  }, [activeChatIdRef, messagesCacheRef, rememberPendingOutgoing, setChats, setMessages]);
+  }, [activeChatIdRef, messagesCacheRef, rememberPendingOutgoing, resolveSessionSenderIdentity, setChats, setMessages]);
 
   const buildQuotedMessagePayload = useCallback(() => {
     if (!replyingMessage?.id) return null;
