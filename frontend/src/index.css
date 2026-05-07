@@ -5825,17 +5825,20 @@ body {
 }
 
 .assignment-selector {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: 6px;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    margin-left: 6px;
+    min-width: 180px;
 }
 
 .assignment-selector-label {
-  font-size: 0.66rem;
-  color: var(--saas-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+    font-size: 0.72rem;
+    color: var(--saas-text-secondary);
+    text-transform: none;
+    letter-spacing: 0.01em;
+    font-weight: 600;
 }
 
 .assignment-selector-select {
@@ -5867,10 +5870,33 @@ body {
 }
 
 .chat-header-popover-section .assignment-selector {
-  margin-left: 0;
-  display: flex;
-  width: 100%;
-  gap: 7px;
+    margin-left: 0;
+    display: flex;
+    width: 100%;
+    gap: 7px;
+}
+
+.sidebar-filter-content {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.sidebar-main-column .chat-list {
+    margin-top: 6px;
+}
+
+.sidebar-active-filters-row {
+    min-height: 30px;
+    margin-bottom: 2px;
+}
+
+.sidebar-ribbon-btn::after {
+    display: none !important;
+}
+
+.sidebar-label-dropdown {
+    top: calc(100% + 8px) !important;
 }
 
 .chat-header-popover-section .assignment-selector-select {

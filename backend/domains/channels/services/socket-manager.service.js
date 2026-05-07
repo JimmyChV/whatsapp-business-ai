@@ -1073,8 +1073,6 @@ class SocketManager {
         const labelTokens = normalizeFilterTokens(filters?.labelTokens);
 
         if (unreadOnly && Number(summary?.unreadCount || 0) <= 0) return false;
-        if (contactMode === 'my' && !summary?.isMyContact) return false;
-        if (contactMode === 'unknown' && summary?.isMyContact) return false;
         if (archivedMode === 'archived' && !summary?.archived) return false;
         if (archivedMode === 'active' && summary?.archived) return false;
         if (pinnedMode === 'pinned' && !summary?.pinned) return false;
@@ -1125,8 +1123,13 @@ class SocketManager {
             ...summary,
             name: displayName || summary?.name || null,
             subtitle: subtitle || null,
+            isMyContact: Boolean(summary?.isMyContact || erpCustomer?.customerId),
             erpCustomerName: erpCustomer ? displayName : (summary?.erpCustomerName || null),
-            customerId: erpCustomer?.customerId || summary?.customerId || null
+            customerId: erpCustomer?.customerId || summary?.customerId || null,
+            contactName: erpCustomer?.contactName || erpCustomer?.contact_name || summary?.contactName || null,
+            firstName: erpCustomer?.firstName || erpCustomer?.first_name || summary?.firstName || null,
+            lastNamePaternal: erpCustomer?.lastNamePaternal || erpCustomer?.last_name_paternal || summary?.lastNamePaternal || null,
+            lastNameMaternal: erpCustomer?.lastNameMaternal || erpCustomer?.last_name_maternal || summary?.lastNameMaternal || null
         };
     }
 

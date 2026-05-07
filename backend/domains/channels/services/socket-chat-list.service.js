@@ -285,9 +285,10 @@ function createSocketChatListService({
             const unreadCount = Number(chat?.unreadCount || 0);
             if (unreadOnly && unreadCount <= 0) return;
 
-            const isMyContact = Boolean(chat?.contact?.isMyContact);
-            if (contactMode === 'my' && !isMyContact) return;
-            if (contactMode === 'unknown' && isMyContact) return;
+            // El filtro Guardados/No guardados depende del vínculo CRM enriquecido
+            // que resolvemos después en el summary; aquí no filtramos todavía para
+            // no perder chats que sí están guardados en BD pero no vienen como
+            // isMyContact desde el runtime.
             const isArchived = Boolean(chat?.archived);
             if (archivedMode === 'archived' && !isArchived) return;
             if (archivedMode === 'active' && isArchived) return;

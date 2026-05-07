@@ -20,10 +20,17 @@ const normalizeSearchText = (value = '') => String(value || '')
   .replace(/[\u0300-\u036f]/g, '')
   .trim()
   .toLowerCase();
+const hasCrmIdentity = (chat = {}) => (
+  Boolean(String(chat?.customerId || '').trim())
+  || Boolean(String(chat?.erpCustomerName || '').trim())
+  || Boolean(String(chat?.contactName || chat?.contact_name || '').trim())
+  || Boolean(String(chat?.firstName || chat?.first_name || '').trim())
+  || Boolean(String(chat?.lastNamePaternal || chat?.last_name_paternal || '').trim())
+  || Boolean(String(chat?.lastNameMaternal || chat?.last_name_maternal || '').trim())
+);
 const isSavedCustomerChat = (chat = {}) => (
   chat?.isMyContact === true
-  || Boolean(String(chat?.customerId || '').trim())
-  || Boolean(String(chat?.erpCustomerName || '').trim())
+  || hasCrmIdentity(chat)
 );
 const normalizeFilterToken = (value = '') => String(value || '').trim().toLowerCase();
 const normalizeCommercialStatus = (value = 'all') => {

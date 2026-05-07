@@ -146,6 +146,7 @@ const Sidebar = ({
     const [customerSearchLoading, setCustomerSearchLoading] = React.useState(false);
     const assigneeMenuRef = React.useRef(null);
     const commercialMenuRef = React.useRef(null);
+    const labelPanelRef = React.useRef(null);
     const customerSearchRequestRef = React.useRef(0);
 
     React.useEffect(() => {
@@ -157,10 +158,25 @@ const Sidebar = ({
             if (commercialMenuRef.current && !commercialMenuRef.current.contains(target)) {
                 setShowCommercialFilterMenu(false);
             }
+            if (labelPanelRef.current && !labelPanelRef.current.contains(target) && !target.closest('.sidebar-ribbon-btn[data-label="Etiquetas"]')) {
+                setShowLabelPanel(false);
+            }
         };
         document.addEventListener('pointerdown', handlePointerDown);
         return () => document.removeEventListener('pointerdown', handlePointerDown);
     }, []);
+
+    React.useEffect(() => {
+        const handleKeyDown = (event) => {
+            if (event.key !== 'Escape') return;
+            setShowLabelPanel(false);
+            setShowAssigneeFilterMenu(false);
+            setShowCommercialFilterMenu(false);
+            setShowMenu(false);
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [setShowLabelPanel, setShowMenu]);
 
     const selectedAssigneeLabel = React.useMemo(() => {
         if (filters.assigneeUserId === '__unassigned__') return 'Sin asignar';
@@ -585,7 +601,7 @@ const Sidebar = ({
                             </div>
 
                         {showLabelPanel && (
-                            <div className="sidebar-label-dropdown" role="dialog" aria-label="Filtrar por etiquetas">
+                            <div className="sidebar-label-dropdown" ref={labelPanelRef} role="dialog" aria-label="Filtrar por etiquetas">
                                 <div className="sidebar-label-dropdown-header">Filtro de etiquetas (seleccion multiple)</div>
                                 <div className="sidebar-label-search-row">
                                     <Search size={14} />

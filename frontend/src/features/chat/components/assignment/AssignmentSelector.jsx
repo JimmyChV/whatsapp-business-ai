@@ -148,16 +148,16 @@ export default function AssignmentSelector({
 
   return (
     <label className="assignment-selector" onClick={(event) => event.stopPropagation()}>
-      <span className="assignment-selector-label">Asignar</span>
+      <span className="assignment-selector-label">Selecciona usuario</span>
       <select
         className="assignment-selector-select"
         value={selectedUserId}
         onChange={handleAssign}
         disabled={isLoadingUsers || isAssigning || options.length === 0}
-        title="Asignar chat"
+        title="Selecciona usuario del chat"
       >
         <option value="">
-          {isLoadingUsers ? 'Cargando...' : 'Selecciona usuaria'}
+          {isLoadingUsers ? 'Cargando...' : 'Selecciona usuario'}
         </option>
         {options.map((option) => (
           <option key={option.value} value={option.value}>
