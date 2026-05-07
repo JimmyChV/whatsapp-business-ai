@@ -229,12 +229,18 @@ function pickPreferredSummary(prevItem = {}, incoming = {}) {
         scopeModuleId: scopeModuleId || null,
         phone: primary?.phone || secondary?.phone || null,
         subtitle: primary?.subtitle || secondary?.subtitle || null,
-        isMyContact: Boolean(primary?.isMyContact ?? secondary?.isMyContact),
+        isMyContact: Boolean(primary?.isMyContact || secondary?.isMyContact),
         lastMessage: primary?.lastMessage || secondary?.lastMessage || '',
         timestamp: Math.max(prevTs, incomingTs),
         labels: Array.isArray(primary?.labels) && primary.labels.length > 0
             ? primary.labels
-            : (Array.isArray(secondary?.labels) ? secondary.labels : [])
+            : (Array.isArray(secondary?.labels) ? secondary.labels : []),
+        customerId: String(primary?.customerId || secondary?.customerId || '').trim() || null,
+        erpCustomerName: String(primary?.erpCustomerName || secondary?.erpCustomerName || '').trim() || null,
+        contactName: String(primary?.contactName || primary?.contact_name || secondary?.contactName || secondary?.contact_name || '').trim() || null,
+        firstName: String(primary?.firstName || primary?.first_name || secondary?.firstName || secondary?.first_name || '').trim() || null,
+        lastNamePaternal: String(primary?.lastNamePaternal || primary?.last_name_paternal || secondary?.lastNamePaternal || secondary?.last_name_paternal || '').trim() || null,
+        lastNameMaternal: String(primary?.lastNameMaternal || primary?.last_name_maternal || secondary?.lastNameMaternal || secondary?.last_name_maternal || '').trim() || null
     };
 
     const primaryName = String(primary?.name || '').trim();
