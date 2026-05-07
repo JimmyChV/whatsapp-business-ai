@@ -138,25 +138,45 @@ function createSocketWaEventsBridgeService({
         return 'failed';
     };
 
-    const updateCustomerPhoneStatusFromDeliveryError = async ({
+    const updateCustomerPhoneStatusFromDeliveryError = ({
         tenantId = '',
         phone = '',
         errorCode = null
     } = {}) => {
         const cleanTenantId = String(tenantId || '').trim();
         const cleanPhone = String(phone || '').trim();
-        if (!cleanTenantId || !cleanPhone || getStorageDriver() !== 'postgres') return;
+        if (!cleanTenantId || !cleanPhone || getStorageDriver() !== 'postgres') return Promise.resolve();
         const mappedStatus = mapMetaDeliveryErrorToPhoneStatus(errorCode);
         const normalizedErrorCode = Number.isFinite(Number(errorCode)) ? Number(errorCode) : null;
-        await queryPostgres(
+        return queryPostgres(
             `UPDATE tenant_customers
              SET phone_status = $3,
                  phone_status_checked_at = NOW(),
                  phone_status_error_code = $4,
                  updated_at = NOW()
              WHERE tenant_id = $1
-               AND phone_e164 = $2`,
+               AND (phone_e164 = $2 OR phone_alt = $2)
+               AND phone_status != 'blocked'`,
             [cleanTenantId, cleanPhone, mappedStatus, normalizedErrorCode]
+        );
+    };
+
+    const updateCustomerPhoneStatusAsValid = ({
+        tenantId = '',
+        phone = ''
+    } = {}) => {
+        const cleanTenantId = String(tenantId || '').trim();
+        const cleanPhone = String(phone || '').trim();
+        if (!cleanTenantId || !cleanPhone || getStorageDriver() !== 'postgres') return Promise.resolve();
+        return queryPostgres(
+            `UPDATE tenant_customers
+             SET phone_status = 'valid',
+                 phone_status_checked_at = NOW(),
+                 phone_status_error_code = NULL,
+                 updated_at = NOW()
+             WHERE tenant_id = $1
+               AND (phone_e164 = $2 OR phone_alt = $2)`,
+            [cleanTenantId, cleanPhone]
         );
     };
 
@@ -682,7 +702,7 @@ function createSocketWaEventsBridgeService({
             } catch (e) { }
         });
 
-        waClient.on('message_ack', async ({ message, ack, errors }) => {
+        waClient.on('message_ack', async ({ message, ack, errors, status, recipientId }) => {
             const messageId = getSerializedMessageId(message);
             const baseChatId = String(message?.to || message?.from || '').trim();
             const isFromMe = Boolean(message?.fromMe);
@@ -690,6 +710,7 @@ function createSocketWaEventsBridgeService({
             const scopeModuleId = normalizeScopedModuleId(runtimeModuleContext?.moduleId || '');
             const scopedChatId = buildScopedChatId(baseChatId, scopeModuleId || '');
             const normalizedErrors = Array.isArray(errors) ? errors : [];
+            const statusValue = String(status || '').trim().toLowerCase();
             const primaryError = normalizedErrors[0] && typeof normalizedErrors[0] === 'object'
                 ? normalizedErrors[0]
                 : null;
@@ -732,19 +753,21 @@ function createSocketWaEventsBridgeService({
                 });
             }
 
-            if (deliveryError?.code) {
-                try {
-                    const tenantId = String(resolveHistoryTenantId() || '').trim();
-                    const phoneCandidates = extractPhoneCandidatesFromChatId(baseChatId);
-                    const recipientPhone = phoneCandidates.find((entry) => String(entry || '').trim().startsWith('+')) || phoneCandidates[0] || '';
-                    await updateCustomerPhoneStatusFromDeliveryError({
-                        tenantId,
-                        phone: recipientPhone,
-                        errorCode: deliveryError.code
-                    });
-                } catch (_) {
-                    // No interrumpe el bridge si falla la actualizacion CRM.
-                }
+            const tenantId = String(resolveHistoryTenantId() || '').trim();
+            const recipientPhoneDigits = String(recipientId || '').replace(/^\+/, '').trim();
+            const recipientPhone = recipientPhoneDigits ? `+${recipientPhoneDigits}` : '';
+            if (statusValue === 'failed' && recipientPhone) {
+                updateCustomerPhoneStatusFromDeliveryError({
+                    tenantId,
+                    phone: recipientPhone,
+                    errorCode: deliveryError?.code ?? null
+                }).catch((err) => console.warn('[PHONE-STATUS] failed update:', err.message));
+            }
+            if ((statusValue === 'delivered' || statusValue === 'read') && recipientPhone) {
+                updateCustomerPhoneStatusAsValid({
+                    tenantId,
+                    phone: recipientPhone
+                }).catch((err) => console.warn('[PHONE-STATUS] valid update:', err.message));
             }
 
             if (isFromMe && messageId) {

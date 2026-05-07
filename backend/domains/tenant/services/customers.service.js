@@ -32,23 +32,14 @@ const PAGE_LIMIT_DEFAULT = 50;
 const PAGE_LIMIT_MAX = 500;
 const ERP_IMPORT_PROGRESS_TTL_MS = 10 * 60 * 1000;
 const ERP_IMPORT_BATCH_SIZE = 250;
-const PHONE_VALIDATION_PROGRESS_TTL_MS = 10 * 60 * 1000;
-const PHONE_VALIDATION_BATCH_SIZE_DEFAULT = 50;
-const PHONE_VALIDATION_BATCH_SIZE_MAX = 100;
 
 let schemaPromise = null;
 let schemaReady = false;
 const erpImportProgressStore = new Map();
 const erpImportProgressCleanupTimers = new Map();
-const phoneValidationJobsStore = new Map();
-const phoneValidationJobsCleanupTimers = new Map();
 
 function createErpImportId() {
     return `erpimp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function createPhoneValidationJobId() {
-    return `phval_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function scheduleErpImportProgressCleanup(importId = '') {
@@ -119,146 +110,6 @@ function chunkArray(items = [], size = ERP_IMPORT_BATCH_SIZE) {
         chunks.push(source.slice(index, index + chunkSize));
     }
     return chunks;
-}
-
-function schedulePhoneValidationJobCleanup(jobId = '') {
-    const key = String(jobId || '').trim();
-    if (!key) return;
-    const previousTimer = phoneValidationJobsCleanupTimers.get(key);
-    if (previousTimer) clearTimeout(previousTimer);
-    const nextTimer = setTimeout(() => {
-        phoneValidationJobsStore.delete(key);
-        phoneValidationJobsCleanupTimers.delete(key);
-    }, PHONE_VALIDATION_PROGRESS_TTL_MS);
-    phoneValidationJobsCleanupTimers.set(key, nextTimer);
-}
-
-function setPhoneValidationJob(jobId = '', patch = {}) {
-    const key = String(jobId || '').trim();
-    if (!key) return null;
-    const current = phoneValidationJobsStore.get(key) || {};
-    const next = {
-        ...current,
-        ...patch,
-        jobId: key,
-        updatedAt: nowIso()
-    };
-    phoneValidationJobsStore.set(key, next);
-    schedulePhoneValidationJobCleanup(key);
-    return next;
-}
-
-function getPhoneValidationJob(jobId = '', tenantId = '') {
-    const key = String(jobId || '').trim();
-    if (!key) return null;
-    const item = phoneValidationJobsStore.get(key);
-    if (!item) return null;
-    const cleanTenantId = String(tenantId || '').trim();
-    if (cleanTenantId && String(item?.tenantId || '').trim() !== cleanTenantId) return null;
-    return item;
-}
-
-function normalizePhoneValidationBatchSize(value) {
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric) || numeric <= 0) return PHONE_VALIDATION_BATCH_SIZE_DEFAULT;
-    return Math.max(1, Math.min(PHONE_VALIDATION_BATCH_SIZE_MAX, Math.trunc(numeric)));
-}
-
-function normalizePhoneStatus(value = '', fallback = 'unknown') {
-    const candidate = String(value || '').trim().toLowerCase();
-    if (['unknown', 'valid', 'invalid', 'blocked', 'failed'].includes(candidate)) return candidate;
-    return fallback;
-}
-
-function extractMetaErrorCode(error = null) {
-    if (!error || typeof error !== 'object') return null;
-    const direct = Number(error?.code);
-    if (Number.isFinite(direct)) return direct;
-    const nested = Number(error?.error?.code);
-    if (Number.isFinite(nested)) return nested;
-    return null;
-}
-
-function sanitizeContactDigits(phone = '') {
-    return String(phone || '').replace(/[^\d]/g, '');
-}
-
-async function callMetaContactsValidation({
-    graphVersion = 'v19.0',
-    phoneNumberId = '',
-    systemUserToken = '',
-    contacts = [],
-    forceCheck = false
-} = {}) {
-    const cleanPhoneNumberId = String(phoneNumberId || '').trim();
-    const cleanToken = String(systemUserToken || '').trim();
-    const normalizedContacts = Array.from(new Set(
-        (Array.isArray(contacts) ? contacts : [])
-            .map((entry) => String(entry || '').trim())
-            .filter(Boolean)
-    ));
-    if (!cleanPhoneNumberId) throw new Error('phoneNumberId invalido para validar contactos.');
-    if (!cleanToken) throw new Error('systemUserToken invalido para validar contactos.');
-    if (!normalizedContacts.length) return { contacts: [] };
-
-    const response = await fetch(`https://graph.facebook.com/${String(graphVersion || 'v19.0').trim()}/${encodeURIComponent(cleanPhoneNumberId)}/contacts`, {
-        method: 'POST',
-        headers: {
-            Authorization: `Bearer ${cleanToken}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            messaging_product: 'whatsapp',
-            blocking: 'wait',
-            force_check: Boolean(forceCheck),
-            contacts: normalizedContacts
-        })
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-        const error = new Error(
-            String(payload?.error?.message || payload?.message || `Meta Contacts API respondio ${response.status}.`).trim()
-            || 'No se pudo validar contactos en Meta.'
-        );
-        error.metaCode = extractMetaErrorCode(payload?.error || payload);
-        error.metaPayload = payload;
-        throw error;
-    }
-    return payload && typeof payload === 'object' ? payload : { contacts: [] };
-}
-
-async function updateTenantCustomerPhoneStatuses(tenantId = DEFAULT_TENANT_ID, items = []) {
-    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
-    const rows = (Array.isArray(items) ? items : [])
-        .map((item = {}) => ({
-            customerId: String(item.customerId || '').trim(),
-            phoneStatus: normalizePhoneStatus(item.phoneStatus),
-            phoneStatusErrorCode: Number.isFinite(Number(item.phoneStatusErrorCode)) ? Number(item.phoneStatusErrorCode) : null
-        }))
-        .filter((item) => item.customerId);
-    if (!rows.length) return;
-
-    const values = [];
-    const placeholders = rows.map((item, index) => {
-        const base = index * 3;
-        values.push(item.customerId, item.phoneStatus, item.phoneStatusErrorCode);
-        return `($${base + 1}, $${base + 2}, $${base + 3})`;
-    });
-    values.push(cleanTenantId);
-
-    await queryPostgres(
-        `UPDATE tenant_customers AS customers
-         SET phone_status = status_rows.phone_status,
-             phone_status_checked_at = NOW(),
-             phone_status_error_code = status_rows.phone_status_error_code,
-             updated_at = NOW()
-         FROM (
-             VALUES ${placeholders.join(', ')}
-         ) AS status_rows(customer_id, phone_status, phone_status_error_code)
-         WHERE customers.tenant_id = $${values.length}
-           AND customers.customer_id = status_rows.customer_id`,
-        values
-    );
 }
 
 async function ensurePostgresSchema() {
@@ -614,183 +465,6 @@ async function listCustomers(tenantId = DEFAULT_TENANT_ID, options = {}) {
         return listCustomersPostgres(cleanTenantId, options);
     }
     return listCustomersFile(cleanTenantId, options);
-}
-
-async function loadCustomersPendingPhoneValidationPostgres(tenantId = DEFAULT_TENANT_ID) {
-    await ensurePostgresSchema();
-    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
-    const result = await queryPostgres(
-        `SELECT customer_id, phone_e164
-         FROM tenant_customers
-         WHERE tenant_id = $1
-           AND phone_e164 IS NOT NULL
-           AND phone_e164 <> ''
-           AND (
-                COALESCE(phone_status, 'unknown') = 'unknown'
-                OR phone_status_checked_at IS NULL
-                OR phone_status_checked_at < NOW() - INTERVAL '30 days'
-           )
-         ORDER BY updated_at DESC`,
-        [cleanTenantId]
-    );
-    return Array.isArray(result?.rows) ? result.rows : [];
-}
-
-async function runTenantCustomerPhoneValidation(tenantId = DEFAULT_TENANT_ID, options = {}) {
-    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
-    const jobId = String(options.jobId || '').trim();
-    const cleanModuleId = String(options.moduleId || '').trim().toLowerCase();
-    const graphVersion = String(options.graphVersion || 'v19.0').trim() || 'v19.0';
-    const phoneNumberId = String(options.phoneNumberId || '').trim();
-    const systemUserToken = String(options.systemUserToken || '').trim();
-    const batchSize = normalizePhoneValidationBatchSize(options.batchSize);
-    if (!jobId) throw new Error('jobId invalido.');
-    if (!phoneNumberId || !systemUserToken) throw new Error('Credenciales cloud incompletas para validar telefonos.');
-
-    try {
-        const customers = await loadCustomersPendingPhoneValidationPostgres(cleanTenantId);
-        setPhoneValidationJob(jobId, {
-            status: 'running',
-            total: customers.length,
-            validated: 0,
-            valid: 0,
-            invalid: 0,
-            blocked: 0,
-            failed: 0,
-            errors: 0,
-            message: customers.length
-                ? 'Validando numeros contra Meta Contacts API...'
-                : 'No hay numeros pendientes por validar.'
-        });
-
-        if (!customers.length) {
-            setPhoneValidationJob(jobId, {
-                status: 'done',
-                finishedAt: nowIso(),
-                message: 'No hubo numeros pendientes por validar.'
-            });
-            return;
-        }
-
-        const chunks = chunkArray(customers, batchSize);
-        let validated = 0;
-        let valid = 0;
-        let invalid = 0;
-        let blocked = 0;
-        let failed = 0;
-        let errors = 0;
-
-        for (const chunk of chunks) {
-            const contacts = chunk
-                .map((item) => String(item?.phone_e164 || '').trim())
-                .filter(Boolean);
-            try {
-                const payload = await callMetaContactsValidation({
-                    graphVersion,
-                    phoneNumberId,
-                    systemUserToken,
-                    contacts,
-                    forceCheck: false
-                });
-                const resultByDigits = new Map(
-                    (Array.isArray(payload?.contacts) ? payload.contacts : []).map((entry = {}) => {
-                        const input = String(entry?.input || '').trim();
-                        return [sanitizeContactDigits(input), entry];
-                    }).filter(([key]) => key)
-                );
-                const updates = chunk.map((item = {}) => {
-                    const digits = sanitizeContactDigits(item?.phone_e164 || '');
-                    const contactResult = resultByDigits.get(digits) || null;
-                    const status = normalizePhoneStatus(contactResult?.status, 'failed');
-                    return {
-                        customerId: String(item?.customer_id || '').trim(),
-                        phoneStatus: status,
-                        phoneStatusErrorCode: null
-                    };
-                }).filter((item) => item.customerId);
-
-                await updateTenantCustomerPhoneStatuses(cleanTenantId, updates);
-                updates.forEach((item) => {
-                    validated += 1;
-                    if (item.phoneStatus === 'valid') valid += 1;
-                    else if (item.phoneStatus === 'invalid') invalid += 1;
-                    else if (item.phoneStatus === 'blocked') blocked += 1;
-                    else if (item.phoneStatus === 'failed') failed += 1;
-                });
-            } catch (error) {
-                const metaCode = extractMetaErrorCode(error?.metaPayload?.error || error) ?? extractMetaErrorCode(error);
-                const fallbackUpdates = chunk.map((item = {}) => ({
-                    customerId: String(item?.customer_id || '').trim(),
-                    phoneStatus: 'failed',
-                    phoneStatusErrorCode: metaCode
-                })).filter((item) => item.customerId);
-                await updateTenantCustomerPhoneStatuses(cleanTenantId, fallbackUpdates);
-                validated += fallbackUpdates.length;
-                failed += fallbackUpdates.length;
-                errors += fallbackUpdates.length;
-            }
-
-            setPhoneValidationJob(jobId, {
-                status: 'running',
-                validated,
-                valid,
-                invalid,
-                blocked,
-                failed,
-                errors,
-                message: `Validando numeros... ${validated} / ${customers.length}`
-            });
-        }
-
-        setPhoneValidationJob(jobId, {
-            status: 'done',
-            validated,
-            valid,
-            invalid,
-            blocked,
-            failed,
-            errors,
-            finishedAt: nowIso(),
-            message: 'Validacion completada.'
-        });
-    } catch (error) {
-        setPhoneValidationJob(jobId, {
-            status: 'error',
-            error: String(error?.message || 'No se pudo validar telefonos.'),
-            finishedAt: nowIso(),
-            message: 'La validacion de telefonos fallo.'
-        });
-    }
-}
-
-function startTenantCustomerPhoneValidation(tenantId = DEFAULT_TENANT_ID, options = {}) {
-    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
-    const cleanModuleId = String(options.moduleId || '').trim().toLowerCase();
-    if (!cleanModuleId) throw new Error('moduleId invalido.');
-    const jobId = createPhoneValidationJobId();
-    const startedAt = nowIso();
-    const progress = setPhoneValidationJob(jobId, {
-        tenantId: cleanTenantId,
-        moduleId: cleanModuleId,
-        status: 'running',
-        total: 0,
-        validated: 0,
-        valid: 0,
-        invalid: 0,
-        blocked: 0,
-        failed: 0,
-        errors: 0,
-        startedAt,
-        message: 'Preparando validacion de numeros...'
-    });
-    setTimeout(() => {
-        void runTenantCustomerPhoneValidation(cleanTenantId, {
-            ...options,
-            moduleId: cleanModuleId,
-            jobId
-        });
-    }, 0);
-    return progress;
 }
 
 async function searchCustomersForChatPostgres(tenantId = DEFAULT_TENANT_ID, options = {}) {
@@ -3035,11 +2709,8 @@ async function upsertFromInteraction(tenantId = DEFAULT_TENANT_ID, payload = {})
 module.exports = {
     ensurePostgresSchema,
     setErpImportProgress,
-    setPhoneValidationJob,
     listCustomers,
     searchCustomersForChat,
-    startTenantCustomerPhoneValidation,
-    getPhoneValidationJob,
     getCustomer,
     getCustomerByPhone,
     getCustomerByPhoneWithAddresses,
