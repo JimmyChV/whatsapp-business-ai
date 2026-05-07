@@ -437,77 +437,71 @@ const MessageBubble = ({
             )}
 
             {isOrderActionable && (
-                <div style={{
-                    background: 'rgba(0,168,132,0.12)',
-                    border: '1px solid rgba(0,168,132,0.3)',
-                    borderRadius: '8px',
-                    padding: '8px 10px',
-                    marginBottom: '6px'
-                }}>
-                    <div style={{ fontSize: '0.78rem', color: '#00a884', fontWeight: 700, marginBottom: '4px' }}>
+                <div className={`message-order-card${isQuotePayload ? ' is-quote' : ''}${isProductPayload ? ' is-product' : ' is-order'}`}>
+                    <div className="message-order-card__title">
                         {isProductPayload ? 'Producto compartido' : (isQuotePayload ? 'Cotizacion' : 'Carrito/Pedido del cliente')}
                     </div>
                     {orderIdentifier && (
-                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '2px' }}>ID: {orderIdentifier}</div>
+                        <div className="message-order-card__meta">ID: {orderIdentifier}</div>
                     )}
                     {isProductPayload && (firstOrderItem?.title || firstOrderItem?.name) && (
-                        <div style={{ fontSize: '0.82rem', color: 'var(--text-primary)', marginBottom: '4px', fontWeight: 600 }}>
+                        <div className="message-order-card__product-name">
                             {firstOrderItem?.title || firstOrderItem?.name}
                         </div>
                     )}
                     {orderSubtotalLabel && !isQuotePayload && (
-                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginBottom: '4px' }}>Subtotal: {orderSubtotalLabel}</div>
+                        <div className="message-order-card__meta">Subtotal: {orderSubtotalLabel}</div>
                     )}
                     {isProductPayload ? (
-                        <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>
+                        <div className="message-order-card__hint">
                             Puedes anadir este producto al carrito para cotizarlo.
                         </div>
                     ) : isQuotePayload ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <div style={{ fontSize: '0.75rem', color: '#9bb0ba', marginTop: '1px' }}>Detalle de productos:</div>
+                        <div className="message-order-card__quote-body">
+                            <div className="message-order-card__section-label">Detalle de productos:</div>
                             {orderItems.length > 0 ? orderItems.slice(0, 40).map((item, idx) => {
                                 const itemQty = Number.isFinite(Number(item?.qty)) ? Number(item.qty)
                                     : (Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1);
                                 const itemTitle = String(item?.title || item?.name || 'Producto').trim() || 'Producto';
                                 return (
-                                    <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+                                    <div key={idx} className="message-order-card__quote-item">
                                         - {itemQty} {itemTitle}
                                     </div>
                                 );
                             }) : (
-                                <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>No se pudo leer el detalle de productos.</div>
+                                <div className="message-order-card__hint">No se pudo leer el detalle de productos.</div>
                             )}
                             {(quoteSubtotalLabel || quoteDiscountLabel || quoteTotalAfterDiscountLabel || quoteDeliveryLabel || quoteTotalPayableLabel) && (
                                 <>
-                                    <div style={{ fontSize: '0.75rem', color: '#9bb0ba', marginTop: '6px' }}>Detalle de pago:</div>
+                                    <div className="message-order-card__section-label with-gap">Detalle de pago:</div>
                                     {quoteSubtotalLabel && (
-                                        <div style={{ fontSize: '0.79rem', color: '#d6e3eb', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                        <div className="message-order-card__summary-row">
                                             <span>Subtotal</span>
                                             <strong>{quoteSubtotalLabel}</strong>
                                         </div>
                                     )}
                                     {quoteDiscountLabel && (
-                                        <div style={{ fontSize: '0.79rem', color: '#d6e3eb', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                        <div className="message-order-card__summary-row">
                                             <span>Descuento</span>
                                             <strong>- {quoteDiscountLabel}</strong>
                                         </div>
                                     )}
                                     {quoteTotalAfterDiscountLabel && (
-                                        <div style={{ fontSize: '0.79rem', color: '#d6e3eb', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                        <div className="message-order-card__summary-row">
                                             <span>Total con descuento</span>
                                             <strong>{quoteTotalAfterDiscountLabel}</strong>
                                         </div>
                                     )}
                                     {quoteDeliveryLabel && (
-                                        <div style={{ fontSize: '0.79rem', color: '#d6e3eb', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                        <div className="message-order-card__summary-row">
                                             <span>Delivery</span>
                                             <strong>{quoteDeliveryLabel}</strong>
                                         </div>
                                     )}
                                     {quoteTotalPayableLabel && (
-                                        <div style={{ fontSize: '0.82rem', color: '#e8fbf3', display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '2px' }}>
-                                            <span style={{ fontWeight: 700 }}>TOTAL A PAGAR</span>
-                                            <strong style={{ fontWeight: 800 }}>{quoteTotalPayableLabel}</strong>
+                                        <div className="message-order-card__summary-row total">
+                                            <span>TOTAL A PAGAR</span>
+                                            <strong>{quoteTotalPayableLabel}</strong>
                                         </div>
                                     )}
                                 </>
@@ -519,38 +513,29 @@ const MessageBubble = ({
                             : (Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1);
                         const itemTitle = String(item?.title || item?.name || 'Producto').trim() || 'Producto';
                         return (
-                            <div key={idx} style={{ fontSize: '0.8rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>- {itemTitle} x{itemQty}{item?.sku ? ` (SKU: ${item.sku})` : ''}</span>
-                                <span style={{ color: '#9bb0ba', flexShrink: 0 }}>{itemAmount || ''}</span>
+                            <div key={idx} className="message-order-card__line-item">
+                                <span className="message-order-card__line-item-name">- {itemTitle} x{itemQty}{item?.sku ? ` (SKU: ${item.sku})` : ''}</span>
+                                <span className="message-order-card__line-item-amount">{itemAmount || ''}</span>
                             </div>
                         );
                     }) : (
-                        <div style={{ fontSize: '0.8rem', color: '#c6d3da' }}>Se recibio un pedido desde catalogo de WhatsApp.</div>
+                        <div className="message-order-card__hint">Se recibio un pedido desde catalogo de WhatsApp.</div>
                     )}
                     {!isProductPayload && !isQuotePayload && safeOrderNote && (
-                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginTop: '6px' }}>
+                        <div className="message-order-card__meta with-gap">
                             Nota cliente: {safeOrderNote}
                         </div>
                     )}
                     {!isProductPayload && !isQuotePayload && actionOrder?.rawPreview?.itemCount && (
-                        <div style={{ fontSize: '0.74rem', color: '#9bb0ba', marginTop: '2px' }}>
+                        <div className="message-order-card__meta">
                             Items reportados: {actionOrder.rawPreview.itemCount}
                         </div>
                     )}
-                    <div style={{ marginTop: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <div className="message-order-card__actions">
                         <button
                             onClick={() => typeof onLoadOrderToCart === 'function' && onLoadOrderToCart(actionOrder || null)}
                             disabled={typeof onLoadOrderToCart !== 'function'}
-                            style={{
-                                background: '#17323f',
-                                color: '#c7f1ff',
-                                border: '1px solid rgba(124,200,255,0.45)',
-                                borderRadius: '6px',
-                                padding: '6px 10px',
-                                cursor: typeof onLoadOrderToCart === 'function' ? 'pointer' : 'not-allowed',
-                                fontSize: '0.75rem',
-                                opacity: typeof onLoadOrderToCart === 'function' ? 1 : 0.55
-                            }}
+                            className="message-order-card__action-btn"
                         >
                             {orderActionLabel}
                         </button>
