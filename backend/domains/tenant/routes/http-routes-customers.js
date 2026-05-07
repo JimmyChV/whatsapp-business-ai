@@ -346,6 +346,69 @@ function registerTenantCustomerHttpRoutes({
         }
     });
 
+    app.post('/api/admin/saas/tenants/:tenantId/customers/validate-phones', async (req, res) => {
+        const tenantId = String(req.params?.tenantId || '').trim();
+        if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+        if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_MANAGE)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const moduleId = String(req.body?.moduleId || '').trim().toLowerCase();
+            const batchSize = Number(req.body?.batchSize || 50);
+            if (!moduleId) {
+                return res.status(400).json({ ok: false, error: 'moduleId invalido.' });
+            }
+            const modules = await waModuleService.listModulesRuntime(tenantId, { includeInactive: true, userId: req?.authContext?.userId || '' });
+            const moduleRuntime = (Array.isArray(modules) ? modules : [])
+                .find((entry) => String(entry?.moduleId || '').trim().toLowerCase() === moduleId);
+            if (!moduleRuntime) {
+                return res.status(404).json({ ok: false, error: 'No se encontro el modulo indicado.' });
+            }
+            const cloudConfig = waModuleService.resolveModuleCloudConfig(moduleRuntime);
+            const phoneNumberId = String(cloudConfig?.phoneNumberId || '').trim();
+            const systemUserToken = String(cloudConfig?.systemUserToken || '').trim();
+            const graphVersion = String(cloudConfig?.graphVersion || 'v19.0').trim() || 'v19.0';
+            if (!phoneNumberId || !systemUserToken) {
+                return res.status(400).json({ ok: false, error: 'El modulo no tiene credenciales cloud completas para validar telefonos.' });
+            }
+            const progress = customerService.startTenantCustomerPhoneValidation(tenantId, {
+                moduleId,
+                batchSize,
+                phoneNumberId,
+                systemUserToken,
+                graphVersion
+            });
+            return res.json({
+                ok: true,
+                tenantId,
+                jobId: progress?.jobId || null,
+                progress
+            });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo iniciar la validacion de telefonos.') });
+        }
+    });
+
+    app.get('/api/admin/saas/tenants/:tenantId/customers/validate-phones/:jobId', async (req, res) => {
+        const tenantId = String(req.params?.tenantId || '').trim();
+        const jobId = String(req.params?.jobId || '').trim();
+        if (!tenantId || !jobId) return res.status(400).json({ ok: false, error: 'tenantId/jobId invalido.' });
+        if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_MANAGE)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const progress = customerService.getPhoneValidationJob(jobId, tenantId);
+            if (!progress) {
+                return res.status(404).json({ ok: false, error: 'No se encontro el job de validacion.' });
+            }
+            return res.json({ ok: true, tenantId, jobId, progress });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo consultar el progreso de validacion.') });
+        }
+    });
+
     app.get('/api/tenant/customers', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
