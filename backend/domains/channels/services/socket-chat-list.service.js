@@ -619,29 +619,33 @@ function createSocketChatListService({
 
                         historyTotalHint = Math.max(0, Number(cloudHistoryPage?.total || 0));
                         if (Array.isArray(cloudHistoryPage?.items) && cloudHistoryPage.items.length > 0) {
-                            const mergedMap = new Map();
-                            for (const item of cloudHistoryPage.items) {
-                                if (!item) continue;
-                                const key = buildChatIdentityKeyFromSummary(item);
-                                if (!mergedMap.has(key)) mergedMap.set(key, item);
-                            }
+                            const runtimeByKey = new Map();
                             for (const item of items) {
                                 if (!item) continue;
                                 const key = buildChatIdentityKeyFromSummary(item);
-                                if (!mergedMap.has(key)) {
-                                    mergedMap.set(key, item);
+                                if (!runtimeByKey.has(key)) {
+                                    runtimeByKey.set(key, item);
                                 } else {
-                                    mergedMap.set(key, pickPreferredSummary(mergedMap.get(key), item));
+                                    runtimeByKey.set(key, pickPreferredSummary(runtimeByKey.get(key), item));
                                 }
                             }
 
-                            const mergedItems = Array.from(mergedMap.values())
+                            const mergedItems = [];
+                            for (const historyItem of cloudHistoryPage.items) {
+                                if (!historyItem) continue;
+                                const key = buildChatIdentityKeyFromSummary(historyItem);
+                                const runtimeItem = runtimeByKey.get(key) || null;
+                                mergedItems.push(runtimeItem ? pickPreferredSummary(historyItem, runtimeItem) : historyItem);
+                                runtimeByKey.delete(key);
+                            }
+
+                            if (runtimeByKey.size > 0) {
+                                mergedItems.push(...Array.from(runtimeByKey.values()));
+                            }
+
+                            items = mergedItems
                                 .sort((a, b) => (Number(b?.timestamp || 0) - Number(a?.timestamp || 0)))
                                 .slice(0, limit);
-
-                            if (mergedItems.length > 0) {
-                                items = mergedItems;
-                            }
                         }
                     } catch (historyMergeError) {
                         console.warn('[History] cloud chat merge failed:', String(historyMergeError?.message || historyMergeError));

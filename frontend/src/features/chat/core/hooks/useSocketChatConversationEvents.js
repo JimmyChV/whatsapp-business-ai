@@ -437,7 +437,14 @@ export default function useSocketChatConversationEvents({
                         subtitle: sanitizeDisplayText(chat?.subtitle || ''),
                         status: sanitizeDisplayText(chat?.status || ''),
                         phone: getBestChatPhone(chat),
-                        lastMessage: sanitizeDisplayText(chat?.lastMessage || ''),
+                        timestamp: Number(chat?.timestamp || previous?.timestamp || 0) || 0,
+                        lastMessage: sanitizeDisplayText(chat?.lastMessage || '') || sanitizeDisplayText(previous?.lastMessage || ''),
+                        lastMessageFromMe: Object.prototype.hasOwnProperty.call(chat || {}, 'lastMessageFromMe')
+                            ? Boolean(chat?.lastMessageFromMe)
+                            : Boolean(previous?.lastMessageFromMe),
+                        ack: Number.isFinite(Number(chat?.ack))
+                            ? Number(chat?.ack)
+                            : (Number.isFinite(Number(previous?.ack)) ? Number(previous?.ack) : 0),
                         labels: (() => {
                             const hasIncomingLabels = Object.prototype.hasOwnProperty.call(chat || {}, 'labels');
                             const incoming = hasIncomingLabels ? normalizeChatLabels(chat.labels) : null;
@@ -446,7 +453,7 @@ export default function useSocketChatConversationEvents({
                             if (Array.isArray(existing) && existing.length > 0) return existing;
                             return Array.isArray(incoming) ? incoming : [];
                         })(),
-                        profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl),
+                        profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl || previous?.profilePicUrl || ''),
                         isMyContact: chat?.isMyContact === true,
                         archived: Boolean(chat?.archived),
                         pinned: Boolean(chat?.pinned),
@@ -505,9 +512,16 @@ export default function useSocketChatConversationEvents({
                 subtitle: sanitizeDisplayText(chat?.subtitle || ''),
                 status: sanitizeDisplayText(chat?.status || ''),
                 phone: getBestChatPhone(chat),
-                lastMessage: sanitizeDisplayText(chat?.lastMessage || ''),
+                timestamp: Number(chat?.timestamp || previous?.timestamp || 0) || 0,
+                lastMessage: sanitizeDisplayText(chat?.lastMessage || '') || sanitizeDisplayText(previous?.lastMessage || ''),
+                lastMessageFromMe: Object.prototype.hasOwnProperty.call(chat || {}, 'lastMessageFromMe')
+                    ? Boolean(chat?.lastMessageFromMe)
+                    : Boolean(previous?.lastMessageFromMe),
+                ack: Number.isFinite(Number(chat?.ack))
+                    ? Number(chat?.ack)
+                    : (Number.isFinite(Number(previous?.ack)) ? Number(previous?.ack) : 0),
                 labels: normalizeChatLabels(chat.labels),
-                profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl),
+                profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl || previous?.profilePicUrl || ''),
                 isMyContact: chat?.isMyContact === true,
                 archived: Boolean(chat?.archived),
                 pinned: Boolean(chat?.pinned),
