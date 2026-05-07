@@ -1557,6 +1557,7 @@ class SocketManager {
                 checkOutboundConsent: (...args) => this.messageDeliveryConsentPolicyService.checkOutboundConsent(...args),
                 resolveScopedSendTarget: (...args) => messageDeliveryRuntime.resolveScopedSendTarget(...args),
                 emitRealtimeOutgoingMessage: (...args) => messageDeliveryRuntime.emitRealtimeOutgoingMessage(...args),
+                emitToRuntimeContext: (...args) => this.emitToRuntimeContext(...args),
                 emitCommercialStatusUpdated: (...args) => this.emitCommercialStatusUpdated(...args),
                 recordConversationEvent
             });

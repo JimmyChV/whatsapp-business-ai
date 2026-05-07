@@ -139,12 +139,13 @@ export default function useMessageBubbleDerivedModel({
             .replace(/\s+/g, ' ')
             .trim();
         const showOutgoingAttribution = Boolean(isOut && (displaySentByName || safeSentViaLabel));
+        const isEditableQuoteMessage = Boolean(isQuotePayload && isOut && String(safeMsg?.body || '').trim());
         const canEditMessage = Boolean(
             canEditMessages
             && isOut
             && !safeMsg?.hasMedia
             && String(safeMsg?.body || '').trim()
-            && safeMsg?.canEdit === true
+            && (isEditableQuoteMessage || safeMsg?.canEdit === true)
         );
         const canReplyMessage = Boolean(safeMsg?.id);
         const canForwardMessage = Boolean(safeMsg?.id);

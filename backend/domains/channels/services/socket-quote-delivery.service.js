@@ -182,6 +182,7 @@ function createSocketQuoteDeliveryService({
         checkOutboundConsent,
         resolveScopedSendTarget,
         emitRealtimeOutgoingMessage,
+        emitToRuntimeContext,
         emitCommercialStatusUpdated,
         recordConversationEvent
     } = {}) => {
@@ -347,7 +348,7 @@ function createSocketQuoteDeliveryService({
                     }
                 });
 
-                socket.emit('quote_sent', {
+                const quoteSentPayload = {
                     ok: true,
                     to: target.scopedChatId || target.targetChatId,
                     chatId: target.scopedChatId || target.targetChatId,
@@ -360,7 +361,11 @@ function createSocketQuoteDeliveryService({
                     items: normalizedQuote.items,
                     summary: normalizedQuote.summary,
                     notes: normalizedQuote.notes
-                });
+                };
+                socket.emit('quote_sent', quoteSentPayload);
+                if (typeof emitToRuntimeContext === 'function') {
+                    emitToRuntimeContext('quote_sent', quoteSentPayload);
+                }
             } catch (error) {
                 const detail = String(error?.message || error || 'No se pudo enviar la cotizacion.');
                 console.warn('[WA][SendStructuredQuote] ' + detail);

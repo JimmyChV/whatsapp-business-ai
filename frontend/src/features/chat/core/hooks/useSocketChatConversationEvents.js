@@ -1355,7 +1355,6 @@ export default function useSocketChatConversationEvents({
 
             const incomingChatId = String(event?.chatId || event?.baseChatId || event?.to || '').trim();
             const activeChatId = String(activeChatIdRef.current || '').trim();
-            if (incomingChatId && activeChatId && !chatIdsReferSameScope(incomingChatId, activeChatId)) return;
 
             const updateQuoteMessage = (prev) => {
                 const safePrev = Array.isArray(prev) ? prev : [];
@@ -1385,7 +1384,9 @@ export default function useSocketChatConversationEvents({
             if (activeChatId && (!incomingChatId || chatIdsReferSameScope(incomingChatId, activeChatId))) {
                 setMessages(updateQuoteMessage);
             }
-            patchCachedMessages(messagesCacheRef, incomingChatId || activeChatId, updateQuoteMessage);
+            if (incomingChatId) {
+                patchCachedMessages(messagesCacheRef, incomingChatId, updateQuoteMessage);
+            }
         });
 
         socket.on('error', (msg) => {
