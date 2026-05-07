@@ -1,3 +1,5 @@
+const { queryPostgres } = require('../../../config/persistence-runtime');
+
 function createSocketMessageDeliveryService({
     waClient,
     normalizeScopedModuleId,
@@ -35,6 +37,40 @@ function createSocketMessageDeliveryService({
         listMessages
     } = {}) => {
         const MESSAGE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+        const enrichAuthContextWithUserName = async (rawAuthContext = null) => {
+            const safeAuthContext = rawAuthContext && typeof rawAuthContext === 'object'
+                ? rawAuthContext
+                : null;
+            if (!safeAuthContext) return safeAuthContext;
+
+            const existingName = String(safeAuthContext?.name || '').trim();
+            const existingDisplayName = String(safeAuthContext?.displayName || '').trim();
+            const userId = String(safeAuthContext?.userId || '').trim();
+            if ((existingName || existingDisplayName) || !userId) {
+                return safeAuthContext;
+            }
+
+            try {
+                const userRow = await queryPostgres(
+                    'SELECT display_name, email FROM users WHERE user_id = $1 LIMIT 1',
+                    [userId]
+                );
+                const user = userRow?.rows?.[0] || null;
+                if (!user) return safeAuthContext;
+
+                const resolvedDisplayName = String(user?.display_name || '').trim();
+                const resolvedEmail = String(user?.email || '').trim();
+                return {
+                    ...safeAuthContext,
+                    name: resolvedDisplayName || resolvedEmail || existingName || null,
+                    displayName: resolvedDisplayName || existingDisplayName || null
+                };
+            } catch (e) {
+                console.warn('[AGENT-META] could not enrich authContext name:', e?.message || e);
+                return safeAuthContext;
+            }
+        };
 
         const hasOpenCustomerCareWindow = async (chatId = '') => {
             const safeChatId = String(chatId || '').trim();
@@ -280,9 +316,10 @@ function createSocketMessageDeliveryService({
                      errorEvent: 'error',
                      action: 'enviar mensajes'
                  });
-                 if (!target?.ok) return;
-                   const moduleContext = target.moduleContext || socket?.data?.waModule || null;
-                const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
+                if (!target?.ok) return;
+                  const moduleContext = target.moduleContext || socket?.data?.waModule || null;
+                const enrichedAuthContext = await enrichAuthContextWithUserName(authContext);
+                const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(enrichedAuthContext, moduleContext));
                 let sentMessage = null;
                 const hasOpenWindow = await hasOpenCustomerCareWindow(target.targetChatId);
                 if (!hasOpenWindow) {
@@ -420,9 +457,10 @@ function createSocketMessageDeliveryService({
                      errorEvent: 'error',
                      action: 'enviar adjuntos'
                  });
-                 if (!target?.ok) return;
-                   const moduleContext = target.moduleContext || socket?.data?.waModule || null;
-                 const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
+                if (!target?.ok) return;
+                  const moduleContext = target.moduleContext || socket?.data?.waModule || null;
+                 const enrichedAuthContext = await enrichAuthContextWithUserName(authContext);
+                 const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(enrichedAuthContext, moduleContext));
                  const sentMessage = await waClient.sendMedia(target.targetChatId, mediaData, mimetype, filename, caption, isPtt, quoted || null);
                  const sentMessageId = getSerializedMessageId(sentMessage);
                  if (sentMessageId && agentMeta) {
@@ -621,7 +659,6 @@ function createSocketMessageDeliveryService({
 module.exports = {
     createSocketMessageDeliveryService
 };
-
 
 
 
