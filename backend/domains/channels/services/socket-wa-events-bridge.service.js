@@ -130,6 +130,36 @@ function createSocketWaEventsBridgeService({
         }
     };
 
+    const mapMetaDeliveryErrorToPhoneStatus = (errorCode = null) => {
+        const numeric = Number(errorCode);
+        if (!Number.isFinite(numeric)) return 'failed';
+        if ([131026, 131028, 130472].includes(numeric)) return 'invalid';
+        if (numeric === 131047) return 'blocked';
+        return 'failed';
+    };
+
+    const updateCustomerPhoneStatusFromDeliveryError = async ({
+        tenantId = '',
+        phone = '',
+        errorCode = null
+    } = {}) => {
+        const cleanTenantId = String(tenantId || '').trim();
+        const cleanPhone = String(phone || '').trim();
+        if (!cleanTenantId || !cleanPhone || getStorageDriver() !== 'postgres') return;
+        const mappedStatus = mapMetaDeliveryErrorToPhoneStatus(errorCode);
+        const normalizedErrorCode = Number.isFinite(Number(errorCode)) ? Number(errorCode) : null;
+        await queryPostgres(
+            `UPDATE tenant_customers
+             SET phone_status = $3,
+                 phone_status_checked_at = NOW(),
+                 phone_status_error_code = $4,
+                 updated_at = NOW()
+             WHERE tenant_id = $1
+               AND phone_e164 = $2`,
+            [cleanTenantId, cleanPhone, mappedStatus, normalizedErrorCode]
+        );
+    };
+
     const registerWaProviderEvents = () => {
         waClient.on('qr', (qr) => emitToRuntimeContext('qr', qr));
         waClient.on('ready', async () => {
@@ -700,6 +730,21 @@ function createSocketWaEventsBridgeService({
                     deliveryError,
                     updatedAt: new Date().toISOString()
                 });
+            }
+
+            if (deliveryError?.code) {
+                try {
+                    const tenantId = String(resolveHistoryTenantId() || '').trim();
+                    const phoneCandidates = extractPhoneCandidatesFromChatId(baseChatId);
+                    const recipientPhone = phoneCandidates.find((entry) => String(entry || '').trim().startsWith('+')) || phoneCandidates[0] || '';
+                    await updateCustomerPhoneStatusFromDeliveryError({
+                        tenantId,
+                        phone: recipientPhone,
+                        errorCode: deliveryError.code
+                    });
+                } catch (_) {
+                    // No interrumpe el bridge si falla la actualizacion CRM.
+                }
             }
 
             if (isFromMe && messageId) {
