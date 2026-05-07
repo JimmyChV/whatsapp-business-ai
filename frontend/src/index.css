@@ -8520,6 +8520,80 @@ body {
   box-shadow: none !important;
 }
 
+.business-tabs {
+  gap: 10px !important;
+}
+
+.business-tab-btn {
+  position: relative !important;
+  min-height: 44px !important;
+  border-radius: 14px !important;
+  border: 1px solid color-mix(in srgb, var(--chat-card-border) 78%, transparent) !important;
+  background: color-mix(in srgb, var(--chat-control-surface) 88%, transparent) !important;
+  color: var(--saas-text-primary) !important;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--chat-card-border) 35%, transparent) inset !important;
+}
+
+.business-tab-btn .business-tab-icon,
+.business-tab-btn .business-tab-label {
+  color: inherit !important;
+}
+
+.business-tab-btn .business-tab-icon {
+  opacity: 0.9 !important;
+}
+
+.business-tab-btn .business-tab-label {
+  font-weight: 800 !important;
+  letter-spacing: 0.01em !important;
+}
+
+.business-tab-btn:hover {
+  border-color: color-mix(in srgb, var(--saas-accent-primary) 34%, var(--chat-card-border)) !important;
+  background: color-mix(in srgb, var(--chat-control-surface) 70%, var(--saas-accent-primary) 12%) !important;
+  color: var(--saas-text-primary) !important;
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--saas-accent-primary) 10%, transparent) !important;
+}
+
+.business-tab-btn.active {
+  border-color: color-mix(in srgb, var(--saas-accent-primary) 60%, var(--chat-success-border)) !important;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--saas-accent-primary) 24%, var(--chat-control-surface)),
+    color-mix(in srgb, var(--saas-accent-primary) 14%, var(--chat-control-surface))
+  ) !important;
+  color: var(--saas-text-primary) !important;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--saas-accent-primary) 24%, transparent),
+    0 12px 24px color-mix(in srgb, var(--saas-accent-primary) 16%, transparent) !important;
+}
+
+:root[data-theme="light"] .business-tab-btn {
+  border-color: color-mix(in srgb, var(--saas-border-subtle) 82%, transparent) !important;
+  background: color-mix(in srgb, #ffffff 92%, var(--saas-bg-secondary)) !important;
+  color: var(--saas-text-primary) !important;
+  box-shadow: 0 1px 0 color-mix(in srgb, #ffffff 90%, transparent) inset !important;
+}
+
+:root[data-theme="light"] .business-tab-btn:hover {
+  border-color: color-mix(in srgb, var(--saas-accent-primary) 44%, var(--saas-border-subtle)) !important;
+  background: color-mix(in srgb, #ffffff 76%, var(--saas-accent-primary) 10%) !important;
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--saas-accent-primary) 10%, transparent) !important;
+}
+
+:root[data-theme="light"] .business-tab-btn.active {
+  border-color: color-mix(in srgb, var(--saas-accent-primary) 58%, var(--saas-border-subtle)) !important;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--saas-accent-primary) 18%, #ffffff),
+    color-mix(in srgb, var(--saas-accent-primary) 10%, #f8fbff)
+  ) !important;
+  color: var(--saas-text-primary) !important;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--saas-accent-primary) 22%, transparent),
+    0 12px 24px color-mix(in srgb, var(--saas-accent-primary) 12%, transparent) !important;
+}
+
 :root[data-theme="light"] .message-ack.sent,
 :root[data-theme="light"] .message-ack.delivered {
   color: color-mix(in srgb, var(--saas-text-primary) 86%, var(--saas-text-secondary)) !important;
