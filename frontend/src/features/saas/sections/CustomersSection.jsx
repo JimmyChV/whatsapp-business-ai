@@ -1,5 +1,6 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ShieldCheck } from 'lucide-react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import SendTemplateModal from '../../chat/components/SendTemplateModal';
 import { buildTemplateResolvedPreview } from '../../chat/core/helpers/templateMessages.helpers';
@@ -26,6 +27,32 @@ const CUSTOMER_TABLE_COLUMNS = [
     { key: 'apellidoPaterno', label: 'Apellido Paterno', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
     { key: 'apellidoMaterno', label: 'Apellido Materno', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
     { key: 'telefono', label: 'Telefono', width: '156px', minWidth: '132px', maxWidth: '190px', type: 'text' },
+    {
+        key: 'phone_status',
+        label: 'Estado tel.',
+        width: '108px',
+        minWidth: '96px',
+        maxWidth: '132px',
+        type: 'option',
+        render: (value) => {
+            const config = {
+                valid: { icon: '✓', color: 'green', label: 'Valido' },
+                invalid: { icon: '✗', color: 'red', label: 'Invalido' },
+                blocked: { icon: '⊘', color: 'orange', label: 'Bloqueado' },
+                failed: { icon: '!', color: 'yellow', label: 'Fallo' },
+                unknown: { icon: '?', color: 'gray', label: 'Sin validar' }
+            };
+            const entry = config[String(value || '').trim().toLowerCase()] || config.unknown;
+            return (
+                <span
+                    title={entry.label}
+                    style={{ color: `var(--saas-accent-${entry.color})`, fontWeight: 700 }}
+                >
+                    {entry.icon}
+                </span>
+            );
+        }
+    },
     { key: 'telefonoAlt', label: 'Telefono Alterno', width: '168px', minWidth: '140px', maxWidth: '208px', type: 'text' },
     { key: 'email', label: 'Correo', width: '220px', minWidth: '180px', maxWidth: '280px', type: 'text' },
     { key: 'tipoCliente', label: 'Tipo De Cliente', width: '146px', minWidth: '124px', maxWidth: '196px', type: 'option' },
@@ -198,6 +225,12 @@ const CUSTOMER_MONTO_180_OPTIONS = [
     { value: 'lt100', label: 'Menos de S/100' },
     { value: '100_500', label: 'S/100 a S/500' },
     { value: 'gt500', label: 'Mas de S/500' }
+];
+const CUSTOMER_PHONE_STATUS_OPTIONS = [
+    { value: 'valid', label: 'Valido' },
+    { value: 'invalid', label: 'Invalido' },
+    { value: 'blocked', label: 'Bloqueado' },
+    { value: 'unknown', label: 'Sin validar' }
 ];
 
 function normalizeGeoNumericId(value = '') {
@@ -1022,6 +1055,7 @@ function CustomersSection(props = {}) {
     const [zoneRules, setZoneRules] = useState([]);
     const [customerZoneLabels, setCustomerZoneLabels] = useState([]);
     const [showImportModal, setShowImportModal] = useState(false);
+    const [showValidateModal, setShowValidateModal] = useState(false);
     const [importStep, setImportStep] = useState(1);
     const [importFileClientes, setImportFileClientes] = useState(null);
     const [importFileDirecciones, setImportFileDirecciones] = useState(null);
@@ -1036,6 +1070,13 @@ function CustomersSection(props = {}) {
     const [importNow, setImportNow] = useState(() => Date.now());
     const [importModuleId, setImportModuleId] = useState('');
     const [showAllImportErrors, setShowAllImportErrors] = useState(false);
+    const [validateModuleId, setValidateModuleId] = useState('');
+    const [validateJob, setValidateJob] = useState(null);
+    const [validateLoading, setValidateLoading] = useState(false);
+    const [validateErrorMessage, setValidateErrorMessage] = useState('');
+    const [validateStartedAt, setValidateStartedAt] = useState(0);
+    const [validateNow, setValidateNow] = useState(() => Date.now());
+    const validateProgressPollRef = useRef(null);
     const importProgressPollRef = useRef(null);
     const importProgressStateRef = useRef(null);
     const syncedIndicatorTimeoutRef = useRef(null);
@@ -1246,6 +1287,118 @@ function CustomersSection(props = {}) {
             setImportModuleId(defaultModuleId);
         }
     }, [importModuleId, outreachModuleOptions, showImportModal]);
+    const stopValidateProgressPolling = useCallback(() => {
+        if (validateProgressPollRef.current) {
+            clearInterval(validateProgressPollRef.current);
+            validateProgressPollRef.current = null;
+        }
+    }, []);
+    const resetValidateFlow = useCallback(() => {
+        setShowValidateModal(false);
+        setValidateModuleId('');
+        setValidateJob(null);
+        setValidateLoading(false);
+        setValidateErrorMessage('');
+        setValidateStartedAt(0);
+        stopValidateProgressPolling();
+    }, [stopValidateProgressPolling]);
+    const fetchValidateProgress = useCallback(async (jobId) => {
+        const cleanJobId = String(jobId || '').trim();
+        if (!cleanJobId || !tenantScopeId) return null;
+        try {
+            const response = await requestJson(
+                `/api/admin/saas/tenants/${encodeURIComponent(tenantScopeId)}/customers/validate-phones/${encodeURIComponent(cleanJobId)}`,
+                { method: 'GET' }
+            );
+            const progress = response?.progress || null;
+            setValidateJob(progress);
+            const status = String(progress?.status || '').trim().toLowerCase();
+            if (status === 'done' || status === 'error') {
+                stopValidateProgressPolling();
+                setValidateLoading(false);
+                if (status === 'error') {
+                    setValidateErrorMessage(String(progress?.error || progress?.message || 'La validacion fallo.').trim());
+                }
+            }
+            return progress;
+        } catch (error) {
+            stopValidateProgressPolling();
+            setValidateLoading(false);
+            setValidateErrorMessage(String(error?.message || 'No se pudo consultar el progreso de validacion.').trim());
+            return null;
+        }
+    }, [requestJson, stopValidateProgressPolling, tenantScopeId]);
+    const startValidateProgressPolling = useCallback((jobId) => {
+        const cleanJobId = String(jobId || '').trim();
+        if (!cleanJobId) return;
+        stopValidateProgressPolling();
+        void fetchValidateProgress(cleanJobId);
+        validateProgressPollRef.current = setInterval(() => {
+            void fetchValidateProgress(cleanJobId);
+        }, 1500);
+    }, [fetchValidateProgress, stopValidateProgressPolling]);
+    useEffect(() => () => {
+        stopValidateProgressPolling();
+    }, [stopValidateProgressPolling]);
+    useEffect(() => {
+        if (!validateLoading) return undefined;
+        const timer = setInterval(() => setValidateNow(Date.now()), 1000);
+        return () => clearInterval(timer);
+    }, [validateLoading]);
+    useEffect(() => {
+        if (!showValidateModal) return;
+        if (validateModuleId) return;
+        const defaultModuleId = String(outreachModuleOptions?.[0]?.moduleId || '').trim();
+        if (defaultModuleId) setValidateModuleId(defaultModuleId);
+    }, [outreachModuleOptions, showValidateModal, validateModuleId]);
+    const validateElapsedSeconds = useMemo(() => {
+        if (!validateLoading || !validateStartedAt) return 0;
+        return Math.max(0, Math.round((validateNow - validateStartedAt) / 1000));
+    }, [validateLoading, validateNow, validateStartedAt]);
+    const validateProgressPercent = useMemo(() => {
+        const total = Number(validateJob?.total || 0);
+        const validated = Number(validateJob?.validated || 0);
+        if (total <= 0) return 0;
+        return Math.max(0, Math.min(100, Math.round((validated / total) * 100)));
+    }, [validateJob?.total, validateJob?.validated]);
+    const handleStartPhoneValidation = useCallback(async () => {
+        const cleanTenantId = String(tenantScopeId || '').trim();
+        if (!cleanTenantId) return;
+        if (!validateModuleId) {
+            setValidateErrorMessage('Selecciona un modulo para validar numeros.');
+            return;
+        }
+        try {
+            setValidateErrorMessage('');
+            setValidateLoading(true);
+            setValidateStartedAt(Date.now());
+            setValidateNow(Date.now());
+            const response = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/customers/validate-phones`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    moduleId: validateModuleId,
+                    batchSize: 50
+                })
+            });
+            const progress = response?.progress || null;
+            const jobId = String(response?.jobId || progress?.jobId || '').trim();
+            setValidateJob(progress);
+            if (!jobId) {
+                throw new Error('No se recibio un jobId de validacion.');
+            }
+            startValidateProgressPolling(jobId);
+        } catch (error) {
+            setValidateLoading(false);
+            setValidateErrorMessage(String(error?.message || 'No se pudo iniciar la validacion de numeros.').trim());
+        }
+    }, [requestJson, startValidateProgressPolling, tenantScopeId, validateModuleId]);
+    const handleCloseValidateModal = useCallback(async () => {
+        const shouldReload = ['done', 'error'].includes(String(validateJob?.status || '').trim().toLowerCase());
+        resetValidateFlow();
+        if (shouldReload) {
+            await refreshCustomersView({ forceFullReload: true, silent: true });
+        }
+    }, [refreshCustomersView, resetValidateFlow, validateJob?.status]);
     const selectedCustomerPreferredModuleIds = useMemo(
         () => Array.from(new Set(
             (Array.isArray(moduleContexts) ? moduleContexts : [])
@@ -1612,6 +1765,10 @@ function CustomersSection(props = {}) {
                 ...column,
                 options: CUSTOMER_SEGMENT_OPTIONS
             };
+            if (column.key === 'phone_status') return {
+                ...column,
+                options: CUSTOMER_PHONE_STATUS_OPTIONS
+            };
             if (column.key === 'realizo_compra') return {
                 ...column,
                 options: CUSTOMER_PURCHASE_FILTER_OPTIONS
@@ -1794,6 +1951,7 @@ function CustomersSection(props = {}) {
         const realizoCompra = customer.realizo_compra === true || customer.realizoCompra === true || String(customer.realizo_compra || customer.realizoCompra || '').trim().toLowerCase() === 'true';
         const ultimoPedidoId = String(customer.ultimo_pedido_id || customer.ultimoPedidoId || '').trim();
         const rangoCompras = String(customer.rango_compras || customer.rangoCompras || '').trim();
+        const phoneStatus = String(customer.phone_status || customer.phoneStatus || 'unknown').trim().toLowerCase() || 'unknown';
         return {
             id: safeId,
             codigo: customerId || '-',
@@ -1802,6 +1960,7 @@ function CustomersSection(props = {}) {
             apellidoPaterno: nameParts.lastNamePaternal || '-',
             apellidoMaterno: nameParts.lastNameMaternal || '-',
             telefono: String(customer.phoneE164 || customer.phone_e164 || '-').trim() || '-',
+            phone_status: phoneStatus,
             telefonoAlt: String(customer.phoneAlt || customer.phone_alt || '-').trim() || '-',
             email: String(customer.email || '-').trim() || '-',
             tipoCliente: buildCustomerTypeLabel(customer, customerLabelMaps),
@@ -3900,6 +4059,14 @@ function CustomersSection(props = {}) {
             disabled: busy || tenantScopeLocked
         },
         {
+            key: 'validate-phones',
+            label: 'Validar numeros',
+            icon: ShieldCheck,
+            onClick: () => setShowValidateModal(true),
+            variant: 'secondary',
+            disabled: busy || tenantScopeLocked
+        },
+        {
             key: 'toggle-selection',
             label: campaignSelectionMode ? 'Cancelar seleccion' : 'Seleccionar clientes',
             onClick: () => {
@@ -4501,6 +4668,93 @@ function CustomersSection(props = {}) {
         </div>
     );
 
+    const validatePhonesModal = showValidateModal ? (
+        <div className="saas-template-builder-modal-overlay" onClick={() => { if (!validateLoading) { void handleCloseValidateModal(); } }}>
+            <div className="saas-template-builder-modal-shell saas-customers-import-shell" onClick={(event) => event.stopPropagation()}>
+                <SaasDetailPanel
+                    title="Validar numeros de WhatsApp"
+                    subtitle="Verifica cuales numeros de tu lista tienen WhatsApp activo. Se procesaran todos los numeros sin validar o con validacion de mas de 30 dias."
+                    className="saas-template-builder-modal-panel saas-customers-import-panel"
+                    bodyClassName="saas-template-builder-modal-panel__body saas-customers-import-panel__body"
+                    actions={(
+                        <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                            <button
+                                type="button"
+                                className="saas-btn saas-btn--secondary"
+                                onClick={() => { void handleCloseValidateModal(); }}
+                                disabled={validateLoading}
+                            >
+                                {String(validateJob?.status || '').trim().toLowerCase() === 'done' ? 'Cerrar' : 'Cancelar'}
+                            </button>
+                            <button
+                                type="button"
+                                className="saas-btn saas-btn--primary"
+                                onClick={() => { void handleStartPhoneValidation(); }}
+                                disabled={validateLoading || !validateModuleId}
+                            >
+                                {validateLoading ? 'Validando...' : 'Iniciar validacion'}
+                            </button>
+                        </div>
+                    )}
+                >
+                    <div className="saas-admin-form-row">
+                        <label className="saas-customers-outreach-toolbar__field">
+                            <span>Modulo</span>
+                            <select value={validateModuleId} onChange={(event) => setValidateModuleId(String(event.target.value || '').trim())} disabled={validateLoading}>
+                                <option value="">Selecciona modulo</option>
+                                {outreachModuleOptions.map((moduleItem) => (
+                                    <option key={`customers_validate_module_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
+                                        {moduleItem.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                    </div>
+
+                    {validateLoading || validateJob ? (
+                        <div className="saas-customers-import-live-status">
+                            <div className="saas-admin-inline-feedback">
+                                {String(validateJob?.message || 'Preparando validacion de numeros...').trim()}
+                                {validateElapsedSeconds > 0 ? ` Tiempo transcurrido: ${validateElapsedSeconds}s.` : ''}
+                            </div>
+                            <div className="saas-customers-import-live-progress">
+                                <div className="saas-customers-import-live-progress__bar">
+                                    <span
+                                        className="saas-customers-import-live-progress__fill"
+                                        style={{ width: `${validateProgressPercent}%` }}
+                                    />
+                                </div>
+                                <div className="saas-customers-import-live-progress__meta">
+                                    <strong>{validateProgressPercent}%</strong>
+                                    <span>Validando... {Number(validateJob?.validated || 0)} / {Number(validateJob?.total || 0)}</span>
+                                    <span>Validos: {Number(validateJob?.valid || 0)}</span>
+                                    <span>Invalidos: {Number(validateJob?.invalid || 0)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    ) : null}
+
+                    {validateErrorMessage ? (
+                        <div className="saas-admin-inline-feedback error">
+                            {validateErrorMessage}
+                        </div>
+                    ) : null}
+
+                    {String(validateJob?.status || '').trim().toLowerCase() === 'done' ? (
+                        <SaasDetailPanelSection title="Resultado" defaultOpen>
+                            <div className="saas-customers-import-chip-row">
+                                <span className="saas-admin-profile-chip">✓ {Number(validateJob?.valid || 0)} numeros validos</span>
+                                <span className="saas-admin-profile-chip">✗ {Number(validateJob?.invalid || 0)} invalidos o inexistentes</span>
+                                <span className="saas-admin-profile-chip">⊘ {Number(validateJob?.blocked || 0)} bloqueados</span>
+                                <span className="saas-admin-profile-chip">! {Number(validateJob?.failed || 0)} fallidos</span>
+                            </div>
+                        </SaasDetailPanelSection>
+                    ) : null}
+                </SaasDetailPanel>
+            </div>
+        </div>
+    ) : null;
+
     const importModal = showImportModal ? (
         <div className="saas-template-builder-modal-overlay" onClick={() => { if (!importLoading) resetImportFlow(); }}>
             <div className="saas-template-builder-modal-shell saas-customers-import-shell" onClick={(event) => event.stopPropagation()}>
@@ -4792,6 +5046,7 @@ function CustomersSection(props = {}) {
                 onSelectTemplate={(template) => { void handleSelectCampaignTemplate(template); }}
                 onConfirm={() => { void handleConfirmExpressCampaign(); }}
             />
+            {validatePhonesModal}
             {importModal}
         </SaasEntityPage>
         </div>
