@@ -489,7 +489,10 @@ class WhatsAppCloudClient extends EventEmitter {
 
         const existing = this.chats.get(safeChatId);
         const chatContact = contact || this.ensureContact(safeChatId);
-        const timestamp = safeTimestamp(existing?.timestamp);
+        const existingTimestamp = Number(existing?.timestamp || 0);
+        const timestamp = Number.isFinite(existingTimestamp) && existingTimestamp > 0
+            ? Math.floor(existingTimestamp)
+            : 0;
         const next = {
             id: {
                 _serialized: safeChatId,

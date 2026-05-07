@@ -39,9 +39,43 @@ function createCorsOriginChecker({
     isProduction = false,
     allowEmptyOriginsInProd = false
 } = {}) {
+    const isLoopbackHost = (hostname = '') => {
+        const clean = String(hostname || '').trim().toLowerCase();
+        return clean === 'localhost' || clean === '127.0.0.1' || clean === '::1' || clean === '[::1]';
+    };
+
+    const normalizeOriginKey = (origin = '') => {
+        const raw = String(origin || '').trim();
+        if (!raw) return '';
+        try {
+            const parsed = new URL(raw);
+            const protocol = String(parsed.protocol || '').trim().toLowerCase();
+            const port = String(parsed.port || '').trim()
+                || (protocol === 'https:' ? '443' : protocol === 'http:' ? '80' : '');
+            const hostname = String(parsed.hostname || '').trim().toLowerCase();
+            const normalizedHost = hostname === '127.0.0.1' ? 'localhost' : hostname;
+            return `${protocol}//${normalizedHost}:${port}`;
+        } catch (_) {
+            return raw.toLowerCase();
+        }
+    };
+
+    const allowedOriginKeys = Array.from(new Set(
+        (Array.isArray(allowedOrigins) ? allowedOrigins : [])
+            .map((entry) => normalizeOriginKey(entry))
+            .filter(Boolean)
+    ));
+
     return function isCorsOriginAllowed(origin) {
         if (!origin) return true;
         if (allowedOrigins.includes(origin)) return true;
+        if (allowedOriginKeys.includes(normalizeOriginKey(origin))) return true;
+        try {
+            const parsed = new URL(String(origin || '').trim());
+            if (isLoopbackHost(parsed.hostname)) return true;
+        } catch (_) {
+            // Ignora origins invalidos y continua con el flujo normal.
+        }
         if (allowedOrigins.length === 0) {
             if (isProduction && !allowEmptyOriginsInProd) return false;
             return true;
