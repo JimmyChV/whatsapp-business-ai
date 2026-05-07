@@ -651,10 +651,10 @@ export default function useSocketChatConversationEvents({
 
                     return {
                         ...normalizedMessage,
-                        sentByUserId: String(normalizedMessage?.sentByUserId || sessionSenderId || '').trim() || null,
-                        sentByName: String(normalizedMessage?.sentByName || normalizedMessage?.sentByEmail || sessionSenderName || '').trim() || null,
-                        sentByEmail: String(normalizedMessage?.sentByEmail || sessionSenderEmail || '').trim() || null,
-                        sentByRole: String(normalizedMessage?.sentByRole || sessionSenderRole || '').trim() || null
+                        sentByUserId: String(normalizedMessage?.sentByUserId || '').trim() || null,
+                        sentByName: String(normalizedMessage?.sentByName || normalizedMessage?.sentByEmail || '').trim() || null,
+                        sentByEmail: String(normalizedMessage?.sentByEmail || '').trim() || null,
+                        sentByRole: String(normalizedMessage?.sentByRole || '').trim() || null
                     };
                 })
                 : [];
@@ -1227,10 +1227,10 @@ export default function useSocketChatConversationEvents({
 
             const enrichedIncoming = {
                 ...normalizedIncoming,
-                sentByUserId: String(normalizedIncoming?.sentByUserId || (normalizedIncoming?.fromMe ? (sessionSenderIdentity?.id || '') : '')).trim() || null,
-                sentByName: String(normalizedIncoming?.sentByName || normalizedIncoming?.sentByEmail || fallbackSessionName).trim() || null,
-                sentByEmail: String(normalizedIncoming?.sentByEmail || fallbackSessionEmail).trim() || null,
-                sentByRole: String(normalizedIncoming?.sentByRole || fallbackSessionRole).trim() || null,
+                sentByUserId: String(normalizedIncoming?.sentByUserId || '').trim() || null,
+                sentByName: String(normalizedIncoming?.sentByName || normalizedIncoming?.sentByEmail || '').trim() || null,
+                sentByEmail: String(normalizedIncoming?.sentByEmail || '').trim() || null,
+                sentByRole: String(normalizedIncoming?.sentByRole || '').trim() || null,
                 sentViaModuleImageUrl: normalizeModuleImageUrl(normalizedIncoming?.sentViaModuleImageUrl || '') || null
             };
             const matchedClientTempId = enrichedIncoming?.fromMe
@@ -1277,6 +1277,7 @@ export default function useSocketChatConversationEvents({
                     const existingIndex = prev.findIndex((m) => String(m?.id || '').trim() === incomingId);
                     if (existingIndex >= 0) {
                         const existing = prev[existingIndex] || {};
+                        const preserveOptimisticAttribution = Boolean(existing?.optimistic);
                         const existingOrder = existing?.order && typeof existing.order === 'object' ? existing.order : null;
                         const incomingOrder = normalizedIncoming?.order && typeof normalizedIncoming.order === 'object'
                             ? normalizedIncoming.order
@@ -1285,10 +1286,23 @@ export default function useSocketChatConversationEvents({
                             ...existing,
                             ...normalizedIncoming,
                             ack: resolveHighestAck(normalizedIncoming?.ack, existing?.ack),
-                            sentByUserId: String(normalizedIncoming?.sentByUserId || existing?.sentByUserId || (normalizedIncoming?.fromMe ? (sessionSenderIdentity?.id || '') : '')).trim() || null,
-                            sentByName: String(normalizedIncoming?.sentByName || normalizedIncoming?.sentByEmail || existing?.sentByName || existing?.sentByEmail || fallbackSessionName).trim() || null,
-                            sentByEmail: String(normalizedIncoming?.sentByEmail || existing?.sentByEmail || fallbackSessionEmail).trim() || null,
-                            sentByRole: String(normalizedIncoming?.sentByRole || existing?.sentByRole || fallbackSessionRole).trim() || null,
+                            sentByUserId: String(
+                                normalizedIncoming?.sentByUserId
+                                || (preserveOptimisticAttribution ? existing?.sentByUserId : '')
+                            ).trim() || null,
+                            sentByName: String(
+                                normalizedIncoming?.sentByName
+                                || normalizedIncoming?.sentByEmail
+                                || (preserveOptimisticAttribution ? (existing?.sentByName || existing?.sentByEmail) : '')
+                            ).trim() || null,
+                            sentByEmail: String(
+                                normalizedIncoming?.sentByEmail
+                                || (preserveOptimisticAttribution ? existing?.sentByEmail : '')
+                            ).trim() || null,
+                            sentByRole: String(
+                                normalizedIncoming?.sentByRole
+                                || (preserveOptimisticAttribution ? existing?.sentByRole : '')
+                            ).trim() || null,
                             sentViaModuleId: String(normalizedIncoming?.sentViaModuleId || existing?.sentViaModuleId || '').trim() || null,
                             sentViaModuleName: String(normalizedIncoming?.sentViaModuleName || existing?.sentViaModuleName || '').trim() || null,
                             sentViaModuleImageUrl: normalizeModuleImageUrl(normalizedIncoming?.sentViaModuleImageUrl || existing?.sentViaModuleImageUrl || '') || null,
