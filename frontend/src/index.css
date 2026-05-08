@@ -2066,6 +2066,29 @@ body {
   color: rgba(233, 237, 239, 0.62);
 }
 
+.message-ack--stack {
+  position: relative;
+  overflow: visible;
+}
+
+.message-ack-icon-slot {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 120ms ease;
+}
+
+.message-ack-icon-slot.is-visible {
+  opacity: 1;
+}
+
+.message-ack-icon-slot.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .message-ack.sent,
 .message-ack.delivered {
   color: rgba(233, 237, 239, 0.68);

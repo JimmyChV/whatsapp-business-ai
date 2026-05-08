@@ -215,13 +215,6 @@ const MessageBubble = ({
                 </span>
             );
         }
-        if (explicitStatus === 'sending') {
-            return (
-                <span className="message-ack pending" title="Estado: Enviando" aria-label="Estado: Enviando">
-                    <Clock3 size={16} />
-                </span>
-            );
-        }
         if (explicitStatus === 'failed') {
             return (
                 <span className="message-ack failed" title="Estado: Error" aria-label="Estado: Error">
@@ -230,6 +223,20 @@ const MessageBubble = ({
             );
         }
         const ack = Number.isFinite(Number(msg.ack)) ? Number(msg.ack) : 0;
+        if (explicitStatus === 'sending' || ack <= 1) {
+            const isSent = explicitStatus !== 'sending' && ack >= 1;
+            const label = isSent ? 'Estado: Enviado' : 'Estado: Enviando';
+            return (
+                <span className={`message-ack ${isSent ? 'sent' : 'pending'} message-ack--stack`} title={label} aria-label={label}>
+                    <span className={`message-ack-icon-slot ${isSent ? 'is-hidden' : 'is-visible'}`} aria-hidden="true">
+                        <Clock3 size={16} />
+                    </span>
+                    <span className={`message-ack-icon-slot ${isSent ? 'is-visible' : 'is-hidden'}`} aria-hidden="true">
+                        <Check size={16} />
+                    </span>
+                </span>
+            );
+        }
         const label = `Estado: ${getAckLabel(ack)}`;
         return (
             <span className={`message-ack ${ack >= 3 ? 'read' : ack >= 2 ? 'delivered' : ack >= 1 ? 'sent' : 'pending'}`} title={label} aria-label={label}>
