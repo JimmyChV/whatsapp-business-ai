@@ -1700,22 +1700,34 @@ function CustomersSection(props = {}) {
             options: CUSTOMER_SEGMENT_OPTIONS.map((item) => ({ value: item.value, label: item.label }))
         },
         {
-            field: 'acquisition_source_id',
+            field: 'fuenteAdquisicion',
             label: 'Fuente',
             type: 'multi-select',
-            options: acquisitionSources.map((item) => ({ value: item.id, label: item.label }))
+            options: sourceOptions.map((item) => ({ value: item.label, label: item.label }))
         },
         {
-            field: 'customer_type_id',
+            field: 'tipoCliente',
             label: 'Tipo cliente',
             type: 'multi-select',
-            options: customerTypes.map((item) => ({ value: item.id, label: item.label }))
+            options: customerTypeOptions.map((item) => ({ value: item.label, label: item.label }))
         },
         {
-            field: 'treatment_id',
+            field: 'tratamiento',
             label: 'Tratamiento',
             type: 'multi-select',
-            options: treatments.map((item) => ({ value: item.id, label: item.abbreviation || item.label }))
+            options: treatmentOptions.map((item) => ({ value: item.abbreviation || item.label, label: item.abbreviation || item.label }))
+        },
+        {
+            field: 'tipoDocumento',
+            label: 'Tipo documento',
+            type: 'multi-select',
+            options: documentTypeOptions.map((item) => ({ value: item.abbreviation || item.label, label: item.abbreviation || item.label }))
+        },
+        {
+            field: 'zona',
+            label: 'Zona',
+            type: 'multi-select',
+            options: zoneOptions.map((item) => ({ value: item.label, label: item.label }))
         },
         {
             field: 'phone_status',
@@ -1726,13 +1738,13 @@ function CustomersSection(props = {}) {
         {
             field: 'realizo_compra',
             label: 'Realizo compra',
-            type: 'single-select',
+            type: 'multi-select',
             options: ['Sí', 'No']
         },
         {
             field: 'dias_ultima_compra',
             label: 'Días sin compra',
-            type: 'single-select',
+            type: 'multi-select',
             options: ['≤30', '31-60', '61-90', '>90'],
             rangeFilter: (row, value) => {
                 const days = row?.dias_ultima_compra;
@@ -1747,7 +1759,7 @@ function CustomersSection(props = {}) {
         {
             field: 'monto_180',
             label: 'Monto 180d',
-            type: 'single-select',
+            type: 'multi-select',
             options: ['<S/100', 'S/100-500', '>S/500'],
             rangeFilter: (row, value) => {
                 const amount = Number.parseFloat(row?.monto_180 || 0);
@@ -1760,21 +1772,14 @@ function CustomersSection(props = {}) {
         {
             field: 'ultima_fecha_compra',
             label: 'Última compra',
-            type: 'date-preset',
-            presets: [
-                { label: 'Últimos 30 días', days: 30 },
-                { label: 'Últimos 60 días', days: 60 },
-                { label: 'Últimos 90 días', days: 90 },
-                { label: 'Más de 90 días', daysMin: 90 },
-                { label: 'Más de 180 días', daysMin: 180 }
-            ]
+            type: 'date-range'
         },
         {
             field: 'created_at',
             label: 'Fecha registro',
             type: 'date-range'
         }
-    ], filterColumns), [acquisitionSources, customerTypes, filterColumns, treatments]);
+    ], filterColumns), [customerTypeOptions, documentTypeOptions, filterColumns, sourceOptions, treatmentOptions, zoneOptions]);
     const normalizedHeaderFilters = useMemo(
         () => normalizeFilterItems(headerFilters),
         [headerFilters]
@@ -1824,6 +1829,7 @@ function CustomersSection(props = {}) {
             acquisition_source_id: String(customer.acquisitionSourceId || customer.acquisition_source_id || '').trim() || null,
             customer_type_id: String(customer.customerTypeId || customer.customer_type_id || '').trim() || null,
             treatment_id: String(customer.treatmentId || customer.treatment_id || '').trim() || null,
+            document_type_id: String(customer.documentTypeId || customer.document_type_id || '').trim() || null,
             ultima_fecha_compra: ultimaFechaCompra || null,
             created_at: String(customer.createdAt || customer.created_at || '').trim() || null,
             dias_ultima_compra: diasUltimaCompra,

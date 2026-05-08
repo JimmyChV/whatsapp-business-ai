@@ -102,7 +102,8 @@ export default function SaasViewHeader({
   const [overflowOpen, setOverflowOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
-  const [openFilterValueMenuId, setOpenFilterValueMenuId] = useState('');
+  const [draftFilterItems, setDraftFilterItems] = useState(() => normalizeFilterItems([createEmptyFilterItem()]));
+  const [selectedFilterItemId, setSelectedFilterItemId] = useState('');
   const filtersRef = useRef(null);
   const sortRef = useRef(null);
   const filterValueMenuRef = useRef(null);
@@ -113,6 +114,7 @@ export default function SaasViewHeader({
   const activeSortItems = normalizedSort.activeItems;
   const supportsMultiFilters = Boolean(Array.isArray(filters?.items) || typeof filters?.onItemsChange === 'function');
   const normalizedFilterItems = useMemo(() => normalizeFilterItems(supportsMultiFilters ? filters?.items : filters?.value), [filters, supportsMultiFilters]);
+  const visibleFilterItems = filtersOpen ? draftFilterItems : normalizedFilterItems;
   const activeFilterItems = useMemo(() => normalizedFilterItems.filter((item) => isFilterItemActive(item, filterColumns)), [filterColumns, normalizedFilterItems]);
   const inlineActions = useMemo(() => (compactActions ? safeActions.slice(0, 2) : safeActions), [compactActions, safeActions]);
   const overflowActions = useMemo(() => (compactActions ? safeActions.slice(2) : []), [compactActions, safeActions]);
@@ -133,13 +135,24 @@ export default function SaasViewHeader({
 
   useEffect(() => { if (!compactActions) setOverflowOpen(false); }, [compactActions]);
   useEffect(() => {
+    if (!filtersOpen) {
+      setDraftFilterItems(normalizeFilterItems(normalizedFilterItems));
+      setSelectedFilterItemId('');
+    }
+  }, [filtersOpen, normalizedFilterItems]);
+  useEffect(() => {
+    if (!filtersOpen) return;
+    const availableItems = Array.isArray(draftFilterItems) ? draftFilterItems : [];
+    const hasSelected = availableItems.some((item) => String(item?.id || '') === String(selectedFilterItemId || ''));
+    if (!hasSelected) {
+      setSelectedFilterItemId('');
+    }
+  }, [draftFilterItems, filtersOpen, selectedFilterItemId]);
+  useEffect(() => {
     const handlePointerDown = (event) => {
       const target = event.target;
       if (filtersRef.current && !filtersRef.current.contains(target)) {
         setFiltersOpen(false);
-        setOpenFilterValueMenuId('');
-      } else if (filterValueMenuRef.current && !filterValueMenuRef.current.contains(target)) {
-        setOpenFilterValueMenuId('');
       }
       if (sortRef.current && !sortRef.current.contains(target)) setSortOpen(false);
     };
@@ -149,16 +162,12 @@ export default function SaasViewHeader({
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (event.key !== 'Escape') return;
-      if (openFilterValueMenuId) {
-        setOpenFilterValueMenuId('');
-        return;
-      }
       if (filtersOpen) setFiltersOpen(false);
       if (sortOpen) setSortOpen(false);
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [filtersOpen, openFilterValueMenuId, sortOpen]);
+  }, [filtersOpen, sortOpen]);
 
   const commitFilterItems = useCallback((nextItems) => {
     const normalizedItems = normalizeFilterItems(nextItems);
@@ -175,12 +184,27 @@ export default function SaasViewHeader({
   }, [onSortChange]);
 
   const clearFiltersOnly = useCallback(() => {
-    if (typeof filters?.onClear === 'function') {
-      filters.onClear();
-      return;
+    const nextItems = [createEmptyFilterItem()];
+    setDraftFilterItems(nextItems);
+    setSelectedFilterItemId('');
+    if (!filtersOpen) {
+      if (typeof filters?.onClear === 'function') {
+        filters.onClear();
+        return;
+      }
+      commitFilterItems(nextItems);
     }
-    commitFilterItems([createEmptyFilterItem()]);
-  }, [commitFilterItems, filters]);
+  }, [commitFilterItems, filters, filtersOpen]);
+
+  const applyDraftFilters = useCallback(() => {
+    const nextItems = normalizeFilterItems(draftFilterItems);
+    if (typeof filters?.onClear === 'function' && nextItems.every((item) => !isFilterItemActive(item, filterColumns))) {
+      filters.onClear();
+    } else {
+      commitFilterItems(nextItems);
+    }
+    setFiltersOpen(false);
+  }, [commitFilterItems, draftFilterItems, filterColumns, filters]);
 
   const clearSortOnly = useCallback(() => {
     if (typeof onSortChange !== 'function') return;
@@ -188,7 +212,7 @@ export default function SaasViewHeader({
   }, [onSortChange]);
 
   const updateFilterItem = useCallback((index, patch = {}) => {
-    const nextItems = normalizedFilterItems.map((item, itemIndex) => {
+    const nextItems = visibleFilterItems.map((item, itemIndex) => {
       if (itemIndex !== index) return item;
       const nextColumnKey = Object.prototype.hasOwnProperty.call(patch, 'columnKey') ? String(patch?.columnKey || '').trim() : item.columnKey;
       const selectedColumn = filterColumns.find((column) => getFilterDefinitionKey(column) === nextColumnKey) || null;
@@ -206,9 +230,13 @@ export default function SaasViewHeader({
         operator: String(nextItem.operator || defaultOperator).trim().toLowerCase() || defaultOperator
       };
     });
-    if (Object.prototype.hasOwnProperty.call(patch, 'columnKey')) setOpenFilterValueMenuId('');
-    commitFilterItems(nextItems);
-  }, [commitFilterItems, filterColumns, normalizedFilterItems]);
+    if (Object.prototype.hasOwnProperty.call(patch, 'columnKey')) {
+      const nextColumnKey = String(patch?.columnKey || '').trim();
+      const nextItem = nextItems[index];
+      setSelectedFilterItemId(nextColumnKey ? String(nextItem?.id || '') : '');
+    }
+    setDraftFilterItems(nextItems);
+  }, [filterColumns, visibleFilterItems]);
 
   const updateSortItem = useCallback((index, patch = {}) => {
     const nextItems = normalizedSortItems.map((item, itemIndex) => {
@@ -223,13 +251,21 @@ export default function SaasViewHeader({
     commitSortItems(nextItems);
   }, [commitSortItems, normalizedSortItems]);
 
-  const addFilterItem = useCallback(() => commitFilterItems([...normalizedFilterItems, createEmptyFilterItem()]), [commitFilterItems, normalizedFilterItems]);
+  const addFilterItem = useCallback(() => {
+    const nextItem = createEmptyFilterItem();
+    setDraftFilterItems([...visibleFilterItems, nextItem]);
+    setSelectedFilterItemId('');
+  }, [visibleFilterItems]);
   const addSortItem = useCallback(() => commitSortItems([...normalizedSortItems, createEmptySortItem()]), [commitSortItems, normalizedSortItems]);
 
   const removeFilterItem = useCallback((itemId = '') => {
-    const nextItems = normalizedFilterItems.filter((item) => String(item?.id || '') !== String(itemId || ''));
-    commitFilterItems(nextItems.length > 0 ? nextItems : [createEmptyFilterItem()]);
-  }, [commitFilterItems, normalizedFilterItems]);
+    const normalizedItemId = String(itemId || '');
+    const currentItems = Array.isArray(visibleFilterItems) ? visibleFilterItems : [];
+    const nextItems = currentItems.filter((item) => String(item?.id || '') !== normalizedItemId);
+    const resolvedItems = nextItems.length > 0 ? nextItems : [createEmptyFilterItem()];
+    setDraftFilterItems(resolvedItems);
+    setSelectedFilterItemId((prev) => (prev === normalizedItemId ? '' : prev));
+  }, [visibleFilterItems]);
 
   const removeSortItem = useCallback((itemId = '') => {
     const nextItems = normalizedSortItems.filter((item) => String(item?.id || '') !== String(itemId || ''));
@@ -239,7 +275,7 @@ export default function SaasViewHeader({
   const hasActiveSort = activeSortItems.length > 0;
   const toggleMultiSelectOption = useCallback((index, optionValue = '') => {
     const normalizedOptionValue = String(optionValue || '').trim();
-    const nextItems = normalizedFilterItems.map((item, itemIndex) => {
+    const nextItems = visibleFilterItems.map((item, itemIndex) => {
       if (itemIndex !== index) return item;
       const currentValues = Array.isArray(item?.value) ? item.value.map((value) => String(value || '').trim()).filter(Boolean) : [];
       const nextValues = currentValues.includes(normalizedOptionValue)
@@ -247,17 +283,25 @@ export default function SaasViewHeader({
         : [...currentValues, normalizedOptionValue];
       return { ...item, value: nextValues };
     });
-    commitFilterItems(nextItems);
-  }, [commitFilterItems, normalizedFilterItems]);
+    setDraftFilterItems(nextItems);
+  }, [visibleFilterItems]);
 
   const clearFilterValue = useCallback((index) => {
-    const nextItems = normalizedFilterItems.map((item, itemIndex) => {
+    const nextItems = visibleFilterItems.map((item, itemIndex) => {
       if (itemIndex !== index) return item;
       return { ...item, value: '' };
     });
-    commitFilterItems(nextItems);
-    setOpenFilterValueMenuId('');
-  }, [commitFilterItems, normalizedFilterItems]);
+    setDraftFilterItems(nextItems);
+  }, [visibleFilterItems]);
+
+  const selectedFilterIndex = useMemo(
+    () => visibleFilterItems.findIndex((item) => String(item?.id || '') === String(selectedFilterItemId || '')),
+    [selectedFilterItemId, visibleFilterItems]
+  );
+  const selectedFilterItem = selectedFilterIndex >= 0 ? visibleFilterItems[selectedFilterIndex] : null;
+  const selectedFilterColumn = selectedFilterItem
+    ? filterColumns.find((column) => getFilterDefinitionKey(column) === String(selectedFilterItem?.columnKey || '')) || null
+    : null;
 
   return (
     <div className="saas-view-header saas-view-header__sticky">
@@ -319,10 +363,66 @@ export default function SaasViewHeader({
                 {activeFilterItems.length > 0 ? <span className="saas-view-header__filter-count">{activeFilterItems.length}</span> : null}
               </button>
               {filtersOpen ? (
-                <div className="saas-view-header__dropdown-menu saas-view-header__dropdown-menu--filters">
-                  <div className="saas-view-header__dropdown-menu-body saas-view-header__dropdown-menu-body--filters">
-                    {normalizedFilterItems.map((item, index) => {
-                      const selectedColumn = filterColumns.find((column) => getFilterDefinitionKey(column) === String(item?.columnKey || '')) || null;
+                <div className="saas-view-header__filters-popover">
+                  <div className="saas-view-header__dropdown-menu saas-view-header__dropdown-menu--filters">
+                    <div className="saas-view-header__dropdown-menu-body saas-view-header__dropdown-menu-body--filters">
+                      <div className="saas-view-header__filters-layout">
+                        <div className="saas-view-header__filters-list">
+                          {visibleFilterItems.map((item, index) => {
+                            const selectedColumn = filterColumns.find((column) => getFilterDefinitionKey(column) === String(item?.columnKey || '')) || null;
+                            const isSelected = String(item?.id || '') === String(selectedFilterItem?.id || '');
+                            return (
+                              <div key={item.id} className={`saas-view-header__filters-list-row ${isSelected ? 'is-selected' : ''}`}>
+                                <select
+                                  value={item.columnKey}
+                                  onChange={(event) => updateFilterItem(index, { columnKey: event.target.value })}
+                                  onFocus={() => {
+                                    if (String(item?.columnKey || '').trim()) setSelectedFilterItemId(String(item?.id || ''));
+                                  }}
+                                >
+                                  <option value="">Selecciona columna</option>
+                                  {filterColumns.map((column) => <option key={column.key} value={column.key}>{toTitleCaseLabel(column.label || column.key)}</option>)}
+                                </select>
+                                {String(item?.columnKey || '').trim() ? (
+                                  <button
+                                    type="button"
+                                    className="saas-btn saas-btn--secondary saas-btn--sm saas-view-header__filters-list-open"
+                                    onClick={() => setSelectedFilterItemId(String(item?.id || ''))}
+                                    title="Configurar filtro"
+                                  >
+                                    Editar
+                                  </button>
+                                ) : null}
+                                {(supportsMultiFilters || visibleFilterItems.length > 1) ? (
+                                  <button type="button" className="saas-btn saas-btn--secondary saas-btn--sm saas-view-header__filter-remove-btn" onClick={() => removeFilterItem(item.id)} title="Quitar filtro">
+                                    <Trash2 size={14} strokeWidth={2} />
+                                  </button>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  <div className="saas-view-header__dropdown-actions">
+                    <button type="button" className="saas-btn saas-btn--secondary saas-btn--sm" onClick={addFilterItem}>
+                      <Plus size={14} strokeWidth={2} />
+                      <span className="saas-btn-text">Agregar filtro</span>
+                    </button>
+                    <button type="button" className="saas-btn saas-btn--secondary saas-btn--sm" onClick={clearFiltersOnly}>
+                      <Trash2 size={14} strokeWidth={2} />
+                      <span className="saas-btn-text">Limpiar</span>
+                    </button>
+                    <button type="button" className="saas-btn saas-btn--primary saas-btn--sm" onClick={applyDraftFilters}>
+                      <Check size={14} strokeWidth={2} />
+                      <span className="saas-btn-text">Aplicar</span>
+                    </button>
+                  </div>
+                  </div>
+                  {selectedFilterItem && selectedFilterColumn ? (() => {
+                      const item = selectedFilterItem;
+                      const index = selectedFilterIndex >= 0 ? selectedFilterIndex : 0;
+                      const selectedColumn = selectedFilterColumn;
                       const columnType = resolveFilterColumnType(selectedColumn);
                       const operatorOptions = FILTER_OPERATORS[columnType] || FILTER_OPERATORS.text;
                       const needsValue = operatorNeedsValue(item?.operator);
@@ -334,39 +434,33 @@ export default function SaasViewHeader({
                           to: String(item.value.to || '').trim()
                         }
                         : { from: '', to: '' };
-                      const currentPresetKey = selectedColumn?.presets?.find((preset) => {
-                        const currentValue = item?.value;
-                        if (!currentValue || typeof currentValue !== 'object') return false;
-                        return String(preset.key || '') === String(currentValue.key || currentValue.value || currentValue.label || '').trim();
-                      })?.key || '';
-                      const filterSummary = selectedColumn ? getFilterItemSummary(item, selectedColumn) : '';
+                      const filterSummary = getFilterItemSummary(item, selectedColumn);
                       return (
-                        <div key={item.id} className="saas-view-header__filter-row">
-                          <select value={item.columnKey} onChange={(event) => updateFilterItem(index, { columnKey: event.target.value })}>
-                            <option value="">Selecciona columna</option>
-                            {filterColumns.map((column) => <option key={column.key} value={column.key}>{toTitleCaseLabel(column.label || column.key)}</option>)}
-                          </select>
-                          {isLegacyOperatorType(columnType) ? (
-                            <select value={item.operator} onChange={(event) => updateFilterItem(index, { operator: event.target.value })} disabled={!item.columnKey}>
-                              {operatorOptions.map((option) => <option key={`${item.id}_${option.value}`} value={option.value}>{option.label}</option>)}
-                            </select>
-                          ) : (
-                            <div className="saas-view-header__filter-type-chip">{getFilterTypeLabel(columnType)}</div>
-                          )}
-                          {selectedColumn && columnType === 'multi-select' ? (
-                            <div className="saas-view-header__filter-value-wrap">
+                        <div className={`saas-view-header__filters-sidecar is-open`}>
+                        <div className={`saas-view-header__filter-sidecar-panel saas-view-header__filter-row saas-view-header__filter-row--${columnType}`}>
+                          <div className="saas-view-header__filter-row-top">
+                            <div className="saas-view-header__filter-editor-header">
+                              <div className="saas-view-header__filter-editor-title">
+                                {toTitleCaseLabel(selectedColumn.label || selectedColumn.key)}
+                              </div>
                               <button
                                 type="button"
-                                className={`saas-view-header__filter-value-btn ${selectedMultiValues.length > 0 ? 'is-active' : ''}`}
-                                disabled={!item.columnKey}
-                                onClick={() => setOpenFilterValueMenuId((prev) => prev === item.id ? '' : item.id)}
+                                className="saas-btn saas-btn--secondary saas-btn--sm saas-view-header__filter-editor-close"
+                                onClick={() => setSelectedFilterItemId('')}
+                                title="Cerrar editor"
                               >
-                                <span className="saas-view-header__filter-value-summary">
-                                  {filterSummary || selectedColumn.label || 'Selecciona opciones'}
-                                </span>
+                                <X size={14} strokeWidth={2} />
                               </button>
-                              {openFilterValueMenuId === item.id ? (
-                                <div ref={filterValueMenuRef} className="saas-view-header__filter-option-menu">
+                            </div>
+                          </div>
+
+                          <div className="saas-view-header__filter-row-body">
+                            {columnType === 'multi-select' ? (
+                              <div className="saas-view-header__filter-value-wrap">
+                                <div className="saas-view-header__filter-value-label">
+                                  {filterSummary || `Selecciona opciones de ${selectedColumn.label}`}
+                                </div>
+                                <div ref={filterValueMenuRef} className="saas-view-header__filter-option-menu is-inline-open">
                                   <div className="saas-view-header__filter-option-menu-body">
                                     {optionList.map((option) => {
                                       const checked = selectedMultiValues.includes(option.value);
@@ -387,90 +481,83 @@ export default function SaasViewHeader({
                                     <button type="button" className="saas-btn saas-btn--secondary saas-btn--sm" onClick={() => clearFilterValue(index)}>Limpiar</button>
                                   </div>
                                 </div>
-                              ) : null}
-                            </div>
-                          ) : null}
-                          {selectedColumn && columnType === 'single-select' ? (
-                            <div className="saas-view-header__filter-value-wrap saas-view-header__filter-value-wrap--inline">
-                              <select value={String(item.value ?? '')} onChange={(event) => updateFilterItem(index, { value: event.target.value })} disabled={!item.columnKey}>
-                                <option value="">Selecciona valor</option>
-                                {optionList.map((option) => <option key={`${item.id}_opt_${option.value}`} value={option.value}>{option.label}</option>)}
-                              </select>
-                              {String(item.value ?? '').trim() ? (
-                                <button type="button" className="saas-btn saas-btn--secondary saas-btn--sm saas-view-header__filter-inline-clear" onClick={() => clearFilterValue(index)}>Limpiar</button>
-                              ) : null}
-                            </div>
-                          ) : null}
-                          {selectedColumn && columnType === 'date-range' ? (
-                            <div className="saas-view-header__filter-date-range">
-                              <input
-                                type="date"
-                                value={currentDateRange.from}
-                                onChange={(event) => updateFilterItem(index, { value: { ...currentDateRange, from: event.target.value } })}
-                                disabled={!item.columnKey}
-                              />
-                              <input
-                                type="date"
-                                value={currentDateRange.to}
-                                onChange={(event) => updateFilterItem(index, { value: { ...currentDateRange, to: event.target.value } })}
-                                disabled={!item.columnKey}
-                              />
-                              {(currentDateRange.from || currentDateRange.to) ? (
-                                <button type="button" className="saas-btn saas-btn--secondary saas-btn--sm saas-view-header__filter-inline-clear" onClick={() => clearFilterValue(index)}>Limpiar</button>
-                              ) : null}
-                            </div>
-                          ) : null}
-                          {selectedColumn && columnType === 'date-preset' ? (
-                            <div className="saas-view-header__filter-value-wrap saas-view-header__filter-value-wrap--inline">
-                              <select
-                                value={currentPresetKey}
-                                onChange={(event) => {
-                                  const nextPreset = (Array.isArray(selectedColumn?.presets) ? selectedColumn.presets : []).find((preset) => String(preset.key) === String(event.target.value));
-                                  updateFilterItem(index, { value: nextPreset || '' });
-                                }}
-                                disabled={!item.columnKey}
-                              >
-                                <option value="">Selecciona periodo</option>
-                                {(Array.isArray(selectedColumn?.presets) ? selectedColumn.presets : []).map((preset) => (
-                                  <option key={`${item.id}_preset_${preset.key}`} value={preset.key}>{preset.label}</option>
-                                ))}
-                              </select>
-                              {currentPresetKey ? (
-                                <button type="button" className="saas-btn saas-btn--secondary saas-btn--sm saas-view-header__filter-inline-clear" onClick={() => clearFilterValue(index)}>Limpiar</button>
-                              ) : null}
-                            </div>
-                          ) : null}
-                          {!selectedColumn ? (
-                            <div className="saas-view-header__filter-placeholder">Selecciona una columna</div>
-                          ) : null}
-                          {selectedColumn && isLegacyOperatorType(columnType) ? (
-                            needsValue ? (
-                              <input value={String(item.value ?? '')} onChange={(event) => updateFilterItem(index, { value: event.target.value })} placeholder="Valor" disabled={!item.columnKey} />
-                            ) : <div className="saas-view-header__filter-placeholder">Sin valor</div>
-                          ) : null}
-                          {(supportsMultiFilters || normalizedFilterItems.length > 1) ? (
-                            <button type="button" className="saas-btn saas-btn--secondary saas-btn--sm" onClick={() => removeFilterItem(item.id)} title="Quitar filtro">
-                              <X size={14} strokeWidth={2} />
-                            </button>
-                          ) : null}
+                              </div>
+                            ) : null}
+
+                            {columnType === 'single-select' ? (
+                              <div className="saas-view-header__filter-control-row">
+                                <select value={String(item.value ?? '')} onChange={(event) => updateFilterItem(index, { value: event.target.value })} disabled={!item.columnKey}>
+                                  <option value="">Selecciona valor</option>
+                                  {optionList.map((option) => <option key={`${item.id}_opt_${option.value}`} value={option.value}>{option.label}</option>)}
+                                </select>
+                                {String(item.value ?? '').trim() ? (
+                                  <button type="button" className="saas-btn saas-btn--secondary saas-btn--sm saas-view-header__filter-inline-clear" onClick={() => clearFilterValue(index)}>Limpiar</button>
+                                ) : null}
+                              </div>
+                            ) : null}
+
+                            {columnType === 'date-range' ? (
+                              <div className="saas-view-header__filter-date-range">
+                                <div className="saas-view-header__filter-date-field">
+                                  <span>Desde</span>
+                                  <input
+                                    type="date"
+                                    value={currentDateRange.from}
+                                    onChange={(event) => updateFilterItem(index, { value: { ...currentDateRange, from: event.target.value } })}
+                                    disabled={!item.columnKey}
+                                  />
+                                </div>
+                                <div className="saas-view-header__filter-date-field">
+                                  <span>Hasta</span>
+                                  <input
+                                    type="date"
+                                    value={currentDateRange.to}
+                                    onChange={(event) => updateFilterItem(index, { value: { ...currentDateRange, to: event.target.value } })}
+                                    disabled={!item.columnKey}
+                                  />
+                                </div>
+                                {(currentDateRange.from || currentDateRange.to) ? (
+                                  <button type="button" className="saas-btn saas-btn--secondary saas-btn--sm saas-view-header__filter-inline-clear" onClick={() => clearFilterValue(index)}>Limpiar</button>
+                                ) : null}
+                              </div>
+                            ) : null}
+
+                            {columnType === 'date-preset' ? (
+                              <div className="saas-view-header__filter-control-row">
+                                <select
+                                  value={String(item?.value?.key || item?.value?.value || item?.value?.label || '')}
+                                  onChange={(event) => {
+                                    const nextPreset = (Array.isArray(selectedColumn?.presets) ? selectedColumn.presets : []).find((preset) => String(preset.key) === String(event.target.value));
+                                    updateFilterItem(index, { value: nextPreset || '' });
+                                  }}
+                                  disabled={!item.columnKey}
+                                >
+                                  <option value="">Selecciona periodo</option>
+                                  {(Array.isArray(selectedColumn?.presets) ? selectedColumn.presets : []).map((preset) => (
+                                    <option key={`${item.id}_preset_${preset.key}`} value={preset.key}>{preset.label}</option>
+                                  ))}
+                                </select>
+                                {String(item?.value?.key || item?.value?.value || item?.value?.label || '').trim() ? (
+                                  <button type="button" className="saas-btn saas-btn--secondary saas-btn--sm saas-view-header__filter-inline-clear" onClick={() => clearFilterValue(index)}>Limpiar</button>
+                                ) : null}
+                              </div>
+                            ) : null}
+
+                            {isLegacyOperatorType(columnType) ? (
+                              <div className="saas-view-header__filter-control-stack">
+                                <select value={item.operator} onChange={(event) => updateFilterItem(index, { operator: event.target.value })} disabled={!item.columnKey}>
+                                  {operatorOptions.map((option) => <option key={`${item.id}_${option.value}`} value={option.value}>{option.label}</option>)}
+                                </select>
+                                {needsValue ? (
+                                  <input value={String(item.value ?? '')} onChange={(event) => updateFilterItem(index, { value: event.target.value })} placeholder="Valor" disabled={!item.columnKey} />
+                                ) : <div className="saas-view-header__filter-placeholder">Sin valor</div>}
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
                         </div>
                       );
-                    })}
-                  </div>
-                  <div className="saas-view-header__dropdown-actions">
-                    <button type="button" className="saas-btn saas-btn--secondary saas-btn--sm" onClick={addFilterItem}>
-                      <Plus size={14} strokeWidth={2} />
-                      <span className="saas-btn-text">Agregar filtro</span>
-                    </button>
-                    <button type="button" className="saas-btn saas-btn--secondary saas-btn--sm" onClick={clearFiltersOnly}>
-                      <Trash2 size={14} strokeWidth={2} />
-                      <span className="saas-btn-text">Limpiar</span>
-                    </button>
-                    <button type="button" className="saas-btn saas-btn--primary saas-btn--sm" onClick={() => setFiltersOpen(false)}>
-                      <Check size={14} strokeWidth={2} />
-                      <span className="saas-btn-text">Aplicar</span>
-                    </button>
-                  </div>
+                    })() : null}
                 </div>
               ) : null}
             </div>

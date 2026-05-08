@@ -50,12 +50,12 @@ export function getFilterDefinitionKey(definition = {}) {
 
 function normalizeFilterType(type = '', hasOptions = false) {
     const rawType = toText(type).toLowerCase();
-    if (rawType === 'select' || rawType === 'option') return 'single-select';
+    if (rawType === 'select' || rawType === 'option') return 'multi-select';
     if (rawType === 'date') return 'date-range';
     if (rawType === 'multi-select' || rawType === 'single-select' || rawType === 'date-range' || rawType === 'date-preset') {
         return rawType;
     }
-    if (hasOptions) return 'single-select';
+    if (hasOptions) return 'multi-select';
     if (rawType === 'number') return 'number';
     return rawType || 'text';
 }
@@ -63,6 +63,11 @@ function normalizeFilterType(type = '', hasOptions = false) {
 export function normalizeFilterDefinitions(filters = null, columns = []) {
     const explicitFilters = Array.isArray(filters) ? filters.filter((filter) => getFilterDefinitionKey(filter)) : [];
     const explicitByKey = new Map(explicitFilters.map((filter) => [getFilterDefinitionKey(filter), filter]));
+    const columnOrder = new Map(
+        (Array.isArray(columns) ? columns : [])
+            .filter((column) => column && getFilterDefinitionKey(column))
+            .map((column, index) => [getFilterDefinitionKey(column), index])
+    );
     const inferredFilters = (Array.isArray(columns) ? columns : [])
         .filter((column) => column && getFilterDefinitionKey(column))
         .filter((column) => column.filterable !== false)
@@ -75,7 +80,15 @@ export function normalizeFilterDefinitions(filters = null, columns = []) {
     const combined = [
         ...explicitFilters,
         ...inferredFilters.filter((filter) => !explicitByKey.has(getFilterDefinitionKey(filter)))
-    ];
+    ].sort((left, right) => {
+        const leftKey = getFilterDefinitionKey(left);
+        const rightKey = getFilterDefinitionKey(right);
+        const leftIndex = columnOrder.has(leftKey) ? columnOrder.get(leftKey) : Number.MAX_SAFE_INTEGER;
+        const rightIndex = columnOrder.has(rightKey) ? columnOrder.get(rightKey) : Number.MAX_SAFE_INTEGER;
+        if (leftIndex !== rightIndex) return leftIndex - rightIndex;
+        return explicitFilters.findIndex((filter) => getFilterDefinitionKey(filter) === leftKey)
+            - explicitFilters.findIndex((filter) => getFilterDefinitionKey(filter) === rightKey);
+    });
     return combined.map((definition) => {
         const key = getFilterDefinitionKey(definition);
         const options = normalizeOptionList(definition?.options);
@@ -216,6 +229,9 @@ function matchesSingleSelect(row = {}, definition = {}, value = '') {
 function matchesMultiSelect(row = {}, definition = {}, value = null) {
     const selectedValues = normalizeMultiSelectValue(value);
     if (selectedValues.length === 0) return true;
+    if (typeof definition?.rangeFilter === 'function') {
+        return selectedValues.some((selectedValue) => Boolean(definition.rangeFilter(row, selectedValue)));
+    }
     const rowValue = toText(row?.[definition.field]);
     return selectedValues.includes(rowValue);
 }
