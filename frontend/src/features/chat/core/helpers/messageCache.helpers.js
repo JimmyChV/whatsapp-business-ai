@@ -46,7 +46,7 @@ export function upsertMessageById(messages = [], nextMessage = null) {
 
   const merged = [...safeMessages];
   merged[existingIndex] = { ...merged[existingIndex], ...safeNextMessage };
-  return merged.sort((a, b) => Number(a?.timestamp || 0) - Number(b?.timestamp || 0));
+  return merged;
 }
 
 export function replaceMessageByClientTempId(messages = [], clientTempId = '', serverMessage = null) {
@@ -62,5 +62,5 @@ export function replaceMessageByClientTempId(messages = [], clientTempId = '', s
 
   const next = [...safeMessages];
   next[existingIndex] = { ...next[existingIndex], ...safeServerMessage };
-  return next.sort((a, b) => Number(a?.timestamp || 0) - Number(b?.timestamp || 0));
+  return next;
 }
