@@ -14,6 +14,7 @@ import {
     SaasViewHeader,
     useSaasColumnPrefs
 } from '../components/layout';
+import { applyEntityFilters, createEmptyFilterItem, normalizeFilterDefinitions, normalizeFilterItems } from '../components/layout/filterUtils';
 import { normalizeSortState } from '../components/layout/sortUtils';
 import { createCampaign as createCampaignApi, startCampaign as startCampaignApi } from '../services/campaigns.service';
 import { fetchTenantCustomerLabels, fetchTenantZoneRules } from '../services/labels.service';
@@ -229,6 +230,7 @@ const CUSTOMER_PHONE_STATUS_OPTIONS = [
     { value: 'valid', label: 'Valido' },
     { value: 'invalid', label: 'Invalido' },
     { value: 'blocked', label: 'Bloqueado' },
+    { value: 'failed', label: 'Fallo' },
     { value: 'unknown', label: 'Sin validar' }
 ];
 
@@ -996,7 +998,7 @@ function CustomersSection(props = {}) {
 
     const [showColumnsMenu, setShowColumnsMenu] = useState(false);
     const [searchInput, setSearchInput] = useState(String(customerSearch || ''));
-    const [headerFilters, setHeaderFilters] = useState([{ id: 'customers_filter_1', columnKey: '', operator: 'contains', value: '' }]);
+    const [headerFilters, setHeaderFilters] = useState([createEmptyFilterItem()]);
     const [sortConfig, setSortConfig] = useState(CUSTOMER_DEFAULT_SORT);
     const [languageDraftByCustomer, setLanguageDraftByCustomer] = useState({});
     const [languageBusy, setLanguageBusy] = useState(false);
@@ -1690,127 +1692,96 @@ function CustomersSection(props = {}) {
             return { ...column };
         })
     ), [customerTypeOptions, documentTypeOptions, sourceOptions, treatmentOptions, zoneOptions]);
-    const filterColumnByKey = useMemo(
-        () => filterColumns.reduce((acc, column) => {
-            acc[String(column.key || '').trim()] = column;
-            return acc;
-        }, {}),
-        [filterColumns]
-    );
-    const toFilterDateTimestamp = useCallback((value) => {
-        const raw = String(value || '').trim();
-        if (!raw || raw === '-') return NaN;
-        const parsed = new Date(raw);
-        if (Number.isNaN(parsed.getTime())) return NaN;
-        return parsed.getTime();
-    }, []);
-    const toFilterNumberValue = useCallback((value) => {
-        const text = String(value ?? '').replace(/,/g, '.').replace(/[^\d.-]/g, '').trim();
-        const parsed = Number(text);
-        return Number.isFinite(parsed) ? parsed : NaN;
-    }, []);
-    const matchCustomerTableFilterValue = useCallback((candidateValueRaw, filterItem = {}) => {
-        const filterColumnKey = String(filterItem?.columnKey || '').trim();
-        const filterOperator = String(filterItem?.operator || 'contains').trim().toLowerCase();
-        const filterValue = String(filterItem?.value || '').trim().toLowerCase();
-        const filterColumnType = String(filterColumnByKey[filterColumnKey]?.type || 'text').trim().toLowerCase();
-        const candidateValue = String(candidateValueRaw ?? '').trim().toLowerCase();
-        const optionAliases = filterColumnType === 'option'
-            ? (Array.isArray(filterColumnByKey[filterColumnKey]?.options) ? filterColumnByKey[filterColumnKey].options : [])
-                .filter((option) => {
-                    const optionTokens = [
-                        option?.value,
-                        option?.label,
-                        option?.id,
-                        option?.abbreviation
-                    ]
-                        .map((token) => String(token ?? '').trim().toLowerCase())
-                        .filter(Boolean);
-                    return optionTokens.includes(filterValue);
-                })
-                .flatMap((option) => [
-                    option?.value,
-                    option?.label,
-                    option?.id,
-                    option?.abbreviation
-                ])
-                .map((token) => String(token ?? '').trim().toLowerCase())
-                .filter(Boolean)
-            : [];
-        const optionAliasSet = optionAliases.length > 0 ? new Set(optionAliases) : null;
-        if (!filterColumnKey) return true;
-        if (filterOperator === 'is_empty') return candidateValue.length === 0 || candidateValue === '-';
-        if (filterOperator === 'not_empty') return candidateValue.length > 0 && candidateValue !== '-';
-        if (!filterValue) return true;
-        if (filterColumnKey === 'dias_ultima_compra') {
-            const value = Number(candidateValueRaw);
-            if (!Number.isFinite(value)) return false;
-            if (filterValue === 'lte30') return value <= 30;
-            if (filterValue === '31_60') return value >= 31 && value <= 60;
-            if (filterValue === '61_90') return value >= 61 && value <= 90;
-            if (filterValue === 'gt90') return value > 90;
-            return true;
+    const customerHeaderFilterDefinitions = useMemo(() => normalizeFilterDefinitions([
+        {
+            field: 'segmento',
+            label: 'Segmento',
+            type: 'multi-select',
+            options: CUSTOMER_SEGMENT_OPTIONS.map((item) => ({ value: item.value, label: item.label }))
+        },
+        {
+            field: 'acquisition_source_id',
+            label: 'Fuente',
+            type: 'multi-select',
+            options: acquisitionSources.map((item) => ({ value: item.id, label: item.label }))
+        },
+        {
+            field: 'customer_type_id',
+            label: 'Tipo cliente',
+            type: 'multi-select',
+            options: customerTypes.map((item) => ({ value: item.id, label: item.label }))
+        },
+        {
+            field: 'treatment_id',
+            label: 'Tratamiento',
+            type: 'multi-select',
+            options: treatments.map((item) => ({ value: item.id, label: item.abbreviation || item.label }))
+        },
+        {
+            field: 'phone_status',
+            label: 'Estado tel.',
+            type: 'multi-select',
+            options: CUSTOMER_PHONE_STATUS_OPTIONS.map((item) => ({ value: item.value, label: item.label }))
+        },
+        {
+            field: 'realizo_compra',
+            label: 'Realizo compra',
+            type: 'single-select',
+            options: ['Sí', 'No']
+        },
+        {
+            field: 'dias_ultima_compra',
+            label: 'Días sin compra',
+            type: 'single-select',
+            options: ['≤30', '31-60', '61-90', '>90'],
+            rangeFilter: (row, value) => {
+                const days = row?.dias_ultima_compra;
+                if (days === null || days === undefined || days === '') return false;
+                if (value === '≤30') return Number(days) <= 30;
+                if (value === '31-60') return Number(days) > 30 && Number(days) <= 60;
+                if (value === '61-90') return Number(days) > 60 && Number(days) <= 90;
+                if (value === '>90') return Number(days) > 90;
+                return true;
+            }
+        },
+        {
+            field: 'monto_180',
+            label: 'Monto 180d',
+            type: 'single-select',
+            options: ['<S/100', 'S/100-500', '>S/500'],
+            rangeFilter: (row, value) => {
+                const amount = Number.parseFloat(row?.monto_180 || 0);
+                if (value === '<S/100') return amount < 100;
+                if (value === 'S/100-500') return amount >= 100 && amount <= 500;
+                if (value === '>S/500') return amount > 500;
+                return true;
+            }
+        },
+        {
+            field: 'ultima_fecha_compra',
+            label: 'Última compra',
+            type: 'date-preset',
+            presets: [
+                { label: 'Últimos 30 días', days: 30 },
+                { label: 'Últimos 60 días', days: 60 },
+                { label: 'Últimos 90 días', days: 90 },
+                { label: 'Más de 90 días', daysMin: 90 },
+                { label: 'Más de 180 días', daysMin: 180 }
+            ]
+        },
+        {
+            field: 'created_at',
+            label: 'Fecha registro',
+            type: 'date-range'
         }
-        if (filterColumnKey === 'monto_180') {
-            const value = Number(candidateValueRaw);
-            if (!Number.isFinite(value)) return false;
-            if (filterValue === 'lt100') return value < 100;
-            if (filterValue === '100_500') return value >= 100 && value <= 500;
-            if (filterValue === 'gt500') return value > 500;
-            return true;
-        }
-        if (filterColumnType === 'option' && optionAliasSet) {
-            const matchesOptionAlias = optionAliasSet.has(candidateValue);
-            if (filterOperator === 'not_equals') return !matchesOptionAlias;
-            if (filterOperator === 'equals') return matchesOptionAlias;
-        }
-        if (filterOperator === 'not_equals') return candidateValue !== filterValue;
-        if (filterColumnType === 'number') {
-            const left = toFilterNumberValue(candidateValueRaw);
-            const right = toFilterNumberValue(filterValue);
-            if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
-            if (filterOperator === 'gt') return left > right;
-            if (filterOperator === 'gte') return left >= right;
-            if (filterOperator === 'lt') return left < right;
-            if (filterOperator === 'lte') return left <= right;
-            return left === right;
-        }
-        if (filterColumnType === 'date') {
-            const left = toFilterDateTimestamp(candidateValueRaw);
-            const right = toFilterDateTimestamp(filterValue);
-            if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
-            if (filterOperator === 'before') return left < right;
-            if (filterOperator === 'after') return left > right;
-            const leftDate = new Date(left).toISOString().slice(0, 10);
-            const rightDate = new Date(right).toISOString().slice(0, 10);
-            return leftDate === rightDate;
-        }
-        if (filterOperator === 'equals') return candidateValue === filterValue;
-        if (filterOperator === 'starts_with') return candidateValue.startsWith(filterValue);
-        if (filterOperator === 'ends_with') return candidateValue.endsWith(filterValue);
-        return candidateValue.includes(filterValue);
-    }, [filterColumnByKey, toFilterDateTimestamp, toFilterNumberValue]);
-    const activeHeaderFilters = useMemo(
-        () => (Array.isArray(headerFilters) ? headerFilters : []).filter((filterItem) => {
-            const columnKey = String(filterItem?.columnKey || '').trim();
-            const operator = String(filterItem?.operator || 'contains').trim().toLowerCase();
-            if (!columnKey) return false;
-            if (operator === 'is_empty' || operator === 'not_empty') return true;
-            return Boolean(String(filterItem?.value || '').trim());
-        }),
+    ], filterColumns), [acquisitionSources, customerTypes, filterColumns, treatments]);
+    const normalizedHeaderFilters = useMemo(
+        () => normalizeFilterItems(headerFilters),
         [headerFilters]
     );
-    const applyCustomerHeaderFilters = useCallback((sourceRows = []) => {
-        const rows = Array.isArray(sourceRows) ? sourceRows : [];
-        return activeHeaderFilters.reduce((currentRows, filterItem) => {
-            const filterColumnKey = String(filterItem?.columnKey || '').trim();
-            return currentRows.filter((row) => {
-                if (filterColumnKey === 'actualizado') return matchCustomerTableFilterValue(row?._raw?.updatedAt || row?.actualizado, filterItem);
-                if (filterColumnKey === 'ultimaInteraccion') return matchCustomerTableFilterValue(row?._raw?.lastInteractionAt || row?.ultimaInteraccion, filterItem);
-                return matchCustomerTableFilterValue(row?.[filterColumnKey], filterItem);
-            });
-        }, rows);
-    }, [activeHeaderFilters, matchCustomerTableFilterValue]);
+    const applyCustomerHeaderFilters = useCallback((sourceRows = []) => (
+        applyEntityFilters(sourceRows, normalizedHeaderFilters, customerHeaderFilterDefinitions)
+    ), [customerHeaderFilterDefinitions, normalizedHeaderFilters]);
     const buildCustomerTableRow = useCallback((customer = {}, index = 0) => {
         const customerId = resolveCustomerId(customer);
         const safeId = customerId || String(customer.phoneE164 || customer.phone_e164 || customer.email || `customer-${index}`).trim();
@@ -1850,7 +1821,11 @@ function CustomersSection(props = {}) {
             tratamiento: buildTreatmentLabel(customer, customerLabelMaps),
             zona: zone?.label || '-',
             segmento: segmento || null,
+            acquisition_source_id: String(customer.acquisitionSourceId || customer.acquisition_source_id || '').trim() || null,
+            customer_type_id: String(customer.customerTypeId || customer.customer_type_id || '').trim() || null,
+            treatment_id: String(customer.treatmentId || customer.treatment_id || '').trim() || null,
             ultima_fecha_compra: ultimaFechaCompra || null,
+            created_at: String(customer.createdAt || customer.created_at || '').trim() || null,
             dias_ultima_compra: diasUltimaCompra,
             compras_180: compras180,
             monto_180: monto180,
@@ -3980,12 +3955,7 @@ function CustomersSection(props = {}) {
         }
     ].filter(Boolean);
 
-    const headerFilterColumns = filterColumns.map((column) => ({
-        key: column.key,
-        label: column.label || column.key,
-        type: column.type || 'text',
-        options: Array.isArray(column.options) ? column.options : []
-    }));
+    const headerFilterColumns = customerHeaderFilterDefinitions;
 
     const headerElement = (
         <SaasViewHeader
@@ -4028,7 +3998,7 @@ function CustomersSection(props = {}) {
                 columns: headerFilterColumns,
                 items: headerFilters,
                 onItemsChange: setHeaderFilters,
-                onClear: () => setHeaderFilters([{ id: 'customers_filter_1', columnKey: '', operator: 'contains', value: '' }])
+                onClear: () => setHeaderFilters([createEmptyFilterItem()])
             }}
             sortConfig={{
                 ...sortConfig,
