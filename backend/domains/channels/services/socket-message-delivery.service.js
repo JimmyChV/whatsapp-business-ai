@@ -93,7 +93,6 @@ function createSocketMessageDeliveryService({
              sentMessage = null,
              fallbackChatId = '',
              fallbackBody = '',
-             clientTempId = '',
              quotedMessageId = '',
              quotedMessage = null,
              moduleContext = null,
@@ -177,7 +176,7 @@ function createSocketMessageDeliveryService({
                  order: normalizedOrderPayload,
                  location: null,
                 quotedMessage: normalizedQuotedMessage || (quotedId ? { id: quotedId, body: '', fromMe: false, hasMedia: false, type: 'chat' } : null),
-                 clientTempId: String(clientTempId || safeSentMessage?.clientTempId || '').trim() || null,
+                 clientTempId: String(safeSentMessage?.clientTempId || '').trim() || null,
                  templateName,
                  templateLanguage,
                  templatePreviewText,
@@ -301,7 +300,7 @@ function createSocketMessageDeliveryService({
                  scopedChatId: buildScopedChatId(targetChatId, scopeModuleId || '')
              };
          };
-        socket.on('send_message', async ({ to, toPhone, body, quotedMessageId, quotedMessage, clientTempId }) => {
+         socket.on('send_message', async ({ to, toPhone, body, quotedMessageId, quotedMessage }) => {
              if (!guardRateLimit(socket, 'send_message')) return;
              if (!transportOrchestrator.ensureTransportReady(socket, { action: 'enviar mensajes', errorEvent: 'error' })) return;
              try {
@@ -352,13 +351,10 @@ function createSocketMessageDeliveryService({
                  if (sentMessageId && agentMeta) {
                      rememberOutgoingAgentMeta(sentMessageId, agentMeta);
                  }
-                await emitRealtimeOutgoingMessage({
-                    sentMessage: sentMessage && typeof sentMessage === 'object'
-                        ? { ...sentMessage, clientTempId: String(clientTempId || '').trim() || null }
-                        : sentMessage,
+                 await emitRealtimeOutgoingMessage({
+                    sentMessage,
                     fallbackChatId: target.targetChatId,
                     fallbackBody: text,
-                    clientTempId,
                     quotedMessageId: quoted,
                     quotedMessage,
                     moduleContext,
@@ -444,7 +440,7 @@ function createSocketMessageDeliveryService({
              if (!guardRateLimit(socket, 'send_media_message')) return;
              if (!transportOrchestrator.ensureTransportReady(socket, { action: 'enviar adjuntos', errorEvent: 'error' })) return;
              try {
-                const { to, toPhone, body, mediaData, mimetype, filename, isPtt, quotedMessageId, quotedMessage, clientTempId } = data || {};
+                 const { to, toPhone, body, mediaData, mimetype, filename, isPtt, quotedMessageId, quotedMessage } = data || {};
                  if (isPtt) {
                      socket.emit('error', 'El envio de notas de voz esta deshabilitado temporalmente.');
                      return;
@@ -470,13 +466,10 @@ function createSocketMessageDeliveryService({
                  if (sentMessageId && agentMeta) {
                      rememberOutgoingAgentMeta(sentMessageId, agentMeta);
                  }
-                await emitRealtimeOutgoingMessage({
-                    sentMessage: sentMessage && typeof sentMessage === 'object'
-                        ? { ...sentMessage, clientTempId: String(clientTempId || '').trim() || null }
-                        : sentMessage,
+                 await emitRealtimeOutgoingMessage({
+                    sentMessage,
                     fallbackChatId: target.targetChatId,
                     fallbackBody: caption,
-                    clientTempId,
                     quotedMessageId: quoted,
                     quotedMessage,
                     moduleContext,
@@ -666,4 +659,6 @@ function createSocketMessageDeliveryService({
 module.exports = {
     createSocketMessageDeliveryService
 };
+
+
 
