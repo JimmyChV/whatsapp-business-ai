@@ -325,6 +325,10 @@ export default function useAppOperationHandlers({
     saasSessionRef,
     saasRuntimeRef,
     activeChatScopeModuleId: chatDerivedState.activeChatDetails?.scopeModuleId || selectedWaModuleRef?.current?.moduleId || '',
+    activeChatScopeModuleName: chatDerivedState.activeChatDetails?.moduleName
+      || chatDerivedState.activeChatDetails?.lastMessageModuleName
+      || selectedWaModuleRef?.current?.name
+      || '',
     clientContact,
     prevMessagesMetaRef,
     suppressSmoothScrollUntilRef,

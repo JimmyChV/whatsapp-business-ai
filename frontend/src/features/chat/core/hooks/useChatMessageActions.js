@@ -22,6 +22,7 @@ export default function useChatMessageActions({
   saasSessionRef,
   saasRuntimeRef,
   activeChatScopeModuleId,
+  activeChatScopeModuleName,
   clientContact,
   prevMessagesMetaRef,
   suppressSmoothScrollUntilRef,
@@ -188,6 +189,8 @@ export default function useChatMessageActions({
     const clientTempId = `tmp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     const timestamp = Math.floor(Date.now() / 1000);
     const sessionSenderIdentity = resolveSessionSenderIdentity();
+    const safeModuleId = String(activeChatScopeModuleId || '').trim() || null;
+    const safeModuleName = String(activeChatScopeModuleName || '').trim() || null;
     const optimisticMessage = {
       id: clientTempId,
       clientTempId,
@@ -211,6 +214,8 @@ export default function useChatMessageActions({
       sentByName: String(sessionSenderIdentity?.name || sessionSenderIdentity?.email || '').trim() || null,
       sentByEmail: String(sessionSenderIdentity?.email || '').trim() || null,
       sentByRole: String(sessionSenderIdentity?.role || '').trim() || null,
+      sentViaModuleId: safeModuleId,
+      sentViaModuleName: safeModuleName,
       retryPayload: retryPayload && typeof retryPayload === 'object' ? retryPayload : null,
       ...(extraFields && typeof extraFields === 'object' ? extraFields : {})
     };
@@ -231,7 +236,16 @@ export default function useChatMessageActions({
     )));
     rememberPendingOutgoing(safeChatId, clientTempId, retryPayload);
     return optimisticMessage;
-  }, [activeChatIdRef, messagesCacheRef, rememberPendingOutgoing, resolveSessionSenderIdentity, setChats, setMessages]);
+  }, [
+    activeChatIdRef,
+    activeChatScopeModuleId,
+    activeChatScopeModuleName,
+    messagesCacheRef,
+    rememberPendingOutgoing,
+    resolveSessionSenderIdentity,
+    setChats,
+    setMessages
+  ]);
 
   const buildQuotedMessagePayload = useCallback(() => {
     if (!replyingMessage?.id) return null;
