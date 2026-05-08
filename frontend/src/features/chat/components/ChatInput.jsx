@@ -42,7 +42,8 @@ const ChatInput = ({
     onOpenMapPicker,
     onOpenSendTemplate,
     buildApiHeaders,
-    windowOpen = true
+    windowOpen = true,
+    focusChatKey = ''
 }) => {
     const [showEmoji, setShowEmoji] = useState(false);
     const [showCommands, setShowCommands] = useState(false);
@@ -335,6 +336,17 @@ const ChatInput = ({
         document.addEventListener('mousedown', onOutside);
         return () => document.removeEventListener('mousedown', onOutside);
     }, [showEmoji]);
+
+    useEffect(() => {
+        if (!focusChatKey || disableFreeformComposer) return;
+        const timer = setTimeout(() => {
+            if (!inputRef.current || document.activeElement === inputRef.current) return;
+            inputRef.current.focus();
+            const len = String(inputRef.current.value || '').length;
+            inputRef.current.setSelectionRange(len, len);
+        }, 0);
+        return () => clearTimeout(timer);
+    }, [disableFreeformComposer, focusChatKey]);
 
     useEffect(() => {
         if (typeof window === 'undefined') {
@@ -707,7 +719,7 @@ const ChatInput = ({
                         onKeyDown && onKeyDown(e);
                     }}
                     rows={1}
-                    style={{ padding: '4px 0', minHeight: '24px', maxHeight: '220px', resize: 'none', overflowY: 'auto' }}
+                    style={{ padding: '6px 12px', minHeight: '24px', maxHeight: '220px', resize: 'none', overflowY: 'auto' }}
                     onClick={() => { setShowEmoji(false); updateSelectionState(); }}
                     onSelect={updateSelectionState}
                     onKeyUp={updateSelectionState}

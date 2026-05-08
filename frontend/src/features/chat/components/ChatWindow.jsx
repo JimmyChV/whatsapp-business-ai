@@ -544,6 +544,7 @@ const ChatWindow = ({
                         onOpenMapPicker={() => openMapModal({ query: '' })}
                         buildApiHeaders={buildApiHeaders}
                         windowOpen={conversationWindowOpen}
+                        focusChatKey={activeChatScopedId}
                     />
                     <SendTemplateModal
                         isOpen={Boolean(inputProps?.sendTemplateOpen)}
@@ -586,7 +587,6 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
-
 
 
 
