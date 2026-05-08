@@ -218,7 +218,7 @@ const MessageBubble = ({
         if (explicitStatus === 'sending') {
             return (
                 <span className="message-ack pending" title="Estado: Enviando" aria-label="Estado: Enviando">
-                    <Clock3 size={14} />
+                    <Clock3 size={16} />
                 </span>
             );
         }

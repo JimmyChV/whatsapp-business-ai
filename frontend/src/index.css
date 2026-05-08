@@ -2060,7 +2060,9 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 16px;
   min-width: 16px;
+  flex: 0 0 16px;
   color: rgba(233, 237, 239, 0.62);
 }
 

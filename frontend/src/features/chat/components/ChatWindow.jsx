@@ -381,9 +381,10 @@ const ChatWindow = ({
                     const isHighlighted = matchIdx !== -1;
                     const isCurrentHighlighted = isHighlighted && matchIdx === activeMatchIdx;
                     const messageKey = msg.id || `idx_${idx}`;
+                    const messageRenderKey = msg.clientTempId || msg.id || `idx_${idx}`;
                     const senderDisplayName = resolveGroupSenderName(msg);
                     return (
-                        <React.Fragment key={messageKey}>
+                        <React.Fragment key={messageRenderKey}>
                             {showDay && (
                                 <div className="chat-day-separator">
                                     {formatDayLabel(msg.timestamp)}
@@ -585,7 +586,6 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
-
 
 
 
