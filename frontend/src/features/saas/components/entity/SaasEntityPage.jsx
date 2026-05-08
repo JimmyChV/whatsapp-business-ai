@@ -9,6 +9,12 @@ import {
 } from '../layout';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 import { applyMultiSort, normalizeSortState } from '../layout/sortUtils';
+import {
+    applyEntityFilters,
+    createEmptyFilterItem,
+    normalizeFilterDefinitions,
+    normalizeFilterItems
+} from '../layout/filterUtils';
 
 const EMPTY_ARRAY = [];
 
@@ -76,77 +82,6 @@ function applySearch(rows = [], columns = [], search = '') {
     const query = String(search || '').trim().toLowerCase();
     if (!query) return rows;
     return rows.filter((row) => defaultRowText(row, columns).includes(query));
-}
-
-function normalizeEntityFilters(filters = null, columns = []) {
-    const explicitFilters = Array.isArray(filters) ? filters.filter((filter) => filter && filter.key) : [];
-    const explicitByKey = new Map(explicitFilters.map((filter) => [String(filter.key), filter]));
-    const inferredFilters = getConfigurableColumns(columns)
-        .filter((column) => column.filterable !== false)
-        .map((column) => ({
-            key: column.key,
-            label: column.menuLabel ?? column.sortLabel ?? column.label ?? column.key,
-            type: column.type === 'select' ? 'option' : (column.type || 'text'),
-            options: Array.isArray(column.options) ? column.options : undefined
-        }));
-    const combined = [
-        ...explicitFilters,
-        ...inferredFilters.filter((filter) => !explicitByKey.has(String(filter.key)))
-    ];
-    return combined.map((filter) => ({
-        ...filter,
-        type: filter.type === 'select' ? 'option' : (filter.type || 'text')
-    }));
-}
-
-function matchesFilterValue(rowValue, filterValue = {}) {
-    const operator = String(filterValue.operator || 'contains').trim();
-    const expected = String(filterValue.value ?? '').trim().toLowerCase();
-    const actual = String(rowValue ?? '').trim().toLowerCase();
-    if (operator === 'is_empty') return !actual;
-    if (operator === 'not_empty') return Boolean(actual);
-    if (!expected) return true;
-    if (operator === 'equals') return actual === expected;
-    if (operator === 'not_equals') return actual !== expected;
-    if (operator === 'starts_with') return actual.startsWith(expected);
-    if (operator === 'ends_with') return actual.endsWith(expected);
-    return actual.includes(expected);
-}
-
-function applyStructuredFilter(rows = [], filterValue = {}) {
-    const columnKey = String(filterValue?.columnKey || '').trim();
-    if (!columnKey) return rows;
-    return rows.filter((row) => matchesFilterValue(row?.[columnKey], filterValue));
-}
-
-function normalizeFilterItem(filterValue = {}) {
-    return {
-        id: String(filterValue?.id || ''),
-        columnKey: String(filterValue?.columnKey || '').trim(),
-        operator: String(filterValue?.operator || 'contains').trim().toLowerCase() || 'contains',
-        value: filterValue?.value ?? ''
-    };
-}
-
-function normalizeFilterItems(items = null) {
-    if (!Array.isArray(items)) return [{ id: 'filter_1', columnKey: '', operator: 'contains', value: '' }];
-    if (items.length === 0) return [{ id: 'filter_1', columnKey: '', operator: 'contains', value: '' }];
-    return items.map((item, index) => {
-        const normalized = normalizeFilterItem(item);
-        return { ...normalized, id: normalized.id || `filter_${index + 1}` };
-    });
-}
-
-function isActiveFilterItem(filterValue = {}) {
-    const normalized = normalizeFilterItem(filterValue);
-    if (!normalized.columnKey) return false;
-    if (normalized.operator === 'is_empty' || normalized.operator === 'not_empty') return true;
-    return Boolean(String(normalized.value ?? '').trim());
-}
-
-function applyStructuredFilters(rows = [], filterItems = []) {
-    const activeFilters = normalizeFilterItems(filterItems).filter(isActiveFilterItem);
-    return activeFilters.reduce((acc, filterValue) => applyStructuredFilter(acc, filterValue), rows);
 }
 
 function ColumnMenu({
@@ -229,8 +164,8 @@ export default function SaasEntityPage({
     const { confirm } = useUiFeedback();
     const preferences = useSaasViewPreferences(sectionKey || id || title, columns, { requestJson });
     const [search, setSearch] = useState('');
-    const [activeFilters, setActiveFilters] = useState([{ id: 'filter_1', columnKey: '', operator: 'contains', value: '' }]);
-    const filterColumns = useMemo(() => normalizeEntityFilters(filters, columns), [columns, filters]);
+    const [activeFilters, setActiveFilters] = useState([createEmptyFilterItem()]);
+    const filterColumns = useMemo(() => normalizeFilterDefinitions(filters, columns), [columns, filters]);
     const filterConfig = useMemo(() => {
         if (filterColumns.length === 0) return null;
         return {
@@ -242,7 +177,7 @@ export default function SaasEntityPage({
                 if (typeof onFilterChange === 'function') onFilterChange(normalized);
             },
             onClear: () => {
-                const cleared = [{ id: 'filter_1', columnKey: '', operator: 'contains', value: '' }];
+                const cleared = [createEmptyFilterItem()];
                 setActiveFilters(cleared);
                 if (typeof onFilterChange === 'function') onFilterChange(cleared);
             }
@@ -254,8 +189,8 @@ export default function SaasEntityPage({
     );
     const sortableColumns = useMemo(() => getSortableColumns(columns), [columns]);
     const visibleRows = useMemo(
-        () => applyMultiSort(applyStructuredFilters(applySearch(rows, columns, search), activeFilters), preferences.sort),
-        [activeFilters, columns, preferences.sort, rows, search]
+        () => applyMultiSort(applyEntityFilters(applySearch(rows, columns, search), activeFilters, filterColumns), preferences.sort),
+        [activeFilters, columns, filterColumns, preferences.sort, rows, search]
     );
     const normalizedSort = useMemo(() => normalizeSortState(preferences.sort), [preferences.sort]);
     const hasSelection = Boolean(selectedId);

@@ -9381,6 +9381,120 @@ textarea:focus {
   padding: 0 9px !important;
 }
 
+.saas-admin-shell .saas-view-header__filter-row {
+  align-items: start !important;
+}
+
+.saas-admin-shell .saas-view-header__filter-type-chip {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 34px !important;
+  padding: 0 10px !important;
+  border: 1px solid var(--saas-border-strong, rgba(15, 23, 42, 0.14)) !important;
+  border-radius: 10px !important;
+  background: var(--saas-surface-subtle, rgba(255, 255, 255, 0.9)) !important;
+  color: var(--saas-text-secondary, #52606d) !important;
+  font-size: 0.78rem !important;
+  font-weight: 700 !important;
+}
+
+.saas-admin-shell .saas-view-header__filter-value-wrap {
+  position: relative !important;
+  min-width: 0 !important;
+}
+
+.saas-admin-shell .saas-view-header__filter-value-wrap--inline {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  gap: 6px !important;
+}
+
+.saas-admin-shell .saas-view-header__filter-value-btn {
+  width: 100% !important;
+  min-height: 34px !important;
+  padding: 0 12px !important;
+  border-radius: 10px !important;
+  border: 1px solid var(--saas-border-strong, rgba(15, 23, 42, 0.14)) !important;
+  background: var(--saas-surface-raised, rgba(255, 255, 255, 0.98)) !important;
+  color: var(--saas-text-primary, #1f2937) !important;
+  text-align: left !important;
+}
+
+.saas-admin-shell .saas-view-header__filter-value-btn.is-active {
+  border-color: var(--saas-accent-primary, #00A884) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--saas-accent-primary, #00A884) 24%, transparent) !important;
+}
+
+.saas-admin-shell .saas-view-header__filter-value-summary {
+  display: block !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  font-size: 0.8rem !important;
+}
+
+.saas-admin-shell .saas-view-header__filter-option-menu {
+  position: absolute !important;
+  top: calc(100% + 6px) !important;
+  left: 0 !important;
+  right: 0 !important;
+  z-index: 24 !important;
+  display: grid !important;
+  gap: 6px !important;
+  padding: 8px !important;
+  border-radius: 12px !important;
+  border: 1px solid var(--saas-border-strong, rgba(15, 23, 42, 0.14)) !important;
+  background: var(--saas-surface-raised, rgba(255, 255, 255, 0.98)) !important;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18) !important;
+}
+
+.saas-admin-shell .saas-view-header__filter-option-menu-body {
+  display: grid !important;
+  gap: 6px !important;
+  max-height: min(220px, 28vh) !important;
+  overflow-y: auto !important;
+  padding-right: 2px !important;
+}
+
+.saas-admin-shell .saas-view-header__filter-option-item {
+  display: grid !important;
+  grid-template-columns: 16px minmax(0, 1fr) !important;
+  gap: 8px !important;
+  align-items: center !important;
+  min-height: 32px !important;
+  padding: 7px 8px !important;
+  border-radius: 10px !important;
+  color: var(--saas-text-primary, #1f2937) !important;
+  cursor: pointer !important;
+}
+
+.saas-admin-shell .saas-view-header__filter-option-item.is-active {
+  background: color-mix(in srgb, var(--saas-accent-primary, #00A884) 12%, transparent) !important;
+}
+
+.saas-admin-shell .saas-view-header__filter-option-checkbox {
+  width: 15px !important;
+  height: 15px !important;
+  accent-color: var(--saas-accent-primary, #00A884) !important;
+}
+
+.saas-admin-shell .saas-view-header__filter-option-actions {
+  display: flex !important;
+  justify-content: flex-end !important;
+}
+
+.saas-admin-shell .saas-view-header__filter-date-range {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto !important;
+  gap: 6px !important;
+  min-width: 0 !important;
+}
+
+.saas-admin-shell .saas-view-header__filter-inline-clear {
+  white-space: nowrap !important;
+}
+
 .saas-admin-shell .saas-data-table thead th {
   padding: 7px 9px !important;
   font-size: 0.7rem !important;

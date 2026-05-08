@@ -10,6 +10,7 @@ import {
     SaasViewHeader,
     useSaasColumnPrefs
 } from '../components/layout';
+import { applyEntityFilters, createEmptyFilterItem, normalizeFilterDefinitions, normalizeFilterItems } from '../components/layout/filterUtils';
 import { applyMultiSort, normalizeSortState } from '../components/layout/sortUtils';
 
 const STATUS_META = {
@@ -632,7 +633,7 @@ function MetaTemplatesSection(props = {}) {
     const [panelMode, setPanelMode] = useState('view');
     const [selectedTemplateId, setSelectedTemplateId] = useState('');
     const [showColumnsPanel, setShowColumnsPanel] = useState(false);
-    const [headerFilters, setHeaderFilters] = useState([{ id: 'templates_filter_1', columnKey: '', operator: 'contains', value: '' }]);
+    const [headerFilters, setHeaderFilters] = useState([createEmptyFilterItem()]);
     const [syncModuleId, setSyncModuleId] = useState('');
     const [createForm, setCreateForm] = useState(() => buildInitialForm(''));
     const [templateVarCatalog, setTemplateVarCatalog] = useState([]);
@@ -833,21 +834,45 @@ function MetaTemplatesSection(props = {}) {
             })
             : [];
     }, [filteredItems]);
+    const templateHeaderFilterDefinitions = useMemo(() => normalizeFilterDefinitions([
+        {
+            field: 'category',
+            label: 'Categoría',
+            type: 'multi-select',
+            options: CATEGORY_OPTIONS.map((option) => ({ value: option.label, label: option.label }))
+        },
+        {
+            field: 'templateLanguage',
+            label: 'Idioma',
+            type: 'multi-select',
+            options: LANGUAGE_OPTIONS.map((option) => ({ value: option.value.toUpperCase(), label: option.label }))
+        },
+        {
+            field: 'statusLabel',
+            label: 'Estado',
+            type: 'multi-select',
+            options: statusOptions.filter(Boolean).map((option) => ({ value: resolveStatusMeta(option).label, label: resolveStatusMeta(option).label }))
+        },
+        {
+            field: 'moduleLabel',
+            label: 'Módulo',
+            type: 'multi-select',
+            options: moduleOptions.map((moduleItem) => ({ value: moduleItem.label, label: moduleItem.label }))
+        },
+        {
+            field: 'useCaseLabel',
+            label: 'Caso de uso',
+            type: 'multi-select',
+            options: USE_CASE_OPTIONS.map((option) => ({ value: option.label, label: option.label }))
+        },
+        { field: 'createdAt', label: 'Creada', type: 'date-range' },
+        { field: 'updatedAt', label: 'Actualizada', type: 'date-range' }
+    ], TEMPLATE_TABLE_COLUMNS), [moduleOptions, statusOptions]);
 
     const filteredTableRows = useMemo(() => {
-        const activeHeaderFilters = (Array.isArray(headerFilters) ? headerFilters : []).filter((filterItem) => {
-            const columnKey = toText(filterItem?.columnKey);
-            const operator = toLower(filterItem?.operator || 'contains');
-            if (!columnKey) return false;
-            if (operator === 'is_empty' || operator === 'not_empty') return true;
-            return Boolean(toText(filterItem?.value));
-        });
-        const filteredRows = activeHeaderFilters.reduce((currentRows, filterItem) => {
-            const columnKey = toText(filterItem?.columnKey);
-            return currentRows.filter((row) => matchesTextFilter(row?.[columnKey], filterItem?.value, filterItem?.operator));
-        }, tableRows);
+        const filteredRows = applyEntityFilters(tableRows, normalizeFilterItems(headerFilters), templateHeaderFilterDefinitions);
         return sortTemplateTableRows(filteredRows, tableSort);
-    }, [headerFilters, tableRows, tableSort]);
+    }, [headerFilters, tableRows, tableSort, templateHeaderFilterDefinitions]);
 
     const tableColumns = useMemo(() => {
         const visibleSet = new Set((Array.isArray(visibleTableColumnKeys) ? visibleTableColumnKeys : [])
@@ -1346,17 +1371,10 @@ function MetaTemplatesSection(props = {}) {
             searchPlaceholder="Buscar plantilla por nombre, categoría o idioma..."
             searchDisabled={templatesBusy || tenantScopeLocked}
             filters={{
-                columns: [
-                    { key: 'templateName', label: 'Nombre', type: 'text' },
-                    { key: 'category', label: 'Categoría', type: 'option', options: CATEGORY_OPTIONS.map((option) => ({ value: option.label, label: option.label })) },
-                    { key: 'templateLanguage', label: 'Idioma', type: 'option', options: LANGUAGE_OPTIONS.map((option) => ({ value: option.value.toUpperCase(), label: option.label })) },
-                    { key: 'statusLabel', label: 'Estado', type: 'option', options: statusOptions.filter(Boolean).map((option) => ({ value: resolveStatusMeta(option).label, label: resolveStatusMeta(option).label })) },
-                    { key: 'moduleLabel', label: 'Módulo', type: 'option', options: moduleOptions.map((moduleItem) => ({ value: moduleItem.label, label: moduleItem.label })) },
-                    { key: 'useCaseLabel', label: 'Caso De Uso', type: 'option', options: USE_CASE_OPTIONS.map((option) => ({ value: option.label, label: option.label })) }
-                ],
+                columns: templateHeaderFilterDefinitions,
                 items: headerFilters,
                 onItemsChange: setHeaderFilters,
-                onClear: () => setHeaderFilters([{ id: 'templates_filter_1', columnKey: '', operator: 'contains', value: '' }])
+                onClear: () => setHeaderFilters([createEmptyFilterItem()])
             }}
             sortConfig={{
                 columns: TEMPLATE_TABLE_COLUMNS.map((column) => ({
@@ -2205,3 +2223,4 @@ function MetaTemplatesSection(props = {}) {
 }
 
 export default React.memo(MetaTemplatesSection);
+

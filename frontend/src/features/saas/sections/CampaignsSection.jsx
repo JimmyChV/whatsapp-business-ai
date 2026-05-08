@@ -12,6 +12,7 @@ import {
     SaasViewHeader,
     useSaasColumnPrefs
 } from '../components/layout';
+import { applyEntityFilters, createEmptyFilterItem, normalizeFilterDefinitions, normalizeFilterItems } from '../components/layout/filterUtils';
 import { applyMultiSort, normalizeSortState } from '../components/layout/sortUtils';
 
 const STATUS_META = {
@@ -634,7 +635,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const [wizardStep, setWizardStep] = useState(1);
     const [form, setForm] = useState(EMPTY_FORM);
     const [search, setSearch] = useState('');
-    const [headerFilters, setHeaderFilters] = useState([{ id: 'campaigns_filter_1', columnKey: '', operator: 'contains', value: '' }]);
+    const [headerFilters, setHeaderFilters] = useState([createEmptyFilterItem()]);
     const [showColumnsMenu, setShowColumnsMenu] = useState(false);
     const [localEstimate, setLocalEstimate] = useState(null);
     const [baseAudienceEstimate, setBaseAudienceEstimate] = useState(null);
@@ -821,19 +822,28 @@ export default React.memo(function CampaignsSection(props = {}) {
         createdAt: toText(campaign?.createdAt || ''),
         updatedAt: toText(campaign?.updatedAt || campaign?.createdAt || '')
     })), [filteredCampaigns]);
+    const campaignHeaderFilterDefinitions = useMemo(() => normalizeFilterDefinitions([
+        {
+            field: 'status',
+            label: 'Estado',
+            type: 'multi-select',
+            options: Object.keys(STATUS_META).map((key) => ({ value: key, label: STATUS_META[key].label }))
+        },
+        {
+            field: 'moduleId',
+            label: 'Módulo',
+            type: 'multi-select',
+            options: moduleOptions.map((item) => ({ value: item.moduleId, label: item.label }))
+        },
+        { field: 'scheduledAt', label: 'Programada', type: 'date-range' },
+        { field: 'startedAt', label: 'Iniciada', type: 'date-range' },
+        { field: 'completedAt', label: 'Completada', type: 'date-range' },
+        { field: 'createdAt', label: 'Creada', type: 'date-range' },
+        { field: 'updatedAt', label: 'Actualizada', type: 'date-range' }
+    ], CAMPAIGN_TABLE_COLUMNS), [moduleOptions]);
     const filteredCampaignTableRows = useMemo(() => {
-        const activeHeaderFilters = (Array.isArray(headerFilters) ? headerFilters : []).filter((filterItem) => {
-            const columnKey = toText(filterItem?.columnKey);
-            const operator = toLower(filterItem?.operator || 'contains');
-            if (!columnKey) return false;
-            if (operator === 'is_empty' || operator === 'not_empty') return true;
-            return Boolean(toText(filterItem?.value));
-        });
-        return activeHeaderFilters.reduce((currentRows, filterItem) => {
-            const columnKey = toText(filterItem?.columnKey);
-            return currentRows.filter((row) => matchesTextFilter(row?.[columnKey], filterItem?.value, filterItem?.operator));
-        }, campaignTableRows);
-    }, [campaignTableRows, headerFilters]);
+        return applyEntityFilters(campaignTableRows, normalizeFilterItems(headerFilters), campaignHeaderFilterDefinitions);
+    }, [campaignHeaderFilterDefinitions, campaignTableRows, headerFilters]);
     const sortedCampaignTableRows = useMemo(
         () => applyCampaignSort(filteredCampaignTableRows, columnPrefs.sort),
         [filteredCampaignTableRows, columnPrefs.sort]
@@ -3177,21 +3187,10 @@ export default React.memo(function CampaignsSection(props = {}) {
                 </div>
             )}
             filters={{
-                columns: [
-                    ...CAMPAIGN_TABLE_COLUMNS.map((column) => ({
-                        key: column.key,
-                        label: column.label,
-                        type: column.type || 'text',
-                        options: column.key === 'status'
-                            ? Object.keys(STATUS_META).map((key) => ({ value: key, label: STATUS_META[key].label }))
-                            : (column.key === 'moduleId'
-                                ? moduleOptions.map((item) => ({ value: item.moduleId, label: item.label }))
-                                : undefined)
-                    }))
-                ],
+                columns: campaignHeaderFilterDefinitions,
                 items: headerFilters,
                 onItemsChange: setHeaderFilters,
-                onClear: () => setHeaderFilters([{ id: 'campaigns_filter_1', columnKey: '', operator: 'contains', value: '' }])
+                onClear: () => setHeaderFilters([createEmptyFilterItem()])
             }}
             sortConfig={{
                 columns: CAMPAIGN_TABLE_COLUMNS,
