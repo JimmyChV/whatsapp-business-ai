@@ -45,7 +45,11 @@ export function upsertMessageById(messages = [], nextMessage = null) {
   }
 
   const merged = [...safeMessages];
-  merged[existingIndex] = { ...merged[existingIndex], ...safeNextMessage };
+  const existingMessage = merged[existingIndex] && typeof merged[existingIndex] === 'object'
+    ? merged[existingIndex]
+    : {};
+  const preservedClientTempId = String(safeNextMessage?.clientTempId || existingMessage?.clientTempId || '').trim() || null;
+  merged[existingIndex] = { ...existingMessage, ...safeNextMessage, clientTempId: preservedClientTempId };
   return merged;
 }
 
@@ -61,6 +65,10 @@ export function replaceMessageByClientTempId(messages = [], clientTempId = '', s
   }
 
   const next = [...safeMessages];
-  next[existingIndex] = { ...next[existingIndex], ...safeServerMessage };
+  const existingMessage = next[existingIndex] && typeof next[existingIndex] === 'object'
+    ? next[existingIndex]
+    : {};
+  const preservedClientTempId = String(safeServerMessage?.clientTempId || existingMessage?.clientTempId || '').trim() || null;
+  next[existingIndex] = { ...existingMessage, ...safeServerMessage, clientTempId: preservedClientTempId };
   return next;
 }
