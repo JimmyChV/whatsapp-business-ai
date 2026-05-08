@@ -191,6 +191,15 @@ export default function useChatMessageActions({
     const sessionSenderIdentity = resolveSessionSenderIdentity();
     const safeModuleId = String(activeChatScopeModuleId || '').trim() || null;
     const safeModuleName = String(activeChatScopeModuleName || '').trim() || null;
+    const normalizedRetryPayload = retryPayload && typeof retryPayload === 'object'
+      ? {
+        ...retryPayload,
+        payload: {
+          ...(retryPayload.payload && typeof retryPayload.payload === 'object' ? retryPayload.payload : {}),
+          clientTempId: String(retryPayload?.payload?.clientTempId || clientTempId).trim() || clientTempId
+        }
+      }
+      : null;
     const optimisticMessage = {
       id: clientTempId,
       clientTempId,
@@ -216,7 +225,7 @@ export default function useChatMessageActions({
       sentByRole: String(sessionSenderIdentity?.role || '').trim() || null,
       sentViaModuleId: safeModuleId,
       sentViaModuleName: safeModuleName,
-      retryPayload: retryPayload && typeof retryPayload === 'object' ? retryPayload : null,
+      retryPayload: normalizedRetryPayload,
       ...(extraFields && typeof extraFields === 'object' ? extraFields : {})
     };
 
@@ -234,7 +243,7 @@ export default function useChatMessageActions({
         }
         : chat
     )));
-    rememberPendingOutgoing(safeChatId, clientTempId, retryPayload);
+    rememberPendingOutgoing(safeChatId, clientTempId, normalizedRetryPayload);
     return optimisticMessage;
   }, [
     activeChatIdRef,
@@ -576,7 +585,7 @@ export default function useChatMessageActions({
 
     const optimisticBody = buildCatalogProductCaptionPreview(payload.product);
 
-    insertOptimisticOutgoing({
+    const optimisticMessage = insertOptimisticOutgoing({
       chatId: activeId,
       body: optimisticBody || productTitle,
       hasMedia: Boolean(imageUrl),
@@ -588,7 +597,10 @@ export default function useChatMessageActions({
       }
     });
 
-    socket.emit('send_catalog_product', payload);
+    socket.emit('send_catalog_product', {
+      ...payload,
+      clientTempId: String(optimisticMessage?.clientTempId || '').trim() || null
+    });
     return true;
   }, [
     activeChatId,
@@ -652,8 +664,9 @@ export default function useChatMessageActions({
       const primaryAsset = draftMediaAssets[0] || null;
       const primaryMimeType = String(draftQuickReply.mediaMimeType || primaryAsset?.mimeType || '').trim().toLowerCase();
       const primaryFileName = String(draftQuickReply.mediaFileName || primaryAsset?.fileName || '').trim();
+      let quickReplyOptimisticMessage = null;
       if (draftMediaAssets.length > 0) {
-        insertOptimisticOutgoing({
+        quickReplyOptimisticMessage = insertOptimisticOutgoing({
           chatId: activeChatId,
           body: outboundText || primaryFileName || 'Adjunto',
           hasMedia: true,
@@ -696,7 +709,8 @@ export default function useChatMessageActions({
         to: activeChatId,
         toPhone,
         quotedMessageId,
-        quotedMessage
+        quotedMessage,
+        clientTempId: String(quickReplyOptimisticMessage?.clientTempId || '').trim() || null
       });
       setQuickReplyDraft(null);
       setInputText('');
@@ -708,16 +722,16 @@ export default function useChatMessageActions({
       const sendPayload = {
         to: activeChatId,
         toPhone,
-        body: inputText,
+        body: text,
         mediaData: attachment.data,
         mimetype: attachment.mimetype,
         filename: attachment.filename,
         quotedMessageId,
         quotedMessage
       };
-      insertOptimisticOutgoing({
+      const optimisticMessage = insertOptimisticOutgoing({
         chatId: activeChatId,
-        body: String(inputText || '').trim() || String(attachment.filename || '').trim() || 'Adjunto',
+        body: text || String(attachment.filename || '').trim() || 'Adjunto',
         hasMedia: true,
         type: resolveOptimisticMediaType(attachment.mimetype, attachment.filename),
         mimetype: attachment.mimetype,
@@ -729,26 +743,32 @@ export default function useChatMessageActions({
           payload: sendPayload
         }
       });
-      socket.emit('send_media_message', sendPayload);
+      socket.emit('send_media_message', {
+        ...sendPayload,
+        clientTempId: String(optimisticMessage?.clientTempId || '').trim() || null
+      });
       removeAttachment();
     } else {
       const sendPayload = {
         to: activeChatId,
         toPhone,
-        body: inputText,
+        body: text,
         quotedMessageId,
         quotedMessage
       };
-      insertOptimisticOutgoing({
+      const optimisticMessage = insertOptimisticOutgoing({
         chatId: activeChatId,
-        body: inputText,
+        body: text,
         quotedMessage,
         retryPayload: {
           eventName: 'send_message',
           payload: sendPayload
         }
       });
-      socket.emit('send_message', sendPayload);
+      socket.emit('send_message', {
+        ...sendPayload,
+        clientTempId: String(optimisticMessage?.clientTempId || '').trim() || null
+      });
     }
     setInputText('');
     setReplyingMessage(null);

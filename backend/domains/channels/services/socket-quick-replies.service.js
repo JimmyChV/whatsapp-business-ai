@@ -189,9 +189,12 @@ function createSocketQuickRepliesService({
                         if (sentAssetMessageId && agentMeta) rememberOutgoingAgentMeta(sentAssetMessageId, agentMeta);
 
                         await emitRealtimeOutgoingMessage({
-                            sentMessage: sentAssetMessage,
+                            sentMessage: sentAssetMessage && typeof sentAssetMessage === 'object'
+                                ? { ...sentAssetMessage, clientTempId: String(payload?.clientTempId || '').trim() || null }
+                                : sentAssetMessage,
                             fallbackChatId: target.targetChatId,
                             fallbackBody: captionText,
+                            clientTempId: String(payload?.clientTempId || '').trim() || null,
                             quotedMessageId: quotedMessageId || '',
                             quotedMessage: quotedMessageId ? quotedMessage : null,
                             moduleContext,
@@ -215,9 +218,12 @@ function createSocketQuickRepliesService({
                     if (sentMessageId && agentMeta) rememberOutgoingAgentMeta(sentMessageId, agentMeta);
 
                     await emitRealtimeOutgoingMessage({
-                        sentMessage,
+                        sentMessage: sentMessage && typeof sentMessage === 'object'
+                            ? { ...sentMessage, clientTempId: String(payload?.clientTempId || '').trim() || null }
+                            : sentMessage,
                         fallbackChatId: target.targetChatId,
                         fallbackBody: bodyText,
+                        clientTempId: String(payload?.clientTempId || '').trim() || null,
                         quotedMessageId: quoted,
                         quotedMessage,
                         moduleContext,

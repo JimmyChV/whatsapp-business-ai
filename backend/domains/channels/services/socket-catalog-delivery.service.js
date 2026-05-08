@@ -104,7 +104,9 @@ function createSocketCatalogDeliveryService({
                 }
 
                 await emitRealtimeOutgoingMessage({
-                    sentMessage: sentResponse || {
+                    sentMessage: sentResponse && typeof sentResponse === 'object'
+                        ? { ...sentResponse, clientTempId: String(payload?.clientTempId || '').trim() || null }
+                        : (sentResponse || {
                         id: sentMessageId ? { _serialized: sentMessageId } : null,
                         to: target.targetChatId,
                         body: caption,
@@ -112,10 +114,12 @@ function createSocketCatalogDeliveryService({
                         timestamp: Math.floor(Date.now() / 1000),
                         ack: 1,
                         hasMedia: sentWithImage,
-                        type: sentWithImage ? 'image' : 'chat'
-                    },
+                        type: sentWithImage ? 'image' : 'chat',
+                        clientTempId: String(payload?.clientTempId || '').trim() || null
+                    }),
                     fallbackChatId: target.targetChatId,
                     fallbackBody: caption,
+                    clientTempId: String(payload?.clientTempId || '').trim() || null,
                     moduleContext,
                     agentMeta,
                     mediaPayload: catalogMediaPayload
