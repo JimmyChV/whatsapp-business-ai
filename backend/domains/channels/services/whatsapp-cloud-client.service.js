@@ -1395,6 +1395,8 @@ class WhatsAppCloudClient extends EventEmitter {
                     : null
             };
         } else if (type === 'order') {
+            console.log('[ORDER RAW]', JSON.stringify(msg.order, null, 2));
+            console.log('[ORDER ITEMS]', JSON.stringify(msg.order?.product_items, null, 2));
             const orderPayload = msg?.order && typeof msg.order === 'object' ? msg.order : {};
             const fallbackTitle = String(
                 orderPayload?.order_title
