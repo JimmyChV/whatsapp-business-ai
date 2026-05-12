@@ -134,12 +134,24 @@ function createSocketOrderDebugHelpers({
                 || msg?.order?.catalog_name
                 || msg?.order?.text
                 || '';
-            let products = collectProductsFromUnknownShape({
-                msgOrder: msg?.order,
-                msgOrderProducts: msg?.orderProducts,
-                native: msg,
-                raw: data
-            });
+            let products = [];
+            if (Array.isArray(msg?.orderProducts) && msg.orderProducts.length > 0) {
+                products = msg.orderProducts.map((item) => ({
+                    name: String(item?.name || item?.sku || '').trim() || 'Producto',
+                    quantity: Math.max(1, Number(item?.quantity) || 1),
+                    price: item?.price ?? null,
+                    lineTotal: item?.lineTotal ?? null,
+                    sku: item?.sku || null,
+                    currency: item?.currency || 'PEN'
+                }));
+            } else {
+                products = collectProductsFromUnknownShape({
+                    msgOrder: msg?.order,
+                    msgOrderProducts: msg?.orderProducts,
+                    native: msg,
+                    raw: data
+                });
+            }
 
             if (!products.length) {
                 products = parseProductsFromBodyText(msg?.body || data?.body || '');
