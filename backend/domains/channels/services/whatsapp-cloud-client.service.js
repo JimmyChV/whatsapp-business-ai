@@ -8,6 +8,7 @@ const {
     randomMessageId,
     ackFromCloudStatus,
     parseMoneyLike,
+    parseQuantityLike,
     buildOrderLineFromCloud,
     compactObject,
     normalizeRuntimeCloudConfig
