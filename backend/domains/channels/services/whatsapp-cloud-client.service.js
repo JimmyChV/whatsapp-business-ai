@@ -1354,7 +1354,7 @@ class WhatsAppCloudClient extends EventEmitter {
             mimetype: null,
             filename: null,
             fileSizeBytes: null,
-            quotedMessageId: String(msg?.context?.id || '').trim() || null,
+            quotedMessageId: String(msg?.context?.id || msg?.context?.message_id || '').trim() || null,
             order: null,
             orderProducts: null,
             location: null,

@@ -195,6 +195,17 @@ function createSocketWaEventsBridgeService({
 
         try {
             if (getStorageDriver() === 'postgres') {
+                const quoteStatus = await queryPostgres(
+                    `SELECT status
+                       FROM tenant_quotes
+                      WHERE tenant_id = $1
+                        AND quote_id = $2
+                      LIMIT 1`,
+                    [tenantId, quoteId]
+                );
+                const currentQuoteStatus = String(quoteStatus?.rows?.[0]?.status || '').trim().toLowerCase();
+                if (currentQuoteStatus === 'accepted') return true;
+
                 const quoteUpdate = await queryPostgres(
                     `UPDATE tenant_quotes
                         SET status = $3,
