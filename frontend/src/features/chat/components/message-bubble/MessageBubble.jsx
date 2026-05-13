@@ -54,6 +54,7 @@ const MessageBubble = ({
     canEditMessages = false,
     showSenderName = false,
     senderDisplayName = '',
+    catalog = [],
     buildApiHeaders,
 }) => {
     const {
@@ -128,13 +129,21 @@ const MessageBubble = ({
         return variants?.[preferredSkinTone] || emoji;
     });
 
-    const shouldHideBodyForOrder = isQuotePayload || (hasOrder && isLikelyBinaryBody(messageBodyText));
+    const shouldHideBodyForOrder = isQuotePayload || (hasOrder && isOrderPayload) || (hasOrder && isLikelyBinaryBody(messageBodyText));
     const messageTextToRender = isCatalogItem
         ? 'Te gustaria que te lo separemos?'
         : ((isLocationMessage && locationData?.source === 'native') ? '' : (shouldHideBodyForOrder ? '' : (msg.body || '')));
     const firstNonMapUrl = extractFirstNonMapUrlFromText(messageBodyText);
     const showWebPreview = Boolean(firstNonMapUrl && !isLocationMessage && !msg?.hasMedia && !hasOrder && !isCatalogItem && !isOrderActionable);
     const phoneCandidates = extractPhoneCandidatesFromText(messageTextToRender);
+    const catalogBySku = React.useMemo(() => {
+        const map = new Map();
+        (Array.isArray(catalog) ? catalog : []).forEach((item) => {
+            const sku = String(item?.sku || item?.id || '').trim().toUpperCase();
+            if (sku && !map.has(sku)) map.set(sku, item);
+        });
+        return map;
+    }, [catalog]);
     const orderCardTotals = React.useMemo(() => {
         if (isProductPayload || isQuotePayload || !Array.isArray(orderItems) || orderItems.length === 0) {
             return { total: 0, savings: 0, totalLabel: '', savingsLabel: '' };
@@ -147,10 +156,14 @@ const MessageBubble = ({
             const qty = Math.max(1, Number.isFinite(Number(item?.qty))
                 ? Number(item.qty)
                 : (Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1));
+            const skuKey = String(item?.sku || item?.id || '').trim().toUpperCase();
+            const matchedCatalogItem = skuKey ? catalogBySku.get(skuKey) : null;
             const finalUnit = Math.max(0, parseOrderCardMoney(item?.price ?? item?.unitPrice, 0));
             const finalLine = Math.max(0, parseOrderCardMoney(item?.lineTotal ?? item?.total, finalUnit * qty));
-            const regularUnit = Math.max(0, parseOrderCardMoney(item?.regularPrice ?? item?.regular_price, finalUnit));
-            const regularLine = regularUnit > finalUnit ? regularUnit * qty : finalLine;
+            const regularUnit = matchedCatalogItem
+                ? Math.max(0, parseOrderCardMoney(matchedCatalogItem?.regularPrice ?? matchedCatalogItem?.regular_price, finalUnit))
+                : finalUnit;
+            const regularLine = regularUnit - finalUnit > 0.01 ? regularUnit * qty : finalLine;
             return {
                 total: acc.total + finalLine,
                 savings: acc.savings + Math.max(0, regularLine - finalLine)
@@ -161,7 +174,7 @@ const MessageBubble = ({
             totalLabel: totals.total > 0 ? formatOrderMoney(totals.total, actionOrder?.currency || 'PEN') : '',
             savingsLabel: totals.savings > 0 ? formatOrderMoney(totals.savings, actionOrder?.currency || 'PEN') : ''
         };
-    }, [actionOrder?.currency, isProductPayload, isQuotePayload, orderItems]);
+    }, [actionOrder?.currency, catalogBySku, isProductPayload, isQuotePayload, orderItems]);
     const orderCatalogFooterText = React.useMemo(() => {
         const itemCount = Number(actionOrder?.rawPreview?.itemCount || reportedItemCount || 0);
         if (Number.isFinite(itemCount) && itemCount > 0) {
@@ -556,8 +569,12 @@ const MessageBubble = ({
                         return (
                             <div key={idx} className="message-order-card__line-item">
                                 <span className="message-order-card__line-item-name">
-                                    <span>{itemTitle} x{itemQty}</span>
-                                    {item?.sku ? <small className="message-order-card__meta">SKU: {item.sku}</small> : null}
+                                    <span>{itemTitle} × {itemQty}</span>
+                                    {item?.sku ? (
+                                        <small className="message-order-card__meta" style={{ display: 'block', marginTop: 2, opacity: 0.72 }}>
+                                            SKU: {item.sku}
+                                        </small>
+                                    ) : null}
                                 </span>
                                 <span className="message-order-card__line-item-amount">{itemAmount || ''}</span>
                             </div>
@@ -568,7 +585,7 @@ const MessageBubble = ({
                     {!isProductPayload && !isQuotePayload && orderItems.length > 0 && orderCardTotals.savingsLabel && (
                         <div className="message-order-card__summary-row">
                             <span>Ahorro</span>
-                            <strong>{orderCardTotals.savingsLabel}</strong>
+                            <strong style={{ color: 'var(--saas-accent-primary)' }}>{orderCardTotals.savingsLabel}</strong>
                         </div>
                     )}
                     {!isProductPayload && !isQuotePayload && orderItems.length > 0 && orderCardTotals.totalLabel && (

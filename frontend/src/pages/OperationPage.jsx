@@ -250,6 +250,7 @@ export default function OperationPage({
             <ChatWindow
               activeChatDetails={mergedActiveChatDetails}
               messages={messages}
+              businessData={businessData}
               messagesEndRef={messagesEndRef}
               isDragOver={isDragOver}
               onDragOver={handleDragOver}

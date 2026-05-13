@@ -46,6 +46,7 @@ const ChatWindow = ({
     buildApiHeaders,
     activeTenantId = '',
     currentUserRole = '',
+    businessData = {},
     waModules = [],
     chatAssignmentState = null,
     chatCommercialStatusState = null,
@@ -419,6 +420,7 @@ const ChatWindow = ({
                                     onDeleteMessage={onDeleteMessage}
                                     forwardChatOptions={forwardChatOptions}
                                     activeChatId={activeChatDetails?.id}
+                                    catalog={businessData?.catalog || []}
                                     showSenderName={Boolean(activeChatDetails?.isGroup && !msg?.fromMe)}
                                     senderDisplayName={senderDisplayName}
                                     canEditMessages={canEditMessages}
@@ -587,7 +589,6 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
-
 
 
 
