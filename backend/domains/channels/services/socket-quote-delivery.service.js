@@ -18,6 +18,11 @@ function toFiniteNumberOrNull(value) {
     return Number.isFinite(num) ? num : null;
 }
 
+function formatSoles(value) {
+    const num = toFiniteNumberOrNull(value) ?? 0;
+    return 'S/ ' + Math.max(0, num).toFixed(2);
+}
+
 function normalizeQuoteItem(item = {}, index = 0, currency = 'PEN') {
     const source = isPlainObject(item) ? item : {};
     const itemId = toNullableText(source.itemId || source.id || source.productId || ('item_' + (index + 1)));
@@ -99,22 +104,63 @@ function normalizeStructuredQuote(payload = {}) {
     };
 }
 
+function resolveQuoteSourceType(metadata = {}, payload = {}) {
+    const sourceMessageId = toText(
+        metadata?.sourceMessageId
+        || metadata?.source_message_id
+        || metadata?.orderMessageId
+        || metadata?.order_message_id
+        || payload?.sourceMessageId
+        || payload?.source_message_id
+        || payload?.orderMessageId
+        || payload?.order_message_id
+    );
+    if (sourceMessageId) return 'order';
+
+    const rawType = toText(metadata?.sourceType || metadata?.source_type || metadata?.source || payload?.sourceType || payload?.source_type).toLowerCase();
+    return rawType.includes('order') ? 'order' : 'quote';
+}
+
 function buildQuoteMessageBody(quote = {}, fallbackBody = '') {
-    const explicitBody = toText(fallbackBody);
-    if (explicitBody) return explicitBody;
+    const sourceType = toText(quote?.metadata?.sourceType || quote?.metadata?.source_type).toLowerCase();
+    const header = sourceType === 'order'
+        ? '🛒 *Lávitat® · Resumen de tu pedido*'
+        : '📋 *Lávitat® · Cotización para ti*';
+    const items = Array.isArray(quote?.items) ? quote.items : [];
+    const summary = isPlainObject(quote?.summary) ? quote.summary : {};
+    const lines = items.map((item) => {
+        const title = toText(item?.title || item?.name || item?.sku || 'Producto') || 'Producto';
+        const qty = Math.max(1, toFiniteNumberOrNull(item?.qty ?? item?.quantity) ?? 1);
+        const total = toFiniteNumberOrNull(item?.lineTotal ?? item?.total ?? item?.price ?? item?.unitPrice) ?? 0;
+        return `${title} × ${qty}      ${formatSoles(total)}`;
+    });
 
-    const quoteIdLabel = quote?.quoteId ? ' #' + quote.quoteId : '';
-    const itemCount = Number.isInteger(Number(quote?.summary?.itemCount))
-        ? Number(quote.summary.itemCount)
-        : Array.isArray(quote?.items)
-            ? quote.items.length
-            : 0;
-    const totalPayable = toFiniteNumberOrNull(quote?.summary?.totalPayable);
-    const currency = toText(quote?.currency || quote?.summary?.currency || 'PEN') || 'PEN';
-    const totalLine = totalPayable !== null ? '\nTotal: ' + currency + ' ' + totalPayable.toFixed(1) : '';
-    const notesLine = quote?.notes ? '\n' + quote.notes : '';
+    const discount = toFiniteNumberOrNull(summary?.discount) ?? 0;
+    const deliveryAmount = toFiniteNumberOrNull(summary?.deliveryAmount) ?? 0;
+    const deliveryLabel = Boolean(summary?.deliveryFree) || deliveryAmount <= 0
+        ? 'Gratuito'
+        : formatSoles(deliveryAmount);
+    const totalPayable = toFiniteNumberOrNull(summary?.totalPayable)
+        ?? Math.max(0, (toFiniteNumberOrNull(summary?.totalAfterDiscount) ?? 0) + (Boolean(summary?.deliveryFree) ? 0 : deliveryAmount));
 
-    return ('Cotizacion' + quoteIdLabel + '\nItems: ' + itemCount + totalLine + notesLine).trim();
+    const totalLines = ['────────────────────────────────'];
+    if (discount > 0) {
+        totalLines.push(`Descuento                      - ${formatSoles(discount)}`);
+    }
+    totalLines.push(`Delivery                       ${deliveryLabel}`);
+    totalLines.push(`Total a pagar                 ${formatSoles(totalPayable)}`);
+
+    const notesLine = quote?.notes ? ['', toText(quote.notes)] : [];
+    const fallbackLine = !items.length && toText(fallbackBody) ? ['', toText(fallbackBody)] : [];
+
+    return [
+        header,
+        '',
+        ...lines,
+        ...totalLines,
+        ...notesLine,
+        ...fallbackLine
+    ].join('\n').trim();
 }
 
 function buildQuoteInteractiveMessage(quoteId, body) {
@@ -302,7 +348,16 @@ function createSocketQuoteDeliveryService({
 
                 const moduleContext = target.moduleContext || socket?.data?.waModule || null;
                 const actorUserId = resolveActorUserId(authContext);
-                const quoteBody = buildQuoteMessageBody(incomingQuote, payload?.body || payload?.message || '');
+                const quoteSourceType = resolveQuoteSourceType(incomingQuote.metadata, payload);
+                const quoteMetadata = {
+                    ...(incomingQuote.metadata || {}),
+                    source: 'socket.send_structured_quote',
+                    sourceType: quoteSourceType
+                };
+                const quoteBody = buildQuoteMessageBody({
+                    ...incomingQuote,
+                    metadata: quoteMetadata
+                }, payload?.body || payload?.message || '');
                 const quotedMessageId = toText(payload?.quotedMessageId || payload?.quoted || '');
 
                 const createdQuote = await resolvedQuotesService.createQuoteRecord(tenantId, {
@@ -318,16 +373,14 @@ function createSocketQuoteDeliveryService({
                     createdByUserId: actorUserId,
                     updatedByUserId: actorUserId,
                     sentAt: null,
-                    metadata: {
-                        ...(incomingQuote.metadata || {}),
-                        source: 'socket.send_structured_quote'
-                    }
+                    metadata: quoteMetadata
                 });
 
                 const effectiveQuoteId = toNullableText(createdQuote?.quoteId || incomingQuote.quoteId);
                 const normalizedQuote = {
                     ...incomingQuote,
-                    quoteId: effectiveQuoteId || incomingQuote.quoteId || null
+                    quoteId: effectiveQuoteId || incomingQuote.quoteId || null,
+                    metadata: quoteMetadata
                 };
 
                 const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
