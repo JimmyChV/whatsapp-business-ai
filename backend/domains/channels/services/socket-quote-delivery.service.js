@@ -151,7 +151,7 @@ function resolveQuoteSourceType(metadata = {}, payload = {}) {
 }
 
 function buildQuoteMessageBody(quote = {}, fallbackBody = '') {
-    const separator = '──────────────────────────────';
+    const separator = '──────────────────';
     const sourceType = toText(quote?.metadata?.sourceType || quote?.metadata?.source_type).toLowerCase();
     const header = sourceType === 'order'
         ? '🛒 *RESUMEN DE PEDIDO*'
