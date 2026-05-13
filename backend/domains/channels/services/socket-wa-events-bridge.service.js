@@ -7,6 +7,7 @@ const {
     customerModuleContextsService: customerModuleContextsServiceFallback,
     customerConsentService: customerConsentServiceFallback
 } = require('../../operations/services');
+const catalogManagerService = require('../../tenant/services/catalog-manager.service');
 
 function createSocketWaEventsBridgeService({
     waClient,
@@ -180,6 +181,49 @@ function createSocketWaEventsBridgeService({
         );
     };
 
+    async function enrichOrderProducts(tenantId, order) {
+        if (!order || !Array.isArray(order.products) || !order.products.length) return order;
+        try {
+            const skus = order.products.map((p) => p.sku).filter(Boolean);
+            if (!skus.length) return order;
+            const catalogItems = await catalogManagerService.getCatalogItemsBySkus(tenantId, skus);
+            if (!Array.isArray(catalogItems) || !catalogItems.length) return order;
+            const catalogMap = new Map(
+                catalogItems.map((ci) => [String(ci.id || '').trim().toUpperCase(), ci])
+            );
+            const enriched = order.products.map((p) => {
+                const key = String(p.sku || '').trim().toUpperCase();
+                const match = catalogMap.get(key);
+                if (!match) return p;
+                const updated = { ...p };
+                if (match.title && !match.title.startsWith('SKU ')) {
+                    updated.name = match.title;
+                }
+                const salePrice = match.metadata?.salePrice
+                    ?? match.metadata?.sale_price
+                    ?? match.metadata?.precio_oferta
+                    ?? null;
+                const saleParsed = salePrice !== null
+                    ? Math.round(Number(salePrice) * 100) / 100 : null;
+                const regularParsed = match.price
+                    ? Math.round(Number(match.price) * 100) / 100 : null;
+                const finalPrice = Number.isFinite(saleParsed) && saleParsed > 0
+                    ? saleParsed
+                    : (Number.isFinite(regularParsed) && regularParsed > 0
+                        ? regularParsed : null);
+                if (finalPrice) {
+                    updated.price = finalPrice;
+                    updated.lineTotal = Math.round((finalPrice * (p.quantity || 1)) * 100) / 100;
+                }
+                return updated;
+            });
+            return { ...order, products: enriched };
+        } catch (err) {
+            console.warn('[enrichOrderProducts] skipped:', err?.message);
+            return order;
+        }
+    }
+
     const registerWaProviderEvents = () => {
         waClient.on('qr', (qr) => emitToRuntimeContext('qr', qr));
         waClient.on('ready', async () => {
@@ -338,12 +382,15 @@ function createSocketWaEventsBridgeService({
                             updatedAt: new Date().toISOString()
                         });
                     }
+                    const enrichedOrder = order
+                        ? await enrichOrderProducts(historyTenantId, order)
+                        : order;
 
                     await persistMessageHistory(historyTenantId, {
                         msg,
                         senderMeta,
                         fileMeta,
-                        order,
+                        order: enrichedOrder,
                         location,
                         quotedMessage,
                         agentMeta,
@@ -549,11 +596,14 @@ function createSocketWaEventsBridgeService({
             const quotedMessage = await extractQuotedMessageInfo(msg);
             const order = extractOrderInfo(msg);
             const location = extractLocationInfo(msg);
+            const enrichedOrder = order
+                ? await enrichOrderProducts(historyTenantId, order)
+                : order;
             await persistMessageHistory(historyTenantId, {
                 msg,
                 senderMeta: null,
                 fileMeta,
-                order,
+                order: enrichedOrder,
                 location,
                 quotedMessage,
                 agentMeta,
