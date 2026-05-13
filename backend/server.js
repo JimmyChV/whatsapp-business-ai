@@ -64,6 +64,7 @@ const {
     assignmentRulesService,
     chatAssignmentRouterService,
     chatAssignmentInactivityJobService,
+    quoteExpiryJobService,
     operationsKpiService,
     globalLabelsService,
     opsTelemetry,
@@ -529,6 +530,11 @@ const campaignDispatcherJob = campaignDispatcherJobService.createCampaignDispatc
     logger,
     opsTelemetry
 });
+const quoteExpiryJob = quoteExpiryJobService.createQuoteExpiryJob({
+    tenantService,
+    logger,
+    opsTelemetry
+});
 
 registerProcessHandlers();
 
@@ -549,6 +555,7 @@ async function startServer() {
         logger.info(`[WA] transport requested=${runtime.requestedTransport} active=${runtime.activeTransport} cloudConfigured=${runtime.cloudConfigured}`);
         chatAssignmentInactivityJob.start();
         campaignDispatcherJob.start();
+        quoteExpiryJob.start();
         scheduleWaInitialize();
     });
 }
