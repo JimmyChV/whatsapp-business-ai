@@ -135,6 +135,40 @@ const MessageBubble = ({
     const firstNonMapUrl = extractFirstNonMapUrlFromText(messageBodyText);
     const showWebPreview = Boolean(firstNonMapUrl && !isLocationMessage && !msg?.hasMedia && !hasOrder && !isCatalogItem && !isOrderActionable);
     const phoneCandidates = extractPhoneCandidatesFromText(messageTextToRender);
+    const orderCardTotals = React.useMemo(() => {
+        if (isProductPayload || isQuotePayload || !Array.isArray(orderItems) || orderItems.length === 0) {
+            return { total: 0, savings: 0, totalLabel: '', savingsLabel: '' };
+        }
+        const parseOrderCardMoney = (value, fallback = 0) => {
+            const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
+            return Number.isFinite(parsed) ? parsed : fallback;
+        };
+        const totals = orderItems.reduce((acc, item) => {
+            const qty = Math.max(1, Number.isFinite(Number(item?.qty))
+                ? Number(item.qty)
+                : (Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1));
+            const finalUnit = Math.max(0, parseOrderCardMoney(item?.price ?? item?.unitPrice, 0));
+            const finalLine = Math.max(0, parseOrderCardMoney(item?.lineTotal ?? item?.total, finalUnit * qty));
+            const regularUnit = Math.max(0, parseOrderCardMoney(item?.regularPrice ?? item?.regular_price, finalUnit));
+            const regularLine = regularUnit > finalUnit ? regularUnit * qty : finalLine;
+            return {
+                total: acc.total + finalLine,
+                savings: acc.savings + Math.max(0, regularLine - finalLine)
+            };
+        }, { total: 0, savings: 0 });
+        return {
+            ...totals,
+            totalLabel: totals.total > 0 ? formatOrderMoney(totals.total, actionOrder?.currency || 'PEN') : '',
+            savingsLabel: totals.savings > 0 ? formatOrderMoney(totals.savings, actionOrder?.currency || 'PEN') : ''
+        };
+    }, [actionOrder?.currency, isProductPayload, isQuotePayload, orderItems]);
+    const orderCatalogFooterText = React.useMemo(() => {
+        const itemCount = Number(actionOrder?.rawPreview?.itemCount || reportedItemCount || 0);
+        if (Number.isFinite(itemCount) && itemCount > 0) {
+            return `Pedido via catalogo WhatsApp - ${itemCount} productos`;
+        }
+        return 'Pedido via catalogo WhatsApp';
+    }, [actionOrder?.rawPreview?.itemCount, reportedItemCount]);
     const { webPreview, webPreviewLoading } = useMessageBubbleLinkPreview({
         showWebPreview,
         firstNonMapUrl,
@@ -521,21 +555,36 @@ const MessageBubble = ({
                         const itemTitle = String(item?.name || item?.title || item?.sku || 'Producto').trim() || 'Producto';
                         return (
                             <div key={idx} className="message-order-card__line-item">
-                                <span className="message-order-card__line-item-name">- {itemTitle} x{itemQty}{item?.sku ? ` (SKU: ${item.sku})` : ''}</span>
+                                <span className="message-order-card__line-item-name">
+                                    <span>{itemTitle} x{itemQty}</span>
+                                    {item?.sku ? <small className="message-order-card__meta">SKU: {item.sku}</small> : null}
+                                </span>
                                 <span className="message-order-card__line-item-amount">{itemAmount || ''}</span>
                             </div>
                         );
                     }) : (
                         <div className="message-order-card__hint">Se recibio un pedido desde catalogo de WhatsApp.</div>
                     )}
+                    {!isProductPayload && !isQuotePayload && orderItems.length > 0 && orderCardTotals.savingsLabel && (
+                        <div className="message-order-card__summary-row">
+                            <span>Ahorro</span>
+                            <strong>{orderCardTotals.savingsLabel}</strong>
+                        </div>
+                    )}
+                    {!isProductPayload && !isQuotePayload && orderItems.length > 0 && orderCardTotals.totalLabel && (
+                        <div className="message-order-card__summary-row total">
+                            <span>Total</span>
+                            <strong>{orderCardTotals.totalLabel}</strong>
+                        </div>
+                    )}
                     {!isProductPayload && !isQuotePayload && safeOrderNote && (
                         <div className="message-order-card__meta with-gap">
                             Nota cliente: {safeOrderNote}
                         </div>
                     )}
-                    {!isProductPayload && !isQuotePayload && actionOrder?.rawPreview?.itemCount && (
+                    {!isProductPayload && !isQuotePayload && (
                         <div className="message-order-card__meta">
-                            Items reportados: {actionOrder.rawPreview.itemCount}
+                            {orderCatalogFooterText}
                         </div>
                     )}
                     <div className="message-order-card__actions">
