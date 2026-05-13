@@ -117,6 +117,71 @@ function buildQuoteMessageBody(quote = {}, fallbackBody = '') {
     return ('Cotizacion' + quoteIdLabel + '\nItems: ' + itemCount + totalLine + notesLine).trim();
 }
 
+function buildQuoteInteractiveMessage(quoteId, body) {
+    const confirmTitle = '✓ Confirmar';
+    const changeTitle = '✎ Cambios';
+    if (confirmTitle.length > 20 || changeTitle.length > 20) {
+        throw new Error('Los titulos de botones de cotizacion exceden 20 caracteres.');
+    }
+
+    const safeQuoteId = toText(quoteId);
+    return {
+        type: 'button',
+        body: {
+            text: String(body || '').trim()
+        },
+        action: {
+            buttons: [
+                {
+                    type: 'reply',
+                    reply: {
+                        id: `quote_confirm_${safeQuoteId}`,
+                        title: confirmTitle
+                    }
+                },
+                {
+                    type: 'reply',
+                    reply: {
+                        id: `quote_change_${safeQuoteId}`,
+                        title: changeTitle
+                    }
+                }
+            ]
+        }
+    };
+}
+
+function buildSyntheticInteractiveSentMessage({
+    messageId,
+    chatId,
+    body,
+    interactive
+} = {}) {
+    const safeMessageId = toText(messageId);
+    if (!safeMessageId) return null;
+    const safeChatId = toText(chatId);
+    return {
+        id: {
+            _serialized: safeMessageId,
+            id: safeMessageId
+        },
+        chatId: safeChatId,
+        to: safeChatId,
+        body: String(body || ''),
+        fromMe: true,
+        type: 'interactive',
+        ack: 1,
+        timestamp: Math.floor(Date.now() / 1000),
+        hasMedia: false,
+        rawData: {
+            interactive
+        },
+        _data: {
+            interactive
+        }
+    };
+}
+
 function buildOutgoingOrderPayload(quote = {}) {
     const items = Array.isArray(quote?.items) ? quote.items : [];
     const summary = isPlainObject(quote?.summary) ? quote.summary : {};
@@ -268,14 +333,29 @@ function createSocketQuoteDeliveryService({
                 const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
 
                 let sentMessage = null;
-                if (quotedMessageId) {
-                    try {
-                        sentMessage = await waClient.sendMessage(target.targetChatId, quoteBody, { quotedMessageId });
-                    } catch (_) {
-                        sentMessage = await waClient.replyToMessage(target.targetChatId, quotedMessageId, quoteBody);
+                const quoteInteractive = buildQuoteInteractiveMessage(normalizedQuote.quoteId, quoteBody);
+                if (typeof waClient?.sendInteractiveMessage === 'function') {
+                    const interactiveMessageId = await waClient.sendInteractiveMessage(target.targetChatId, quoteInteractive);
+                    if (interactiveMessageId) {
+                        sentMessage = buildSyntheticInteractiveSentMessage({
+                            messageId: interactiveMessageId,
+                            chatId: target.targetChatId,
+                            body: quoteBody,
+                            interactive: quoteInteractive
+                        });
                     }
-                } else {
-                    sentMessage = await waClient.sendMessage(target.targetChatId, quoteBody);
+                }
+
+                if (!sentMessage) {
+                    if (quotedMessageId) {
+                        try {
+                            sentMessage = await waClient.sendMessage(target.targetChatId, quoteBody, { quotedMessageId });
+                        } catch (_) {
+                            sentMessage = await waClient.replyToMessage(target.targetChatId, quotedMessageId, quoteBody);
+                        }
+                    } else {
+                        sentMessage = await waClient.sendMessage(target.targetChatId, quoteBody);
+                    }
                 }
 
                 const sentMessageId = getSerializedMessageId(sentMessage);

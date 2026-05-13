@@ -852,6 +852,57 @@ class WhatsAppCloudClient extends EventEmitter {
         return response;
     }
 
+    async sendInteractiveMessage(to, interactive = {}) {
+        if (!this.isReady) throw new Error('Cloud client not ready');
+        const waId = await this.resolveSendWaId(to);
+        const safeInteractive = interactive && typeof interactive === 'object' && !Array.isArray(interactive)
+            ? interactive
+            : null;
+        if (!safeInteractive) throw new Error('interactive requerido para enviar mensaje interactivo.');
+
+        const payload = {
+            messaging_product: 'whatsapp',
+            recipient_type: 'individual',
+            to: waId,
+            type: 'interactive',
+            interactive: safeInteractive
+        };
+
+        const response = await this.graphJson(`/${this.phoneNumberId}/messages`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const messageId = String(response?.messages?.[0]?.id || randomMessageId('cloud_out_interactive'));
+        const chatId = `${waId}@c.us`;
+        const interactiveBody = String(safeInteractive?.body?.text || '').trim();
+        const message = this.upsertMessage({
+            id: messageId,
+            chatId,
+            from: this.selfChatId,
+            to: chatId,
+            body: interactiveBody,
+            fromMe: true,
+            type: 'interactive',
+            ack: 1,
+            timestamp: safeTimestamp(),
+            hasMedia: false,
+            rawData: compactObject({
+                interactive: safeInteractive,
+                interactiveType: String(safeInteractive?.type || '').trim() || null
+            })
+        }, { incoming: false, emitEvent: 'message_sent' });
+
+        if (message) {
+            this.emit('message_ack', { message, ack: 1 });
+        }
+
+        return messageId;
+    }
+
     async sendReaction(to, { messageId, emoji } = {}) {
         if (!this.isReady) throw new Error('Cloud client not ready');
         const waId = await this.resolveSendWaId(to);
