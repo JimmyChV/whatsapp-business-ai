@@ -11,7 +11,17 @@ const customerModuleContextsService = require('./customer-module-contexts.servic
 const STORE_FILE = 'chat_commercial_status.json';
 const DEFAULT_LIMIT = 60;
 const MAX_LIMIT = 500;
-const VALID_STATUSES = new Set(['nuevo', 'en_conversacion', 'cotizado', 'vendido', 'perdido']);
+const VALID_STATUSES = new Set([
+    'nuevo',
+    'en_conversacion',
+    'cotizado',
+    'aceptado',
+    'programado',
+    'atendido',
+    'expirado',
+    'vendido',
+    'perdido'
+]);
 const VALID_SOURCES = new Set(['system', 'manual', 'automation', 'campaign', 'socket', 'webhook', 'http']);
 
 let schemaReady = false;
@@ -243,7 +253,7 @@ async function ensurePostgresSchema() {
                 chat_id TEXT NOT NULL,
                 scope_module_id TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'nuevo'
-                    CHECK (status IN ('nuevo', 'en_conversacion', 'cotizado', 'vendido', 'perdido')),
+                    CHECK (status IN ('nuevo', 'en_conversacion', 'cotizado', 'aceptado', 'programado', 'atendido', 'expirado', 'vendido', 'perdido')),
                 source TEXT NOT NULL DEFAULT 'system'
                     CHECK (source IN ('system', 'manual', 'automation', 'campaign', 'socket', 'webhook', 'http')),
                 reason TEXT NULL,

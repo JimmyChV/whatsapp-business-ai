@@ -1533,15 +1533,21 @@ class WhatsAppCloudClient extends EventEmitter {
             });
         } else {
             if (type === 'interactive') {
+                const interactive = msg?.interactive && typeof msg.interactive === 'object' ? msg.interactive : null;
                 const interactiveText = String(
-                    msg?.interactive?.button_reply?.title
-                    || msg?.interactive?.list_reply?.title
-                    || msg?.interactive?.nfm_reply?.name
-                    || msg?.interactive?.nfm_reply?.body
+                    interactive?.button_reply?.title
+                    || interactive?.list_reply?.title
+                    || interactive?.nfm_reply?.name
+                    || interactive?.nfm_reply?.body
                     || ''
                 ).trim();
                 base.type = 'chat';
                 base.body = interactiveText || String(msg?.text?.body || '').trim();
+                base.rawData = compactObject({
+                    ...(base.rawData || {}),
+                    interactive,
+                    interactiveType: String(interactive?.type || '').trim() || null
+                });
             } else {
                 const fallbackBody = String(msg?.[type]?.caption || msg?.[type]?.text || msg?.text?.body || '').trim();
                 base.type = type || 'chat';
