@@ -584,10 +584,39 @@ async function deleteProduct(id, options = null) {
     await saveCatalogToFile(next, { tenantId });
 }
 
+async function getCatalogItemsBySkus(tenantId, skus = []) {
+    if (!Array.isArray(skus) || skus.length === 0) return [];
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    await ensurePostgresSchema();
+    try {
+        const upper = skus.map((s) => String(s || '').trim().toUpperCase()).filter(Boolean);
+        if (!upper.length) return [];
+        const placeholders = upper.map((_, i) => `$${i + 2}`).join(', ');
+        const { rows } = await queryPostgres(
+            `SELECT item_id, title, price, metadata
+               FROM catalog_items
+              WHERE tenant_id = $1
+                AND UPPER(item_id) = ANY(ARRAY[${placeholders}])`,
+            [cleanTenantId, ...upper]
+        );
+        return rows.map((row) => ({
+            id: String(row.item_id || '').trim(),
+            title: row.title || '',
+            price: row.price ?? '',
+            metadata: row.metadata && typeof row.metadata === 'object'
+                ? row.metadata : {}
+        }));
+    } catch (error) {
+        if (isMissingRelationError(error)) return [];
+        throw error;
+    }
+}
+
 module.exports = {
     loadCatalog,
     addProduct,
     updateProduct,
-    deleteProduct
+    deleteProduct,
+    getCatalogItemsBySkus
 };
 
