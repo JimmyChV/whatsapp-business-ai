@@ -168,8 +168,18 @@ export const usePendingOrderCartImport = ({
             const derivedUnitPrice = parseMoney(line.unitPrice, (lineTotal > 0 && qty > 0 ? (lineTotal / qty) : linePrice));
             const derivedRegularUnitPrice = lineSubtotal > 0 && qty > 0 ? (lineSubtotal / qty) : derivedUnitPrice;
 
-            const baseLine = matched
-                ? {
+            let baseLine = null;
+            if (matched && !isQuoteImport) {
+                baseLine = {
+                    ...matched,
+                    sku: matched.sku || rawSku || null,
+                    qty,
+                    lineDiscountEnabled: Boolean(matched.lineDiscountEnabled || false),
+                    lineDiscountType: matched.lineDiscountType === 'amount' ? 'amount' : 'percent',
+                    lineDiscountValue: Math.max(0, parseMoney(matched.lineDiscountValue, 0))
+                };
+            } else if (matched) {
+                baseLine = {
                     ...matched,
                     price: Math.max(0, derivedUnitPrice || 0).toFixed(2),
                     regularPrice: Math.max(0, derivedRegularUnitPrice || 0).toFixed(2),
@@ -179,8 +189,9 @@ export const usePendingOrderCartImport = ({
                     lineDiscountType,
                     lineDiscountValue,
                     lineDiscountAmount: roundMoney(lineDiscountAmount)
-                }
-                : {
+                };
+            } else {
+                baseLine = {
                     id: `meta_order_${skuKey || nameKey || idx + 1}`,
                     title: rawName || (rawSku ? `SKU ${rawSku}` : `Producto pedido ${idx + 1}`),
                     price: Math.max(0, derivedUnitPrice || 0).toFixed(2),
@@ -198,6 +209,7 @@ export const usePendingOrderCartImport = ({
                     lineDiscountValue,
                     lineDiscountAmount: roundMoney(lineDiscountAmount)
                 };
+            }
 
             if (!matched) fallbackLines += 1;
 
