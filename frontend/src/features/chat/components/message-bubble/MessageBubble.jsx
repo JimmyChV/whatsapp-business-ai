@@ -518,7 +518,7 @@ const MessageBubble = ({
                         const itemAmount = formatOrderMoney(item?.lineTotal ?? item?.price, actionOrder?.currency || 'PEN');
                         const itemQty = Number.isFinite(Number(item?.qty)) ? Number(item.qty)
                             : (Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1);
-                        const itemTitle = String(item?.title || item?.name || 'Producto').trim() || 'Producto';
+                        const itemTitle = String(item?.name || item?.title || item?.sku || 'Producto').trim() || 'Producto';
                         return (
                             <div key={idx} className="message-order-card__line-item">
                                 <span className="message-order-card__line-item-name">- {itemTitle} x{itemQty}{item?.sku ? ` (SKU: ${item.sku})` : ''}</span>
