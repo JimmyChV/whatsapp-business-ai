@@ -128,11 +128,14 @@ function buildQuoteMessageBody(quote = {}, fallbackBody = '') {
         : '📋 *Lávitat® · Cotización para ti*';
     const items = Array.isArray(quote?.items) ? quote.items : [];
     const summary = isPlainObject(quote?.summary) ? quote.summary : {};
-    const lines = items.map((item) => {
+    const lines = items.flatMap((item) => {
         const title = toText(item?.title || item?.name || item?.sku || 'Producto') || 'Producto';
         const qty = Math.max(1, toFiniteNumberOrNull(item?.qty ?? item?.quantity) ?? 1);
         const total = toFiniteNumberOrNull(item?.lineTotal ?? item?.total ?? item?.price ?? item?.unitPrice) ?? 0;
-        return `${title} × ${qty}      ${formatSoles(total)}`;
+        return [
+            `*${title}*`,
+            `${qty} unidad(es) · ${formatSoles(total)}`
+        ];
     });
 
     const discount = toFiniteNumberOrNull(summary?.discount) ?? 0;
@@ -143,12 +146,12 @@ function buildQuoteMessageBody(quote = {}, fallbackBody = '') {
     const totalPayable = toFiniteNumberOrNull(summary?.totalPayable)
         ?? Math.max(0, (toFiniteNumberOrNull(summary?.totalAfterDiscount) ?? 0) + (Boolean(summary?.deliveryFree) ? 0 : deliveryAmount));
 
-    const totalLines = ['────────────────────────────────'];
+    const totalLines = ['──────────────────'];
     if (discount > 0) {
-        totalLines.push(`Descuento                      - ${formatSoles(discount)}`);
+        totalLines.push(`Descuento: -${formatSoles(discount)}`);
     }
-    totalLines.push(`Delivery                       ${deliveryLabel}`);
-    totalLines.push(`Total a pagar                 ${formatSoles(totalPayable)}`);
+    totalLines.push(`Delivery: ${deliveryLabel}`);
+    totalLines.push(`*Total a pagar: ${formatSoles(totalPayable)}*`);
 
     const notesLine = quote?.notes ? ['', toText(quote.notes)] : [];
     const fallbackLine = !items.length && toText(fallbackBody) ? ['', toText(fallbackBody)] : [];
@@ -157,6 +160,7 @@ function buildQuoteMessageBody(quote = {}, fallbackBody = '') {
         header,
         '',
         ...lines,
+        '',
         ...totalLines,
         ...notesLine,
         ...fallbackLine
