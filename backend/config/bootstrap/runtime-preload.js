@@ -1,3 +1,5 @@
+const catalogSyncService = require('../../domains/tenant/services/catalog-sync.service');
+
 async function preloadRuntimeServices({
     saasControlService,
     planLimitsStoreService,
@@ -20,6 +22,15 @@ async function preloadRuntimeServices({
             .then(() => accessPolicyService.initializeAccessPolicy())
             .catch((error) => {
                 logger.warn('[SaaS] no se pudo precargar catalogo de accesos: ' + String(error?.message || error));
+            }),
+        Promise.resolve()
+            .then(() => {
+                catalogSyncService.warmupAllCatalogs().catch((error) => {
+                    logger.warn('[CatalogSync] no se pudo precargar catalogos WooCommerce: ' + String(error?.message || error));
+                });
+            })
+            .catch((error) => {
+                logger.warn('[CatalogSync] no se pudo precargar catalogos WooCommerce: ' + String(error?.message || error));
             })
     ];
 

@@ -1,6 +1,7 @@
 import React from 'react';
 import ImageDropInput from '../components/panel/ImageDropInput';
 import { SaasEntityPage } from '../components/layout';
+import useCatalogSync from '../hooks/domains/catalogs/useCatalogSync';
 
 const text = (value) => String(value ?? '').trim();
 
@@ -56,6 +57,16 @@ function CatalogSection(props = {}) {
     const selectedId = catalogPanelMode === 'create'
         ? '__create_catalog__'
         : text(selectedTenantCatalog?.catalogId);
+    const {
+        syncStatus,
+        syncing,
+        syncError,
+        loadSyncStatus,
+        triggerSync,
+        setInterval: setSyncInterval
+    } = useCatalogSync({ requestJson });
+    const selectedSyncCatalogId = text(selectedTenantCatalog?.catalogId).toUpperCase();
+    const isWooCatalogSelected = selectedTenantCatalog?.sourceType === 'woocommerce';
 
     const rows = React.useMemo(() => tenantCatalogItems.map((item) => ({
         id: text(item?.catalogId),
@@ -158,6 +169,48 @@ function CatalogSection(props = {}) {
         settingsTenantId,
         tenantCatalogForm
     ]);
+
+    React.useEffect(() => {
+        if (!settingsTenantId || !selectedSyncCatalogId || !isWooCatalogSelected) return;
+        void loadSyncStatus(settingsTenantId, selectedSyncCatalogId);
+    }, [isWooCatalogSelected, loadSyncStatus, selectedSyncCatalogId, settingsTenantId]);
+
+    const syncStatusLabel = React.useMemo(() => {
+        if (syncing || syncStatus?.status === 'syncing') return 'Sincronizando...';
+        if (syncStatus?.status === 'success') return 'Sincronizado';
+        if (syncStatus?.status === 'partial') return 'Sincronizado con observaciones';
+        if (syncStatus?.status === 'error') return 'Error';
+        return 'Sin sincronizacion aun';
+    }, [syncStatus?.status, syncing]);
+
+    const syncStatusIcon = React.useMemo(() => {
+        if (syncing || syncStatus?.status === 'syncing') return '...';
+        if (syncStatus?.status === 'success') return 'OK';
+        if (syncStatus?.status === 'partial') return '!';
+        if (syncStatus?.status === 'error') return '!';
+        return '-';
+    }, [syncStatus?.status, syncing]);
+
+    const handleSyncNow = React.useCallback(() => runAction?.('Catalogo sincronizado', async () => {
+        if (!settingsTenantId || !selectedSyncCatalogId) return;
+        await triggerSync(settingsTenantId, selectedSyncCatalogId, syncStatus?.intervalHours || 0);
+        await loadTenantCatalogProducts?.(settingsTenantId, selectedSyncCatalogId);
+    }), [
+        loadTenantCatalogProducts,
+        runAction,
+        selectedSyncCatalogId,
+        settingsTenantId,
+        syncStatus?.intervalHours,
+        triggerSync
+    ]);
+
+    const handleSyncIntervalChange = React.useCallback((event) => {
+        const nextHours = Number(event.target.value) || 0;
+        if (!settingsTenantId || !selectedSyncCatalogId) return;
+        void runAction?.('Intervalo de sincronizacion actualizado', async () => {
+            await setSyncInterval(settingsTenantId, selectedSyncCatalogId, nextHours);
+        });
+    }, [runAction, selectedSyncCatalogId, setSyncInterval, settingsTenantId]);
 
     const renderCatalogForm = React.useCallback(({ close: requestClose } = {}) => (
         <>
@@ -399,6 +452,54 @@ function CatalogSection(props = {}) {
                         </div>
                     </div>
                 ) : null}
+                {selectedTenantCatalog.sourceType === 'woocommerce' ? (
+                    <div className="saas-admin-related-block">
+                        <h4>Sincronizacion con WooCommerce</h4>
+                        <div className="saas-admin-detail-grid">
+                            <div className="saas-admin-detail-field">
+                                <span>Ultima sync</span>
+                                <strong>{syncStatus?.lastSync ? formatDateTimeLabel(syncStatus.lastSync) : 'Sin sincronizacion aun'}</strong>
+                            </div>
+                            <div className="saas-admin-detail-field">
+                                <span>Productos</span>
+                                <strong>{Number(syncStatus?.productCount || 0)} productos en catalogo</strong>
+                            </div>
+                            <div className="saas-admin-detail-field">
+                                <span>Estado</span>
+                                <strong>{syncStatusIcon} {syncStatusLabel}</strong>
+                            </div>
+                            <div className="saas-admin-detail-field">
+                                <span>Proxima sync</span>
+                                <strong>{syncStatus?.nextSync ? formatDateTimeLabel(syncStatus.nextSync) : 'Solo manual'}</strong>
+                            </div>
+                        </div>
+                        {syncError ? <div className="saas-admin-alert error">{syncError}</div> : null}
+                        <div className="saas-admin-form-row">
+                            <div className="saas-admin-field">
+                                <label>Intervalo de sincronizacion automatica</label>
+                                <select
+                                    value={String(syncStatus?.intervalHours || 0)}
+                                    onChange={handleSyncIntervalChange}
+                                    disabled={busy || syncing || !canEditCatalog}
+                                >
+                                    <option value="1">Cada hora</option>
+                                    <option value="6">Cada 6h</option>
+                                    <option value="12">Cada 12h</option>
+                                    <option value="24">Una vez al dia</option>
+                                    <option value="0">Solo manual</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div className="saas-admin-form-row saas-admin-form-row--actions">
+                            <button type="button" disabled={busy || syncing || !canEditCatalog} onClick={handleSyncNow}>
+                                {syncing ? 'Sincronizando...' : 'Sincronizar ahora'}
+                            </button>
+                        </div>
+                        <div className="saas-admin-empty-inline">
+                            La sync manual respeta el catalogo activo y actualiza precios en tiempo real para pedidos entrantes.
+                        </div>
+                    </div>
+                ) : null}
             </>
         );
     }, [
@@ -408,6 +509,8 @@ function CatalogSection(props = {}) {
         close,
         deactivateCatalogProduct,
         formatDateTimeLabel,
+        handleSyncIntervalChange,
+        handleSyncNow,
         isCatalogEditing,
         isProductEditing,
         loadTenantCatalogProducts,
@@ -428,6 +531,14 @@ function CatalogSection(props = {}) {
         setCatalogProductPanelMode,
         setSelectedCatalogProductId,
         settingsTenantId,
+        syncError,
+        syncStatus?.intervalHours,
+        syncStatus?.lastSync,
+        syncStatus?.nextSync,
+        syncStatus?.productCount,
+        syncStatusIcon,
+        syncStatusLabel,
+        syncing,
         tenantCatalogProducts,
         buildCatalogProductFormFromItem
     ]);

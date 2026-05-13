@@ -617,6 +617,7 @@ module.exports = {
     addProduct,
     updateProduct,
     deleteProduct,
-    getCatalogItemsBySkus
+    getCatalogItemsBySkus,
+    upsertCatalogItemPostgres
 };
 

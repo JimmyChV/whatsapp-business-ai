@@ -1,4 +1,6 @@
-﻿function defaultSanitizeCatalogProductPayload(payload = {}, { allowPartial = false } = {}) {
+﻿const catalogSyncService = require('../services/catalog-sync.service');
+
+function defaultSanitizeCatalogProductPayload(payload = {}, { allowPartial = false } = {}) {
     const source = payload && typeof payload === 'object' ? payload : {};
     const categories = Array.isArray(source.categories)
         ? source.categories
@@ -301,6 +303,53 @@ function registerTenantAdminConfigCatalogHttpRoutes({
             return res.json({ ok: true, tenantId, ...result });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar el catalogo.') });
+        }
+    });
+
+    app.get('/api/admin/saas/tenants/:tenantId/catalogs/:catalogId/sync-status', async (req, res) => {
+        const tenantId = String(req.params?.tenantId || '').trim();
+        const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
+        if (!tenantId || !catalogId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId invalido.' });
+        if (!isTenantAllowedForUser(req, tenantId)
+            || !hasAnyPermission(req, [
+                accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE,
+                accessPolicyService.PERMISSIONS.TENANT_MODULES_READ,
+                accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ
+            ])) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const status = await catalogSyncService.getSyncStatus(tenantId, catalogId);
+            return res.json({ ok: true, tenantId, catalogId, status });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar estado de sincronizacion.') });
+        }
+    });
+
+    app.post('/api/admin/saas/tenants/:tenantId/catalogs/:catalogId/sync', async (req, res) => {
+        const tenantId = String(req.params?.tenantId || '').trim();
+        const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
+        if (!tenantId || !catalogId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId invalido.' });
+        if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const body = req.body && typeof req.body === 'object' ? req.body : {};
+            const hasInterval = Object.prototype.hasOwnProperty.call(body, 'intervalHours');
+            if (body.scheduleOnly === true) {
+                if (hasInterval) catalogSyncService.scheduleCatalogSync(tenantId, catalogId, body.intervalHours);
+                const status = await catalogSyncService.getSyncStatus(tenantId, catalogId);
+                return res.json({ ok: true, tenantId, catalogId, status });
+            }
+
+            const result = await catalogSyncService.syncCatalogFromWoocommerce(tenantId, catalogId);
+            if (hasInterval) catalogSyncService.scheduleCatalogSync(tenantId, catalogId, body.intervalHours);
+            const status = await catalogSyncService.getSyncStatus(tenantId, catalogId);
+            return res.json({ ok: true, tenantId, catalogId, result, status });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo sincronizar el catalogo.') });
         }
     });
 
