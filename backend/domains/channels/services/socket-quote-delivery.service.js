@@ -23,6 +23,35 @@ function formatSoles(value) {
     return 'S/ ' + Math.max(0, num).toFixed(2);
 }
 
+function roundMoney(value) {
+    const num = toFiniteNumberOrNull(value) ?? 0;
+    return Math.round(num * 100) / 100;
+}
+
+function toTitleCase(value = '') {
+    return toText(value)
+        .toLocaleLowerCase('es-PE')
+        .replace(/(^|\s)(\S)/g, (_, space, letter) => `${space}${letter.toLocaleUpperCase('es-PE')}`);
+}
+
+function resolveQuoteDisplayUnitPrice(item = {}, qty = 1) {
+    const safeQty = Math.max(1, toFiniteNumberOrNull(qty) ?? 1);
+    const lineSubtotal = toFiniteNumberOrNull(item?.lineSubtotal ?? item?.subtotal);
+    if (lineSubtotal !== null && lineSubtotal > 0) {
+        return roundMoney(lineSubtotal / safeQty);
+    }
+    return roundMoney(
+        toFiniteNumberOrNull(
+            item?.regularPrice
+            ?? item?.regular_price
+            ?? item?.metadata?.regularPrice
+            ?? item?.metadata?.regular_price
+            ?? item?.unitPrice
+            ?? item?.price
+        ) ?? 0
+    );
+}
+
 function normalizeQuoteItem(item = {}, index = 0, currency = 'PEN') {
     const source = isPlainObject(item) ? item : {};
     const itemId = toNullableText(source.itemId || source.id || source.productId || ('item_' + (index + 1)));
@@ -122,23 +151,32 @@ function resolveQuoteSourceType(metadata = {}, payload = {}) {
 }
 
 function buildQuoteMessageBody(quote = {}, fallbackBody = '') {
+    const separator = '──────────────────────────────';
     const sourceType = toText(quote?.metadata?.sourceType || quote?.metadata?.source_type).toLowerCase();
     const header = sourceType === 'order'
-        ? '🛒 *Lávitat® · Resumen de tu pedido*'
-        : '📋 *Lávitat® · Cotización para ti*';
+        ? '🛒 *RESUMEN DE PEDIDO*'
+        : '📋 *COTIZACIÓN*';
     const items = Array.isArray(quote?.items) ? quote.items : [];
     const summary = isPlainObject(quote?.summary) ? quote.summary : {};
     const lines = items.flatMap((item) => {
-        const title = toText(item?.title || item?.name || item?.sku || 'Producto') || 'Producto';
+        const title = toTitleCase(item?.title || item?.name || item?.sku || 'Producto') || 'Producto';
         const qty = Math.max(1, toFiniteNumberOrNull(item?.qty ?? item?.quantity) ?? 1);
-        const total = toFiniteNumberOrNull(item?.lineTotal ?? item?.total ?? item?.price ?? item?.unitPrice) ?? 0;
+        const unitPrice = resolveQuoteDisplayUnitPrice(item, qty);
+        const lineSubtotal = roundMoney(qty * unitPrice);
         return [
             `*${title}*`,
-            `${qty} unidad(es) · ${formatSoles(total)}`
+            `${qty} × ${formatSoles(unitPrice)} = ${formatSoles(lineSubtotal)}`
         ];
     });
 
-    const discount = toFiniteNumberOrNull(summary?.discount) ?? 0;
+    const subtotal = roundMoney(lines.length > 0
+        ? items.reduce((acc, item) => {
+            const qty = Math.max(1, toFiniteNumberOrNull(item?.qty ?? item?.quantity) ?? 1);
+            const unitPrice = resolveQuoteDisplayUnitPrice(item, qty);
+            return acc + roundMoney(qty * unitPrice);
+        }, 0)
+        : (toFiniteNumberOrNull(summary?.subtotal) ?? 0));
+    const discount = roundMoney(toFiniteNumberOrNull(summary?.discount) ?? Math.max(0, subtotal - (toFiniteNumberOrNull(summary?.totalAfterDiscount) ?? subtotal)));
     const deliveryAmount = toFiniteNumberOrNull(summary?.deliveryAmount) ?? 0;
     const deliveryLabel = Boolean(summary?.deliveryFree) || deliveryAmount <= 0
         ? 'Gratuito'
@@ -146,18 +184,26 @@ function buildQuoteMessageBody(quote = {}, fallbackBody = '') {
     const totalPayable = toFiniteNumberOrNull(summary?.totalPayable)
         ?? Math.max(0, (toFiniteNumberOrNull(summary?.totalAfterDiscount) ?? 0) + (Boolean(summary?.deliveryFree) ? 0 : deliveryAmount));
 
-    const totalLines = ['──────────────────'];
+    const totalLines = [
+        separator,
+        `Subtotal:         ${formatSoles(subtotal)}`
+    ];
     if (discount > 0) {
-        totalLines.push(`Descuento: -${formatSoles(discount)}`);
+        totalLines.push(`*Descuento:       - ${formatSoles(discount)}*`);
     }
-    totalLines.push(`Delivery: ${deliveryLabel}`);
-    totalLines.push(`*Total a pagar: ${formatSoles(totalPayable)}*`);
+    totalLines.push(`Delivery:         ${deliveryLabel}`);
+    totalLines.push(separator);
+    totalLines.push(`*TOTAL A PAGAR:   ${formatSoles(totalPayable)}*`);
+    totalLines.push('');
+    totalLines.push(separator);
+    totalLines.push('_Lávitat® · La confianza que abraza tu hogar_');
 
     const notesLine = quote?.notes ? ['', toText(quote.notes)] : [];
     const fallbackLine = !items.length && toText(fallbackBody) ? ['', toText(fallbackBody)] : [];
 
     return [
         header,
+        separator,
         '',
         ...lines,
         '',
