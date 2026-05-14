@@ -1,5 +1,6 @@
 const EventEmitter = require('events');
 const crypto = require('crypto');
+const { queryPostgres } = require('../../../config/persistence-runtime');
 const {
     normalizeDigits,
     toChatId,
@@ -554,8 +555,28 @@ class WhatsAppCloudClient extends EventEmitter {
             location: raw.location || null,
             referral: raw.referral || null,
             rawReferral: raw.rawReferral || null,
+            quotedMessage: raw.quotedMessage || null,
             hasQuotedMsg: Boolean(raw.quotedMessageId),
             getQuotedMessage: async () => {
+                if (raw.quotedMessage) {
+                    return {
+                        id: { _serialized: raw.quotedMessage.id },
+                        body: raw.quotedMessage.body,
+                        fromMe: Boolean(raw.quotedMessage.fromMe),
+                        hasMedia: Boolean(raw.quotedMessage.hasMedia),
+                        type: raw.quotedMessage.type || 'chat',
+                        _data: {
+                            caption: raw.quotedMessage.body,
+                            quotedStanzaID: raw.quotedMessage.id,
+                            quotedMsg: {
+                                body: raw.quotedMessage.body,
+                                type: raw.quotedMessage.type || 'chat',
+                                fromMe: Boolean(raw.quotedMessage.fromMe),
+                                isMedia: Boolean(raw.quotedMessage.hasMedia)
+                            }
+                        }
+                    };
+                }
                 if (!raw.quotedMessageId) return null;
                 return this.getMessageById(raw.quotedMessageId);
             },
@@ -578,6 +599,32 @@ class WhatsAppCloudClient extends EventEmitter {
         message.mediaId = raw.mediaId || null;
 
         return message;
+    }
+
+    async buildButtonReplyQuotedMessage(contextMessageId = '') {
+        const messageId = String(contextMessageId || '').trim();
+        if (!messageId) return null;
+
+        let body = '[Cotización]';
+        try {
+            const { rows } = await queryPostgres(
+                'SELECT message_id FROM tenant_messages WHERE message_id = $1 LIMIT 1',
+                [messageId]
+            );
+            if (Array.isArray(rows) && rows.length > 0) {
+                body = '[Cotización Lávitat®]';
+            }
+        } catch (error) {
+            body = '[Cotización]';
+        }
+
+        return {
+            id: messageId,
+            body,
+            fromMe: true,
+            hasMedia: false,
+            type: 'interactive'
+        };
     }
 
     upsertMessage(raw = {}, { incoming = false, emitEvent = null } = {}) {
@@ -1322,7 +1369,7 @@ class WhatsAppCloudClient extends EventEmitter {
         });
     }
 
-    ingestInboundMessage(msg = {}, contactsByWaId = new Map()) {
+    async ingestInboundMessage(msg = {}, contactsByWaId = new Map()) {
         const fromWa = normalizeDigits(msg?.from || '');
         if (!fromWa) return null;
 
@@ -1585,6 +1632,7 @@ class WhatsAppCloudClient extends EventEmitter {
         } else {
             if (type === 'interactive') {
                 const interactive = msg?.interactive && typeof msg.interactive === 'object' ? msg.interactive : null;
+                const interactiveType = String(interactive?.type || '').trim().toLowerCase();
                 const interactiveText = String(
                     interactive?.button_reply?.title
                     || interactive?.list_reply?.title
@@ -1594,6 +1642,9 @@ class WhatsAppCloudClient extends EventEmitter {
                 ).trim();
                 base.type = 'chat';
                 base.body = interactiveText || String(msg?.text?.body || '').trim();
+                if (interactiveType === 'button_reply' && base.quotedMessageId) {
+                    base.quotedMessage = await this.buildButtonReplyQuotedMessage(base.quotedMessageId);
+                }
                 base.rawData = compactObject({
                     ...(base.rawData || {}),
                     interactive,
@@ -1687,7 +1738,7 @@ class WhatsAppCloudClient extends EventEmitter {
 
                 const messages = Array.isArray(value?.messages) ? value.messages : [];
                 for (const msg of messages) {
-                    this.ingestInboundMessage(msg, contactsByWaId);
+                    await this.ingestInboundMessage(msg, contactsByWaId);
                 }
 
                 const statuses = Array.isArray(value?.statuses) ? value.statuses : [];

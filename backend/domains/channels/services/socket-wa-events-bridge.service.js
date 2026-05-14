@@ -758,7 +758,8 @@ function createSocketWaEventsBridgeService({
             });
             const fileMeta = extractMessageFileMeta(msg, media);
             const quotedMessage = await extractQuotedMessageInfo(msg);
-            const order = extractOrderInfo(msg);
+            const isInteractive = String(msg?.type || msg?._data?.type || '').toLowerCase() === 'interactive';
+            const order = isInteractive ? null : extractOrderInfo(msg);
             const location = extractLocationInfo(msg);
             const enrichedOrder = order
                 ? await enrichOrderProducts(historyTenantId, order)
