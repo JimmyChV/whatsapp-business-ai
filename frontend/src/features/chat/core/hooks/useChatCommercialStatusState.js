@@ -35,7 +35,7 @@ const normalizeCommercialStatusRecord = (status = null, fallbackChatId = '', fal
   };
 };
 
-const MANUAL_ALLOWED_STATUSES = new Set(['vendido', 'perdido']);
+const MANUAL_ALLOWED_STATUSES = new Set(['aceptado', 'programado', 'atendido', 'vendido', 'perdido', 'expirado']);
 
 export default function useChatCommercialStatusState({
   socket,
@@ -107,7 +107,7 @@ export default function useChatCommercialStatusState({
     if (!MANUAL_ALLOWED_STATUSES.has(safeStatus)) {
       notify({
         type: 'warn',
-        message: 'Estado comercial invalido. Solo permitido: vendido o perdido.'
+        message: 'Estado comercial invalido. Permitidos: aceptado, programado, atendido, vendido, perdido, expirado.'
       });
       return { ok: false, error: 'invalid_status' };
     }

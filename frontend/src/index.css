@@ -5701,7 +5701,10 @@ body {
 }
 
 .commercial-status-dropdown-item {
-  border: 1px solid transparent;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--chat-control-border);
   border-radius: 8px;
   padding: 6px 9px;
   font-size: 0.72rem;
@@ -5709,7 +5712,16 @@ body {
   line-height: 1.1;
   cursor: pointer;
   text-align: left;
+  background: var(--chat-menu-surface);
+  color: var(--chat-control-text);
   transition: all 0.14s ease;
+}
+
+.commercial-status-dropdown-item:hover:not(:disabled),
+.commercial-status-dropdown-item.active {
+  background: var(--chat-button-ghost-hover-strong);
+  border-color: color-mix(in srgb, var(--chat-control-border) 70%, var(--chat-control-text));
+  color: var(--chat-control-text);
 }
 
 .commercial-status-dropdown-item:disabled {
@@ -5717,28 +5729,12 @@ body {
   cursor: not-allowed;
 }
 
-.commercial-status-dropdown-item--sold {
-  background: rgba(0, 168, 132, 0.16);
-  border-color: rgba(0, 168, 132, 0.35);
-  color: color-mix(in srgb, var(--saas-accent-primary) 20%, var(--saas-bg-surface));
-}
-
-.commercial-status-dropdown-item--sold:hover:not(:disabled),
-.commercial-status-dropdown-item--sold.active {
-  background: rgba(0, 168, 132, 0.28);
-  border-color: rgba(0, 168, 132, 0.5);
-}
-
-.commercial-status-dropdown-item--lost {
-  background: rgba(244, 67, 54, 0.16);
-  border-color: rgba(244, 67, 54, 0.35);
-  color: color-mix(in srgb, var(--saas-accent-danger) 18%, var(--saas-bg-surface));
-}
-
-.commercial-status-dropdown-item--lost:hover:not(:disabled),
-.commercial-status-dropdown-item--lost.active {
-  background: rgba(244, 67, 54, 0.28);
-  border-color: rgba(244, 67, 54, 0.5);
+.commercial-status-dropdown-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 10%, transparent);
 }
 
 .chat-row-statuses .assignment-badge {

@@ -6,6 +6,14 @@ const normalizeRole = (value = '') => String(value || '').trim().toLowerCase();
 const normalizeStatus = (value = '') => String(value || '').trim().toLowerCase();
 
 const MANUAL_STATUS_ROLES = new Set(['seller', 'admin', 'owner', 'superadmin']);
+const MANUAL_STATUS_OPTIONS = [
+  { value: 'aceptado', label: 'ACEPTADO', color: '#4CAF50' },
+  { value: 'programado', label: 'PROGRAMADO', color: '#1565C0' },
+  { value: 'atendido', label: 'ATENDIDO', color: '#2E7D32' },
+  { value: 'vendido', label: 'VENDIDO', color: '#00A884' },
+  { value: 'perdido', label: 'PERDIDO', color: '#FF5C5C' },
+  { value: 'expirado', label: 'EXPIRADO', color: '#616161' }
+];
 
 export default function CommercialStatusActions({
   chatId = '',
@@ -80,24 +88,23 @@ export default function CommercialStatusActions({
       </button>
       {open && (
         <div className="commercial-status-dropdown-menu">
-          <button
-            type="button"
-            className={`commercial-status-dropdown-item commercial-status-dropdown-item--sold ${currentStatus === 'vendido' ? 'active' : ''}`}
-            onClick={() => runStatusUpdate('vendido')}
-            disabled={Boolean(pendingStatus)}
-            title="Marcar chat como vendido"
-          >
-            Marcar vendido
-          </button>
-          <button
-            type="button"
-            className={`commercial-status-dropdown-item commercial-status-dropdown-item--lost ${currentStatus === 'perdido' ? 'active' : ''}`}
-            onClick={() => runStatusUpdate('perdido')}
-            disabled={Boolean(pendingStatus)}
-            title="Marcar chat como perdido"
-          >
-            Marcar perdido
-          </button>
+          {MANUAL_STATUS_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={`commercial-status-dropdown-item ${currentStatus === option.value ? 'active' : ''}`}
+              onClick={() => runStatusUpdate(option.value)}
+              disabled={Boolean(pendingStatus)}
+              title={`Marcar chat como ${option.label.toLowerCase()}`}
+            >
+              <span
+                className="commercial-status-dropdown-dot"
+                style={{ backgroundColor: option.color }}
+                aria-hidden="true"
+              />
+              <span>{option.label}</span>
+            </button>
+          ))}
         </div>
       )}
     </div>
