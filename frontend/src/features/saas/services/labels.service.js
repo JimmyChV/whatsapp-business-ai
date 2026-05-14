@@ -31,7 +31,6 @@ export async function fetchGlobalLabels(requestJson, { includeInactive = true } 
 }
 
 const GLOBAL_LABELS_CACHE_KEY = 'commercial';
-const GLOBAL_COMMERCIAL_STATUS_KEYS = new Set(['nuevo', 'en_conversacion', 'cotizado', 'vendido', 'perdido']);
 const globalLabelsCache = new Map();
 
 const normalizeText = (value = '') => String(value || '').trim();
@@ -52,7 +51,7 @@ export function normalizeGlobalLabel(item = {}) {
 export function normalizeCommercialGlobalLabels(items = []) {
     return (Array.isArray(items) ? items : [])
         .map(normalizeGlobalLabel)
-        .filter((item) => GLOBAL_COMMERCIAL_STATUS_KEYS.has(item.commercialStatusKey));
+        .filter((item) => Boolean(item.commercialStatusKey));
 }
 
 export function hasCachedGlobalLabels() {
@@ -78,7 +77,7 @@ export async function loadCachedGlobalLabels(requestJson, { force = false, inclu
 
 export function upsertCachedGlobalLabel(item = {}) {
     const normalized = normalizeGlobalLabel(item);
-    if (!normalized.id || !GLOBAL_COMMERCIAL_STATUS_KEYS.has(normalized.commercialStatusKey)) {
+    if (!normalized.id || !normalized.commercialStatusKey) {
         return getCachedGlobalLabels();
     }
     const current = getCachedGlobalLabels();
