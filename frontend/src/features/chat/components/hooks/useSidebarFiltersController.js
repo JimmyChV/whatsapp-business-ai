@@ -22,6 +22,13 @@ const isSavedCustomerChat = (chat = {}) => (
   || hasCrmIdentity(chat)
 );
 const normalizeFilterToken = (value = '') => String(value || '').trim().toLowerCase();
+const formatCommercialStatusLabel = (value = '') => {
+  const clean = String(value || '').replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  return clean
+    .toLocaleLowerCase('es-PE')
+    .replace(/(^|[\s/.-])(\S)/g, (_, prefix, char) => `${prefix}${char.toLocaleUpperCase('es-PE')}`);
+};
 const normalizeCommercialStatus = (value = 'all', options = DEFAULT_COMMERCIAL_STATUS_OPTIONS) => {
   const clean = normalizeFilterToken(value || 'all');
   const allowed = new Set((Array.isArray(options) ? options : DEFAULT_COMMERCIAL_STATUS_OPTIONS)
@@ -172,7 +179,7 @@ const useSidebarFiltersController = ({
       seen.add(value);
       options.push({
         value,
-        label: String(entry?.label || value).trim() || value,
+        label: formatCommercialStatusLabel(entry?.label || value) || value,
         color: entry?.color || null
       });
     });

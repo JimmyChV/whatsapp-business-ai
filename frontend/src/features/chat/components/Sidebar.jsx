@@ -34,6 +34,14 @@ const sanitizeDisplayText = (value = '') => repairMojibake(value)
     .replace(/\s+/g, ' ')
     .trim();
 
+const toDisplayTitleCase = (value = '') => {
+    const clean = sanitizeDisplayText(value);
+    if (!clean) return '';
+    return clean
+        .toLocaleLowerCase('es-PE')
+        .replace(/(^|[\s/.-])(\S)/g, (_, prefix, char) => `${prefix}${char.toLocaleUpperCase('es-PE')}`);
+};
+
 const normalizeSearchText = (value = '') => String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -222,7 +230,7 @@ const Sidebar = ({
                 const options = items
                     .map((item) => ({
                         value: String(item?.commercialStatusKey || item?.commercial_status_key || '').trim().toLowerCase(),
-                        label: sanitizeDisplayText(item?.name || item?.commercialStatusKey || item?.commercial_status_key || ''),
+                        label: toDisplayTitleCase(item?.name || item?.commercialStatusKey || item?.commercial_status_key || ''),
                         color: item?.color || null,
                         sortOrder: Number(item?.sortOrder ?? item?.sort_order ?? 100) || 100
                     }))
