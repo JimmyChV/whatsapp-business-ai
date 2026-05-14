@@ -4736,14 +4736,14 @@ body {
   right: 0;
   min-width: min(172px, calc(100vw - 24px));
   max-width: min(210px, calc(100vw - 24px));
-  max-height: min(360px, calc(100vh - 180px));
+  max-height: min(340px, calc(100vh - 200px));
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
   display: grid;
   grid-auto-rows: minmax(32px, auto);
   gap: 4px;
-  padding: 7px;
+  padding: 7px 7px 16px;
   box-sizing: border-box;
   border-radius: 12px;
   border: 1px solid rgba(124, 151, 164, 0.26);
