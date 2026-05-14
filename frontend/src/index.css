@@ -4736,7 +4736,7 @@ body {
   right: 0;
   min-width: min(172px, calc(100vw - 24px));
   max-width: min(210px, calc(100vw - 24px));
-  max-height: min(292px, calc(100vh - 260px));
+  max-height: min(238px, calc(100vh - 340px));
   overflow: auto;
   overscroll-behavior: contain;
   display: grid;

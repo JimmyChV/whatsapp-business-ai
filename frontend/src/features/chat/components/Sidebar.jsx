@@ -190,7 +190,7 @@ const Sidebar = ({
 
     const selectedAssigneeLabel = React.useMemo(() => {
         if (filters.assigneeUserId === '__unassigned__') return 'Sin asignar';
-        if (!filters.assigneeUserId) return 'Todas las vendedoras';
+        if (!filters.assigneeUserId) return 'Todos los usuarios';
         const match = assignmentUserOptions.find((entry) => String(entry?.value || '') === String(filters.assigneeUserId || ''));
         return match?.label || filters.assigneeUserId;
     }, [assignmentUserOptions, filters.assigneeUserId]);
@@ -555,9 +555,9 @@ const Sidebar = ({
                                                 setShowAssigneeFilterMenu((prev) => !prev);
                                                 setShowCommercialFilterMenu(false);
                                             }}
-                                            title="Filtrar por vendedora"
+                                            title="Filtrar por usuario"
                                         >
-                                            <span className="sidebar-filter-pill-label">Vendedora</span>
+                                            <span className="sidebar-filter-pill-label">Usuarios</span>
                                             <span className="sidebar-filter-pill-value">{selectedAssigneeLabel}</span>
                                             <ChevronDown size={14} className={`sidebar-filter-pill-caret ${showAssigneeFilterMenu ? 'open' : ''}`} />
                                         </button>
@@ -571,7 +571,7 @@ const Sidebar = ({
                                                         setShowAssigneeFilterMenu(false);
                                                     }}
                                                 >
-                                                    Todas las vendedoras
+                                                    Todos los usuarios
                                                 </button>
                                                 <button
                                                     type="button"
