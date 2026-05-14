@@ -263,6 +263,14 @@ class WAProvider extends EventEmitter {
         return await this.activeAdapter.sendTemplateMessage(to, payload);
     }
 
+    async sendInteractiveMessage(to, interactive = {}) {
+        if (!this.activeAdapter?.sendInteractiveMessage) {
+            console.warn('[WA][Provider] adapter does not support interactive messages.');
+            return null;
+        }
+        return await this.activeAdapter.sendInteractiveMessage(to, interactive);
+    }
+
     async sendReaction(to, payload = {}) {
         if (!this.activeAdapter?.sendReaction) {
             throw new Error('Reaction send is not supported in this transport.');

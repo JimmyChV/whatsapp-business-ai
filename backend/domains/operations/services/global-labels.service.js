@@ -53,6 +53,42 @@ const DEFAULT_GLOBAL_LABELS = Object.freeze([
         commercialStatusKey: 'perdido',
         sortOrder: 5,
         isActive: true
+    },
+    {
+        id: 'ACEPTADO',
+        name: 'Aceptado',
+        color: '#4CAF50',
+        description: 'Etiqueta comercial predeterminada para pedidos aceptados.',
+        commercialStatusKey: 'aceptado',
+        sortOrder: 6,
+        isActive: true
+    },
+    {
+        id: 'PROGRAMADO',
+        name: 'Programado',
+        color: '#1565C0',
+        description: 'Etiqueta comercial predeterminada para pedidos programados.',
+        commercialStatusKey: 'programado',
+        sortOrder: 7,
+        isActive: true
+    },
+    {
+        id: 'ATENDIDO',
+        name: 'Atendido',
+        color: '#2E7D32',
+        description: 'Etiqueta comercial predeterminada para pedidos atendidos.',
+        commercialStatusKey: 'atendido',
+        sortOrder: 8,
+        isActive: true
+    },
+    {
+        id: 'EXPIRADO',
+        name: 'Expirado',
+        color: '#616161',
+        description: 'Etiqueta comercial predeterminada para cotizaciones expiradas.',
+        commercialStatusKey: 'expirado',
+        sortOrder: 9,
+        isActive: true
     }
 ]);
 const DEFAULT_GLOBAL_LABEL_IDS = new Set(DEFAULT_GLOBAL_LABELS.map((entry) => entry.id));
@@ -171,15 +207,17 @@ async function ensureDefaultGlobalLabels() {
         return;
     }
 
+    const valuesSql = DEFAULT_GLOBAL_LABELS
+        .map((_, index) => {
+            const offset = index * 6;
+            return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, TRUE, NOW(), NOW())`;
+        })
+        .join(',\n            ');
     await queryPostgres(
         `INSERT INTO global_labels (
             id, name, color, description, commercial_status_key, sort_order, is_active, created_at, updated_at
         ) VALUES
-            ($1, $2, $3, $4, $5, $6, TRUE, NOW(), NOW()),
-            ($7, $8, $9, $10, $11, $12, TRUE, NOW(), NOW()),
-            ($13, $14, $15, $16, $17, $18, TRUE, NOW(), NOW()),
-            ($19, $20, $21, $22, $23, $24, TRUE, NOW(), NOW()),
-            ($25, $26, $27, $28, $29, $30, TRUE, NOW(), NOW())
+            ${valuesSql}
         ON CONFLICT (id) DO NOTHING`,
         DEFAULT_GLOBAL_LABELS.flatMap((entry) => [
             entry.id,
@@ -246,16 +284,14 @@ async function listLabels(options = {}) {
     try {
         await ensurePostgresSchema();
         await ensureDefaultGlobalLabels();
-        const statusKeys = [...DEFAULT_COMMERCIAL_STATUS_KEYS];
         const where = includeInactive
-            ? 'WHERE commercial_status_key = ANY($1::text[])'
-            : 'WHERE commercial_status_key = ANY($1::text[]) AND is_active = TRUE';
+            ? 'WHERE commercial_status_key IS NOT NULL'
+            : 'WHERE commercial_status_key IS NOT NULL AND is_active = TRUE';
         const { rows } = await queryPostgres(
             `SELECT id, name, color, description, commercial_status_key, sort_order, is_active, created_at, updated_at
                FROM global_labels
                ${where}
-              ORDER BY sort_order ASC, name ASC`,
-            [statusKeys]
+              ORDER BY sort_order ASC, name ASC`
         );
         return (Array.isArray(rows) ? rows : []).map(sanitizeLabel);
     } catch (error) {
@@ -302,12 +338,12 @@ async function saveLabel(payload = {}) {
             color = EXCLUDED.color,
             description = EXCLUDED.description,
             commercial_status_key = CASE
-                WHEN global_labels.id IN ('NUEVO', 'EN_CONVERSACION', 'COTIZADO', 'VENDIDO', 'PERDIDO') THEN global_labels.commercial_status_key
+                WHEN global_labels.id = ANY($8::text[]) THEN global_labels.commercial_status_key
                 ELSE EXCLUDED.commercial_status_key
             END,
             sort_order = EXCLUDED.sort_order,
             is_active = CASE
-                WHEN global_labels.id IN ('NUEVO', 'EN_CONVERSACION', 'COTIZADO', 'VENDIDO', 'PERDIDO') THEN TRUE
+                WHEN global_labels.id = ANY($8::text[]) THEN TRUE
                 ELSE EXCLUDED.is_active
             END,
             updated_at = NOW()`,
@@ -318,7 +354,8 @@ async function saveLabel(payload = {}) {
             clean.description || null,
             isDefault ? defaultLabel?.commercialStatusKey : clean.commercialStatusKey || null,
             clean.sortOrder,
-            isDefault ? true : clean.isActive !== false
+            isDefault ? true : clean.isActive !== false,
+            [...DEFAULT_GLOBAL_LABEL_IDS]
         ]
     );
     const items = await listLabels({ includeInactive: true });

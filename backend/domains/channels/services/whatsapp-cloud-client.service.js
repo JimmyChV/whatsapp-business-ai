@@ -1,5 +1,6 @@
 const EventEmitter = require('events');
 const crypto = require('crypto');
+const { queryPostgres } = require('../../../config/persistence-runtime');
 const {
     normalizeDigits,
     toChatId,
@@ -554,8 +555,28 @@ class WhatsAppCloudClient extends EventEmitter {
             location: raw.location || null,
             referral: raw.referral || null,
             rawReferral: raw.rawReferral || null,
+            quotedMessage: raw.quotedMessage || null,
             hasQuotedMsg: Boolean(raw.quotedMessageId),
             getQuotedMessage: async () => {
+                if (raw.quotedMessage) {
+                    return {
+                        id: { _serialized: raw.quotedMessage.id },
+                        body: raw.quotedMessage.body,
+                        fromMe: Boolean(raw.quotedMessage.fromMe),
+                        hasMedia: Boolean(raw.quotedMessage.hasMedia),
+                        type: raw.quotedMessage.type || 'chat',
+                        _data: {
+                            caption: raw.quotedMessage.body,
+                            quotedStanzaID: raw.quotedMessage.id,
+                            quotedMsg: {
+                                body: raw.quotedMessage.body,
+                                type: raw.quotedMessage.type || 'chat',
+                                fromMe: Boolean(raw.quotedMessage.fromMe),
+                                isMedia: Boolean(raw.quotedMessage.hasMedia)
+                            }
+                        }
+                    };
+                }
                 if (!raw.quotedMessageId) return null;
                 return this.getMessageById(raw.quotedMessageId);
             },
@@ -578,6 +599,32 @@ class WhatsAppCloudClient extends EventEmitter {
         message.mediaId = raw.mediaId || null;
 
         return message;
+    }
+
+    async buildButtonReplyQuotedMessage(contextMessageId = '') {
+        const messageId = String(contextMessageId || '').trim();
+        if (!messageId) return null;
+
+        let body = '[Cotización]';
+        try {
+            const { rows } = await queryPostgres(
+                'SELECT message_id FROM tenant_messages WHERE message_id = $1 LIMIT 1',
+                [messageId]
+            );
+            if (Array.isArray(rows) && rows.length > 0) {
+                body = '[Cotización Lávitat®]';
+            }
+        } catch (error) {
+            body = '[Cotización]';
+        }
+
+        return {
+            id: messageId,
+            body,
+            fromMe: true,
+            hasMedia: false,
+            type: 'interactive'
+        };
     }
 
     upsertMessage(raw = {}, { incoming = false, emitEvent = null } = {}) {
@@ -850,6 +897,57 @@ class WhatsAppCloudClient extends EventEmitter {
         }
 
         return response;
+    }
+
+    async sendInteractiveMessage(to, interactive = {}) {
+        if (!this.isReady) throw new Error('Cloud client not ready');
+        const waId = await this.resolveSendWaId(to);
+        const safeInteractive = interactive && typeof interactive === 'object' && !Array.isArray(interactive)
+            ? interactive
+            : null;
+        if (!safeInteractive) throw new Error('interactive requerido para enviar mensaje interactivo.');
+
+        const payload = {
+            messaging_product: 'whatsapp',
+            recipient_type: 'individual',
+            to: waId,
+            type: 'interactive',
+            interactive: safeInteractive
+        };
+
+        const response = await this.graphJson(`/${this.phoneNumberId}/messages`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const messageId = String(response?.messages?.[0]?.id || randomMessageId('cloud_out_interactive'));
+        const chatId = `${waId}@c.us`;
+        const interactiveBody = String(safeInteractive?.body?.text || '').trim();
+        const message = this.upsertMessage({
+            id: messageId,
+            chatId,
+            from: this.selfChatId,
+            to: chatId,
+            body: interactiveBody,
+            fromMe: true,
+            type: 'interactive',
+            ack: 1,
+            timestamp: safeTimestamp(),
+            hasMedia: false,
+            rawData: compactObject({
+                interactive: safeInteractive,
+                interactiveType: String(safeInteractive?.type || '').trim() || null
+            })
+        }, { incoming: false, emitEvent: 'message_sent' });
+
+        if (message) {
+            this.emit('message_ack', { message, ack: 1 });
+        }
+
+        return messageId;
     }
 
     async sendReaction(to, { messageId, emoji } = {}) {
@@ -1271,7 +1369,7 @@ class WhatsAppCloudClient extends EventEmitter {
         });
     }
 
-    ingestInboundMessage(msg = {}, contactsByWaId = new Map()) {
+    async ingestInboundMessage(msg = {}, contactsByWaId = new Map()) {
         const fromWa = normalizeDigits(msg?.from || '');
         if (!fromWa) return null;
 
@@ -1303,7 +1401,7 @@ class WhatsAppCloudClient extends EventEmitter {
             mimetype: null,
             filename: null,
             fileSizeBytes: null,
-            quotedMessageId: String(msg?.context?.id || '').trim() || null,
+            quotedMessageId: String(msg?.context?.id || msg?.context?.message_id || '').trim() || null,
             order: null,
             orderProducts: null,
             location: null,
@@ -1533,15 +1631,25 @@ class WhatsAppCloudClient extends EventEmitter {
             });
         } else {
             if (type === 'interactive') {
+                const interactive = msg?.interactive && typeof msg.interactive === 'object' ? msg.interactive : null;
+                const interactiveType = String(interactive?.type || '').trim().toLowerCase();
                 const interactiveText = String(
-                    msg?.interactive?.button_reply?.title
-                    || msg?.interactive?.list_reply?.title
-                    || msg?.interactive?.nfm_reply?.name
-                    || msg?.interactive?.nfm_reply?.body
+                    interactive?.button_reply?.title
+                    || interactive?.list_reply?.title
+                    || interactive?.nfm_reply?.name
+                    || interactive?.nfm_reply?.body
                     || ''
                 ).trim();
                 base.type = 'chat';
                 base.body = interactiveText || String(msg?.text?.body || '').trim();
+                if (interactiveType === 'button_reply' && base.quotedMessageId) {
+                    base.quotedMessage = await this.buildButtonReplyQuotedMessage(base.quotedMessageId);
+                }
+                base.rawData = compactObject({
+                    ...(base.rawData || {}),
+                    interactive,
+                    interactiveType: String(interactive?.type || '').trim() || null
+                });
             } else {
                 const fallbackBody = String(msg?.[type]?.caption || msg?.[type]?.text || msg?.text?.body || '').trim();
                 base.type = type || 'chat';
@@ -1630,7 +1738,7 @@ class WhatsAppCloudClient extends EventEmitter {
 
                 const messages = Array.isArray(value?.messages) ? value.messages : [];
                 for (const msg of messages) {
-                    this.ingestInboundMessage(msg, contactsByWaId);
+                    await this.ingestInboundMessage(msg, contactsByWaId);
                 }
 
                 const statuses = Array.isArray(value?.statuses) ? value.statuses : [];

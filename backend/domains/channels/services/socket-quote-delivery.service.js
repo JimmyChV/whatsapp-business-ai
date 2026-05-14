@@ -18,6 +18,40 @@ function toFiniteNumberOrNull(value) {
     return Number.isFinite(num) ? num : null;
 }
 
+function formatSoles(value) {
+    const num = toFiniteNumberOrNull(value) ?? 0;
+    return 'S/ ' + Math.max(0, num).toFixed(2);
+}
+
+function roundMoney(value) {
+    const num = toFiniteNumberOrNull(value) ?? 0;
+    return Math.round(num * 100) / 100;
+}
+
+function toTitleCase(value = '') {
+    return toText(value)
+        .toLocaleLowerCase('es-PE')
+        .replace(/(^|\s)(\S)/g, (_, space, letter) => `${space}${letter.toLocaleUpperCase('es-PE')}`);
+}
+
+function resolveQuoteDisplayUnitPrice(item = {}, qty = 1) {
+    const safeQty = Math.max(1, toFiniteNumberOrNull(qty) ?? 1);
+    const lineSubtotal = toFiniteNumberOrNull(item?.lineSubtotal ?? item?.subtotal);
+    if (lineSubtotal !== null && lineSubtotal > 0) {
+        return roundMoney(lineSubtotal / safeQty);
+    }
+    return roundMoney(
+        toFiniteNumberOrNull(
+            item?.regularPrice
+            ?? item?.regular_price
+            ?? item?.metadata?.regularPrice
+            ?? item?.metadata?.regular_price
+            ?? item?.unitPrice
+            ?? item?.price
+        ) ?? 0
+    );
+}
+
 function normalizeQuoteItem(item = {}, index = 0, currency = 'PEN') {
     const source = isPlainObject(item) ? item : {};
     const itemId = toNullableText(source.itemId || source.id || source.productId || ('item_' + (index + 1)));
@@ -99,22 +133,149 @@ function normalizeStructuredQuote(payload = {}) {
     };
 }
 
+function resolveQuoteSourceType(metadata = {}, payload = {}) {
+    const sourceMessageId = toText(
+        metadata?.sourceMessageId
+        || metadata?.source_message_id
+        || metadata?.orderMessageId
+        || metadata?.order_message_id
+        || payload?.sourceMessageId
+        || payload?.source_message_id
+        || payload?.orderMessageId
+        || payload?.order_message_id
+    );
+    if (sourceMessageId) return 'order';
+
+    const rawType = toText(metadata?.sourceType || metadata?.source_type || metadata?.source || payload?.sourceType || payload?.source_type).toLowerCase();
+    return rawType.includes('order') ? 'order' : 'quote';
+}
+
 function buildQuoteMessageBody(quote = {}, fallbackBody = '') {
-    const explicitBody = toText(fallbackBody);
-    if (explicitBody) return explicitBody;
+    const separator = '──────────────────';
+    const sourceType = toText(quote?.metadata?.sourceType || quote?.metadata?.source_type).toLowerCase();
+    const header = sourceType === 'order'
+        ? '🛒 *RESUMEN DE PEDIDO*'
+        : '📋 *COTIZACIÓN*';
+    const items = Array.isArray(quote?.items) ? quote.items : [];
+    const summary = isPlainObject(quote?.summary) ? quote.summary : {};
+    const lines = items.flatMap((item) => {
+        const title = toTitleCase(item?.title || item?.name || item?.sku || 'Producto') || 'Producto';
+        const qty = Math.max(1, toFiniteNumberOrNull(item?.qty ?? item?.quantity) ?? 1);
+        const unitPrice = resolveQuoteDisplayUnitPrice(item, qty);
+        const lineSubtotal = roundMoney(qty * unitPrice);
+        return [
+            `*${title}*`,
+            `${qty} × ${formatSoles(unitPrice)} = ${formatSoles(lineSubtotal)}`
+        ];
+    });
 
-    const quoteIdLabel = quote?.quoteId ? ' #' + quote.quoteId : '';
-    const itemCount = Number.isInteger(Number(quote?.summary?.itemCount))
-        ? Number(quote.summary.itemCount)
-        : Array.isArray(quote?.items)
-            ? quote.items.length
-            : 0;
-    const totalPayable = toFiniteNumberOrNull(quote?.summary?.totalPayable);
-    const currency = toText(quote?.currency || quote?.summary?.currency || 'PEN') || 'PEN';
-    const totalLine = totalPayable !== null ? '\nTotal: ' + currency + ' ' + totalPayable.toFixed(1) : '';
-    const notesLine = quote?.notes ? '\n' + quote.notes : '';
+    const subtotal = roundMoney(lines.length > 0
+        ? items.reduce((acc, item) => {
+            const qty = Math.max(1, toFiniteNumberOrNull(item?.qty ?? item?.quantity) ?? 1);
+            const unitPrice = resolveQuoteDisplayUnitPrice(item, qty);
+            return acc + roundMoney(qty * unitPrice);
+        }, 0)
+        : (toFiniteNumberOrNull(summary?.subtotal) ?? 0));
+    const discount = roundMoney(toFiniteNumberOrNull(summary?.discount) ?? Math.max(0, subtotal - (toFiniteNumberOrNull(summary?.totalAfterDiscount) ?? subtotal)));
+    const deliveryAmount = toFiniteNumberOrNull(summary?.deliveryAmount) ?? 0;
+    const deliveryLabel = Boolean(summary?.deliveryFree) || deliveryAmount <= 0
+        ? 'Gratuito'
+        : formatSoles(deliveryAmount);
+    const totalPayable = toFiniteNumberOrNull(summary?.totalPayable)
+        ?? Math.max(0, (toFiniteNumberOrNull(summary?.totalAfterDiscount) ?? 0) + (Boolean(summary?.deliveryFree) ? 0 : deliveryAmount));
 
-    return ('Cotizacion' + quoteIdLabel + '\nItems: ' + itemCount + totalLine + notesLine).trim();
+    const totalLines = [
+        separator,
+        `Subtotal:         ${formatSoles(subtotal)}`
+    ];
+    if (discount > 0) {
+        totalLines.push(`*Descuento:       - ${formatSoles(discount)}*`);
+    }
+    totalLines.push(`Delivery:         ${deliveryLabel}`);
+    totalLines.push(separator);
+    totalLines.push(`*TOTAL A PAGAR:   ${formatSoles(totalPayable)}*`);
+    totalLines.push('');
+    totalLines.push(separator);
+    totalLines.push('_Lávitat® · La confianza que abraza tu hogar_');
+
+    const notesLine = quote?.notes ? ['', toText(quote.notes)] : [];
+    const fallbackLine = !items.length && toText(fallbackBody) ? ['', toText(fallbackBody)] : [];
+
+    return [
+        header,
+        separator,
+        '',
+        ...lines,
+        '',
+        ...totalLines,
+        ...notesLine,
+        ...fallbackLine
+    ].join('\n').trim();
+}
+
+function buildQuoteInteractiveMessage(quoteId, body) {
+    const confirmTitle = '✓ Confirmar';
+    const changeTitle = '✎ Cambios';
+    if (confirmTitle.length > 20 || changeTitle.length > 20) {
+        throw new Error('Los titulos de botones de cotizacion exceden 20 caracteres.');
+    }
+
+    const safeQuoteId = toText(quoteId);
+    return {
+        type: 'button',
+        body: {
+            text: String(body || '').trim()
+        },
+        action: {
+            buttons: [
+                {
+                    type: 'reply',
+                    reply: {
+                        id: `quote_confirm_${safeQuoteId}`,
+                        title: confirmTitle
+                    }
+                },
+                {
+                    type: 'reply',
+                    reply: {
+                        id: `quote_change_${safeQuoteId}`,
+                        title: changeTitle
+                    }
+                }
+            ]
+        }
+    };
+}
+
+function buildSyntheticInteractiveSentMessage({
+    messageId,
+    chatId,
+    body,
+    interactive
+} = {}) {
+    const safeMessageId = toText(messageId);
+    if (!safeMessageId) return null;
+    const safeChatId = toText(chatId);
+    return {
+        id: {
+            _serialized: safeMessageId,
+            id: safeMessageId
+        },
+        chatId: safeChatId,
+        to: safeChatId,
+        body: String(body || ''),
+        fromMe: true,
+        type: 'interactive',
+        ack: 1,
+        timestamp: Math.floor(Date.now() / 1000),
+        hasMedia: false,
+        rawData: {
+            interactive
+        },
+        _data: {
+            interactive
+        }
+    };
 }
 
 function buildOutgoingOrderPayload(quote = {}) {
@@ -237,7 +398,16 @@ function createSocketQuoteDeliveryService({
 
                 const moduleContext = target.moduleContext || socket?.data?.waModule || null;
                 const actorUserId = resolveActorUserId(authContext);
-                const quoteBody = buildQuoteMessageBody(incomingQuote, payload?.body || payload?.message || '');
+                const quoteSourceType = resolveQuoteSourceType(incomingQuote.metadata, payload);
+                const quoteMetadata = {
+                    ...(incomingQuote.metadata || {}),
+                    source: 'socket.send_structured_quote',
+                    sourceType: quoteSourceType
+                };
+                const quoteBody = buildQuoteMessageBody({
+                    ...incomingQuote,
+                    metadata: quoteMetadata
+                }, payload?.body || payload?.message || '');
                 const quotedMessageId = toText(payload?.quotedMessageId || payload?.quoted || '');
 
                 const createdQuote = await resolvedQuotesService.createQuoteRecord(tenantId, {
@@ -253,29 +423,42 @@ function createSocketQuoteDeliveryService({
                     createdByUserId: actorUserId,
                     updatedByUserId: actorUserId,
                     sentAt: null,
-                    metadata: {
-                        ...(incomingQuote.metadata || {}),
-                        source: 'socket.send_structured_quote'
-                    }
+                    metadata: quoteMetadata
                 });
 
                 const effectiveQuoteId = toNullableText(createdQuote?.quoteId || incomingQuote.quoteId);
                 const normalizedQuote = {
                     ...incomingQuote,
-                    quoteId: effectiveQuoteId || incomingQuote.quoteId || null
+                    quoteId: effectiveQuoteId || incomingQuote.quoteId || null,
+                    metadata: quoteMetadata
                 };
 
                 const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
 
                 let sentMessage = null;
-                if (quotedMessageId) {
-                    try {
-                        sentMessage = await waClient.sendMessage(target.targetChatId, quoteBody, { quotedMessageId });
-                    } catch (_) {
-                        sentMessage = await waClient.replyToMessage(target.targetChatId, quotedMessageId, quoteBody);
+                const quoteInteractive = buildQuoteInteractiveMessage(normalizedQuote.quoteId, quoteBody);
+                if (typeof waClient?.sendInteractiveMessage === 'function') {
+                    const interactiveMessageId = await waClient.sendInteractiveMessage(target.targetChatId, quoteInteractive);
+                    if (interactiveMessageId) {
+                        sentMessage = buildSyntheticInteractiveSentMessage({
+                            messageId: interactiveMessageId,
+                            chatId: target.targetChatId,
+                            body: quoteBody,
+                            interactive: quoteInteractive
+                        });
                     }
-                } else {
-                    sentMessage = await waClient.sendMessage(target.targetChatId, quoteBody);
+                }
+
+                if (!sentMessage) {
+                    if (quotedMessageId) {
+                        try {
+                            sentMessage = await waClient.sendMessage(target.targetChatId, quoteBody, { quotedMessageId });
+                        } catch (_) {
+                            sentMessage = await waClient.replyToMessage(target.targetChatId, quotedMessageId, quoteBody);
+                        }
+                    } else {
+                        sentMessage = await waClient.sendMessage(target.targetChatId, quoteBody);
+                    }
                 }
 
                 const sentMessageId = getSerializedMessageId(sentMessage);

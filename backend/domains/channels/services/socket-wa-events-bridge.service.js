@@ -131,6 +131,159 @@ function createSocketWaEventsBridgeService({
         }
     };
 
+    const resolveCustomerNameFromChat = async (tenantId = '', chatId = '', scopeModuleId = '') => {
+        if (getStorageDriver() !== 'postgres') return '';
+        const customerId = await resolveCustomerIdFromChat(tenantId, chatId, scopeModuleId);
+        if (!customerId) return '';
+        try {
+            const { rows } = await queryPostgres(
+                `SELECT contact_name, first_name, last_name_paternal, last_name_maternal
+                   FROM tenant_customers
+                  WHERE tenant_id = $1
+                    AND customer_id = $2
+                  LIMIT 1`,
+                [tenantId, customerId]
+            );
+            const row = rows?.[0] || null;
+            return String(
+                row?.contact_name
+                || [row?.first_name, row?.last_name_paternal, row?.last_name_maternal].filter(Boolean).join(' ')
+                || ''
+            ).trim();
+        } catch (_) {
+            return '';
+        }
+    };
+
+    const extractQuoteButtonReplyId = (msg = {}) => {
+        const interactive = msg?.interactive && typeof msg.interactive === 'object'
+            ? msg.interactive
+            : (msg?._data?.interactive && typeof msg._data.interactive === 'object' ? msg._data.interactive : null);
+        const buttonReply = interactive?.button_reply && typeof interactive.button_reply === 'object'
+            ? interactive.button_reply
+            : null;
+        return String(buttonReply?.id || '').trim();
+    };
+
+    const handleQuoteButtonReply = async ({
+        msg,
+        tenantId,
+        chatId,
+        scopeModuleId,
+        messageId,
+        at
+    } = {}) => {
+        const buttonReplyId = extractQuoteButtonReplyId(msg);
+        if (!buttonReplyId || !tenantId || !chatId) return false;
+
+        const isConfirm = buttonReplyId.startsWith('quote_confirm_');
+        const isChange = buttonReplyId.startsWith('quote_change_');
+        if (!isConfirm && !isChange) return false;
+
+        const quoteId = buttonReplyId
+            .replace(/^quote_confirm_/, '')
+            .replace(/^quote_change_/, '')
+            .trim();
+        if (!quoteId) return false;
+
+        const cleanScopeModuleId = String(scopeModuleId || '').trim().toLowerCase();
+        const eventName = isConfirm ? 'quote_confirmed' : 'quote_change_requested';
+        const nextStatus = isConfirm ? 'aceptado' : 'en_conversacion';
+        const eventMessage = isConfirm
+            ? 'El cliente confirmo el pedido'
+            : 'El cliente solicita cambios en su pedido';
+
+        try {
+            if (getStorageDriver() === 'postgres') {
+                const quoteStatus = await queryPostgres(
+                    `SELECT status
+                       FROM tenant_quotes
+                      WHERE tenant_id = $1
+                        AND quote_id = $2
+                      LIMIT 1`,
+                    [tenantId, quoteId]
+                );
+                const currentQuoteStatus = String(quoteStatus?.rows?.[0]?.status || '').trim().toLowerCase();
+                if (currentQuoteStatus === 'accepted') return true;
+
+                const quoteUpdate = await queryPostgres(
+                    `UPDATE tenant_quotes
+                        SET status = $3,
+                            updated_at = NOW(),
+                            metadata = COALESCE(metadata, '{}'::jsonb) || $4::jsonb
+                      WHERE tenant_id = $1
+                        AND quote_id = $2
+                      RETURNING quote_id`,
+                    [
+                        tenantId,
+                        quoteId,
+                        isConfirm ? 'accepted' : 'change_requested',
+                        JSON.stringify({
+                            lastButtonReplyId: buttonReplyId,
+                            lastButtonReplyMessageId: messageId || null,
+                            lastButtonReplyAt: at || new Date().toISOString()
+                        })
+                    ]
+                );
+                if (!quoteUpdate?.rows?.length) return false;
+            }
+
+            const commercialResult = await chatCommercialStatusService?.upsertChatCommercialStatus?.(tenantId, {
+                chatId,
+                scopeModuleId: cleanScopeModuleId,
+                status: nextStatus,
+                source: 'webhook',
+                reason: isConfirm ? 'quote_confirm_button_reply' : 'quote_change_button_reply',
+                changedByUserId: null,
+                lastTransitionAt: at,
+                metadata: {
+                    trigger: 'button_reply',
+                    quoteId,
+                    buttonReplyId,
+                    messageId: messageId || null
+                }
+            });
+
+            if (commercialResult?.changed) {
+                emitCommercialStatusUpdated?.({
+                    tenantId,
+                    chatId,
+                    scopeModuleId: cleanScopeModuleId,
+                    result: commercialResult,
+                    source: 'wa_events_bridge.button_reply'
+                });
+            }
+
+            const [assignment, customerName] = await Promise.all([
+                conversationOpsService?.getChatAssignment?.(tenantId, { chatId, scopeModuleId: cleanScopeModuleId }),
+                resolveCustomerNameFromChat(tenantId, chatId, cleanScopeModuleId)
+            ]);
+            const assigneeUserId = String(assignment?.assigneeUserId || '').trim() || null;
+            const payload = {
+                quoteId,
+                chatId,
+                scopeModuleId: cleanScopeModuleId || null,
+                customerName: customerName || null,
+                assigneeUserId,
+                message: eventMessage,
+                buttonReplyId,
+                messageId: messageId || null,
+                at: at || new Date().toISOString()
+            };
+
+            emitToRuntimeContext(eventName, payload);
+            emitToRuntimeContext('quote_action_notification', {
+                ...payload,
+                event: eventName,
+                title: isConfirm ? 'Pedido confirmado' : 'Cambios solicitados'
+            });
+            return true;
+        } catch (error) {
+            console.warn('[WA][QuoteButtonReply] handling failed:', String(error?.message || error));
+            return false;
+        }
+    };
+
     const mapMetaDeliveryErrorToPhoneStatus = (errorCode = null) => {
         const numeric = Number(errorCode);
         if (!Number.isFinite(numeric)) return 'failed';
@@ -397,6 +550,17 @@ function createSocketWaEventsBridgeService({
                         moduleContext: effectiveModuleContext
                     });
 
+                    if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase) {
+                        await handleQuoteButtonReply({
+                            msg,
+                            tenantId: historyTenantId,
+                            chatId: relatedChatIdBase,
+                            scopeModuleId: cleanScopeModuleId,
+                            messageId,
+                            at: activityAtIso
+                        });
+                    }
+
                     if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase && cleanScopeModuleId && customerModuleContextsService) {
                         try {
                             const customerId = await resolveCustomerIdFromChat(historyTenantId, relatedChatIdBase, cleanScopeModuleId);
@@ -594,7 +758,8 @@ function createSocketWaEventsBridgeService({
             });
             const fileMeta = extractMessageFileMeta(msg, media);
             const quotedMessage = await extractQuotedMessageInfo(msg);
-            const order = extractOrderInfo(msg);
+            const isInteractive = String(msg?.type || msg?._data?.type || '').toLowerCase() === 'interactive';
+            const order = isInteractive ? null : extractOrderInfo(msg);
             const location = extractLocationInfo(msg);
             const enrichedOrder = order
                 ? await enrichOrderProducts(historyTenantId, order)
