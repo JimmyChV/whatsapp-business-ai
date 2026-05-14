@@ -117,11 +117,9 @@ const MessageBubble = ({
     const productPrice = catalogMatch ? catalogMatch[2] : null;
     const firstOrderItem = orderItems[0] || null;
     const orderIdentifier = String(
-        actionOrder?.quoteId
-        || actionOrder?.orderId
-        || actionOrder?.rawPreview?.token
-        || actionOrder?.rawPreview?.orderId
-        || ''
+        isQuotePayload
+            ? (actionOrder?.quoteId || '')
+            : (actionOrder?.orderId || actionOrder?.rawPreview?.token || '')
     ).trim();
     const [selectedLocationText, setSelectedLocationText] = useState('');
     const [showForwardPicker, setShowForwardPicker] = useState(false);
