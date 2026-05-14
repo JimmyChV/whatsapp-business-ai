@@ -8,6 +8,8 @@ const {
 } = require('../../../config/persistence-runtime');
 const customerModuleContextsService = require('./customer-module-contexts.service');
 const customerLifecycleService = require('./customer-lifecycle.service');
+const tenantAutomationService = require('../../tenant/services/tenant-automation.service');
+const waClient = require('../../channels/services/wa-provider.service');
 
 const STORE_FILE = 'chat_commercial_status.json';
 const DEFAULT_LIMIT = 60;
@@ -39,6 +41,11 @@ const MANUAL_STATUS_KEYS = new Set([
     'expirado'
 ]);
 const VALID_SOURCES = new Set(['system', 'manual', 'automation', 'campaign', 'socket', 'webhook', 'http']);
+const AUTOMATION_EVENT_BY_STATUS = Object.freeze({
+    aceptado: 'quote_accepted',
+    programado: 'order_programmed',
+    atendido: 'order_attended'
+});
 
 let schemaReady = false;
 let schemaPromise = null;
@@ -212,6 +219,53 @@ function triggerLifecycleAfterAttended(cleanTenantId, next = {}, previous = null
             await customerLifecycleService.syncAfterAttendedOrder(cleanTenantId, customerId);
         })
         .catch((error) => console.warn('[customer-lifecycle] sync after attended skipped:', error?.message || error));
+}
+
+function triggerAutomationAfterCommercialTransition(cleanTenantId, next = {}, previous = null) {
+    const nextStatus = String(next?.status || '').trim().toLowerCase();
+    const previousStatus = String(previous?.status || '').trim().toLowerCase();
+    const eventKey = AUTOMATION_EVENT_BY_STATUS[nextStatus];
+    if (!eventKey || previousStatus === nextStatus) return;
+
+    Promise.resolve()
+        .then(async () => {
+            const rules = await tenantAutomationService.listActiveRulesForEvent(cleanTenantId, eventKey, {
+                moduleId: next.scopeModuleId || ''
+            });
+            if (!Array.isArray(rules) || rules.length === 0) {
+                console.info('[automation-rules] no active rule for event:', eventKey);
+                return;
+            }
+
+            for (const rule of rules) {
+                const send = async () => {
+                    try {
+                        await waClient.sendTemplateMessage(next.chatId, {
+                            templateName: rule.templateName,
+                            languageCode: rule.templateLanguage || 'es',
+                            components: [],
+                            metadata: {
+                                automationRuleId: rule.ruleId,
+                                automationEventKey: eventKey,
+                                commercialStatus: nextStatus
+                            }
+                        });
+                        console.info('[automation-rules] template sent:', eventKey, rule.templateName);
+                    } catch (error) {
+                        console.warn('[automation-rules] template send skipped:', error?.message || error);
+                    }
+                };
+
+                const delayMs = Math.max(0, Number(rule.delayMinutes || 0)) * 60 * 1000;
+                if (delayMs > 0) {
+                    const timer = setTimeout(send, delayMs);
+                    if (typeof timer.unref === 'function') timer.unref();
+                } else {
+                    await send();
+                }
+            }
+        })
+        .catch((error) => console.warn('[automation-rules] trigger skipped:', error?.message || error));
 }
 
 function normalizeRecord(item = {}, { fallbackChatId = '', fallbackScopeModuleId = '' } = {}) {
@@ -477,6 +531,7 @@ async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload 
             // silent: dual-write must not interrupt commercial status lifecycle
         }
         triggerLifecycleAfterAttended(cleanTenantId, next, previous);
+        triggerAutomationAfterCommercialTransition(cleanTenantId, next, previous);
         return {
             status: next,
             previous,
@@ -554,6 +609,7 @@ async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload 
     }
 
     triggerLifecycleAfterAttended(cleanTenantId, next, previous);
+    triggerAutomationAfterCommercialTransition(cleanTenantId, next, previous);
     return {
         status: next,
         previous,
