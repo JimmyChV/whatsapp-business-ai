@@ -241,7 +241,8 @@ async function listActiveRulesForEvent(tenantId, eventKey, { moduleId = '' } = {
     return rows.filter((item) => {
         if (!item.isActive || item.eventKey !== cleanEventKey || !item.templateName) return false;
         if (!item.moduleId) return true;
-        return cleanModuleId && String(item.moduleId) === String(cleanModuleId);
+        return cleanModuleId
+            && String(item.moduleId).toLowerCase() === String(cleanModuleId).toLowerCase();
     });
 }
 
