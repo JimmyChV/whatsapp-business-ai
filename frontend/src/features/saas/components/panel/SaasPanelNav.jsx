@@ -32,6 +32,8 @@ function NavSectionIcon({ sectionId }) {
         return <svg {...commonProps}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>;
     case 'saas_ia':
         return <svg {...commonProps}><path d="m12 3 1.4 3.8L17 8.2l-3.1 2.4L15 15l-3-2-3 2 1.1-4.4L7 8.2l3.6-1.4L12 3z" /></svg>;
+    case 'saas_automations':
+        return <svg {...commonProps}><path d="M12 3v3M12 18v3M4.9 4.9 7 7M17 17l2.1 2.1M3 12h3M18 12h3M4.9 19.1 7 17M17 7l2.1-2.1M9 12a3 3 0 1 0 6 0 3 3 0 0 0-6 0z" /></svg>;
     case 'saas_etiquetas':
     case 'saas_global_labels':
         return <svg {...commonProps}><path d="m20 13-7 7-9-9V4h7zM7.5 7.5h.01" /></svg>;

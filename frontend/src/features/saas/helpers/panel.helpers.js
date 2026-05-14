@@ -166,6 +166,7 @@ export const ADMIN_NAV_ITEMS = [
     { id: 'saas_etiquetas', label: 'Etiquetas' },
     { id: 'saas_quick_replies', label: 'Respuestas Rápidas' },
     { id: 'saas_ia', label: 'Asistentes IA' },
+    { id: 'saas_automations', label: 'Mensajes automáticos' },
     { id: 'saas_operacion', label: 'Operación' },
     { id: 'saas_clientes', label: 'Clientes' },
     { id: 'saas_templates', label: 'Plantillas Meta' },

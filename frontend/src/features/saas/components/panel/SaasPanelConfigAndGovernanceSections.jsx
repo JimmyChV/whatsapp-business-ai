@@ -1,4 +1,5 @@
 import {
+    AutomationSection,
     CatalogSection,
     ModulesConfigSection,
     PlansSection,
@@ -108,6 +109,20 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
         tenantCatalogForm: context.tenantCatalogForm
     };
 
+    const automationContext = {
+        selectedSectionId: context.selectedSectionId,
+        isAutomationSection: context.isAutomationSection,
+        settingsTenantId: context.settingsTenantId,
+        tenantScopeLocked: context.tenantScopeLocked,
+        busy: context.busy,
+        requestJson: context.requestJson,
+        runAction: context.runAction,
+        waModules: context.waModules,
+        metaTemplatesController: context.metaTemplatesController,
+        canManageAutomations: context.canManageAutomations,
+        formatDateTimeLabel: context.formatDateTimeLabel
+    };
+
     const rolesContext = {
         isRolesSection: context.isRolesSection,
         loadAccessCatalog: context.loadAccessCatalog,
@@ -160,6 +175,8 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
             <ModulesConfigSection context={modulesConfigContext} />
 
             <CatalogSection context={catalogContext} />
+
+            <AutomationSection context={automationContext} />
 
             <RoleProfilesSection context={rolesContext} />
 

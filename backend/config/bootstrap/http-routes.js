@@ -18,6 +18,7 @@ function registerHttpRoutes({
     registerTenantRuntimeSettingsHttpRoutes,
     registerTenantLabelsQuickRepliesHttpRoutes,
     registerTenantAdminConfigCatalogHttpRoutes,
+    registerTenantAdminAutomationHttpRoutes,
     registerOperationsUtilityHttpRoutes,
     registerCloudWebhookHttpRoutes,
     isProduction,
@@ -38,6 +39,7 @@ function registerHttpRoutes({
     tenantZoneRulesService,
     saasUserUiPreferencesService,
     quickReplyLibrariesService,
+    tenantAutomationService,
     customerService,
     customerAddressesService,
     customerCatalogsService,
@@ -282,6 +284,15 @@ function registerHttpRoutes({
         loadCatalog,
         addProduct,
         updateProduct
+    });
+
+    registerTenantAdminAutomationHttpRoutes({
+        app,
+        tenantAutomationService,
+        accessPolicyService,
+        isTenantAllowedForUser,
+        hasPermission,
+        hasAnyPermission
     });
 
     registerOperationsUtilityHttpRoutes({

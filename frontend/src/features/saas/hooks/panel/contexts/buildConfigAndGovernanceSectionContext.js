@@ -1,13 +1,18 @@
 export default function buildConfigAndGovernanceSectionContext(c) {
     return {
+        selectedSectionId: c.selectedSectionId,
         isGeneralConfigSection: c.isGeneralConfigSection,
         isModulesSection: c.isModulesSection,
+        isAutomationSection: c.isAutomationSection,
         settingsTenantId: c.settingsTenantId,
         loadTenantSettings: c.loadTenantSettings,
         loadWaModules: c.loadWaModules,
         toTenantDisplayName: c.toTenantDisplayName,
         tenantOptions: c.tenantOptions,
         busy: c.busy,
+        tenantScopeLocked: c.tenantScopeLocked,
+        metaTemplatesController: c.metaTemplatesController,
+        canManageAutomations: c.canEditModules || c.canEditTenantSettings || c.canManageTenantSettings,
         canEditModules: c.canEditModules,
         openConfigModuleCreate: c.openConfigModuleCreate,
         openConfigSettingsView: c.openConfigSettingsView,

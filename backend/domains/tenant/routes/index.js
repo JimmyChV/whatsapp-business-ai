@@ -4,6 +4,7 @@ module.exports = {
     ...require('./http-routes-runtime-settings'),
     ...require('./http-routes-labels-quick-replies'),
     ...require('./http-routes-admin-config-catalog'),
+    ...require('./http-routes-admin-automation'),
     ...require('./http-routes-admin-tenants-users'),
     ...require('./http-routes-assets-upload'),
     ...require('./http-routes-runtime-public')

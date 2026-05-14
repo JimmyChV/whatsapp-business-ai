@@ -60,6 +60,7 @@ export default function useSaasPanelNavigation({
         if (cleanId === 'saas_campaigns') return canViewOperations;
         if (cleanId === 'saas_templates') return canViewModules;
         if (cleanId === 'saas_ia') return canViewAi;
+        if (cleanId === 'saas_automations') return canViewTenantSettings || canViewModules;
         if (cleanId === 'saas_etiquetas' || cleanId === 'saas_global_labels') return canViewLabels;
         if (cleanId === 'saas_quick_replies') return canViewQuickReplies;
         if (cleanId === 'saas_modulos') return canViewModules;
@@ -118,6 +119,7 @@ export default function useSaasPanelNavigation({
         isCampaignsSection: selectedSectionId === 'saas_campaigns',
         isMetaTemplatesSection: selectedSectionId === 'saas_templates',
         isAiSection: selectedSectionId === 'saas_ia',
+        isAutomationSection: selectedSectionId === 'saas_automations',
         isLabelsSection: selectedSectionId === 'saas_etiquetas',
         isGlobalLabelsSection: selectedSectionId === 'saas_global_labels',
         isQuickRepliesSection: selectedSectionId === 'saas_quick_replies',
