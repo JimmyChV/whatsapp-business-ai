@@ -501,7 +501,7 @@ const MessageBubble = ({
             {isOrderActionable && (
                 <div className={`message-order-card${isQuotePayload ? ' is-quote' : ''}${isProductPayload ? ' is-product' : ' is-order'}`}>
                     <div className="message-order-card__title">
-                        {isProductPayload ? 'Producto compartido' : (isQuotePayload ? 'Cotizacion' : 'Carrito/Pedido del cliente')}
+                        {isProductPayload ? 'Producto compartido' : (isQuotePayload ? '📋 Cotización' : '🛒 Pedido del cliente')}
                     </div>
                     {orderIdentifier && (
                         <div className="message-order-card__meta">ID: {orderIdentifier}</div>
@@ -511,7 +511,7 @@ const MessageBubble = ({
                             {firstOrderItem?.title || firstOrderItem?.name}
                         </div>
                     )}
-                    {orderSubtotalLabel && !isQuotePayload && (
+                    {orderSubtotalLabel && isProductPayload && (
                         <div className="message-order-card__meta">Subtotal: {orderSubtotalLabel}</div>
                     )}
                     {isProductPayload ? (
@@ -524,10 +524,19 @@ const MessageBubble = ({
                             {orderItems.length > 0 ? orderItems.slice(0, 40).map((item, idx) => {
                                 const itemQty = Number.isFinite(Number(item?.qty)) ? Number(item.qty)
                                     : (Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1);
-                                const itemTitle = String(item?.title || item?.name || 'Producto').trim() || 'Producto';
+                                const itemTitle = String(item?.name || item?.title || item?.sku || 'Producto').trim() || 'Producto';
+                                const itemAmount = formatOrderMoney(item?.lineTotal ?? item?.price ?? item?.unitPrice, quoteCurrency || actionOrder?.currency || 'PEN');
                                 return (
-                                    <div key={idx} className="message-order-card__quote-item">
-                                        - {itemQty} {itemTitle}
+                                    <div key={idx} className="message-order-card__line-item">
+                                        <span className="message-order-card__line-item-name">
+                                            <span>{itemTitle} × {itemQty}</span>
+                                            {item?.sku ? (
+                                                <small className="message-order-card__meta" style={{ display: 'block', marginTop: 2, opacity: 0.72 }}>
+                                                    SKU: {item.sku}
+                                                </small>
+                                            ) : null}
+                                        </span>
+                                        <span className="message-order-card__line-item-amount">{itemAmount || ''}</span>
                                     </div>
                                 );
                             }) : (
@@ -544,14 +553,8 @@ const MessageBubble = ({
                                     )}
                                     {quoteDiscountLabel && (
                                         <div className="message-order-card__summary-row">
-                                            <span>Descuento</span>
+                                            <span>Ahorro</span>
                                             <strong>- {quoteDiscountLabel}</strong>
-                                        </div>
-                                    )}
-                                    {quoteTotalAfterDiscountLabel && (
-                                        <div className="message-order-card__summary-row">
-                                            <span>Total con descuento</span>
-                                            <strong>{quoteTotalAfterDiscountLabel}</strong>
                                         </div>
                                     )}
                                     {quoteDeliveryLabel && (
@@ -616,16 +619,6 @@ const MessageBubble = ({
                                     )}
                                 </>
                             )}
-                        </div>
-                    )}
-                    {!isProductPayload && !isQuotePayload && safeOrderNote && (
-                        <div className="message-order-card__meta with-gap">
-                            Nota cliente: {safeOrderNote}
-                        </div>
-                    )}
-                    {!isProductPayload && !isQuotePayload && (
-                        <div className="message-order-card__meta">
-                            {orderCatalogFooterText}
                         </div>
                     )}
                     <div className="message-order-card__actions">
