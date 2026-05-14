@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp, Minus, Plus, Send, ShoppingCart, Sparkles, Tras
 export default function BusinessCartTabSection({
     cart = [],
     orderImportStatus = null,
+    sourceOrder = null,
     getLineBreakdown,
     removeFromCart,
     updateQty,
@@ -59,6 +60,11 @@ export default function BusinessCartTabSection({
                 {orderImportStatus?.text && (
                     <div style={{ background: orderImportStatus.level === 'warn' ? tone.warningSurface : tone.successSurface, border: orderImportStatus.level === 'warn' ? `1px solid ${tone.warningBorder}` : `1px solid ${tone.successBorder}`, color: orderImportStatus.level === 'warn' ? tone.warningText : tone.successText, borderRadius: '8px', padding: '8px 10px', fontSize: '0.74rem', lineHeight: 1.4 }}>
                         {orderImportStatus.text}
+                    </div>
+                )}
+                {(sourceOrder?.orderId || sourceOrder?.messageId) && (
+                    <div style={{ background: tone.cardSurfaceAlt, border: `1px solid ${tone.controlBorder}`, color: tone.textSoft, borderRadius: '8px', padding: '8px 10px', fontSize: '0.74rem', lineHeight: 1.4 }}>
+                        Pedido origen: <strong style={{ color: 'var(--text-primary)' }}>{sourceOrder.orderId || sourceOrder.messageId}</strong>
                     </div>
                 )}
 

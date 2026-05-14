@@ -139,15 +139,50 @@ function resolveQuoteSourceType(metadata = {}, payload = {}) {
         || metadata?.source_message_id
         || metadata?.orderMessageId
         || metadata?.order_message_id
+        || metadata?.sourceOrder?.messageId
+        || metadata?.sourceOrder?.message_id
         || payload?.sourceMessageId
         || payload?.source_message_id
         || payload?.orderMessageId
         || payload?.order_message_id
+        || payload?.sourceOrder?.messageId
+        || payload?.sourceOrder?.message_id
     );
     if (sourceMessageId) return 'order';
 
     const rawType = toText(metadata?.sourceType || metadata?.source_type || metadata?.source || payload?.sourceType || payload?.source_type).toLowerCase();
     return rawType.includes('order') ? 'order' : 'quote';
+}
+
+function resolveSourceOrder(metadata = {}, payload = {}) {
+    const sourceOrder = isPlainObject(metadata?.sourceOrder)
+        ? metadata.sourceOrder
+        : (isPlainObject(payload?.sourceOrder) ? payload.sourceOrder : {});
+    const orderId = toNullableText(
+        sourceOrder?.orderId
+        || sourceOrder?.order_id
+        || metadata?.sourceOrderId
+        || metadata?.source_order_id
+        || metadata?.orderId
+        || metadata?.order_id
+        || payload?.sourceOrderId
+        || payload?.source_order_id
+        || payload?.orderId
+        || payload?.order_id
+    );
+    const messageId = toNullableText(
+        sourceOrder?.messageId
+        || sourceOrder?.message_id
+        || metadata?.sourceMessageId
+        || metadata?.source_message_id
+        || metadata?.orderMessageId
+        || metadata?.order_message_id
+        || payload?.sourceMessageId
+        || payload?.source_message_id
+        || payload?.orderMessageId
+        || payload?.order_message_id
+    );
+    return (orderId || messageId) ? { orderId, messageId } : null;
 }
 
 function buildQuoteMessageBody(quote = {}, fallbackBody = '') {
@@ -399,10 +434,12 @@ function createSocketQuoteDeliveryService({
                 const moduleContext = target.moduleContext || socket?.data?.waModule || null;
                 const actorUserId = resolveActorUserId(authContext);
                 const quoteSourceType = resolveQuoteSourceType(incomingQuote.metadata, payload);
+                const sourceOrder = resolveSourceOrder(incomingQuote.metadata, payload);
                 const quoteMetadata = {
                     ...(incomingQuote.metadata || {}),
                     source: 'socket.send_structured_quote',
-                    sourceType: quoteSourceType
+                    sourceType: sourceOrder ? 'order' : quoteSourceType,
+                    ...(sourceOrder ? { sourceOrder } : {})
                 };
                 const quoteBody = buildQuoteMessageBody({
                     ...incomingQuote,

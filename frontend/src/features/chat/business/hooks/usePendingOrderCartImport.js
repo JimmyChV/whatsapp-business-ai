@@ -61,6 +61,28 @@ export const usePendingOrderCartImport = ({
         const order = pendingOrderCartLoad.order && typeof pendingOrderCartLoad.order === 'object'
             ? pendingOrderCartLoad.order
             : {};
+        const sourceOrderId = String(
+            order?.rawPreview?.token
+            || order?.rawPreview?.orderId
+            || order?.orderId
+            || ''
+        ).trim();
+        const sourceOrderMessageId = String(
+            order?.sourceMessageId
+            || order?.messageId
+            || order?.rawPreview?.messageId
+            || pendingOrderCartLoad?.messageId
+            || ''
+        ).trim();
+        const sourceOrder = (sourceOrderId || sourceOrderMessageId)
+            ? {
+                orderId: sourceOrderId || null,
+                messageId: sourceOrderMessageId || null
+            }
+            : null;
+        if (sourceOrder) {
+            applyDraftPatch({ sourceOrder });
+        }
         const orderType = String(order?.rawPreview?.type || '').toLowerCase();
         const isProductImport = orderType.includes('product') && !String(order?.orderId || '').trim();
         const isQuoteImport = orderType.includes('quote');

@@ -102,6 +102,9 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const deliveryType = activeDraft.deliveryType || 'none';
     const deliveryAmount = activeDraft.deliveryAmount || 0;
     const showCartTotalsBreakdown = activeDraft.showCartTotalsBreakdown || false;
+    const sourceOrder = activeDraft.sourceOrder && typeof activeDraft.sourceOrder === 'object'
+        ? activeDraft.sourceOrder
+        : null;
     const [quickSearch, setQuickSearch] = useState('');
     const [orderImportStatus, setOrderImportStatus] = useState(null);
     const lastImportedOrderRef = useRef('');
@@ -515,7 +518,8 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             currency: 'PEN',
             metadata: {
                 tenantScopeKey: normalizedTenantScopeKey,
-                scopeModuleId: String(activeModuleId || selectedCatalogModuleId || '').trim().toLowerCase() || null
+                scopeModuleId: String(activeModuleId || selectedCatalogModuleId || '').trim().toLowerCase() || null,
+                sourceOrder: sourceOrder || undefined
             }
         });
         if (!payload) return;
@@ -527,6 +531,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
 
         socket.emit('send_structured_quote', payload);
         setCart([]);
+        updateDraft({ sourceOrder: null });
     };
     const addToCart = (item, qtyToAdd = 1) => {
         if (!canWriteByAssignment) {
@@ -712,6 +717,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                 <BusinessCartTabSection
                     cart={cart}
                     orderImportStatus={orderImportStatus}
+                    sourceOrder={sourceOrder}
                     getLineBreakdown={getLineBreakdown}
                     removeFromCart={removeFromCart}
                     updateQty={updateQty}

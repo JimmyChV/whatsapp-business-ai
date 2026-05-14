@@ -12,6 +12,7 @@ export const useCartDraftSync = ({
     deliveryType = 'free',
     deliveryAmount = 0,
     showCartTotalsBreakdown = true,
+    sourceOrder = null,
     setOrderImportStatus,
     setCart,
     setShowOrderAdjustments,
@@ -74,7 +75,8 @@ export const useCartDraftSync = ({
             globalDiscountValue,
             deliveryType,
             deliveryAmount,
-            showCartTotalsBreakdown
+            showCartTotalsBreakdown,
+            sourceOrder
         };
 
         const nextSignature = JSON.stringify(nextDraft);
@@ -99,6 +101,7 @@ export const useCartDraftSync = ({
         deliveryType,
         deliveryAmount,
         showCartTotalsBreakdown,
+        sourceOrder,
         cartDraftSignaturesRef,
         setCartDraftsByChat
     ]);
