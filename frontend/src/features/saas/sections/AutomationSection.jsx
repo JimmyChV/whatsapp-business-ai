@@ -6,7 +6,19 @@ import { isTemplateAllowedInIndividual } from '../helpers/templateUseCase.helper
 const EVENT_OPTIONS = [
     { value: 'quote_accepted', label: 'Pedido aceptado' },
     { value: 'order_programmed', label: 'Pedido programado' },
-    { value: 'order_attended', label: 'Pedido atendido' }
+    { value: 'order_attended', label: 'Pedido atendido' },
+    { value: 'order_expired', label: 'Pedido expirado' },
+    { value: 'order_lost', label: 'Pedido perdido' },
+    { value: 'order_sold', label: 'Pedido vendido' }
+];
+
+const DELAY_UNIT_OPTIONS = [
+    { value: 'seconds', label: 'Segundos' },
+    { value: 'minutes', label: 'Minutos' },
+    { value: 'hours', label: 'Horas' },
+    { value: 'days', label: 'Días' },
+    { value: 'weeks', label: 'Semanas' },
+    { value: 'months', label: 'Meses' }
 ];
 
 const EMPTY_FORM = {
@@ -14,7 +26,8 @@ const EMPTY_FORM = {
     moduleId: '',
     templateName: '',
     templateLanguage: 'es',
-    delayMinutes: 0,
+    delayValue: 0,
+    delayUnit: 'minutes',
     isActive: true
 };
 
@@ -26,6 +39,24 @@ function eventLabel(value = '') {
     return EVENT_OPTIONS.find((item) => item.value === value)?.label || text(value) || '-';
 }
 
+function normalizeDelayUnit(value = '') {
+    const unit = text(value).toLowerCase();
+    return DELAY_UNIT_OPTIONS.some((item) => item.value === unit) ? unit : 'minutes';
+}
+
+function normalizeDelayValue(value = 0) {
+    const parsed = Number.parseInt(String(value ?? 0), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function formatDelay(rule = {}) {
+    const value = normalizeDelayValue(rule.delayValue ?? rule.delay_value ?? rule.delayMinutes ?? rule.delay_minutes);
+    const unit = normalizeDelayUnit(rule.delayUnit || rule.delay_unit || 'minutes');
+    if (!value) return 'Inmediato';
+    const label = DELAY_UNIT_OPTIONS.find((item) => item.value === unit)?.label || 'Minutos';
+    return `${value} ${label.toLowerCase()}`;
+}
+
 function buildForm(rule = null) {
     if (!rule) return { ...EMPTY_FORM };
     return {
@@ -33,7 +64,8 @@ function buildForm(rule = null) {
         moduleId: text(rule.moduleId),
         templateName: text(rule.templateName),
         templateLanguage: text(rule.templateLanguage) || 'es',
-        delayMinutes: Number.isFinite(Number(rule.delayMinutes)) ? Number(rule.delayMinutes) : 0,
+        delayValue: normalizeDelayValue(rule.delayValue ?? rule.delay_value ?? rule.delayMinutes ?? rule.delay_minutes),
+        delayUnit: normalizeDelayUnit(rule.delayUnit || rule.delay_unit || 'minutes'),
         isActive: rule.isActive !== false
     };
 }
@@ -111,7 +143,7 @@ function AutomationSection(props = {}) {
         event: eventLabel(rule.eventKey),
         module: moduleLabelMap.get(text(rule.moduleId)) || (text(rule.moduleId) || 'Todos los modulos'),
         template: text(rule.templateName) || '-',
-        delay: `${Number(rule.delayMinutes || 0)} min`,
+        delay: formatDelay(rule),
         status: rule.isActive === false ? 'Inactiva' : 'Activa',
         updatedAt: formatDateTimeLabel(rule.updatedAt),
         raw: rule
@@ -178,7 +210,8 @@ function AutomationSection(props = {}) {
                 moduleId: form.moduleId || null,
                 templateName: form.templateName,
                 templateLanguage: form.templateLanguage || 'es',
-                delayMinutes: Number(form.delayMinutes || 0),
+                delayValue: normalizeDelayValue(form.delayValue),
+                delayUnit: normalizeDelayUnit(form.delayUnit),
                 isActive: form.isActive !== false
             };
             if (!payload.eventKey) throw new Error('Selecciona un evento.');
@@ -228,7 +261,7 @@ function AutomationSection(props = {}) {
                         <div className="saas-admin-detail-field"><span>MODULO</span><strong>{moduleLabelMap.get(text(rule.moduleId)) || text(rule.moduleId) || 'Todos los modulos'}</strong></div>
                         <div className="saas-admin-detail-field"><span>TEMPLATE</span><strong>{text(rule.templateName) || '-'}</strong></div>
                         <div className="saas-admin-detail-field"><span>IDIOMA</span><strong>{text(rule.templateLanguage).toUpperCase() || 'ES'}</strong></div>
-                        <div className="saas-admin-detail-field"><span>DELAY</span><strong>{Number(rule.delayMinutes || 0)} min</strong></div>
+                        <div className="saas-admin-detail-field"><span>DELAY</span><strong>{formatDelay(rule)}</strong></div>
                         <div className="saas-admin-detail-field"><span>ESTADO</span><strong>{rule.isActive === false ? 'Inactiva' : 'Activa'}</strong></div>
                     </div>
                 </div>
@@ -293,17 +326,28 @@ function AutomationSection(props = {}) {
                 <small>{selectedTemplate ? 'Template aprobado para mensajes individuales.' : 'Usa templates aprobados con uso individual o ambos.'}</small>
             </div>
             <div className="saas-admin-form-row">
-                <label htmlFor="automation_delay">Enviar despues de X minutos</label>
+                <label htmlFor="automation_delay_value">Enviar después</label>
                 <input
-                    id="automation_delay"
+                    id="automation_delay_value"
                     className="saas-input"
                     type="number"
                     min="0"
                     step="1"
-                    value={form.delayMinutes}
+                    value={form.delayValue}
                     disabled={busy}
-                    onChange={(event) => setForm((prev) => ({ ...prev, delayMinutes: event.target.value }))}
+                    onChange={(event) => setForm((prev) => ({ ...prev, delayValue: event.target.value }))}
                 />
+                <select
+                    className="saas-input"
+                    value={form.delayUnit}
+                    disabled={busy}
+                    onChange={(event) => setForm((prev) => ({ ...prev, delayUnit: event.target.value }))}
+                >
+                    {DELAY_UNIT_OPTIONS.map((item) => (
+                        <option key={`automation_delay_unit_${item.value}`} value={item.value}>{item.label}</option>
+                    ))}
+                </select>
+                <small>Usa 0 para enviar inmediatamente.</small>
             </div>
             <div className="saas-admin-related-block">
                 <h4>Estado</h4>

@@ -51,7 +51,10 @@ const VALID_SOURCES = new Set(['system', 'manual', 'automation', 'campaign', 'so
 const AUTOMATION_EVENT_BY_STATUS = Object.freeze({
     aceptado: 'quote_accepted',
     programado: 'order_programmed',
-    atendido: 'order_attended'
+    atendido: 'order_attended',
+    expirado: 'order_expired',
+    perdido: 'order_lost',
+    vendido: 'order_sold'
 });
 
 let schemaReady = false;
@@ -298,7 +301,10 @@ function triggerAutomationAfterCommercialTransition(cleanTenantId, next = {}, pr
                     }
                 };
 
-                const delayMs = Math.max(0, Number(rule.delayMinutes || 0)) * 60 * 1000;
+                const delaySeconds = Number.isFinite(Number(rule.delaySeconds))
+                    ? Number(rule.delaySeconds)
+                    : Math.max(0, Number(rule.delayMinutes || 0)) * 60;
+                const delayMs = Math.max(0, delaySeconds) * 1000;
                 if (delayMs > 0) {
                     const timer = setTimeout(send, delayMs);
                     if (typeof timer.unref === 'function') timer.unref();
