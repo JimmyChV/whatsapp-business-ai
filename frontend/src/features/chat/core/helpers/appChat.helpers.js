@@ -518,10 +518,8 @@ export const normalizeChatFilters = (filters = {}) => {
   const pinnedMode = ['all', 'pinned', 'unpinned'].includes(String(filters?.pinnedMode || 'all'))
     ? String(filters?.pinnedMode || 'all')
     : 'all';
-  const commercialStatus = ['all', 'nuevo', 'en_conversacion', 'cotizado', 'vendido', 'perdido']
-    .includes(String(filters?.commercialStatus || 'all').trim().toLowerCase())
-    ? String(filters?.commercialStatus || 'all').trim().toLowerCase()
-    : 'all';
+  const rawCommercialStatus = String(filters?.commercialStatus || 'all').trim().toLowerCase();
+  const commercialStatus = rawCommercialStatus || 'all';
 
   return {
     labelTokens,

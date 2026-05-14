@@ -82,6 +82,7 @@ const Sidebar = ({
         showLabelPanel,
         setShowLabelPanel
     } = useSidebarUiToggles();
+    const [globalCommercialStatusOptions, setGlobalCommercialStatusOptions] = React.useState([{ value: 'all', label: 'Todos' }]);
     const {
         filters,
         updateFilters,
@@ -104,6 +105,7 @@ const Sidebar = ({
         waModules,
         chatAssignmentState,
         chatCommercialStatusState,
+        commercialStatusOptions: globalCommercialStatusOptions,
         onFiltersChange,
         searchQuery
     });
@@ -202,6 +204,43 @@ const Sidebar = ({
             module || {}
         ])
     ), [waModules]);
+
+    React.useEffect(() => {
+        if (typeof buildApiHeaders !== 'function') return undefined;
+        let cancelled = false;
+        const headers = { ...(buildApiHeaders() || {}) };
+        if (currentTenantId) headers['x-tenant-id'] = currentTenantId;
+
+        fetch(`${String(API_URL || '').replace(/\/$/, '')}/api/ops/global-labels?includeInactive=false`, {
+            method: 'GET',
+            headers
+        })
+            .then((response) => response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`)))
+            .then((payload) => {
+                if (cancelled) return;
+                const items = Array.isArray(payload?.items) ? payload.items : [];
+                const options = items
+                    .map((item) => ({
+                        value: String(item?.commercialStatusKey || item?.commercial_status_key || '').trim().toLowerCase(),
+                        label: sanitizeDisplayText(item?.name || item?.commercialStatusKey || item?.commercial_status_key || ''),
+                        color: item?.color || null,
+                        sortOrder: Number(item?.sortOrder ?? item?.sort_order ?? 100) || 100
+                    }))
+                    .filter((item) => item.value)
+                    .sort((a, b) => {
+                        if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+                        return a.label.localeCompare(b.label, 'es', { sensitivity: 'base' });
+                    });
+                setGlobalCommercialStatusOptions([{ value: 'all', label: 'Todos' }, ...options]);
+            })
+            .catch(() => {
+                if (!cancelled) setGlobalCommercialStatusOptions([{ value: 'all', label: 'Todos' }]);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [buildApiHeaders, currentTenantId]);
 
     React.useEffect(() => {
         const query = String(searchQuery || '').trim();

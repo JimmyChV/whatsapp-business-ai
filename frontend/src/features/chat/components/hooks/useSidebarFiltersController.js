@@ -1,18 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 
 const WA_LABEL_COLORS = ['#25D366', '#34B7F1', '#FFB02E', '#FF5C5C', '#9C6BFF', '#00A884', '#7D8D95'];
-const COMMERCIAL_STATUS_OPTIONS = [
-  { value: 'all', label: 'Todos' },
-  { value: 'nuevo', label: 'Nuevo' },
-  { value: 'en_conversacion', label: 'En conversacion' },
-  { value: 'cotizado', label: 'Cotizado' },
-  { value: 'vendido', label: 'Vendido' },
-  { value: 'perdido', label: 'Perdido' }
-];
-const COMMERCIAL_STATUS_LABEL_BY_VALUE = COMMERCIAL_STATUS_OPTIONS.reduce((acc, entry) => {
-  acc[entry.value] = entry.label;
-  return acc;
-}, {});
+const DEFAULT_COMMERCIAL_STATUS_OPTIONS = [{ value: 'all', label: 'Todos' }];
 
 const normalizePhoneDigits = (value = '') => String(value || '').replace(/\D/g, '');
 const normalizeSearchText = (value = '') => String(value || '')
@@ -33,12 +22,15 @@ const isSavedCustomerChat = (chat = {}) => (
   || hasCrmIdentity(chat)
 );
 const normalizeFilterToken = (value = '') => String(value || '').trim().toLowerCase();
-const normalizeCommercialStatus = (value = 'all') => {
+const normalizeCommercialStatus = (value = 'all', options = DEFAULT_COMMERCIAL_STATUS_OPTIONS) => {
   const clean = normalizeFilterToken(value || 'all');
-  return COMMERCIAL_STATUS_LABEL_BY_VALUE[clean] ? clean : 'all';
+  const allowed = new Set((Array.isArray(options) ? options : DEFAULT_COMMERCIAL_STATUS_OPTIONS)
+    .map((entry) => normalizeFilterToken(entry?.value))
+    .filter(Boolean));
+  return allowed.has(clean) ? clean : 'all';
 };
 
-const normalizeFilters = (filters = {}) => {
+const normalizeFilters = (filters = {}, commercialStatusOptions = DEFAULT_COMMERCIAL_STATUS_OPTIONS) => {
   const rawTokens = Array.isArray(filters?.labelTokens) ? filters.labelTokens : [];
   const seen = new Set();
   const labelTokens = [];
@@ -65,7 +57,7 @@ const normalizeFilters = (filters = {}) => {
     unlabeledOnly: Boolean(filters?.unlabeledOnly),
     onlyAssignedToMe: Boolean(filters?.onlyAssignedToMe),
     assigneeUserId: normalizeFilterToken(filters?.assigneeUserId || ''),
-    commercialStatus: normalizeCommercialStatus(filters?.commercialStatus || 'all'),
+    commercialStatus: normalizeCommercialStatus(filters?.commercialStatus || 'all', commercialStatusOptions),
     contactMode,
     archivedMode,
     pinnedMode
@@ -127,6 +119,7 @@ const useSidebarFiltersController = ({
   waModules = [],
   chatAssignmentState = null,
   chatCommercialStatusState = null,
+  commercialStatusOptions = DEFAULT_COMMERCIAL_STATUS_OPTIONS,
   onFiltersChange = null,
   searchQuery = ''
 } = {}) => {
@@ -170,10 +163,33 @@ const useSidebarFiltersController = ({
 
   const [labelSearch, setLabelSearch] = useState('');
 
-  const filters = useMemo(() => normalizeFilters(activeFilters), [activeFilters]);
+  const safeCommercialStatusOptions = useMemo(() => {
+    const seen = new Set(['all']);
+    const options = [{ value: 'all', label: 'Todos' }];
+    (Array.isArray(commercialStatusOptions) ? commercialStatusOptions : []).forEach((entry) => {
+      const value = normalizeFilterToken(entry?.value);
+      if (!value || value === 'all' || seen.has(value)) return;
+      seen.add(value);
+      options.push({
+        value,
+        label: String(entry?.label || value).trim() || value,
+        color: entry?.color || null
+      });
+    });
+    return options;
+  }, [commercialStatusOptions]);
+
+  const commercialStatusLabelByValue = useMemo(() => (
+    safeCommercialStatusOptions.reduce((acc, entry) => {
+      acc[entry.value] = entry.label;
+      return acc;
+    }, {})
+  ), [safeCommercialStatusOptions]);
+
+  const filters = useMemo(() => normalizeFilters(activeFilters, safeCommercialStatusOptions), [activeFilters, safeCommercialStatusOptions]);
 
   const updateFilters = (patch = {}) => {
-    const next = normalizeFilters({ ...filters, ...patch });
+    const next = normalizeFilters({ ...filters, ...patch }, safeCommercialStatusOptions);
     onFiltersChange?.(next);
   };
 
@@ -284,7 +300,7 @@ const useSidebarFiltersController = ({
       chips.push(`Asignada: ${assignmentUserLabelById.get(filters.assigneeUserId) || filters.assigneeUserId}`);
     }
     if (filters.commercialStatus !== 'all') {
-      chips.push(`Estado: ${COMMERCIAL_STATUS_LABEL_BY_VALUE[filters.commercialStatus] || filters.commercialStatus}`);
+      chips.push(`Estado: ${commercialStatusLabelByValue[filters.commercialStatus] || filters.commercialStatus}`);
     }
     if (filters.archivedMode === 'archived') chips.push('Archivados');
     if (filters.pinnedMode === 'pinned') chips.push('Fijados');
@@ -292,7 +308,7 @@ const useSidebarFiltersController = ({
     if (filters.contactMode === 'unknown') chips.push('No guardados');
     if (filters.labelTokens.length > 0) chips.push(`Etiquetas (${filters.labelTokens.length})`);
     return chips;
-  }, [assignmentUserLabelById, filters, hasAnyFilter]);
+  }, [assignmentUserLabelById, commercialStatusLabelByValue, filters, hasAnyFilter]);
 
   const localQuery = String(searchQuery || '');
   const filteredChats = useMemo(() => chats.filter((chat) => {
@@ -354,7 +370,7 @@ const useSidebarFiltersController = ({
       contactMode: 'all',
       archivedMode: 'all',
       pinnedMode: 'all'
-    }));
+    }, safeCommercialStatusOptions));
   };
 
   const toggleLabel = (token) => {
@@ -380,7 +396,7 @@ const useSidebarFiltersController = ({
     selectedLabelCount,
     hasAnyFilter,
     assignmentUserOptions,
-    commercialStatusOptions: COMMERCIAL_STATUS_OPTIONS
+    commercialStatusOptions: safeCommercialStatusOptions
   };
 };
 
