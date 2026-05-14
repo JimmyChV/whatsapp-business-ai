@@ -32,7 +32,7 @@ INSERT INTO global_labels (
 ) VALUES
   (
     'ACEPTADO',
-    'Aceptado',
+    'ACEPTADO',
     '#4CAF50',
     'Etiqueta comercial para pedidos aceptados por el cliente.',
     'aceptado',
@@ -43,7 +43,7 @@ INSERT INTO global_labels (
   ),
   (
     'PROGRAMADO',
-    'Programado',
+    'PROGRAMADO',
     '#1565C0',
     'Etiqueta comercial para pedidos programados.',
     'programado',
@@ -54,7 +54,7 @@ INSERT INTO global_labels (
   ),
   (
     'ATENDIDO',
-    'Atendido',
+    'ATENDIDO',
     '#2E7D32',
     'Etiqueta comercial para pedidos atendidos.',
     'atendido',
@@ -65,7 +65,7 @@ INSERT INTO global_labels (
   ),
   (
     'EXPIRADO',
-    'Expirado',
+    'EXPIRADO',
     '#616161',
     'Etiqueta comercial para cotizaciones expiradas.',
     'expirado',
@@ -114,7 +114,7 @@ INSERT INTO global_labels (
 ) VALUES
   (
     'PROSPECTO',
-    'Prospecto',
+    'PROSPECTO',
     '#9E9E9E',
     'Etiqueta lifecycle para contactos que aun no compran.',
     NULL,
@@ -125,7 +125,7 @@ INSERT INTO global_labels (
   ),
   (
     'CLIENTE_NUEVO',
-    'Cliente Nuevo',
+    'CLIENTE NUEVO',
     '#FF9800',
     'Etiqueta lifecycle para clientes con primera compra.',
     NULL,
@@ -136,7 +136,7 @@ INSERT INTO global_labels (
   ),
   (
     'CLIENTE_RECURRENTE',
-    'Cliente Recurrente',
+    'CLIENTE RECURRENTE',
     '#8BC34A',
     'Etiqueta lifecycle para clientes con compras recurrentes.',
     NULL,

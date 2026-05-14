@@ -56,7 +56,7 @@ const DEFAULT_GLOBAL_LABELS = Object.freeze([
     },
     {
         id: 'ACEPTADO',
-        name: 'Aceptado',
+        name: 'ACEPTADO',
         color: '#4CAF50',
         description: 'Etiqueta comercial predeterminada para pedidos aceptados.',
         commercialStatusKey: 'aceptado',
@@ -65,7 +65,7 @@ const DEFAULT_GLOBAL_LABELS = Object.freeze([
     },
     {
         id: 'PROGRAMADO',
-        name: 'Programado',
+        name: 'PROGRAMADO',
         color: '#1565C0',
         description: 'Etiqueta comercial predeterminada para pedidos programados.',
         commercialStatusKey: 'programado',
@@ -74,7 +74,7 @@ const DEFAULT_GLOBAL_LABELS = Object.freeze([
     },
     {
         id: 'ATENDIDO',
-        name: 'Atendido',
+        name: 'ATENDIDO',
         color: '#2E7D32',
         description: 'Etiqueta comercial predeterminada para pedidos atendidos.',
         commercialStatusKey: 'atendido',
@@ -83,7 +83,7 @@ const DEFAULT_GLOBAL_LABELS = Object.freeze([
     },
     {
         id: 'EXPIRADO',
-        name: 'Expirado',
+        name: 'EXPIRADO',
         color: '#616161',
         description: 'Etiqueta comercial predeterminada para cotizaciones expiradas.',
         commercialStatusKey: 'expirado',
