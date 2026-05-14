@@ -22,6 +22,13 @@ const VALID_STATUSES = new Set([
     'vendido',
     'perdido'
 ]);
+const INBOUND_FIRST_CONTACT_PROTECTED_STATUSES = new Set([
+    'cotizado',
+    'aceptado',
+    'programado',
+    'atendido',
+    'vendido'
+]);
 const VALID_SOURCES = new Set(['system', 'manual', 'automation', 'campaign', 'socket', 'webhook', 'http']);
 
 let schemaReady = false;
@@ -530,6 +537,14 @@ async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload 
 async function markInboundCustomerFirstContact(tenantId = DEFAULT_TENANT_ID, options = {}) {
     const at = normalizeIso(options.at) || nowIso();
     const current = await getChatCommercialStatus(tenantId, options);
+    const currentStatus = toText(current?.status || '').toLowerCase();
+
+    if (INBOUND_FIRST_CONTACT_PROTECTED_STATUSES.has(currentStatus)) {
+        return { status: current, previous: current, changed: false };
+    }
+    if (currentStatus && currentStatus !== 'nuevo') {
+        return { status: current, previous: current, changed: false };
+    }
 
     if (!current) {
         return upsertChatCommercialStatus(tenantId, {
