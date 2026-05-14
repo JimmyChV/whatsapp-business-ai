@@ -1404,8 +1404,9 @@ function registerOperationsHttpRoutes({
 
             const scopeModuleId = normalizeScopeModuleId(req.body?.scopeModuleId || req.query?.scopeModuleId || '');
             const targetStatus = toLower(req.body?.status || '');
-            if (!['vendido', 'perdido'].includes(targetStatus)) {
-                return res.status(400).json({ ok: false, error: 'Estado comercial invalido. Solo vendido/perdido.' });
+            const manualStatuses = ['aceptado', 'programado', 'atendido', 'vendido', 'perdido', 'expirado'];
+            if (!manualStatuses.includes(targetStatus)) {
+                return res.status(400).json({ ok: false, error: 'Estado comercial invalido. Permitidos: aceptado, programado, atendido, vendido, perdido, expirado.' });
             }
 
             const actorUserId = resolveActorUserId(req);
