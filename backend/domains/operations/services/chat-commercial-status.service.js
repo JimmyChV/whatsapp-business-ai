@@ -8,8 +8,15 @@ const {
 } = require('../../../config/persistence-runtime');
 const customerModuleContextsService = require('./customer-module-contexts.service');
 const customerLifecycleService = require('./customer-lifecycle.service');
+const metaTemplatesService = require('./meta-templates.service');
+const templateVariablesService = require('./template-variables.service');
 const tenantAutomationService = require('../../tenant/services/tenant-automation.service');
 const waClient = require('../../channels/services/wa-provider.service');
+const {
+    buildTemplateSendComponents,
+    buildTemplatePreviewText,
+    buildTemplateRealtimeComponents
+} = require('../../channels/helpers/template-render.helpers');
 
 const STORE_FILE = 'chat_commercial_status.json';
 const DEFAULT_LIMIT = 60;
@@ -237,14 +244,49 @@ function triggerAutomationAfterCommercialTransition(cleanTenantId, next = {}, pr
                 return;
             }
 
+            const customerId = await resolveCustomerIdFromChat(cleanTenantId, {
+                chatId: next.chatId,
+                scopeModuleId: next.scopeModuleId
+            });
+
             for (const rule of rules) {
                 const send = async () => {
                     try {
+                        const templateLanguage = rule.templateLanguage || 'es';
+                        const template = await metaTemplatesService.getTemplateRecord(cleanTenantId, {
+                            templateName: rule.templateName,
+                            moduleId: rule.moduleId || next.scopeModuleId || '',
+                            templateLanguage
+                        });
+                        const previewPayload = await templateVariablesService.getPreview(cleanTenantId, {
+                            chatId: next.chatId,
+                            customerId: customerId || ''
+                        });
+                        const components = Array.isArray(template?.componentsJson) && template.componentsJson.length > 0
+                            ? buildTemplateSendComponents(template, previewPayload)
+                            : [];
+                        const templateComponents = Array.isArray(template?.componentsJson) && template.componentsJson.length > 0
+                            ? buildTemplateRealtimeComponents(template, previewPayload)
+                            : [];
+                        const previewText = Array.isArray(template?.componentsJson) && template.componentsJson.length > 0
+                            ? buildTemplatePreviewText(template, previewPayload, rule.templateName)
+                            : `Template: ${rule.templateName}`;
+                        const automationAgentMeta = {
+                            sentByUserId: 'automation',
+                            sentByName: 'Automatización',
+                            sentByRole: 'system',
+                            sentViaModuleId: next.scopeModuleId || rule.moduleId || ''
+                        };
                         await waClient.sendTemplateMessage(next.chatId, {
                             templateName: rule.templateName,
-                            languageCode: rule.templateLanguage || 'es',
-                            components: [],
+                            languageCode: templateLanguage,
+                            components,
                             metadata: {
+                                previewText,
+                                templateName: rule.templateName,
+                                templateLanguage,
+                                templateComponents,
+                                agentMeta: automationAgentMeta,
                                 automationRuleId: rule.ruleId,
                                 automationEventKey: eventKey,
                                 commercialStatus: nextStatus

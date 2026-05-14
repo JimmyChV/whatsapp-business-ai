@@ -739,7 +739,12 @@ function createSocketWaEventsBridgeService({
             const runtimeModuleContext = resolveHistoryModuleContext();
             const relatedChatIdBase = String(msg?.to || msg?.from || '').trim();
             const messageId = getSerializedMessageId(msg);
-            const agentMeta = msg?.fromMe ? mergeAgentMeta(getOutgoingAgentMeta(messageId)) : null;
+            const rawData = msg?._data && typeof msg._data === 'object' ? msg._data : {};
+            const rawMetadata = rawData?.metadata && typeof rawData.metadata === 'object' ? rawData.metadata : {};
+            const agentMetaFromMetadata = rawMetadata?.agentMeta && typeof rawMetadata.agentMeta === 'object'
+                ? rawMetadata.agentMeta
+                : null;
+            const agentMeta = msg?.fromMe ? mergeAgentMeta(getOutgoingAgentMeta(messageId), agentMetaFromMetadata) : null;
             const effectiveModuleContext = buildEffectiveModuleContext(runtimeModuleContext, agentMeta);
             const moduleAttributionMeta = buildModuleAttributionMeta(effectiveModuleContext);
             const scopeModuleId = normalizeScopedModuleId(
@@ -823,6 +828,10 @@ function createSocketWaEventsBridgeService({
                 mediaPath: fileMeta.mediaPath || null,
                 ack: msg?.ack,
                 type: msg?.type,
+                templateName: String(rawData?.templateName || rawMetadata?.templateName || '').trim() || null,
+                templateLanguage: String(rawData?.templateLanguage || rawMetadata?.templateLanguage || '').trim() || null,
+                templatePreviewText: String(rawMetadata?.previewText || '').trim() || null,
+                templateComponents: Array.isArray(rawData?.templateComponents) ? rawData.templateComponents : [],
                 author: msg?.author || msg?._data?.author || null,
                 notifyName: null,
                 senderPhone: null,
