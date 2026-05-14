@@ -263,12 +263,12 @@ class WAProvider extends EventEmitter {
         return await this.activeAdapter.sendTemplateMessage(to, payload);
     }
 
-    async sendInteractiveMessage(to, interactive = {}) {
+    async sendInteractiveMessage(to, interactive = {}, options = {}) {
         if (!this.activeAdapter?.sendInteractiveMessage) {
             console.warn('[WA][Provider] adapter does not support interactive messages.');
             return null;
         }
-        return await this.activeAdapter.sendInteractiveMessage(to, interactive);
+        return await this.activeAdapter.sendInteractiveMessage(to, interactive, options);
     }
 
     async sendReaction(to, payload = {}) {

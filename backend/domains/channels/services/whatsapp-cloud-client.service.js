@@ -899,7 +899,7 @@ class WhatsAppCloudClient extends EventEmitter {
         return response;
     }
 
-    async sendInteractiveMessage(to, interactive = {}) {
+    async sendInteractiveMessage(to, interactive = {}, options = {}) {
         if (!this.isReady) throw new Error('Cloud client not ready');
         const waId = await this.resolveSendWaId(to);
         const safeInteractive = interactive && typeof interactive === 'object' && !Array.isArray(interactive)
@@ -914,6 +914,10 @@ class WhatsAppCloudClient extends EventEmitter {
             type: 'interactive',
             interactive: safeInteractive
         };
+        const quotedMessageId = String(options?.quotedMessageId || '').trim();
+        if (quotedMessageId) {
+            payload.context = { message_id: quotedMessageId };
+        }
 
         const response = await this.graphJson(`/${this.phoneNumberId}/messages`, {
             method: 'POST',
@@ -937,6 +941,7 @@ class WhatsAppCloudClient extends EventEmitter {
             ack: 1,
             timestamp: safeTimestamp(),
             hasMedia: false,
+            quotedMessageId,
             rawData: compactObject({
                 interactive: safeInteractive,
                 interactiveType: String(safeInteractive?.type || '').trim() || null

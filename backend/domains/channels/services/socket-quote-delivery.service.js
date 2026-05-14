@@ -286,7 +286,8 @@ function buildSyntheticInteractiveSentMessage({
     messageId,
     chatId,
     body,
-    interactive
+    interactive,
+    quotedMessageId = ''
 } = {}) {
     const safeMessageId = toText(messageId);
     if (!safeMessageId) return null;
@@ -302,6 +303,7 @@ function buildSyntheticInteractiveSentMessage({
         fromMe: true,
         type: 'interactive',
         ack: 1,
+        quotedMessageId: toNullableText(quotedMessageId),
         timestamp: Math.floor(Date.now() / 1000),
         hasMedia: false,
         rawData: {
@@ -310,6 +312,18 @@ function buildSyntheticInteractiveSentMessage({
         _data: {
             interactive
         }
+    };
+}
+
+function buildSourceOrderQuotedMessage(sourceOrder = {}) {
+    const messageId = toNullableText(sourceOrder?.messageId || sourceOrder?.message_id);
+    if (!messageId) return null;
+    return {
+        id: messageId,
+        body: '🛒 Pedido del cliente',
+        fromMe: false,
+        hasMedia: false,
+        type: 'order'
     };
 }
 
@@ -445,7 +459,11 @@ function createSocketQuoteDeliveryService({
                     ...incomingQuote,
                     metadata: quoteMetadata
                 }, payload?.body || payload?.message || '');
-                const quotedMessageId = toText(payload?.quotedMessageId || payload?.quoted || '');
+                const sourceOrderQuotedMessageId = toText(sourceOrder?.messageId || sourceOrder?.message_id || '');
+                const quotedMessageId = toText(payload?.quotedMessageId || payload?.quoted || sourceOrderQuotedMessageId || '');
+                const quotedMessage = quotedMessageId && quotedMessageId === sourceOrderQuotedMessageId
+                    ? buildSourceOrderQuotedMessage(sourceOrder)
+                    : null;
 
                 const createdQuote = await resolvedQuotesService.createQuoteRecord(tenantId, {
                     quoteId: incomingQuote.quoteId || undefined,
@@ -475,13 +493,16 @@ function createSocketQuoteDeliveryService({
                 let sentMessage = null;
                 const quoteInteractive = buildQuoteInteractiveMessage(normalizedQuote.quoteId, quoteBody);
                 if (typeof waClient?.sendInteractiveMessage === 'function') {
-                    const interactiveMessageId = await waClient.sendInteractiveMessage(target.targetChatId, quoteInteractive);
+                    const interactiveMessageId = await waClient.sendInteractiveMessage(target.targetChatId, quoteInteractive, {
+                        quotedMessageId
+                    });
                     if (interactiveMessageId) {
                         sentMessage = buildSyntheticInteractiveSentMessage({
                             messageId: interactiveMessageId,
                             chatId: target.targetChatId,
                             body: quoteBody,
-                            interactive: quoteInteractive
+                            interactive: quoteInteractive,
+                            quotedMessageId
                         });
                     }
                 }
@@ -510,6 +531,7 @@ function createSocketQuoteDeliveryService({
                     fallbackChatId: target.targetChatId,
                     fallbackBody: quoteBody,
                     quotedMessageId,
+                    quotedMessage,
                     moduleContext,
                     agentMeta,
                     mediaPayload: null,
