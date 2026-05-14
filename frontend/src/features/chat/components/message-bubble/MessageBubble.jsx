@@ -116,7 +116,13 @@ const MessageBubble = ({
     const productTitle = catalogMatch ? catalogMatch[1] : null;
     const productPrice = catalogMatch ? catalogMatch[2] : null;
     const firstOrderItem = orderItems[0] || null;
-    const orderIdentifier = String(actionOrder?.quoteId || actionOrder?.orderId || '').trim();
+    const orderIdentifier = String(
+        actionOrder?.quoteId
+        || actionOrder?.orderId
+        || actionOrder?.rawPreview?.token
+        || actionOrder?.rawPreview?.orderId
+        || ''
+    ).trim();
     const [selectedLocationText, setSelectedLocationText] = useState('');
     const [showForwardPicker, setShowForwardPicker] = useState(false);
     const [forwardSearch, setForwardSearch] = useState('');
@@ -165,12 +171,14 @@ const MessageBubble = ({
                 : finalUnit;
             const regularLine = regularUnit - finalUnit > 0.01 ? regularUnit * qty : finalLine;
             return {
+                subtotal: acc.subtotal + regularLine,
                 total: acc.total + finalLine,
                 savings: acc.savings + Math.max(0, regularLine - finalLine)
             };
-        }, { total: 0, savings: 0 });
+        }, { subtotal: 0, total: 0, savings: 0 });
         return {
             ...totals,
+            subtotalLabel: totals.subtotal > 0 ? formatOrderMoney(totals.subtotal, actionOrder?.currency || 'PEN') : '',
             totalLabel: totals.total > 0 ? formatOrderMoney(totals.total, actionOrder?.currency || 'PEN') : '',
             savingsLabel: totals.savings > 0 ? formatOrderMoney(totals.savings, actionOrder?.currency || 'PEN') : ''
         };
@@ -561,7 +569,10 @@ const MessageBubble = ({
                                 </>
                             )}
                         </div>
-                    ) : orderItems.length > 0 ? orderItems.slice(0, 16).map((item, idx) => {
+                    ) : (
+                        <div className="message-order-card__quote-body">
+                            <div className="message-order-card__section-label">Detalle de productos:</div>
+                            {orderItems.length > 0 ? orderItems.slice(0, 40).map((item, idx) => {
                         const itemAmount = formatOrderMoney(item?.lineTotal ?? item?.price, actionOrder?.currency || 'PEN');
                         const itemQty = Number.isFinite(Number(item?.qty)) ? Number(item.qty)
                             : (Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1);
@@ -579,19 +590,32 @@ const MessageBubble = ({
                                 <span className="message-order-card__line-item-amount">{itemAmount || ''}</span>
                             </div>
                         );
-                    }) : (
-                        <div className="message-order-card__hint">Se recibio un pedido desde catalogo de WhatsApp.</div>
-                    )}
-                    {!isProductPayload && !isQuotePayload && orderItems.length > 0 && orderCardTotals.savingsLabel && (
-                        <div className="message-order-card__summary-row">
-                            <span>Ahorro</span>
-                            <strong style={{ color: 'var(--saas-accent-primary)' }}>{orderCardTotals.savingsLabel}</strong>
-                        </div>
-                    )}
-                    {!isProductPayload && !isQuotePayload && orderItems.length > 0 && orderCardTotals.totalLabel && (
-                        <div className="message-order-card__summary-row total">
-                            <span>Total</span>
-                            <strong>{orderCardTotals.totalLabel}</strong>
+                            }) : (
+                                <div className="message-order-card__hint">Se recibio un pedido desde catalogo de WhatsApp.</div>
+                            )}
+                            {orderItems.length > 0 && (
+                                <>
+                                    <div className="message-order-card__section-label with-gap">Detalle de pago:</div>
+                                    {orderCardTotals.subtotalLabel && (
+                                        <div className="message-order-card__summary-row">
+                                            <span>Subtotal</span>
+                                            <strong>{orderCardTotals.subtotalLabel}</strong>
+                                        </div>
+                                    )}
+                                    {orderCardTotals.savingsLabel && (
+                                        <div className="message-order-card__summary-row">
+                                            <span>Descuento</span>
+                                            <strong style={{ color: 'var(--saas-accent-primary)' }}>- {orderCardTotals.savingsLabel}</strong>
+                                        </div>
+                                    )}
+                                    {orderCardTotals.totalLabel && (
+                                        <div className="message-order-card__summary-row total">
+                                            <span>TOTAL A PAGAR</span>
+                                            <strong>{orderCardTotals.totalLabel}</strong>
+                                        </div>
+                                    )}
+                                </>
+                            )}
                         </div>
                     )}
                     {!isProductPayload && !isQuotePayload && safeOrderNote && (
@@ -606,7 +630,16 @@ const MessageBubble = ({
                     )}
                     <div className="message-order-card__actions">
                         <button
-                            onClick={() => typeof onLoadOrderToCart === 'function' && onLoadOrderToCart(actionOrder || null)}
+                            onClick={() => {
+                                if (typeof onLoadOrderToCart !== 'function') return;
+                                const orderForCart = actionOrder && typeof actionOrder === 'object'
+                                    ? {
+                                        ...actionOrder,
+                                        sourceMessageId: String(msg?.id || '').trim() || actionOrder?.sourceMessageId || null
+                                    }
+                                    : null;
+                                onLoadOrderToCart(orderForCart);
+                            }}
                             disabled={typeof onLoadOrderToCart !== 'function'}
                             className="message-order-card__action-btn"
                         >

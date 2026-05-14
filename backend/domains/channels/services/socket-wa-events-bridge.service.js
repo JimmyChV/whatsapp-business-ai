@@ -388,7 +388,7 @@ function createSocketWaEventsBridgeService({
         waClient.on('auth_failure', (msg) => emitToRuntimeContext('auth_failure', msg));
         waClient.on('disconnected', (reason) => emitToRuntimeContext('disconnected', reason));
 
-        waClient.on('message', (msg) => {
+        waClient.on('message', async (msg) => {
             if (isStatusOrSystemMessage(msg)) return;
 
             const historyTenantId = resolveHistoryTenantId();
@@ -410,6 +410,9 @@ function createSocketWaEventsBridgeService({
             const cleanScopeModuleId = String(scopeModuleId || '').trim().toLowerCase();
             const scopedChatId = buildScopedChatId(relatedChatIdBase, scopeModuleId || '');
             const order = extractOrderInfo(msg);
+            const enrichedOrder = order
+                ? await enrichOrderProducts(historyTenantId, order)
+                : order;
             const location = extractLocationInfo(msg);
             const referral = msg?.referral && typeof msg.referral === 'object' ? msg.referral : null;
             const hasReferral = Boolean(referral && Object.keys(referral).length > 0);
@@ -474,7 +477,7 @@ function createSocketWaEventsBridgeService({
                 isGroupMessage: String(msg?.from || msg?.to || '').includes('@g.us'),
                 canEdit: false,
                 referral: referral || null,
-                order,
+                order: enrichedOrder,
                 location,
                 quotedMessage: quotedPreviewId
                     ? {
@@ -535,10 +538,6 @@ function createSocketWaEventsBridgeService({
                             updatedAt: new Date().toISOString()
                         });
                     }
-                    const enrichedOrder = order
-                        ? await enrichOrderProducts(historyTenantId, order)
-                        : order;
-
                     await persistMessageHistory(historyTenantId, {
                         msg,
                         senderMeta,
@@ -831,7 +830,7 @@ function createSocketWaEventsBridgeService({
                 senderPushname: null,
                 isGroupMessage: String(msg?.to || msg?.from || '').includes('@g.us'),
                 canEdit: false,
-                order,
+                order: enrichedOrder,
                 location,
                 quotedMessage,
                 sentViaModuleId: moduleAttributionMeta?.sentViaModuleId || null,
