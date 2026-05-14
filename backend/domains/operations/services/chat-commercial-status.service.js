@@ -7,6 +7,7 @@ const {
     queryPostgres
 } = require('../../../config/persistence-runtime');
 const customerModuleContextsService = require('./customer-module-contexts.service');
+const customerLifecycleService = require('./customer-lifecycle.service');
 
 const STORE_FILE = 'chat_commercial_status.json';
 const DEFAULT_LIMIT = 60;
@@ -195,6 +196,22 @@ function normalizeOffset(value = 0) {
 
 function statusKey(chatId = '', scopeModuleId = '') {
     return `${normalizeChatId(chatId)}::${normalizeScopeModuleId(scopeModuleId)}`;
+}
+
+function triggerLifecycleAfterAttended(cleanTenantId, next = {}, previous = null) {
+    if (String(next?.status || '').trim().toLowerCase() !== 'atendido') return;
+    if (String(previous?.status || '').trim().toLowerCase() === 'atendido') return;
+
+    Promise.resolve()
+        .then(async () => {
+            const customerId = await resolveCustomerIdFromChat(cleanTenantId, {
+                chatId: next.chatId,
+                scopeModuleId: next.scopeModuleId
+            });
+            if (!customerId) return;
+            await customerLifecycleService.syncAfterAttendedOrder(cleanTenantId, customerId);
+        })
+        .catch((error) => console.warn('[customer-lifecycle] sync after attended skipped:', error?.message || error));
 }
 
 function normalizeRecord(item = {}, { fallbackChatId = '', fallbackScopeModuleId = '' } = {}) {
@@ -459,6 +476,7 @@ async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload 
         } catch (_) {
             // silent: dual-write must not interrupt commercial status lifecycle
         }
+        triggerLifecycleAfterAttended(cleanTenantId, next, previous);
         return {
             status: next,
             previous,
@@ -535,6 +553,7 @@ async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload 
         // silent: dual-write must not interrupt commercial status lifecycle
     }
 
+    triggerLifecycleAfterAttended(cleanTenantId, next, previous);
     return {
         status: next,
         previous,

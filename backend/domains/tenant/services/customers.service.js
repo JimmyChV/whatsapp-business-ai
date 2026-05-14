@@ -27,6 +27,7 @@ const {
     createChannelEventId
 } = require('../helpers/customers-normalizers.helpers');
 const { normalizeCustomerFields, toUpper } = require('../../../utils/normalize-text');
+const customerLifecycleService = require('../../operations/services/customer-lifecycle.service');
 const CUSTOMERS_FILE = 'customers.json';
 const PAGE_LIMIT_DEFAULT = 50;
 const PAGE_LIMIT_MAX = 500;
@@ -819,10 +820,16 @@ async function upsertCustomerFile(tenantId = DEFAULT_TENANT_ID, payload = {}, { 
 
 async function upsertCustomer(tenantId = DEFAULT_TENANT_ID, payload = {}, options = {}) {
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
-    if (getStorageDriver() === 'postgres') {
-        return upsertCustomerPostgres(cleanTenantId, payload, options);
+    const result = getStorageDriver() === 'postgres'
+        ? await upsertCustomerPostgres(cleanTenantId, payload, options)
+        : await upsertCustomerFile(cleanTenantId, payload, options);
+
+    if (result?.created && result?.item?.customerId) {
+        customerLifecycleService.ensureProspectLabel(cleanTenantId, result.item.customerId)
+            .catch((error) => console.warn('[customer-lifecycle] ensureProspectLabel skipped:', error?.message || error));
     }
-    return upsertCustomerFile(cleanTenantId, payload, options);
+
+    return result;
 }
 
 async function getCustomer(tenantId = DEFAULT_TENANT_ID, customerId = '') {
