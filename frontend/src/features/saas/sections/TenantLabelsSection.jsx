@@ -142,6 +142,14 @@ function GlobalPanel({ busy, requestJson, runAction, setError, isSuperAdmin }) {
     const [form, setForm] = useState({ ...EMPTY_GLOBAL });
     const selected = useMemo(() => items.find((x) => x.id === selectedId) || null, [items, selectedId]);
     const visible = useMemo(() => items.filter((x) => !key(search) || key(`${x.id} ${x.name} ${x.commercialStatusKey}`).includes(key(search))), [items, search]);
+    const globalColumns = React.useMemo(
+        () => LABEL_TABLE_COLUMNS.map((column) =>
+            column.key === 'metaText'
+                ? { ...column, label: 'Estado Comercial' }
+                : column
+        ),
+        []
+    );
     const close = useCallback(() => { setMode('list'); setSelectedId(''); setForm({ ...EMPTY_GLOBAL }); }, []);
     useEscape(mode !== 'list', close);
     const load = useCallback(async ({ force = false } = {}) => {
@@ -196,7 +204,7 @@ function GlobalPanel({ busy, requestJson, runAction, setError, isSuperAdmin }) {
             </div>
         </SaasDetailPanelSection>
     );
-    return <SaasEntityPage title="Globales comerciales" sectionKey="global_labels_inner" rows={buildLabelRows(visible, 'id', 'global')} columns={LABEL_TABLE_COLUMNS.map((column) => column.key === 'metaText' ? { ...column, label: 'Estado Comercial' } : column)} selectedId={mode === 'list' ? '' : selectedId} onSelect={(row) => openDetail(row)} onClose={close} renderDetail={renderDetail} renderForm={renderForm} mode={mode === 'create' || mode === 'edit' ? 'form' : 'detail'} dirty={mode === 'create' || mode === 'edit'} requestJson={requestJson} loading={loading} emptyText="No hay etiquetas globales para mostrar." searchPlaceholder="Buscar etiqueta global" actions={[{ key: 'reload', label: 'Recargar', onClick: () => load({ force: true }).catch((e) => setError?.(String(e?.message || e))), disabled: busy || loading }, { key: 'create', label: 'Nuevo', onClick: openCreate, disabled: busy }]} filters={GLOBAL_LABEL_FILTERS} layoutClassName="saas-labels-layout" detailTitle={mode === 'create' ? 'Nueva global' : mode === 'edit' ? 'Editar global' : selected?.name || 'Etiqueta global'} detailSubtitle={mode === 'detail' ? 'Etiqueta comercial global.' : 'Define nombre, color, orden y estado comercial asociado.'} detailActions={mode === 'detail' && selected ? <button type="button" disabled={busy} onClick={openEdit}>Editar</button> : null} />;
+    return <SaasEntityPage title="Globales comerciales" sectionKey="global_labels_inner" rows={buildLabelRows(visible, 'id', 'global')} columns={globalColumns} selectedId={mode === 'list' ? '' : selectedId} onSelect={(row) => openDetail(row)} onClose={close} renderDetail={renderDetail} renderForm={renderForm} mode={mode === 'create' || mode === 'edit' ? 'form' : 'detail'} dirty={mode === 'create' || mode === 'edit'} requestJson={requestJson} loading={loading} emptyText="No hay etiquetas globales para mostrar." searchPlaceholder="Buscar etiqueta global" actions={[{ key: 'reload', label: 'Recargar', onClick: () => load({ force: true }).catch((e) => setError?.(String(e?.message || e))), disabled: busy || loading }, { key: 'create', label: 'Nuevo', onClick: openCreate, disabled: busy }]} filters={GLOBAL_LABEL_FILTERS} layoutClassName="saas-labels-layout" detailTitle={mode === 'create' ? 'Nueva global' : mode === 'edit' ? 'Editar global' : selected?.name || 'Etiqueta global'} detailSubtitle={mode === 'detail' ? 'Etiqueta comercial global.' : 'Define nombre, color, orden y estado comercial asociado.'} detailActions={mode === 'detail' && selected ? <button type="button" disabled={busy} onClick={openEdit}>Editar</button> : null} />;
 }
 
 function ZonePanel({ busy, requestJson, runAction, setError, canManageLabels, tenantScopeLocked, settingsTenantId }) {
