@@ -8934,6 +8934,7 @@ body {
   font-size: 0.78rem;
   line-height: 1.45;
   color: var(--saas-text-secondary);
+  overflow-wrap: anywhere;
 }
 
 .message-order-card__meta.with-gap,

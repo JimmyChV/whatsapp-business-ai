@@ -177,7 +177,6 @@ function createSocketOrderDebugHelpers({
                 || data?.order?.order_id
                 || data?.orderToken
                 || data?.token
-                || messageId
                 || null;
             const subtotalFrom1000 = normalizeOrderCurrencyAmount(
                 msg?.totalAmount1000

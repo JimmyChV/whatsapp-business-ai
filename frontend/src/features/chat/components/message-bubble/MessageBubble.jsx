@@ -127,7 +127,7 @@ const MessageBubble = ({
     const orderIdentifier = String(
         isQuotePayload
             ? (actionOrder?.quoteId || '')
-            : (actionOrder?.orderId || actionOrder?.rawPreview?.token || actionOrder?.rawPreview?.messageId || msg?.id || '')
+            : (actionOrder?.orderId || actionOrder?.rawPreview?.token || '')
     ).trim();
     const [selectedLocationText, setSelectedLocationText] = useState('');
     const [showForwardPicker, setShowForwardPicker] = useState(false);
