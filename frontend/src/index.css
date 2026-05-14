@@ -4736,12 +4736,15 @@ body {
   right: 0;
   min-width: min(172px, calc(100vw - 24px));
   max-width: min(210px, calc(100vw - 24px));
-  max-height: min(238px, calc(100vh - 340px));
-  overflow: auto;
+  max-height: min(360px, calc(100vh - 180px));
+  overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
   display: grid;
+  grid-auto-rows: minmax(32px, auto);
   gap: 4px;
   padding: 7px;
+  box-sizing: border-box;
   border-radius: 12px;
   border: 1px solid rgba(124, 151, 164, 0.26);
   background: linear-gradient(180deg, rgba(18, 33, 42, 0.98), rgba(14, 27, 35, 0.97));
@@ -4761,6 +4764,7 @@ body {
   text-align: left;
   cursor: pointer;
   transition: all 0.14s ease;
+  box-sizing: border-box;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
