@@ -5639,10 +5639,29 @@ body {
   color: color-mix(in srgb, var(--saas-accent-warning) 25%, var(--saas-bg-surface));
 }
 
+.commercial-status-badge--aceptado,
+.commercial-status-badge--atendido {
+  background: rgba(76, 175, 80, 0.2);
+  border-color: rgba(76, 175, 80, 0.42);
+  color: color-mix(in srgb, var(--saas-accent-primary) 20%, var(--saas-bg-surface));
+}
+
+.commercial-status-badge--programado {
+  background: rgba(21, 101, 192, 0.2);
+  border-color: rgba(21, 101, 192, 0.42);
+  color: color-mix(in srgb, var(--saas-accent-info) 25%, var(--saas-bg-surface));
+}
+
 .commercial-status-badge--vendido {
   background: rgba(0, 168, 132, 0.2);
   border-color: rgba(0, 168, 132, 0.46);
   color: color-mix(in srgb, var(--saas-accent-primary) 20%, var(--saas-bg-surface));
+}
+
+.commercial-status-badge--expirado {
+  background: rgba(97, 97, 97, 0.2);
+  border-color: rgba(97, 97, 97, 0.42);
+  color: var(--saas-text-secondary);
 }
 
 .commercial-status-badge--perdido {
@@ -7153,6 +7172,8 @@ body {
 }
 
 :root[data-theme="light"] .assignment-badge--mine,
+:root[data-theme="light"] .commercial-status-badge--aceptado,
+:root[data-theme="light"] .commercial-status-badge--atendido,
 :root[data-theme="light"] .commercial-status-badge--vendido {
   background: var(--chat-success-surface) !important;
   border-color: var(--chat-success-border) !important;
@@ -7160,10 +7181,17 @@ body {
 }
 
 :root[data-theme="light"] .assignment-badge--assigned,
+:root[data-theme="light"] .commercial-status-badge--programado,
 :root[data-theme="light"] .commercial-status-badge--en-conversacion {
   background: var(--chat-info-surface) !important;
   border-color: var(--chat-info-border) !important;
   color: var(--chat-info-text) !important;
+}
+
+:root[data-theme="light"] .commercial-status-badge--expirado {
+  background: var(--chat-card-surface-alt) !important;
+  border-color: var(--chat-pill-border) !important;
+  color: var(--saas-text-secondary) !important;
 }
 
 :root[data-theme="light"] .commercial-status-badge--perdido {
@@ -7963,6 +7991,8 @@ body {
 }
 
 .assignment-badge--mine,
+.commercial-status-badge--aceptado,
+.commercial-status-badge--atendido,
 .commercial-status-badge--vendido {
   background: var(--chat-success-surface) !important;
   border-color: var(--chat-success-border) !important;
@@ -7970,10 +8000,17 @@ body {
 }
 
 .assignment-badge--assigned,
+.commercial-status-badge--programado,
 .commercial-status-badge--en-conversacion {
   background: var(--chat-info-surface) !important;
   border-color: var(--chat-info-border) !important;
   color: var(--chat-info-text) !important;
+}
+
+.commercial-status-badge--expirado {
+  background: var(--chat-card-surface-alt) !important;
+  border-color: var(--chat-pill-border) !important;
+  color: var(--saas-text-secondary) !important;
 }
 
 .commercial-status-badge--perdido {

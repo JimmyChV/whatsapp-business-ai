@@ -9,11 +9,23 @@ function resolveCommercialStatusVisual(commercialStatus = null) {
   if (status === 'cotizado') {
     return { tone: 'cotizado', label: 'Cotizado' };
   }
+  if (status === 'aceptado') {
+    return { tone: 'aceptado', label: 'Aceptado' };
+  }
+  if (status === 'programado') {
+    return { tone: 'programado', label: 'Programado' };
+  }
+  if (status === 'atendido') {
+    return { tone: 'atendido', label: 'Atendido' };
+  }
   if (status === 'vendido') {
     return { tone: 'vendido', label: 'Vendido' };
   }
   if (status === 'perdido') {
     return { tone: 'perdido', label: 'Perdido' };
+  }
+  if (status === 'expirado') {
+    return { tone: 'expirado', label: 'Expirado' };
   }
 
   return { tone: 'nuevo', label: 'Nuevo' };

@@ -61,7 +61,14 @@ export default function useChatCommercialStatusState({
     const key = resolveCommercialStatusKey(chatId, scopeModuleId);
     const normalizedStatus = normalizeCommercialStatusRecord(status, chatId, scopeModuleId);
     if (!key || !normalizedStatus) return;
-    setCommercialStatusesByChatId((prev) => ({ ...prev, [key]: normalizedStatus }));
+    setCommercialStatusesByChatId((prev) => {
+      const next = { ...prev, [key]: normalizedStatus };
+      const baseKey = resolveCommercialStatusKey(normalizedStatus.chatId, '');
+      if (baseKey) next[baseKey] = { ...normalizedStatus, scopeModuleId: '' };
+      const scopedKey = resolveCommercialStatusKey(normalizedStatus.chatId, normalizedStatus.scopeModuleId);
+      if (scopedKey) next[scopedKey] = normalizedStatus;
+      return next;
+    });
   }, [resolveCommercialStatusKey]);
 
   const getCommercialStatus = useCallback((chatId = '') => {
