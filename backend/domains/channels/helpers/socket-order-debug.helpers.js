@@ -161,12 +161,23 @@ function createSocketOrderDebugHelpers({
             }
             products = dedupeOrderProducts(products);
 
+            const messageId = msg?.id?._serialized
+                || msg?.id
+                || data?.message_id
+                || data?.messageId
+                || data?.id?._serialized
+                || data?.id
+                || null;
+
             const orderId = msg?.orderId
                 || msg?.order?.id
                 || msg?.order?.order_id
                 || data?.orderId
+                || data?.order?.id
+                || data?.order?.order_id
                 || data?.orderToken
                 || data?.token
+                || messageId
                 || null;
             const subtotalFrom1000 = normalizeOrderCurrencyAmount(
                 msg?.totalAmount1000
@@ -219,7 +230,8 @@ function createSocketOrderDebugHelpers({
                     || products.length
                     || null,
                 sellerJid: data?.sellerJid || msg?.order?.seller_jid || null,
-                token: data?.orderToken || data?.token || msg?.order?.token || null
+                token: data?.orderToken || data?.token || msg?.order?.token || null,
+                messageId
             };
 
             logOrderDebug({

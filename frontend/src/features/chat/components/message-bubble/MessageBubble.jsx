@@ -34,6 +34,14 @@ const REACTION_TONE_VARIANTS = {
     }
 };
 
+const formatOrderCardTitle = (value = '') => {
+    const clean = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!clean) return '';
+    return clean
+        .toLocaleLowerCase('es-PE')
+        .replace(/(^|[\s/.-])(\S)/g, (_, prefix, char) => `${prefix}${char.toLocaleUpperCase('es-PE')}`);
+};
+
 const MessageBubble = ({
     msg,
     onPrefillMessage,
@@ -119,7 +127,7 @@ const MessageBubble = ({
     const orderIdentifier = String(
         isQuotePayload
             ? (actionOrder?.quoteId || '')
-            : (actionOrder?.orderId || actionOrder?.rawPreview?.token || '')
+            : (actionOrder?.orderId || actionOrder?.rawPreview?.token || actionOrder?.rawPreview?.messageId || msg?.id || '')
     ).trim();
     const [selectedLocationText, setSelectedLocationText] = useState('');
     const [showForwardPicker, setShowForwardPicker] = useState(false);
@@ -522,7 +530,7 @@ const MessageBubble = ({
                             {orderItems.length > 0 ? orderItems.slice(0, 40).map((item, idx) => {
                                 const itemQty = Number.isFinite(Number(item?.qty)) ? Number(item.qty)
                                     : (Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1);
-                                const itemTitle = String(item?.name || item?.title || item?.sku || 'Producto').trim() || 'Producto';
+                                const itemTitle = formatOrderCardTitle(item?.name || item?.title || item?.sku || 'Producto') || 'Producto';
                                 const itemAmount = formatOrderMoney(item?.lineTotal ?? item?.price ?? item?.unitPrice, quoteCurrency || actionOrder?.currency || 'PEN');
                                 return (
                                     <div key={idx} className="message-order-card__line-item">
@@ -577,7 +585,7 @@ const MessageBubble = ({
                         const itemAmount = formatOrderMoney(item?.lineTotal ?? item?.price, actionOrder?.currency || 'PEN');
                         const itemQty = Number.isFinite(Number(item?.qty)) ? Number(item.qty)
                             : (Number.isFinite(Number(item?.quantity)) ? Number(item.quantity) : 1);
-                        const itemTitle = String(item?.name || item?.title || item?.sku || 'Producto').trim() || 'Producto';
+                        const itemTitle = formatOrderCardTitle(item?.name || item?.title || item?.sku || 'Producto') || 'Producto';
                         return (
                             <div key={idx} className="message-order-card__line-item">
                                 <span className="message-order-card__line-item-name">
