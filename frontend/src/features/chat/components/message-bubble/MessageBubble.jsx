@@ -129,6 +129,25 @@ const MessageBubble = ({
             ? (actionOrder?.quoteId || '')
             : (actionOrder?.orderId || actionOrder?.rawPreview?.token || '')
     ).trim();
+    const quoteMetadata = actionOrder?.metadata && typeof actionOrder.metadata === 'object'
+        ? actionOrder.metadata
+        : {};
+    const quoteSourceType = String(
+        quoteMetadata?.sourceType
+        || quoteMetadata?.source_type
+        || actionOrder?.sourceType
+        || actionOrder?.source_type
+        || ''
+    ).trim().toLowerCase();
+    const quoteHasSourceOrder = Boolean(
+        quoteMetadata?.sourceOrder
+        || quoteMetadata?.source_order
+        || actionOrder?.sourceOrder
+        || actionOrder?.source_order
+    );
+    const quoteCardTitle = quoteSourceType === 'order' || quoteHasSourceOrder
+        ? '🛒 Resumen De Pedido'
+        : '📋 Cotización';
     const [selectedLocationText, setSelectedLocationText] = useState('');
     const [showForwardPicker, setShowForwardPicker] = useState(false);
     const [forwardSearch, setForwardSearch] = useState('');
@@ -507,7 +526,7 @@ const MessageBubble = ({
             {isOrderActionable && (
                 <div className={`message-order-card${isQuotePayload ? ' is-quote' : ''}${isProductPayload ? ' is-product' : ' is-order'}`}>
                     <div className="message-order-card__title">
-                        {isProductPayload ? 'Producto compartido' : (isQuotePayload ? '📋 Cotización' : '🛒 Pedido del cliente')}
+                        {isProductPayload ? 'Producto compartido' : (isQuotePayload ? quoteCardTitle : '🛒 Pedido del cliente')}
                     </div>
                     {orderIdentifier && (
                         <div className="message-order-card__meta">ID: {orderIdentifier}</div>
