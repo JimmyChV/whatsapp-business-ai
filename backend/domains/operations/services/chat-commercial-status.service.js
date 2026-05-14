@@ -29,6 +29,14 @@ const INBOUND_FIRST_CONTACT_PROTECTED_STATUSES = new Set([
     'atendido',
     'vendido'
 ]);
+const MANUAL_STATUS_KEYS = new Set([
+    'aceptado',
+    'programado',
+    'atendido',
+    'vendido',
+    'perdido',
+    'expirado'
+]);
 const VALID_SOURCES = new Set(['system', 'manual', 'automation', 'campaign', 'socket', 'webhook', 'http']);
 
 let schemaReady = false;
@@ -642,8 +650,8 @@ async function markQuoteSent(tenantId = DEFAULT_TENANT_ID, options = {}) {
 
 async function markManualStatus(tenantId = DEFAULT_TENANT_ID, options = {}) {
     const targetStatus = normalizeStatus(options.status || '');
-    if (targetStatus !== 'vendido' && targetStatus !== 'perdido') {
-        throw new Error('status manual invalido. Solo vendido/perdido.');
+    if (!MANUAL_STATUS_KEYS.has(targetStatus)) {
+        throw new Error('status manual invalido. Permitidos: aceptado, programado, atendido, vendido, perdido, expirado.');
     }
     const at = normalizeIso(options.at) || nowIso();
     const current = await getChatCommercialStatus(tenantId, options);
