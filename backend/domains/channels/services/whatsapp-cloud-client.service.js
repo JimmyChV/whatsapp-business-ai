@@ -795,6 +795,9 @@ class WhatsAppCloudClient extends EventEmitter {
     async sendMessage(to, body, options = {}) {
         if (!this.isReady) throw new Error('Cloud client not ready');
         const waId = await this.resolveSendWaId(to);
+        const metadataObj = options?.metadata && typeof options.metadata === 'object' && !Array.isArray(options.metadata)
+            ? options.metadata
+            : {};
 
         const payload = {
             messaging_product: 'whatsapp',
@@ -829,7 +832,8 @@ class WhatsAppCloudClient extends EventEmitter {
             ack: 1,
             quotedMessageId,
             timestamp: safeTimestamp(),
-            hasMedia: false
+            hasMedia: false,
+            rawData: Object.keys(metadataObj).length > 0 ? { metadata: metadataObj } : null
         }, { incoming: false, emitEvent: 'message_sent' });
 
         if (message) {

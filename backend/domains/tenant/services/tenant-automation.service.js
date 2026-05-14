@@ -152,6 +152,7 @@ function sanitizeRulePayload(payload = {}) {
         moduleId: normalizeModuleId(source.moduleId || source.module_id),
         templateName: templateName || null,
         templateLanguage: normalizeText(source.templateLanguage || source.template_language || 'es') || 'es',
+        quickReplyCode: normalizeText(source.quickReplyCode || source.quick_reply_code) || null,
         ...delayPayload,
         isActive: source.isActive !== false && source.is_active !== false
     };
@@ -165,6 +166,7 @@ function normalizeRow(row = {}) {
         moduleId: normalizeModuleId(row.module_id || row.moduleId),
         templateName: normalizeText(row.template_name || row.templateName),
         templateLanguage: normalizeText(row.template_language || row.templateLanguage || 'es') || 'es',
+        quickReplyCode: normalizeText(row.quick_reply_code || row.quickReplyCode),
         ...buildDelayPayload(row),
         isActive: row.is_active !== false && row.isActive !== false,
         createdAt: row.created_at || row.createdAt || null,
@@ -184,6 +186,7 @@ async function ensurePostgresSchema() {
               module_id TEXT,
               template_name TEXT,
               template_language TEXT DEFAULT 'es',
+              quick_reply_code TEXT DEFAULT NULL,
               delay_minutes INTEGER DEFAULT 0,
               delay_value INTEGER DEFAULT 0,
               delay_unit TEXT DEFAULT 'minutes',
@@ -197,7 +200,8 @@ async function ensurePostgresSchema() {
             ALTER TABLE tenant_automation_rules
               ADD COLUMN IF NOT EXISTS delay_value INTEGER DEFAULT 0,
               ADD COLUMN IF NOT EXISTS delay_unit TEXT DEFAULT 'minutes',
-              ADD COLUMN IF NOT EXISTS delay_seconds INTEGER DEFAULT 0;
+              ADD COLUMN IF NOT EXISTS delay_seconds INTEGER DEFAULT 0,
+              ADD COLUMN IF NOT EXISTS quick_reply_code TEXT DEFAULT NULL;
             ALTER TABLE tenant_automation_rules
               DROP CONSTRAINT IF EXISTS tenant_automation_rules_event_key_check;
             ALTER TABLE tenant_automation_rules
@@ -245,7 +249,8 @@ async function listAutomationRules(tenantId) {
     await ensurePostgresSchema();
     const { rows } = await queryPostgres(
         `SELECT rule_id, tenant_id, event_key, module_id, template_name, template_language,
-                delay_minutes, delay_value, delay_unit, delay_seconds, is_active, created_at, updated_at
+                quick_reply_code, delay_minutes, delay_value, delay_unit, delay_seconds,
+                is_active, created_at, updated_at
            FROM tenant_automation_rules
           WHERE tenant_id = $1
           ORDER BY event_key ASC, module_id ASC NULLS FIRST, created_at DESC`,
@@ -276,10 +281,11 @@ async function createAutomationRule(tenantId, payload = {}) {
     const { rows } = await queryPostgres(
         `INSERT INTO tenant_automation_rules
             (rule_id, tenant_id, event_key, module_id, template_name, template_language,
-             delay_minutes, delay_value, delay_unit, delay_seconds, is_active)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             quick_reply_code, delay_minutes, delay_value, delay_unit, delay_seconds, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING rule_id, tenant_id, event_key, module_id, template_name, template_language,
-                   delay_minutes, delay_value, delay_unit, delay_seconds, is_active, created_at, updated_at`,
+                   quick_reply_code, delay_minutes, delay_value, delay_unit, delay_seconds,
+                   is_active, created_at, updated_at`,
         [
             ruleId,
             cleanTenantId,
@@ -287,6 +293,7 @@ async function createAutomationRule(tenantId, payload = {}) {
             clean.moduleId,
             clean.templateName,
             clean.templateLanguage,
+            clean.quickReplyCode,
             clean.delayMinutes,
             clean.delayValue,
             clean.delayUnit,
@@ -322,16 +329,18 @@ async function updateAutomationRule(tenantId, ruleId, payload = {}) {
                 module_id = $4,
                 template_name = $5,
                 template_language = $6,
-                delay_minutes = $7,
-                delay_value = $8,
-                delay_unit = $9,
-                delay_seconds = $10,
-                is_active = $11,
+                quick_reply_code = $7,
+                delay_minutes = $8,
+                delay_value = $9,
+                delay_unit = $10,
+                delay_seconds = $11,
+                is_active = $12,
                 updated_at = NOW()
           WHERE tenant_id = $1
             AND rule_id = $2
           RETURNING rule_id, tenant_id, event_key, module_id, template_name, template_language,
-                    delay_minutes, delay_value, delay_unit, delay_seconds, is_active, created_at, updated_at`,
+                    quick_reply_code, delay_minutes, delay_value, delay_unit, delay_seconds,
+                    is_active, created_at, updated_at`,
         [
             cleanTenantId,
             cleanRuleId,
@@ -339,6 +348,7 @@ async function updateAutomationRule(tenantId, ruleId, payload = {}) {
             clean.moduleId,
             clean.templateName,
             clean.templateLanguage,
+            clean.quickReplyCode,
             clean.delayMinutes,
             clean.delayValue,
             clean.delayUnit,
@@ -375,7 +385,7 @@ async function listActiveRulesForEvent(tenantId, eventKey, { moduleId = '' } = {
     const cleanModuleId = normalizeModuleId(moduleId);
     const rows = await listAutomationRules(cleanTenantId);
     return rows.filter((item) => {
-        if (!item.isActive || item.eventKey !== cleanEventKey || !item.templateName) return false;
+        if (!item.isActive || item.eventKey !== cleanEventKey || (!item.templateName && !item.quickReplyCode)) return false;
         if (!item.moduleId) return true;
         return cleanModuleId
             && String(item.moduleId).toLowerCase() === String(cleanModuleId).toLowerCase();

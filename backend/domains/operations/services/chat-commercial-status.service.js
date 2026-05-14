@@ -11,6 +11,7 @@ const customerLifecycleService = require('./customer-lifecycle.service');
 const metaTemplatesService = require('./meta-templates.service');
 const templateVariablesService = require('./template-variables.service');
 const tenantAutomationService = require('../../tenant/services/tenant-automation.service');
+const quickRepliesManagerService = require('../../tenant/services/quick-replies-manager.service');
 const waClient = require('../../channels/services/wa-provider.service');
 const {
     buildTemplateSendComponents,
@@ -231,6 +232,59 @@ function triggerLifecycleAfterAttended(cleanTenantId, next = {}, previous = null
         .catch((error) => console.warn('[customer-lifecycle] sync after attended skipped:', error?.message || error));
 }
 
+async function getLastInboundCustomerInteractionAt(cleanTenantId, chatId = '') {
+    if (getStorageDriver() !== 'postgres') return null;
+    const cleanChatId = normalizeChatId(chatId);
+    if (!cleanTenantId || !cleanChatId) return null;
+    try {
+        const { rows } = await queryPostgres(
+            `SELECT timestamp_unix, created_at
+               FROM tenant_messages
+              WHERE tenant_id = $1
+                AND chat_id = $2
+                AND from_me = FALSE
+              ORDER BY timestamp_unix DESC NULLS LAST, created_at DESC
+              LIMIT 1`,
+            [cleanTenantId, cleanChatId]
+        );
+        const row = rows?.[0] || null;
+        if (!row) return null;
+        const unix = Number(row.timestamp_unix || 0);
+        if (Number.isFinite(unix) && unix > 0) return new Date(unix * 1000);
+        const created = row.created_at ? new Date(row.created_at) : null;
+        return created && !Number.isNaN(created.getTime()) ? created : null;
+    } catch (error) {
+        console.warn('[automation-rules] last inbound lookup skipped:', error?.message || error);
+        return null;
+    }
+}
+
+async function isWithinCustomerServiceWindow(cleanTenantId, chatId = '') {
+    const lastInboundAt = await getLastInboundCustomerInteractionAt(cleanTenantId, chatId);
+    if (!lastInboundAt) return false;
+    return Date.now() - lastInboundAt.getTime() < 24 * 60 * 60 * 1000;
+}
+
+async function resolveAutomationQuickReply(cleanTenantId, rule = {}, moduleId = '') {
+    const code = toText(rule?.quickReplyCode || rule?.quick_reply_code);
+    if (!code) return null;
+    try {
+        const items = await quickRepliesManagerService.listQuickReplies({
+            tenantId: cleanTenantId,
+            moduleId: moduleId || rule?.moduleId || rule?.module_id || ''
+        });
+        const normalizedCode = code.toLowerCase();
+        return (Array.isArray(items) ? items : []).find((item) => {
+            const id = toText(item?.id || item?.itemId).toLowerCase();
+            const label = toText(item?.label).toLowerCase();
+            return id === normalizedCode || label === normalizedCode;
+        }) || null;
+    } catch (error) {
+        console.warn('[automation-rules] quick reply lookup skipped:', error?.message || error);
+        return null;
+    }
+}
+
 function triggerAutomationAfterCommercialTransition(cleanTenantId, next = {}, previous = null) {
     const nextStatus = String(next?.status || '').trim().toLowerCase();
     const previousStatus = String(previous?.status || '').trim().toLowerCase();
@@ -255,6 +309,36 @@ function triggerAutomationAfterCommercialTransition(cleanTenantId, next = {}, pr
             for (const rule of rules) {
                 const send = async () => {
                     try {
+                        const automationAgentMeta = {
+                            sentByUserId: 'automation',
+                            sentByName: 'Automatizacion',
+                            sentByRole: 'system',
+                            sentViaModuleId: next.scopeModuleId || rule.moduleId || ''
+                        };
+                        const within24h = rule.quickReplyCode
+                            ? await isWithinCustomerServiceWindow(cleanTenantId, next.chatId)
+                            : false;
+                        if (within24h && rule.quickReplyCode) {
+                            const quickReply = await resolveAutomationQuickReply(cleanTenantId, rule, next.scopeModuleId || '');
+                            const quickReplyText = toText(quickReply?.text || quickReply?.bodyText || quickReply?.body);
+                            if (quickReplyText) {
+                                await waClient.sendMessage(next.chatId, quickReplyText, {
+                                    metadata: {
+                                        agentMeta: automationAgentMeta,
+                                        automationRuleId: rule.ruleId,
+                                        automationEventKey: eventKey,
+                                        commercialStatus: nextStatus,
+                                        quickReplyCode: rule.quickReplyCode
+                                    }
+                                });
+                                console.info('[automation-rules] quick reply sent:', eventKey, rule.quickReplyCode);
+                                return;
+                            }
+                        }
+                        if (!rule.templateName) {
+                            console.info('[automation-rules] no template fallback configured:', eventKey, rule.ruleId);
+                            return;
+                        }
                         const templateLanguage = rule.templateLanguage || 'es';
                         const template = await metaTemplatesService.getTemplateRecord(cleanTenantId, {
                             templateName: rule.templateName,
@@ -274,12 +358,6 @@ function triggerAutomationAfterCommercialTransition(cleanTenantId, next = {}, pr
                         const previewText = Array.isArray(template?.componentsJson) && template.componentsJson.length > 0
                             ? buildTemplatePreviewText(template, previewPayload, rule.templateName)
                             : `Template: ${rule.templateName}`;
-                        const automationAgentMeta = {
-                            sentByUserId: 'automation',
-                            sentByName: 'Automatización',
-                            sentByRole: 'system',
-                            sentViaModuleId: next.scopeModuleId || rule.moduleId || ''
-                        };
                         await waClient.sendTemplateMessage(next.chatId, {
                             templateName: rule.templateName,
                             languageCode: templateLanguage,
