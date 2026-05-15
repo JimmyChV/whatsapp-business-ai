@@ -180,6 +180,24 @@ function normalizeMediaAssets(value = [], fallback = null) {
     const fallbackAsset = normalizeMediaAsset(fallback);
     return fallbackAsset ? [fallbackAsset] : [];
 }
+
+function normalizeQuickReplyButtons(value = []) {
+    const source = Array.isArray(value) ? value : [];
+    return source
+        .map((entry, index) => {
+            const button = entry && typeof entry === 'object' ? entry : {};
+            const title = String(button.title || button.label || button.text || '').trim().slice(0, 20);
+            if (!title) return null;
+            const id = String(button.id || button.buttonId || `btn_${index + 1}`).trim() || `btn_${index + 1}`;
+            return {
+                id,
+                title
+            };
+        })
+        .filter(Boolean)
+        .slice(0, 3);
+}
+
 function sanitizeItem(input = {}) {
     const source = input && typeof input === 'object' ? input : {};
     const itemId = normalizeItemId(source.itemId || source.id || '');
@@ -206,9 +224,11 @@ function sanitizeItem(input = {}) {
     const mediaSizeBytes = Number.isFinite(mediaSizeRaw) && mediaSizeRaw > 0 ? Math.floor(mediaSizeRaw) : null;
     const isActive = normalizeBool(source.isActive, true);
     const sortOrder = normalizeSortOrder(source.sortOrder, 1000);
+    const buttons = normalizeQuickReplyButtons(source.buttons || sourceMetadata.buttons);
     const metadata = {
         ...sourceMetadata,
-        mediaAssets
+        mediaAssets,
+        buttons
     };
 
     return {
@@ -223,6 +243,7 @@ function sanitizeItem(input = {}) {
         mediaSizeBytes,
         isActive,
         sortOrder,
+        buttons,
         metadata
     };
 }
@@ -570,9 +591,11 @@ async function listQuickReplyItems(options = {}) {
                 isActive: row.is_active !== false,
                 isShared: library?.isShared !== false,
                 moduleIds: Array.isArray(library?.moduleIds) ? library.moduleIds : [],
+                buttons: normalizeQuickReplyButtons(metadata.buttons),
                 metadata: {
                     ...metadata,
-                    mediaAssets
+                    mediaAssets,
+                    buttons: normalizeQuickReplyButtons(metadata.buttons)
                 }
             };
         });
@@ -616,6 +639,7 @@ async function saveQuickReplyItem(payload = {}, options = {}) {
             sortOrder: clean.sortOrder,
             isActive: clean.isActive,
             mediaAssets: Array.isArray(clean.mediaAssets) ? clean.mediaAssets : [],
+            buttons: clean.buttons,
             metadata: clean.metadata && typeof clean.metadata === 'object' ? clean.metadata : {}
         };
         if (idx >= 0) store.items[idx] = nextItem;

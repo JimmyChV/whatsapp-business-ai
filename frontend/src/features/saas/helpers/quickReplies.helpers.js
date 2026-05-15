@@ -70,6 +70,7 @@ export const EMPTY_QUICK_REPLY_ITEM_FORM = {
     mediaMimeType: '',
     mediaFileName: '',
     mediaAssets: [],
+    buttons: [],
     isActive: true,
     sortOrder: '100'
 };
@@ -109,6 +110,7 @@ export function normalizeQuickReplyItem(item = {}) {
         sizeBytes: source.mediaSizeBytes
     });
     const primaryMedia = mediaAssets[0] || null;
+    const buttons = normalizeQuickReplyButtons(source.buttons || metadata.buttons);
     return {
         itemId,
         libraryId: String(source.libraryId || '').trim().toUpperCase(),
@@ -119,12 +121,30 @@ export function normalizeQuickReplyItem(item = {}) {
         mediaMimeType: String(primaryMedia?.mimeType || source.mediaMimeType || '').trim().toLowerCase(),
         mediaFileName: String(primaryMedia?.fileName || source.mediaFileName || '').trim(),
         mediaSizeBytes: Number.isFinite(Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes)) ? Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes) : null,
+        buttons,
         isActive: source.isActive !== false,
         sortOrder: Number.isFinite(Number(source.sortOrder)) ? Number(source.sortOrder) : 100,
         metadata,
         createdAt: String(source.createdAt || '').trim() || null,
         updatedAt: String(source.updatedAt || '').trim() || null
     };
+}
+
+export function normalizeQuickReplyButtons(value = []) {
+    const source = Array.isArray(value) ? value : [];
+    return source
+        .map((entry, index) => {
+            const button = entry && typeof entry === 'object' ? entry : {};
+            const title = String(button.title || button.label || button.text || '').trim().slice(0, 20);
+            if (!title) return null;
+            const id = String(button.id || button.buttonId || `btn_${index + 1}`).trim() || `btn_${index + 1}`;
+            return {
+                id,
+                title
+            };
+        })
+        .filter(Boolean)
+        .slice(0, 3);
 }
 
 export function normalizeQuickReplyMediaAsset(input = {}) {
@@ -219,6 +239,7 @@ export function buildQuickReplyItemPayload(form = {}, { libraryId = '' } = {}) {
         sizeBytes: source.mediaSizeBytes
     });
     const primaryMedia = mediaAssets[0] || null;
+    const buttons = normalizeQuickReplyButtons(source.buttons);
     return {
         itemId: String(source.itemId || '').trim().toUpperCase() || undefined,
         libraryId: String(source.libraryId || libraryId || '').trim().toUpperCase(),
@@ -229,6 +250,7 @@ export function buildQuickReplyItemPayload(form = {}, { libraryId = '' } = {}) {
         mediaMimeType: String(primaryMedia?.mimeType || source.mediaMimeType || '').trim().toLowerCase() || null,
         mediaFileName: String(primaryMedia?.fileName || source.mediaFileName || '').trim() || null,
         mediaSizeBytes: Number.isFinite(Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes)) ? Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes) : null,
+        buttons,
         isActive: source.isActive !== false,
         sortOrder: Math.max(0, Math.min(9999, Number(source.sortOrder || 100) || 100))
     };

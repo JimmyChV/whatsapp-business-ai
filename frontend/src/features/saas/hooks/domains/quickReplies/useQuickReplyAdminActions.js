@@ -194,6 +194,7 @@ export default function useQuickReplyAdminActions({
             ...emptyQuickReplyItemForm,
             libraryId: selectedQuickReplyLibrary.libraryId,
             isActive: true,
+            buttons: [],
             sortOrder: '100'
         });
         setQuickReplyItemPanelMode('create');
@@ -215,6 +216,7 @@ export default function useQuickReplyAdminActions({
             mediaUrl: selectedQuickReplyItem.mediaUrl || '',
             mediaMimeType: selectedQuickReplyItem.mediaMimeType || '',
             mediaFileName: selectedQuickReplyItem.mediaFileName || '',
+            buttons: Array.isArray(selectedQuickReplyItem.buttons) ? selectedQuickReplyItem.buttons : [],
             isActive: selectedQuickReplyItem.isActive !== false,
             sortOrder: String(selectedQuickReplyItem.sortOrder || 100)
         });
@@ -237,6 +239,7 @@ export default function useQuickReplyAdminActions({
                 mediaUrl: selectedQuickReplyItem.mediaUrl || '',
                 mediaMimeType: selectedQuickReplyItem.mediaMimeType || '',
                 mediaFileName: selectedQuickReplyItem.mediaFileName || '',
+                buttons: Array.isArray(selectedQuickReplyItem.buttons) ? selectedQuickReplyItem.buttons : [],
                 isActive: selectedQuickReplyItem.isActive !== false,
                 sortOrder: String(selectedQuickReplyItem.sortOrder || 100)
             });
