@@ -171,6 +171,7 @@ function createSocketQuickRepliesService({
                 }
 
                 const quoted = String(payload?.quotedMessageId || '').trim();
+                const clientTempId = String(payload?.clientTempId || '').trim();
                 const quotedMessage = payload?.quotedMessage && typeof payload.quotedMessage === 'object'
                     ? payload.quotedMessage
                     : null;
@@ -274,6 +275,9 @@ function createSocketQuickRepliesService({
                             false,
                             quotedMessageId
                         );
+                        if (index === 0 && clientTempId && sentAssetMessage && typeof sentAssetMessage === 'object') {
+                            sentAssetMessage.clientTempId = clientTempId;
+                        }
 
                         if (!sentMessage) sentMessage = sentAssetMessage;
                         const currentMediaPayload = {
@@ -323,6 +327,9 @@ function createSocketQuickRepliesService({
                         interactive,
                         quotedMessageId: mediaAssets.length > 0 ? '' : quoted
                     });
+                    if (clientTempId && mediaAssets.length === 0 && sentMessage && typeof sentMessage === 'object') {
+                        sentMessage.clientTempId = clientTempId;
+                    }
                     const sentInteractiveMessageId = getSerializedMessageId(sentMessage);
                     if (sentInteractiveMessageId && agentMeta) rememberOutgoingAgentMeta(sentInteractiveMessageId, agentMeta);
 
@@ -343,6 +350,9 @@ function createSocketQuickRepliesService({
                         sentMessage = await waClient.sendMessage(target.targetChatId, bodyText);
                     }
                     const sentMessageId = getSerializedMessageId(sentMessage);
+                    if (clientTempId && sentMessage && typeof sentMessage === 'object') {
+                        sentMessage.clientTempId = clientTempId;
+                    }
                     if (sentMessageId && agentMeta) rememberOutgoingAgentMeta(sentMessageId, agentMeta);
 
                     await emitRealtimeOutgoingMessage({

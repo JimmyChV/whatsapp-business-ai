@@ -652,8 +652,9 @@ export default function useChatMessageActions({
       const primaryAsset = draftMediaAssets[0] || null;
       const primaryMimeType = String(draftQuickReply.mediaMimeType || primaryAsset?.mimeType || '').trim().toLowerCase();
       const primaryFileName = String(draftQuickReply.mediaFileName || primaryAsset?.fileName || '').trim();
+      let quickReplyClientTempId = null;
       if (draftMediaAssets.length > 0) {
-        insertOptimisticOutgoing({
+        const optimisticQuickReplyMessage = insertOptimisticOutgoing({
           chatId: activeChatId,
           body: outboundText || primaryFileName || 'Adjunto',
           hasMedia: true,
@@ -681,9 +682,14 @@ export default function useChatMessageActions({
             }
           }
         });
+        quickReplyClientTempId = String(optimisticQuickReplyMessage?.clientTempId || '').trim() || null;
+        if (quickReplyClientTempId && optimisticQuickReplyMessage?.retryPayload?.payload) {
+          optimisticQuickReplyMessage.retryPayload.payload.clientTempId = quickReplyClientTempId;
+        }
       }
       socket.emit('send_quick_reply', {
         quickReplyId: draftQuickReply.id || undefined,
+        clientTempId: quickReplyClientTempId || undefined,
         quickReply: {
           id: draftQuickReply.id || undefined,
           label: draftQuickReply.label || undefined,
