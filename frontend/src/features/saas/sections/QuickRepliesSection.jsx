@@ -3,6 +3,34 @@ import { SaasEntityPage } from '../components/layout';
 
 const text = (value) => String(value ?? '').trim();
 
+function renderWhatsAppFormattedText(value) {
+    const raw = String(value || '');
+    if (!raw) return <span className="saas-quick-reply-preview-muted">El texto aparecera aqui...</span>;
+    const tokenRegex = /(\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~|`[^`\n]+`)/g;
+    return raw.split('\n').map((line, lineIndex) => {
+        const parts = [];
+        let lastIndex = 0;
+        line.replace(tokenRegex, (match, _token, offset) => {
+            if (offset > lastIndex) parts.push(line.slice(lastIndex, offset));
+            const content = match.slice(1, -1);
+            const key = `qr_fmt_${lineIndex}_${offset}`;
+            if (match.startsWith('*')) parts.push(<strong key={key}>{content}</strong>);
+            else if (match.startsWith('_')) parts.push(<em key={key}>{content}</em>);
+            else if (match.startsWith('~')) parts.push(<del key={key}>{content}</del>);
+            else parts.push(<code key={key}>{content}</code>);
+            lastIndex = offset + match.length;
+            return match;
+        });
+        if (lastIndex < line.length) parts.push(line.slice(lastIndex));
+        return (
+            <React.Fragment key={`qr_fmt_line_${lineIndex}`}>
+                {parts.length > 0 ? parts : ' '}
+                {lineIndex < raw.split('\n').length - 1 ? <br /> : null}
+            </React.Fragment>
+        );
+    });
+}
+
 export default function QuickRepliesSection(props = {}) {
     const context = props.context && typeof props.context === 'object' ? props.context : props;
     const {
@@ -61,6 +89,7 @@ export default function QuickRepliesSection(props = {}) {
 
     const isLibraryEditing = quickReplyLibraryPanelMode === 'create' || quickReplyLibraryPanelMode === 'edit';
     const isItemEditing = quickReplyItemPanelMode === 'create' || quickReplyItemPanelMode === 'edit';
+    const quickReplyTextRef = React.useRef(null);
     const selectedId = quickReplyLibraryPanelMode === 'create'
         ? '__create_quick_reply_library__'
         : text(selectedQuickReplyLibrary?.libraryId);
@@ -194,35 +223,157 @@ export default function QuickRepliesSection(props = {}) {
         waModules
     ]);
 
+    const quickReplyFormButtons = React.useMemo(() => {
+        const source = Array.isArray(quickReplyItemForm.buttons) ? quickReplyItemForm.buttons : [];
+        return source
+            .map((button, index) => ({
+                id: text(button?.id) || `btn_${index + 1}`,
+                title: text(button?.title || button?.label || button?.text).slice(0, 20)
+            }))
+            .slice(0, 3);
+    }, [quickReplyItemForm.buttons]);
+
+    const setQuickReplyButtons = React.useCallback((updater) => {
+        setQuickReplyItemForm?.((prev) => {
+            const current = Array.isArray(prev.buttons) ? prev.buttons : [];
+            const next = typeof updater === 'function' ? updater(current) : updater;
+            return {
+                ...prev,
+                buttons: (Array.isArray(next) ? next : [])
+                    .map((button, index) => ({
+                        id: text(button?.id) || `btn_${index + 1}`,
+                        title: text(button?.title || button?.label || button?.text).slice(0, 20)
+                    }))
+                    .slice(0, 3)
+            };
+        });
+    }, [setQuickReplyItemForm]);
+
+    const addQuickReplyButton = React.useCallback(() => {
+        setQuickReplyButtons((current) => {
+            if (current.length >= 3) return current;
+            return [...current, { id: `btn_${current.length + 1}`, title: '' }];
+        });
+    }, [setQuickReplyButtons]);
+
+    const updateQuickReplyButtonTitle = React.useCallback((buttonIndex, title) => {
+        setQuickReplyItemForm?.((prev) => {
+            const current = Array.isArray(prev.buttons) ? prev.buttons : [];
+            const next = current.map((button, index) => ({
+                id: text(button?.id) || `btn_${index + 1}`,
+                title: index === buttonIndex ? String(title || '').slice(0, 20) : text(button?.title || button?.label || button?.text).slice(0, 20)
+            }));
+            return { ...prev, buttons: next.slice(0, 3) };
+        });
+    }, [setQuickReplyItemForm]);
+
+    const removeQuickReplyButton = React.useCallback((buttonIndex) => {
+        setQuickReplyButtons((current) => current
+            .filter((_, index) => index !== buttonIndex)
+            .map((button, index) => ({ ...button, id: `btn_${index + 1}` })));
+    }, [setQuickReplyButtons]);
+
+    const wrapQuickReplySelection = React.useCallback((prefix, suffix = prefix) => {
+        const markerStart = String(prefix || '');
+        const markerEnd = String(suffix || markerStart);
+        const input = quickReplyTextRef.current;
+        const currentText = String(quickReplyItemForm.text || '');
+        const start = Number(input?.selectionStart ?? currentText.length);
+        const end = Number(input?.selectionEnd ?? currentText.length);
+        const selectedText = currentText.slice(start, end);
+        const nextText = `${currentText.slice(0, start)}${markerStart}${selectedText}${markerEnd}${currentText.slice(end)}`;
+        setQuickReplyItemForm?.((prev) => ({ ...prev, text: nextText }));
+        window.requestAnimationFrame?.(() => {
+            const nextInput = quickReplyTextRef.current;
+            if (!nextInput) return;
+            nextInput.focus();
+            const cursorStart = selectedText ? start : start + markerStart.length;
+            const cursorEnd = selectedText ? end + markerStart.length + markerEnd.length : cursorStart;
+            nextInput.setSelectionRange(cursorStart, cursorEnd);
+        });
+    }, [quickReplyItemForm.text, setQuickReplyItemForm]);
+
     const renderItemForm = React.useCallback(({ close: requestClose } = {}) => (
         <div className="saas-admin-related-block">
             <h4>{quickReplyItemPanelMode === 'create' ? 'Nueva respuesta' : 'Editar respuesta'}</h4>
-            <div className="saas-admin-form-row">
-                <input value={quickReplyItemForm.label || ''} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, label: event.target.value }))} placeholder="Etiqueta de respuesta" disabled={busy || uploadingQuickReplyAssets} />
-            </div>
-            <textarea value={quickReplyItemForm.text || ''} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, text: event.target.value }))} rows={5} placeholder="Texto rapido" disabled={busy || uploadingQuickReplyAssets} />
-            <div className="saas-admin-form-row">
-                <input value={quickReplyItemForm.mediaUrl || ''} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, mediaUrl: event.target.value, mediaMimeType: prev.mediaMimeType || '' }))} placeholder="URL principal (opcional)" disabled={busy || uploadingQuickReplyAssets} />
-                <label className={`saas-admin-dropzone ${busy || uploadingQuickReplyAssets ? 'is-disabled' : ''}`.trim()} style={{ minHeight: 'auto', padding: '10px 12px' }}>
-                    <input
-                        type="file"
-                        multiple
-                        accept={QUICK_REPLY_ACCEPT_VALUE}
-                        disabled={busy || uploadingQuickReplyAssets}
-                        onChange={async (event) => {
-                            const files = Array.from(event.target.files || []);
-                            event.target.value = '';
-                            if (files.length === 0) return;
-                            try {
-                                await handleQuickReplyAssetSelection?.(files);
-                            } catch (uploadError) {
-                                setError?.(String(uploadError?.message || uploadError || 'No se pudo subir adjunto de respuesta rapida.'));
-                            }
-                        }}
-                    />
-                    <strong>{uploadingQuickReplyAssets ? 'Subiendo adjuntos...' : 'Subir adjuntos'}</strong>
-                    <small>JPEG o PNG recomendado para WhatsApp. Max 50 MB.</small>
-                </label>
+            <div className="saas-quick-reply-editor-layout">
+                <div className="saas-quick-reply-editor-main">
+                    <div className="saas-admin-form-row">
+                        <input value={quickReplyItemForm.label || ''} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, label: event.target.value }))} placeholder="Etiqueta de respuesta" disabled={busy || uploadingQuickReplyAssets} />
+                    </div>
+                    <textarea ref={quickReplyTextRef} value={quickReplyItemForm.text || ''} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, text: event.target.value }))} rows={5} placeholder="Texto rapido" disabled={busy || uploadingQuickReplyAssets} />
+                    <div className="saas-quick-reply-format-toolbar" aria-label="Formato WhatsApp">
+                        <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => wrapQuickReplySelection('*')}><strong>B</strong></button>
+                        <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => wrapQuickReplySelection('_')}><em>I</em></button>
+                        <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => wrapQuickReplySelection('~')}><del>S</del></button>
+                        <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => wrapQuickReplySelection('`')}><code>M</code></button>
+                    </div>
+                    <div className="saas-admin-form-row">
+                        <input value={quickReplyItemForm.mediaUrl || ''} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, mediaUrl: event.target.value, mediaMimeType: prev.mediaMimeType || '' }))} placeholder="URL principal (opcional)" disabled={busy || uploadingQuickReplyAssets} />
+                        <label className={`saas-admin-dropzone ${busy || uploadingQuickReplyAssets ? 'is-disabled' : ''}`.trim()} style={{ minHeight: 'auto', padding: '10px 12px' }}>
+                            <input
+                                type="file"
+                                multiple
+                                accept={QUICK_REPLY_ACCEPT_VALUE}
+                                disabled={busy || uploadingQuickReplyAssets}
+                                onChange={async (event) => {
+                                    const files = Array.from(event.target.files || []);
+                                    event.target.value = '';
+                                    if (files.length === 0) return;
+                                    try {
+                                        await handleQuickReplyAssetSelection?.(files);
+                                    } catch (uploadError) {
+                                        setError?.(String(uploadError?.message || uploadError || 'No se pudo subir adjunto de respuesta rapida.'));
+                                    }
+                                }}
+                            />
+                            <strong>{uploadingQuickReplyAssets ? 'Subiendo adjuntos...' : 'Subir adjuntos'}</strong>
+                            <small>JPEG o PNG recomendado para WhatsApp. Max 50 MB.</small>
+                        </label>
+                    </div>
+                    <div className="saas-quick-reply-buttons-block">
+                        <div className="saas-quick-reply-buttons-header">
+                            <span>Botones de respuesta (max 3)</span>
+                            <button type="button" disabled={busy || uploadingQuickReplyAssets || quickReplyFormButtons.length >= 3} onClick={addQuickReplyButton}>+ Agregar boton</button>
+                        </div>
+                        {quickReplyFormButtons.length === 0 ? (
+                            <small className="saas-quick-reply-preview-muted">Sin botones. Se enviara como respuesta rapida normal.</small>
+                        ) : null}
+                        {quickReplyFormButtons.map((button, buttonIndex) => (
+                            <div key={`qr_button_edit_${button.id}_${buttonIndex}`} className="saas-quick-reply-button-row">
+                                <input
+                                    value={button.title}
+                                    maxLength={20}
+                                    placeholder={`Boton ${buttonIndex + 1}`}
+                                    disabled={busy || uploadingQuickReplyAssets}
+                                    onChange={(event) => updateQuickReplyButtonTitle(buttonIndex, event.target.value)}
+                                />
+                                <small>{button.title.length}/20</small>
+                                <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => removeQuickReplyButton(buttonIndex)}>Eliminar</button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+                <aside className="saas-quick-reply-preview" aria-label="Preview WhatsApp">
+                    <h5>Preview WhatsApp</h5>
+                    <div className="saas-quick-reply-preview-phone">
+                        <div className="saas-quick-reply-preview-bubble">
+                            {(quickReplyItemFormAssets.length > 0 || text(quickReplyItemForm.mediaUrl)) ? (
+                                <div className="saas-quick-reply-preview-image">Imagen</div>
+                            ) : null}
+                            <div className="saas-quick-reply-preview-text">
+                                {renderWhatsAppFormattedText(quickReplyItemForm.text)}
+                            </div>
+                        </div>
+                        {quickReplyFormButtons.length > 0 ? (
+                            <div className="saas-quick-reply-preview-buttons">
+                                {quickReplyFormButtons.map((button, index) => (
+                                    <button key={`qr_button_preview_${button.id}_${index}`} type="button" disabled>{button.title}</button>
+                                ))}
+                            </div>
+                        ) : null}
+                    </div>
+                </aside>
             </div>
             {quickReplyItemFormAssets.length > 0 ? (
                 <div className="saas-admin-related-block">
@@ -258,6 +409,7 @@ export default function QuickRepliesSection(props = {}) {
         </div>
     ), [
         QUICK_REPLY_ACCEPT_VALUE,
+        addQuickReplyButton,
         QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL,
         busy,
         canManageQuickReplies,
@@ -267,14 +419,18 @@ export default function QuickRepliesSection(props = {}) {
         quickReplyItemForm,
         quickReplyItemFormAssets,
         quickReplyItemPanelMode,
+        quickReplyFormButtons,
         quickReplyStorageQuotaMb,
         quickReplyUploadMaxMb,
         removeQuickReplyAssetAt,
+        removeQuickReplyButton,
         runAction,
         saveQuickReplyItem,
         setError,
         setQuickReplyItemForm,
-        uploadingQuickReplyAssets
+        updateQuickReplyButtonTitle,
+        uploadingQuickReplyAssets,
+        wrapQuickReplySelection
     ]);
 
     const renderDetail = React.useCallback(() => {
