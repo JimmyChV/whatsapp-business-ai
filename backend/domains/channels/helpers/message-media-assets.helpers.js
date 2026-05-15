@@ -179,9 +179,6 @@ function createMessageMediaAssetsHelpers(deps = {}) {
         if (/^https?:\/\//i.test(clean)) {
             try {
                 const parsedUrl = new URL(clean);
-                const localHostNames = new Set(['localhost', '127.0.0.1', '::1']);
-                const hostName = String(parsedUrl.hostname || '').trim().toLowerCase();
-                if (!localHostNames.has(hostName)) return null;
                 pathname = String(parsedUrl.pathname || '').trim();
             } catch (e) {
                 return null;
