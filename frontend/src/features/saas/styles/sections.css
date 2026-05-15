@@ -10454,7 +10454,7 @@ textarea:focus {
 .saas-quick-reply-builder-overlay {
   position: fixed;
   inset: 0;
-  z-index: 4300;
+  z-index: 10000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -10522,6 +10522,7 @@ textarea:focus {
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  position: relative;
 }
 
 .saas-quick-reply-format-toolbar span {
@@ -10536,11 +10537,18 @@ textarea:focus {
 .saas-quick-reply-button-row button {
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
   border-radius: 10px;
-  background: var(--color-surface, #fff);
-  color: var(--color-text, #111);
+  background: var(--saas-surface, var(--color-surface, #fff));
+  color: var(--saas-text, var(--color-text, #111));
   padding: 8px 10px;
   font-weight: 700;
   cursor: pointer;
+}
+
+.saas-quick-reply-format-toolbar button:hover,
+.saas-quick-reply-buttons-header button:hover,
+.saas-quick-reply-button-row button:hover {
+  background: var(--saas-surface-soft, var(--color-surface-soft, #f7f5f1));
+  border-color: var(--saas-accent-primary, var(--color-primary, #008069));
 }
 
 .saas-quick-reply-format-toolbar button:disabled,
@@ -10548,6 +10556,24 @@ textarea:focus {
 .saas-quick-reply-button-row button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.saas-quick-reply-emoji-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.saas-quick-reply-emoji-panel {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 10px);
+  width: min(360px, 78vw);
+  z-index: 3;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+  border-radius: 16px;
+  background: var(--saas-surface, var(--color-surface, #fff));
+  box-shadow: 0 22px 60px rgba(15, 23, 42, 0.18);
+  overflow: hidden;
 }
 
 .saas-quick-reply-buttons-block {
@@ -10607,16 +10633,21 @@ textarea:focus {
 
 .saas-quick-reply-variable-group button {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   align-items: center;
   text-align: left;
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
   border-radius: 12px;
-  background: var(--color-surface, #fff);
-  color: var(--color-text, #111);
+  background: var(--saas-surface, var(--color-surface, #fff));
+  color: var(--saas-text, var(--color-text, #111));
   padding: 9px 10px;
   cursor: pointer;
+}
+
+.saas-quick-reply-variable-group button:hover {
+  border-color: var(--saas-accent-primary, var(--color-primary, #008069));
+  background: color-mix(in srgb, var(--saas-accent-primary, #008069) 8%, var(--saas-surface, #fff));
 }
 
 .saas-quick-reply-variable-group button strong {
@@ -10710,8 +10741,8 @@ textarea:focus {
   align-self: flex-end;
   width: min(100%, 360px);
   border-radius: 18px 18px 4px 18px;
-  background: var(--chat-message-out-bg, #d9fdd3);
-  color: var(--color-text, #111);
+  background: var(--chat-message-out-bg, color-mix(in srgb, var(--saas-accent-primary, #008069) 14%, var(--saas-surface, #fff)));
+  color: var(--saas-text, var(--color-text, #111));
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.10));
   padding: 8px;
   box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
@@ -10767,10 +10798,10 @@ textarea:focus {
 }
 
 .saas-quick-reply-preview-buttons button {
-  border: 1px solid rgba(0, 168, 132, 0.25);
+  border: 1px solid color-mix(in srgb, var(--saas-accent-primary, #008069) 30%, transparent);
   border-radius: 12px;
-  background: var(--color-surface, #fff);
-  color: var(--color-primary, #008069);
+  background: var(--saas-surface, var(--color-surface, #fff));
+  color: var(--saas-accent-primary, var(--color-primary, #008069));
   padding: 10px 12px;
   font-weight: 800;
   opacity: 1;

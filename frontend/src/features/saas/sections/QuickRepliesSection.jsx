@@ -1,8 +1,11 @@
 import React from 'react';
+import EmojiPicker from 'emoji-picker-react';
+import { EmojiStyle, SkinTonePickerLocation, SkinTones, SuggestionMode, Theme } from 'emoji-picker-react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import { SaasEntityPage } from '../components/layout';
 
 const text = (value) => String(value ?? '').trim();
+const QUICK_REPLY_EMOJI_SKIN_TONE_STORAGE_KEY = 'chat-emoji-skin-tone:global';
 
 const QUICK_REPLY_FALLBACK_VARIABLE_CATEGORIES = Object.freeze([
     {
@@ -197,10 +200,21 @@ export default function QuickRepliesSection(props = {}) {
     const isLibraryEditing = quickReplyLibraryPanelMode === 'create' || quickReplyLibraryPanelMode === 'edit';
     const isItemEditing = quickReplyItemPanelMode === 'create' || quickReplyItemPanelMode === 'edit';
     const quickReplyTextRef = React.useRef(null);
-    const [quickReplyVariableCategories, setQuickReplyVariableCategories] = React.useState([]);
+    const [quickReplyVariableCategories, setQuickReplyVariableCategories] = React.useState(() => collectVariableCategories({}));
     const [quickReplyVariableLoading, setQuickReplyVariableLoading] = React.useState(false);
     const [quickReplyVariableError, setQuickReplyVariableError] = React.useState('');
     const [quickReplyVariableSearch, setQuickReplyVariableSearch] = React.useState('');
+    const [quickReplyVariableCatalogLoaded, setQuickReplyVariableCatalogLoaded] = React.useState(false);
+    const [showQuickReplyEmojiPicker, setShowQuickReplyEmojiPicker] = React.useState(false);
+    const [quickReplyEmojiSkinTone, setQuickReplyEmojiSkinTone] = React.useState(() => {
+        if (typeof window === 'undefined') return SkinTones.NEUTRAL;
+        try {
+            const stored = window.localStorage.getItem(QUICK_REPLY_EMOJI_SKIN_TONE_STORAGE_KEY);
+            return Object.values(SkinTones).includes(stored) ? stored : SkinTones.NEUTRAL;
+        } catch (_) {
+            return SkinTones.NEUTRAL;
+        }
+    });
     const selectedId = quickReplyLibraryPanelMode === 'create'
         ? '__create_quick_reply_library__'
         : text(selectedQuickReplyLibrary?.libraryId);
@@ -381,7 +395,7 @@ export default function QuickRepliesSection(props = {}) {
     ]);
 
     React.useEffect(() => {
-        if (!isItemEditing || quickReplyVariableCategories.length > 0 || quickReplyVariableLoading || typeof requestJson !== 'function') return;
+        if (!isItemEditing || quickReplyVariableCatalogLoaded || quickReplyVariableLoading || typeof requestJson !== 'function') return;
         let cancelled = false;
         setQuickReplyVariableLoading(true);
         setQuickReplyVariableError('');
@@ -389,11 +403,13 @@ export default function QuickRepliesSection(props = {}) {
             .then((payload) => {
                 if (cancelled) return;
                 setQuickReplyVariableCategories(collectVariableCategories(payload));
+                setQuickReplyVariableCatalogLoaded(true);
             })
             .catch(() => {
                 if (cancelled) return;
                 setQuickReplyVariableError('');
                 setQuickReplyVariableCategories(collectVariableCategories({}));
+                setQuickReplyVariableCatalogLoaded(true);
             })
             .finally(() => {
                 if (!cancelled) setQuickReplyVariableLoading(false);
@@ -401,7 +417,7 @@ export default function QuickRepliesSection(props = {}) {
         return () => {
             cancelled = true;
         };
-    }, [isItemEditing, quickReplyVariableCategories.length, quickReplyVariableLoading, requestJson]);
+    }, [isItemEditing, quickReplyVariableCatalogLoaded, quickReplyVariableLoading, requestJson]);
 
     const quickReplyFormButtons = React.useMemo(() => {
         const source = Array.isArray(quickReplyItemForm.buttons) ? quickReplyItemForm.buttons : [];
@@ -472,6 +488,34 @@ export default function QuickRepliesSection(props = {}) {
             nextInput.setSelectionRange(cursorStart, cursorEnd);
         });
     }, [quickReplyItemForm.text, setQuickReplyItemForm]);
+
+    const insertQuickReplyEmoji = React.useCallback((emoji = '') => {
+        const safeEmoji = String(emoji || '');
+        if (!safeEmoji) return;
+        const input = quickReplyTextRef.current;
+        const currentText = String(quickReplyItemForm.text || '');
+        const start = Number(input?.selectionStart ?? currentText.length);
+        const end = Number(input?.selectionEnd ?? currentText.length);
+        const nextText = `${currentText.slice(0, start)}${safeEmoji}${currentText.slice(end)}`;
+        setQuickReplyItemForm?.((prev) => ({ ...prev, text: nextText }));
+        setShowQuickReplyEmojiPicker(false);
+        window.requestAnimationFrame?.(() => {
+            const nextInput = quickReplyTextRef.current;
+            if (!nextInput) return;
+            nextInput.focus();
+            const cursor = start + safeEmoji.length;
+            nextInput.setSelectionRange(cursor, cursor);
+        });
+    }, [quickReplyItemForm.text, setQuickReplyItemForm]);
+
+    const handleQuickReplyEmojiSkinToneChange = React.useCallback((skinTone) => {
+        const safeSkinTone = Object.values(SkinTones).includes(skinTone) ? skinTone : SkinTones.NEUTRAL;
+        setQuickReplyEmojiSkinTone(safeSkinTone);
+        if (typeof window === 'undefined') return;
+        try {
+            window.localStorage.setItem(QUICK_REPLY_EMOJI_SKIN_TONE_STORAGE_KEY, safeSkinTone);
+        } catch (_) { }
+    }, []);
 
     const insertQuickReplyVariable = React.useCallback((variableKey = '') => {
         const cleanKey = text(variableKey);
@@ -553,6 +597,36 @@ export default function QuickRepliesSection(props = {}) {
                             </div>
                             <div className="saas-quick-reply-format-toolbar" aria-label="Formato WhatsApp">
                                 <span>Formato WhatsApp</span>
+                                <div className="saas-quick-reply-emoji-wrap">
+                                    <button
+                                        type="button"
+                                        disabled={busy || uploadingQuickReplyAssets}
+                                        onClick={() => setShowQuickReplyEmojiPicker((prev) => !prev)}
+                                        aria-label="Insertar emoji"
+                                    >
+                                        🙂
+                                    </button>
+                                    {showQuickReplyEmojiPicker ? (
+                                        <div className="saas-quick-reply-emoji-panel" onClick={(event) => event.stopPropagation()}>
+                                            <EmojiPicker
+                                                onEmojiClick={(emojiData) => insertQuickReplyEmoji(emojiData?.emoji)}
+                                                onSkinToneChange={handleQuickReplyEmojiSkinToneChange}
+                                                width="100%"
+                                                height={360}
+                                                lazyLoadEmojis
+                                                skinTonesDisabled={false}
+                                                searchDisabled={false}
+                                                searchPlaceHolder="Buscar emoji o gesto"
+                                                defaultSkinTone={quickReplyEmojiSkinTone}
+                                                suggestedEmojisMode={SuggestionMode.FREQUENT}
+                                                skinTonePickerLocation={SkinTonePickerLocation.SEARCH}
+                                                emojiStyle={EmojiStyle.APPLE}
+                                                previewConfig={{ showPreview: false }}
+                                                theme={Theme.AUTO}
+                                            />
+                                        </div>
+                                    ) : null}
+                                </div>
                                 <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => wrapQuickReplySelection('*')}><strong>B</strong></button>
                                 <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => wrapQuickReplySelection('_')}><em>I</em></button>
                                 <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => wrapQuickReplySelection('~')}><del>S</del></button>
@@ -605,6 +679,11 @@ export default function QuickRepliesSection(props = {}) {
                                 </div>
                                 {quickReplyFormButtons.length === 0 ? (
                                     <small className="saas-quick-reply-preview-muted">Sin botones. Se enviara como respuesta rapida normal.</small>
+                                ) : null}
+                                {quickReplyFormButtons.length > 0 ? (
+                                    <small className="saas-quick-reply-preview-muted">
+                                        Recomendacion: usa los botones para capturar la intencion del cliente; configura la respuesta/espera desde Automatizaciones para mantener el flujo ordenado.
+                                    </small>
                                 ) : null}
                                 {quickReplyFormButtons.map((button, buttonIndex) => (
                                     <div key={`qr_button_edit_${button.id}_${buttonIndex}`} className="saas-quick-reply-button-row">
@@ -728,6 +807,10 @@ export default function QuickRepliesSection(props = {}) {
         quickReplyUploadMaxMb,
         resolveQuickReplyAssetPreviewUrl,
         isQuickReplyImageAsset,
+        showQuickReplyEmojiPicker,
+        quickReplyEmojiSkinTone,
+        insertQuickReplyEmoji,
+        handleQuickReplyEmojiSkinToneChange,
         removeQuickReplyAssetAt,
         removeQuickReplyButton,
         requestCloseQuickReplyItemBuilder,
