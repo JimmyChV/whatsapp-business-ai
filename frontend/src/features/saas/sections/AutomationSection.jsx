@@ -85,6 +85,9 @@ function AutomationSection(props = {}) {
         runAction,
         waModules = [],
         metaTemplatesController = null,
+        quickReplyItems: contextQuickReplyItems = null,
+        quickReplyLibraries: contextQuickReplyLibraries = null,
+        loadingQuickReplies: contextLoadingQuickReplies = false,
         canManageAutomations = false,
         formatDateTimeLabel = (value) => value || '-'
     } = context;
@@ -106,9 +109,19 @@ function AutomationSection(props = {}) {
     const [selectedRuleId, setSelectedRuleId] = React.useState('');
     const [panelMode, setPanelMode] = React.useState('view');
     const [form, setForm] = React.useState(() => ({ ...EMPTY_FORM }));
-    const [quickReplyItems, setQuickReplyItems] = React.useState([]);
-    const [quickReplyLibraries, setQuickReplyLibraries] = React.useState([]);
-    const [loadingQuickReplies, setLoadingQuickReplies] = React.useState(false);
+    const [localQuickReplyItems, setLocalQuickReplyItems] = React.useState([]);
+    const [localQuickReplyLibraries, setLocalQuickReplyLibraries] = React.useState([]);
+    const [localQuickRepliesLoading, setLocalQuickRepliesLoading] = React.useState(false);
+    const hasQuickReplyContext = Array.isArray(contextQuickReplyItems) || Array.isArray(contextQuickReplyLibraries);
+    const quickReplyItems = React.useMemo(() => {
+        if (Array.isArray(contextQuickReplyItems)) return contextQuickReplyItems;
+        return localQuickReplyItems;
+    }, [contextQuickReplyItems, localQuickReplyItems]);
+    const quickReplyLibraries = React.useMemo(() => {
+        if (Array.isArray(contextQuickReplyLibraries)) return contextQuickReplyLibraries;
+        return localQuickReplyLibraries;
+    }, [contextQuickReplyLibraries, localQuickReplyLibraries]);
+    const loadingQuickReplies = hasQuickReplyContext ? contextLoadingQuickReplies : localQuickRepliesLoading;
 
     const moduleOptions = React.useMemo(() => (Array.isArray(waModules) ? waModules : [])
         .map((item) => ({
@@ -141,13 +154,14 @@ function AutomationSection(props = {}) {
     }, [isSection, metaTemplatesController, settingsTenantId]);
 
     React.useEffect(() => {
+        if (hasQuickReplyContext) return;
         if (!isSection || !settingsTenantId || typeof requestJson !== 'function') {
-            setQuickReplyItems([]);
-            setQuickReplyLibraries([]);
+            setLocalQuickReplyItems([]);
+            setLocalQuickReplyLibraries([]);
             return;
         }
         let cancelled = false;
-        setLoadingQuickReplies(true);
+        setLocalQuickRepliesLoading(true);
         Promise.all([
             fetchQuickReplyItems(requestJson, settingsTenantId, { includeInactive: false }),
             fetchQuickReplyLibraries(requestJson, settingsTenantId, { includeInactive: false })
@@ -163,22 +177,22 @@ function AutomationSection(props = {}) {
                     .map((entry) => normalizeQuickReplyLibraryItem(entry))
                     .filter(Boolean)
                     .filter((library) => library.isActive !== false);
-                setQuickReplyItems(items);
-                setQuickReplyLibraries(libraries);
+                setLocalQuickReplyItems(items);
+                setLocalQuickReplyLibraries(libraries);
             })
             .catch(() => {
                 if (!cancelled) {
-                    setQuickReplyItems([]);
-                    setQuickReplyLibraries([]);
+                    setLocalQuickReplyItems([]);
+                    setLocalQuickReplyLibraries([]);
                 }
             })
             .finally(() => {
-                if (!cancelled) setLoadingQuickReplies(false);
+                if (!cancelled) setLocalQuickRepliesLoading(false);
             });
         return () => {
             cancelled = true;
         };
-    }, [isSection, requestJson, settingsTenantId]);
+    }, [hasQuickReplyContext, isSection, requestJson, settingsTenantId]);
 
     const selectedRule = React.useMemo(
         () => automationRules.find((item) => text(item?.ruleId) === selectedRuleId) || null,
@@ -354,9 +368,9 @@ function AutomationSection(props = {}) {
     const renderForm = React.useCallback(({ requestClose } = {}) => (
         <>
             <div className="saas-admin-form-row">
-                <label htmlFor="automation_event">Evento</label>
                 <select
                     id="automation_event"
+                    aria-label="Evento"
                     className="saas-input"
                     value={form.eventKey}
                     disabled={busy}
@@ -366,11 +380,9 @@ function AutomationSection(props = {}) {
                         <option key={`automation_event_${item.value}`} value={item.value}>{item.label}</option>
                     ))}
                 </select>
-            </div>
-            <div className="saas-admin-form-row">
-                <label htmlFor="automation_module">Modulo</label>
                 <select
                     id="automation_module"
+                    aria-label="Modulo"
                     className="saas-input"
                     value={form.moduleId}
                     disabled={busy}
@@ -383,9 +395,9 @@ function AutomationSection(props = {}) {
                 </select>
             </div>
             <div className="saas-admin-form-row">
-                <label htmlFor="automation_template">Template Meta (fuera de 24h)</label>
                 <select
                     id="automation_template"
+                    aria-label="Template Meta fuera de 24h"
                     className="saas-input"
                     value={form.templateName}
                     disabled={busy}
@@ -398,19 +410,16 @@ function AutomationSection(props = {}) {
                         }));
                     }}
                 >
-                    <option value="">Selecciona template aprobado</option>
+                    <option value="">Template Meta (fuera de 24h)</option>
                     {templateItems.map((item) => (
                         <option key={`automation_template_${item.templateName}_${item.templateLanguage}`} value={item.templateName}>
                             {item.label}
                         </option>
                     ))}
                 </select>
-                <small>{selectedTemplate ? 'Template aprobado para mensajes individuales.' : 'Usa templates aprobados con uso individual o ambos.'}</small>
-            </div>
-            <div className="saas-admin-form-row">
-                <label htmlFor="automation_quick_reply">Respuesta rapida (dentro de 24h)</label>
                 <select
                     id="automation_quick_reply"
+                    aria-label="Respuesta rapida dentro de 24h"
                     className="saas-input"
                     value={form.quickReplyCode}
                     disabled={busy || loadingQuickReplies}
@@ -421,7 +430,6 @@ function AutomationSection(props = {}) {
                         <option key={`automation_quick_reply_${item.code}`} value={item.code}>{item.label}</option>
                     ))}
                 </select>
-                <small>{selectedQuickReply?.text || 'Se usara solo si el cliente escribio dentro de las ultimas 24h.'}</small>
             </div>
             {!text(form.templateName) && !text(form.quickReplyCode) ? (
                 <div className="saas-admin-related-block">
@@ -429,19 +437,22 @@ function AutomationSection(props = {}) {
                 </div>
             ) : null}
             <div className="saas-admin-form-row">
-                <label htmlFor="automation_delay_value">Enviar después</label>
+                <label htmlFor="automation_delay_value" hidden>Enviar despues</label>
                 <input
                     id="automation_delay_value"
+                    aria-label="Enviar despues"
                     className="saas-input"
                     type="number"
                     min="0"
                     step="1"
                     value={form.delayValue}
+                    placeholder="Enviar despues"
                     disabled={busy}
                     onChange={(event) => setForm((prev) => ({ ...prev, delayValue: event.target.value }))}
                 />
                 <select
                     className="saas-input"
+                    aria-label="Unidad de delay"
                     value={form.delayUnit}
                     disabled={busy}
                     onChange={(event) => setForm((prev) => ({ ...prev, delayUnit: event.target.value }))}
@@ -450,7 +461,6 @@ function AutomationSection(props = {}) {
                         <option key={`automation_delay_unit_${item.value}`} value={item.value}>{item.label}</option>
                     ))}
                 </select>
-                <small>Usa 0 para enviar inmediatamente.</small>
             </div>
             <div className="saas-admin-related-block">
                 <h4>Estado</h4>

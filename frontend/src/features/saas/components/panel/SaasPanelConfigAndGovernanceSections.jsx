@@ -119,6 +119,9 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
         runAction: context.runAction,
         waModules: context.waModules,
         metaTemplatesController: context.metaTemplatesController,
+        quickReplyItems: context.quickReplyItems,
+        quickReplyLibraries: context.quickReplyLibraries,
+        loadingQuickReplies: context.loadingQuickReplies,
         canManageAutomations: context.canManageAutomations,
         formatDateTimeLabel: context.formatDateTimeLabel
     };
