@@ -200,6 +200,29 @@ function normalizeMetadata(value = {}) {
     return {};
 }
 
+async function getAssistantName(tenantId = DEFAULT_TENANT_ID, moduleId = '') {
+    const cleanTenantId = resolveTenantId(tenantId);
+    const cleanModuleId = toText(moduleId);
+    if (!cleanTenantId || !cleanModuleId || getStorageDriver() !== 'postgres') return 'Asistente IA';
+    try {
+        const { rows } = await queryPostgres(
+            `SELECT metadata
+               FROM wa_modules
+              WHERE tenant_id = $1
+                AND LOWER(module_id) = LOWER($2)
+              LIMIT 1`,
+            [cleanTenantId, cleanModuleId]
+        );
+        const metadata = rows?.[0]?.metadata && typeof rows[0].metadata === 'object'
+            ? rows[0].metadata
+            : {};
+        const assistantName = toText(metadata?.aiConfig?.assistantName);
+        return assistantName || 'Asistente IA';
+    } catch (_) {
+        return 'Asistente IA';
+    }
+}
+
 function normalizeLimit(value = DEFAULT_LIMIT) {
     const parsed = Number(value || DEFAULT_LIMIT);
     if (!Number.isFinite(parsed)) return DEFAULT_LIMIT;
@@ -309,11 +332,13 @@ function triggerAutomationAfterCommercialTransition(cleanTenantId, next = {}, pr
             for (const rule of rules) {
                 const send = async () => {
                     try {
+                        const automationModuleId = next.scopeModuleId || rule.moduleId || '';
+                        const assistantName = await getAssistantName(cleanTenantId, automationModuleId);
                         const automationAgentMeta = {
                             sentByUserId: 'automation',
-                            sentByName: 'Automatizacion',
+                            sentByName: assistantName,
                             sentByRole: 'system',
-                            sentViaModuleId: next.scopeModuleId || rule.moduleId || ''
+                            sentViaModuleId: automationModuleId
                         };
                         const within24h = rule.quickReplyCode
                             ? await isWithinCustomerServiceWindow(cleanTenantId, next.chatId)
