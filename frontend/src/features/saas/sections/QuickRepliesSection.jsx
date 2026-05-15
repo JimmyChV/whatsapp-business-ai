@@ -205,6 +205,7 @@ export default function QuickRepliesSection(props = {}) {
     const [quickReplyVariableError, setQuickReplyVariableError] = React.useState('');
     const [quickReplyVariableSearch, setQuickReplyVariableSearch] = React.useState('');
     const [quickReplyVariableCatalogLoaded, setQuickReplyVariableCatalogLoaded] = React.useState(false);
+    const [quickReplyExpandedVariableCategories, setQuickReplyExpandedVariableCategories] = React.useState({});
     const [showQuickReplyEmojiPicker, setShowQuickReplyEmojiPicker] = React.useState(false);
     const [quickReplyEmojiSkinTone, setQuickReplyEmojiSkinTone] = React.useState(() => {
         if (typeof window === 'undefined') return SkinTones.NEUTRAL;
@@ -419,55 +420,16 @@ export default function QuickRepliesSection(props = {}) {
         };
     }, [isItemEditing, quickReplyVariableCatalogLoaded, quickReplyVariableLoading, requestJson]);
 
-    const quickReplyFormButtons = React.useMemo(() => {
-        const source = Array.isArray(quickReplyItemForm.buttons) ? quickReplyItemForm.buttons : [];
-        return source
-            .map((button, index) => ({
-                id: text(button?.id) || `btn_${index + 1}`,
-                title: text(button?.title || button?.label || button?.text).slice(0, 20)
-            }))
-            .slice(0, 3);
-    }, [quickReplyItemForm.buttons]);
-
-    const setQuickReplyButtons = React.useCallback((updater) => {
-        setQuickReplyItemForm?.((prev) => {
-            const current = Array.isArray(prev.buttons) ? prev.buttons : [];
-            const next = typeof updater === 'function' ? updater(current) : updater;
-            return {
-                ...prev,
-                buttons: (Array.isArray(next) ? next : [])
-                    .map((button, index) => ({
-                        id: text(button?.id) || `btn_${index + 1}`,
-                        title: text(button?.title || button?.label || button?.text).slice(0, 20)
-                    }))
-                    .slice(0, 3)
-            };
+    React.useEffect(() => {
+        setQuickReplyExpandedVariableCategories((prev) => {
+            const next = { ...(prev || {}) };
+            (Array.isArray(quickReplyVariableCategories) ? quickReplyVariableCategories : []).forEach((category) => {
+                const key = text(category?.id || category?.label).toLowerCase();
+                if (key && next[key] === undefined) next[key] = true;
+            });
+            return next;
         });
-    }, [setQuickReplyItemForm]);
-
-    const addQuickReplyButton = React.useCallback(() => {
-        setQuickReplyButtons((current) => {
-            if (current.length >= 3) return current;
-            return [...current, { id: `btn_${current.length + 1}`, title: '' }];
-        });
-    }, [setQuickReplyButtons]);
-
-    const updateQuickReplyButtonTitle = React.useCallback((buttonIndex, title) => {
-        setQuickReplyItemForm?.((prev) => {
-            const current = Array.isArray(prev.buttons) ? prev.buttons : [];
-            const next = current.map((button, index) => ({
-                id: text(button?.id) || `btn_${index + 1}`,
-                title: index === buttonIndex ? String(title || '').slice(0, 20) : text(button?.title || button?.label || button?.text).slice(0, 20)
-            }));
-            return { ...prev, buttons: next.slice(0, 3) };
-        });
-    }, [setQuickReplyItemForm]);
-
-    const removeQuickReplyButton = React.useCallback((buttonIndex) => {
-        setQuickReplyButtons((current) => current
-            .filter((_, index) => index !== buttonIndex)
-            .map((button, index) => ({ ...button, id: `btn_${index + 1}` })));
-    }, [setQuickReplyButtons]);
+    }, [quickReplyVariableCategories]);
 
     const wrapQuickReplySelection = React.useCallback((prefix, suffix = prefix) => {
         const markerStart = String(prefix || '');
@@ -549,6 +511,12 @@ export default function QuickRepliesSection(props = {}) {
             }))
             .filter((category) => Array.isArray(category.variables) && category.variables.length > 0);
     }, [quickReplyVariableCategories, quickReplyVariableSearch]);
+
+    const toggleQuickReplyVariableCategory = React.useCallback((categoryKey = '') => {
+        const key = text(categoryKey).toLowerCase();
+        if (!key) return;
+        setQuickReplyExpandedVariableCategories((prev) => ({ ...(prev || {}), [key]: !prev?.[key] }));
+    }, []);
 
     const requestCloseQuickReplyItemBuilder = React.useCallback(async (requestClose = null) => {
         if (quickReplyItemHasChanges) {
@@ -672,32 +640,9 @@ export default function QuickRepliesSection(props = {}) {
                                     </div>
                                 ) : null}
                             </div>
-                            <div className="saas-quick-reply-buttons-block">
-                                <div className="saas-quick-reply-buttons-header">
-                                    <span>Botones de respuesta (max 3)</span>
-                                    <button type="button" disabled={busy || uploadingQuickReplyAssets || quickReplyFormButtons.length >= 3} onClick={addQuickReplyButton}>+ Agregar boton</button>
-                                </div>
-                                {quickReplyFormButtons.length === 0 ? (
-                                    <small className="saas-quick-reply-preview-muted">Sin botones. Se enviara como respuesta rapida normal.</small>
-                                ) : null}
-                                {quickReplyFormButtons.length > 0 ? (
-                                    <small className="saas-quick-reply-preview-muted">
-                                        Recomendacion: usa los botones para capturar la intencion del cliente; configura la respuesta/espera desde Automatizaciones para mantener el flujo ordenado.
-                                    </small>
-                                ) : null}
-                                {quickReplyFormButtons.map((button, buttonIndex) => (
-                                    <div key={`qr_button_edit_${button.id}_${buttonIndex}`} className="saas-quick-reply-button-row">
-                                        <input
-                                            value={button.title}
-                                            maxLength={20}
-                                            placeholder={`Boton ${buttonIndex + 1}`}
-                                            disabled={busy || uploadingQuickReplyAssets}
-                                            onChange={(event) => updateQuickReplyButtonTitle(buttonIndex, event.target.value)}
-                                        />
-                                        <small>{button.title.length}/20</small>
-                                        <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => removeQuickReplyButton(buttonIndex)}>Eliminar</button>
-                                    </div>
-                                ))}
+                            <div className="saas-quick-reply-flow-note">
+                                <strong>Botones y flujos</strong>
+                                <span>Configuralos desde Automatizaciones para definir intencion, demora y siguiente respuesta sin mezclarlo con el contenido reutilizable.</span>
                             </div>
                             <label className="saas-admin-module-toggle">
                                 <input type="checkbox" checked={quickReplyItemForm.isActive !== false} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, isActive: event.target.checked }))} disabled={busy || uploadingQuickReplyAssets} />
@@ -729,22 +674,47 @@ export default function QuickRepliesSection(props = {}) {
                             {quickReplyVariableError ? <small className="saas-meta-template-error">{quickReplyVariableError}</small> : null}
                             {!quickReplyVariableLoading && !quickReplyVariableError ? (
                                 <div className="saas-quick-reply-variable-list">
-                                    {filteredQuickReplyVariableCategories.map((category) => (
-                                        <div key={`qr_var_group_${category?.id}`} className="saas-quick-reply-variable-group">
-                                            <span>{category?.label || category?.id}</span>
-                                            {(Array.isArray(category?.variables) ? category.variables : []).map((variable) => (
+                                    {filteredQuickReplyVariableCategories.map((category) => {
+                                        const categoryKey = text(category?.id || category?.label).toLowerCase();
+                                        const variables = Array.isArray(category?.variables) ? category.variables : [];
+                                        const isExpanded = quickReplyExpandedVariableCategories?.[categoryKey] !== false;
+                                        return (
+                                            <div key={`qr_var_group_${category?.id}`} className="saas-quick-reply-variable-group">
                                                 <button
-                                                    key={`qr_var_${category?.id}_${variable?.key}`}
                                                     type="button"
-                                                    disabled={busy || uploadingQuickReplyAssets}
-                                                    onClick={() => insertQuickReplyVariable(variable?.key)}
+                                                    className="saas-meta-template-accordion-trigger"
+                                                    onClick={() => toggleQuickReplyVariableCategory(categoryKey)}
                                                 >
-                                                    <strong>{`{{${variable?.key}}}`}</strong>
-                                                    <small>{variable?.label || variable?.description || variable?.key}</small>
+                                                    <span className="saas-meta-template-accordion-title">
+                                                        {category?.label || category?.id}
+                                                        <small>{variables.length}</small>
+                                                    </span>
+                                                    <span className="saas-meta-template-accordion-caret">{isExpanded ? '▾' : '▸'}</span>
                                                 </button>
-                                            ))}
-                                        </div>
-                                    ))}
+                                                {isExpanded ? (
+                                                    <div className="saas-meta-template-var-list">
+                                                        {variables.map((variable) => (
+                                                            <div className="saas-meta-template-var-item" key={`qr_var_${category?.id}_${variable?.key}`}>
+                                                                <div className="saas-meta-template-var-item-main">
+                                                                    <span className="saas-meta-template-var-token">{`{{${variable?.key}}}`}</span>
+                                                                    <strong>{variable?.label || variable?.key}</strong>
+                                                                    <small>{variable?.description || variable?.exampleValue || variable?.key}</small>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    className="saas-btn saas-btn--primary saas-meta-template-var-insert"
+                                                                    disabled={busy || uploadingQuickReplyAssets}
+                                                                    onClick={() => insertQuickReplyVariable(variable?.key)}
+                                                                >
+                                                                    +
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                        );
+                                    })}
                                     {filteredQuickReplyVariableCategories.length === 0 ? <small className="saas-quick-reply-preview-muted">Sin variables para mostrar.</small> : null}
                                 </div>
                             ) : null}
@@ -772,13 +742,6 @@ export default function QuickRepliesSection(props = {}) {
                                     </div>
                                     <small className="saas-quick-reply-preview-time">Ahora</small>
                                 </div>
-                                {quickReplyFormButtons.length > 0 ? (
-                                    <div className="saas-quick-reply-preview-buttons">
-                                        {quickReplyFormButtons.map((button, index) => (
-                                            <button key={`qr_button_preview_${button.id}_${index}`} type="button" disabled>{button.title || `Boton ${index + 1}`}</button>
-                                        ))}
-                                    </div>
-                                ) : null}
                             </div>
                         </aside>
                     </div>
@@ -787,7 +750,6 @@ export default function QuickRepliesSection(props = {}) {
         );
     }, [
         QUICK_REPLY_ACCEPT_VALUE,
-        addQuickReplyButton,
         QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL,
         busy,
         canManageQuickReplies,
@@ -797,8 +759,8 @@ export default function QuickRepliesSection(props = {}) {
         quickReplyItemForm,
         quickReplyItemFormAssets,
         quickReplyItemPanelMode,
-        quickReplyFormButtons,
         quickReplyVariableCategories,
+        quickReplyExpandedVariableCategories,
         filteredQuickReplyVariableCategories,
         quickReplyVariableError,
         quickReplyVariableLoading,
@@ -812,14 +774,13 @@ export default function QuickRepliesSection(props = {}) {
         insertQuickReplyEmoji,
         handleQuickReplyEmojiSkinToneChange,
         removeQuickReplyAssetAt,
-        removeQuickReplyButton,
         requestCloseQuickReplyItemBuilder,
         runAction,
         saveQuickReplyItem,
         setError,
         setQuickReplyItemForm,
         insertQuickReplyVariable,
-        updateQuickReplyButtonTitle,
+        toggleQuickReplyVariableCategory,
         uploadingQuickReplyAssets,
         wrapQuickReplySelection
     ]);

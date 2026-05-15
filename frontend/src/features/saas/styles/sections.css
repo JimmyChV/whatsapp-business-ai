@@ -10467,14 +10467,15 @@ textarea:focus {
   height: min(880px, calc(100vh - 32px));
   max-height: calc(100vh - 32px);
   overflow: hidden;
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+  border: 1px solid var(--saas-border-color, var(--color-border, rgba(0, 0, 0, 0.12)));
   border-radius: 22px;
-  background: var(--chat-shell-panel-gradient, var(--color-surface, #fff));
-  color: var(--color-text, #111);
-  box-shadow: var(--chat-panel-shadow, 0 28px 80px rgba(15, 23, 42, 0.24));
+  background: var(--saas-bg-elevated, var(--color-surface, #fff));
+  color: var(--saas-text-primary, var(--color-text, #111));
+  box-shadow: var(--saas-panel-shadow, var(--chat-panel-shadow, 0 28px 80px rgba(15, 23, 42, 0.24)));
   padding: 18px;
   display: flex;
   flex-direction: column;
+  font-family: var(--saas-font-family, inherit);
 }
 
 .saas-quick-reply-builder-header {
@@ -10484,7 +10485,7 @@ textarea:focus {
   gap: 16px;
   padding-bottom: 14px;
   margin-bottom: 16px;
-  border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+  border-bottom: 1px solid var(--saas-divider-soft, var(--color-border, rgba(0, 0, 0, 0.12)));
 }
 
 .saas-quick-reply-builder-header h4 {
@@ -10495,7 +10496,7 @@ textarea:focus {
 .saas-quick-reply-builder-header small {
   display: block;
   margin-top: 4px;
-  color: var(--color-text-muted, rgba(0, 0, 0, 0.55));
+  color: var(--saas-text-secondary, var(--color-text-muted, rgba(0, 0, 0, 0.55)));
 }
 
 .saas-quick-reply-editor-main {
@@ -10505,9 +10506,9 @@ textarea:focus {
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+  border: 1px solid var(--saas-border-color, var(--color-border, rgba(0, 0, 0, 0.12)));
   border-radius: 18px;
-  background: var(--color-surface, #fff);
+  background: var(--saas-bg-surface, var(--color-surface, #fff));
   padding: 14px;
 }
 
@@ -10526,7 +10527,7 @@ textarea:focus {
 }
 
 .saas-quick-reply-format-toolbar span {
-  color: var(--color-text-muted, rgba(0, 0, 0, 0.55));
+  color: var(--saas-text-secondary, var(--color-text-muted, rgba(0, 0, 0, 0.55)));
   font-size: 0.78rem;
   font-weight: 800;
   margin-right: 2px;
@@ -10537,8 +10538,8 @@ textarea:focus {
 .saas-quick-reply-button-row button {
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
   border-radius: 10px;
-  background: var(--saas-surface, var(--color-surface, #fff));
-  color: var(--saas-text, var(--color-text, #111));
+  background: var(--saas-bg-surface, var(--color-surface, #fff));
+  color: var(--saas-text-primary, var(--color-text, #111));
   padding: 8px 10px;
   font-weight: 700;
   cursor: pointer;
@@ -10576,20 +10577,24 @@ textarea:focus {
   overflow: hidden;
 }
 
-.saas-quick-reply-buttons-block {
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+.saas-quick-reply-flow-note {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--saas-divider-soft, var(--color-border, rgba(0, 0, 0, 0.12)));
   border-radius: 16px;
-  background: var(--color-surface-soft, var(--color-surface, #fff));
+  background: color-mix(in srgb, var(--saas-accent-primary, #008069) 6%, var(--saas-bg-surface, #fff));
   padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  color: var(--saas-text-secondary, var(--color-text-muted, rgba(0, 0, 0, 0.55)));
+}
+
+.saas-quick-reply-flow-note strong {
+  color: var(--saas-text-primary, var(--color-text, #111));
 }
 
 .saas-quick-reply-variable-panel {
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+  border: 1px solid var(--saas-border-color, var(--color-border, rgba(0, 0, 0, 0.12)));
   border-radius: 16px;
-  background: var(--color-surface-soft, var(--color-surface, #fff));
+  background: var(--saas-bg-surface, var(--color-surface, #fff));
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -10618,49 +10623,8 @@ textarea:focus {
 }
 
 .saas-quick-reply-variable-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.saas-quick-reply-variable-group > span {
-  font-size: 0.72rem;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-text-muted, rgba(0, 0, 0, 0.55));
-}
-
-.saas-quick-reply-variable-group button {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
-  align-items: center;
-  text-align: left;
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
-  border-radius: 12px;
-  background: var(--saas-surface, var(--color-surface, #fff));
-  color: var(--saas-text, var(--color-text, #111));
-  padding: 9px 10px;
-  cursor: pointer;
-}
-
-.saas-quick-reply-variable-group button:hover {
-  border-color: var(--saas-accent-primary, var(--color-primary, #008069));
-  background: color-mix(in srgb, var(--saas-accent-primary, #008069) 8%, var(--saas-surface, #fff));
-}
-
-.saas-quick-reply-variable-group button strong {
-  color: var(--color-primary, #008069);
-  font-size: 0.78rem;
-}
-
-.saas-quick-reply-variable-group button small {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--color-text-muted, rgba(0, 0, 0, 0.55));
 }
 
 .saas-quick-reply-buttons-header {
@@ -10688,9 +10652,9 @@ textarea:focus {
 }
 
 .saas-quick-reply-preview {
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+  border: 1px solid var(--saas-border-color, var(--color-border, rgba(0, 0, 0, 0.12)));
   border-radius: 18px;
-  background: var(--color-surface, #fff);
+  background: var(--saas-bg-surface, var(--color-surface, #fff));
   padding: 14px;
   box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
   min-height: 0;
@@ -10702,7 +10666,7 @@ textarea:focus {
   font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--color-text-muted, rgba(0, 0, 0, 0.55));
+  color: var(--saas-text-secondary, var(--color-text-muted, rgba(0, 0, 0, 0.55)));
 }
 
 .saas-quick-reply-preview-phone {
@@ -10712,7 +10676,7 @@ textarea:focus {
   background:
     radial-gradient(circle at 12px 12px, rgba(0, 0, 0, 0.045) 1px, transparent 1px) 0 0 / 18px 18px,
     linear-gradient(135deg, rgba(37, 211, 102, 0.10), transparent 38%),
-    var(--color-bg-soft, rgba(0, 0, 0, 0.035));
+    var(--saas-bg-soft, var(--color-bg-soft, rgba(0, 0, 0, 0.035)));
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
@@ -10726,14 +10690,14 @@ textarea:focus {
   margin-bottom: 12px;
   padding: 10px 12px;
   border-radius: 14px;
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.10));
+  background: var(--saas-bg-surface, var(--color-surface, #fff));
+  border: 1px solid var(--saas-divider-soft, var(--color-border, rgba(0, 0, 0, 0.10)));
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.07);
   font-weight: 900;
 }
 
 .saas-quick-reply-preview-chatbar small {
-  color: var(--color-text-muted, rgba(0, 0, 0, 0.55));
+  color: var(--saas-text-secondary, var(--color-text-muted, rgba(0, 0, 0, 0.55)));
   font-weight: 700;
 }
 
@@ -10741,9 +10705,9 @@ textarea:focus {
   align-self: flex-end;
   width: min(100%, 360px);
   border-radius: 18px 18px 4px 18px;
-  background: var(--chat-message-out-bg, color-mix(in srgb, var(--saas-accent-primary, #008069) 14%, var(--saas-surface, #fff)));
-  color: var(--saas-text, var(--color-text, #111));
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.10));
+  background: var(--chat-message-out-bg, color-mix(in srgb, var(--saas-accent-primary, #008069) 14%, var(--saas-bg-surface, #fff)));
+  color: var(--saas-text-primary, var(--color-text, #111));
+  border: 1px solid var(--saas-divider-soft, var(--color-border, rgba(0, 0, 0, 0.10)));
   padding: 8px;
   box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
   position: relative;
