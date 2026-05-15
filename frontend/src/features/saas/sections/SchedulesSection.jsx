@@ -21,6 +21,21 @@ const TIMEZONE_OPTIONS = [
     'UTC'
 ];
 
+const MONTH_OPTIONS = [
+    { value: 1, label: 'Enero' },
+    { value: 2, label: 'Febrero' },
+    { value: 3, label: 'Marzo' },
+    { value: 4, label: 'Abril' },
+    { value: 5, label: 'Mayo' },
+    { value: 6, label: 'Junio' },
+    { value: 7, label: 'Julio' },
+    { value: 8, label: 'Agosto' },
+    { value: 9, label: 'Septiembre' },
+    { value: 10, label: 'Octubre' },
+    { value: 11, label: 'Noviembre' },
+    { value: 12, label: 'Diciembre' }
+];
+
 const DEFAULT_WEEKLY_HOURS = {
     mon: [{ start: '09:00', end: '19:00' }],
     tue: [{ start: '09:00', end: '19:00' }],
@@ -48,6 +63,15 @@ function cloneJson(value) {
     return JSON.parse(JSON.stringify(value));
 }
 
+function getDaysInMonth(month) {
+    const safeMonth = Math.min(12, Math.max(1, Number(month) || 1));
+    return new Date(2024, safeMonth, 0).getDate();
+}
+
+function getDayOptionsForMonth(month) {
+    return Array.from({ length: getDaysInMonth(month) }, (_, index) => index + 1);
+}
+
 function normalizeForm(schedule = null) {
     if (!schedule) return { ...EMPTY_FORM, weeklyHours: cloneJson(DEFAULT_WEEKLY_HOURS), holidays: [], customDays: [] };
     return {
@@ -59,8 +83,8 @@ function normalizeForm(schedule = null) {
             return acc;
         }, {}),
         holidays: Array.isArray(schedule.holidays) ? schedule.holidays.map((item) => ({
-            month: Number(item.month) || 1,
-            day: Number(item.day) || 1,
+            month: Math.min(12, Math.max(1, Number(item.month) || 1)),
+            day: Math.min(getDaysInMonth(item.month), Math.max(1, Number(item.day) || 1)),
             name: text(item.name)
         })) : [],
         customDays: Array.isArray(schedule.customDays) ? schedule.customDays.map((item) => ({
@@ -215,6 +239,20 @@ function SchedulesSection(props = {}) {
         });
     }, []);
 
+    const updateHoliday = React.useCallback((index, patch = {}) => {
+        setForm((prev) => ({
+            ...prev,
+            holidays: prev.holidays.map((entry, i) => {
+                if (i !== index) return entry;
+                const next = { ...entry, ...patch };
+                const month = Math.min(12, Math.max(1, Number(next.month) || 1));
+                const maxDay = getDaysInMonth(month);
+                const day = Math.min(maxDay, Math.max(1, Number(next.day) || 1));
+                return { ...next, month, day };
+            })
+        }));
+    }, []);
+
     const detailActions = React.useMemo(() => {
         if (!selectedSchedule || panelMode !== 'view') return null;
         return (
@@ -335,14 +373,38 @@ function SchedulesSection(props = {}) {
             <div className="saas-admin-related-block">
                 <h4>Feriados perpetuos</h4>
                 <div className="saas-admin-related-list">
-                    {form.holidays.map((item, index) => (
+                    {form.holidays.map((item, index) => {
+                        const month = Math.min(12, Math.max(1, Number(item.month) || 1));
+                        const day = Math.min(getDaysInMonth(month), Math.max(1, Number(item.day) || 1));
+                        return (
                         <div key={`schedule_form_holiday_${index}`} className="saas-admin-related-row">
-                            <input className="saas-input" type="number" min="1" max="12" value={item.month} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, holidays: prev.holidays.map((entry, i) => (i === index ? { ...entry, month: event.target.value } : entry)) }))} />
-                            <input className="saas-input" type="number" min="1" max="31" value={item.day} disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, holidays: prev.holidays.map((entry, i) => (i === index ? { ...entry, day: event.target.value } : entry)) }))} />
-                            <input className="saas-input" value={item.name} placeholder="Nombre" disabled={busy} onChange={(event) => setForm((prev) => ({ ...prev, holidays: prev.holidays.map((entry, i) => (i === index ? { ...entry, name: event.target.value } : entry)) }))} />
+                            <select
+                                className="saas-input"
+                                value={month}
+                                disabled={busy}
+                                aria-label="Mes del feriado"
+                                onChange={(event) => updateHoliday(index, { month: Number(event.target.value) })}
+                            >
+                                {MONTH_OPTIONS.map((option) => (
+                                    <option key={`holiday_month_${option.value}`} value={option.value}>{option.label}</option>
+                                ))}
+                            </select>
+                            <select
+                                className="saas-input"
+                                value={day}
+                                disabled={busy}
+                                aria-label="Dia del feriado"
+                                onChange={(event) => updateHoliday(index, { day: Number(event.target.value) })}
+                            >
+                                {getDayOptionsForMonth(month).map((option) => (
+                                    <option key={`holiday_day_${month}_${option}`} value={option}>{option}</option>
+                                ))}
+                            </select>
+                            <input className="saas-input" value={item.name} placeholder="Nombre" disabled={busy} onChange={(event) => updateHoliday(index, { name: event.target.value })} />
                             <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => setForm((prev) => ({ ...prev, holidays: prev.holidays.filter((_, i) => i !== index) }))}>Eliminar</button>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
                 <button type="button" disabled={busy} onClick={() => setForm((prev) => ({ ...prev, holidays: [...prev.holidays, { month: 1, day: 1, name: '' }] }))}>Agregar feriado</button>
             </div>
@@ -388,7 +450,7 @@ function SchedulesSection(props = {}) {
                 <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { void requestClose?.(); }}>Cancelar</button>
             </div>
         </>
-    ), [busy, form, panelMode, saveSchedule, updateDay]);
+    ), [busy, form, panelMode, saveSchedule, updateDay, updateHoliday]);
 
     if (!isSection) return null;
 
