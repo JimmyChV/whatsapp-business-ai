@@ -221,7 +221,7 @@ export default function QuickRepliesSection(props = {}) {
                         }}
                     />
                     <strong>{uploadingQuickReplyAssets ? 'Subiendo adjuntos...' : 'Subir adjuntos'}</strong>
-                    <small>{QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL} | max {quickReplyUploadMaxMb} MB | cuota {quickReplyStorageQuotaMb} MB</small>
+                    <small>JPEG o PNG recomendado para WhatsApp. Max 50 MB.</small>
                 </label>
             </div>
             {quickReplyItemFormAssets.length > 0 ? (

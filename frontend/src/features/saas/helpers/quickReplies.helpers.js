@@ -3,7 +3,6 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 export const QUICK_REPLY_ALLOWED_MIME_TYPES = [
     'image/jpeg',
     'image/png',
-    'image/webp',
     'image/gif',
     'application/pdf',
     'text/plain',
@@ -22,18 +21,17 @@ export const QUICK_REPLY_ALLOWED_MIME_TYPES = [
 ];
 
 export const QUICK_REPLY_ALLOWED_EXTENSIONS = [
-    '.jpg', '.jpeg', '.png', '.webp', '.gif', '.pdf', '.txt', '.csv', '.doc', '.docx',
+    '.jpg', '.jpeg', '.png', '.gif', '.pdf', '.txt', '.csv', '.doc', '.docx',
     '.xls', '.xlsx', '.ppt', '.pptx', '.zip', '.mp3', '.ogg', '.mp4'
 ];
 
-export const QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL = '.jpg, .jpeg, .png, .webp, .gif, .pdf, .txt, .csv, .doc, .docx, .xls, .xlsx, .ppt, .pptx, .zip, .mp3, .ogg, .mp4';
+export const QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL = '.jpg, .jpeg, .png, .gif, .pdf, .txt, .csv, .doc, .docx, .xls, .xlsx, .ppt, .pptx, .zip, .mp3, .ogg, .mp4';
 export const QUICK_REPLY_ACCEPT_VALUE = `${QUICK_REPLY_ALLOWED_MIME_TYPES.join(',')},${QUICK_REPLY_ALLOWED_EXTENSIONS.join(',')}`;
 
 export const QUICK_REPLY_EXT_TO_MIME = Object.freeze({
     '.jpg': 'image/jpeg',
     '.jpeg': 'image/jpeg',
     '.png': 'image/png',
-    '.webp': 'image/webp',
     '.gif': 'image/gif',
     '.pdf': 'application/pdf',
     '.txt': 'text/plain',

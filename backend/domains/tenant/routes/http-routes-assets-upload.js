@@ -41,6 +41,16 @@
                 maxQuickReplyBytes: quickReplyAssetLimits?.maxUploadBytes,
                 fallbackQuickReplyMaxBytes: adminAssetQuickReplyMaxBytes
             });
+            if (
+                parsed.kind === 'quick_reply'
+                && String(parsed.mimeType || '').trim().toLowerCase().startsWith('image/')
+                && !new Set(['image/jpeg', 'image/png', 'image/gif']).has(String(parsed.mimeType || '').trim().toLowerCase())
+            ) {
+                return res.status(400).json({
+                    ok: false,
+                    error: 'Formato no soportado por WhatsApp. Usa JPEG o PNG.'
+                });
+            }
 
             if (parsed.kind === 'quick_reply' && quickReplyAssetLimits?.storageQuotaBytes > 0) {
                 const tenantAssetsRoot = path.join(uploadsRoot, 'saas-assets', tenantId);
