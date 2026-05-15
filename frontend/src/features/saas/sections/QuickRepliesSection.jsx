@@ -4,6 +4,53 @@ import { SaasEntityPage } from '../components/layout';
 
 const text = (value) => String(value ?? '').trim();
 
+const QUICK_REPLY_FALLBACK_VARIABLE_CATEGORIES = Object.freeze([
+    {
+        id: 'cliente',
+        label: 'Cliente',
+        variables: [
+            { key: 'nombre_cliente', label: 'Nombre del cliente', description: 'Nombre visible para saludo.', exampleValue: 'Maria Perez' },
+            { key: 'telefono_cliente', label: 'Telefono del cliente', description: 'Telefono principal.', exampleValue: '+51941443776' },
+            { key: 'email_cliente', label: 'Email del cliente', description: 'Correo del cliente.', exampleValue: 'cliente@correo.com' },
+            { key: 'customer_id', label: 'ID de cliente', description: 'Identificador interno.', exampleValue: 'CUS-8K2M4P' }
+        ]
+    },
+    {
+        id: 'agente',
+        label: 'Agente',
+        variables: [
+            { key: 'nombre_agente', label: 'Nombre del agente', description: 'Asesor asignado al chat.', exampleValue: 'Owner Lavitat' },
+            { key: 'rol_agente', label: 'Rol del agente', description: 'Rol operativo.', exampleValue: 'seller' },
+            { key: 'modulo_chat_id', label: 'Modulo del chat', description: 'Modulo/canal del chat.', exampleValue: 'MOD-4Q8K5C' }
+        ]
+    },
+    {
+        id: 'comercial',
+        label: 'Comercial',
+        variables: [
+            { key: 'estado_comercial_chat', label: 'Estado comercial', description: 'Estado comercial actual.', exampleValue: 'cotizado' },
+            { key: 'estado_asignacion_chat', label: 'Estado de asignacion', description: 'Estado operativo del chat.', exampleValue: 'active' }
+        ]
+    },
+    {
+        id: 'cotizacion',
+        label: 'Cotizacion',
+        variables: [
+            { key: 'ultima_cotizacion_id', label: 'ID de ultima cotizacion', description: 'Ultima cotizacion enviada.', exampleValue: 'quote_mnb9jysp_tg3fiy' },
+            { key: 'ultima_cotizacion_total', label: 'Total de ultima cotizacion', description: 'Total final.', exampleValue: '186.2' },
+            { key: 'ultima_cotizacion_items_count', label: 'Items cotizados', description: 'Cantidad de items.', exampleValue: '3' }
+        ]
+    },
+    {
+        id: 'origen',
+        label: 'Origen',
+        variables: [
+            { key: 'origen_chat_tipo', label: 'Origen del chat', description: 'Origen detectado.', exampleValue: 'meta_ad' },
+            { key: 'origen_campana_id', label: 'ID de campana', description: 'Campana asociada.', exampleValue: 'camp_abril_2026_01' }
+        ]
+    }
+]);
+
 function renderWhatsAppFormattedText(value) {
     const raw = String(value || '');
     if (!raw) return <span className="saas-quick-reply-preview-muted">El texto aparecera aqui...</span>;
@@ -33,7 +80,48 @@ function renderWhatsAppFormattedText(value) {
 }
 
 function collectVariableCategories(payload = {}) {
-    return Array.isArray(payload?.categories) ? payload.categories : [];
+    const categories = Array.isArray(payload?.categories) ? payload.categories : [];
+    const normalizedCategories = categories
+        .map((category = {}) => ({
+            id: text(category?.id || category?.key).toLowerCase(),
+            label: text(category?.label || category?.id || category?.key),
+            variables: (Array.isArray(category?.variables) ? category.variables : [])
+                .map((variable = {}) => ({
+                    ...variable,
+                    key: text(variable?.key),
+                    label: text(variable?.label || variable?.key),
+                    description: text(variable?.description),
+                    exampleValue: text(variable?.exampleValue || variable?.previewValue)
+                }))
+                .filter((variable) => variable.key)
+        }))
+        .filter((category) => category.id && category.label && category.variables.length > 0);
+    if (normalizedCategories.length > 0) return normalizedCategories;
+
+    const variables = Array.isArray(payload?.variables) ? payload.variables : [];
+    if (variables.length > 0) {
+        const grouped = new Map();
+        variables.forEach((variable = {}) => {
+            const categoryId = text(variable?.categoryId || variable?.category || 'general').toLowerCase() || 'general';
+            const categoryLabel = text(variable?.categoryLabel || variable?.category || categoryId);
+            if (!grouped.has(categoryId)) grouped.set(categoryId, { id: categoryId, label: categoryLabel, variables: [] });
+            const key = text(variable?.key);
+            if (key) grouped.get(categoryId).variables.push({
+                ...variable,
+                key,
+                label: text(variable?.label || key),
+                description: text(variable?.description),
+                exampleValue: text(variable?.exampleValue || variable?.previewValue)
+            });
+        });
+        const groupedCategories = Array.from(grouped.values()).filter((category) => category.variables.length > 0);
+        if (groupedCategories.length > 0) return groupedCategories;
+    }
+
+    return QUICK_REPLY_FALLBACK_VARIABLE_CATEGORIES.map((category) => ({
+        ...category,
+        variables: category.variables.map((variable) => ({ ...variable }))
+    }));
 }
 
 function renderQuickReplyPreviewText(value, categories = []) {
@@ -302,9 +390,10 @@ export default function QuickRepliesSection(props = {}) {
                 if (cancelled) return;
                 setQuickReplyVariableCategories(collectVariableCategories(payload));
             })
-            .catch((error) => {
+            .catch(() => {
                 if (cancelled) return;
-                setQuickReplyVariableError(String(error?.message || error || 'No se pudo cargar el catalogo de variables.'));
+                setQuickReplyVariableError('');
+                setQuickReplyVariableCategories(collectVariableCategories({}));
             })
             .finally(() => {
                 if (!cancelled) setQuickReplyVariableLoading(false);
@@ -435,6 +524,12 @@ export default function QuickRepliesSection(props = {}) {
         const hasRequiredContent = Boolean(text(quickReplyItemForm.text) || quickReplyItemFormAssets.length > 0 || text(quickReplyItemForm.mediaUrl));
         const saveDisabled = busy || uploadingQuickReplyAssets || !canManageQuickReplies || !text(quickReplyItemForm.label) || !hasRequiredContent;
         const handleClose = () => { void requestCloseQuickReplyItemBuilder(requestClose); };
+        const previewAsset = quickReplyItemFormAssets[0] || null;
+        const previewMediaUrl = resolveQuickReplyAssetPreviewUrl(previewAsset?.url || quickReplyItemForm.mediaUrl || '');
+        const previewMediaName = text(previewAsset?.fileName || previewAsset?.filename || quickReplyItemForm.mediaFileName || 'Adjunto');
+        const previewIsImage = previewAsset
+            ? isQuickReplyImageAsset(previewAsset)
+            : /\.(png|jpe?g|gif|webp|avif|bmp|svg)(?:\?|#|$)/i.test(previewMediaUrl);
 
         return (
             <div className="saas-quick-reply-builder-overlay" onClick={handleClose}>
@@ -578,13 +673,25 @@ export default function QuickRepliesSection(props = {}) {
                         <aside className="saas-quick-reply-preview" aria-label="Preview WhatsApp">
                             <h5>Preview WhatsApp</h5>
                             <div className="saas-quick-reply-preview-phone">
+                                <div className="saas-quick-reply-preview-chatbar">
+                                    <span>Vista del cliente</span>
+                                    <small>WhatsApp</small>
+                                </div>
                                 <div className="saas-quick-reply-preview-bubble">
-                                    {(quickReplyItemFormAssets.length > 0 || text(quickReplyItemForm.mediaUrl)) ? (
-                                        <div className="saas-quick-reply-preview-image">Imagen</div>
+                                    {previewMediaUrl ? (
+                                        previewIsImage ? (
+                                            <img className="saas-quick-reply-preview-image" src={previewMediaUrl} alt={previewMediaName || 'Imagen de respuesta rapida'} />
+                                        ) : (
+                                            <div className="saas-quick-reply-preview-file">
+                                                <span>Archivo adjunto</span>
+                                                <small>{previewMediaName}</small>
+                                            </div>
+                                        )
                                     ) : null}
                                     <div className="saas-quick-reply-preview-text">
                                         {renderWhatsAppFormattedText(renderQuickReplyPreviewText(quickReplyItemForm.text, quickReplyVariableCategories))}
                                     </div>
+                                    <small className="saas-quick-reply-preview-time">Ahora</small>
                                 </div>
                                 {quickReplyFormButtons.length > 0 ? (
                                     <div className="saas-quick-reply-preview-buttons">
@@ -619,6 +726,8 @@ export default function QuickRepliesSection(props = {}) {
         quickReplyVariableSearch,
         quickReplyStorageQuotaMb,
         quickReplyUploadMaxMb,
+        resolveQuickReplyAssetPreviewUrl,
+        isQuickReplyImageAsset,
         removeQuickReplyAssetAt,
         removeQuickReplyButton,
         requestCloseQuickReplyItemBuilder,
