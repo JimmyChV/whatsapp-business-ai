@@ -1,4 +1,5 @@
 import React from 'react';
+import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import { SaasEntityPage } from '../components/layout';
 
 const text = (value) => String(value ?? '').trim();
@@ -49,6 +50,7 @@ function renderQuickReplyPreviewText(value, categories = []) {
 
 export default function QuickRepliesSection(props = {}) {
     const context = props.context && typeof props.context === 'object' ? props.context : props;
+    const { confirm } = useUiFeedback();
     const {
         busy,
         loadingQuickReplies,
@@ -114,6 +116,52 @@ export default function QuickRepliesSection(props = {}) {
     const selectedId = quickReplyLibraryPanelMode === 'create'
         ? '__create_quick_reply_library__'
         : text(selectedQuickReplyLibrary?.libraryId);
+
+    const quickReplyItemInitialSignature = React.useMemo(() => {
+        if (quickReplyItemPanelMode === 'create') {
+            return JSON.stringify({
+                label: '',
+                text: '',
+                mediaUrl: '',
+                buttons: [],
+                isActive: true,
+                assets: []
+            });
+        }
+        const item = selectedQuickReplyItem || {};
+        const assets = Array.isArray(selectedQuickReplyItemMediaAssets) ? selectedQuickReplyItemMediaAssets : [];
+        return JSON.stringify({
+            label: text(item.label),
+            text: String(item.text || ''),
+            mediaUrl: text(item.mediaUrl),
+            buttons: (Array.isArray(item.buttons) ? item.buttons : [])
+                .map((button, index) => ({
+                    id: text(button?.id) || `btn_${index + 1}`,
+                    title: text(button?.title || button?.label || button?.text).slice(0, 20)
+                }))
+                .slice(0, 3),
+            isActive: item.isActive !== false,
+            assets: assets.map((asset) => text(asset?.url || asset?.mediaUrl || asset?.filename || asset?.fileName)).filter(Boolean)
+        });
+    }, [quickReplyItemPanelMode, selectedQuickReplyItem, selectedQuickReplyItemMediaAssets]);
+
+    const quickReplyItemCurrentSignature = React.useMemo(() => JSON.stringify({
+        label: text(quickReplyItemForm.label),
+        text: String(quickReplyItemForm.text || ''),
+        mediaUrl: text(quickReplyItemForm.mediaUrl),
+        buttons: (Array.isArray(quickReplyItemForm.buttons) ? quickReplyItemForm.buttons : [])
+            .map((button, index) => ({
+                id: text(button?.id) || `btn_${index + 1}`,
+                title: text(button?.title || button?.label || button?.text).slice(0, 20)
+            }))
+            .slice(0, 3),
+        isActive: quickReplyItemForm.isActive !== false,
+        assets: (Array.isArray(quickReplyItemFormAssets) ? quickReplyItemFormAssets : [])
+            .map((asset) => text(asset?.url || asset?.mediaUrl || asset?.filename || asset?.fileName))
+            .filter(Boolean)
+    }), [quickReplyItemForm, quickReplyItemFormAssets]);
+
+    const quickReplyItemHasChanges = isItemEditing && quickReplyItemCurrentSignature !== quickReplyItemInitialSignature;
 
     const rows = React.useMemo(() => visibleQuickReplyLibraries.map((library) => ({
         id: text(library?.libraryId).toUpperCase(),
@@ -369,163 +417,189 @@ export default function QuickRepliesSection(props = {}) {
             .filter((category) => Array.isArray(category.variables) && category.variables.length > 0);
     }, [quickReplyVariableCategories, quickReplyVariableSearch]);
 
-    const renderItemForm = React.useCallback(({ close: requestClose } = {}) => (
-        <div className="saas-quick-reply-builder-overlay" onClick={() => { void requestClose?.(); }}>
-            <div className="saas-quick-reply-builder-shell" onClick={(event) => event.stopPropagation()}>
-                <div className="saas-quick-reply-builder-header">
-                    <div>
-                        <h4>{quickReplyItemPanelMode === 'create' ? 'Nueva respuesta rapida' : 'Editar respuesta rapida'}</h4>
-                        <small>Construye una respuesta con formato, variables, adjuntos y botones.</small>
-                    </div>
-                    <button type="button" className="saas-btn-cancel" disabled={busy || uploadingQuickReplyAssets} onClick={() => { void requestClose?.(); }}>Cerrar</button>
-                </div>
-                <div className="saas-quick-reply-editor-layout">
-                <div className="saas-quick-reply-editor-main">
-                    <div className="saas-admin-form-row">
-                        <input value={quickReplyItemForm.label || ''} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, label: event.target.value }))} placeholder="Etiqueta de respuesta" disabled={busy || uploadingQuickReplyAssets} />
-                    </div>
-                    <textarea ref={quickReplyTextRef} value={quickReplyItemForm.text || ''} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, text: event.target.value }))} rows={5} placeholder="Texto rapido" disabled={busy || uploadingQuickReplyAssets} />
-                    <div className="saas-quick-reply-format-toolbar" aria-label="Formato WhatsApp">
-                        <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => wrapQuickReplySelection('*')}><strong>B</strong></button>
-                        <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => wrapQuickReplySelection('_')}><em>I</em></button>
-                        <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => wrapQuickReplySelection('~')}><del>S</del></button>
-                        <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => wrapQuickReplySelection('`')}><code>M</code></button>
-                    </div>
-                    <div className="saas-quick-reply-variable-panel">
-                        <div className="saas-quick-reply-variable-panel__head">
-                            <strong>Variables</strong>
-                            <input
-                                value={quickReplyVariableSearch}
-                                onChange={(event) => setQuickReplyVariableSearch(event.target.value)}
-                                placeholder="Buscar variable..."
-                                disabled={busy || quickReplyVariableLoading}
-                            />
+    const requestCloseQuickReplyItemBuilder = React.useCallback(async (requestClose = null) => {
+        if (quickReplyItemHasChanges) {
+            const ok = await confirm({
+                title: 'Descartar cambios',
+                message: '¿Descartar cambios en esta respuesta rápida?',
+                confirmText: 'Descartar',
+                cancelText: 'Seguir editando',
+                tone: 'danger'
+            });
+            if (!ok) return;
+        }
+        await requestClose?.();
+    }, [confirm, quickReplyItemHasChanges]);
+
+    const renderItemForm = React.useCallback(({ close: requestClose } = {}) => {
+        const hasRequiredContent = Boolean(text(quickReplyItemForm.text) || quickReplyItemFormAssets.length > 0 || text(quickReplyItemForm.mediaUrl));
+        const saveDisabled = busy || uploadingQuickReplyAssets || !canManageQuickReplies || !text(quickReplyItemForm.label) || !hasRequiredContent;
+        const handleClose = () => { void requestCloseQuickReplyItemBuilder(requestClose); };
+
+        return (
+            <div className="saas-quick-reply-builder-overlay" onClick={handleClose}>
+                <div className="saas-quick-reply-builder-shell" onClick={(event) => event.stopPropagation()}>
+                    <div className="saas-quick-reply-builder-header">
+                        <div>
+                            <h4>{quickReplyItemPanelMode === 'create' ? 'Nueva respuesta rapida' : 'Editar respuesta rapida'}</h4>
+                            <small>Construye una respuesta con formato, variables, adjuntos y botones.</small>
                         </div>
-                        {quickReplyVariableLoading ? <small className="saas-quick-reply-preview-muted">Cargando variables...</small> : null}
-                        {quickReplyVariableError ? <small className="saas-meta-template-error">{quickReplyVariableError}</small> : null}
-                        {!quickReplyVariableLoading && !quickReplyVariableError ? (
-                            <div className="saas-quick-reply-variable-list">
-                                {filteredQuickReplyVariableCategories.map((category) => (
-                                    <div key={`qr_var_group_${category?.id}`} className="saas-quick-reply-variable-group">
-                                        <span>{category?.label || category?.id}</span>
-                                        {(Array.isArray(category?.variables) ? category.variables : []).map((variable) => (
-                                            <button
-                                                key={`qr_var_${category?.id}_${variable?.key}`}
-                                                type="button"
-                                                disabled={busy || uploadingQuickReplyAssets}
-                                                onClick={() => insertQuickReplyVariable(variable?.key)}
-                                            >
-                                                <strong>{`{{${variable?.key}}}`}</strong>
-                                                <small>{variable?.label || variable?.description || variable?.key}</small>
-                                            </button>
-                                        ))}
+                        <button type="button" className="saas-btn-cancel" disabled={busy || uploadingQuickReplyAssets} onClick={handleClose}>Cerrar</button>
+                    </div>
+                    <div className="saas-quick-reply-editor-layout">
+                        <section className="saas-quick-reply-editor-main saas-quick-reply-editor-main--form" aria-label="Formulario de respuesta rapida">
+                            <div className="saas-admin-form-row">
+                                <label>Etiqueta</label>
+                                <input value={quickReplyItemForm.label || ''} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, label: event.target.value }))} placeholder="Ej: Saludo inicial" disabled={busy || uploadingQuickReplyAssets} />
+                            </div>
+                            <div className="saas-admin-form-row">
+                                <label>Mensaje</label>
+                                <textarea ref={quickReplyTextRef} value={quickReplyItemForm.text || ''} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, text: event.target.value }))} rows={8} placeholder="Escribe el mensaje. Puedes insertar variables desde la columna central." disabled={busy || uploadingQuickReplyAssets} />
+                            </div>
+                            <div className="saas-quick-reply-format-toolbar" aria-label="Formato WhatsApp">
+                                <span>Formato WhatsApp</span>
+                                <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => wrapQuickReplySelection('*')}><strong>B</strong></button>
+                                <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => wrapQuickReplySelection('_')}><em>I</em></button>
+                                <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => wrapQuickReplySelection('~')}><del>S</del></button>
+                                <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => wrapQuickReplySelection('`')}><code>M</code></button>
+                            </div>
+                            <div className="saas-admin-related-block">
+                                <h4>Adjunto</h4>
+                                <div className="saas-admin-form-row">
+                                    <input value={quickReplyItemForm.mediaUrl || ''} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, mediaUrl: event.target.value, mediaMimeType: prev.mediaMimeType || '' }))} placeholder="URL principal (opcional)" disabled={busy || uploadingQuickReplyAssets} />
+                                    <label className={`saas-admin-dropzone ${busy || uploadingQuickReplyAssets ? 'is-disabled' : ''}`.trim()} style={{ minHeight: 'auto', padding: '10px 12px' }}>
+                                        <input
+                                            type="file"
+                                            multiple
+                                            accept={QUICK_REPLY_ACCEPT_VALUE}
+                                            disabled={busy || uploadingQuickReplyAssets}
+                                            onChange={async (event) => {
+                                                const files = Array.from(event.target.files || []);
+                                                event.target.value = '';
+                                                if (files.length === 0) return;
+                                                try {
+                                                    await handleQuickReplyAssetSelection?.(files);
+                                                } catch (uploadError) {
+                                                    setError?.(String(uploadError?.message || uploadError || 'No se pudo subir adjunto de respuesta rapida.'));
+                                                }
+                                            }}
+                                        />
+                                        <strong>{uploadingQuickReplyAssets ? 'Subiendo adjuntos...' : 'Subir adjuntos'}</strong>
+                                        <small>JPEG o PNG recomendado para WhatsApp. Max 50 MB.</small>
+                                    </label>
+                                </div>
+                                {quickReplyItemFormAssets.length > 0 ? (
+                                    <div className="saas-admin-related-list">
+                                        {quickReplyItemFormAssets.map((asset, assetIdx) => {
+                                            const fileLabel = getQuickReplyAssetDisplayName(asset, assetIdx);
+                                            return (
+                                                <div key={`qr_item_asset_edit_${assetIdx}`} className="saas-admin-related-row" role="status">
+                                                    <span>{fileLabel}</span>
+                                                    <small>{asset.mimeType || 'archivo'}{asset.sizeBytes ? ` | ${formatBytes(asset.sizeBytes)}` : ''}</small>
+                                                    <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => removeQuickReplyAssetAt?.(assetIdx)}>Quitar</button>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : null}
+                            </div>
+                            <div className="saas-quick-reply-buttons-block">
+                                <div className="saas-quick-reply-buttons-header">
+                                    <span>Botones de respuesta (max 3)</span>
+                                    <button type="button" disabled={busy || uploadingQuickReplyAssets || quickReplyFormButtons.length >= 3} onClick={addQuickReplyButton}>+ Agregar boton</button>
+                                </div>
+                                {quickReplyFormButtons.length === 0 ? (
+                                    <small className="saas-quick-reply-preview-muted">Sin botones. Se enviara como respuesta rapida normal.</small>
+                                ) : null}
+                                {quickReplyFormButtons.map((button, buttonIndex) => (
+                                    <div key={`qr_button_edit_${button.id}_${buttonIndex}`} className="saas-quick-reply-button-row">
+                                        <input
+                                            value={button.title}
+                                            maxLength={20}
+                                            placeholder={`Boton ${buttonIndex + 1}`}
+                                            disabled={busy || uploadingQuickReplyAssets}
+                                            onChange={(event) => updateQuickReplyButtonTitle(buttonIndex, event.target.value)}
+                                        />
+                                        <small>{button.title.length}/20</small>
+                                        <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => removeQuickReplyButton(buttonIndex)}>Eliminar</button>
                                     </div>
                                 ))}
-                                {filteredQuickReplyVariableCategories.length === 0 ? <small className="saas-quick-reply-preview-muted">Sin variables para mostrar.</small> : null}
                             </div>
-                        ) : null}
-                    </div>
-                    <div className="saas-admin-form-row">
-                        <input value={quickReplyItemForm.mediaUrl || ''} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, mediaUrl: event.target.value, mediaMimeType: prev.mediaMimeType || '' }))} placeholder="URL principal (opcional)" disabled={busy || uploadingQuickReplyAssets} />
-                        <label className={`saas-admin-dropzone ${busy || uploadingQuickReplyAssets ? 'is-disabled' : ''}`.trim()} style={{ minHeight: 'auto', padding: '10px 12px' }}>
-                            <input
-                                type="file"
-                                multiple
-                                accept={QUICK_REPLY_ACCEPT_VALUE}
-                                disabled={busy || uploadingQuickReplyAssets}
-                                onChange={async (event) => {
-                                    const files = Array.from(event.target.files || []);
-                                    event.target.value = '';
-                                    if (files.length === 0) return;
-                                    try {
-                                        await handleQuickReplyAssetSelection?.(files);
-                                    } catch (uploadError) {
-                                        setError?.(String(uploadError?.message || uploadError || 'No se pudo subir adjunto de respuesta rapida.'));
-                                    }
-                                }}
-                            />
-                            <strong>{uploadingQuickReplyAssets ? 'Subiendo adjuntos...' : 'Subir adjuntos'}</strong>
-                            <small>JPEG o PNG recomendado para WhatsApp. Max 50 MB.</small>
-                        </label>
-                    </div>
-                    <div className="saas-quick-reply-buttons-block">
-                        <div className="saas-quick-reply-buttons-header">
-                            <span>Botones de respuesta (max 3)</span>
-                            <button type="button" disabled={busy || uploadingQuickReplyAssets || quickReplyFormButtons.length >= 3} onClick={addQuickReplyButton}>+ Agregar boton</button>
-                        </div>
-                        {quickReplyFormButtons.length === 0 ? (
-                            <small className="saas-quick-reply-preview-muted">Sin botones. Se enviara como respuesta rapida normal.</small>
-                        ) : null}
-                        {quickReplyFormButtons.map((button, buttonIndex) => (
-                            <div key={`qr_button_edit_${button.id}_${buttonIndex}`} className="saas-quick-reply-button-row">
+                            <label className="saas-admin-module-toggle">
+                                <input type="checkbox" checked={quickReplyItemForm.isActive !== false} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, isActive: event.target.checked }))} disabled={busy || uploadingQuickReplyAssets} />
+                                <span>Respuesta activa</span>
+                            </label>
+                            {!hasRequiredContent ? <small className="saas-meta-template-error">Agrega texto o un adjunto para guardar la respuesta.</small> : null}
+                            <div className="saas-admin-form-row saas-admin-form-row--actions saas-quick-reply-builder-actions">
+                                <button
+                                    type="button"
+                                    disabled={saveDisabled}
+                                    onClick={() => runAction?.(quickReplyItemPanelMode === 'create' ? 'Respuesta rapida creada' : 'Respuesta rapida actualizada', async () => saveQuickReplyItem?.())}
+                                >
+                                    {quickReplyItemPanelMode === 'create' ? 'Guardar respuesta' : 'Actualizar respuesta'}
+                                </button>
+                                <button type="button" className="saas-btn-cancel" disabled={busy || uploadingQuickReplyAssets} onClick={handleClose}>Cancelar</button>
+                            </div>
+                        </section>
+                        <aside className="saas-quick-reply-variable-panel" aria-label="Variables disponibles">
+                            <div className="saas-quick-reply-variable-panel__head">
+                                <strong>Variables</strong>
                                 <input
-                                    value={button.title}
-                                    maxLength={20}
-                                    placeholder={`Boton ${buttonIndex + 1}`}
-                                    disabled={busy || uploadingQuickReplyAssets}
-                                    onChange={(event) => updateQuickReplyButtonTitle(buttonIndex, event.target.value)}
+                                    value={quickReplyVariableSearch}
+                                    onChange={(event) => setQuickReplyVariableSearch(event.target.value)}
+                                    placeholder="Buscar variable..."
+                                    disabled={busy || quickReplyVariableLoading}
                                 />
-                                <small>{button.title.length}/20</small>
-                                <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => removeQuickReplyButton(buttonIndex)}>Eliminar</button>
                             </div>
-                        ))}
-                    </div>
-                </div>
-                <aside className="saas-quick-reply-preview" aria-label="Preview WhatsApp">
-                    <h5>Preview WhatsApp</h5>
-                    <div className="saas-quick-reply-preview-phone">
-                        <div className="saas-quick-reply-preview-bubble">
-                            {(quickReplyItemFormAssets.length > 0 || text(quickReplyItemForm.mediaUrl)) ? (
-                                <div className="saas-quick-reply-preview-image">Imagen</div>
-                            ) : null}
-                            <div className="saas-quick-reply-preview-text">
-                                {renderWhatsAppFormattedText(renderQuickReplyPreviewText(quickReplyItemForm.text, quickReplyVariableCategories))}
-                            </div>
-                        </div>
-                        {quickReplyFormButtons.length > 0 ? (
-                            <div className="saas-quick-reply-preview-buttons">
-                                {quickReplyFormButtons.map((button, index) => (
-                                    <button key={`qr_button_preview_${button.id}_${index}`} type="button" disabled>{button.title}</button>
-                                ))}
-                            </div>
-                        ) : null}
-                    </div>
-                </aside>
-                </div>
-            {quickReplyItemFormAssets.length > 0 ? (
-                <div className="saas-admin-related-block">
-                    <h4>Adjuntos ({quickReplyItemFormAssets.length})</h4>
-                    <div className="saas-admin-related-list">
-                        {quickReplyItemFormAssets.map((asset, assetIdx) => {
-                            const fileLabel = getQuickReplyAssetDisplayName(asset, assetIdx);
-                            return (
-                                <div key={`qr_item_asset_edit_${assetIdx}`} className="saas-admin-related-row" role="status">
-                                    <span>{fileLabel}</span>
-                                    <small>{asset.mimeType || 'archivo'}{asset.sizeBytes ? ` | ${formatBytes(asset.sizeBytes)}` : ''}</small>
-                                    <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => removeQuickReplyAssetAt?.(assetIdx)}>Quitar</button>
+                            {quickReplyVariableLoading ? <small className="saas-quick-reply-preview-muted">Cargando variables...</small> : null}
+                            {quickReplyVariableError ? <small className="saas-meta-template-error">{quickReplyVariableError}</small> : null}
+                            {!quickReplyVariableLoading && !quickReplyVariableError ? (
+                                <div className="saas-quick-reply-variable-list">
+                                    {filteredQuickReplyVariableCategories.map((category) => (
+                                        <div key={`qr_var_group_${category?.id}`} className="saas-quick-reply-variable-group">
+                                            <span>{category?.label || category?.id}</span>
+                                            {(Array.isArray(category?.variables) ? category.variables : []).map((variable) => (
+                                                <button
+                                                    key={`qr_var_${category?.id}_${variable?.key}`}
+                                                    type="button"
+                                                    disabled={busy || uploadingQuickReplyAssets}
+                                                    onClick={() => insertQuickReplyVariable(variable?.key)}
+                                                >
+                                                    <strong>{`{{${variable?.key}}}`}</strong>
+                                                    <small>{variable?.label || variable?.description || variable?.key}</small>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    ))}
+                                    {filteredQuickReplyVariableCategories.length === 0 ? <small className="saas-quick-reply-preview-muted">Sin variables para mostrar.</small> : null}
                                 </div>
-                            );
-                        })}
+                            ) : null}
+                        </aside>
+                        <aside className="saas-quick-reply-preview" aria-label="Preview WhatsApp">
+                            <h5>Preview WhatsApp</h5>
+                            <div className="saas-quick-reply-preview-phone">
+                                <div className="saas-quick-reply-preview-bubble">
+                                    {(quickReplyItemFormAssets.length > 0 || text(quickReplyItemForm.mediaUrl)) ? (
+                                        <div className="saas-quick-reply-preview-image">Imagen</div>
+                                    ) : null}
+                                    <div className="saas-quick-reply-preview-text">
+                                        {renderWhatsAppFormattedText(renderQuickReplyPreviewText(quickReplyItemForm.text, quickReplyVariableCategories))}
+                                    </div>
+                                </div>
+                                {quickReplyFormButtons.length > 0 ? (
+                                    <div className="saas-quick-reply-preview-buttons">
+                                        {quickReplyFormButtons.map((button, index) => (
+                                            <button key={`qr_button_preview_${button.id}_${index}`} type="button" disabled>{button.title || `Boton ${index + 1}`}</button>
+                                        ))}
+                                    </div>
+                                ) : null}
+                            </div>
+                        </aside>
                     </div>
                 </div>
-            ) : null}
-            <label className="saas-admin-module-toggle">
-                <input type="checkbox" checked={quickReplyItemForm.isActive !== false} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, isActive: event.target.checked }))} disabled={busy || uploadingQuickReplyAssets} />
-                <span>Respuesta activa</span>
-            </label>
-            <div className="saas-admin-form-row saas-admin-form-row--actions">
-                <button
-                    type="button"
-                    disabled={busy || uploadingQuickReplyAssets || !canManageQuickReplies || !text(quickReplyItemForm.label) || (!text(quickReplyItemForm.text) && quickReplyItemFormAssets.length === 0 && !text(quickReplyItemForm.mediaUrl))}
-                    onClick={() => runAction?.(quickReplyItemPanelMode === 'create' ? 'Respuesta rapida creada' : 'Respuesta rapida actualizada', async () => saveQuickReplyItem?.())}
-                >
-                    {quickReplyItemPanelMode === 'create' ? 'Guardar respuesta' : 'Actualizar respuesta'}
-                </button>
-                <button type="button" className="saas-btn-cancel" disabled={busy || uploadingQuickReplyAssets} onClick={() => { void requestClose?.(); }}>Cancelar</button>
             </div>
-            </div>
-        </div>
-    ), [
+        );
+    }, [
         QUICK_REPLY_ACCEPT_VALUE,
         addQuickReplyButton,
         QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL,
@@ -547,6 +621,7 @@ export default function QuickRepliesSection(props = {}) {
         quickReplyUploadMaxMb,
         removeQuickReplyAssetAt,
         removeQuickReplyButton,
+        requestCloseQuickReplyItemBuilder,
         runAction,
         saveQuickReplyItem,
         setError,

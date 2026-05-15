@@ -10443,9 +10443,12 @@ textarea:focus {
 
 .saas-quick-reply-editor-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+  grid-template-columns: minmax(420px, 2fr) minmax(260px, 1fr) minmax(260px, 1fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .saas-quick-reply-builder-overlay {
@@ -10460,15 +10463,18 @@ textarea:focus {
 }
 
 .saas-quick-reply-builder-shell {
-  width: min(1080px, 96vw);
-  max-height: min(88vh, 900px);
-  overflow: auto;
+  width: min(1480px, calc(100vw - 32px));
+  height: min(880px, calc(100vh - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
   border-radius: 22px;
   background: var(--chat-shell-panel-gradient, var(--color-surface, #fff));
   color: var(--color-text, #111);
   box-shadow: var(--chat-panel-shadow, 0 28px 80px rgba(15, 23, 42, 0.24));
   padding: 18px;
+  display: flex;
+  flex-direction: column;
 }
 
 .saas-quick-reply-builder-header {
@@ -10497,12 +10503,32 @@ textarea:focus {
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+  border-radius: 18px;
+  background: var(--color-surface, #fff);
+  padding: 14px;
+}
+
+.saas-quick-reply-editor-main--form textarea {
+  width: 100%;
+  min-height: 170px;
+  resize: vertical;
 }
 
 .saas-quick-reply-format-toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
+}
+
+.saas-quick-reply-format-toolbar span {
+  color: var(--color-text-muted, rgba(0, 0, 0, 0.55));
+  font-size: 0.78rem;
+  font-weight: 800;
+  margin-right: 2px;
 }
 
 .saas-quick-reply-format-toolbar button,
@@ -10542,6 +10568,8 @@ textarea:focus {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .saas-quick-reply-variable-panel__head {
@@ -10558,7 +10586,7 @@ textarea:focus {
 .saas-quick-reply-variable-list {
   display: grid;
   gap: 10px;
-  max-height: 260px;
+  min-height: 0;
   overflow: auto;
   padding-right: 4px;
 }
@@ -10634,6 +10662,8 @@ textarea:focus {
   background: var(--color-surface, #fff);
   padding: 14px;
   box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+  min-height: 0;
+  overflow: auto;
 }
 
 .saas-quick-reply-preview h5 {
@@ -10704,6 +10734,7 @@ textarea:focus {
 @media (max-width: 920px) {
   .saas-quick-reply-editor-layout {
     grid-template-columns: 1fr;
+    overflow: auto;
   }
 
   .saas-quick-reply-builder-overlay {
@@ -10713,6 +10744,7 @@ textarea:focus {
 
   .saas-quick-reply-builder-shell {
     width: 100%;
+    height: calc(100vh - 20px);
     max-height: calc(100vh - 20px);
   }
 }
