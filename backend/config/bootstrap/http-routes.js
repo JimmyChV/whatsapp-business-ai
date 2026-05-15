@@ -19,6 +19,7 @@ function registerHttpRoutes({
     registerTenantLabelsQuickRepliesHttpRoutes,
     registerTenantAdminConfigCatalogHttpRoutes,
     registerTenantAdminAutomationHttpRoutes,
+    registerTenantAdminScheduleHttpRoutes,
     registerOperationsUtilityHttpRoutes,
     registerCloudWebhookHttpRoutes,
     isProduction,
@@ -40,6 +41,7 @@ function registerHttpRoutes({
     saasUserUiPreferencesService,
     quickReplyLibrariesService,
     tenantAutomationService,
+    tenantScheduleService,
     customerService,
     customerAddressesService,
     customerCatalogsService,
@@ -289,6 +291,15 @@ function registerHttpRoutes({
     registerTenantAdminAutomationHttpRoutes({
         app,
         tenantAutomationService,
+        accessPolicyService,
+        isTenantAllowedForUser,
+        hasPermission,
+        hasAnyPermission
+    });
+
+    registerTenantAdminScheduleHttpRoutes({
+        app,
+        tenantScheduleService,
         accessPolicyService,
         isTenantAllowedForUser,
         hasPermission,

@@ -10,6 +10,7 @@ export { default as OperationsSection } from './OperationsSection';
 export { default as PlansSection } from './PlansSection';
 export { default as QuickRepliesSection } from './QuickRepliesSection';
 export { default as RoleProfilesSection } from './RoleProfilesSection';
+export { default as SchedulesSection } from './SchedulesSection';
 export { default as SummarySection } from './SummarySection';
 export { default as TenantLabelsSection } from './TenantLabelsSection';
 export { default as UsersSection } from './UsersSection';

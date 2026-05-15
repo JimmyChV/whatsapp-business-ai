@@ -19,6 +19,7 @@ export default function useSaasPanelLoadEffects({
     loadMetaTemplates,
     loadCampaigns,
     loadAutomations,
+    loadSchedules,
     loadQuickReplyData,
     loadTenantLabels,
     loadTenantAssignmentRules,
@@ -40,6 +41,7 @@ export default function useSaasPanelLoadEffects({
         loadMetaTemplates,
         loadCampaigns,
         loadAutomations,
+        loadSchedules,
         loadQuickReplyData,
         loadTenantLabels,
         loadTenantAssignmentRules,
@@ -62,6 +64,7 @@ export default function useSaasPanelLoadEffects({
         loadMetaTemplates,
         loadCampaigns,
         loadAutomations,
+        loadSchedules,
         loadQuickReplyData,
         loadTenantLabels,
         loadTenantAssignmentRules,
@@ -171,6 +174,7 @@ export default function useSaasPanelLoadEffects({
             loadMetaTemplates: loadMetaTemplatesFn,
             loadCampaigns: loadCampaignsFn,
             loadAutomations: loadAutomationsFn,
+            loadSchedules: loadSchedulesFn,
             loadQuickReplyData: loadQuickReplyDataFn,
             loadTenantLabels: loadTenantLabelsFn,
             loadTenantAssignmentRules: loadTenantAssignmentRulesFn,
@@ -188,6 +192,7 @@ export default function useSaasPanelLoadEffects({
         if (typeof loadMetaTemplatesFn === 'function') tasks.push(loadMetaTemplatesFn(tenantScopeId));
         if (typeof loadCampaignsFn === 'function') tasks.push(loadCampaignsFn(tenantScopeId));
         if (typeof loadAutomationsFn === 'function') tasks.push(loadAutomationsFn(tenantScopeId));
+        if (typeof loadSchedulesFn === 'function') tasks.push(loadSchedulesFn(tenantScopeId));
         if (typeof loadQuickReplyDataFn === 'function') tasks.push(loadQuickReplyDataFn(tenantScopeId));
         if (typeof loadTenantLabelsFn === 'function') tasks.push(loadTenantLabelsFn(tenantScopeId));
         if (typeof loadTenantAssignmentRulesFn === 'function') tasks.push(loadTenantAssignmentRulesFn(tenantScopeId));

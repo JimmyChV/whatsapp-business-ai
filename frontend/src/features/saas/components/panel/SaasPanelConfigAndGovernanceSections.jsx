@@ -3,7 +3,8 @@ import {
     CatalogSection,
     ModulesConfigSection,
     PlansSection,
-    RoleProfilesSection
+    RoleProfilesSection,
+    SchedulesSection
 } from '../../sections';
 
 export default function SaasPanelConfigAndGovernanceSections(props = {}) {
@@ -132,6 +133,23 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
         formatDateTimeLabel: context.formatDateTimeLabel
     };
 
+    const schedulesContext = {
+        selectedSectionId: context.selectedSectionId,
+        isSchedulesSection: context.isSchedulesSection,
+        settingsTenantId: context.settingsTenantId,
+        tenantScopeLocked: context.tenantScopeLocked,
+        busy: context.busy,
+        requestJson: context.requestJson,
+        runAction: context.runAction,
+        schedules: context.schedules,
+        loadingSchedules: context.loadingSchedules,
+        loadSchedules: context.loadSchedules,
+        createSchedule: context.createSchedule,
+        updateSchedule: context.updateSchedule,
+        deleteSchedule: context.deleteSchedule,
+        canManageSchedules: context.canManageSchedules
+    };
+
     const rolesContext = {
         isRolesSection: context.isRolesSection,
         loadAccessCatalog: context.loadAccessCatalog,
@@ -186,6 +204,8 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
             <CatalogSection context={catalogContext} />
 
             <AutomationSection context={automationContext} />
+
+            <SchedulesSection context={schedulesContext} />
 
             <RoleProfilesSection context={rolesContext} />
 

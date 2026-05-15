@@ -16,6 +16,7 @@
   tenantIntegrationsService: require('./integrations.service'),
   quickReplyLibrariesService: require('./quick-reply-libraries.service'),
   tenantAutomationService: require('./tenant-automation.service'),
+  tenantScheduleService: require('./tenant-schedule.service'),
   quotesService: require('./quotes.service'),
   woocommerceService: require('./woocommerce.service')
 };

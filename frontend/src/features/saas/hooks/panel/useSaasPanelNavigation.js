@@ -120,6 +120,7 @@ export default function useSaasPanelNavigation({
         isMetaTemplatesSection: selectedSectionId === 'saas_templates',
         isAiSection: selectedSectionId === 'saas_ia',
         isAutomationSection: selectedSectionId === 'saas_automations',
+        isSchedulesSection: selectedSectionId === 'saas_schedules',
         isLabelsSection: selectedSectionId === 'saas_etiquetas',
         isGlobalLabelsSection: selectedSectionId === 'saas_global_labels',
         isQuickRepliesSection: selectedSectionId === 'saas_quick_replies',

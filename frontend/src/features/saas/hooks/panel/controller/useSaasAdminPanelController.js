@@ -106,6 +106,7 @@ import useSaasUsersController from './useSaasUsersController';
 import useSaasMetaTemplatesController from '../../useSaasMetaTemplatesController';
 import useSaasCampaignsController from '../../useSaasCampaignsController';
 import useTenantAutomations from '../../domains/automations/useTenantAutomations';
+import useTenantSchedules from '../../domains/schedules/useTenantSchedules';
 
 export default function useSaasAdminPanelController({
     isOpen = false,
@@ -298,6 +299,12 @@ export default function useSaasAdminPanelController({
         tenantId: panelCoreState.settingsTenantId
     });
     const automationsController = useTenantAutomations({
+        requestJson,
+        tenantId: panelCoreState.settingsTenantId,
+        enabled: isOpen && Boolean(panelCoreState.settingsTenantId),
+        autoLoad: false
+    });
+    const schedulesController = useTenantSchedules({
         requestJson,
         tenantId: panelCoreState.settingsTenantId,
         enabled: isOpen && Boolean(panelCoreState.settingsTenantId),
@@ -887,6 +894,7 @@ export default function useSaasAdminPanelController({
         loadMetaTemplates: metaTemplatesController.loadTemplates,
         loadCampaigns: campaignsController.loadCampaigns,
         loadAutomations: automationsController.loadAutomations,
+        loadSchedules: schedulesController.loadSchedules,
         loadTenantAssignmentRules: operationsController.operationsActions.loadTenantAssignmentRules,
         loadTenantOperationsKpis: operationsController.operationsActions.loadTenantOperationsKpis,
         selectedWaModuleId,
@@ -1169,6 +1177,12 @@ export default function useSaasAdminPanelController({
         createAutomationRule: automationsController.createAutomationRule,
         updateAutomationRule: automationsController.updateAutomationRule,
         deleteAutomationRule: automationsController.deleteAutomationRule,
+        schedules: schedulesController.schedules,
+        loadingSchedules: schedulesController.loadingSchedules,
+        loadSchedules: schedulesController.loadSchedules,
+        createSchedule: schedulesController.createSchedule,
+        updateSchedule: schedulesController.updateSchedule,
+        deleteSchedule: schedulesController.deleteSchedule,
         // tenantsUsers (8)
         openTenantCreate: tenantsUsersActions.openTenantCreate,
         openTenantEdit: tenantsUsersActions.openTenantEdit,

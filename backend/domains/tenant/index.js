@@ -18,6 +18,7 @@ module.exports = {
     quickReplyLibrariesService: tenantDomainServices.quickReplyLibrariesService,
     quickRepliesManagerService: tenantDomainServices.quickRepliesManagerService,
     tenantAutomationService: tenantDomainServices.tenantAutomationService,
+    tenantScheduleService: tenantDomainServices.tenantScheduleService,
     aiUsageService: tenantDomainServices.aiUsageService,
     ...tenantRoutes
 };
