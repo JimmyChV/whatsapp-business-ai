@@ -16,6 +16,63 @@ function createSocketQuickRepliesService({
         sizeBytes: Number(entry?.sizeBytes ?? entry?.mediaSizeBytes) || null
     });
 
+    const normalizeQuickReplyButtons = (buttons = []) => {
+        const source = Array.isArray(buttons) ? buttons : [];
+        return source
+            .map((entry, index) => {
+                const button = entry && typeof entry === 'object' ? entry : {};
+                const title = String(button.title || button.label || button.text || '').trim().slice(0, 20);
+                if (!title) return null;
+                const id = String(button.id || button.buttonId || `btn_${index + 1}`).trim() || `btn_${index + 1}`;
+                return { id, title };
+            })
+            .filter(Boolean)
+            .slice(0, 3);
+    };
+
+    const buildQuickReplyInteractive = (bodyText, buttons = []) => ({
+        type: 'button',
+        body: { text: String(bodyText || '').trim() },
+        action: {
+            buttons: normalizeQuickReplyButtons(buttons).map((button) => ({
+                type: 'reply',
+                reply: {
+                    id: button.id,
+                    title: button.title
+                }
+            }))
+        }
+    });
+
+    const buildSyntheticInteractiveSentMessage = ({
+        messageId,
+        chatId,
+        body,
+        interactive,
+        quotedMessageId = ''
+    } = {}) => {
+        const safeMessageId = String(messageId || '').trim();
+        if (!safeMessageId) return null;
+        const safeChatId = String(chatId || '').trim();
+        return {
+            id: {
+                _serialized: safeMessageId,
+                id: safeMessageId
+            },
+            chatId: safeChatId,
+            to: safeChatId,
+            body: String(body || ''),
+            fromMe: true,
+            type: 'interactive',
+            ack: 1,
+            quotedMessageId: String(quotedMessageId || '').trim() || null,
+            timestamp: Math.floor(Date.now() / 1000),
+            hasMedia: false,
+            rawData: { interactive },
+            _data: { interactive }
+        };
+    };
+
     const buildQuickReplySentPayload = ({
         replyPayload,
         quickReplyId,
@@ -114,6 +171,7 @@ function createSocketQuickRepliesService({
                 }
 
                 const bodyText = String(replyPayload?.text || replyPayload?.bodyText || replyPayload?.body || '').trim();
+                const quickReplyButtons = normalizeQuickReplyButtons(replyPayload?.buttons || replyPayload?.metadata?.buttons);
                 const rawMediaAssets = Array.isArray(replyPayload?.mediaAssets) ? replyPayload.mediaAssets : [];
                 const mediaAssets = rawMediaAssets
                     .map(normalizeQuickReplyAssetEntry)
@@ -129,6 +187,11 @@ function createSocketQuickRepliesService({
                         fileName: legacyMediaFileName,
                         sizeBytes: null
                     });
+                }
+
+                if (quickReplyButtons.length > 0 && !bodyText) {
+                    socket.emit('error', 'La respuesta rapida necesita texto para enviar botones.');
+                    return;
                 }
 
                 if (!bodyText && mediaAssets.length === 0) {
@@ -163,8 +226,8 @@ function createSocketQuickRepliesService({
 
                         const fileNameBase = mediaEntry.fileName || legacyMediaFileName || pathModule.basename(String(fetchedMedia.filename || '').trim() || '') || ('adjunto-' + Date.now());
                         const safeFileName = String(fileNameBase || '').trim() || ('adjunto-' + Date.now());
-                        const captionText = index === 0 ? bodyText : '';
-                        const quotedMessageId = index === 0 ? (quoted || null) : null;
+                        const captionText = quickReplyButtons.length > 0 ? '' : (index === 0 ? bodyText : '');
+                        const quotedMessageId = quickReplyButtons.length > 0 ? null : (index === 0 ? (quoted || null) : null);
                         const sentAssetMessage = await waClient.sendMedia(
                             target.targetChatId,
                             fetchedMedia.mediaData,
@@ -205,7 +268,38 @@ function createSocketQuickRepliesService({
                             mediaAssets: sentMediaPayloads
                         };
                     }
-                } else {
+                }
+
+                if (quickReplyButtons.length > 0) {
+                    if (typeof waClient?.sendInteractiveMessage !== 'function') {
+                        socket.emit('error', 'El canal no soporta botones interactivos para respuestas rapidas.');
+                        return;
+                    }
+                    const interactive = buildQuickReplyInteractive(bodyText, quickReplyButtons);
+                    const interactiveMessageId = await waClient.sendInteractiveMessage(target.targetChatId, interactive, {
+                        quotedMessageId: mediaAssets.length > 0 ? '' : quoted
+                    });
+                    sentMessage = buildSyntheticInteractiveSentMessage({
+                        messageId: interactiveMessageId,
+                        chatId: target.targetChatId,
+                        body: bodyText,
+                        interactive,
+                        quotedMessageId: mediaAssets.length > 0 ? '' : quoted
+                    });
+                    const sentInteractiveMessageId = getSerializedMessageId(sentMessage);
+                    if (sentInteractiveMessageId && agentMeta) rememberOutgoingAgentMeta(sentInteractiveMessageId, agentMeta);
+
+                    await emitRealtimeOutgoingMessage({
+                        sentMessage,
+                        fallbackChatId: target.targetChatId,
+                        fallbackBody: bodyText,
+                        quotedMessageId: mediaAssets.length > 0 ? '' : quoted,
+                        quotedMessage: mediaAssets.length > 0 ? null : quotedMessage,
+                        moduleContext,
+                        agentMeta,
+                        mediaPayload: null
+                    });
+                } else if (mediaAssets.length === 0) {
                     if (quoted) {
                         sentMessage = await waClient.sendMessage(target.targetChatId, bodyText, { quotedMessageId: quoted });
                     } else {
