@@ -20,6 +20,7 @@ const GRID_SECTION_IDS = new Set([
     'saas_modulos',
     'saas_config',
     'saas_catalogos',
+    'saas_schedules',
     'saas_roles',
     'saas_planes'
 ]);
