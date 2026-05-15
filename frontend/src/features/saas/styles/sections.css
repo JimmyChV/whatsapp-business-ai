@@ -10448,6 +10448,50 @@ textarea:focus {
   align-items: start;
 }
 
+.saas-quick-reply-builder-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 4300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+  background: var(--chat-overlay-backdrop, rgba(15, 23, 42, 0.48));
+}
+
+.saas-quick-reply-builder-shell {
+  width: min(1080px, 96vw);
+  max-height: min(88vh, 900px);
+  overflow: auto;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+  border-radius: 22px;
+  background: var(--chat-shell-panel-gradient, var(--color-surface, #fff));
+  color: var(--color-text, #111);
+  box-shadow: var(--chat-panel-shadow, 0 28px 80px rgba(15, 23, 42, 0.24));
+  padding: 18px;
+}
+
+.saas-quick-reply-builder-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding-bottom: 14px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+}
+
+.saas-quick-reply-builder-header h4 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.saas-quick-reply-builder-header small {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-text-muted, rgba(0, 0, 0, 0.55));
+}
+
 .saas-quick-reply-editor-main {
   display: flex;
   flex-direction: column;
@@ -10488,6 +10532,76 @@ textarea:focus {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.saas-quick-reply-variable-panel {
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+  border-radius: 16px;
+  background: var(--color-surface-soft, var(--color-surface, #fff));
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.saas-quick-reply-variable-panel__head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.saas-quick-reply-variable-panel__head input {
+  min-width: 0;
+}
+
+.saas-quick-reply-variable-list {
+  display: grid;
+  gap: 10px;
+  max-height: 260px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.saas-quick-reply-variable-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.saas-quick-reply-variable-group > span {
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted, rgba(0, 0, 0, 0.55));
+}
+
+.saas-quick-reply-variable-group button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  text-align: left;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+  border-radius: 12px;
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #111);
+  padding: 9px 10px;
+  cursor: pointer;
+}
+
+.saas-quick-reply-variable-group button strong {
+  color: var(--color-primary, #008069);
+  font-size: 0.78rem;
+}
+
+.saas-quick-reply-variable-group button small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-muted, rgba(0, 0, 0, 0.55));
 }
 
 .saas-quick-reply-buttons-header {
@@ -10590,5 +10704,15 @@ textarea:focus {
 @media (max-width: 920px) {
   .saas-quick-reply-editor-layout {
     grid-template-columns: 1fr;
+  }
+
+  .saas-quick-reply-builder-overlay {
+    align-items: stretch;
+    padding: 10px;
+  }
+
+  .saas-quick-reply-builder-shell {
+    width: 100%;
+    max-height: calc(100vh - 20px);
   }
 }

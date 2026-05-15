@@ -1,3 +1,5 @@
+const templateVariablesService = require('../../operations/services/template-variables.service');
+
 function createSocketQuickRepliesService({
     waClient,
     listQuickReplies,
@@ -43,6 +45,35 @@ function createSocketQuickRepliesService({
             }))
         }
     });
+
+    const resolveQuickReplyVariables = async ({
+        tenantId,
+        bodyText,
+        chatId,
+        customerId = ''
+    } = {}) => {
+        const source = String(bodyText || '');
+        if (!source || !/\{\{\s*[a-zA-Z0-9_]+\s*\}\}/.test(source)) return source;
+        try {
+            const previewPayload = await templateVariablesService.getPreview(tenantId, {
+                chatId,
+                customerId
+            });
+            const variables = (Array.isArray(previewPayload?.categories) ? previewPayload.categories : [])
+                .flatMap((category) => (Array.isArray(category?.variables) ? category.variables : []));
+            const valueMap = new Map(variables.map((variable) => [
+                String(variable?.key || '').trim().toLowerCase(),
+                String(variable?.previewValue ?? '').trim()
+            ]));
+            return source.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (match, rawKey) => {
+                const value = valueMap.get(String(rawKey || '').trim().toLowerCase());
+                return value || '';
+            });
+        } catch (error) {
+            console.warn('[quick-replies] could not resolve variables:', error?.message);
+            return source;
+        }
+    };
 
     const buildSyntheticInteractiveSentMessage = ({
         messageId,
@@ -170,7 +201,13 @@ function createSocketQuickRepliesService({
                     return;
                 }
 
-                const bodyText = String(replyPayload?.text || replyPayload?.bodyText || replyPayload?.body || '').trim();
+                const bodyTextRaw = String(replyPayload?.text || replyPayload?.bodyText || replyPayload?.body || '').trim();
+                const bodyText = await resolveQuickReplyVariables({
+                    tenantId,
+                    bodyText: bodyTextRaw,
+                    chatId: target.scopedChatId || target.targetChatId,
+                    customerId: payload?.customerId || payload?.customer_id || ''
+                });
                 const quickReplyButtons = normalizeQuickReplyButtons(replyPayload?.buttons || replyPayload?.metadata?.buttons);
                 const rawMediaAssets = Array.isArray(replyPayload?.mediaAssets) ? replyPayload.mediaAssets : [];
                 const mediaAssets = rawMediaAssets
