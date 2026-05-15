@@ -121,6 +121,11 @@ export const EMPTY_WA_MODULE_FORM = {
     assignedUserIds: [],
     catalogIds: [],
     aiAssistantId: '',
+    scheduleId: '',
+    aiAssistantName: 'Patty',
+    aiWithinHoursMode: 'review',
+    aiOutsideHoursMode: 'autonomous',
+    aiWaitMinutes: 5,
     moduleCatalogMode: 'inherit',
     moduleAiEnabled: true,
     moduleCatalogEnabled: true,
@@ -233,6 +238,22 @@ export function normalizeWaModule(item = {}) {
     const moduleSettings = metadata.moduleSettings && typeof metadata.moduleSettings === 'object' && !Array.isArray(metadata.moduleSettings)
         ? metadata.moduleSettings
         : {};
+    const aiConfigSource = (source.aiConfig && typeof source.aiConfig === 'object' && !Array.isArray(source.aiConfig))
+        ? source.aiConfig
+        : (metadata.aiConfig && typeof metadata.aiConfig === 'object' && !Array.isArray(metadata.aiConfig) ? metadata.aiConfig : {});
+    const withinHoursMode = ['review', 'off'].includes(String(aiConfigSource.withinHoursMode || '').trim())
+        ? String(aiConfigSource.withinHoursMode || '').trim()
+        : 'review';
+    const outsideHoursMode = ['autonomous', 'review', 'off'].includes(String(aiConfigSource.outsideHoursMode || '').trim())
+        ? String(aiConfigSource.outsideHoursMode || '').trim()
+        : 'autonomous';
+    const parsedWaitMinutes = Number.parseInt(String(aiConfigSource.waitMinutes ?? ''), 10);
+    const aiConfig = {
+        assistantName: String(aiConfigSource.assistantName || '').trim() || 'Patty',
+        withinHoursMode,
+        outsideHoursMode,
+        waitMinutes: Number.isFinite(parsedWaitMinutes) ? Math.max(1, Math.min(60, parsedWaitMinutes)) : 5
+    };
 
     return {
         moduleId,
@@ -249,6 +270,8 @@ export function normalizeWaModule(item = {}) {
         catalogIds: Array.isArray(moduleSettings.catalogIds)
             ? moduleSettings.catalogIds.map((entry) => String(entry || '').trim().toUpperCase()).filter((entry) => /^CAT-[A-Z0-9]{4,}$/.test(entry))
             : [],
+        scheduleId: String(source.scheduleId || metadata.scheduleId || '').trim() || '',
+        aiConfig,
         moduleAiAssistantId: sanitizeAiAssistantCode(moduleSettings.aiAssistantId),
         moduleCatalogMode: CATALOG_MODE_OPTIONS.includes(String(moduleSettings.catalogMode || '').trim())
             ? String(moduleSettings.catalogMode || '').trim()

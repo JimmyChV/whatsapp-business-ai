@@ -124,6 +124,28 @@ function normalizeImageUrl(value = '') {
     return /^https?:\/\//i.test(text) ? text : null;
 }
 
+function normalizeScheduleId(value = null) {
+    const clean = toText(value);
+    return clean || null;
+}
+
+function normalizeAiConfig(value = {}) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const withinHoursMode = ['review', 'off'].includes(toText(source.withinHoursMode))
+        ? toText(source.withinHoursMode)
+        : 'review';
+    const outsideHoursMode = ['autonomous', 'review', 'off'].includes(toText(source.outsideHoursMode))
+        ? toText(source.outsideHoursMode)
+        : 'autonomous';
+    const parsedWaitMinutes = Number.parseInt(String(source.waitMinutes ?? ''), 10);
+    return {
+        assistantName: toText(source.assistantName) || 'Patty',
+        withinHoursMode,
+        outsideHoursMode,
+        waitMinutes: Number.isFinite(parsedWaitMinutes) ? Math.max(1, Math.min(60, parsedWaitMinutes)) : 5
+    };
+}
+
 function createUniqueModuleId(modules = []) {
     const existing = new Set(
         (Array.isArray(modules) ? modules : [])
@@ -484,6 +506,9 @@ function sanitizeModulePublic(module = {}) {
     const name = toText(module.name) || moduleId;
     const phoneNumber = module.phoneNumber || null;
     const channelType = normalizeChannelType(module.channelType || 'whatsapp');
+    const metadata = sanitizeModuleMetadataForPublic(sanitizeMetadata(module.metadata));
+    const scheduleId = normalizeScheduleId(metadata.scheduleId);
+    const aiConfig = normalizeAiConfig(metadata.aiConfig);
 
     return {
         moduleId,
@@ -498,7 +523,13 @@ function sanitizeModulePublic(module = {}) {
         isDefault: module.isDefault === true,
         isSelected: module.isSelected === true,
         assignedUserIds: normalizeAssignedUserIds(module.assignedUserIds || []),
-        metadata: sanitizeModuleMetadataForPublic(sanitizeMetadata(module.metadata)),
+        scheduleId,
+        aiConfig,
+        metadata: {
+            ...metadata,
+            scheduleId,
+            aiConfig
+        },
         createdAt: toText(module.createdAt) || null,
         updatedAt: toText(module.updatedAt) || null
     };

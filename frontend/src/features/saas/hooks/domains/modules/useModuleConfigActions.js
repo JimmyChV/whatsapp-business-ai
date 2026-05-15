@@ -69,7 +69,12 @@ export default function useModuleConfigActions({
             catalogIds: activeCatalogOptions.length > 0
                 ? [String(activeCatalogOptions[0]?.catalogId || '').trim().toUpperCase()].filter(Boolean)
                 : [],
-            aiAssistantId: defaultAiAssistantId || ''
+            aiAssistantId: defaultAiAssistantId || '',
+            scheduleId: '',
+            aiAssistantName: 'Patty',
+            aiWithinHoursMode: 'review',
+            aiOutsideHoursMode: 'autonomous',
+            aiWaitMinutes: 5
         }));
     };
 

@@ -1,6 +1,23 @@
 import React from 'react';
 import ImageDropInput from '../../components/panel/ImageDropInput';
 
+const WITHIN_HOURS_MODE_OPTIONS = [
+    { value: 'review', label: 'Sugerencias (pendiente aprobacion)' },
+    { value: 'off', label: 'Desactivado' }
+];
+
+const OUTSIDE_HOURS_MODE_OPTIONS = [
+    { value: 'autonomous', label: 'Autonomo (responde solo)' },
+    { value: 'review', label: 'Sugerencias (pendiente aprobacion)' },
+    { value: 'off', label: 'Desactivado' }
+];
+
+function clampWaitMinutes(value) {
+    const parsed = Number.parseInt(String(value ?? ''), 10);
+    if (!Number.isFinite(parsed)) return 5;
+    return Math.max(1, Math.min(60, parsed));
+}
+
 export default function ModulesConfigModuleEditForm({
     settingsTenantId,
     busy,
@@ -14,6 +31,7 @@ export default function ModulesConfigModuleEditForm({
     normalizeCatalogIdsList,
     toggleCatalogForModule,
     activeQuickReplyLibraries,
+    schedules = [],
     moduleQuickReplyLibraryDraft,
     toggleQuickReplyLibraryForModuleDraft,
     handleFormImageUpload,
@@ -29,6 +47,11 @@ export default function ModulesConfigModuleEditForm({
     openConfigModuleView,
     clearConfigSelection
 }) {
+    const activeSchedules = Array.isArray(schedules) ? schedules.filter((item) => item?.isActive !== false) : [];
+    const selectedSchedule = activeSchedules.find((item) => String(item?.scheduleId || '').trim() === String(waModuleForm.scheduleId || '').trim()) || null;
+    const selectedScheduleStatus = selectedSchedule
+        ? 'Ahora: segun horario configurado'
+        : 'Sin horario asignado';
     const handleModuleSave = () => {
         if (typeof saveWaModule !== 'function') return;
         saveWaModule();
@@ -87,6 +110,96 @@ export default function ModulesConfigModuleEditForm({
                             </option>
                         ))}
                     </select>
+                </div>
+            </div>
+
+            <div className="saas-admin-related-block">
+                <h4>Horario del módulo</h4>
+                <div className="saas-admin-form-row">
+                    <div className="saas-admin-field">
+                        <label htmlFor="wa-module-schedule">Horario asignado</label>
+                        <select
+                            id="wa-module-schedule"
+                            value={waModuleForm.scheduleId || ''}
+                            onChange={(event) => setWaModuleForm((prev) => ({ ...prev, scheduleId: event.target.value }))}
+                            disabled={!settingsTenantId || busy}
+                        >
+                            <option value="">Sin horario asignado</option>
+                            {activeSchedules.map((schedule) => {
+                                const scheduleId = String(schedule?.scheduleId || '').trim();
+                                if (!scheduleId) return null;
+                                return (
+                                    <option key={`wa_module_schedule_${scheduleId}`} value={scheduleId}>
+                                        {schedule?.name || scheduleId}
+                                    </option>
+                                );
+                            })}
+                        </select>
+                    </div>
+                    <div className="saas-admin-field">
+                        <label htmlFor="wa-module-schedule-status">Estado actual</label>
+                        <input
+                            id="wa-module-schedule-status"
+                            value={selectedScheduleStatus}
+                            disabled
+                        />
+                    </div>
+                </div>
+            </div>
+
+            <div className="saas-admin-related-block">
+                <h4>Asistente IA</h4>
+                <div className="saas-admin-form-row">
+                    <div className="saas-admin-field">
+                        <label htmlFor="wa-module-ai-name">Nombre del asistente</label>
+                        <input
+                            id="wa-module-ai-name"
+                            value={waModuleForm.aiAssistantName || ''}
+                            onChange={(event) => setWaModuleForm((prev) => ({ ...prev, aiAssistantName: event.target.value }))}
+                            placeholder="Patty"
+                            disabled={!settingsTenantId || busy}
+                        />
+                    </div>
+                    <div className="saas-admin-field">
+                        <label htmlFor="wa-module-ai-within-hours">Modo dentro de horario</label>
+                        <select
+                            id="wa-module-ai-within-hours"
+                            value={waModuleForm.aiWithinHoursMode || 'review'}
+                            onChange={(event) => setWaModuleForm((prev) => ({ ...prev, aiWithinHoursMode: event.target.value }))}
+                            disabled={!settingsTenantId || busy}
+                        >
+                            {WITHIN_HOURS_MODE_OPTIONS.map((option) => (
+                                <option key={`within_hours_${option.value}`} value={option.value}>{option.label}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+                <div className="saas-admin-form-row">
+                    <div className="saas-admin-field">
+                        <label htmlFor="wa-module-ai-outside-hours">Modo fuera de horario</label>
+                        <select
+                            id="wa-module-ai-outside-hours"
+                            value={waModuleForm.aiOutsideHoursMode || 'autonomous'}
+                            onChange={(event) => setWaModuleForm((prev) => ({ ...prev, aiOutsideHoursMode: event.target.value }))}
+                            disabled={!settingsTenantId || busy}
+                        >
+                            {OUTSIDE_HOURS_MODE_OPTIONS.map((option) => (
+                                <option key={`outside_hours_${option.value}`} value={option.value}>{option.label}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="saas-admin-field">
+                        <label htmlFor="wa-module-ai-wait">minutos antes de intervenir</label>
+                        <input
+                            id="wa-module-ai-wait"
+                            type="number"
+                            min="1"
+                            max="60"
+                            value={waModuleForm.aiWaitMinutes || 5}
+                            onChange={(event) => setWaModuleForm((prev) => ({ ...prev, aiWaitMinutes: clampWaitMinutes(event.target.value) }))}
+                            disabled={!settingsTenantId || busy}
+                        />
+                    </div>
                 </div>
             </div>
 

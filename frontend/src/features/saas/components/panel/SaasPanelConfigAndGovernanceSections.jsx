@@ -52,6 +52,7 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
         activeCatalogOptions: context.activeCatalogOptions,
         toggleCatalogForModule: context.toggleCatalogForModule,
         activeAiAssistantOptions: context.activeAiAssistantOptions,
+        schedules: context.schedules,
         moduleQuickReplyLibraryDraft: context.moduleQuickReplyLibraryDraft,
         activeQuickReplyLibraries: context.activeQuickReplyLibraries,
         toggleQuickReplyLibraryForModuleDraft: context.toggleQuickReplyLibraryForModuleDraft,

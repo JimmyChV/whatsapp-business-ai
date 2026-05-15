@@ -23,6 +23,13 @@ function buildWaModulePayload({
         ? existingMetadata.cloudConfig
         : {};
     const catalogIds = toCleanCatalogIds(waModuleForm.catalogIds || []);
+    const waitMinutes = Math.max(1, Math.min(60, Number.parseInt(String(waModuleForm.aiWaitMinutes ?? ''), 10) || 5));
+    const withinHoursMode = ['review', 'off'].includes(String(waModuleForm.aiWithinHoursMode || '').trim())
+        ? String(waModuleForm.aiWithinHoursMode || '').trim()
+        : 'review';
+    const outsideHoursMode = ['autonomous', 'review', 'off'].includes(String(waModuleForm.aiOutsideHoursMode || '').trim())
+        ? String(waModuleForm.aiOutsideHoursMode || '').trim()
+        : 'autonomous';
 
     return {
         name: String(waModuleForm.name || '').trim(),
@@ -35,6 +42,13 @@ function buildWaModulePayload({
         catalogIds,
         metadata: {
             ...existingMetadata,
+            scheduleId: String(waModuleForm.scheduleId || '').trim() || null,
+            aiConfig: {
+                assistantName: String(waModuleForm.aiAssistantName || '').trim() || 'Patty',
+                withinHoursMode,
+                outsideHoursMode,
+                waitMinutes
+            },
             moduleSettings: {
                 catalogMode: CATALOG_MODE_OPTIONS.includes(String(waModuleForm.moduleCatalogMode || '').trim())
                     ? String(waModuleForm.moduleCatalogMode || '').trim()

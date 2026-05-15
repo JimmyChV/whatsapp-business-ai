@@ -111,6 +111,28 @@ function createTenantAdminPayloadSanitizers({
         return /^AIA-[A-Z0-9]{6}$/.test(clean) ? clean : null;
     }
 
+    function sanitizeModuleScheduleIdPayload(value = null) {
+        const clean = String(value || '').trim();
+        return clean || null;
+    }
+
+    function sanitizeModuleAiConfigPayload(value = {}) {
+        const source = sanitizeObjectPayload(value);
+        const withinHoursMode = ['review', 'off'].includes(String(source.withinHoursMode || '').trim())
+            ? String(source.withinHoursMode || '').trim()
+            : 'review';
+        const outsideHoursMode = ['autonomous', 'review', 'off'].includes(String(source.outsideHoursMode || '').trim())
+            ? String(source.outsideHoursMode || '').trim()
+            : 'autonomous';
+        const parsedWaitMinutes = Number.parseInt(String(source.waitMinutes ?? ''), 10);
+        return {
+            assistantName: String(source.assistantName || '').trim() || 'Patty',
+            withinHoursMode,
+            outsideHoursMode,
+            waitMinutes: Number.isFinite(parsedWaitMinutes) ? Math.max(1, Math.min(60, parsedWaitMinutes)) : 5
+        };
+    }
+
     function sanitizeWaModulePayload(payload = {}, { allowModuleId = true } = {}) {
         const source = sanitizeObjectPayload(payload);
         const sourceMetadata = sanitizeObjectPayload(source.metadata);
@@ -131,6 +153,16 @@ function createTenantAdminPayloadSanitizers({
             || source.moduleAiAssistantId
             || metadataModuleSettings.aiAssistantId
         );
+        const hasScheduleIdPayload = Object.prototype.hasOwnProperty.call(source, 'scheduleId')
+            || Object.prototype.hasOwnProperty.call(sourceMetadata, 'scheduleId');
+        const hasAiConfigPayload = Object.prototype.hasOwnProperty.call(source, 'aiConfig')
+            || Object.prototype.hasOwnProperty.call(sourceMetadata, 'aiConfig');
+        const incomingScheduleId = Object.prototype.hasOwnProperty.call(source, 'scheduleId')
+            ? sanitizeModuleScheduleIdPayload(source.scheduleId)
+            : sanitizeModuleScheduleIdPayload(sourceMetadata.scheduleId);
+        const incomingAiConfig = Object.prototype.hasOwnProperty.call(source, 'aiConfig')
+            ? sanitizeModuleAiConfigPayload(source.aiConfig)
+            : sanitizeModuleAiConfigPayload(sourceMetadata.aiConfig);
 
         const base = {
             name: String(source.name || '').trim(),
@@ -145,6 +177,8 @@ function createTenantAdminPayloadSanitizers({
                 : [],
             metadata: {
                 ...sourceMetadata,
+                ...(hasScheduleIdPayload ? { scheduleId: incomingScheduleId } : {}),
+                ...(hasAiConfigPayload ? { aiConfig: incomingAiConfig } : {}),
                 moduleSettings: {
                     ...metadataModuleSettings,
                     catalogIds: incomingCatalogIds,

@@ -30,6 +30,7 @@ export default function ModulesConfigModuleDetailPane({ context = {} }) {
         activeCatalogOptions,
         toggleCatalogForModule,
         activeAiAssistantOptions,
+        schedules,
         moduleQuickReplyLibraryDraft,
         activeQuickReplyLibraries,
         toggleQuickReplyLibraryForModuleDraft,
@@ -62,6 +63,8 @@ export default function ModulesConfigModuleDetailPane({ context = {} }) {
     const moduleAssistantLabel = moduleAssistantId
         ? (aiAssistantLabelMap.get(moduleAssistantId) || moduleAssistantId)
         : 'Asistente principal del tenant';
+    const activeSchedules = Array.isArray(schedules) ? schedules.filter((item) => item?.isActive !== false) : [];
+    const selectedSchedule = activeSchedules.find((item) => String(item?.scheduleId || '').trim() === String(moduleInDetail?.scheduleId || '').trim()) || null;
 
     return (
         <>
@@ -72,6 +75,7 @@ export default function ModulesConfigModuleDetailPane({ context = {} }) {
                     moduleCatalogLabels={moduleCatalogLabels}
                     moduleAssistantLabel={moduleAssistantLabel}
                     moduleCloudConfig={moduleCloudConfig}
+                    selectedSchedule={selectedSchedule}
                     buildInitials={buildInitials}
                     formatDateTimeLabel={formatDateTimeLabel}
                 />
@@ -87,6 +91,7 @@ export default function ModulesConfigModuleDetailPane({ context = {} }) {
                     CATALOG_MODE_OPTIONS={CATALOG_MODE_OPTIONS}
                     sanitizeAiAssistantCode={sanitizeAiAssistantCode}
                     activeAiAssistantOptions={activeAiAssistantOptions}
+                    schedules={activeSchedules}
                     activeCatalogOptions={activeCatalogOptions}
                     normalizeCatalogIdsList={normalizeCatalogIdsList}
                     toggleCatalogForModule={toggleCatalogForModule}
