@@ -152,6 +152,7 @@ export default function useSaasPanelActionContexts(input = {}) {
                 loadWaModules: c.loadWaModules,
                 loadTenantCatalogs: catalogAdminActions.loadTenantCatalogs,
                 loadTenantAiAssistants: aiAssistantsAdminActions.loadTenantAiAssistants,
+                loadAutomations: c.loadAutomations,
                 loadQuickReplyData: quickReplyAdminActions.loadQuickReplyData,
                 loadTenantLabels: tenantLabelsAdminActions.loadTenantLabels
             },
@@ -172,6 +173,7 @@ export default function useSaasPanelActionContexts(input = {}) {
                 loadCustomers: c.loadCustomers,
                 loadMetaTemplates: c.loadMetaTemplates,
                 loadCampaigns: c.loadCampaigns,
+                loadAutomations: c.loadAutomations,
                 loadQuickReplyData: quickReplyAdminActions.loadQuickReplyData,
                 loadTenantLabels: tenantLabelsAdminActions.loadTenantLabels,
                 loadTenantAssignmentRules: c.loadTenantAssignmentRules,

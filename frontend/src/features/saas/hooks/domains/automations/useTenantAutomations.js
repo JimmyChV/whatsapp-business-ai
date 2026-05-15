@@ -7,7 +7,8 @@ function text(value = '') {
 export default function useTenantAutomations({
     requestJson = null,
     tenantId = '',
-    enabled = true
+    enabled = true,
+    autoLoad = true
 } = {}) {
     const [items, setItems] = React.useState([]);
     const [loading, setLoading] = React.useState(false);
@@ -36,9 +37,9 @@ export default function useTenantAutomations({
     }, [enabled, requestJson, tenantId]);
 
     React.useEffect(() => {
-        if (!enabled) return;
+        if (!autoLoad || !enabled) return;
         loadAutomations().catch(() => {});
-    }, [enabled, loadAutomations]);
+    }, [autoLoad, enabled, loadAutomations]);
 
     const createAutomationRule = React.useCallback(async (payload) => {
         const cleanTenantId = text(tenantId);

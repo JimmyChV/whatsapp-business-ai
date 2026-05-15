@@ -1,6 +1,5 @@
 import React from 'react';
 import { SaasEntityPage } from '../components/layout';
-import useTenantAutomations from '../hooks/domains/automations/useTenantAutomations';
 import { isTemplateAllowedInIndividual } from '../helpers/templateUseCase.helpers';
 import { normalizeQuickReplyItem, normalizeQuickReplyLibraryItem } from '../helpers';
 import { fetchQuickReplyItems, fetchQuickReplyLibraries } from '../services';
@@ -85,6 +84,12 @@ function AutomationSection(props = {}) {
         runAction,
         waModules = [],
         metaTemplatesController = null,
+        automationRules = [],
+        loadingAutomations = false,
+        loadAutomations = null,
+        createAutomationRule = null,
+        updateAutomationRule = null,
+        deleteAutomationRule = null,
         quickReplyItems: contextQuickReplyItems = null,
         quickReplyLibraries: contextQuickReplyLibraries = null,
         loadingQuickReplies: contextLoadingQuickReplies = false,
@@ -93,18 +98,6 @@ function AutomationSection(props = {}) {
     } = context;
 
     const isSection = selectedSectionId === 'saas_automations';
-    const {
-        automationRules,
-        loadingAutomations,
-        loadAutomations,
-        createAutomationRule,
-        updateAutomationRule,
-        deleteAutomationRule
-    } = useTenantAutomations({
-        requestJson,
-        tenantId: settingsTenantId,
-        enabled: isSection && Boolean(settingsTenantId)
-    });
 
     const [selectedRuleId, setSelectedRuleId] = React.useState('');
     const [panelMode, setPanelMode] = React.useState('view');

@@ -105,6 +105,7 @@ import useSaasTenantController from './useSaasTenantController';
 import useSaasUsersController from './useSaasUsersController';
 import useSaasMetaTemplatesController from '../../useSaasMetaTemplatesController';
 import useSaasCampaignsController from '../../useSaasCampaignsController';
+import useTenantAutomations from '../../domains/automations/useTenantAutomations';
 
 export default function useSaasAdminPanelController({
     isOpen = false,
@@ -295,6 +296,12 @@ export default function useSaasAdminPanelController({
         requestJson,
         socket,
         tenantId: panelCoreState.settingsTenantId
+    });
+    const automationsController = useTenantAutomations({
+        requestJson,
+        tenantId: panelCoreState.settingsTenantId,
+        enabled: isOpen && Boolean(panelCoreState.settingsTenantId),
+        autoLoad: false
     });
 
     const operationsPanelState = useOperationsPanelState({
@@ -879,6 +886,7 @@ export default function useSaasAdminPanelController({
         loadCustomers: tenantController.tenantLoaders.loadCustomers,
         loadMetaTemplates: metaTemplatesController.loadTemplates,
         loadCampaigns: campaignsController.loadCampaigns,
+        loadAutomations: automationsController.loadAutomations,
         loadTenantAssignmentRules: operationsController.operationsActions.loadTenantAssignmentRules,
         loadTenantOperationsKpis: operationsController.operationsActions.loadTenantOperationsKpis,
         selectedWaModuleId,
@@ -1155,6 +1163,12 @@ export default function useSaasAdminPanelController({
         customersAdminActions,
         metaTemplatesController,
         campaignsController,
+        automationRules: automationsController.automationRules,
+        loadingAutomations: automationsController.loadingAutomations,
+        loadAutomations: automationsController.loadAutomations,
+        createAutomationRule: automationsController.createAutomationRule,
+        updateAutomationRule: automationsController.updateAutomationRule,
+        deleteAutomationRule: automationsController.deleteAutomationRule,
         // tenantsUsers (8)
         openTenantCreate: tenantsUsersActions.openTenantCreate,
         openTenantEdit: tenantsUsersActions.openTenantEdit,
