@@ -63,7 +63,9 @@ async function getModuleConfig(tenantId, moduleId) {
     const cleanModuleId = lower(moduleId);
     if (!cleanTenantId || !cleanModuleId) return null;
     try {
-        const module = await waModulesService.getModule(cleanTenantId, cleanModuleId, { userId: '' });
+        const modules = await waModulesService.listModules(cleanTenantId, { includeInactive: true, userId: '' });
+        const module = (Array.isArray(modules) ? modules : [])
+            .find((item) => lower(item?.moduleId) === cleanModuleId) || null;
         if (module) {
             const metadata = safeJsonObject(module.metadata);
             const aiConfig = safeJsonObject(module.aiConfig || metadata.aiConfig);
@@ -101,7 +103,7 @@ async function getModuleConfig(tenantId, moduleId) {
     if (getStorageDriver() !== 'postgres') return null;
     try {
         const { rows } = await queryPostgres(
-            `SELECT module_id, name, metadata
+            `SELECT module_id, module_name, metadata
                FROM wa_modules
               WHERE tenant_id = $1
                 AND LOWER(module_id) = LOWER($2)
@@ -127,7 +129,7 @@ async function getModuleConfig(tenantId, moduleId) {
         }
         return {
             moduleId: text(row.module_id) || cleanModuleId,
-            name: text(row.name),
+            name: text(row.module_name),
             metadata,
             scheduleId: text(metadata.scheduleId || metadata.schedule_id),
             aiConfig: Object.keys(aiConfig).length ? aiConfig : null
