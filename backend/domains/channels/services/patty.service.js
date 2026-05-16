@@ -46,6 +46,58 @@ function normalizeProductLookupKey(value = '') {
         .replace(/\s+/g, ' ');
 }
 
+function extractProductVolume(value = '') {
+    const normalized = lower(value)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+    const match = normalized.match(/\b(\d+(?:[.,]\d+)?)\s*(ml|mililitros?|l|lt|lts|litros?|kg|kilos?|g|gr|grs|gramos?)\b/i);
+    if (!match) return null;
+    const amount = Number.parseFloat(String(match[1]).replace(',', '.'));
+    if (!Number.isFinite(amount)) return null;
+    const rawUnit = lower(match[2]);
+    if (rawUnit.startsWith('l') || rawUnit.startsWith('lt')) {
+        return { unit: 'ml', amount: Math.round(amount * 1000) };
+    }
+    if (rawUnit.startsWith('kg') || rawUnit.startsWith('kilo')) {
+        return { unit: 'g', amount: Math.round(amount * 1000) };
+    }
+    if (rawUnit.startsWith('g') || rawUnit.startsWith('gr')) {
+        return { unit: 'g', amount: Math.round(amount) };
+    }
+    return { unit: 'ml', amount: Math.round(amount) };
+}
+
+function normalizeProductTitleForFuzzyMatch(value = '') {
+    return lower(value)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\b\d+(?:[.,]\d+)?\s*(ml|mililitros?|l|lt|lts|litros?|kg|kilos?|g|gr|grs|gramos?)\b/gi, ' ')
+        .replace(/[®©™]/g, ' ')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim()
+        .replace(/\s+/g, ' ');
+}
+
+function catalogRowMatchPrice(row = {}) {
+    const metadata = safeJsonObject(row.metadata);
+    const parsed = money(metadata.salePrice ?? metadata.sale_price ?? metadata.precio_oferta ?? row.price);
+    return parsed === null ? Number.MAX_SAFE_INTEGER : parsed;
+}
+
+function compareCatalogCandidates(a, b, requestVolume) {
+    if (requestVolume) {
+        const aDistance = a.volume && a.volume.unit === requestVolume.unit
+            ? Math.abs(a.volume.amount - requestVolume.amount)
+            : Number.MAX_SAFE_INTEGER;
+        const bDistance = b.volume && b.volume.unit === requestVolume.unit
+            ? Math.abs(b.volume.amount - requestVolume.amount)
+            : Number.MAX_SAFE_INTEGER;
+        if (aDistance !== bDistance) return aDistance - bDistance;
+    }
+    if (a.price !== b.price) return a.price - b.price;
+    return a.titleKey.length - b.titleKey.length;
+}
+
 function normalizeLocationLookup(value = '') {
     return normalizeProductLookupKey(value);
 }
@@ -63,22 +115,62 @@ function findCatalogRowForQuoteProduct(requestItem = {}, catalogRows = [], catal
     const exactSkuMatch = sku ? catalogBySku.get(sku) : null;
     if (exactSkuMatch) return exactSkuMatch;
 
-    const containsMatch = catalogRows.find((row) => {
-        const titleKey = normalizeProductLookupKey(row.title);
-        if (!titleKey || !normalizedLookup) return false;
-        return titleKey.includes(normalizedLookup) || normalizedLookup.includes(titleKey);
-    });
-    if (containsMatch) return containsMatch;
+    const fuzzyLookup = normalizeProductTitleForFuzzyMatch(lookupText);
+    const requestVolume = extractProductVolume(lookupText);
+    const fuzzyCandidates = catalogRows
+        .map((row) => {
+            const titleKey = normalizeProductTitleForFuzzyMatch(row.title);
+            return {
+                row,
+                titleKey,
+                volume: extractProductVolume(row.title),
+                price: catalogRowMatchPrice(row)
+            };
+        })
+        .filter((candidate) => (
+            candidate.titleKey
+            && fuzzyLookup
+            && (candidate.titleKey.includes(fuzzyLookup) || fuzzyLookup.includes(candidate.titleKey))
+        ))
+        .sort((a, b) => compareCatalogCandidates(a, b, requestVolume));
+    if (fuzzyCandidates.length) return fuzzyCandidates[0].row;
+
+    const containsCandidates = catalogRows
+        .map((row) => {
+            const titleKey = normalizeProductLookupKey(row.title);
+            return {
+                row,
+                titleKey,
+                volume: extractProductVolume(row.title),
+                price: catalogRowMatchPrice(row)
+            };
+        })
+        .filter((candidate) => (
+            candidate.titleKey
+            && normalizedLookup
+            && (candidate.titleKey.includes(normalizedLookup) || normalizedLookup.includes(candidate.titleKey))
+        ))
+        .sort((a, b) => compareCatalogCandidates(a, b, requestVolume));
+    if (containsCandidates.length) return containsCandidates[0].row;
 
     const usefulWords = normalizedLookup
         .split(' ')
         .map((word) => word.trim())
         .filter((word) => word.length >= 3);
     if (!usefulWords.length) return null;
-    return catalogRows.find((row) => {
-        const titleKey = normalizeProductLookupKey(row.title);
-        return titleKey && usefulWords.some((word) => titleKey.includes(word));
-    }) || null;
+    const wordCandidates = catalogRows
+        .map((row) => {
+            const titleKey = normalizeProductLookupKey(row.title);
+            return {
+                row,
+                titleKey,
+                volume: extractProductVolume(row.title),
+                price: catalogRowMatchPrice(row)
+            };
+        })
+        .filter((candidate) => candidate.titleKey && usefulWords.some((word) => candidate.titleKey.includes(word)))
+        .sort((a, b) => compareCatalogCandidates(a, b, requestVolume));
+    return wordCandidates[0]?.row || null;
 }
 
 function normalizeChatId(value = '') {
@@ -822,6 +914,49 @@ async function getRecentSentQuote(tenantId, moduleId, chatId) {
     }
 }
 
+const QUOTE_CHANGE_WORDS = [
+    'agrega',
+    'anade',
+    'quita',
+    'cambia',
+    'modifica',
+    'tambien',
+    'ademas',
+    'incluye',
+    'sin',
+    'diferente',
+    'otro',
+    'otra',
+    'nueva',
+    'cambios'
+];
+
+function hasQuoteChangeIntent(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized) return false;
+    return QUOTE_CHANGE_WORDS.some((word) => normalized.includes(word));
+}
+
+async function getLastInboundCustomerText(tenantId, moduleId, chatId) {
+    try {
+        const { rows } = await pgQuery(
+            `SELECT body
+               FROM tenant_messages
+              WHERE tenant_id = $1
+                AND chat_id = $2
+                AND COALESCE(from_me, FALSE) = FALSE
+                AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($3))
+              ORDER BY created_at DESC
+              LIMIT 1`,
+            [tenantId, normalizeChatId(chatId), lower(moduleId)]
+        );
+        return text(rows?.[0]?.body);
+    } catch (error) {
+        console.warn('[Patty] last customer message unavailable for quote guard:', error?.message || error);
+        return '';
+    }
+}
+
 function formatOrderContext(orderPayload) {
     const order = safeJsonObject(orderPayload);
     const products = Array.isArray(order.products) ? order.products : [];
@@ -849,14 +984,24 @@ async function createAndSendPattyQuote({
 
     const activeQuote = await getRecentSentQuote(cleanTenantId, cleanModuleId, cleanChatId);
     if (activeQuote) {
-        console.log('[Patty] quote blocked: active quote already exists', {
+        const lastCustomerMessage = await getLastInboundCustomerText(cleanTenantId, cleanModuleId, cleanChatId);
+        const allowQuoteChange = hasQuoteChangeIntent(lastCustomerMessage);
+        if (!allowQuoteChange) {
+            console.log('[Patty] quote blocked: active quote already exists', {
+                tenantId: cleanTenantId,
+                moduleId: cleanModuleId,
+                chatId: cleanChatId,
+                quoteId: text(activeQuote.quote_id || activeQuote.quoteId),
+                sentAt: activeQuote.sent_at || activeQuote.sentAt || null
+            });
+            return null;
+        }
+        console.log('[Patty] quote change allowed: customer requested modifications', {
             tenantId: cleanTenantId,
             moduleId: cleanModuleId,
             chatId: cleanChatId,
-            quoteId: text(activeQuote.quote_id || activeQuote.quoteId),
-            sentAt: activeQuote.sent_at || activeQuote.sentAt || null
+            quoteId: text(activeQuote.quote_id || activeQuote.quoteId)
         });
-        return null;
     }
 
     const items = await getCatalogItemsForQuoteRequest(cleanTenantId, request.products);
