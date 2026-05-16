@@ -381,6 +381,14 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
 async function generatePattySuggestion(tenantId, moduleId, chatId) {
     const context = await buildPattyContext(tenantId, moduleId, chatId);
     const moduleAssistantId = text(context.moduleConfig?.metadata?.moduleSettings?.aiAssistantId).toUpperCase();
+    console.log('[Patty] generating suggestion', {
+        tenantId: context.tenantId,
+        moduleId: context.moduleId,
+        chatId: context.chatId,
+        moduleAssistantId: moduleAssistantId || null,
+        contextChars: context.system.length,
+        lastCustomerMessageChars: context.lastCustomerMessage.length
+    });
     const suggestion = await getChatSuggestion(
         context.system,
         `Ultimo mensaje del cliente: ${context.lastCustomerMessage}\n\nResponde solo con el texto listo para enviar por WhatsApp.`,
@@ -405,33 +413,69 @@ async function generatePattySuggestion(tenantId, moduleId, chatId) {
                 : null
         }
     );
+    console.log('[Patty] suggestion generated', {
+        tenantId: context.tenantId,
+        moduleId: context.moduleId,
+        chatId: context.chatId,
+        suggestionChars: text(suggestion).length,
+        isAiError: text(suggestion).startsWith('Error IA:') || lower(suggestion).includes('ia no configurada')
+    });
     return { ...context, suggestion };
 }
 
 async function hasOutboundAfter(tenantId, moduleId, chatId, sinceIso) {
-    if (!sinceIso) return false;
+    if (!sinceIso) return { hasOutbound: false, latest: null };
     const { rows } = await pgQuery(
-        `SELECT message_id
+        `SELECT message_id, created_at, body
            FROM tenant_messages
           WHERE tenant_id = $1
             AND chat_id = $2
             AND from_me = TRUE
             AND created_at > $4::timestamptz
             AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($3))
+          ORDER BY created_at DESC
           LIMIT 1`,
         [tenantId, normalizeChatId(chatId), lower(moduleId), sinceIso]
     );
-    return rows.length > 0;
+    const latest = rows?.[0] || null;
+    return {
+        hasOutbound: Boolean(latest),
+        latest: latest
+            ? {
+                messageId: text(latest.message_id),
+                createdAt: latest.created_at,
+                bodyPreview: text(latest.body).slice(0, 80)
+            }
+            : null
+    };
 }
 
 function emitSuggestion(socketEmitter, tenantId, payload) {
     if (typeof socketEmitter === 'function') {
         socketEmitter('patty_suggestion', payload);
+        console.log('[Patty] emitted suggestion via runtime context', {
+            tenantId,
+            chatId: payload?.chatId,
+            moduleId: payload?.moduleId,
+            suggestionChars: text(payload?.suggestion).length
+        });
         return;
     }
     if (socketEmitter?.to && typeof socketEmitter.to === 'function') {
         socketEmitter.to(tenantId).emit('patty_suggestion', payload);
+        console.log('[Patty] emitted suggestion via socket room', {
+            tenantId,
+            chatId: payload?.chatId,
+            moduleId: payload?.moduleId,
+            suggestionChars: text(payload?.suggestion).length
+        });
+        return;
     }
+    console.warn('[Patty] could not emit suggestion: socket emitter unavailable', {
+        tenantId,
+        chatId: payload?.chatId,
+        moduleId: payload?.moduleId
+    });
 }
 
 async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, options = {}) {
@@ -440,21 +484,70 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
     const cleanChatId = normalizeChatId(chatId);
     const moduleConfig = await getModuleConfig(cleanTenantId, cleanModuleId);
     const aiConfig = moduleConfig?.aiConfig;
-    if (!aiConfig) return;
+    if (!aiConfig) {
+        console.log('[Patty] skipped: module has no aiConfig', {
+            tenantId: cleanTenantId,
+            moduleId: cleanModuleId,
+            chatId: cleanChatId
+        });
+        return;
+    }
 
     const scheduleState = await resolveScheduleState(cleanTenantId, moduleConfig);
     const mode = scheduleState.open
         ? lower(aiConfig.withinHoursMode || aiConfig.within_hours_mode || 'off')
         : lower(aiConfig.outsideHoursMode || aiConfig.outside_hours_mode || 'off');
-    if (!['review', 'autonomous'].includes(mode)) return;
+    if (!['review', 'autonomous'].includes(mode)) {
+        console.log('[Patty] skipped: mode off or unsupported', {
+            tenantId: cleanTenantId,
+            moduleId: cleanModuleId,
+            chatId: cleanChatId,
+            scheduleOpen: scheduleState.open,
+            mode
+        });
+        return;
+    }
 
     const waitMinutes = Math.max(1, Math.min(60, Number(aiConfig.waitMinutes || aiConfig.wait_minutes || 5) || 5));
     const inboundAt = text(options.inboundAt) || new Date().toISOString();
+    console.log('[Patty] scheduled intervention', {
+        tenantId: cleanTenantId,
+        moduleId: cleanModuleId,
+        chatId: cleanChatId,
+        mode,
+        waitMinutes,
+        inboundAt,
+        scheduleOpen: scheduleState.open
+    });
     const timer = setTimeout(async () => {
         try {
-            if (await hasOutboundAfter(cleanTenantId, cleanModuleId, cleanChatId, inboundAt)) return;
+            console.log('[Patty] timer fired', {
+                tenantId: cleanTenantId,
+                moduleId: cleanModuleId,
+                chatId: cleanChatId,
+                mode,
+                inboundAt
+            });
+            const outboundCheck = await hasOutboundAfter(cleanTenantId, cleanModuleId, cleanChatId, inboundAt);
+            if (outboundCheck.hasOutbound) {
+                console.log('[Patty] cancelled: outbound response found after inbound', {
+                    tenantId: cleanTenantId,
+                    moduleId: cleanModuleId,
+                    chatId: cleanChatId,
+                    inboundAt,
+                    latestOutbound: outboundCheck.latest
+                });
+                return;
+            }
             const result = await generatePattySuggestion(cleanTenantId, cleanModuleId, cleanChatId);
-            if (!result.suggestion) return;
+            if (!result.suggestion) {
+                console.log('[Patty] skipped: empty suggestion', {
+                    tenantId: cleanTenantId,
+                    moduleId: cleanModuleId,
+                    chatId: cleanChatId
+                });
+                return;
+            }
             const assistantName = result.assistantName || DEFAULT_ASSISTANT_NAME;
             if (mode === 'review') {
                 emitSuggestion(socketEmitter, cleanTenantId, {
@@ -466,6 +559,12 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 });
                 return;
             }
+            console.log('[Patty] sending autonomous message', {
+                tenantId: cleanTenantId,
+                moduleId: cleanModuleId,
+                chatId: cleanChatId,
+                suggestionChars: text(result.suggestion).length
+            });
             await waClient.sendMessage(cleanChatId, result.suggestion, {
                 metadata: {
                     agentMeta: {
@@ -477,6 +576,11 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                     patty: true,
                     automationSource: 'patty_autonomous'
                 }
+            });
+            console.log('[Patty] autonomous message sent', {
+                tenantId: cleanTenantId,
+                moduleId: cleanModuleId,
+                chatId: cleanChatId
             });
         } catch (error) {
             console.warn('[Patty] intervention skipped:', error?.message || error);
