@@ -37,6 +37,37 @@ function normalizeProductLookupKey(value = '') {
         .replace(/\s+/g, ' ');
 }
 
+function findCatalogRowForQuoteProduct(requestItem = {}, catalogRows = [], catalogBySku = new Map(), catalogByTitle = new Map()) {
+    const sku = text(requestItem?.sku).toUpperCase();
+    const requestedTitle = text(requestItem?.title || requestItem?.name || requestItem?.productName || requestItem?.product_name);
+    const lookupText = requestedTitle || sku;
+    const normalizedLookup = normalizeProductLookupKey(lookupText);
+    if (!normalizedLookup && !sku) return null;
+
+    const exactTitleMatch = catalogByTitle.get(normalizedLookup);
+    if (exactTitleMatch) return exactTitleMatch;
+
+    const exactSkuMatch = sku ? catalogBySku.get(sku) : null;
+    if (exactSkuMatch) return exactSkuMatch;
+
+    const containsMatch = catalogRows.find((row) => {
+        const titleKey = normalizeProductLookupKey(row.title);
+        if (!titleKey || !normalizedLookup) return false;
+        return titleKey.includes(normalizedLookup) || normalizedLookup.includes(titleKey);
+    });
+    if (containsMatch) return containsMatch;
+
+    const usefulWords = normalizedLookup
+        .split(' ')
+        .map((word) => word.trim())
+        .filter((word) => word.length >= 3);
+    if (!usefulWords.length) return null;
+    return catalogRows.find((row) => {
+        const titleKey = normalizeProductLookupKey(row.title);
+        return titleKey && usefulWords.some((word) => titleKey.includes(word));
+    }) || null;
+}
+
 function normalizeChatId(value = '') {
     return text(value).split('::mod::')[0].trim();
 }
@@ -345,23 +376,21 @@ async function getCatalogItemsForQuoteRequest(tenantId, products = []) {
           LIMIT 500`,
         [tenantId]
     );
+    const catalogRows = Array.isArray(rows) ? rows : [];
     const catalogBySku = new Map(
-        (Array.isArray(rows) ? rows : [])
+        catalogRows
             .map((row) => [text(row.item_id).toUpperCase(), row])
             .filter(([sku]) => sku)
     );
     const catalogByTitle = new Map(
-        (Array.isArray(rows) ? rows : [])
+        catalogRows
             .map((row) => [normalizeProductLookupKey(row.title), row])
             .filter(([title]) => title)
     );
     return products
         .map((requestItem, index) => {
             const sku = text(requestItem?.sku).toUpperCase();
-            const requestedTitle = text(requestItem?.title || requestItem?.name || requestItem?.productName || requestItem?.product_name);
-            const row = catalogBySku.get(sku)
-                || catalogByTitle.get(normalizeProductLookupKey(requestedTitle))
-                || catalogByTitle.get(normalizeProductLookupKey(sku));
+            const row = findCatalogRowForQuoteProduct(requestItem, catalogRows, catalogBySku, catalogByTitle);
             if (!row) return null;
             const metadata = safeJsonObject(row.metadata);
             const unitPrice = money(metadata.salePrice ?? metadata.sale_price ?? metadata.precio_oferta ?? row.price) || 0;
@@ -716,7 +745,11 @@ async function createAndSendPattyQuote({ tenantId, moduleId, chatId, assistantNa
             tenantId: cleanTenantId,
             moduleId: cleanModuleId,
             chatId: cleanChatId,
-            skus: request.products.map((item) => item.sku)
+            products: request.products.map((item) => ({
+                sku: item.sku || null,
+                title: item.title || null,
+                qty: item.qty || 1
+            }))
         });
         return null;
     }
@@ -845,6 +878,13 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     ]);
     const labels = await getCustomerLabelsContext(cleanTenantId, customer.customerId);
     const recentOrder = formatOrderContext(conversation.recentOrder);
+    const catalogText = lineList(catalog);
+    console.log('[Patty] catalog context preview', {
+        tenantId: cleanTenantId,
+        moduleId: cleanModuleId,
+        chars: catalogText.length,
+        preview: catalogText.slice(0, 200)
+    });
     const system = [
         basePrompt || 'Eres una asesora comercial experta de WhatsApp. Responde de forma breve, clara, humana y orientada a venta consultiva.',
         '',
@@ -852,7 +892,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         `Modulo: ${moduleConfig?.name || cleanModuleId || 'sin modulo'}. ${scheduleState.label}.`,
         '',
         'NEGOCIO / CATALOGO:',
-        lineList(catalog),
+        catalogText,
         '',
         'RESPUESTAS RAPIDAS DISPONIBLES:',
         lineList(quickReplies),
@@ -880,8 +920,8 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '- Cada mensaje debe tener maximo 3 lineas.',
         '- quotedMessageId debe ser el message_id del mensaje CLIENTE mas relevante para esa respuesta.',
         '- Si solo hay un tema, usa un array con un solo mensaje. Maximo 3 mensajes por respuesta.',
-        '- Si el cliente claramente acepta o pide una cotizacion, agrega quoteRequest con products usando SKUs del catalogo: {"products":[{"sku":"SKU","qty":1}],"note":"opcional"}.',
-        '- Cuando generes quoteRequest, usa EXACTAMENTE los SKUs entre corchetes del catalogo. Nunca inventes SKUs. Ejemplo: {"sku":"MAT05040010","qty":1}.',
+        '- Si el cliente claramente acepta o pide una cotizacion, agrega quoteRequest con products usando el titulo EXACTO del catalogo: {"products":[{"title":"Nombre exacto del producto","qty":1}],"note":"opcional"}.',
+        '- El title debe copiarse del catalogo tal como aparece despues del SKU entre corchetes. No inventes SKUs ni codigos. Si incluyes sku, debe ser exactamente uno de los SKUs entre corchetes.',
         '- Incluye quoteRequest solo cuando haya una aceptacion o solicitud clara de cotizacion.',
         '- No digas "Sugerencia", no expliques tu razonamiento y no inventes datos.',
         '- Si falta informacion, pregunta de forma breve y amable.',
@@ -916,8 +956,8 @@ async function generatePattySuggestion(tenantId, moduleId, chatId) {
             `Ultimo mensaje del cliente: ${context.lastCustomerMessage}`,
             '',
             'Responde con JSON valido exactamente en este formato:',
-            '{"messages":[{"text":"texto listo para enviar por WhatsApp","quotedMessageId":"message_id inbound relevante o null"}],"quoteRequest":{"products":[{"sku":"SKU","qty":1}],"note":"opcional"}}',
-            'Para quoteRequest usa SOLO SKUs reales entre corchetes del catalogo, por ejemplo {"sku":"MAT05040010","qty":1}. Nunca inventes SKUs.',
+            '{"messages":[{"text":"texto listo para enviar por WhatsApp","quotedMessageId":"message_id inbound relevante o null"}],"quoteRequest":{"products":[{"title":"Nombre exacto del producto del catalogo","qty":1}],"note":"opcional"}}',
+            'Para quoteRequest usa el title exacto del catalogo. No uses SKUs inventados; si agregas sku, debe existir exactamente entre corchetes en el catalogo.',
             'Omite quoteRequest si no corresponde generar cotizacion.'
         ].join('\n'),
         null,
