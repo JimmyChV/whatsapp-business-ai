@@ -18,9 +18,9 @@ export default function ModulesConfigModuleReadView({
         ? moduleInDetail.aiConfig
         : {};
     const scheduleLabel = selectedSchedule?.name || (moduleInDetail.scheduleId ? 'Horario no disponible' : 'Sin horario asignado');
-    const withinHoursModeLabel = aiConfig.withinHoursMode === 'off'
-        ? 'Desactivado'
-        : 'Sugerencias (pendiente aprobacion)';
+    const withinHoursModeLabel = aiConfig.withinHoursMode === 'autonomous'
+        ? 'Autonomo (responde solo)'
+        : (aiConfig.withinHoursMode === 'off' ? 'Desactivado' : 'Sugerencias (pendiente aprobacion)');
     const outsideHoursModeLabel = aiConfig.outsideHoursMode === 'autonomous'
         ? 'Autonomo (responde solo)'
         : (aiConfig.outsideHoursMode === 'off' ? 'Desactivado' : 'Sugerencias (pendiente aprobacion)');
@@ -95,6 +95,8 @@ export default function ModulesConfigModuleReadView({
                 <h4>ASISTENTE IA</h4>
                 <div className="saas-admin-detail-grid">
                     <div className="saas-admin-detail-field"><span>NOMBRE</span><strong>{aiConfig.assistantName || 'Patty'}</strong></div>
+                    <div className="saas-admin-detail-field"><span>PATTY</span><strong>{aiConfig.enablePatty === false ? 'Desactivada' : 'Activa'}</strong></div>
+                    <div className="saas-admin-detail-field"><span>COPILOTO</span><strong>{aiConfig.enableCopilot === false ? 'Desactivado' : 'Activo'}</strong></div>
                     <div className="saas-admin-detail-field"><span>DENTRO DE HORARIO</span><strong>{withinHoursModeLabel}</strong></div>
                     <div className="saas-admin-detail-field"><span>FUERA DE HORARIO</span><strong>{outsideHoursModeLabel}</strong></div>
                     <div className="saas-admin-detail-field"><span>TIEMPO DE ESPERA</span><strong>{waitSeconds} seg</strong></div>

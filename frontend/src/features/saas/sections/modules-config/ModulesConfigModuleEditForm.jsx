@@ -2,6 +2,7 @@ import React from 'react';
 import ImageDropInput from '../../components/panel/ImageDropInput';
 
 const WITHIN_HOURS_MODE_OPTIONS = [
+    { value: 'autonomous', label: 'Autonomo (responde solo)' },
     { value: 'review', label: 'Sugerencias (pendiente aprobacion)' },
     { value: 'off', label: 'Desactivado' }
 ];
@@ -173,6 +174,26 @@ export default function ModulesConfigModuleEditForm({
                             ))}
                         </select>
                     </div>
+                </div>
+                <div className="saas-admin-form-row">
+                    <label className="saas-admin-module-toggle">
+                        <input
+                            type="checkbox"
+                            checked={waModuleForm.aiEnablePatty !== false}
+                            onChange={(event) => setWaModuleForm((prev) => ({ ...prev, aiEnablePatty: event.target.checked }))}
+                            disabled={!settingsTenantId || busy}
+                        />
+                        <span>Activar sugerencias Patty</span>
+                    </label>
+                    <label className="saas-admin-module-toggle">
+                        <input
+                            type="checkbox"
+                            checked={waModuleForm.aiEnableCopilot !== false}
+                            onChange={(event) => setWaModuleForm((prev) => ({ ...prev, aiEnableCopilot: event.target.checked }))}
+                            disabled={!settingsTenantId || busy}
+                        />
+                        <span>Activar copiloto interno</span>
+                    </label>
                 </div>
                 <div className="saas-admin-form-row">
                     <div className="saas-admin-field">

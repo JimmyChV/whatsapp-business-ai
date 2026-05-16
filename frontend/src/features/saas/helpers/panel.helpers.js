@@ -126,6 +126,8 @@ export const EMPTY_WA_MODULE_FORM = {
     aiWithinHoursMode: 'review',
     aiOutsideHoursMode: 'autonomous',
     aiWaitSeconds: 15,
+    aiEnablePatty: true,
+    aiEnableCopilot: true,
     moduleCatalogMode: 'inherit',
     moduleAiEnabled: true,
     moduleCatalogEnabled: true,
@@ -241,7 +243,7 @@ export function normalizeWaModule(item = {}) {
     const aiConfigSource = (source.aiConfig && typeof source.aiConfig === 'object' && !Array.isArray(source.aiConfig))
         ? source.aiConfig
         : (metadata.aiConfig && typeof metadata.aiConfig === 'object' && !Array.isArray(metadata.aiConfig) ? metadata.aiConfig : {});
-    const withinHoursMode = ['review', 'off'].includes(String(aiConfigSource.withinHoursMode || '').trim())
+    const withinHoursMode = ['autonomous', 'review', 'off'].includes(String(aiConfigSource.withinHoursMode || '').trim())
         ? String(aiConfigSource.withinHoursMode || '').trim()
         : 'review';
     const outsideHoursMode = ['autonomous', 'review', 'off'].includes(String(aiConfigSource.outsideHoursMode || '').trim())
@@ -258,7 +260,9 @@ export function normalizeWaModule(item = {}) {
         assistantName: String(aiConfigSource.assistantName || '').trim() || 'Patty',
         withinHoursMode,
         outsideHoursMode,
-        waitSeconds
+        waitSeconds,
+        enablePatty: aiConfigSource.enablePatty !== false,
+        enableCopilot: aiConfigSource.enableCopilot !== false
     };
 
     return {

@@ -218,6 +218,26 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         () => (businessData.catalog || []).map((item, idx) => normalizeCatalogItem(item, idx)),
         [businessData.catalog]
     );
+    const activeBusinessModule = useMemo(() => {
+        const target = String(activeModuleId || selectedCatalogModuleId || '').trim().toLowerCase();
+        if (!target) return null;
+        return (Array.isArray(waModules) ? waModules : []).find((item) => {
+            const moduleId = String(item?.moduleId || item?.module_id || item?.id || '').trim().toLowerCase();
+            return moduleId === target;
+        }) || null;
+    }, [activeModuleId, selectedCatalogModuleId, waModules]);
+    const activeAiConfig = useMemo(() => {
+        const direct = activeBusinessModule?.aiConfig && typeof activeBusinessModule.aiConfig === 'object'
+            ? activeBusinessModule.aiConfig
+            : null;
+        const metadataConfig = activeBusinessModule?.metadata?.aiConfig && typeof activeBusinessModule.metadata.aiConfig === 'object'
+            ? activeBusinessModule.metadata.aiConfig
+            : null;
+        return direct || metadataConfig || {};
+    }, [activeBusinessModule]);
+    const enablePatty = activeAiConfig.enablePatty !== false;
+    const enableCopilot = activeAiConfig.enableCopilot !== false;
+    const aiPanelAvailable = enablePatty || enableCopilot;
     const labels = useMemo(() => (Array.isArray(businessData.labels) ? businessData.labels : []), [businessData.labels]);
     const profile = useMemo(() => (businessData.profile || myProfile || null), [businessData.profile, myProfile]);
     const quickRepliesEnabled = Boolean(waCapabilities?.quickReplies || waCapabilities?.quickRepliesRead || waCapabilities?.quickRepliesWrite);
@@ -516,6 +536,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                 moduleId: String(event?.moduleId || '').trim(),
                 suggestion,
                 messages: messages.length ? messages : (suggestion ? [{ text: suggestion, quotedMessageId: null }] : []),
+                quoteRequest: event?.quoteRequest && typeof event.quoteRequest === 'object' ? event.quoteRequest : null,
                 assistantName: String(event?.assistantName || 'Patty').trim() || 'Patty',
                 timestamp: event?.timestamp || Date.now()
             });
@@ -537,6 +558,12 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             socket.off('message', handleMessage);
         };
     }, [socket, activeChatId]);
+
+    useEffect(() => {
+        if (activeTab === 'ai' && !aiPanelAvailable) {
+            setActiveTab('catalog');
+        }
+    }, [activeTab, aiPanelAvailable]);
 
     const sendQuoteToChat = () => {
         if (!canWriteByAssignment) {
@@ -585,6 +612,115 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setCart([]);
         updateDraft({ sourceOrder: null });
     };
+
+    const handleUsePattySuggestionMessage = useCallback((index) => {
+        const messages = Array.isArray(pattySuggestion?.messages) ? pattySuggestion.messages : [];
+        const message = messages[index];
+        const text = String(message?.text || '').trim();
+        if (!text) return;
+        setInputText(text);
+    }, [pattySuggestion, setInputText]);
+
+    const handleGeneratePattyQuote = useCallback(() => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
+        if (!conversationWindowOpen) {
+            notifyWindowLock();
+            return;
+        }
+        const products = Array.isArray(pattySuggestion?.quoteRequest?.products)
+            ? pattySuggestion.quoteRequest.products
+            : [];
+        if (!products.length) {
+            notify({ type: 'warn', message: 'Patty no incluyo productos para cotizar.' });
+            return;
+        }
+        const catalogBySku = new Map(catalog.map((item) => {
+            const sku = String(item?.sku || item?.itemId || item?.productId || item?.id || '').trim().toUpperCase();
+            return [sku, item];
+        }).filter(([sku]) => Boolean(sku)));
+        const tempCart = products.map((entry) => {
+            const sku = String(entry?.sku || entry?.productId || entry?.id || '').trim().toUpperCase();
+            const catalogItem = catalogBySku.get(sku);
+            if (!catalogItem) return null;
+            const qty = Math.max(1, Number.parseInt(String(entry?.qty || entry?.quantity || 1), 10) || 1);
+            return {
+                ...catalogItem,
+                qty
+            };
+        }).filter(Boolean);
+        if (!tempCart.length) {
+            notify({ type: 'warn', message: 'No encontre esos SKUs en el catalogo local.' });
+            return;
+        }
+        const pricing = calculateCartPricing({
+            cart: tempCart,
+            globalDiscountEnabled: false,
+            globalDiscountType: 'percentage',
+            globalDiscountValue: 0,
+            deliveryType: 'none',
+            deliveryAmount: 0,
+            parseMoney,
+            roundMoney,
+            clampNumber
+        });
+        const getTempLineBreakdown = (item = {}) => getCartLineBreakdown(item, {
+            parseMoney,
+            roundMoney,
+            clampNumber
+        });
+        const payload = buildStructuredQuotePayloadFromCart({
+            activeChatId,
+            activeChatPhone,
+            cart: tempCart,
+            regularSubtotalTotal: pricing.regularSubtotalTotal,
+            totalDiscountForQuote: pricing.totalDiscountForQuote,
+            subtotalAfterGlobal: pricing.subtotalAfterGlobal,
+            deliveryFee: pricing.deliveryFee,
+            cartTotal: pricing.cartTotal,
+            deliveryType: 'none',
+            globalDiscountEnabled: false,
+            globalDiscountType: 'percentage',
+            globalDiscountValue: 0,
+            getLineBreakdown: getTempLineBreakdown,
+            buildQuoteMessageFromCart,
+            formatQuoteProductTitle,
+            formatMoneyCompact,
+            currency: 'PEN',
+            notes: String(pattySuggestion?.quoteRequest?.note || '').trim(),
+            metadata: {
+                tenantScopeKey: normalizedTenantScopeKey,
+                scopeModuleId: String(activeModuleId || selectedCatalogModuleId || '').trim().toLowerCase() || null,
+                source: 'patty_review',
+                assistantName: pattySuggestion?.assistantName || activeAiConfig.assistantName || 'Patty'
+            }
+        });
+        if (!payload) return;
+        if (!socket || typeof socket.emit !== 'function') {
+            if (payload.body) setInputText(payload.body);
+            return;
+        }
+        socket.emit('send_structured_quote', payload);
+        setPattySuggestion(null);
+    }, [
+        activeAiConfig.assistantName,
+        activeChatId,
+        activeChatPhone,
+        activeModuleId,
+        canWriteByAssignment,
+        catalog,
+        conversationWindowOpen,
+        normalizedTenantScopeKey,
+        notify,
+        notifyAssignmentLock,
+        notifyWindowLock,
+        pattySuggestion,
+        selectedCatalogModuleId,
+        setInputText,
+        socket
+    ]);
     const addToCart = (item, qtyToAdd = 1) => {
         if (!canWriteByAssignment) {
             notifyAssignmentLock();
@@ -690,7 +826,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         return haystack.includes(q);
     });
     const tabs = [
-        { id: 'ai', icon: <Bot size={15} />, label: 'IA Pro' },
+        ...(aiPanelAvailable ? [{ id: 'ai', icon: <Bot size={15} />, label: 'IA Pro' }] : []),
         { id: 'catalog', icon: <Package size={15} />, label: `Catalogo${catalog.length > 0 ? ` (${catalog.length})` : ''}` },
         ...(cart.length > 0 ? [{ id: 'cart', icon: <ShoppingCart size={15} />, label: `Carrito (${cart.length})` }] : []),
         ...(quickRepliesEnabled ? [{ id: 'quick', icon: <Clock size={15} />, label: 'Rapidas' }] : []),
@@ -757,6 +893,8 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     aiInput={aiInput}
                     canWriteByAssignment={canUseMessageTools}
                     pattySuggestion={pattySuggestion}
+                    enablePatty={enablePatty}
+                    enableCopilot={enableCopilot}
                     onUsePattySuggestion={() => {
                         const messages = Array.isArray(pattySuggestion?.messages) ? pattySuggestion.messages : [];
                         const suggestion = messages.length
@@ -766,6 +904,8 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                         setInputText(suggestion);
                         setPattySuggestion(null);
                     }}
+                    onUsePattySuggestionMessage={handleUsePattySuggestionMessage}
+                    onGeneratePattyQuote={handleGeneratePattyQuote}
                     onDismissPattySuggestion={() => setPattySuggestion(null)}
                 />
             )}

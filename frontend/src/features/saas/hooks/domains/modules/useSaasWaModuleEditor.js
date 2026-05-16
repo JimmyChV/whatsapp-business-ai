@@ -108,6 +108,8 @@ export default function useSaasWaModuleEditor({
             aiWithinHoursMode: item?.aiConfig?.withinHoursMode || 'review',
             aiOutsideHoursMode: item?.aiConfig?.outsideHoursMode || 'autonomous',
             aiWaitSeconds: waitSeconds,
+            aiEnablePatty: item?.aiConfig?.enablePatty !== false,
+            aiEnableCopilot: item?.aiConfig?.enableCopilot !== false,
             moduleCatalogMode: item.moduleCatalogMode || 'inherit',
             moduleAiEnabled: item?.moduleFeatureFlags?.aiPro !== false,
             moduleCatalogEnabled: item?.moduleFeatureFlags?.catalog !== false,

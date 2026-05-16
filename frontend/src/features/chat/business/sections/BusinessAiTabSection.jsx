@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Send, Sparkles } from 'lucide-react';
 
 const QUICK_PROMPTS = [
@@ -7,6 +8,21 @@ const QUICK_PROMPTS = [
     'Maneja objecion de precio enfocando valor y rendimiento',
     'Propone un cierre elegante para concretar hoy'
 ];
+
+function normalizePattyMessages(pattySuggestion = null) {
+    const pattyMessages = Array.isArray(pattySuggestion?.messages)
+        ? pattySuggestion.messages
+            .map((item) => ({
+                text: String(item?.text || '').trim(),
+                quotedMessageId: String(item?.quotedMessageId || '').trim() || null
+            }))
+            .filter((item) => item.text)
+        : [];
+    const fallbackSuggestion = String(pattySuggestion?.suggestion || '').trim();
+    return pattyMessages.length
+        ? pattyMessages
+        : (fallbackSuggestion ? [{ text: fallbackSuggestion, quotedMessageId: null }] : []);
+}
 
 export default function BusinessAiTabSection({
     aiMessages = [],
@@ -21,23 +37,159 @@ export default function BusinessAiTabSection({
     canWriteByAssignment = false,
     pattySuggestion = null,
     onUsePattySuggestion = null,
-    onDismissPattySuggestion = null
+    onUsePattySuggestionMessage = null,
+    onDismissPattySuggestion = null,
+    onGeneratePattyQuote = null,
+    enablePatty = true,
+    enableCopilot = true
 }) {
-    const pattyMessages = Array.isArray(pattySuggestion?.messages)
-        ? pattySuggestion.messages
-            .map((item) => ({
-                text: String(item?.text || '').trim(),
-                quotedMessageId: String(item?.quotedMessageId || '').trim() || null
-            }))
-            .filter((item) => item.text)
-        : [];
-    const fallbackSuggestion = String(pattySuggestion?.suggestion || '').trim();
-    const visiblePattyMessages = pattyMessages.length
-        ? pattyMessages
-        : (fallbackSuggestion ? [{ text: fallbackSuggestion, quotedMessageId: null }] : []);
+    const pattyEnabled = enablePatty !== false;
+    const copilotEnabled = enableCopilot !== false;
+    const visiblePattyMessages = useMemo(() => normalizePattyMessages(pattySuggestion), [pattySuggestion]);
     const hasPattySuggestion = visiblePattyMessages.length > 0;
-    return (
-        <div className="ai-tab-shell" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    const hasQuoteRequest = Boolean(pattySuggestion?.quoteRequest);
+    const showTabs = pattyEnabled && copilotEnabled;
+    const [activeInnerTab, setActiveInnerTab] = useState(pattyEnabled ? 'patty' : 'copilot');
+
+    useEffect(() => {
+        if (activeInnerTab === 'patty' && !pattyEnabled) setActiveInnerTab('copilot');
+        if (activeInnerTab === 'copilot' && !copilotEnabled) setActiveInnerTab('patty');
+    }, [activeInnerTab, copilotEnabled, pattyEnabled]);
+
+    const renderPattyPanel = () => (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {!hasPattySuggestion && (
+                <div
+                    style={{
+                        border: '1px dashed var(--chat-card-border)',
+                        background: 'var(--chat-card-surface)',
+                        color: 'var(--chat-control-text-soft)',
+                        borderRadius: '16px',
+                        padding: '18px 14px',
+                        fontSize: '0.82rem',
+                        textAlign: 'center'
+                    }}
+                >
+                    Esperando mensaje del cliente...
+                </div>
+            )}
+            {hasPattySuggestion && (
+                <div
+                    style={{
+                        padding: '12px',
+                        borderRadius: '16px',
+                        border: '1px solid var(--saas-accent-primary)',
+                        background: 'color-mix(in srgb, var(--saas-accent-primary) 10%, var(--chat-card-surface))',
+                        boxShadow: '0 10px 24px rgba(0,0,0,0.08)',
+                        color: 'var(--text-primary)'
+                    }}
+                >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 800, fontSize: '0.78rem', marginBottom: '8px' }}>
+                        <Sparkles size={14} />
+                        {pattySuggestion.assistantName || 'Patty'} sugiere{visiblePattyMessages.length > 1 ? ` (${visiblePattyMessages.length} mensajes)` : ''}:
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {visiblePattyMessages.map((message, index) => (
+                            <div
+                                key={`${message.quotedMessageId || 'patty'}-${index}`}
+                                style={{
+                                    padding: '9px 10px',
+                                    borderRadius: '12px',
+                                    border: '1px solid var(--chat-card-border)',
+                                    background: 'var(--chat-card-surface)',
+                                    fontSize: '0.82rem',
+                                    lineHeight: 1.45,
+                                    whiteSpace: 'pre-wrap',
+                                    color: 'var(--text-primary)'
+                                }}
+                            >
+                                <div>{message.text}</div>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => onUsePattySuggestionMessage?.(index)}
+                                        disabled={!canWriteByAssignment}
+                                        style={{
+                                            border: '1px solid var(--saas-accent-primary)',
+                                            background: 'var(--chat-card-surface)',
+                                            color: 'var(--saas-accent-primary)',
+                                            borderRadius: '999px',
+                                            padding: '4px 9px',
+                                            cursor: canWriteByAssignment ? 'pointer' : 'not-allowed',
+                                            fontWeight: 800,
+                                            fontSize: '0.7rem',
+                                            opacity: canWriteByAssignment ? 1 : 0.7
+                                        }}
+                                    >
+                                        Usar
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '10px', flexWrap: 'wrap' }}>
+                        <button
+                            type="button"
+                            onClick={onDismissPattySuggestion}
+                            style={{
+                                border: '1px solid var(--chat-card-border)',
+                                background: 'var(--chat-card-surface)',
+                                color: 'var(--chat-control-text-soft)',
+                                borderRadius: '999px',
+                                padding: '5px 10px',
+                                cursor: 'pointer',
+                                fontWeight: 700,
+                                fontSize: '0.72rem'
+                            }}
+                        >
+                            Descartar
+                        </button>
+                        {hasQuoteRequest && (
+                            <button
+                                type="button"
+                                onClick={onGeneratePattyQuote}
+                                disabled={!canWriteByAssignment}
+                                style={{
+                                    border: '1px solid var(--saas-accent-primary)',
+                                    background: canWriteByAssignment ? 'var(--saas-accent-primary)' : 'var(--chat-control-disabled)',
+                                    color: 'white',
+                                    borderRadius: '999px',
+                                    padding: '5px 10px',
+                                    cursor: canWriteByAssignment ? 'pointer' : 'not-allowed',
+                                    fontWeight: 800,
+                                    fontSize: '0.72rem',
+                                    opacity: canWriteByAssignment ? 1 : 0.75
+                                }}
+                            >
+                                Generar cotizacion
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            onClick={onUsePattySuggestion}
+                            disabled={!canWriteByAssignment}
+                            style={{
+                                border: '1px solid var(--saas-accent-primary)',
+                                background: canWriteByAssignment ? 'var(--saas-accent-primary)' : 'var(--chat-control-disabled)',
+                                color: 'white',
+                                borderRadius: '999px',
+                                padding: '5px 10px',
+                                cursor: canWriteByAssignment ? 'pointer' : 'not-allowed',
+                                fontWeight: 800,
+                                fontSize: '0.72rem',
+                                opacity: canWriteByAssignment ? 1 : 0.75
+                            }}
+                        >
+                            {visiblePattyMessages.length > 1 ? 'Usar todos' : 'Usar respuesta'}
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+
+    const renderCopilotPanel = () => (
+        <>
             <div className="ai-thread-pro" style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {aiMessages.map((msg, idx) => (
                     <div key={idx} className={`ai-row-pro ${msg.role === 'user' ? 'user' : 'assistant'}`} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
@@ -88,81 +240,6 @@ export default function BusinessAiTabSection({
                 <div ref={aiEndRef} />
             </div>
 
-            {hasPattySuggestion && (
-                <div
-                    style={{
-                        margin: '8px 10px 0',
-                        padding: '10px 12px',
-                        borderRadius: '14px',
-                        border: '1px solid var(--saas-accent-primary)',
-                        background: 'color-mix(in srgb, var(--saas-accent-primary) 10%, var(--chat-card-surface))',
-                        boxShadow: '0 10px 24px rgba(0,0,0,0.08)',
-                        color: 'var(--text-primary)',
-                        flexShrink: 0
-                    }}
-                >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 800, fontSize: '0.78rem', marginBottom: '6px' }}>
-                        <Sparkles size={14} />
-                        {pattySuggestion.assistantName || 'Patty'} sugiere{visiblePattyMessages.length > 1 ? ` (${visiblePattyMessages.length} mensajes)` : ''}:
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
-                        {visiblePattyMessages.map((message, index) => (
-                            <div
-                                key={`${message.quotedMessageId || 'patty'}-${index}`}
-                                style={{
-                                    padding: '8px 10px',
-                                    borderRadius: '12px',
-                                    border: '1px solid var(--chat-card-border)',
-                                    background: 'var(--chat-card-surface)',
-                                    fontSize: '0.82rem',
-                                    lineHeight: 1.45,
-                                    whiteSpace: 'pre-wrap',
-                                    color: 'var(--text-primary)'
-                                }}
-                            >
-                                {message.text}
-                            </div>
-                        ))}
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '10px' }}>
-                        <button
-                            type="button"
-                            onClick={onDismissPattySuggestion}
-                            style={{
-                                border: '1px solid var(--chat-card-border)',
-                                background: 'var(--chat-card-surface)',
-                                color: 'var(--chat-control-text-soft)',
-                                borderRadius: '999px',
-                                padding: '5px 10px',
-                                cursor: 'pointer',
-                                fontWeight: 700,
-                                fontSize: '0.72rem'
-                            }}
-                        >
-                            Descartar
-                        </button>
-                        <button
-                            type="button"
-                            onClick={onUsePattySuggestion}
-                            disabled={!canWriteByAssignment}
-                            style={{
-                                border: '1px solid var(--saas-accent-primary)',
-                                background: canWriteByAssignment ? 'var(--saas-accent-primary)' : 'var(--chat-control-disabled)',
-                                color: 'white',
-                                borderRadius: '999px',
-                                padding: '5px 10px',
-                                cursor: canWriteByAssignment ? 'pointer' : 'not-allowed',
-                                fontWeight: 800,
-                                fontSize: '0.72rem',
-                                opacity: canWriteByAssignment ? 1 : 0.75
-                            }}
-                        >
-                            {visiblePattyMessages.length > 1 ? 'Usar todos' : 'Usar respuesta'}
-                        </button>
-                    </div>
-                </div>
-            )}
-
             <div className="ai-quick-prompts ai-quick-prompts-pro" style={{ padding: '8px 10px', borderTop: '1px solid var(--border-color)', display: 'flex', flexWrap: 'wrap', gap: '6px', flexShrink: 0 }}>
                 <div className="ai-quick-prompts-title">
                     <Sparkles size={12} />
@@ -203,6 +280,54 @@ export default function BusinessAiTabSection({
                     <Send size={16} color="white" />
                 </button>
             </div>
+        </>
+    );
+
+    return (
+        <div className="ai-tab-shell" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {showTabs && (
+                <div style={{ display: 'flex', gap: '8px', padding: '8px 10px', borderBottom: '1px solid var(--border-color)', background: 'var(--chat-card-surface)' }}>
+                    <button
+                        type="button"
+                        onClick={() => setActiveInnerTab('patty')}
+                        style={{
+                            flex: 1,
+                            border: `1px solid ${activeInnerTab === 'patty' ? 'var(--saas-accent-primary)' : 'var(--chat-card-border)'}`,
+                            background: activeInnerTab === 'patty' ? 'color-mix(in srgb, var(--saas-accent-primary) 13%, var(--chat-card-surface))' : 'var(--chat-card-surface)',
+                            color: 'var(--text-primary)',
+                            borderRadius: '999px',
+                            padding: '7px 10px',
+                            fontWeight: 800,
+                            cursor: 'pointer'
+                        }}
+                    >
+                        💡 Patty
+                        {hasPattySuggestion && (
+                            <span style={{ marginLeft: '6px', background: 'var(--saas-accent-primary)', color: 'white', borderRadius: '999px', padding: '1px 6px', fontSize: '0.68rem' }}>
+                                {visiblePattyMessages.length}
+                            </span>
+                        )}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setActiveInnerTab('copilot')}
+                        style={{
+                            flex: 1,
+                            border: `1px solid ${activeInnerTab === 'copilot' ? 'var(--saas-accent-primary)' : 'var(--chat-card-border)'}`,
+                            background: activeInnerTab === 'copilot' ? 'color-mix(in srgb, var(--saas-accent-primary) 13%, var(--chat-card-surface))' : 'var(--chat-card-surface)',
+                            color: 'var(--text-primary)',
+                            borderRadius: '999px',
+                            padding: '7px 10px',
+                            fontWeight: 800,
+                            cursor: 'pointer'
+                        }}
+                    >
+                        💬 Copiloto
+                    </button>
+                </div>
+            )}
+            {pattyEnabled && (!showTabs || activeInnerTab === 'patty') && renderPattyPanel()}
+            {copilotEnabled && (!showTabs || activeInnerTab === 'copilot') && renderCopilotPanel()}
         </div>
     );
 }

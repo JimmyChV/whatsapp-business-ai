@@ -24,7 +24,7 @@ function buildWaModulePayload({
         : {};
     const catalogIds = toCleanCatalogIds(waModuleForm.catalogIds || []);
     const waitSeconds = Math.max(5, Math.min(300, Number.parseInt(String(waModuleForm.aiWaitSeconds ?? ''), 10) || 15));
-    const withinHoursMode = ['review', 'off'].includes(String(waModuleForm.aiWithinHoursMode || '').trim())
+    const withinHoursMode = ['autonomous', 'review', 'off'].includes(String(waModuleForm.aiWithinHoursMode || '').trim())
         ? String(waModuleForm.aiWithinHoursMode || '').trim()
         : 'review';
     const outsideHoursMode = ['autonomous', 'review', 'off'].includes(String(waModuleForm.aiOutsideHoursMode || '').trim())
@@ -47,7 +47,9 @@ function buildWaModulePayload({
                 assistantName: String(waModuleForm.aiAssistantName || '').trim() || 'Patty',
                 withinHoursMode,
                 outsideHoursMode,
-                waitSeconds
+                waitSeconds,
+                enablePatty: waModuleForm.aiEnablePatty !== false,
+                enableCopilot: waModuleForm.aiEnableCopilot !== false
             },
             moduleSettings: {
                 catalogMode: CATALOG_MODE_OPTIONS.includes(String(waModuleForm.moduleCatalogMode || '').trim())

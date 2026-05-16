@@ -1009,6 +1009,14 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
         });
         return;
     }
+    if (aiConfig.enablePatty === false) {
+        console.log('[Patty] skipped: Patty disabled for module', {
+            tenantId: cleanTenantId,
+            moduleId: cleanModuleId,
+            chatId: cleanChatId
+        });
+        return;
+    }
 
     const scheduleState = await resolveScheduleState(cleanTenantId, moduleConfig);
     const mode = scheduleState.open
@@ -1025,7 +1033,8 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
         return;
     }
 
-    const waitSeconds = resolveWaitSeconds(aiConfig);
+    const configuredWaitSeconds = resolveWaitSeconds(aiConfig);
+    const waitSeconds = mode === 'review' ? 0 : configuredWaitSeconds;
     const inboundAt = text(options.inboundAt) || new Date().toISOString();
     const debounceKey = buildDebounceKey(cleanTenantId, cleanModuleId, cleanChatId);
     const previousTimer = pattyChatDebounce.get(debounceKey);
@@ -1035,6 +1044,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
             tenantId: cleanTenantId,
             moduleId: cleanModuleId,
             chatId: cleanChatId,
+            configuredWaitSeconds,
             waitSeconds
         });
     }
@@ -1043,6 +1053,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
         moduleId: cleanModuleId,
         chatId: cleanChatId,
         mode,
+        configuredWaitSeconds,
         waitSeconds,
         inboundAt,
         scheduleOpen: scheduleState.open
