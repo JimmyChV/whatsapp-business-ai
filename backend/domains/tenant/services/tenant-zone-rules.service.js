@@ -61,6 +61,41 @@ function ensureArray(value = []) {
     return Array.isArray(value) ? value : [];
 }
 
+function normalizeNumberOrNull(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : null;
+}
+
+function normalizeShippingOptions(value = []) {
+    return ensureArray(value)
+        .map((item) => {
+            const input = normalizeObject(item);
+            const type = toText(input.type || '').toLowerCase();
+            const cleanType = type === 'courier' ? 'courier' : 'delivery';
+            const label = toText(input.label || input.name || (cleanType === 'courier' ? 'Courier' : 'Delivery propio'));
+            return {
+                type: cleanType,
+                label,
+                cost: normalizeNumberOrNull(input.cost) ?? 0,
+                free_from: normalizeNumberOrNull(input.free_from ?? input.freeFrom),
+                estimated_time: toText(input.estimated_time || input.estimatedTime || ''),
+                is_active: input.is_active !== false && input.isActive !== false
+            };
+        })
+        .filter((item) => item.label);
+}
+
+function normalizePaymentMethods(value = {}) {
+    const input = normalizeObject(value);
+    return {
+        yape: input.yape === true,
+        plin: input.plin === true,
+        bank_transfer: input.bank_transfer === true || input.bankTransfer === true,
+        credit_card: input.credit_card === true || input.creditCard === true
+    };
+}
+
 function chunkArray(items = [], size = 250) {
     const safeItems = ensureArray(items);
     const chunkSize = Math.max(1, Number(size) || 250);
@@ -81,6 +116,8 @@ function sanitizeRule(source = {}) {
         name: toText(input.name || ''),
         color: normalizeColor(input.color || ''),
         rulesJson,
+        shippingOptions: normalizeShippingOptions(input.shippingOptions || input.shipping_options),
+        paymentMethods: normalizePaymentMethods(input.paymentMethods || input.payment_methods),
         isActive: input.isActive !== false && input.is_active !== false,
         createdAt: input.createdAt || input.created_at || null,
         updatedAt: input.updatedAt || input.updated_at || null
@@ -116,11 +153,18 @@ async function ensurePostgresSchema() {
                 name TEXT NOT NULL,
                 color TEXT NOT NULL DEFAULT '#00A884',
                 rules_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                shipping_options JSONB NOT NULL DEFAULT '[]'::jsonb,
+                payment_methods JSONB NOT NULL DEFAULT '{}'::jsonb,
                 is_active BOOLEAN NOT NULL DEFAULT TRUE,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 PRIMARY KEY (tenant_id, rule_id)
             )
+        `);
+        await queryPostgres(`
+            ALTER TABLE tenant_zone_rules
+              ADD COLUMN IF NOT EXISTS shipping_options JSONB NOT NULL DEFAULT '[]'::jsonb,
+              ADD COLUMN IF NOT EXISTS payment_methods JSONB NOT NULL DEFAULT '{}'::jsonb
         `);
         await queryPostgres(`
             CREATE TABLE IF NOT EXISTS tenant_customer_labels (
@@ -202,7 +246,7 @@ async function listZoneRules(tenantId = DEFAULT_TENANT_ID, options = {}) {
         const params = [cleanTenantId];
         const activeClause = includeInactive ? '' : 'AND is_active = TRUE';
         const { rows } = await queryPostgres(
-            `SELECT rule_id, tenant_id, name, color, rules_json, is_active, created_at, updated_at
+            `SELECT rule_id, tenant_id, name, color, rules_json, shipping_options, payment_methods, is_active, created_at, updated_at
                FROM tenant_zone_rules
               WHERE tenant_id = $1
                 ${activeClause}
@@ -241,16 +285,27 @@ async function saveZoneRule(tenantId = DEFAULT_TENANT_ID, payload = {}) {
     await ensurePostgresSchema();
     await queryPostgres(
         `INSERT INTO tenant_zone_rules (
-            tenant_id, rule_id, name, color, rules_json, is_active, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, NOW(), NOW())
+            tenant_id, rule_id, name, color, rules_json, shipping_options, payment_methods, is_active, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, NOW(), NOW())
         ON CONFLICT (tenant_id, rule_id)
         DO UPDATE SET
             name = EXCLUDED.name,
             color = EXCLUDED.color,
             rules_json = EXCLUDED.rules_json,
+            shipping_options = EXCLUDED.shipping_options,
+            payment_methods = EXCLUDED.payment_methods,
             is_active = EXCLUDED.is_active,
             updated_at = NOW()`,
-        [cleanTenantId, ruleId, clean.name, clean.color, JSON.stringify(clean.rulesJson || {}), clean.isActive !== false]
+        [
+            cleanTenantId,
+            ruleId,
+            clean.name,
+            clean.color,
+            JSON.stringify(clean.rulesJson || {}),
+            JSON.stringify(clean.shippingOptions || []),
+            JSON.stringify(clean.paymentMethods || {}),
+            clean.isActive !== false
+        ]
     );
     const items = await listZoneRules(cleanTenantId, { includeInactive: true });
     return items.find((item) => item.ruleId === ruleId) || null;
