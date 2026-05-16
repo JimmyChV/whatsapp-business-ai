@@ -55,6 +55,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const { notify } = useUiFeedback();
     const [activeTab, setActiveTab] = useState('ai');
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
+    const [pattySuggestion, setPattySuggestion] = useState(null);
     const companyProfileRef = useRef(null);
 
     // AI Chat State
@@ -368,6 +369,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         const match = text.match(/\[MENSAJE:\s*([\s\S]+?)\]/);
         const msg = match ? match[1].trim() : text;
         setInputText(msg);
+        setPattySuggestion(null);
         setActiveTab('ai');
     };
 
@@ -483,6 +485,46 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         return () => {
             socket.off('quote_sent', handleQuoteSent);
             socket.off('quote_error', handleQuoteError);
+        };
+    }, [socket, activeChatId]);
+
+    useEffect(() => {
+        setPattySuggestion(null);
+    }, [activeChatId]);
+
+    useEffect(() => {
+        if (!socket || typeof socket.on !== 'function' || typeof socket.off !== 'function') return;
+
+        const resolveBaseChatId = (value = '') => String(value || '').split('::mod::')[0].trim();
+
+        const handlePattySuggestion = (event = {}) => {
+            const incomingChatId = String(event?.chatId || event?.baseChatId || '').trim();
+            const currentChatId = String(activeChatId || '').trim();
+            if (!incomingChatId || !currentChatId) return;
+            if (resolveBaseChatId(incomingChatId) !== resolveBaseChatId(currentChatId)) return;
+            setPattySuggestion({
+                chatId: incomingChatId,
+                moduleId: String(event?.moduleId || '').trim(),
+                suggestion: String(event?.suggestion || '').trim(),
+                assistantName: String(event?.assistantName || 'Patty').trim() || 'Patty',
+                timestamp: event?.timestamp || Date.now()
+            });
+        };
+
+        const handleMessage = (event = {}) => {
+            const currentChatId = String(activeChatId || '').trim();
+            const incomingChatId = String(event?.chatId || event?.baseChatId || event?.to || '').trim();
+            if (!currentChatId || !incomingChatId) return;
+            if (resolveBaseChatId(incomingChatId) !== resolveBaseChatId(currentChatId)) return;
+            if (event?.fromMe === true) setPattySuggestion(null);
+        };
+
+        socket.on('patty_suggestion', handlePattySuggestion);
+        socket.on('message', handleMessage);
+
+        return () => {
+            socket.off('patty_suggestion', handlePattySuggestion);
+            socket.off('message', handleMessage);
         };
     }, [socket, activeChatId]);
 
@@ -704,6 +746,14 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     sendAiMessage={sendAiMessage}
                     aiInput={aiInput}
                     canWriteByAssignment={canUseMessageTools}
+                    pattySuggestion={pattySuggestion}
+                    onUsePattySuggestion={() => {
+                        const suggestion = String(pattySuggestion?.suggestion || '').trim();
+                        if (!suggestion) return;
+                        setInputText(suggestion);
+                        setPattySuggestion(null);
+                    }}
+                    onDismissPattySuggestion={() => setPattySuggestion(null)}
                 />
             )}
 

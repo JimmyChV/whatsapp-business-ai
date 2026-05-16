@@ -8,6 +8,7 @@ const {
     customerConsentService: customerConsentServiceFallback
 } = require('../../operations/services');
 const catalogManagerService = require('../../tenant/services/catalog-manager.service');
+const pattyService = require('./patty.service');
 
 function createSocketWaEventsBridgeService({
     waClient,
@@ -658,6 +659,22 @@ function createSocketWaEventsBridgeService({
                     }
 
                     if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase) {
+                        try {
+                            if (cleanScopeModuleId && pattyService?.tryPattyIntervention) {
+                                pattyService.tryPattyIntervention(
+                                    historyTenantId,
+                                    cleanScopeModuleId,
+                                    relatedChatIdBase,
+                                    emitToRuntimeContext,
+                                    { inboundAt: activityAtIso, messageId }
+                                ).catch((error) => {
+                                    console.warn('[WA][Patty] intervention scheduling warning:', String(error?.message || error));
+                                });
+                            }
+                        } catch (_) {
+                            // silent: Patty must never block inbound message processing
+                        }
+
                         try {
                             const assignmentScopeModuleId = cleanScopeModuleId;
 

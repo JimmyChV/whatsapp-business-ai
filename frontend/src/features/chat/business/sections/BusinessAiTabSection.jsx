@@ -18,8 +18,12 @@ export default function BusinessAiTabSection({
     setAiInput,
     sendAiMessage,
     aiInput = '',
-    canWriteByAssignment = false
+    canWriteByAssignment = false,
+    pattySuggestion = null,
+    onUsePattySuggestion = null,
+    onDismissPattySuggestion = null
 }) {
+    const hasPattySuggestion = Boolean(String(pattySuggestion?.suggestion || '').trim());
     return (
         <div className="ai-tab-shell" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div className="ai-thread-pro" style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -71,6 +75,65 @@ export default function BusinessAiTabSection({
                 )}
                 <div ref={aiEndRef} />
             </div>
+
+            {hasPattySuggestion && (
+                <div
+                    style={{
+                        margin: '8px 10px 0',
+                        padding: '10px 12px',
+                        borderRadius: '14px',
+                        border: '1px solid var(--saas-accent-primary)',
+                        background: 'color-mix(in srgb, var(--saas-accent-primary) 10%, var(--chat-card-surface))',
+                        boxShadow: '0 10px 24px rgba(0,0,0,0.08)',
+                        color: 'var(--text-primary)',
+                        flexShrink: 0
+                    }}
+                >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 800, fontSize: '0.78rem', marginBottom: '6px' }}>
+                        <Sparkles size={14} />
+                        {pattySuggestion.assistantName || 'Patty'} sugiere:
+                    </div>
+                    <div style={{ fontSize: '0.82rem', lineHeight: 1.45, whiteSpace: 'pre-wrap', color: 'var(--text-primary)' }}>
+                        {pattySuggestion.suggestion}
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '10px' }}>
+                        <button
+                            type="button"
+                            onClick={onDismissPattySuggestion}
+                            style={{
+                                border: '1px solid var(--chat-card-border)',
+                                background: 'var(--chat-card-surface)',
+                                color: 'var(--chat-control-text-soft)',
+                                borderRadius: '999px',
+                                padding: '5px 10px',
+                                cursor: 'pointer',
+                                fontWeight: 700,
+                                fontSize: '0.72rem'
+                            }}
+                        >
+                            Descartar
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onUsePattySuggestion}
+                            disabled={!canWriteByAssignment}
+                            style={{
+                                border: '1px solid var(--saas-accent-primary)',
+                                background: canWriteByAssignment ? 'var(--saas-accent-primary)' : 'var(--chat-control-disabled)',
+                                color: 'white',
+                                borderRadius: '999px',
+                                padding: '5px 10px',
+                                cursor: canWriteByAssignment ? 'pointer' : 'not-allowed',
+                                fontWeight: 800,
+                                fontSize: '0.72rem',
+                                opacity: canWriteByAssignment ? 1 : 0.75
+                            }}
+                        >
+                            Usar respuesta
+                        </button>
+                    </div>
+                </div>
+            )}
 
             <div className="ai-quick-prompts ai-quick-prompts-pro" style={{ padding: '8px 10px', borderTop: '1px solid var(--border-color)', display: 'flex', flexWrap: 'wrap', gap: '6px', flexShrink: 0 }}>
                 <div className="ai-quick-prompts-title">
