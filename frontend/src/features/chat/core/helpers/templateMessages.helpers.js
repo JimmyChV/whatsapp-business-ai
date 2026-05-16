@@ -63,6 +63,24 @@ export function mergeTemplateMessageContent(existingMessage = {}, incomingMessag
         ...existing,
         ...incoming
     };
+    if ((incoming?.order === undefined || incoming?.order === null) && existing?.order && typeof existing.order === 'object') {
+        merged.order = existing.order;
+    }
+    if ((incoming?.orderPayload === undefined || incoming?.orderPayload === null) && existing?.orderPayload && typeof existing.orderPayload === 'object') {
+        merged.orderPayload = existing.orderPayload;
+    }
+    if (!toText(incoming?.body || '') && (existing?.order || existing?.orderPayload)) {
+        merged.body = existing?.body || merged.body;
+    }
+    if (!toText(incoming?.mediaUrl || '') && existing?.mediaUrl) {
+        merged.mediaUrl = existing.mediaUrl;
+    }
+    if (!toText(incoming?.mediaPath || '') && existing?.mediaPath) {
+        merged.mediaPath = existing.mediaPath;
+    }
+    if (!incoming?.mediaData && existing?.mediaData) {
+        merged.mediaData = existing.mediaData;
+    }
 
     if (incomingIsInboundMessage) {
         merged.templateComponents = [];

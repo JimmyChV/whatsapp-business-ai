@@ -750,7 +750,18 @@ export default function useSocketChatConversationEvents({
                     mergedById.set(id, existing ? {
                         ...existing,
                         ...message,
-                        ack: resolveHighestAck(message?.ack, existing?.ack)
+                        ack: resolveHighestAck(message?.ack, existing?.ack),
+                        body: String(message?.body || '').trim() || existing?.body || '',
+                        order: (message?.order && typeof message.order === 'object')
+                            ? message.order
+                            : ((existing?.order && typeof existing.order === 'object') ? existing.order : null),
+                        metadata: (message?.metadata && typeof message.metadata === 'object')
+                            ? message.metadata
+                            : ((existing?.metadata && typeof existing.metadata === 'object') ? existing.metadata : null),
+                        mediaUrl: String(message?.mediaUrl || '').trim() || existing?.mediaUrl || null,
+                        mediaPath: String(message?.mediaPath || '').trim() || existing?.mediaPath || null,
+                        mediaData: message?.mediaData || existing?.mediaData || null,
+                        mimetype: String(message?.mimetype || '').trim() || existing?.mimetype || null
                     } : message);
                 });
 

@@ -864,20 +864,33 @@ async function getActiveQuoteContext(tenantId, moduleId, chatId) {
         if (!row) return '';
         const items = Array.isArray(row.items_json) ? row.items_json : [];
         const summary = safeJsonObject(row.summary_json);
-        const products = items
-            .map((item) => text(item.title || item.name || item.productName || item.sku))
-            .filter(Boolean)
-            .join(', ');
+        const productLines = items
+            .map((item) => {
+                const sku = text(item.sku || item.productId || item.product_id || item.item_id).toUpperCase();
+                const title = text(item.title || item.name || item.productName || item.sku) || sku || 'Producto';
+                const qty = Math.max(1, Number.parseInt(String(item.qty ?? item.quantity ?? 1), 10) || 1);
+                const lineTotal = money(item.lineTotal ?? item.line_total ?? item.lineSubtotal ?? item.line_subtotal);
+                return `  - ${sku ? `[${sku}] ` : ''}${title} × ${qty}${lineTotal !== null ? ` = S/ ${lineTotal.toFixed(2)}` : ''}`;
+            })
+            .filter(Boolean);
+        const products = productLines.length ? productLines.join('\n') : '  - Sin productos legibles';
         const total = money(summary.totalPayable ?? summary.total_payable ?? summary.total);
         const status = lower(row.status);
         if (status === 'sent') {
             return [
-                '⚠️ COTIZACIÓN YA ENVIADA — NO GENERAR NUEVA:',
+                '⚠️ COTIZACIÓN ACTIVA — GESTIONAR MODIFICACIONES:',
                 `ID: ${text(row.quote_id)}`,
-                `Productos: ${products || 'Sin productos legibles'}`,
-                `Total: S/ ${formatMoney(total)}`,
+                'Productos actuales (usar estos como base):',
+                products,
+                `Total actual: S/ ${formatMoney(total)}`,
                 `Enviada: ${text(row.sent_at) || 'No enviada aun'}`,
-                '→ Solo genera nueva cotización si el cliente pide cambios explícitos en los productos.'
+                '',
+                'INSTRUCCIONES PARA MODIFICAR:',
+                '  - AGREGAR producto: incluir productos actuales + nuevo',
+                '  - QUITAR producto: incluir solo los que quedan',
+                '  - CAMBIAR cantidad: incluir todos con cantidad actualizada',
+                '  - REEMPLAZAR producto: quitar el anterior, agregar el nuevo',
+                '  - Si el cliente confirma sin cambios: NO generar quoteRequest'
             ].join('\n');
         }
         return [
@@ -885,7 +898,8 @@ async function getActiveQuoteContext(tenantId, moduleId, chatId) {
             `- ID: ${text(row.quote_id)}`,
             `- Estado: ${text(row.status) || 'sin_estado'}`,
             `- Total: S/ ${formatMoney(total)}`,
-            `- Productos: ${products || 'Sin productos legibles'}`,
+            '- Productos:',
+            products,
             `- Enviada: ${text(row.sent_at) || 'No enviada aun'}`
         ].join('\n');
     } catch (error) {
@@ -901,7 +915,7 @@ async function getRecentSentQuote(tenantId, moduleId, chatId) {
               WHERE tenant_id = $1
                 AND chat_id = $2
                 AND status = 'sent'
-                AND COALESCE(sent_at, updated_at, created_at) >= NOW() - INTERVAL '24 hours'
+                AND COALESCE(sent_at, updated_at, created_at) >= NOW() - INTERVAL '5 minutes'
                 AND (scope_module_id IS NULL OR scope_module_id = '' OR LOWER(scope_module_id) = LOWER($3))
               ORDER BY COALESCE(sent_at, updated_at, created_at) DESC
               LIMIT 1`,
@@ -917,18 +931,57 @@ async function getRecentSentQuote(tenantId, moduleId, chatId) {
 const QUOTE_CHANGE_WORDS = [
     'agrega',
     'anade',
+    'incluye',
     'quita',
+    'saca',
+    'elimina',
+    'retira',
+    'borra',
+    'descarta',
+    'cancela',
     'cambia',
     'modifica',
+    'actualiza',
     'tambien',
     'ademas',
-    'incluye',
     'sin',
     'diferente',
     'otro',
     'otra',
     'nueva',
-    'cambios'
+    'cambios',
+    'con',
+    'mas',
+    'falta',
+    'suma',
+    'incorpora',
+    'no quiero',
+    '2 unidades',
+    'dos',
+    'tres',
+    'cuatro',
+    'unidades',
+    'cantidad',
+    'junto',
+    'anterior',
+    'todo',
+    'completo',
+    'los otros',
+    'los demas',
+    'ambos',
+    'combine',
+    'todo junto',
+    'lo anterior',
+    'con los otros',
+    'los mismos',
+    'mejor',
+    'prefiero',
+    'en cambio',
+    'mejor dame',
+    'en vez',
+    'en lugar',
+    'cambia por',
+    'reemplaza'
 ];
 
 function hasQuoteChangeIntent(value = '') {
@@ -1252,7 +1305,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         `Tu nombre visible es: ${assistantName}.`,
         `Modulo: ${moduleConfig?.name || cleanModuleId || 'sin modulo'}. ${scheduleState.label}.`,
         '',
-        'INSTRUCCIÓN CRÍTICA: Si el contexto incluye una sección "⚠️ COTIZACIÓN YA ENVIADA", NO incluyas quoteRequest en tu respuesta JSON bajo ninguna circunstancia, salvo que el último mensaje del cliente contenga palabras como "cambia", "modifica", "agrega", "quita", "diferente" o "cambios".',
+        'INSTRUCCIÓN CRÍTICA: Si el contexto incluye una sección "⚠️ COTIZACIÓN ACTIVA", NO incluyas quoteRequest salvo que el último mensaje del cliente pida cambios explícitos en productos, cantidades o reemplazos.',
         '',
         'NEGOCIO / CATALOGO:',
         catalogText,
@@ -1286,6 +1339,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '- Si el cliente claramente acepta o pide una cotizacion, agrega quoteRequest con products usando el titulo EXACTO del catalogo: {"products":[{"title":"Nombre exacto del producto","qty":1}]}.',
         '- quoteRequest NO debe incluir campo note. Solo incluir: {"products":[{"title":"Nombre exacto del producto","qty":1}]}.',
         '- Cuando generes quoteRequest, messages[] solo debe tener un mensaje corto de intro maximo 1 linea. No repitas productos ni precios en el texto.',
+        '- Cuando generes quoteRequest para modificar una cotizacion existente, products[] debe incluir TODOS los productos del resultado final, no solo los cambios. Ejemplo: si hay 2 productos actuales y el cliente agrega 1, products[] debe tener 3 items.',
         '- El title debe copiarse del catalogo tal como aparece despues del SKU entre corchetes. No inventes SKUs ni codigos. Si incluyes sku, debe ser exactamente uno de los SKUs entre corchetes.',
         '- Incluye quoteRequest solo cuando haya una aceptacion o solicitud clara de cotizacion.',
         '- Cuando el cliente mencione su ubicacion, busca en las zonas de cobertura y responde con las opciones de envio y metodos de pago disponibles para esa zona. Si la ubicacion no esta en cobertura, dilo claramente.',
@@ -1322,12 +1376,13 @@ async function generatePattySuggestion(tenantId, moduleId, chatId) {
         [
             `Ultimo mensaje del cliente: ${context.lastCustomerMessage}`,
             '',
-            'INSTRUCCIÓN CRÍTICA: Si el contexto incluye "⚠️ COTIZACIÓN YA ENVIADA", NO incluyas quoteRequest bajo ninguna circunstancia, salvo que este último mensaje pida cambios explícitos con palabras como "cambia", "modifica", "agrega", "quita", "diferente" o "cambios".',
+            'INSTRUCCIÓN CRÍTICA: Si el contexto incluye "⚠️ COTIZACIÓN ACTIVA", NO incluyas quoteRequest salvo que este último mensaje pida cambios explícitos en productos, cantidades o reemplazos.',
             '',
             'Responde con JSON valido exactamente en este formato:',
             '{"messages":[{"text":"texto listo para enviar por WhatsApp","quotedMessageId":"message_id inbound relevante o null"}],"quoteRequest":{"products":[{"title":"Nombre exacto del producto del catalogo","qty":1}]}}',
             'quoteRequest NO debe incluir campo note. Solo incluir products con title y qty.',
             'Cuando incluyas quoteRequest, messages[] debe contener solo una intro corta de maximo 1 linea. No repitas productos ni precios en el texto.',
+            'Si quoteRequest modifica una cotizacion existente, products[] debe incluir TODOS los productos del resultado final, no solo el producto agregado/quitado/cambiado.',
             'Para quoteRequest usa el title exacto del catalogo. No uses SKUs inventados; si agregas sku, debe existir exactamente entre corchetes en el catalogo.',
             'Omite quoteRequest si no corresponde generar cotizacion.'
         ].join('\n'),
