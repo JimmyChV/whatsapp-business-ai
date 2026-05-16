@@ -13,6 +13,10 @@ const quotesService = require('../../tenant/services/quotes.service');
 const chatCommercialStatusService = require('../../operations/services/chat-commercial-status.service');
 const { getChatSuggestion } = require('../../operations/services/ai.service');
 const waClient = require('./wa-provider.service');
+const {
+    buildQuoteMessageBody,
+    buildQuoteInteractiveMessage
+} = require('./socket-quote-delivery.service');
 
 const DEFAULT_ASSISTANT_NAME = 'Patty';
 const DEFAULT_WAIT_SECONDS = 15;
@@ -195,16 +199,6 @@ function buildQuoteId() {
 
 function buildQuoteLineId(index = 0) {
     return `line_${Date.now().toString(36)}_${index + 1}_${Math.random().toString(36).slice(2, 6)}`;
-}
-
-function formatSoles(value) {
-    return `S/ ${formatMoney(value)}`;
-}
-
-function toTitleCase(value = '') {
-    return text(value)
-        .toLocaleLowerCase('es-PE')
-        .replace(/(^|\s)(\S)/g, (_, space, letter) => `${space}${letter.toLocaleUpperCase('es-PE')}`);
 }
 
 async function pgQuery(sql, params = []) {
@@ -428,51 +422,6 @@ function buildPattyQuoteSummary(items = []) {
         deliveryAmount: 0,
         deliveryFree: true,
         totalPayable: subtotal
-    };
-}
-
-function buildPattyQuoteMessageBody(quote = {}) {
-    const separator = '──────────────────';
-    const items = Array.isArray(quote.items) ? quote.items : [];
-    const summary = safeJsonObject(quote.summary);
-    const lines = items.flatMap((item) => {
-        const qty = Math.max(1, Number(item.qty) || 1);
-        const unitPrice = money(item.unitPrice) || 0;
-        const lineSubtotal = money(qty * unitPrice) || 0;
-        return [
-            `*${toTitleCase(item.title || item.sku || 'Producto')}*`,
-            `${qty} × ${formatSoles(unitPrice)} = ${formatSoles(lineSubtotal)}`
-        ];
-    });
-    const subtotal = money(summary.subtotal) || 0;
-    const totalPayable = money(summary.totalPayable) || subtotal;
-    return [
-        '📋 *COTIZACIÓN*',
-        separator,
-        '',
-        ...lines,
-        '',
-        separator,
-        `Subtotal:         ${formatSoles(subtotal)}`,
-        'Delivery:         Gratuito',
-        separator,
-        `*TOTAL A PAGAR:   ${formatSoles(totalPayable)}*`,
-        '',
-        separator,
-        '_Lávitat® · La confianza que abraza tu hogar_'
-    ].join('\n').trim();
-}
-
-function buildPattyQuoteInteractiveMessage(quoteId, body) {
-    return {
-        type: 'button',
-        body: { text: text(body) },
-        action: {
-            buttons: [
-                { type: 'reply', reply: { id: `quote_confirm_${text(quoteId)}`, title: 'Confirmar' } },
-                { type: 'reply', reply: { id: `quote_change_${text(quoteId)}`, title: 'Cambios' } }
-            ]
-        }
     };
 }
 
@@ -818,31 +767,18 @@ async function createAndSendPattyQuote({ tenantId, moduleId, chatId, assistantNa
         metadata
     });
     const effectiveQuoteId = text(createdQuote?.quoteId || quoteId);
-    try {
-        await chatCommercialStatusService.upsertChatCommercialStatus(cleanTenantId, {
-            chatId: cleanChatId,
-            scopeModuleId: cleanModuleId,
-            status: 'cotizado',
-            source: 'system',
-            reason: 'patty_quote_created',
-            metadata: {
-                quoteId: effectiveQuoteId,
-                quoteSource: 'patty'
-            }
-        });
-    } catch (error) {
-        console.warn('[Patty] quote created but commercial status cotizado update skipped:', error?.message || error);
-    }
-    const quoteBody = buildPattyQuoteMessageBody({
+    const normalizedQuote = {
         quoteId: effectiveQuoteId,
+        currency: 'PEN',
         items,
         summary,
         metadata,
         notes: request.note || null
-    });
+    };
+    const quoteBody = buildQuoteMessageBody(normalizedQuote);
 
     let sentMessageId = null;
-    const interactive = buildPattyQuoteInteractiveMessage(effectiveQuoteId, quoteBody);
+    const interactive = buildQuoteInteractiveMessage(effectiveQuoteId, quoteBody);
     if (typeof waClient?.sendInteractiveMessage === 'function') {
         sentMessageId = await waClient.sendInteractiveMessage(cleanChatId, interactive, {
             metadata: {
@@ -884,8 +820,8 @@ async function createAndSendPattyQuote({ tenantId, moduleId, chatId, assistantNa
         await chatCommercialStatusService.markQuoteSent(cleanTenantId, {
             chatId: cleanChatId,
             scopeModuleId: cleanModuleId,
-            source: 'automation',
-            reason: 'patty_quote_generated',
+            source: 'socket',
+            reason: 'send_structured_quote_success',
             changedByUserId: null,
             at: sentAt,
             metadata: {
