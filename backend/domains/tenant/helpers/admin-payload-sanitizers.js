@@ -118,7 +118,7 @@ function createTenantAdminPayloadSanitizers({
 
     function sanitizeModuleAiConfigPayload(value = {}) {
         const source = sanitizeObjectPayload(value);
-        const withinHoursMode = ['review', 'off'].includes(String(source.withinHoursMode || '').trim())
+        const withinHoursMode = ['review', 'autonomous', 'off'].includes(String(source.withinHoursMode || '').trim())
             ? String(source.withinHoursMode || '').trim()
             : 'review';
         const outsideHoursMode = ['autonomous', 'review', 'off'].includes(String(source.outsideHoursMode || '').trim())
