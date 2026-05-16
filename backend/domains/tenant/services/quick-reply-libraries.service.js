@@ -18,6 +18,7 @@ const QUICK_REPLY_CACHE_TTL_MS = Number.parseInt(String(process.env.QUICK_REPLY_
 const QUICK_REPLY_CACHE_SAFE_TTL_MS = Number.isFinite(QUICK_REPLY_CACHE_TTL_MS) && QUICK_REPLY_CACHE_TTL_MS > 0
     ? QUICK_REPLY_CACHE_TTL_MS
     : 5000;
+const QUICK_REPLY_CATEGORIES = new Set(['general', 'informacion', 'catalogo', 'cierre', 'escalado']);
 const quickReplyLibrariesCache = new Map();
 const quickReplyItemsCache = new Map();
 const quickReplyInFlightReads = new Map();
@@ -181,6 +182,11 @@ function normalizeMediaAssets(value = [], fallback = null) {
     return fallbackAsset ? [fallbackAsset] : [];
 }
 
+function normalizeCategory(value = 'general') {
+    const clean = String(value || '').trim().toLowerCase();
+    return QUICK_REPLY_CATEGORIES.has(clean) ? clean : 'general';
+}
+
 function normalizeQuickReplyButtons(value = []) {
     const source = Array.isArray(value) ? value : [];
     return source
@@ -225,10 +231,16 @@ function sanitizeItem(input = {}) {
     const isActive = normalizeBool(source.isActive, true);
     const sortOrder = normalizeSortOrder(source.sortOrder, 1000);
     const buttons = normalizeQuickReplyButtons(source.buttons || sourceMetadata.buttons);
+    const category = normalizeCategory(source.category || sourceMetadata.category);
+    const availableForPatty = category === 'general'
+        ? false
+        : normalizeBool(source.availableForPatty ?? source.available_for_patty ?? sourceMetadata.availableForPatty ?? sourceMetadata.available_for_patty, false);
     const metadata = {
         ...sourceMetadata,
         mediaAssets,
-        buttons
+        buttons,
+        category,
+        availableForPatty
     };
 
     return {
@@ -244,6 +256,8 @@ function sanitizeItem(input = {}) {
         isActive,
         sortOrder,
         buttons,
+        category,
+        availableForPatty,
         metadata
     };
 }
@@ -307,6 +321,8 @@ async function ensurePostgresSchema() {
                 media_file_name TEXT,
                 media_size_bytes BIGINT,
                 sort_order INTEGER NOT NULL DEFAULT 1000,
+                category TEXT NOT NULL DEFAULT 'general',
+                available_for_patty BOOLEAN NOT NULL DEFAULT FALSE,
                 is_active BOOLEAN NOT NULL DEFAULT TRUE,
                 metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -328,6 +344,8 @@ async function ensurePostgresSchema() {
         await queryPostgres(`CREATE INDEX IF NOT EXISTS idx_quick_reply_libraries_tenant_active ON quick_reply_libraries(tenant_id, is_active DESC, sort_order ASC, created_at DESC)`);
         await queryPostgres(`CREATE INDEX IF NOT EXISTS idx_quick_reply_items_tenant_library_sort ON quick_reply_items(tenant_id, library_id, is_active DESC, sort_order ASC, created_at DESC)`);
         await queryPostgres(`CREATE INDEX IF NOT EXISTS idx_quick_reply_library_modules_tenant_module ON quick_reply_library_modules(tenant_id, module_id, library_id)`);
+        await queryPostgres(`ALTER TABLE quick_reply_items ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'general'`);
+        await queryPostgres(`ALTER TABLE quick_reply_items ADD COLUMN IF NOT EXISTS available_for_patty BOOLEAN NOT NULL DEFAULT FALSE`);
 
         schemaReady = true;
         schemaReadyPromise = null;
@@ -554,7 +572,7 @@ async function listQuickReplyItems(options = {}) {
         if (!includeInactive) where += ' AND is_active = TRUE';
 
         const { rows } = await queryPostgres(
-            `SELECT item_id, library_id, label, body_text, media_url, media_mime_type, media_file_name, media_size_bytes, sort_order, is_active, metadata, created_at, updated_at
+            `SELECT item_id, library_id, label, body_text, media_url, media_mime_type, media_file_name, media_size_bytes, sort_order, category, available_for_patty, is_active, metadata, created_at, updated_at
                FROM quick_reply_items
                ${where}
               ORDER BY sort_order ASC, created_at DESC`,
@@ -588,6 +606,9 @@ async function listQuickReplyItems(options = {}) {
                 mediaFileName: String(primaryMedia?.fileName || row.media_file_name || '').trim() || null,
                 mediaSizeBytes: Number.isFinite(Number(primaryMedia?.sizeBytes ?? row.media_size_bytes)) ? Number(primaryMedia?.sizeBytes ?? row.media_size_bytes) : null,
                 sortOrder: normalizeSortOrder(row.sort_order, 1000),
+                category: normalizeCategory(row.category || metadata.category),
+                availableForPatty: row.available_for_patty === true || metadata.availableForPatty === true,
+                available_for_patty: row.available_for_patty === true || metadata.availableForPatty === true,
                 isActive: row.is_active !== false,
                 isShared: library?.isShared !== false,
                 moduleIds: Array.isArray(library?.moduleIds) ? library.moduleIds : [],
@@ -595,7 +616,9 @@ async function listQuickReplyItems(options = {}) {
                 metadata: {
                     ...metadata,
                     mediaAssets,
-                    buttons: normalizeQuickReplyButtons(metadata.buttons)
+                    buttons: normalizeQuickReplyButtons(metadata.buttons),
+                    category: normalizeCategory(row.category || metadata.category),
+                    availableForPatty: row.available_for_patty === true || metadata.availableForPatty === true
                 }
             };
         });
@@ -637,6 +660,8 @@ async function saveQuickReplyItem(payload = {}, options = {}) {
             mediaFileName: clean.mediaFileName || null,
             mediaSizeBytes: clean.mediaSizeBytes,
             sortOrder: clean.sortOrder,
+            category: clean.category,
+            availableForPatty: clean.availableForPatty,
             isActive: clean.isActive,
             mediaAssets: Array.isArray(clean.mediaAssets) ? clean.mediaAssets : [],
             buttons: clean.buttons,
@@ -654,9 +679,9 @@ async function saveQuickReplyItem(payload = {}, options = {}) {
     await queryPostgres(
         `INSERT INTO quick_reply_items (
             tenant_id, item_id, library_id, label, body_text, media_url, media_mime_type,
-            media_file_name, media_size_bytes, sort_order, is_active, metadata, created_at, updated_at
+            media_file_name, media_size_bytes, sort_order, category, available_for_patty, is_active, metadata, created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, NOW(), NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, NOW(), NOW())
         ON CONFLICT (tenant_id, item_id)
         DO UPDATE SET
             library_id = EXCLUDED.library_id,
@@ -667,6 +692,8 @@ async function saveQuickReplyItem(payload = {}, options = {}) {
             media_file_name = EXCLUDED.media_file_name,
             media_size_bytes = EXCLUDED.media_size_bytes,
             sort_order = EXCLUDED.sort_order,
+            category = EXCLUDED.category,
+            available_for_patty = EXCLUDED.available_for_patty,
             is_active = EXCLUDED.is_active,
             metadata = EXCLUDED.metadata,
             updated_at = NOW()`,
@@ -681,6 +708,8 @@ async function saveQuickReplyItem(payload = {}, options = {}) {
             clean.mediaFileName || null,
             clean.mediaSizeBytes,
             clean.sortOrder,
+            clean.category,
+            clean.availableForPatty,
             clean.isActive,
             JSON.stringify(clean.metadata && typeof clean.metadata === 'object' ? clean.metadata : {})
         ]

@@ -110,6 +110,9 @@ async function listFromPostgres(tenantId, moduleId = '') {
                 mediaFileName: String(entry?.mediaFileName || mediaAssets[0]?.fileName || '').trim() || null,
                 mediaSizeBytes: Number.isFinite(Number(entry?.mediaSizeBytes)) ? Number(entry.mediaSizeBytes) : (mediaAssets[0]?.sizeBytes || null),
                 buttons: Array.isArray(entry?.buttons) ? entry.buttons : [],
+                category: String(entry?.category || entry?.metadata?.category || 'general').trim().toLowerCase() || 'general',
+                availableForPatty: entry?.availableForPatty === true || entry?.available_for_patty === true || entry?.metadata?.availableForPatty === true,
+                available_for_patty: entry?.availableForPatty === true || entry?.available_for_patty === true || entry?.metadata?.availableForPatty === true,
                 metadata: entry?.metadata && typeof entry.metadata === 'object' && !Array.isArray(entry.metadata)
                     ? entry.metadata
                     : {},

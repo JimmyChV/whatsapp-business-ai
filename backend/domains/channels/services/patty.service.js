@@ -436,7 +436,28 @@ async function getBasePrompt(tenantId) {
     }
 }
 
-async function getCatalogContext(tenantId) {
+function extractMentionedCatalogSkus(recentText = '', rows = []) {
+    const source = String(recentText || '').toUpperCase();
+    if (!source) return new Set();
+    return new Set((Array.isArray(rows) ? rows : [])
+        .map((row) => text(row.item_id).toUpperCase())
+        .filter((sku) => sku && source.includes(sku)));
+}
+
+function buildCatalogProductDetails(row = {}) {
+    const metadata = safeJsonObject(row.metadata);
+    const details = [
+        text(metadata.description || metadata.descripcion || metadata.shortDescription || metadata.short_description),
+        text(metadata.variants || metadata.variantes),
+        text(metadata.benefits || metadata.beneficios),
+        text(metadata.usage || metadata.uso)
+    ].filter(Boolean).join(' | ');
+    const sku = text(row.item_id).toUpperCase();
+    const title = text(row.title) || sku || 'Producto';
+    return `  [${sku}] ${title}${details ? `: ${details}` : ': Sin detalle adicional registrado.'}`;
+}
+
+async function getCatalogContext(tenantId, recentConversationText = '') {
     const { rows } = await pgQuery(
         `SELECT item_id, title, price, metadata
            FROM catalog_items
@@ -444,7 +465,8 @@ async function getCatalogContext(tenantId) {
           LIMIT 120`,
         [tenantId]
     );
-    return rows
+    const mentionedSkus = extractMentionedCatalogSkus(recentConversationText, rows);
+    const lines = rows
         .map((row) => {
             const metadata = safeJsonObject(row.metadata);
             const sale = money(metadata.salePrice ?? metadata.sale_price ?? metadata.precio_oferta);
@@ -454,13 +476,18 @@ async function getCatalogContext(tenantId) {
             const sku = text(row.item_id).toUpperCase();
             return {
                 score: display,
-                line: `- [${sku}] ${text(row.title)}: S/ ${display.toFixed(2)}${regular && sale && regular > sale ? ` (regular S/ ${regular.toFixed(2)})` : ''}`
+                line: `- [${sku}] ${text(row.title)}: S/ ${display.toFixed(2)}`
             };
         })
         .filter(Boolean)
         .sort((a, b) => b.score - a.score)
         .slice(0, 20)
         .map((item) => item.line);
+    const mentionedDetails = rows
+        .filter((row) => mentionedSkus.has(text(row.item_id).toUpperCase()))
+        .slice(0, 10)
+        .map((row) => buildCatalogProductDetails(row));
+    return { lines, mentionedDetails };
 }
 
 async function getCatalogItemsForQuoteRequest(tenantId, products = []) {
@@ -597,20 +624,38 @@ async function resolveDeliveryForChatQuote(tenantId, chatId, subtotal = 0) {
 async function getQuickRepliesContext(tenantId, moduleId) {
     try {
         const items = await quickRepliesManagerService.listQuickReplies({ tenantId, moduleId });
-        return (Array.isArray(items) ? items : [])
-            .slice(0, 20)
-            .map((item) => `[${text(item.label) || text(item.id) || 'Respuesta'}]: ${text(item.text).replace(/\s+/g, ' ')}`)
-            .filter((line) => line.length > 4);
+        const grouped = new Map();
+        (Array.isArray(items) ? items : [])
+            .filter((item) => item?.availableForPatty === true || item?.available_for_patty === true || safeJsonObject(item?.metadata).availableForPatty === true)
+            .forEach((item) => {
+                const category = text(item.category || safeJsonObject(item?.metadata).category || 'general').toUpperCase() || 'GENERAL';
+                if (!grouped.has(category)) grouped.set(category, []);
+                grouped.get(category).push(`  - ${text(item.label || item.id) || 'Respuesta'}: ${text(item.text).replace(/\s+/g, ' ')}`);
+            });
+        return Array.from(grouped.entries())
+            .map(([category, lines]) => [`[${category}]`, ...lines.slice(0, 12)].join('\n'));
     } catch (error) {
         console.warn('[Patty] quick replies unavailable:', error?.message || error);
         return [];
     }
 }
 
-async function getZonesContext(tenantId) {
+function matchesZoneInRecentText(rule = {}, recentConversationText = '') {
+    const normalizedRecent = normalizeLocationLookup(recentConversationText);
+    if (!normalizedRecent) return false;
+    return collectZoneCoverageValues(rule).some((value) => value && (normalizedRecent.includes(value) || value.includes(normalizedRecent)));
+}
+
+async function getZonesContext(tenantId, recentConversationText = '') {
     try {
         const rules = await tenantZoneRulesService.listZoneRules(tenantId, { includeInactive: false });
-        return (Array.isArray(rules) ? rules : [])
+        const sourceRules = Array.isArray(rules) ? rules : [];
+        const matchedRules = sourceRules.filter((rule) => matchesZoneInRecentText(rule, recentConversationText));
+        if (!matchedRules.length) {
+            const names = sourceRules.map((rule) => text(rule.name)).filter(Boolean).slice(0, 30);
+            return names.length ? [`Zonas disponibles: ${names.join(', ')}`] : [];
+        }
+        return matchedRules
             .slice(0, 20)
             .map((rule) => {
                 const meta = safeJsonObject(rule.rulesJson || rule.rules_json || rule.metadata);
@@ -827,7 +872,7 @@ async function getConversationContext(tenantId, moduleId, chatId) {
             AND chat_id = $2
             AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($3))
           ORDER BY created_at DESC
-          LIMIT 20`,
+          LIMIT 10`,
         [tenantId, normalizeChatId(chatId), lower(moduleId)]
     );
     const ordered = [...rows].reverse();
@@ -1278,27 +1323,36 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     const cleanChatId = normalizeChatId(chatId);
     const moduleConfig = await getModuleConfig(cleanTenantId, cleanModuleId);
     const assistantName = getAssistantNameFromModule(moduleConfig || {});
-    const [scheduleState, basePrompt, catalog, quickReplies, zones, customer, commercialStatus, origin, conversation, quote] = await Promise.all([
+    const [scheduleState, basePrompt, quickReplies, customer, commercialStatus, origin, conversation, quote] = await Promise.all([
         resolveScheduleState(cleanTenantId, moduleConfig || {}),
         getBasePrompt(cleanTenantId),
-        getCatalogContext(cleanTenantId),
         getQuickRepliesContext(cleanTenantId, cleanModuleId),
-        getZonesContext(cleanTenantId),
         getCustomerContext(cleanTenantId, cleanModuleId, cleanChatId),
         getCommercialStatusContext(cleanTenantId, cleanModuleId, cleanChatId),
         getOriginContext(cleanTenantId, cleanModuleId, cleanChatId),
         getConversationContext(cleanTenantId, cleanModuleId, cleanChatId),
         getActiveQuoteContext(cleanTenantId, cleanModuleId, cleanChatId)
     ]);
+    const recentConversationText = [
+        ...(Array.isArray(conversation.lines) ? conversation.lines : []),
+        conversation.lastCustomerMessage || ''
+    ].join('\n');
+    const [catalog, zones] = await Promise.all([
+        getCatalogContext(cleanTenantId, recentConversationText),
+        getZonesContext(cleanTenantId, recentConversationText)
+    ]);
     const labels = await getCustomerLabelsContext(cleanTenantId, customer.customerId);
     const recentOrder = formatOrderContext(conversation.recentOrder);
-    const catalogText = lineList(catalog);
-    console.log('[Patty] catalog context preview', {
-        tenantId: cleanTenantId,
-        moduleId: cleanModuleId,
-        chars: catalogText.length,
-        preview: catalogText.slice(0, 200)
-    });
+    const catalogText = lineList(catalog.lines);
+    const mentionedCatalogText = lineList(catalog.mentionedDetails, '');
+    if (String(process.env.PATTY_DEBUG || '').trim().toLowerCase() === 'true') {
+        console.log('[Patty] catalog context preview', {
+            tenantId: cleanTenantId,
+            moduleId: cleanModuleId,
+            chars: catalogText.length,
+            preview: catalogText.slice(0, 200)
+        });
+    }
     const system = [
         basePrompt || 'Eres una asesora comercial experta de WhatsApp. Responde de forma breve, clara, humana y orientada a venta consultiva.',
         '',
@@ -1309,8 +1363,10 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '',
         'NEGOCIO / CATALOGO:',
         catalogText,
+        mentionedCatalogText ? '\nPRODUCTOS MENCIONADOS EN CONVERSACION:' : '',
+        mentionedCatalogText,
         '',
-        'RESPUESTAS RAPIDAS DISPONIBLES:',
+        'RESPUESTAS RAPIDAS PARA PATTY:',
         lineList(quickReplies),
         '',
         'ZONAS DE COBERTURA Y ENVIO:',
@@ -1449,6 +1505,57 @@ async function hasOutboundAfter(tenantId, moduleId, chatId, sinceIso) {
     };
 }
 
+function extractInteractiveButtonId(metadata = {}) {
+    const source = safeJsonObject(metadata);
+    const candidates = [
+        source.buttonReplyId,
+        source.button_reply_id,
+        source.buttonId,
+        source.button_id,
+        source.interactive?.button_reply?.id,
+        source.interactive?.buttonReply?.id,
+        source.button_reply?.id,
+        source.raw?.interactive?.button_reply?.id,
+        source.rawInteractive?.button_reply?.id
+    ];
+    return text(candidates.find((entry) => text(entry))) || '';
+}
+
+async function isQuoteButtonReplyMessage(tenantId, moduleId, chatId, messageId = '') {
+    const cleanMessageId = text(messageId);
+    if (!cleanMessageId) return false;
+    try {
+        const { rows } = await pgQuery(
+            `SELECT body, message_type, metadata
+               FROM tenant_messages
+              WHERE tenant_id = $1
+                AND chat_id = $2
+                AND message_id = $3
+                AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($4))
+              ORDER BY created_at DESC
+              LIMIT 1`,
+            [tenantId, normalizeChatId(chatId), cleanMessageId, lower(moduleId)]
+        );
+        const row = rows?.[0];
+        if (!row) return false;
+        const metadata = safeJsonObject(row.metadata);
+        const body = lower(row.body);
+        const buttonId = lower(extractInteractiveButtonId(metadata));
+        const metaType = lower(metadata.type || metadata.messageType || metadata.message_type || metadata.interactive?.type);
+        const messageType = lower(row.message_type);
+        const isQuoteButton = buttonId.startsWith('quote_confirm_')
+            || buttonId.startsWith('quote_change_')
+            || body.startsWith('quote_confirm_')
+            || body.startsWith('quote_change_');
+        if (isQuoteButton) return true;
+        return (messageType === 'interactive' || metaType === 'interactive' || metaType === 'button_reply')
+            && (body.includes('confirmar') || body.includes('cambios'));
+    } catch (error) {
+        console.warn('[Patty] button_reply guard skipped:', error?.message || error);
+        return false;
+    }
+}
+
 function emitSuggestion(socketEmitter, tenantId, payload) {
     if (typeof socketEmitter === 'function') {
         socketEmitter('patty_suggestion', payload);
@@ -1483,6 +1590,16 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
     const cleanModuleId = lower(moduleId);
     const cleanChatId = normalizeChatId(chatId);
+    const inboundMessageId = text(options.messageId || options.message_id || options.inboundMessageId || options.inbound_message_id);
+    if (await isQuoteButtonReplyMessage(cleanTenantId, cleanModuleId, cleanChatId, inboundMessageId)) {
+        console.log('[Patty] skipped: quote button_reply inbound', {
+            tenantId: cleanTenantId,
+            moduleId: cleanModuleId,
+            chatId: cleanChatId,
+            messageId: inboundMessageId
+        });
+        return;
+    }
     const moduleConfig = await getModuleConfig(cleanTenantId, cleanModuleId);
     const aiConfig = moduleConfig?.aiConfig;
     if (!aiConfig) {

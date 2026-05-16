@@ -6,6 +6,23 @@ import { SaasEntityPage } from '../components/layout';
 
 const text = (value) => String(value ?? '').trim();
 const QUICK_REPLY_EMOJI_SKIN_TONE_STORAGE_KEY = 'chat-emoji-skin-tone:global';
+const QUICK_REPLY_CATEGORIES = Object.freeze([
+    { value: 'general', label: 'General' },
+    { value: 'informacion', label: 'Informacion' },
+    { value: 'catalogo', label: 'Catalogo' },
+    { value: 'cierre', label: 'Cierre' },
+    { value: 'escalado', label: 'Escalado' }
+]);
+
+function normalizeQuickReplyCategory(value = 'general') {
+    const clean = text(value).toLowerCase();
+    return QUICK_REPLY_CATEGORIES.some((entry) => entry.value === clean) ? clean : 'general';
+}
+
+function getQuickReplyCategoryLabel(value = 'general') {
+    const clean = normalizeQuickReplyCategory(value);
+    return QUICK_REPLY_CATEGORIES.find((entry) => entry.value === clean)?.label || 'General';
+}
 
 const QUICK_REPLY_FALLBACK_VARIABLE_CATEGORIES = Object.freeze([
     {
@@ -227,6 +244,8 @@ export default function QuickRepliesSection(props = {}) {
                 text: '',
                 mediaUrl: '',
                 buttons: [],
+                category: 'general',
+                availableForPatty: false,
                 isActive: true,
                 assets: []
             });
@@ -243,6 +262,8 @@ export default function QuickRepliesSection(props = {}) {
                     title: text(button?.title || button?.label || button?.text).slice(0, 20)
                 }))
                 .slice(0, 3),
+            category: normalizeQuickReplyCategory(item.category),
+            availableForPatty: item.availableForPatty === true,
             isActive: item.isActive !== false,
             assets: assets.map((asset) => text(asset?.url || asset?.mediaUrl || asset?.filename || asset?.fileName)).filter(Boolean)
         });
@@ -258,6 +279,8 @@ export default function QuickRepliesSection(props = {}) {
                 title: text(button?.title || button?.label || button?.text).slice(0, 20)
             }))
             .slice(0, 3),
+        category: normalizeQuickReplyCategory(quickReplyItemForm.category),
+        availableForPatty: quickReplyItemForm.availableForPatty === true,
         isActive: quickReplyItemForm.isActive !== false,
         assets: (Array.isArray(quickReplyItemFormAssets) ? quickReplyItemFormAssets : [])
             .map((asset) => text(asset?.url || asset?.mediaUrl || asset?.filename || asset?.fileName))
@@ -563,6 +586,36 @@ export default function QuickRepliesSection(props = {}) {
                                 <label>Mensaje</label>
                                 <textarea ref={quickReplyTextRef} value={quickReplyItemForm.text || ''} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, text: event.target.value }))} rows={8} placeholder="Escribe el mensaje. Puedes insertar variables desde la columna central." disabled={busy || uploadingQuickReplyAssets} />
                             </div>
+                            <div className="saas-admin-form-row">
+                                <label>Categoria</label>
+                                <select
+                                    value={normalizeQuickReplyCategory(quickReplyItemForm.category)}
+                                    onChange={(event) => {
+                                        const category = normalizeQuickReplyCategory(event.target.value);
+                                        setQuickReplyItemForm?.((prev) => ({
+                                            ...prev,
+                                            category,
+                                            availableForPatty: category === 'general' ? false : prev.availableForPatty === true
+                                        }));
+                                    }}
+                                    disabled={busy || uploadingQuickReplyAssets}
+                                >
+                                    {QUICK_REPLY_CATEGORIES.map((category) => (
+                                        <option key={`qr_category_${category.value}`} value={category.value}>{category.label}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            {normalizeQuickReplyCategory(quickReplyItemForm.category) !== 'general' ? (
+                                <label className="saas-admin-module-toggle">
+                                    <input
+                                        type="checkbox"
+                                        checked={quickReplyItemForm.availableForPatty === true}
+                                        onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, availableForPatty: event.target.checked }))}
+                                        disabled={busy || uploadingQuickReplyAssets}
+                                    />
+                                    <span>Disponible para Patty IA</span>
+                                </label>
+                            ) : null}
                             <div className="saas-quick-reply-format-toolbar" aria-label="Formato WhatsApp">
                                 <span>Formato WhatsApp</span>
                                 <div className="saas-quick-reply-emoji-wrap">
@@ -826,7 +879,7 @@ export default function QuickRepliesSection(props = {}) {
                                 }}
                             >
                                 <span>{item.label || item.itemId}</span>
-                                <small>{item.isActive === false ? 'Inactiva' : 'Activa'} | {item.text || 'Solo adjuntos'}</small>
+                                <small>{getQuickReplyCategoryLabel(item.category)} | {item.availableForPatty ? 'Patty IA' : 'No Patty'} | {item.isActive === false ? 'Inactiva' : 'Activa'} | {item.text || 'Solo adjuntos'}</small>
                             </button>
                         ))}
                     </div>
@@ -839,6 +892,8 @@ export default function QuickRepliesSection(props = {}) {
                         </div>
                         <div className="saas-admin-detail-grid">
                             <div className="saas-admin-detail-field"><span>Etiqueta</span><strong>{selectedQuickReplyItem.label || '-'}</strong></div>
+                            <div className="saas-admin-detail-field"><span>Categoria</span><strong>{getQuickReplyCategoryLabel(selectedQuickReplyItem.category)}</strong></div>
+                            <div className="saas-admin-detail-field"><span>Patty</span><strong>{selectedQuickReplyItem.availableForPatty ? 'Disponible' : 'No disponible'}</strong></div>
                             <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedQuickReplyItem.isActive === false ? 'Inactiva' : 'Activa'}</strong></div>
                             <div className="saas-admin-detail-field"><span>Adjuntos</span><strong>{selectedQuickReplyItemMediaAssets.length}</strong></div>
                             <div className="saas-admin-detail-field"><span>Actualizado</span><strong>{formatDateTimeLabel(selectedQuickReplyItem.updatedAt)}</strong></div>

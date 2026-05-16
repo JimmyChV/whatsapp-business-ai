@@ -71,9 +71,18 @@ export const EMPTY_QUICK_REPLY_ITEM_FORM = {
     mediaFileName: '',
     mediaAssets: [],
     buttons: [],
+    category: 'general',
+    availableForPatty: false,
     isActive: true,
     sortOrder: '100'
 };
+
+const QUICK_REPLY_CATEGORY_KEYS = new Set(['general', 'informacion', 'catalogo', 'cierre', 'escalado']);
+
+export function normalizeQuickReplyCategory(value = 'general') {
+    const clean = String(value || '').trim().toLowerCase();
+    return QUICK_REPLY_CATEGORY_KEYS.has(clean) ? clean : 'general';
+}
 
 export function normalizeQuickReplyLibraryItem(item = {}) {
     const source = item && typeof item === 'object' ? item : {};
@@ -111,6 +120,10 @@ export function normalizeQuickReplyItem(item = {}) {
     });
     const primaryMedia = mediaAssets[0] || null;
     const buttons = normalizeQuickReplyButtons(source.buttons || metadata.buttons);
+    const category = normalizeQuickReplyCategory(source.category || metadata.category);
+    const availableForPatty = category === 'general'
+        ? false
+        : (source.availableForPatty === true || source.available_for_patty === true || metadata.availableForPatty === true || metadata.available_for_patty === true);
     return {
         itemId,
         libraryId: String(source.libraryId || '').trim().toUpperCase(),
@@ -122,6 +135,8 @@ export function normalizeQuickReplyItem(item = {}) {
         mediaFileName: String(primaryMedia?.fileName || source.mediaFileName || '').trim(),
         mediaSizeBytes: Number.isFinite(Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes)) ? Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes) : null,
         buttons,
+        category,
+        availableForPatty,
         isActive: source.isActive !== false,
         sortOrder: Number.isFinite(Number(source.sortOrder)) ? Number(source.sortOrder) : 100,
         metadata,
@@ -240,6 +255,8 @@ export function buildQuickReplyItemPayload(form = {}, { libraryId = '' } = {}) {
     });
     const primaryMedia = mediaAssets[0] || null;
     const buttons = normalizeQuickReplyButtons(source.buttons);
+    const category = normalizeQuickReplyCategory(source.category);
+    const availableForPatty = category === 'general' ? false : source.availableForPatty === true;
     return {
         itemId: String(source.itemId || '').trim().toUpperCase() || undefined,
         libraryId: String(source.libraryId || libraryId || '').trim().toUpperCase(),
@@ -251,6 +268,8 @@ export function buildQuickReplyItemPayload(form = {}, { libraryId = '' } = {}) {
         mediaFileName: String(primaryMedia?.fileName || source.mediaFileName || '').trim() || null,
         mediaSizeBytes: Number.isFinite(Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes)) ? Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes) : null,
         buttons,
+        category,
+        availableForPatty,
         isActive: source.isActive !== false,
         sortOrder: Math.max(0, Math.min(9999, Number(source.sortOrder || 100) || 100))
     };

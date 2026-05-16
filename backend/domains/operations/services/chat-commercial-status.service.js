@@ -527,7 +527,7 @@ function triggerAutomationAfterCommercialTransition(cleanTenantId, next = {}, pr
                         const automationAgentMeta = {
                             sentByUserId: 'automation',
                             sentByName: assistantName,
-                            sentByRole: 'system',
+                            sentByRole: 'assistant',
                             sentViaModuleId: automationModuleId
                         };
                         const within24h = rule.quickReplyCode
