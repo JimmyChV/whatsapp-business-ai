@@ -496,13 +496,54 @@ async function getZonesContext(tenantId) {
             .slice(0, 20)
             .map((rule) => {
                 const meta = safeJsonObject(rule.rulesJson || rule.rules_json || rule.metadata);
-                return `- ${text(rule.name)}${text(meta.description || meta.notes) ? `: ${text(meta.description || meta.notes)}` : ''}`;
+                const coverageParts = [
+                    ...ensureTextArray(meta.districts || meta.districtNames || meta.distritos),
+                    ...ensureTextArray(meta.provinces || meta.provinceNames || meta.provincias),
+                    ...ensureTextArray(meta.departments || meta.departmentNames || meta.departamentos)
+                ];
+                const coverage = text(meta.description || meta.notes)
+                    || Array.from(new Set(coverageParts)).join(', ')
+                    || 'Cobertura no detallada';
+                const shippingOptions = Array.isArray(rule.shippingOptions || rule.shipping_options)
+                    ? (rule.shippingOptions || rule.shipping_options)
+                    : [];
+                const shippingLines = shippingOptions
+                    .filter((item) => item?.is_active !== false && item?.isActive !== false)
+                    .map((item) => {
+                        const type = lower(item.type) === 'courier' ? `Courier ${text(item.label) || 'Courier'}` : (text(item.label) || 'Delivery propio');
+                        const cost = money(item.cost);
+                        const freeFrom = money(item.free_from ?? item.freeFrom);
+                        const estimatedTime = text(item.estimated_time || item.estimatedTime);
+                        return [
+                            `    - ${type}: ${cost !== null ? `S/ ${cost.toFixed(2)}` : 'Costo por confirmar'}`,
+                            freeFrom !== null ? `      (gratis en pedidos +S/ ${freeFrom.toFixed(2)})` : '',
+                            estimatedTime ? `      Tiempo: ${estimatedTime}` : ''
+                        ].filter(Boolean).join('\n');
+                    });
+                const payments = safeJsonObject(rule.paymentMethods || rule.payment_methods);
+                const paymentLabels = [
+                    payments.yape ? 'Yape' : '',
+                    payments.plin ? 'Plin' : '',
+                    payments.bank_transfer || payments.bankTransfer ? 'Transferencia bancaria' : '',
+                    payments.credit_card || payments.creditCard ? 'Tarjeta de credito' : ''
+                ].filter(Boolean);
+                return [
+                    `${text(rule.name)}:`,
+                    `  Cobertura: ${coverage}`,
+                    '  Envio disponible:',
+                    shippingLines.length ? shippingLines.join('\n') : '    - Sin opciones de envio configuradas',
+                    `  Pagos aceptados: ${paymentLabels.length ? paymentLabels.join(', ') : 'No configurados'}`
+                ].join('\n');
             })
             .filter(Boolean);
     } catch (error) {
         console.warn('[Patty] zones unavailable:', error?.message || error);
         return [];
     }
+}
+
+function ensureTextArray(value = []) {
+    return (Array.isArray(value) ? value : [value]).map(text).filter(Boolean);
 }
 
 async function getCustomerContext(tenantId, moduleId, chatId) {
@@ -777,6 +818,21 @@ async function createAndSendPattyQuote({ tenantId, moduleId, chatId, assistantNa
         metadata
     });
     const effectiveQuoteId = text(createdQuote?.quoteId || quoteId);
+    try {
+        await chatCommercialStatusService.upsertChatCommercialStatus(cleanTenantId, {
+            chatId: cleanChatId,
+            scopeModuleId: cleanModuleId,
+            status: 'cotizado',
+            source: 'system',
+            reason: 'patty_quote_created',
+            metadata: {
+                quoteId: effectiveQuoteId,
+                quoteSource: 'patty'
+            }
+        });
+    } catch (error) {
+        console.warn('[Patty] quote created but commercial status cotizado update skipped:', error?.message || error);
+    }
     const quoteBody = buildPattyQuoteMessageBody({
         quoteId: effectiveQuoteId,
         items,
@@ -897,7 +953,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         'RESPUESTAS RAPIDAS DISPONIBLES:',
         lineList(quickReplies),
         '',
-        'ZONAS DE DELIVERY:',
+        'ZONAS DE COBERTURA Y ENVIO:',
         lineList(zones),
         '',
         'DATOS DEL CLIENTE:',
@@ -923,6 +979,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '- Si el cliente claramente acepta o pide una cotizacion, agrega quoteRequest con products usando el titulo EXACTO del catalogo: {"products":[{"title":"Nombre exacto del producto","qty":1}],"note":"opcional"}.',
         '- El title debe copiarse del catalogo tal como aparece despues del SKU entre corchetes. No inventes SKUs ni codigos. Si incluyes sku, debe ser exactamente uno de los SKUs entre corchetes.',
         '- Incluye quoteRequest solo cuando haya una aceptacion o solicitud clara de cotizacion.',
+        '- Cuando el cliente mencione su ubicacion, busca en las zonas de cobertura y responde con las opciones de envio y metodos de pago disponibles para esa zona. Si la ubicacion no esta en cobertura, dilo claramente.',
         '- No digas "Sugerencia", no expliques tu razonamiento y no inventes datos.',
         '- Si falta informacion, pregunta de forma breve y amable.',
         '- Mantén el tono comercial, cercano y natural.'
