@@ -666,7 +666,7 @@ function createSocketWaEventsBridgeService({
                                     cleanScopeModuleId,
                                     relatedChatIdBase,
                                     emitToRuntimeContext,
-                                    { inboundAt: activityAtIso, messageId, emitCommercialStatusUpdated }
+                                    { inboundAt: activityAtIso, messageId, emitCommercialStatusUpdated, persistMessageHistory }
                                 ).catch((error) => {
                                     console.warn('[WA][Patty] intervention scheduling warning:', String(error?.message || error));
                                 });

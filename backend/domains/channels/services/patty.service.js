@@ -838,7 +838,8 @@ async function createAndSendPattyQuote({
     assistantName,
     quoteRequest,
     emitToRuntimeContext,
-    emitCommercialStatusUpdated
+    emitCommercialStatusUpdated,
+    persistMessageHistory
 } = {}) {
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
     const cleanModuleId = lower(moduleId);
@@ -941,15 +942,16 @@ async function createAndSendPattyQuote({
         sentMessageId = text(sentMessage?.id?._serialized || sentMessage?.id || sentMessage?.messageId || sentMessage?.wamid);
     }
 
+    const syntheticSentMessage = buildSyntheticInteractiveSentMessage({
+        messageId: sentMessageId,
+        chatId: cleanChatId,
+        body: quoteBody,
+        interactive,
+        quotedMessageId: ''
+    });
+    const outgoingOrderPayload = buildOutgoingOrderPayload(normalizedQuote);
+
     if (typeof emitToRuntimeContext === 'function') {
-        const syntheticSentMessage = buildSyntheticInteractiveSentMessage({
-            messageId: sentMessageId,
-            chatId: cleanChatId,
-            body: quoteBody,
-            interactive,
-            quotedMessageId: ''
-        });
-        const outgoingOrderPayload = buildOutgoingOrderPayload(normalizedQuote);
         emitToRuntimeContext('message', {
             id: sentMessageId || `local_patty_quote_${Date.now().toString(36)}`,
             from: null,
@@ -973,6 +975,38 @@ async function createAndSendPattyQuote({
             patty: true,
             automationSource: 'patty_quote'
         });
+    }
+
+    if (typeof persistMessageHistory === 'function') {
+        try {
+            await persistMessageHistory(cleanTenantId, {
+                msg: syntheticSentMessage || {
+                    id: { _serialized: sentMessageId },
+                    to: cleanChatId,
+                    body: quoteBody,
+                    fromMe: true,
+                    type: 'interactive',
+                    ack: 1,
+                    timestamp: Math.floor(Date.now() / 1000),
+                    hasMedia: false,
+                    _data: { interactive }
+                },
+                senderMeta: null,
+                fileMeta: null,
+                order: outgoingOrderPayload,
+                location: null,
+                quotedMessage: null,
+                agentMeta: {
+                    sentByUserId: 'patty',
+                    sentByName: metadata.assistantName,
+                    sentByRole: 'assistant',
+                    sentViaModuleId: cleanModuleId
+                },
+                moduleContext: { moduleId: cleanModuleId }
+            });
+        } catch (persistError) {
+            console.warn('[Patty] quote card persistence skipped:', persistError?.message || persistError);
+        }
     }
 
     const sentAt = new Date().toISOString();
@@ -1390,7 +1424,8 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                         assistantName,
                         quoteRequest: result.quoteRequest,
                         emitToRuntimeContext: socketEmitter,
-                        emitCommercialStatusUpdated: options.emitCommercialStatusUpdated
+                        emitCommercialStatusUpdated: options.emitCommercialStatusUpdated,
+                        persistMessageHistory: options.persistMessageHistory
                     });
                 } catch (quoteError) {
                     console.warn('[Patty] quote request failed; text messages already sent:', quoteError?.message || quoteError);
