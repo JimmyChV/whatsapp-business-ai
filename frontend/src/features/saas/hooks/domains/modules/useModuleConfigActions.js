@@ -74,7 +74,7 @@ export default function useModuleConfigActions({
             aiAssistantName: 'Patty',
             aiWithinHoursMode: 'review',
             aiOutsideHoursMode: 'autonomous',
-            aiWaitMinutes: 5
+            aiWaitSeconds: 15
         }));
     };
 

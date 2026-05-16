@@ -23,7 +23,7 @@ function buildWaModulePayload({
         ? existingMetadata.cloudConfig
         : {};
     const catalogIds = toCleanCatalogIds(waModuleForm.catalogIds || []);
-    const waitMinutes = Math.max(1, Math.min(60, Number.parseInt(String(waModuleForm.aiWaitMinutes ?? ''), 10) || 5));
+    const waitSeconds = Math.max(5, Math.min(300, Number.parseInt(String(waModuleForm.aiWaitSeconds ?? ''), 10) || 15));
     const withinHoursMode = ['review', 'off'].includes(String(waModuleForm.aiWithinHoursMode || '').trim())
         ? String(waModuleForm.aiWithinHoursMode || '').trim()
         : 'review';
@@ -47,7 +47,7 @@ function buildWaModulePayload({
                 assistantName: String(waModuleForm.aiAssistantName || '').trim() || 'Patty',
                 withinHoursMode,
                 outsideHoursMode,
-                waitMinutes
+                waitSeconds
             },
             moduleSettings: {
                 catalogMode: CATALOG_MODE_OPTIONS.includes(String(waModuleForm.moduleCatalogMode || '').trim())

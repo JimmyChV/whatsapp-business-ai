@@ -24,6 +24,9 @@ export default function ModulesConfigModuleReadView({
     const outsideHoursModeLabel = aiConfig.outsideHoursMode === 'autonomous'
         ? 'Autonomo (responde solo)'
         : (aiConfig.outsideHoursMode === 'off' ? 'Desactivado' : 'Sugerencias (pendiente aprobacion)');
+    const waitSeconds = Number.isFinite(Number(aiConfig.waitSeconds))
+        ? Math.max(5, Math.min(300, Number(aiConfig.waitSeconds)))
+        : (Number.isFinite(Number(aiConfig.waitMinutes)) ? Math.max(5, Math.min(300, Number(aiConfig.waitMinutes) * 60)) : 15);
 
     return (
         <>
@@ -94,7 +97,7 @@ export default function ModulesConfigModuleReadView({
                     <div className="saas-admin-detail-field"><span>NOMBRE</span><strong>{aiConfig.assistantName || 'Patty'}</strong></div>
                     <div className="saas-admin-detail-field"><span>DENTRO DE HORARIO</span><strong>{withinHoursModeLabel}</strong></div>
                     <div className="saas-admin-detail-field"><span>FUERA DE HORARIO</span><strong>{outsideHoursModeLabel}</strong></div>
-                    <div className="saas-admin-detail-field"><span>TIEMPO DE ESPERA</span><strong>{aiConfig.waitMinutes || 5} min</strong></div>
+                    <div className="saas-admin-detail-field"><span>TIEMPO DE ESPERA</span><strong>{waitSeconds} seg</strong></div>
                 </div>
             </div>
 

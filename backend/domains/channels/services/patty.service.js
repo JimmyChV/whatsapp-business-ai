@@ -13,6 +13,10 @@ const { getChatSuggestion } = require('../../operations/services/ai.service');
 const waClient = require('./wa-provider.service');
 
 const DEFAULT_ASSISTANT_NAME = 'Patty';
+const DEFAULT_WAIT_SECONDS = 15;
+const MIN_WAIT_SECONDS = 5;
+const MAX_WAIT_SECONDS = 300;
+const pattyChatDebounce = new Map();
 
 function text(value = '') {
     return String(value ?? '').trim();
@@ -24,6 +28,32 @@ function lower(value = '') {
 
 function normalizeChatId(value = '') {
     return text(value).split('::mod::')[0].trim();
+}
+
+function buildDebounceKey(tenantId, moduleId, chatId) {
+    return [
+        normalizeTenantId(tenantId || DEFAULT_TENANT_ID),
+        lower(moduleId),
+        normalizeChatId(chatId)
+    ].join('::');
+}
+
+function clampWaitSeconds(value) {
+    const parsed = Number.parseInt(String(value ?? ''), 10);
+    if (!Number.isFinite(parsed)) return DEFAULT_WAIT_SECONDS;
+    return Math.max(MIN_WAIT_SECONDS, Math.min(MAX_WAIT_SECONDS, parsed));
+}
+
+function resolveWaitSeconds(aiConfig = {}) {
+    const directSeconds = Number.parseInt(String(aiConfig.waitSeconds ?? aiConfig.wait_seconds ?? ''), 10);
+    if (Number.isFinite(directSeconds)) return clampWaitSeconds(directSeconds);
+
+    const legacyMinutes = Number.parseFloat(String(aiConfig.waitMinutes ?? aiConfig.wait_minutes ?? ''));
+    if (Number.isFinite(legacyMinutes) && legacyMinutes > 0) {
+        return clampWaitSeconds(Math.round(legacyMinutes * 60));
+    }
+
+    return DEFAULT_WAIT_SECONDS;
 }
 
 function phoneCandidatesFromChatId(chatId = '') {
@@ -570,19 +600,33 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
         return;
     }
 
-    const waitMinutes = Math.max(1, Math.min(60, Number(aiConfig.waitMinutes || aiConfig.wait_minutes || 5) || 5));
+    const waitSeconds = resolveWaitSeconds(aiConfig);
     const inboundAt = text(options.inboundAt) || new Date().toISOString();
+    const debounceKey = buildDebounceKey(cleanTenantId, cleanModuleId, cleanChatId);
+    const previousTimer = pattyChatDebounce.get(debounceKey);
+    if (previousTimer) {
+        clearTimeout(previousTimer);
+        console.log('[Patty] debounce reset: previous timer cancelled', {
+            tenantId: cleanTenantId,
+            moduleId: cleanModuleId,
+            chatId: cleanChatId,
+            waitSeconds
+        });
+    }
     console.log('[Patty] scheduled intervention', {
         tenantId: cleanTenantId,
         moduleId: cleanModuleId,
         chatId: cleanChatId,
         mode,
-        waitMinutes,
+        waitSeconds,
         inboundAt,
         scheduleOpen: scheduleState.open
     });
     const timer = setTimeout(async () => {
         try {
+            if (pattyChatDebounce.get(debounceKey) === timer) {
+                pattyChatDebounce.delete(debounceKey);
+            }
             console.log('[Patty] timer fired', {
                 tenantId: cleanTenantId,
                 moduleId: cleanModuleId,
@@ -645,9 +689,13 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 chatId: cleanChatId
             });
         } catch (error) {
+            if (pattyChatDebounce.get(debounceKey) === timer) {
+                pattyChatDebounce.delete(debounceKey);
+            }
             console.warn('[Patty] intervention skipped:', error?.message || error);
         }
-    }, waitMinutes * 60 * 1000);
+    }, waitSeconds * 1000);
+    pattyChatDebounce.set(debounceKey, timer);
     if (typeof timer.unref === 'function') timer.unref();
 }
 

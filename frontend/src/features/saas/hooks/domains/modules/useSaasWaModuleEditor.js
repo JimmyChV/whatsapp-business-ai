@@ -90,6 +90,10 @@ export default function useSaasWaModuleEditor({
 
         setSelectedWaModuleId(item.moduleId);
         setEditingWaModuleId(item.moduleId);
+        const waitSeconds = Number.isFinite(Number(item?.aiConfig?.waitSeconds))
+            ? Math.max(5, Math.min(300, Number(item.aiConfig.waitSeconds)))
+            : (Number.isFinite(Number(item?.aiConfig?.waitMinutes)) ? Math.max(5, Math.min(300, Number(item.aiConfig.waitMinutes) * 60)) : 15);
+
         setWaModuleForm({
             moduleId: item.moduleId,
             name: item.name,
@@ -103,7 +107,7 @@ export default function useSaasWaModuleEditor({
             aiAssistantName: item?.aiConfig?.assistantName || 'Patty',
             aiWithinHoursMode: item?.aiConfig?.withinHoursMode || 'review',
             aiOutsideHoursMode: item?.aiConfig?.outsideHoursMode || 'autonomous',
-            aiWaitMinutes: item?.aiConfig?.waitMinutes || 5,
+            aiWaitSeconds: waitSeconds,
             moduleCatalogMode: item.moduleCatalogMode || 'inherit',
             moduleAiEnabled: item?.moduleFeatureFlags?.aiPro !== false,
             moduleCatalogEnabled: item?.moduleFeatureFlags?.catalog !== false,

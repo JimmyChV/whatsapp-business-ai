@@ -124,12 +124,18 @@ function createTenantAdminPayloadSanitizers({
         const outsideHoursMode = ['autonomous', 'review', 'off'].includes(String(source.outsideHoursMode || '').trim())
             ? String(source.outsideHoursMode || '').trim()
             : 'autonomous';
-        const parsedWaitMinutes = Number.parseInt(String(source.waitMinutes ?? ''), 10);
+        const parsedWaitSeconds = Number.parseInt(String(source.waitSeconds ?? source.wait_seconds ?? ''), 10);
+        const parsedWaitMinutes = Number.parseFloat(String(source.waitMinutes ?? source.wait_minutes ?? ''));
+        const waitSeconds = Number.isFinite(parsedWaitSeconds)
+            ? Math.max(5, Math.min(300, parsedWaitSeconds))
+            : (Number.isFinite(parsedWaitMinutes) && parsedWaitMinutes > 0
+                ? Math.max(5, Math.min(300, Math.round(parsedWaitMinutes * 60)))
+                : 15);
         return {
             assistantName: String(source.assistantName || '').trim() || 'Patty',
             withinHoursMode,
             outsideHoursMode,
-            waitMinutes: Number.isFinite(parsedWaitMinutes) ? Math.max(1, Math.min(60, parsedWaitMinutes)) : 5
+            waitSeconds
         };
     }
 

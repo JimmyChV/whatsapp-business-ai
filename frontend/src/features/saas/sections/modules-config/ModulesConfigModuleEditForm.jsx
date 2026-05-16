@@ -12,10 +12,10 @@ const OUTSIDE_HOURS_MODE_OPTIONS = [
     { value: 'off', label: 'Desactivado' }
 ];
 
-function clampWaitMinutes(value) {
+function clampWaitSeconds(value) {
     const parsed = Number.parseInt(String(value ?? ''), 10);
-    if (!Number.isFinite(parsed)) return 5;
-    return Math.max(1, Math.min(60, parsed));
+    if (!Number.isFinite(parsed)) return 15;
+    return Math.max(5, Math.min(300, parsed));
 }
 
 export default function ModulesConfigModuleEditForm({
@@ -189,14 +189,14 @@ export default function ModulesConfigModuleEditForm({
                         </select>
                     </div>
                     <div className="saas-admin-field">
-                        <label htmlFor="wa-module-ai-wait">minutos antes de intervenir</label>
+                        <label htmlFor="wa-module-ai-wait">Segundos antes de intervenir</label>
                         <input
                             id="wa-module-ai-wait"
                             type="number"
-                            min="1"
-                            max="60"
-                            value={waModuleForm.aiWaitMinutes || 5}
-                            onChange={(event) => setWaModuleForm((prev) => ({ ...prev, aiWaitMinutes: clampWaitMinutes(event.target.value) }))}
+                            min="5"
+                            max="300"
+                            value={waModuleForm.aiWaitSeconds || 15}
+                            onChange={(event) => setWaModuleForm((prev) => ({ ...prev, aiWaitSeconds: clampWaitSeconds(event.target.value) }))}
                             disabled={!settingsTenantId || busy}
                         />
                     </div>

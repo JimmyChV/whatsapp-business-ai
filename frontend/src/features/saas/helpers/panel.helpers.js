@@ -125,7 +125,7 @@ export const EMPTY_WA_MODULE_FORM = {
     aiAssistantName: 'Patty',
     aiWithinHoursMode: 'review',
     aiOutsideHoursMode: 'autonomous',
-    aiWaitMinutes: 5,
+    aiWaitSeconds: 15,
     moduleCatalogMode: 'inherit',
     moduleAiEnabled: true,
     moduleCatalogEnabled: true,
@@ -247,12 +247,18 @@ export function normalizeWaModule(item = {}) {
     const outsideHoursMode = ['autonomous', 'review', 'off'].includes(String(aiConfigSource.outsideHoursMode || '').trim())
         ? String(aiConfigSource.outsideHoursMode || '').trim()
         : 'autonomous';
-    const parsedWaitMinutes = Number.parseInt(String(aiConfigSource.waitMinutes ?? ''), 10);
+    const parsedWaitSeconds = Number.parseInt(String(aiConfigSource.waitSeconds ?? aiConfigSource.wait_seconds ?? ''), 10);
+    const parsedWaitMinutes = Number.parseFloat(String(aiConfigSource.waitMinutes ?? aiConfigSource.wait_minutes ?? ''));
+    const waitSeconds = Number.isFinite(parsedWaitSeconds)
+        ? Math.max(5, Math.min(300, parsedWaitSeconds))
+        : (Number.isFinite(parsedWaitMinutes) && parsedWaitMinutes > 0
+            ? Math.max(5, Math.min(300, Math.round(parsedWaitMinutes * 60)))
+            : 15);
     const aiConfig = {
         assistantName: String(aiConfigSource.assistantName || '').trim() || 'Patty',
         withinHoursMode,
         outsideHoursMode,
-        waitMinutes: Number.isFinite(parsedWaitMinutes) ? Math.max(1, Math.min(60, parsedWaitMinutes)) : 5
+        waitSeconds
     };
 
     return {
