@@ -9,6 +9,8 @@ const tenantScheduleService = require('../../tenant/services/tenant-schedule.ser
 const quickRepliesManagerService = require('../../tenant/services/quick-replies-manager.service');
 const tenantZoneRulesService = require('../../tenant/services/tenant-zone-rules.service');
 const waModulesService = require('../../tenant/services/wa-modules.service');
+const quotesService = require('../../tenant/services/quotes.service');
+const chatCommercialStatusService = require('../../operations/services/chat-commercial-status.service');
 const { getChatSuggestion } = require('../../operations/services/ai.service');
 const waClient = require('./wa-provider.service');
 
@@ -126,6 +128,42 @@ function normalizePattyMessages(rawSuggestion = '') {
     if (messages.length) return messages;
     const fallback = text(rawSuggestion);
     return fallback ? [{ text: fallback, quotedMessageId: null }] : [];
+}
+
+function normalizePattyQuoteRequest(rawSuggestion = '') {
+    const parsed = extractJsonObject(rawSuggestion);
+    const source = safeJsonObject(parsed?.quoteRequest || parsed?.quote_request);
+    const products = Array.isArray(source.products) ? source.products : [];
+    const normalizedProducts = products
+        .map((item) => ({
+            sku: text(item?.sku || item?.item_id || item?.productId || item?.product_id).toUpperCase(),
+            qty: Math.max(1, Number.parseInt(String(item?.qty ?? item?.quantity ?? 1), 10) || 1)
+        }))
+        .filter((item) => item.sku)
+        .slice(0, 20);
+    if (!normalizedProducts.length) return null;
+    return {
+        products: normalizedProducts,
+        note: text(source.note || source.notes) || null
+    };
+}
+
+function buildQuoteId() {
+    return `quote_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function buildQuoteLineId(index = 0) {
+    return `line_${Date.now().toString(36)}_${index + 1}_${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function formatSoles(value) {
+    return `S/ ${formatMoney(value)}`;
+}
+
+function toTitleCase(value = '') {
+    return text(value)
+        .toLocaleLowerCase('es-PE')
+        .replace(/(^|\s)(\S)/g, (_, space, letter) => `${space}${letter.toLocaleUpperCase('es-PE')}`);
 }
 
 async function pgQuery(sql, params = []) {
@@ -279,13 +317,118 @@ async function getCatalogContext(tenantId) {
             if (!text(row.title) || !display) return null;
             return {
                 score: display,
-                line: `- ${text(row.title)}: S/ ${display.toFixed(2)}${regular && sale && regular > sale ? ` (regular S/ ${regular.toFixed(2)})` : ''}`
+                line: `- SKU ${text(row.item_id)} - ${text(row.title)}: S/ ${display.toFixed(2)}${regular && sale && regular > sale ? ` (regular S/ ${regular.toFixed(2)})` : ''}`
             };
         })
         .filter(Boolean)
         .sort((a, b) => b.score - a.score)
         .slice(0, 20)
         .map((item) => item.line);
+}
+
+async function getCatalogItemsForQuoteRequest(tenantId, products = []) {
+    const skus = products.map((item) => text(item?.sku).toUpperCase()).filter(Boolean);
+    if (!skus.length) return [];
+    const placeholders = skus.map((_, index) => `$${index + 2}`).join(', ');
+    const { rows } = await pgQuery(
+        `SELECT item_id, title, price, metadata
+           FROM catalog_items
+          WHERE tenant_id = $1
+            AND UPPER(item_id) IN (${placeholders})`,
+        [tenantId, ...skus]
+    );
+    const catalogMap = new Map(
+        (Array.isArray(rows) ? rows : [])
+            .map((row) => [text(row.item_id).toUpperCase(), row])
+            .filter(([sku]) => sku)
+    );
+    return products
+        .map((requestItem, index) => {
+            const sku = text(requestItem?.sku).toUpperCase();
+            const row = catalogMap.get(sku);
+            if (!row) return null;
+            const metadata = safeJsonObject(row.metadata);
+            const unitPrice = money(metadata.salePrice ?? metadata.sale_price ?? metadata.precio_oferta ?? row.price) || 0;
+            const qty = Math.max(1, Number.parseInt(String(requestItem?.qty ?? 1), 10) || 1);
+            const lineSubtotal = money(qty * unitPrice) || 0;
+            return {
+                lineId: buildQuoteLineId(index),
+                productId: text(row.item_id) || sku,
+                sku: text(row.item_id) || sku,
+                title: text(row.title) || sku,
+                unit: 'und',
+                qty,
+                unitPrice,
+                lineSubtotal,
+                lineDiscountType: 'none',
+                lineDiscountValue: 0,
+                lineDiscountAmount: 0,
+                lineTotal: lineSubtotal,
+                currency: 'PEN'
+            };
+        })
+        .filter(Boolean);
+}
+
+function buildPattyQuoteSummary(items = []) {
+    const subtotal = money(items.reduce((acc, item) => acc + (money(item.lineTotal) || 0), 0)) || 0;
+    return {
+        schemaVersion: 1,
+        currency: 'PEN',
+        itemCount: items.reduce((acc, item) => acc + (Number(item.qty) || 0), 0),
+        subtotal,
+        discount: 0,
+        totalAfterDiscount: subtotal,
+        globalDiscount: 0,
+        deliveryAmount: 0,
+        deliveryFree: true,
+        totalPayable: subtotal
+    };
+}
+
+function buildPattyQuoteMessageBody(quote = {}) {
+    const separator = '──────────────────';
+    const items = Array.isArray(quote.items) ? quote.items : [];
+    const summary = safeJsonObject(quote.summary);
+    const lines = items.flatMap((item) => {
+        const qty = Math.max(1, Number(item.qty) || 1);
+        const unitPrice = money(item.unitPrice) || 0;
+        const lineSubtotal = money(qty * unitPrice) || 0;
+        return [
+            `*${toTitleCase(item.title || item.sku || 'Producto')}*`,
+            `${qty} × ${formatSoles(unitPrice)} = ${formatSoles(lineSubtotal)}`
+        ];
+    });
+    const subtotal = money(summary.subtotal) || 0;
+    const totalPayable = money(summary.totalPayable) || subtotal;
+    return [
+        '📋 *COTIZACIÓN*',
+        separator,
+        '',
+        ...lines,
+        '',
+        separator,
+        `Subtotal:         ${formatSoles(subtotal)}`,
+        'Delivery:         Gratuito',
+        separator,
+        `*TOTAL A PAGAR:   ${formatSoles(totalPayable)}*`,
+        '',
+        separator,
+        '_Lávitat® · La confianza que abraza tu hogar_'
+    ].join('\n').trim();
+}
+
+function buildPattyQuoteInteractiveMessage(quoteId, body) {
+    return {
+        type: 'button',
+        body: { text: text(body) },
+        action: {
+            buttons: [
+                { type: 'reply', reply: { id: `quote_confirm_${text(quoteId)}`, title: 'Confirmar' } },
+                { type: 'reply', reply: { id: `quote_change_${text(quoteId)}`, title: 'Cambios' } }
+            ]
+        }
+    };
 }
 
 async function getQuickRepliesContext(tenantId, moduleId) {
@@ -544,6 +687,128 @@ function formatOrderContext(orderPayload) {
     return `Pedido del catalogo: ${lines.join(', ')}${total ? ` Total: S/ ${total.toFixed(2)}` : ''}`;
 }
 
+async function createAndSendPattyQuote({ tenantId, moduleId, chatId, assistantName, quoteRequest } = {}) {
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const cleanModuleId = lower(moduleId);
+    const cleanChatId = normalizeChatId(chatId);
+    const request = quoteRequest && typeof quoteRequest === 'object' ? quoteRequest : null;
+    if (!request || !Array.isArray(request.products) || !request.products.length) return null;
+
+    const items = await getCatalogItemsForQuoteRequest(cleanTenantId, request.products);
+    if (!items.length) {
+        console.warn('[Patty] quote request skipped: no catalog matches', {
+            tenantId: cleanTenantId,
+            moduleId: cleanModuleId,
+            chatId: cleanChatId,
+            skus: request.products.map((item) => item.sku)
+        });
+        return null;
+    }
+
+    const quoteId = buildQuoteId();
+    const summary = buildPattyQuoteSummary(items);
+    const metadata = {
+        source: 'patty',
+        sourceType: 'quote',
+        assistantName: text(assistantName) || DEFAULT_ASSISTANT_NAME
+    };
+    const createdQuote = await quotesService.createQuoteRecord(cleanTenantId, {
+        quoteId,
+        chatId: cleanChatId,
+        scopeModuleId: cleanModuleId,
+        messageId: null,
+        status: 'draft',
+        currency: 'PEN',
+        itemsJson: items,
+        summaryJson: summary,
+        notes: request.note || null,
+        createdByUserId: null,
+        updatedByUserId: null,
+        sentAt: null,
+        metadata
+    });
+    const effectiveQuoteId = text(createdQuote?.quoteId || quoteId);
+    const quoteBody = buildPattyQuoteMessageBody({
+        quoteId: effectiveQuoteId,
+        items,
+        summary,
+        metadata,
+        notes: request.note || null
+    });
+
+    let sentMessageId = null;
+    const interactive = buildPattyQuoteInteractiveMessage(effectiveQuoteId, quoteBody);
+    if (typeof waClient?.sendInteractiveMessage === 'function') {
+        sentMessageId = await waClient.sendInteractiveMessage(cleanChatId, interactive, {
+            metadata: {
+                agentMeta: {
+                    sentByUserId: 'patty',
+                    sentByName: metadata.assistantName,
+                    sentByRole: 'assistant',
+                    sentViaModuleId: cleanModuleId
+                },
+                patty: true,
+                automationSource: 'patty_quote'
+            }
+        });
+    }
+    if (!sentMessageId) {
+        const sentMessage = await waClient.sendMessage(cleanChatId, quoteBody, {
+            metadata: {
+                agentMeta: {
+                    sentByUserId: 'patty',
+                    sentByName: metadata.assistantName,
+                    sentByRole: 'assistant',
+                    sentViaModuleId: cleanModuleId
+                },
+                patty: true,
+                automationSource: 'patty_quote'
+            }
+        });
+        sentMessageId = text(sentMessage?.id?._serialized || sentMessage?.id || sentMessage?.messageId || sentMessage?.wamid);
+    }
+
+    const sentAt = new Date().toISOString();
+    await quotesService.markQuoteSent(cleanTenantId, {
+        quoteId: effectiveQuoteId,
+        messageId: sentMessageId || null,
+        updatedByUserId: null,
+        sentAt
+    });
+    try {
+        await chatCommercialStatusService.markQuoteSent(cleanTenantId, {
+            chatId: cleanChatId,
+            scopeModuleId: cleanModuleId,
+            source: 'automation',
+            reason: 'patty_quote_generated',
+            changedByUserId: null,
+            at: sentAt,
+            metadata: {
+                quoteId: effectiveQuoteId,
+                messageId: sentMessageId || null
+            }
+        });
+    } catch (error) {
+        console.warn('[Patty] quote sent but commercial status update skipped:', error?.message || error);
+    }
+
+    console.log('[Patty] quote generated and sent', {
+        tenantId: cleanTenantId,
+        moduleId: cleanModuleId,
+        chatId: cleanChatId,
+        quoteId: effectiveQuoteId,
+        messageId: sentMessageId || null,
+        itemCount: summary.itemCount,
+        totalPayable: summary.totalPayable
+    });
+    return {
+        quoteId: effectiveQuoteId,
+        messageId: sentMessageId || null,
+        items,
+        summary
+    };
+}
+
 async function buildPattyContext(tenantId, moduleId, chatId) {
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
     const cleanModuleId = lower(moduleId);
@@ -599,6 +864,8 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '- Cada mensaje debe tener maximo 3 lineas.',
         '- quotedMessageId debe ser el message_id del mensaje CLIENTE mas relevante para esa respuesta.',
         '- Si solo hay un tema, usa un array con un solo mensaje. Maximo 3 mensajes por respuesta.',
+        '- Si el cliente claramente acepta o pide una cotizacion, agrega quoteRequest con products usando SKUs del catalogo: {"products":[{"sku":"SKU","qty":1}],"note":"opcional"}.',
+        '- Incluye quoteRequest solo cuando haya una aceptacion o solicitud clara de cotizacion.',
         '- No digas "Sugerencia", no expliques tu razonamiento y no inventes datos.',
         '- Si falta informacion, pregunta de forma breve y amable.',
         '- Mantén el tono comercial, cercano y natural.'
@@ -632,7 +899,8 @@ async function generatePattySuggestion(tenantId, moduleId, chatId) {
             `Ultimo mensaje del cliente: ${context.lastCustomerMessage}`,
             '',
             'Responde con JSON valido exactamente en este formato:',
-            '{"messages":[{"text":"texto listo para enviar por WhatsApp","quotedMessageId":"message_id inbound relevante o null"}]}'
+            '{"messages":[{"text":"texto listo para enviar por WhatsApp","quotedMessageId":"message_id inbound relevante o null"}],"quoteRequest":{"products":[{"sku":"SKU","qty":1}],"note":"opcional"}}',
+            'Omite quoteRequest si no corresponde generar cotizacion.'
         ].join('\n'),
         null,
         null,
@@ -656,6 +924,7 @@ async function generatePattySuggestion(tenantId, moduleId, chatId) {
         }
     );
     const messages = normalizePattyMessages(rawSuggestion);
+    const quoteRequest = normalizePattyQuoteRequest(rawSuggestion);
     const suggestion = messages.map((item) => item.text).join('\n\n');
     console.log('[Patty] suggestion generated', {
         tenantId: context.tenantId,
@@ -663,9 +932,10 @@ async function generatePattySuggestion(tenantId, moduleId, chatId) {
         chatId: context.chatId,
         suggestionChars: text(suggestion).length,
         messageCount: messages.length,
+        hasQuoteRequest: Boolean(quoteRequest),
         isAiError: text(rawSuggestion).startsWith('Error IA:') || lower(rawSuggestion).includes('ia no configurada')
     });
-    return { ...context, suggestion, messages, rawSuggestion };
+    return { ...context, suggestion, messages, quoteRequest, rawSuggestion };
 }
 
 async function hasOutboundAfter(tenantId, moduleId, chatId, sinceIso) {
@@ -819,6 +1089,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                     moduleId: cleanModuleId,
                     suggestion: result.suggestion,
                     messages,
+                    quoteRequest: result.quoteRequest || null,
                     assistantName,
                     timestamp: Date.now()
                 });
@@ -848,11 +1119,26 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 });
                 if (index < messages.length - 1) await sleep(1500);
             }
+            if (result.quoteRequest) {
+                try {
+                    await sleep(1500);
+                    await createAndSendPattyQuote({
+                        tenantId: cleanTenantId,
+                        moduleId: cleanModuleId,
+                        chatId: cleanChatId,
+                        assistantName,
+                        quoteRequest: result.quoteRequest
+                    });
+                } catch (quoteError) {
+                    console.warn('[Patty] quote request failed; text messages already sent:', quoteError?.message || quoteError);
+                }
+            }
             console.log('[Patty] autonomous message sent', {
                 tenantId: cleanTenantId,
                 moduleId: cleanModuleId,
                 chatId: cleanChatId,
-                messageCount: messages.length
+                messageCount: messages.length,
+                hasQuoteRequest: Boolean(result.quoteRequest)
             });
         } catch (error) {
             if (pattyChatDebounce.get(debounceKey) === timer) {

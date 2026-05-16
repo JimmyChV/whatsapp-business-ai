@@ -906,6 +906,9 @@ class WhatsAppCloudClient extends EventEmitter {
     async sendInteractiveMessage(to, interactive = {}, options = {}) {
         if (!this.isReady) throw new Error('Cloud client not ready');
         const waId = await this.resolveSendWaId(to);
+        const metadataObj = options?.metadata && typeof options.metadata === 'object' && !Array.isArray(options.metadata)
+            ? options.metadata
+            : {};
         const safeInteractive = interactive && typeof interactive === 'object' && !Array.isArray(interactive)
             ? interactive
             : null;
@@ -948,7 +951,8 @@ class WhatsAppCloudClient extends EventEmitter {
             quotedMessageId,
             rawData: compactObject({
                 interactive: safeInteractive,
-                interactiveType: String(safeInteractive?.type || '').trim() || null
+                interactiveType: String(safeInteractive?.type || '').trim() || null,
+                metadata: Object.keys(metadataObj).length > 0 ? metadataObj : null
             })
         }, { incoming: false, emitEvent: 'message_sent' });
 
