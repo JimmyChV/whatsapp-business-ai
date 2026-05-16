@@ -23,7 +23,19 @@ export default function BusinessAiTabSection({
     onUsePattySuggestion = null,
     onDismissPattySuggestion = null
 }) {
-    const hasPattySuggestion = Boolean(String(pattySuggestion?.suggestion || '').trim());
+    const pattyMessages = Array.isArray(pattySuggestion?.messages)
+        ? pattySuggestion.messages
+            .map((item) => ({
+                text: String(item?.text || '').trim(),
+                quotedMessageId: String(item?.quotedMessageId || '').trim() || null
+            }))
+            .filter((item) => item.text)
+        : [];
+    const fallbackSuggestion = String(pattySuggestion?.suggestion || '').trim();
+    const visiblePattyMessages = pattyMessages.length
+        ? pattyMessages
+        : (fallbackSuggestion ? [{ text: fallbackSuggestion, quotedMessageId: null }] : []);
+    const hasPattySuggestion = visiblePattyMessages.length > 0;
     return (
         <div className="ai-tab-shell" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div className="ai-thread-pro" style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -91,10 +103,26 @@ export default function BusinessAiTabSection({
                 >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 800, fontSize: '0.78rem', marginBottom: '6px' }}>
                         <Sparkles size={14} />
-                        {pattySuggestion.assistantName || 'Patty'} sugiere:
+                        {pattySuggestion.assistantName || 'Patty'} sugiere{visiblePattyMessages.length > 1 ? ` (${visiblePattyMessages.length} mensajes)` : ''}:
                     </div>
-                    <div style={{ fontSize: '0.82rem', lineHeight: 1.45, whiteSpace: 'pre-wrap', color: 'var(--text-primary)' }}>
-                        {pattySuggestion.suggestion}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                        {visiblePattyMessages.map((message, index) => (
+                            <div
+                                key={`${message.quotedMessageId || 'patty'}-${index}`}
+                                style={{
+                                    padding: '8px 10px',
+                                    borderRadius: '12px',
+                                    border: '1px solid var(--chat-card-border)',
+                                    background: 'var(--chat-card-surface)',
+                                    fontSize: '0.82rem',
+                                    lineHeight: 1.45,
+                                    whiteSpace: 'pre-wrap',
+                                    color: 'var(--text-primary)'
+                                }}
+                            >
+                                {message.text}
+                            </div>
+                        ))}
                     </div>
                     <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '10px' }}>
                         <button
@@ -129,7 +157,7 @@ export default function BusinessAiTabSection({
                                 opacity: canWriteByAssignment ? 1 : 0.75
                             }}
                         >
-                            Usar respuesta
+                            {visiblePattyMessages.length > 1 ? 'Usar todos' : 'Usar respuesta'}
                         </button>
                     </div>
                 </div>

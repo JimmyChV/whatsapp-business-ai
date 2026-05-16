@@ -502,10 +502,20 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             const currentChatId = String(activeChatId || '').trim();
             if (!incomingChatId || !currentChatId) return;
             if (resolveBaseChatId(incomingChatId) !== resolveBaseChatId(currentChatId)) return;
+            const messages = Array.isArray(event?.messages)
+                ? event.messages
+                    .map((item) => ({
+                        text: String(item?.text || '').trim(),
+                        quotedMessageId: String(item?.quotedMessageId || '').trim() || null
+                    }))
+                    .filter((item) => item.text)
+                : [];
+            const suggestion = String(event?.suggestion || messages.map((item) => item.text).join('\n\n')).trim();
             setPattySuggestion({
                 chatId: incomingChatId,
                 moduleId: String(event?.moduleId || '').trim(),
-                suggestion: String(event?.suggestion || '').trim(),
+                suggestion,
+                messages: messages.length ? messages : (suggestion ? [{ text: suggestion, quotedMessageId: null }] : []),
                 assistantName: String(event?.assistantName || 'Patty').trim() || 'Patty',
                 timestamp: event?.timestamp || Date.now()
             });
@@ -748,7 +758,10 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     canWriteByAssignment={canUseMessageTools}
                     pattySuggestion={pattySuggestion}
                     onUsePattySuggestion={() => {
-                        const suggestion = String(pattySuggestion?.suggestion || '').trim();
+                        const messages = Array.isArray(pattySuggestion?.messages) ? pattySuggestion.messages : [];
+                        const suggestion = messages.length
+                            ? messages.map((item) => String(item?.text || '').trim()).filter(Boolean).join('\n\n')
+                            : String(pattySuggestion?.suggestion || '').trim();
                         if (!suggestion) return;
                         setInputText(suggestion);
                         setPattySuggestion(null);

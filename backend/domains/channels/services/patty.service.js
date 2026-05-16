@@ -82,8 +82,50 @@ function lineList(lines = [], fallback = 'Sin datos disponibles.') {
     return clean.length ? clean.join('\n') : fallback;
 }
 
+function sleep(ms = 0) {
+    return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
 function safeJsonObject(value) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function extractJsonObject(value = '') {
+    const raw = text(value);
+    if (!raw) return null;
+    const candidates = [
+        raw,
+        raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+    ];
+    const firstBrace = raw.indexOf('{');
+    const lastBrace = raw.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+        candidates.push(raw.slice(firstBrace, lastBrace + 1));
+    }
+    for (const candidate of candidates) {
+        try {
+            const parsed = JSON.parse(candidate);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+        } catch (error) {
+            // Try the next candidate.
+        }
+    }
+    return null;
+}
+
+function normalizePattyMessages(rawSuggestion = '') {
+    const parsed = extractJsonObject(rawSuggestion);
+    const rawMessages = Array.isArray(parsed?.messages) ? parsed.messages : [];
+    const messages = rawMessages
+        .map((item) => ({
+            text: text(item?.text).slice(0, 2000),
+            quotedMessageId: text(item?.quotedMessageId || item?.quoted_message_id) || null
+        }))
+        .filter((item) => item.text)
+        .slice(0, 3);
+    if (messages.length) return messages;
+    const fallback = text(rawSuggestion);
+    return fallback ? [{ text: fallback, quotedMessageId: null }] : [];
 }
 
 async function pgQuery(sql, params = []) {
@@ -432,7 +474,7 @@ async function getOriginContext(tenantId, moduleId, chatId) {
 
 async function getConversationContext(tenantId, moduleId, chatId) {
     const { rows } = await pgQuery(
-        `SELECT from_me, body, message_type, order_payload, created_at
+        `SELECT message_id, from_me, body, message_type, order_payload, created_at
            FROM tenant_messages
           WHERE tenant_id = $1
             AND chat_id = $2
@@ -444,9 +486,10 @@ async function getConversationContext(tenantId, moduleId, chatId) {
     const ordered = [...rows].reverse();
     const lines = ordered.map((row) => {
         const who = row.from_me ? 'ASESOR' : 'CLIENTE';
+        const messageId = text(row.message_id);
         const body = text(row.body) || (lower(row.message_type) === 'order' ? '[Pedido catalogo]' : `[${text(row.message_type) || 'mensaje'}]`);
         const time = row.created_at ? new Date(row.created_at).toLocaleString('es-PE', { timeZone: 'America/Lima' }) : '';
-        return `[${who}]: ${body}${time ? ` (${time})` : ''}`;
+        return `[${who}${messageId ? ` id=${messageId}` : ''}]: ${body}${time ? ` (${time})` : ''}`;
     });
     const lastInbound = [...rows].find((row) => row.from_me !== true && text(row.body));
     const recentOrder = rows.find((row) => row.order_payload && Object.keys(safeJsonObject(row.order_payload)).length > 0);
@@ -550,7 +593,12 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         recentOrder ? `\n${recentOrder}` : '',
         '',
         'INSTRUCCIONES:',
-        '- Devuelve solo el texto exacto listo para enviar al cliente.',
+        '- Devuelve exclusivamente JSON valido, sin markdown, sin texto adicional.',
+        '- Formato obligatorio: {"messages":[{"text":"texto del mensaje","quotedMessageId":"message_id inbound relevante o null"}]}.',
+        '- Si el cliente envio multiples mensajes sobre temas distintos, responde cada tema en un mensaje separado.',
+        '- Cada mensaje debe tener maximo 3 lineas.',
+        '- quotedMessageId debe ser el message_id del mensaje CLIENTE mas relevante para esa respuesta.',
+        '- Si solo hay un tema, usa un array con un solo mensaje. Maximo 3 mensajes por respuesta.',
         '- No digas "Sugerencia", no expliques tu razonamiento y no inventes datos.',
         '- Si falta informacion, pregunta de forma breve y amable.',
         '- Mantén el tono comercial, cercano y natural.'
@@ -578,9 +626,14 @@ async function generatePattySuggestion(tenantId, moduleId, chatId) {
         contextChars: context.system.length,
         lastCustomerMessageChars: context.lastCustomerMessage.length
     });
-    const suggestion = await getChatSuggestion(
+    const rawSuggestion = await getChatSuggestion(
         context.system,
-        `Ultimo mensaje del cliente: ${context.lastCustomerMessage}\n\nResponde solo con el texto listo para enviar por WhatsApp.`,
+        [
+            `Ultimo mensaje del cliente: ${context.lastCustomerMessage}`,
+            '',
+            'Responde con JSON valido exactamente en este formato:',
+            '{"messages":[{"text":"texto listo para enviar por WhatsApp","quotedMessageId":"message_id inbound relevante o null"}]}'
+        ].join('\n'),
         null,
         null,
         {
@@ -602,14 +655,17 @@ async function generatePattySuggestion(tenantId, moduleId, chatId) {
                 : null
         }
     );
+    const messages = normalizePattyMessages(rawSuggestion);
+    const suggestion = messages.map((item) => item.text).join('\n\n');
     console.log('[Patty] suggestion generated', {
         tenantId: context.tenantId,
         moduleId: context.moduleId,
         chatId: context.chatId,
         suggestionChars: text(suggestion).length,
-        isAiError: text(suggestion).startsWith('Error IA:') || lower(suggestion).includes('ia no configurada')
+        messageCount: messages.length,
+        isAiError: text(rawSuggestion).startsWith('Error IA:') || lower(rawSuggestion).includes('ia no configurada')
     });
-    return { ...context, suggestion };
+    return { ...context, suggestion, messages, rawSuggestion };
 }
 
 async function hasOutboundAfter(tenantId, moduleId, chatId, sinceIso) {
@@ -646,7 +702,8 @@ function emitSuggestion(socketEmitter, tenantId, payload) {
             tenantId,
             chatId: payload?.chatId,
             moduleId: payload?.moduleId,
-            suggestionChars: text(payload?.suggestion).length
+            suggestionChars: text(payload?.suggestion).length,
+            messageCount: Array.isArray(payload?.messages) ? payload.messages.length : 0
         });
         return;
     }
@@ -656,7 +713,8 @@ function emitSuggestion(socketEmitter, tenantId, payload) {
             tenantId,
             chatId: payload?.chatId,
             moduleId: payload?.moduleId,
-            suggestionChars: text(payload?.suggestion).length
+            suggestionChars: text(payload?.suggestion).length,
+            messageCount: Array.isArray(payload?.messages) ? payload.messages.length : 0
         });
         return;
     }
@@ -743,7 +801,10 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 return;
             }
             const result = await generatePattySuggestion(cleanTenantId, cleanModuleId, cleanChatId);
-            if (!result.suggestion) {
+            const messages = Array.isArray(result.messages) && result.messages.length
+                ? result.messages
+                : normalizePattyMessages(result.suggestion);
+            if (!messages.length) {
                 console.log('[Patty] skipped: empty suggestion', {
                     tenantId: cleanTenantId,
                     moduleId: cleanModuleId,
@@ -757,6 +818,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                     chatId: cleanChatId,
                     moduleId: cleanModuleId,
                     suggestion: result.suggestion,
+                    messages,
                     assistantName,
                     timestamp: Date.now()
                 });
@@ -766,24 +828,31 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 tenantId: cleanTenantId,
                 moduleId: cleanModuleId,
                 chatId: cleanChatId,
-                suggestionChars: text(result.suggestion).length
+                suggestionChars: text(result.suggestion).length,
+                messageCount: messages.length
             });
-            await waClient.sendMessage(cleanChatId, result.suggestion, {
-                metadata: {
-                    agentMeta: {
-                        sentByUserId: 'patty',
-                        sentByName: assistantName,
-                        sentByRole: 'assistant',
-                        sentViaModuleId: cleanModuleId
-                    },
-                    patty: true,
-                    automationSource: 'patty_autonomous'
-                }
-            });
+            for (let index = 0; index < messages.length; index += 1) {
+                const msg = messages[index];
+                await waClient.sendMessage(cleanChatId, msg.text, {
+                    quotedMessageId: msg.quotedMessageId || null,
+                    metadata: {
+                        agentMeta: {
+                            sentByUserId: 'patty',
+                            sentByName: assistantName,
+                            sentByRole: 'assistant',
+                            sentViaModuleId: cleanModuleId
+                        },
+                        patty: true,
+                        automationSource: 'patty_autonomous'
+                    }
+                });
+                if (index < messages.length - 1) await sleep(1500);
+            }
             console.log('[Patty] autonomous message sent', {
                 tenantId: cleanTenantId,
                 moduleId: cleanModuleId,
-                chatId: cleanChatId
+                chatId: cleanChatId,
+                messageCount: messages.length
             });
         } catch (error) {
             if (pattyChatDebounce.get(debounceKey) === timer) {
