@@ -131,7 +131,7 @@ function normalizeScheduleId(value = null) {
 
 function normalizeAiConfig(value = {}) {
     const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-    const withinHoursMode = ['review', 'off'].includes(toText(source.withinHoursMode))
+    const withinHoursMode = ['review', 'autonomous', 'off'].includes(toText(source.withinHoursMode))
         ? toText(source.withinHoursMode)
         : 'review';
     const outsideHoursMode = ['autonomous', 'review', 'off'].includes(toText(source.outsideHoursMode))
@@ -148,7 +148,9 @@ function normalizeAiConfig(value = {}) {
         assistantName: toText(source.assistantName) || 'Patty',
         withinHoursMode,
         outsideHoursMode,
-        waitSeconds
+        waitSeconds,
+        enablePatty: source.enablePatty !== false,
+        enableCopilot: source.enableCopilot !== false
     };
 }
 
