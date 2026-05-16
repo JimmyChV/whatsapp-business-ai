@@ -8,9 +8,9 @@ const tenantIntegrationsService = require('../../tenant/services/integrations.se
 const tenantScheduleService = require('../../tenant/services/tenant-schedule.service');
 const quickRepliesManagerService = require('../../tenant/services/quick-replies-manager.service');
 const tenantZoneRulesService = require('../../tenant/services/tenant-zone-rules.service');
+const { getChatSuggestion } = require('../../operations/services/ai.service');
 const waClient = require('./wa-provider.service');
 
-const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
 const DEFAULT_ASSISTANT_NAME = 'Patty';
 
 function text(value = '') {
@@ -378,43 +378,33 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     };
 }
 
-async function callAnthropic({ system, userMessage }) {
-    const apiKey = text(process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY);
-    if (!apiKey) {
-        console.warn('[Patty] ANTHROPIC_API_KEY missing; suggestion skipped.');
-        return '';
-    }
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-            'content-type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-            model: text(process.env.PATTY_ANTHROPIC_MODEL) || DEFAULT_MODEL,
-            max_tokens: 400,
-            system,
-            messages: [{ role: 'user', content: userMessage }]
-        })
-    });
-    if (!response.ok) {
-        const detail = await response.text().catch(() => '');
-        throw new Error(`Anthropic ${response.status}: ${detail.slice(0, 240)}`);
-    }
-    const data = await response.json();
-    return (Array.isArray(data?.content) ? data.content : [])
-        .map((part) => part?.type === 'text' ? part.text : '')
-        .join('\n')
-        .trim();
-}
-
 async function generatePattySuggestion(tenantId, moduleId, chatId) {
     const context = await buildPattyContext(tenantId, moduleId, chatId);
-    const suggestion = await callAnthropic({
-        system: context.system,
-        userMessage: context.lastCustomerMessage
-    });
+    const moduleAssistantId = text(context.moduleConfig?.metadata?.moduleSettings?.aiAssistantId).toUpperCase();
+    const suggestion = await getChatSuggestion(
+        context.system,
+        `Ultimo mensaje del cliente: ${context.lastCustomerMessage}\n\nResponde solo con el texto listo para enviar por WhatsApp.`,
+        null,
+        null,
+        {
+            tenantId: context.tenantId,
+            moduleAssistantId,
+            runtimeContext: {
+                chat: { chatId: context.chatId },
+                module: {
+                    moduleId: context.moduleId,
+                    name: context.moduleConfig?.name || context.moduleId
+                }
+            },
+            moduleContext: context.moduleConfig
+                ? {
+                    moduleId: context.moduleConfig.moduleId,
+                    name: context.moduleConfig.name,
+                    metadata: context.moduleConfig.metadata
+                }
+                : null
+        }
+    );
     return { ...context, suggestion };
 }
 
