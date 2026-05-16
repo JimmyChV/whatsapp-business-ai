@@ -8,6 +8,7 @@ const tenantIntegrationsService = require('../../tenant/services/integrations.se
 const tenantScheduleService = require('../../tenant/services/tenant-schedule.service');
 const quickRepliesManagerService = require('../../tenant/services/quick-replies-manager.service');
 const tenantZoneRulesService = require('../../tenant/services/tenant-zone-rules.service');
+const waModulesService = require('../../tenant/services/wa-modules.service');
 const { getChatSuggestion } = require('../../operations/services/ai.service');
 const waClient = require('./wa-provider.service');
 
@@ -61,25 +62,84 @@ async function getModuleConfig(tenantId, moduleId) {
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
     const cleanModuleId = lower(moduleId);
     if (!cleanTenantId || !cleanModuleId) return null;
-    const { rows } = await pgQuery(
-        `SELECT module_id, name, metadata
-           FROM wa_modules
-          WHERE tenant_id = $1
-            AND LOWER(module_id) = LOWER($2)
-          LIMIT 1`,
-        [cleanTenantId, cleanModuleId]
-    );
-    const row = rows?.[0];
-    if (!row) return null;
-    const metadata = safeJsonObject(row.metadata);
-    const aiConfig = safeJsonObject(metadata.aiConfig);
-    return {
-        moduleId: text(row.module_id) || cleanModuleId,
-        name: text(row.name),
-        metadata,
-        scheduleId: text(metadata.scheduleId || metadata.schedule_id),
-        aiConfig: Object.keys(aiConfig).length ? aiConfig : null
-    };
+    try {
+        const module = await waModulesService.getModule(cleanTenantId, cleanModuleId, { userId: '' });
+        if (module) {
+            const metadata = safeJsonObject(module.metadata);
+            const aiConfig = safeJsonObject(module.aiConfig || metadata.aiConfig);
+            if (!Object.keys(aiConfig).length) {
+                console.log('[Patty] module found without aiConfig from waModulesService', {
+                    tenantId: cleanTenantId,
+                    moduleId: cleanModuleId,
+                    metadataKeys: Object.keys(metadata)
+                });
+            }
+            return {
+                moduleId: text(module.moduleId) || cleanModuleId,
+                name: text(module.name),
+                metadata: {
+                    ...metadata,
+                    aiConfig,
+                    scheduleId: text(module.scheduleId || metadata.scheduleId || metadata.schedule_id) || null
+                },
+                scheduleId: text(module.scheduleId || metadata.scheduleId || metadata.schedule_id),
+                aiConfig: Object.keys(aiConfig).length ? aiConfig : null
+            };
+        }
+        console.log('[Patty] module not found through waModulesService; trying direct query', {
+            tenantId: cleanTenantId,
+            moduleId: cleanModuleId
+        });
+    } catch (error) {
+        console.warn('[Patty] waModulesService.getModule failed; trying direct query', {
+            tenantId: cleanTenantId,
+            moduleId: cleanModuleId,
+            error: error?.message || String(error)
+        });
+    }
+
+    if (getStorageDriver() !== 'postgres') return null;
+    try {
+        const { rows } = await queryPostgres(
+            `SELECT module_id, name, metadata
+               FROM wa_modules
+              WHERE tenant_id = $1
+                AND LOWER(module_id) = LOWER($2)
+              LIMIT 1`,
+            [cleanTenantId, cleanModuleId]
+        );
+        const row = rows?.[0];
+        if (!row) {
+            console.log('[Patty] module direct query returned no rows', {
+                tenantId: cleanTenantId,
+                moduleId: cleanModuleId
+            });
+            return null;
+        }
+        const metadata = safeJsonObject(row.metadata);
+        const aiConfig = safeJsonObject(metadata.aiConfig);
+        if (!Object.keys(aiConfig).length) {
+            console.log('[Patty] module direct query found row without aiConfig', {
+                tenantId: cleanTenantId,
+                moduleId: cleanModuleId,
+                metadataKeys: Object.keys(metadata)
+            });
+        }
+        return {
+            moduleId: text(row.module_id) || cleanModuleId,
+            name: text(row.name),
+            metadata,
+            scheduleId: text(metadata.scheduleId || metadata.schedule_id),
+            aiConfig: Object.keys(aiConfig).length ? aiConfig : null
+        };
+    } catch (error) {
+        console.warn('[Patty] module direct query failed', {
+            tenantId: cleanTenantId,
+            moduleId: cleanModuleId,
+            error: error?.message || String(error)
+        });
+        return null;
+    }
 }
 
 function getAssistantNameFromModule(moduleConfig = {}) {
