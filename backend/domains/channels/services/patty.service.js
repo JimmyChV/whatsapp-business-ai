@@ -817,7 +817,14 @@ async function createAndSendPattyQuote({ tenantId, moduleId, chatId, assistantNa
         sentAt
     });
     try {
-        await chatCommercialStatusService.markQuoteSent(cleanTenantId, {
+        console.log('[Patty] marking chat as cotizado', {
+            tenantId: cleanTenantId,
+            moduleId: cleanModuleId,
+            chatId: cleanChatId,
+            quoteId: effectiveQuoteId,
+            messageId: sentMessageId || null
+        });
+        const commercialResult = await chatCommercialStatusService.markQuoteSent(cleanTenantId, {
             chatId: cleanChatId,
             scopeModuleId: cleanModuleId,
             source: 'socket',
@@ -829,8 +836,16 @@ async function createAndSendPattyQuote({ tenantId, moduleId, chatId, assistantNa
                 messageId: sentMessageId || null
             }
         });
+        console.log('[Patty] cotizado done', {
+            tenantId: cleanTenantId,
+            moduleId: cleanModuleId,
+            chatId: cleanChatId,
+            quoteId: effectiveQuoteId,
+            changed: Boolean(commercialResult?.changed),
+            status: commercialResult?.row?.status || commercialResult?.status || null
+        });
     } catch (error) {
-        console.warn('[Patty] quote sent but commercial status update skipped:', error?.message || error);
+        console.warn(`[Patty] cotizado failed: ${error?.message || error}`);
     }
 
     console.log('[Patty] quote generated and sent', {
@@ -912,7 +927,9 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '- Cada mensaje debe tener maximo 3 lineas.',
         '- quotedMessageId debe ser el message_id del mensaje CLIENTE mas relevante para esa respuesta.',
         '- Si solo hay un tema, usa un array con un solo mensaje. Maximo 3 mensajes por respuesta.',
-        '- Si el cliente claramente acepta o pide una cotizacion, agrega quoteRequest con products usando el titulo EXACTO del catalogo: {"products":[{"title":"Nombre exacto del producto","qty":1}],"note":"opcional"}.',
+        '- Si el cliente claramente acepta o pide una cotizacion, agrega quoteRequest con products usando el titulo EXACTO del catalogo: {"products":[{"title":"Nombre exacto del producto","qty":1}]}.',
+        '- quoteRequest NO debe incluir campo note. Solo incluir: {"products":[{"title":"Nombre exacto del producto","qty":1}]}.',
+        '- Cuando generes quoteRequest, messages[] solo debe tener un mensaje corto de intro maximo 1 linea. No repitas productos ni precios en el texto.',
         '- El title debe copiarse del catalogo tal como aparece despues del SKU entre corchetes. No inventes SKUs ni codigos. Si incluyes sku, debe ser exactamente uno de los SKUs entre corchetes.',
         '- Incluye quoteRequest solo cuando haya una aceptacion o solicitud clara de cotizacion.',
         '- Cuando el cliente mencione su ubicacion, busca en las zonas de cobertura y responde con las opciones de envio y metodos de pago disponibles para esa zona. Si la ubicacion no esta en cobertura, dilo claramente.',
@@ -949,7 +966,9 @@ async function generatePattySuggestion(tenantId, moduleId, chatId) {
             `Ultimo mensaje del cliente: ${context.lastCustomerMessage}`,
             '',
             'Responde con JSON valido exactamente en este formato:',
-            '{"messages":[{"text":"texto listo para enviar por WhatsApp","quotedMessageId":"message_id inbound relevante o null"}],"quoteRequest":{"products":[{"title":"Nombre exacto del producto del catalogo","qty":1}],"note":"opcional"}}',
+            '{"messages":[{"text":"texto listo para enviar por WhatsApp","quotedMessageId":"message_id inbound relevante o null"}],"quoteRequest":{"products":[{"title":"Nombre exacto del producto del catalogo","qty":1}]}}',
+            'quoteRequest NO debe incluir campo note. Solo incluir products con title y qty.',
+            'Cuando incluyas quoteRequest, messages[] debe contener solo una intro corta de maximo 1 linea. No repitas productos ni precios en el texto.',
             'Para quoteRequest usa el title exacto del catalogo. No uses SKUs inventados; si agregas sku, debe existir exactamente entre corchetes en el catalogo.',
             'Omite quoteRequest si no corresponde generar cotizacion.'
         ].join('\n'),
