@@ -14,8 +14,13 @@ const chatCommercialStatusService = require('../../operations/services/chat-comm
 const { getChatSuggestion } = require('../../operations/services/ai.service');
 const waClient = require('./wa-provider.service');
 const {
+    buildScopedChatId
+} = require('../helpers/chat-scope.helpers');
+const {
     buildQuoteMessageBody,
-    buildQuoteInteractiveMessage
+    buildQuoteInteractiveMessage,
+    buildOutgoingOrderPayload,
+    buildSyntheticInteractiveSentMessage
 } = require('./socket-quote-delivery.service');
 
 const DEFAULT_ASSISTANT_NAME = 'Patty';
@@ -39,6 +44,10 @@ function normalizeProductLookupKey(value = '') {
         .replace(/[^a-z0-9]+/g, ' ')
         .trim()
         .replace(/\s+/g, ' ');
+}
+
+function normalizeLocationLookup(value = '') {
+    return normalizeProductLookupKey(value);
 }
 
 function findCatalogRowForQuoteProduct(requestItem = {}, catalogRows = [], catalogBySku = new Map(), catalogByTitle = new Map()) {
@@ -409,8 +418,11 @@ async function getCatalogItemsForQuoteRequest(tenantId, products = []) {
         .filter(Boolean);
 }
 
-function buildPattyQuoteSummary(items = []) {
+function buildPattyQuoteSummary(items = [], delivery = {}) {
     const subtotal = money(items.reduce((acc, item) => acc + (money(item.lineTotal) || 0), 0)) || 0;
+    const deliveryAmount = money(delivery.deliveryAmount) || 0;
+    const deliveryFree = delivery.deliveryFree !== false || deliveryAmount <= 0;
+    const totalPayable = money(subtotal + (deliveryFree ? 0 : deliveryAmount)) || subtotal;
     return {
         schemaVersion: 1,
         currency: 'PEN',
@@ -419,10 +431,75 @@ function buildPattyQuoteSummary(items = []) {
         discount: 0,
         totalAfterDiscount: subtotal,
         globalDiscount: 0,
-        deliveryAmount: 0,
-        deliveryFree: true,
-        totalPayable: subtotal
+        deliveryAmount: deliveryFree ? 0 : deliveryAmount,
+        deliveryFree,
+        totalPayable
     };
+}
+
+function collectZoneCoverageValues(rule = {}) {
+    const meta = safeJsonObject(rule.rulesJson || rule.rules_json || rule.metadata);
+    return [
+        rule.name,
+        meta.description,
+        meta.notes,
+        ...ensureTextArray(meta.districts || meta.districtNames || meta.distritos || meta.district),
+        ...ensureTextArray(meta.provinces || meta.provinceNames || meta.provincias || meta.province),
+        ...ensureTextArray(meta.departments || meta.departmentNames || meta.departamentos || meta.department),
+        ...ensureTextArray(meta.cities || meta.cityNames || meta.ciudades || meta.city)
+    ].map(normalizeLocationLookup).filter(Boolean);
+}
+
+function resolveZoneDelivery(rule = null, subtotal = 0) {
+    if (!rule) return { deliveryAmount: 0, deliveryFree: true, zoneName: null };
+    const options = Array.isArray(rule.shippingOptions || rule.shipping_options)
+        ? (rule.shippingOptions || rule.shipping_options)
+        : [];
+    const activeDelivery = options.find((item) => {
+        const type = lower(item?.type || '');
+        return item && item.is_active !== false && item.isActive !== false && (!type || type === 'delivery');
+    }) || options.find((item) => item && item.is_active !== false && item.isActive !== false);
+    if (!activeDelivery) return { deliveryAmount: 0, deliveryFree: true, zoneName: text(rule.name) || null };
+    const cost = money(activeDelivery.cost) || 0;
+    const freeFrom = money(activeDelivery.free_from ?? activeDelivery.freeFrom);
+    const isFree = cost <= 0 || (freeFrom !== null && subtotal >= freeFrom);
+    return {
+        deliveryAmount: isFree ? 0 : cost,
+        deliveryFree: isFree,
+        zoneName: text(rule.name) || null,
+        shippingLabel: text(activeDelivery.label || activeDelivery.type || '')
+    };
+}
+
+async function resolveDeliveryForChatQuote(tenantId, chatId, subtotal = 0) {
+    try {
+        const [{ rows }, rules] = await Promise.all([
+            pgQuery(
+                `SELECT body
+                   FROM tenant_messages
+                  WHERE tenant_id = $1
+                    AND chat_id = $2
+                    AND COALESCE(from_me, FALSE) = FALSE
+                  ORDER BY created_at DESC
+                  LIMIT 20`,
+                [tenantId, chatId]
+            ),
+            tenantZoneRulesService.listZoneRules(tenantId, { includeInactive: false })
+        ]);
+        const recentText = (rows || [])
+            .map((row) => normalizeLocationLookup(row.body || ''))
+            .filter(Boolean)
+            .join(' ');
+        if (!recentText) return { deliveryAmount: 0, deliveryFree: true, zoneName: null };
+        const match = (Array.isArray(rules) ? rules : []).find((rule) => {
+            const values = collectZoneCoverageValues(rule);
+            return values.some((value) => value && (recentText.includes(value) || value.includes(recentText)));
+        });
+        return resolveZoneDelivery(match || null, subtotal);
+    } catch (error) {
+        console.warn('[Patty] zone delivery resolution skipped:', error?.message || error);
+        return { deliveryAmount: 0, deliveryFree: true, zoneName: null };
+    }
 }
 
 async function getQuickRepliesContext(tenantId, moduleId) {
@@ -722,7 +799,15 @@ function formatOrderContext(orderPayload) {
     return `Pedido del catalogo: ${lines.join(', ')}${total ? ` Total: S/ ${total.toFixed(2)}` : ''}`;
 }
 
-async function createAndSendPattyQuote({ tenantId, moduleId, chatId, assistantName, quoteRequest } = {}) {
+async function createAndSendPattyQuote({
+    tenantId,
+    moduleId,
+    chatId,
+    assistantName,
+    quoteRequest,
+    emitToRuntimeContext,
+    emitCommercialStatusUpdated
+} = {}) {
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
     const cleanModuleId = lower(moduleId);
     const cleanChatId = normalizeChatId(chatId);
@@ -745,11 +830,14 @@ async function createAndSendPattyQuote({ tenantId, moduleId, chatId, assistantNa
     }
 
     const quoteId = buildQuoteId();
-    const summary = buildPattyQuoteSummary(items);
+    const subtotal = money(items.reduce((acc, item) => acc + (money(item.lineTotal) || 0), 0)) || 0;
+    const delivery = await resolveDeliveryForChatQuote(cleanTenantId, cleanChatId, subtotal);
+    const summary = buildPattyQuoteSummary(items, delivery);
     const metadata = {
         source: 'patty',
         sourceType: 'quote',
-        assistantName: text(assistantName) || DEFAULT_ASSISTANT_NAME
+        assistantName: text(assistantName) || DEFAULT_ASSISTANT_NAME,
+        ...(delivery.zoneName ? { deliveryZoneName: delivery.zoneName } : {})
     };
     const createdQuote = await quotesService.createQuoteRecord(cleanTenantId, {
         quoteId,
@@ -760,7 +848,7 @@ async function createAndSendPattyQuote({ tenantId, moduleId, chatId, assistantNa
         currency: 'PEN',
         itemsJson: items,
         summaryJson: summary,
-        notes: request.note || null,
+        notes: null,
         createdByUserId: null,
         updatedByUserId: null,
         sentAt: null,
@@ -773,7 +861,7 @@ async function createAndSendPattyQuote({ tenantId, moduleId, chatId, assistantNa
         items,
         summary,
         metadata,
-        notes: request.note || null
+        notes: null
     };
     const quoteBody = buildQuoteMessageBody(normalizedQuote);
 
@@ -807,6 +895,40 @@ async function createAndSendPattyQuote({ tenantId, moduleId, chatId, assistantNa
             }
         });
         sentMessageId = text(sentMessage?.id?._serialized || sentMessage?.id || sentMessage?.messageId || sentMessage?.wamid);
+    }
+
+    if (typeof emitToRuntimeContext === 'function') {
+        const syntheticSentMessage = buildSyntheticInteractiveSentMessage({
+            messageId: sentMessageId,
+            chatId: cleanChatId,
+            body: quoteBody,
+            interactive,
+            quotedMessageId: ''
+        });
+        const outgoingOrderPayload = buildOutgoingOrderPayload(normalizedQuote);
+        emitToRuntimeContext('message', {
+            id: sentMessageId || `local_patty_quote_${Date.now().toString(36)}`,
+            from: null,
+            to: buildScopedChatId(cleanChatId, cleanModuleId) || cleanChatId,
+            chatId: buildScopedChatId(cleanChatId, cleanModuleId) || cleanChatId,
+            baseChatId: cleanChatId,
+            scopeModuleId: cleanModuleId || null,
+            body: quoteBody,
+            timestamp: Number(syntheticSentMessage?.timestamp || 0) || Math.floor(Date.now() / 1000),
+            fromMe: true,
+            hasMedia: false,
+            type: 'interactive',
+            ack: Number(syntheticSentMessage?.ack || 1),
+            order: outgoingOrderPayload,
+            location: null,
+            quotedMessage: null,
+            sentByUserId: 'patty',
+            sentByName: metadata.assistantName,
+            sentByRole: 'assistant',
+            sentViaModuleId: cleanModuleId || null,
+            patty: true,
+            automationSource: 'patty_quote'
+        });
     }
 
     const sentAt = new Date().toISOString();
@@ -844,6 +966,15 @@ async function createAndSendPattyQuote({ tenantId, moduleId, chatId, assistantNa
             changed: Boolean(commercialResult?.changed),
             status: commercialResult?.row?.status || commercialResult?.status || null
         });
+        if (commercialResult?.changed && typeof emitCommercialStatusUpdated === 'function') {
+            emitCommercialStatusUpdated({
+                tenantId: cleanTenantId,
+                chatId: cleanChatId,
+                scopeModuleId: cleanModuleId,
+                result: commercialResult,
+                source: 'patty.quote_generated'
+            });
+        }
     } catch (error) {
         console.warn(`[Patty] cotizado failed: ${error?.message || error}`);
     }
@@ -933,6 +1064,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '- El title debe copiarse del catalogo tal como aparece despues del SKU entre corchetes. No inventes SKUs ni codigos. Si incluyes sku, debe ser exactamente uno de los SKUs entre corchetes.',
         '- Incluye quoteRequest solo cuando haya una aceptacion o solicitud clara de cotizacion.',
         '- Cuando el cliente mencione su ubicacion, busca en las zonas de cobertura y responde con las opciones de envio y metodos de pago disponibles para esa zona. Si la ubicacion no esta en cobertura, dilo claramente.',
+        '- Cuando el cliente indique su ubicacion, identifica su zona de cobertura y menciona el costo de envio y metodos de pago disponibles para esa zona.',
         '- No digas "Sugerencia", no expliques tu razonamiento y no inventes datos.',
         '- Si falta informacion, pregunta de forma breve y amable.',
         '- Mantén el tono comercial, cercano y natural.'
@@ -1208,7 +1340,9 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                         moduleId: cleanModuleId,
                         chatId: cleanChatId,
                         assistantName,
-                        quoteRequest: result.quoteRequest
+                        quoteRequest: result.quoteRequest,
+                        emitToRuntimeContext: socketEmitter,
+                        emitCommercialStatusUpdated: options.emitCommercialStatusUpdated
                     });
                 } catch (quoteError) {
                     console.warn('[Patty] quote request failed; text messages already sent:', quoteError?.message || quoteError);

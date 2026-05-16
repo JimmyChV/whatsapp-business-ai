@@ -627,5 +627,7 @@ function createSocketQuoteDeliveryService({
 module.exports = {
     createSocketQuoteDeliveryService,
     buildQuoteMessageBody,
-    buildQuoteInteractiveMessage
+    buildQuoteInteractiveMessage,
+    buildOutgoingOrderPayload,
+    buildSyntheticInteractiveSentMessage
 };
