@@ -67,6 +67,16 @@ function money(value) {
     return Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
 }
 
+function formatMoney(value, fallback = '0.00') {
+    const parsed = money(value);
+    return parsed === null ? fallback : parsed.toFixed(2);
+}
+
+function firstPhoneE164FromChatId(chatId = '') {
+    const digits = normalizeChatId(chatId).split('@')[0].replace(/[^\d]/g, '');
+    return digits ? `+${digits}` : '';
+}
+
 function lineList(lines = [], fallback = 'Sin datos disponibles.') {
     const clean = lines.map((item) => text(item)).filter(Boolean);
     return clean.length ? clean.join('\n') : fallback;
@@ -266,85 +276,158 @@ async function getZonesContext(tenantId) {
 }
 
 async function getCustomerContext(tenantId, moduleId, chatId) {
-    const phones = phoneCandidatesFromChatId(chatId);
-    if (!phones.length) return { summary: 'Cliente nuevo / Prospecto', customerId: null };
-    const { rows } = await pgQuery(
-        `SELECT customer_id, contact_name, first_name, last_name, phone_e164, email,
-                segmento, compras_total, monto_acumulado, primera_fecha_compra,
-                cadencia_prom_dias, dias_ultima_compra, rango_compras
-           FROM tenant_customers
-          WHERE tenant_id = $1
-            AND (phone_e164 = ANY($2::text[]) OR phone_alt = ANY($2::text[]))
-            AND (module_id IS NULL OR module_id = '' OR LOWER(module_id) = LOWER($3))
-          ORDER BY updated_at DESC NULLS LAST
-          LIMIT 1`,
-        [tenantId, phones, lower(moduleId)]
-    );
-    const row = rows?.[0];
-    if (!row) return { summary: 'Cliente nuevo / Prospecto', customerId: null };
-    const name = text(row.contact_name || [row.first_name, row.last_name].filter(Boolean).join(' ')) || 'Cliente registrado';
-    const lines = [
-        `Nombre: ${name}`,
-        row.segmento ? `Segmento: ${row.segmento}` : '',
-        row.compras_total !== null && row.compras_total !== undefined ? `Compras total: ${row.compras_total}` : '',
-        row.monto_acumulado !== null && row.monto_acumulado !== undefined ? `Monto acumulado: S/ ${row.monto_acumulado}` : '',
-        row.primera_fecha_compra ? `Primera compra: ${row.primera_fecha_compra}` : '',
-        row.cadencia_prom_dias !== null && row.cadencia_prom_dias !== undefined ? `Cadencia promedio: ${row.cadencia_prom_dias} dias` : '',
-        row.dias_ultima_compra !== null && row.dias_ultima_compra !== undefined ? `Dias desde ultima compra: ${row.dias_ultima_compra}` : '',
-        row.rango_compras ? `Rango compras: ${row.rango_compras}` : ''
-    ].filter(Boolean);
-    return { summary: lines.join('\n'), customerId: text(row.customer_id) || null };
+    const phoneE164 = firstPhoneE164FromChatId(chatId);
+    if (!phoneE164) return { summary: 'CLIENTE: Prospecto nuevo (no registrado en BD)', customerId: null };
+    try {
+        const { rows } = await pgQuery(
+            `SELECT customer_id, contact_name, first_name, last_name_paternal, phone_e164,
+                    segmento, compras_total, monto_acumulado, primera_fecha_compra,
+                    cadencia_prom_dias, dias_ultima_compra, rango_compras
+               FROM tenant_customers
+              WHERE tenant_id = $1
+                AND phone_e164 = $2
+                AND (module_id IS NULL OR module_id = '' OR LOWER(module_id) = LOWER($3))
+              ORDER BY updated_at DESC NULLS LAST
+              LIMIT 1`,
+            [tenantId, phoneE164, lower(moduleId)]
+        );
+        const row = rows?.[0];
+        if (!row) return { summary: 'CLIENTE: Prospecto nuevo (no registrado en BD)', customerId: null };
+        const name = text([row.first_name, row.last_name_paternal].filter(Boolean).join(' '))
+            || text(row.contact_name)
+            || 'Cliente registrado';
+        const lines = [
+            'CLIENTE REGISTRADO:',
+            `- Nombre: ${name}`,
+            `- Segmento: ${text(row.segmento) || 'Sin segmento'}`,
+            `- Total compras: ${row.compras_total ?? 0}`,
+            `- Monto acumulado: S/ ${formatMoney(row.monto_acumulado)}`,
+            `- Primera compra: ${text(row.primera_fecha_compra) || 'Sin fecha registrada'}`,
+            row.dias_ultima_compra !== null && row.dias_ultima_compra !== undefined
+                ? `- Ultima compra: hace ${row.dias_ultima_compra} dias`
+                : '- Ultima compra: Sin fecha registrada',
+            row.cadencia_prom_dias !== null && row.cadencia_prom_dias !== undefined
+                ? `- Cadencia promedio: cada ${row.cadencia_prom_dias} dias`
+                : '- Cadencia promedio: Sin datos',
+            `- Rango de compras: ${text(row.rango_compras) || 'Sin rango'}`
+        ];
+        return { summary: lines.join('\n'), customerId: text(row.customer_id) || null };
+    } catch (error) {
+        return { summary: 'CLIENTE: Prospecto nuevo (no registrado en BD)', customerId: null };
+    }
 }
 
 async function getCustomerLabelsContext(tenantId, customerId) {
-    if (!customerId) return [];
-    const { rows } = await pgQuery(
-        `SELECT COALESCE(gl.name, tzr.name, tcl.label_id) AS label_name, tcl.source
-           FROM tenant_customer_labels tcl
-      LEFT JOIN global_labels gl ON gl.id = tcl.label_id
-      LEFT JOIN tenant_zone_rules tzr ON tzr.rule_id = tcl.label_id
-          WHERE tcl.tenant_id = $1
-            AND tcl.customer_id = $2
-          ORDER BY tcl.assigned_at DESC NULLS LAST
-          LIMIT 20`,
-        [tenantId, customerId]
-    );
-    return rows.map((row) => `- ${text(row.label_name)}${text(row.source) ? ` (${text(row.source)})` : ''}`).filter(Boolean);
+    if (!customerId) return '';
+    try {
+        const { rows } = await pgQuery(
+            `SELECT COALESCE(gl.name, tzr.name, tcl.label_id) AS label_name,
+                    COALESCE(tzr.name, '') AS zone_name,
+                    tcl.source,
+                    tcl.created_at
+               FROM tenant_customer_labels tcl
+          LEFT JOIN global_labels gl ON gl.id = tcl.label_id
+          LEFT JOIN tenant_zone_rules tzr ON tzr.rule_id = tcl.label_id
+              WHERE tcl.tenant_id = $1
+                AND tcl.customer_id = $2
+              ORDER BY tcl.created_at DESC NULLS LAST
+              LIMIT 20`,
+            [tenantId, customerId]
+        );
+        if (!rows.length) return '';
+        const lifecycleNames = new Set(['PROSPECTO', 'CLIENTE NUEVO', 'CLIENTE RECURRENTE']);
+        const labels = [];
+        let zone = '';
+        rows.forEach((row) => {
+            const label = text(row.label_name);
+            if (!label) return;
+            if (lifecycleNames.has(label.toUpperCase())) labels.push(label.toUpperCase());
+            if (!zone && text(row.zone_name)) zone = text(row.zone_name);
+        });
+        const lines = [];
+        if (labels.length) lines.push(`ETIQUETAS: ${Array.from(new Set(labels)).join(' / ')}`);
+        if (zone) lines.push(`ZONA ASIGNADA: ${zone}`);
+        return lines.join('\n');
+    } catch (error) {
+        return '';
+    }
 }
 
 async function getCommercialStatusContext(tenantId, moduleId, chatId) {
-    const { rows } = await pgQuery(
-        `SELECT status
-           FROM tenant_chat_commercial_status
-          WHERE tenant_id = $1
-            AND chat_id = $2
-            AND (scope_module_id IS NULL OR scope_module_id = '' OR LOWER(scope_module_id) = LOWER($3))
-          ORDER BY updated_at DESC NULLS LAST
-          LIMIT 1`,
-        [tenantId, normalizeChatId(chatId), lower(moduleId)]
-    );
-    return text(rows?.[0]?.status) || 'sin_estado';
+    try {
+        const { rows } = await pgQuery(
+            `SELECT status
+               FROM tenant_chat_commercial_status
+              WHERE tenant_id = $1
+                AND chat_id = $2
+                AND (scope_module_id IS NULL OR scope_module_id = '' OR LOWER(scope_module_id) = LOWER($3))
+              ORDER BY updated_at DESC NULLS LAST
+              LIMIT 1`,
+            [tenantId, normalizeChatId(chatId), lower(moduleId)]
+        );
+        return `ESTADO COMERCIAL: ${text(rows?.[0]?.status) || 'sin_estado'}`;
+    } catch (error) {
+        return '';
+    }
 }
 
 async function getOriginContext(tenantId, moduleId, chatId) {
-    const { rows } = await pgQuery(
-        `SELECT origin_type, referral_headline, raw_referral, campaign_id
-           FROM tenant_chat_origins
-          WHERE tenant_id = $1
-            AND chat_id = $2
-            AND (scope_module_id IS NULL OR scope_module_id = '' OR LOWER(scope_module_id) = LOWER($3))
-          ORDER BY detected_at ASC NULLS LAST
-          LIMIT 1`,
-        [tenantId, normalizeChatId(chatId), lower(moduleId)]
-    );
-    const row = rows?.[0];
-    if (!row) return 'Contacto directo';
-    const raw = safeJsonObject(row.raw_referral);
-    if (lower(row.origin_type) === 'meta_ad' || text(row.referral_headline)) {
-        return `Llego por anuncio Meta: ${text(row.referral_headline || raw.headline) || 'Anuncio'}${text(raw.body) ? ` - ${text(raw.body)}` : ''}`;
+    const cleanChatId = normalizeChatId(chatId);
+    const phoneE164 = firstPhoneE164FromChatId(chatId);
+    try {
+        const { rows } = await pgQuery(
+            `SELECT metadata
+               FROM tenant_messages
+              WHERE tenant_id = $1
+                AND chat_id = $2
+                AND from_me = FALSE
+                AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($3))
+              ORDER BY created_at ASC
+              LIMIT 1`,
+            [tenantId, cleanChatId, lower(moduleId)]
+        );
+        const metadata = safeJsonObject(rows?.[0]?.metadata);
+        const referral = safeJsonObject(metadata.referral || metadata.rawReferral || metadata.raw_referral);
+        const ctwaClid = text(metadata.ctwaClid || metadata.ctwa_clid || referral.ctwaClid || referral.ctwa_clid);
+        if (Object.keys(referral).length || ctwaClid) {
+            return [
+                'ORIGEN: Anuncio Meta',
+                `- Titulo del anuncio: ${text(referral.headline || referral.title) || 'Sin titulo registrado'}`,
+                `- Texto: ${text(referral.body || referral.description) || 'Sin texto registrado'}`
+            ].join('\n');
+        }
+    } catch (error) {
+        // Omit referral origin and continue with campaign/direct fallbacks.
     }
-    if (text(row.campaign_id)) return `Responde a campana: ${text(row.campaign_id)}`;
-    return text(row.origin_type) || 'Contacto directo';
+
+    try {
+        const phones = phoneCandidatesFromChatId(chatId);
+        const { rows } = await pgQuery(
+            `SELECT c.campaign_name, c.template_name
+               FROM tenant_campaign_recipients r
+          LEFT JOIN tenant_campaigns c
+                 ON c.tenant_id = r.tenant_id
+                AND c.campaign_id = r.campaign_id
+              WHERE r.tenant_id = $1
+                AND r.phone = ANY($2::text[])
+                AND r.sent_at >= NOW() - INTERVAL '7 days'
+                AND (r.module_id IS NULL OR r.module_id = '' OR LOWER(r.module_id) = LOWER($3))
+              ORDER BY r.sent_at DESC NULLS LAST
+              LIMIT 1`,
+            [tenantId, phones.length ? phones : [phoneE164].filter(Boolean), lower(moduleId)]
+        );
+        const row = rows?.[0];
+        if (row) {
+            return [
+                `ORIGEN: Respuesta a campaña "${text(row.campaign_name) || 'Campaña sin nombre'}"`,
+                `Template enviado: ${text(row.template_name) || 'Sin template registrado'}`
+            ].join('\n');
+        }
+    } catch (error) {
+        // Omit campaign origin and continue with direct fallback.
+    }
+
+    return 'ORIGEN: Contacto directo';
 }
 
 async function getConversationContext(tenantId, moduleId, chatId) {
@@ -375,24 +458,38 @@ async function getConversationContext(tenantId, moduleId, chatId) {
 }
 
 async function getActiveQuoteContext(tenantId, moduleId, chatId) {
-    const { rows } = await pgQuery(
-        `SELECT quote_id, items_json, summary_json
-           FROM tenant_quotes
-          WHERE tenant_id = $1
-            AND chat_id = $2
-            AND status = 'sent'
-            AND (scope_module_id IS NULL OR scope_module_id = '' OR LOWER(scope_module_id) = LOWER($3))
-          ORDER BY sent_at DESC NULLS LAST, updated_at DESC NULLS LAST
-          LIMIT 1`,
-        [tenantId, normalizeChatId(chatId), lower(moduleId)]
-    );
-    const row = rows?.[0];
-    if (!row) return '';
-    const items = Array.isArray(row.items_json) ? row.items_json : [];
-    const summary = safeJsonObject(row.summary_json);
-    const products = items.map((item) => `${text(item.title || item.name)} x${item.quantity || 1}`).filter(Boolean).join(', ');
-    const total = money(summary.totalPayable ?? summary.total_payable ?? summary.total);
-    return `Cotizacion enviada (${text(row.quote_id)}): ${products || 'productos'}${total ? ` Total: S/ ${total.toFixed(2)}` : ''}`;
+    try {
+        const { rows } = await pgQuery(
+            `SELECT quote_id, status, items_json, summary_json, sent_at
+               FROM tenant_quotes
+              WHERE tenant_id = $1
+                AND chat_id = $2
+                AND status IN ('sent', 'draft')
+                AND (scope_module_id IS NULL OR scope_module_id = '' OR LOWER(scope_module_id) = LOWER($3))
+              ORDER BY sent_at DESC NULLS LAST, updated_at DESC NULLS LAST
+              LIMIT 1`,
+            [tenantId, normalizeChatId(chatId), lower(moduleId)]
+        );
+        const row = rows?.[0];
+        if (!row) return '';
+        const items = Array.isArray(row.items_json) ? row.items_json : [];
+        const summary = safeJsonObject(row.summary_json);
+        const products = items
+            .map((item) => text(item.title || item.name || item.productName || item.sku))
+            .filter(Boolean)
+            .join(', ');
+        const total = money(summary.totalPayable ?? summary.total_payable ?? summary.total);
+        return [
+            'COTIZACION ACTIVA:',
+            `- ID: ${text(row.quote_id)}`,
+            `- Estado: ${text(row.status) || 'sin_estado'}`,
+            `- Total: S/ ${formatMoney(total)}`,
+            `- Productos: ${products || 'Sin productos legibles'}`,
+            `- Enviada: ${text(row.sent_at) || 'No enviada aun'}`
+        ].join('\n');
+    } catch (error) {
+        return '';
+    }
 }
 
 function formatOrderContext(orderPayload) {
@@ -439,17 +536,17 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         'ZONAS DE DELIVERY:',
         lineList(zones),
         '',
-        'CLIENTE:',
+        'DATOS DEL CLIENTE:',
         customer.summary,
-        `Estado comercial actual: ${commercialStatus}`,
-        `Etiquetas: ${labels.length ? labels.join(', ') : 'sin etiquetas'}`,
+        labels ? `\n${labels}` : '',
+        commercialStatus ? `\n${commercialStatus}` : '',
+        quote ? `\n${quote}` : '',
         '',
-        'ORIGEN:',
+        'ORIGEN DEL CONTACTO:',
         origin,
         '',
         'CONVERSACION RECIENTE:',
         lineList(conversation.lines),
-        quote ? `\n${quote}` : '',
         recentOrder ? `\n${recentOrder}` : '',
         '',
         'INSTRUCCIONES:',
