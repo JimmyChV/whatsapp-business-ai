@@ -28,6 +28,15 @@ function lower(value = '') {
     return text(value).toLowerCase();
 }
 
+function normalizeProductLookupKey(value = '') {
+    return lower(value)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim()
+        .replace(/\s+/g, ' ');
+}
+
 function normalizeChatId(value = '') {
     return text(value).split('::mod::')[0].trim();
 }
@@ -137,9 +146,10 @@ function normalizePattyQuoteRequest(rawSuggestion = '') {
     const normalizedProducts = products
         .map((item) => ({
             sku: text(item?.sku || item?.item_id || item?.productId || item?.product_id).toUpperCase(),
+            title: text(item?.title || item?.name || item?.productName || item?.product_name),
             qty: Math.max(1, Number.parseInt(String(item?.qty ?? item?.quantity ?? 1), 10) || 1)
         }))
-        .filter((item) => item.sku)
+        .filter((item) => item.sku || item.title)
         .slice(0, 20);
     if (!normalizedProducts.length) return null;
     return {
@@ -315,9 +325,10 @@ async function getCatalogContext(tenantId) {
             const regular = money(row.price ?? metadata.regularPrice ?? metadata.regular_price);
             const display = sale || regular;
             if (!text(row.title) || !display) return null;
+            const sku = text(row.item_id).toUpperCase();
             return {
                 score: display,
-                line: `- SKU ${text(row.item_id)} - ${text(row.title)}: S/ ${display.toFixed(2)}${regular && sale && regular > sale ? ` (regular S/ ${regular.toFixed(2)})` : ''}`
+                line: `- [${sku}] ${text(row.title)}: S/ ${display.toFixed(2)}${regular && sale && regular > sale ? ` (regular S/ ${regular.toFixed(2)})` : ''}`
             };
         })
         .filter(Boolean)
@@ -327,25 +338,30 @@ async function getCatalogContext(tenantId) {
 }
 
 async function getCatalogItemsForQuoteRequest(tenantId, products = []) {
-    const skus = products.map((item) => text(item?.sku).toUpperCase()).filter(Boolean);
-    if (!skus.length) return [];
-    const placeholders = skus.map((_, index) => `$${index + 2}`).join(', ');
     const { rows } = await pgQuery(
         `SELECT item_id, title, price, metadata
            FROM catalog_items
           WHERE tenant_id = $1
-            AND UPPER(item_id) IN (${placeholders})`,
-        [tenantId, ...skus]
+          LIMIT 500`,
+        [tenantId]
     );
-    const catalogMap = new Map(
+    const catalogBySku = new Map(
         (Array.isArray(rows) ? rows : [])
             .map((row) => [text(row.item_id).toUpperCase(), row])
             .filter(([sku]) => sku)
     );
+    const catalogByTitle = new Map(
+        (Array.isArray(rows) ? rows : [])
+            .map((row) => [normalizeProductLookupKey(row.title), row])
+            .filter(([title]) => title)
+    );
     return products
         .map((requestItem, index) => {
             const sku = text(requestItem?.sku).toUpperCase();
-            const row = catalogMap.get(sku);
+            const requestedTitle = text(requestItem?.title || requestItem?.name || requestItem?.productName || requestItem?.product_name);
+            const row = catalogBySku.get(sku)
+                || catalogByTitle.get(normalizeProductLookupKey(requestedTitle))
+                || catalogByTitle.get(normalizeProductLookupKey(sku));
             if (!row) return null;
             const metadata = safeJsonObject(row.metadata);
             const unitPrice = money(metadata.salePrice ?? metadata.sale_price ?? metadata.precio_oferta ?? row.price) || 0;
@@ -865,6 +881,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '- quotedMessageId debe ser el message_id del mensaje CLIENTE mas relevante para esa respuesta.',
         '- Si solo hay un tema, usa un array con un solo mensaje. Maximo 3 mensajes por respuesta.',
         '- Si el cliente claramente acepta o pide una cotizacion, agrega quoteRequest con products usando SKUs del catalogo: {"products":[{"sku":"SKU","qty":1}],"note":"opcional"}.',
+        '- Cuando generes quoteRequest, usa EXACTAMENTE los SKUs entre corchetes del catalogo. Nunca inventes SKUs. Ejemplo: {"sku":"MAT05040010","qty":1}.',
         '- Incluye quoteRequest solo cuando haya una aceptacion o solicitud clara de cotizacion.',
         '- No digas "Sugerencia", no expliques tu razonamiento y no inventes datos.',
         '- Si falta informacion, pregunta de forma breve y amable.',
@@ -900,6 +917,7 @@ async function generatePattySuggestion(tenantId, moduleId, chatId) {
             '',
             'Responde con JSON valido exactamente en este formato:',
             '{"messages":[{"text":"texto listo para enviar por WhatsApp","quotedMessageId":"message_id inbound relevante o null"}],"quoteRequest":{"products":[{"sku":"SKU","qty":1}],"note":"opcional"}}',
+            'Para quoteRequest usa SOLO SKUs reales entre corchetes del catalogo, por ejemplo {"sku":"MAT05040010","qty":1}. Nunca inventes SKUs.',
             'Omite quoteRequest si no corresponde generar cotizacion.'
         ].join('\n'),
         null,
