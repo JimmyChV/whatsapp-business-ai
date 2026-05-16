@@ -109,6 +109,10 @@ async function listFromPostgres(tenantId, moduleId = '') {
                 mediaMimeType: String(entry?.mediaMimeType || mediaAssets[0]?.mimeType || '').trim().toLowerCase() || null,
                 mediaFileName: String(entry?.mediaFileName || mediaAssets[0]?.fileName || '').trim() || null,
                 mediaSizeBytes: Number.isFinite(Number(entry?.mediaSizeBytes)) ? Number(entry.mediaSizeBytes) : (mediaAssets[0]?.sizeBytes || null),
+                buttons: Array.isArray(entry?.buttons) ? entry.buttons : [],
+                metadata: entry?.metadata && typeof entry.metadata === 'object' && !Array.isArray(entry.metadata)
+                    ? entry.metadata
+                    : {},
                 libraryId: String(entry?.libraryId || '').trim() || null,
                 libraryName: String(entry?.libraryName || '').trim() || null,
                 isShared: entry?.isShared !== false,

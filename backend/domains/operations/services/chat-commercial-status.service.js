@@ -1,3 +1,6 @@
+const fs = require('fs');
+const path = require('path');
+const { URL } = require('url');
 const {
     DEFAULT_TENANT_ID,
     getStorageDriver,
@@ -13,6 +16,9 @@ const templateVariablesService = require('./template-variables.service');
 const tenantAutomationService = require('../../tenant/services/tenant-automation.service');
 const quickRepliesManagerService = require('../../tenant/services/quick-replies-manager.service');
 const waClient = require('../../channels/services/wa-provider.service');
+const { resolveAndValidatePublicHost } = require('../../security/helpers/security-utils');
+const { createLazySharpLoader } = require('../../channels/helpers/socket-runtime-bootstrap.helpers');
+const { createMessageMediaAssetsHelpers } = require('../../channels/helpers/message-media-assets.helpers');
 const {
     buildTemplateSendComponents,
     buildTemplatePreviewText,
@@ -56,6 +62,29 @@ const AUTOMATION_EVENT_BY_STATUS = Object.freeze({
     expirado: 'order_expired',
     perdido: 'order_lost',
     vendido: 'order_sold'
+});
+const QUICK_REPLY_MEDIA_MAX_BYTES = Math.max(
+    256 * 1024,
+    Number(process.env.QUICK_REPLY_MEDIA_MAX_BYTES || process.env.ADMIN_ASSET_QUICK_REPLY_MAX_BYTES || (50 * 1024 * 1024))
+);
+const QUICK_REPLY_MEDIA_TIMEOUT_MS = Math.max(
+    2000,
+    Number(process.env.QUICK_REPLY_MEDIA_TIMEOUT_MS || 15000)
+);
+const DEFAULT_SAAS_UPLOADS_ROOT = path.resolve(__dirname, '../../../uploads');
+const SAAS_UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || DEFAULT_SAAS_UPLOADS_ROOT).trim() || DEFAULT_SAAS_UPLOADS_ROOT);
+const processedMediaCache = new Map();
+const { fetchQuickReplyMedia } = createMessageMediaAssetsHelpers({
+    fs,
+    path,
+    URL,
+    Buffer,
+    resolveAndValidatePublicHost,
+    getSharpImageProcessor: createLazySharpLoader(),
+    SAAS_UPLOADS_ROOT,
+    QUICK_REPLY_MEDIA_MAX_BYTES,
+    QUICK_REPLY_MEDIA_TIMEOUT_MS,
+    processedMediaCache
 });
 
 let schemaReady = false;
@@ -308,6 +337,167 @@ async function resolveAutomationQuickReply(cleanTenantId, rule = {}, moduleId = 
     }
 }
 
+function normalizeQuickReplyAssetEntry(entry = {}) {
+    return {
+        url: toText(entry?.url || entry?.mediaUrl),
+        mimeType: toText(entry?.mimeType || entry?.mediaMimeType).toLowerCase(),
+        fileName: toText(entry?.fileName || entry?.mediaFileName || entry?.filename),
+        sizeBytes: Number(entry?.sizeBytes ?? entry?.mediaSizeBytes) || null
+    };
+}
+
+function normalizeQuickReplyButtons(buttons = []) {
+    return (Array.isArray(buttons) ? buttons : [])
+        .map((entry, index) => {
+            const button = entry && typeof entry === 'object' ? entry : {};
+            const title = toText(button.title || button.label || button.text).slice(0, 20);
+            if (!title) return null;
+            const id = toText(button.id || button.buttonId || `btn_${index + 1}`) || `btn_${index + 1}`;
+            return { id, title };
+        })
+        .filter(Boolean)
+        .slice(0, 3);
+}
+
+function buildQuickReplyInteractive(bodyText, buttons = []) {
+    return {
+        type: 'button',
+        body: { text: toText(bodyText) },
+        action: {
+            buttons: normalizeQuickReplyButtons(buttons).map((button) => ({
+                type: 'reply',
+                reply: {
+                    id: button.id,
+                    title: button.title
+                }
+            }))
+        }
+    };
+}
+
+async function resolveQuickReplyVariables(cleanTenantId, {
+    bodyText = '',
+    chatId = '',
+    customerId = ''
+} = {}) {
+    const source = String(bodyText || '');
+    if (!source || !/\{\{\s*[a-zA-Z0-9_]+\s*\}\}/.test(source)) return source;
+    try {
+        const previewPayload = await templateVariablesService.getPreview(cleanTenantId, {
+            chatId,
+            customerId
+        });
+        const variables = (Array.isArray(previewPayload?.categories) ? previewPayload.categories : [])
+            .flatMap((category) => (Array.isArray(category?.variables) ? category.variables : []));
+        const valueMap = new Map(variables.map((variable) => [
+            toText(variable?.key).toLowerCase(),
+            String(variable?.previewValue ?? '').trim()
+        ]));
+        return source.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, rawKey) => {
+            const value = valueMap.get(toText(rawKey).toLowerCase());
+            return value || '';
+        });
+    } catch (error) {
+        console.warn('[automation-rules] quick reply variables skipped:', error?.message || error);
+        return source;
+    }
+}
+
+async function sendAutomationQuickReply(cleanTenantId, {
+    rule = {},
+    quickReply = null,
+    chatId = '',
+    customerId = '',
+    eventKey = '',
+    nextStatus = '',
+    agentMeta = {}
+} = {}) {
+    const bodyTextRaw = toText(quickReply?.text || quickReply?.bodyText || quickReply?.body);
+    const bodyText = await resolveQuickReplyVariables(cleanTenantId, {
+        bodyText: bodyTextRaw,
+        chatId,
+        customerId
+    });
+    const quickReplyButtons = normalizeQuickReplyButtons(quickReply?.buttons || quickReply?.metadata?.buttons);
+    const mediaAssets = (Array.isArray(quickReply?.mediaAssets) ? quickReply.mediaAssets : [])
+        .map(normalizeQuickReplyAssetEntry)
+        .filter((entry) => Boolean(entry.url));
+
+    const legacyMediaUrl = toText(quickReply?.mediaUrl);
+    const legacyMediaMimeType = toText(quickReply?.mediaMimeType).toLowerCase();
+    const legacyMediaFileName = toText(quickReply?.mediaFileName || quickReply?.filename);
+    if (legacyMediaUrl && !mediaAssets.some((entry) => entry.url === legacyMediaUrl)) {
+        mediaAssets.push({
+            url: legacyMediaUrl,
+            mimeType: legacyMediaMimeType,
+            fileName: legacyMediaFileName,
+            sizeBytes: null
+        });
+    }
+
+    if (quickReplyButtons.length > 0 && !bodyText) {
+        console.warn('[automation-rules] quick reply buttons skipped: missing body text', rule.ruleId);
+        return false;
+    }
+    if (!bodyText && mediaAssets.length === 0) return false;
+
+    const metadata = {
+        agentMeta,
+        automationRuleId: rule.ruleId,
+        automationEventKey: eventKey,
+        commercialStatus: nextStatus,
+        quickReplyCode: rule.quickReplyCode
+    };
+
+    if (mediaAssets.length > 0) {
+        for (let index = 0; index < mediaAssets.length; index += 1) {
+            const mediaEntry = mediaAssets[index] || {};
+            if (!mediaEntry.url) continue;
+            const fetchedMedia = await fetchQuickReplyMedia(mediaEntry.url, {
+                tenantId: cleanTenantId,
+                maxBytes: QUICK_REPLY_MEDIA_MAX_BYTES,
+                timeoutMs: QUICK_REPLY_MEDIA_TIMEOUT_MS,
+                mimeHint: mediaEntry.mimeType || legacyMediaMimeType,
+                fileNameHint: mediaEntry.fileName || legacyMediaFileName
+            });
+            if (!fetchedMedia?.mediaData) {
+                console.warn('[automation-rules] quick reply media skipped: could not fetch asset', mediaEntry.url);
+                return false;
+            }
+            const fileNameBase = mediaEntry.fileName
+                || legacyMediaFileName
+                || path.basename(toText(fetchedMedia.filename))
+                || `adjunto-${Date.now()}`;
+            const captionText = quickReplyButtons.length > 0 ? '' : (index === 0 ? bodyText : '');
+            await waClient.sendMedia(
+                chatId,
+                fetchedMedia.mediaData,
+                fetchedMedia.mimetype || mediaEntry.mimeType || legacyMediaMimeType || 'application/octet-stream',
+                toText(fileNameBase) || `adjunto-${Date.now()}`,
+                captionText,
+                false,
+                null
+            );
+        }
+    }
+
+    if (quickReplyButtons.length > 0) {
+        if (typeof waClient?.sendInteractiveMessage !== 'function') {
+            console.warn('[automation-rules] quick reply buttons skipped: interactive unsupported', rule.ruleId);
+            return mediaAssets.length > 0;
+        }
+        await waClient.sendInteractiveMessage(chatId, buildQuickReplyInteractive(bodyText, quickReplyButtons), {
+            metadata
+        });
+        return true;
+    }
+
+    if (mediaAssets.length === 0 && bodyText) {
+        await waClient.sendMessage(chatId, bodyText, { metadata });
+    }
+    return true;
+}
+
 function triggerAutomationAfterCommercialTransition(cleanTenantId, next = {}, previous = null) {
     const nextStatus = String(next?.status || '').trim().toLowerCase();
     const previousStatus = String(previous?.status || '').trim().toLowerCase();
@@ -345,18 +535,27 @@ function triggerAutomationAfterCommercialTransition(cleanTenantId, next = {}, pr
                             : false;
                         if (within24h && rule.quickReplyCode) {
                             const quickReply = await resolveAutomationQuickReply(cleanTenantId, rule, next.scopeModuleId || '');
-                            const quickReplyText = toText(quickReply?.text || quickReply?.bodyText || quickReply?.body);
-                            if (quickReplyText) {
-                                await waClient.sendMessage(next.chatId, quickReplyText, {
-                                    metadata: {
-                                        agentMeta: automationAgentMeta,
-                                        automationRuleId: rule.ruleId,
-                                        automationEventKey: eventKey,
-                                        commercialStatus: nextStatus,
-                                        quickReplyCode: rule.quickReplyCode
-                                    }
+                            if (quickReply) {
+                                const quickReplySent = await sendAutomationQuickReply(cleanTenantId, {
+                                    rule,
+                                    quickReply,
+                                    chatId: next.chatId,
+                                    customerId: customerId || '',
+                                    eventKey,
+                                    nextStatus,
+                                    agentMeta: automationAgentMeta
                                 });
-                                console.info('[automation-rules] quick reply sent:', eventKey, rule.quickReplyCode);
+                                if (quickReplySent) {
+                                    console.info('[automation-rules] quick reply sent:', eventKey, rule.quickReplyCode);
+                                    return;
+                                }
+                            }
+                            if (!rule.templateName) {
+                                if (!quickReply) {
+                                    console.info('[automation-rules] quick reply not found:', eventKey, rule.quickReplyCode);
+                                } else {
+                                    console.info('[automation-rules] quick reply has no sendable content:', eventKey, rule.quickReplyCode);
+                                }
                                 return;
                             }
                         }
