@@ -777,6 +777,17 @@ async function getActiveQuoteContext(tenantId, moduleId, chatId) {
             .filter(Boolean)
             .join(', ');
         const total = money(summary.totalPayable ?? summary.total_payable ?? summary.total);
+        const status = lower(row.status);
+        if (status === 'sent') {
+            return [
+                '⚠️ COTIZACIÓN YA ENVIADA — NO GENERAR NUEVA:',
+                `ID: ${text(row.quote_id)}`,
+                `Productos: ${products || 'Sin productos legibles'}`,
+                `Total: S/ ${formatMoney(total)}`,
+                `Enviada: ${text(row.sent_at) || 'No enviada aun'}`,
+                '→ Solo genera nueva cotización si el cliente pide cambios explícitos en los productos.'
+            ].join('\n');
+        }
         return [
             'COTIZACION ACTIVA:',
             `- ID: ${text(row.quote_id)}`,
@@ -787,6 +798,27 @@ async function getActiveQuoteContext(tenantId, moduleId, chatId) {
         ].join('\n');
     } catch (error) {
         return '';
+    }
+}
+
+async function getRecentSentQuote(tenantId, moduleId, chatId) {
+    try {
+        const { rows } = await pgQuery(
+            `SELECT quote_id, sent_at, updated_at
+               FROM tenant_quotes
+              WHERE tenant_id = $1
+                AND chat_id = $2
+                AND status = 'sent'
+                AND COALESCE(sent_at, updated_at, created_at) >= NOW() - INTERVAL '24 hours'
+                AND (scope_module_id IS NULL OR scope_module_id = '' OR LOWER(scope_module_id) = LOWER($3))
+              ORDER BY COALESCE(sent_at, updated_at, created_at) DESC
+              LIMIT 1`,
+            [tenantId, normalizeChatId(chatId), lower(moduleId)]
+        );
+        return rows?.[0] || null;
+    } catch (error) {
+        console.warn('[Patty] active quote guard skipped:', error?.message || error);
+        return null;
     }
 }
 
@@ -813,6 +845,18 @@ async function createAndSendPattyQuote({
     const cleanChatId = normalizeChatId(chatId);
     const request = quoteRequest && typeof quoteRequest === 'object' ? quoteRequest : null;
     if (!request || !Array.isArray(request.products) || !request.products.length) return null;
+
+    const activeQuote = await getRecentSentQuote(cleanTenantId, cleanModuleId, cleanChatId);
+    if (activeQuote) {
+        console.log('[Patty] quote blocked: active quote already exists', {
+            tenantId: cleanTenantId,
+            moduleId: cleanModuleId,
+            chatId: cleanChatId,
+            quoteId: text(activeQuote.quote_id || activeQuote.quoteId),
+            sentAt: activeQuote.sent_at || activeQuote.sentAt || null
+        });
+        return null;
+    }
 
     const items = await getCatalogItemsForQuoteRequest(cleanTenantId, request.products);
     if (!items.length) {
@@ -1029,6 +1073,8 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         `Tu nombre visible es: ${assistantName}.`,
         `Modulo: ${moduleConfig?.name || cleanModuleId || 'sin modulo'}. ${scheduleState.label}.`,
         '',
+        'INSTRUCCIÓN CRÍTICA: Si el contexto incluye una sección "⚠️ COTIZACIÓN YA ENVIADA", NO incluyas quoteRequest en tu respuesta JSON bajo ninguna circunstancia, salvo que el último mensaje del cliente contenga palabras como "cambia", "modifica", "agrega", "quita", "diferente" o "cambios".',
+        '',
         'NEGOCIO / CATALOGO:',
         catalogText,
         '',
@@ -1096,6 +1142,8 @@ async function generatePattySuggestion(tenantId, moduleId, chatId) {
         context.system,
         [
             `Ultimo mensaje del cliente: ${context.lastCustomerMessage}`,
+            '',
+            'INSTRUCCIÓN CRÍTICA: Si el contexto incluye "⚠️ COTIZACIÓN YA ENVIADA", NO incluyas quoteRequest bajo ninguna circunstancia, salvo que este último mensaje pida cambios explícitos con palabras como "cambia", "modifica", "agrega", "quita", "diferente" o "cambios".',
             '',
             'Responde con JSON valido exactamente en este formato:',
             '{"messages":[{"text":"texto listo para enviar por WhatsApp","quotedMessageId":"message_id inbound relevante o null"}],"quoteRequest":{"products":[{"title":"Nombre exacto del producto del catalogo","qty":1}]}}',
