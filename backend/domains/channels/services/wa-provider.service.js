@@ -309,9 +309,9 @@ class WAProvider extends EventEmitter {
         return await this.activeAdapter.canEditMessageById(messageId);
     }
 
-    async sendMedia(to, mediaData, mimetype, filename, caption, isPtt = false, quotedMessageId = null) {
+    async sendMedia(to, mediaData, mimetype, filename, caption, isPtt = false, quotedMessageId = null, metadata = null) {
         if (!this.activeAdapter?.sendMedia) throw new Error('Media send is not supported in this transport.');
-        return await this.activeAdapter.sendMedia(to, mediaData, mimetype, filename, caption, isPtt, quotedMessageId);
+        return await this.activeAdapter.sendMedia(to, mediaData, mimetype, filename, caption, isPtt, quotedMessageId, metadata);
     }
 
     async markAsRead(chatId) {

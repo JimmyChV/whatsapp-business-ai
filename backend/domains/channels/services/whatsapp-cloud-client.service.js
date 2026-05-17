@@ -1105,11 +1105,16 @@ class WhatsAppCloudClient extends EventEmitter {
         });
     }
 
-    async sendMedia(to, mediaData, mimetype, filename, caption, isPtt = false, quotedMessageId = null) {
+    async sendMedia(to, mediaData, mimetype, filename, caption, isPtt = false, quotedMessageId = null, metadata = null) {
         if (!this.isReady) throw new Error('Cloud client not ready');
         if (isPtt) throw new Error('PTT is not supported in cloud transport');
 
         const waId = await this.resolveSendWaId(to);
+        const metadataObj = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+            ? (metadata.metadata && typeof metadata.metadata === 'object' && !Array.isArray(metadata.metadata)
+                ? metadata.metadata
+                : metadata)
+            : {};
 
         const mime = String(mimetype || '').toLowerCase();
         let type = 'document';
@@ -1179,7 +1184,8 @@ class WhatsAppCloudClient extends EventEmitter {
             mediaId,
             filename: filename || null,
             mimetype: mimetype || null,
-            quotedMessageId: quoted || null
+            quotedMessageId: quoted || null,
+            rawData: Object.keys(metadataObj).length > 0 ? { metadata: metadataObj } : null
         }, { incoming: false, emitEvent: 'message_sent' });
 
         if (message) {

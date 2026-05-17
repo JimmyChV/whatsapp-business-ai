@@ -483,7 +483,8 @@ async function sendAutomationQuickReply(cleanTenantId, {
                 toText(fileNameBase) || `adjunto-${Date.now()}`,
                 captionText,
                 false,
-                null
+                null,
+                metadata
             );
         }
     }
