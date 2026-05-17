@@ -45,6 +45,17 @@ function minutesSince(value) {
     return Math.floor((Date.now() - timestamp) / 60000);
 }
 
+function formatElapsedSince(value) {
+    const minutes = minutesSince(value);
+    if (minutes === null) return 'sin fecha registrada';
+    if (minutes < 1) return 'hace menos de 1 minuto';
+    if (minutes < 60) return `hace ${minutes} minuto${minutes === 1 ? '' : 's'}`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `hace ${hours} hora${hours === 1 ? '' : 's'}`;
+    const days = Math.floor(hours / 24);
+    return `hace ${days} dia${days === 1 ? '' : 's'}`;
+}
+
 function normalizeProductLookupKey(value = '') {
     return lower(value)
         .normalize('NFD')
@@ -898,17 +909,28 @@ async function getCustomerLabelsContext(tenantId, customerId) {
 
 async function getCommercialStatusContext(tenantId, moduleId, chatId) {
     try {
-        const { rows } = await pgQuery(
-            `SELECT status
-               FROM tenant_chat_commercial_status
-              WHERE tenant_id = $1
-                AND chat_id = $2
-                AND (scope_module_id IS NULL OR scope_module_id = '' OR LOWER(scope_module_id) = LOWER($3))
-              ORDER BY updated_at DESC NULLS LAST
-              LIMIT 1`,
-            [tenantId, normalizeChatId(chatId), lower(moduleId)]
-        );
-        return `ESTADO COMERCIAL: ${text(rows?.[0]?.status) || 'sin_estado'}`;
+        const state = await getCurrentCommercialState(tenantId, moduleId, chatId);
+        const status = state.status || 'sin_estado';
+        const elapsed = formatElapsedSince(state.lastTransitionAt);
+        const minutes = minutesSince(state.lastTransitionAt);
+        const lines = [
+            'ESTADO COMERCIAL:',
+            `  Estado: ${status}`,
+            `  Desde: ${elapsed}`
+        ];
+        if (status === 'aceptado') {
+            if (minutes !== null && minutes < 30) {
+                lines.push('  Contexto: Pedido recien confirmado. Pregunta si quiere agregar al pedido actual o hacer uno nuevo.');
+            } else if (minutes !== null && minutes < 1440) {
+                lines.push('  Contexto: Pedido confirmado hoy. Trata como nueva interaccion pero menciona el pedido si es relevante.');
+            } else {
+                lines.push('  Contexto: Pedido anterior. Probablemente nueva compra. No menciones el pedido anterior salvo que sea relevante.');
+            }
+        }
+        if (status === 'atendido') {
+            lines.push('  Contexto: Pedido entregado. Momento ideal para recompra o seguimiento post-venta.');
+        }
+        return lines.join('\n');
     } catch (error) {
         return '';
     }
