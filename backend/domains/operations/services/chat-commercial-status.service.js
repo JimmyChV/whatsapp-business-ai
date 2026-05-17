@@ -231,6 +231,7 @@ function normalizeMetadata(value = {}) {
 
 function formatAssistantDisplayName(value = '') {
     const clean = toText(value);
+    if (clean.toLowerCase() === 'operador') return 'Asistente Virtual';
     if (!clean) return 'Asistente Virtual';
     return /\bIA$/i.test(clean) ? clean : `${clean} IA`;
 }
@@ -530,6 +531,7 @@ function triggerAutomationAfterCommercialTransition(cleanTenantId, next = {}, pr
                     try {
                         const automationModuleId = next.scopeModuleId || rule.moduleId || '';
                         const assistantName = await getAssistantName(cleanTenantId, automationModuleId);
+                        console.log('[automation] moduleId:', automationModuleId, 'name:', assistantName);
                         const automationAgentMeta = {
                             sentByUserId: 'automation',
                             sentByName: assistantName,

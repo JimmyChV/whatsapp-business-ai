@@ -28,7 +28,6 @@ const DEFAULT_ASSISTANT_NAME = 'Patty';
 const DEFAULT_WAIT_SECONDS = 15;
 const MIN_WAIT_SECONDS = 5;
 const MAX_WAIT_SECONDS = 300;
-const ACCEPTED_REOPEN_MINUTES = 30;
 const pattyChatDebounce = new Map();
 
 function text(value = '') {
@@ -966,33 +965,6 @@ async function getCurrentCommercialState(tenantId, moduleId, chatId) {
     }
 }
 
-async function reopenAcceptedChatForQuote(tenantId, moduleId, chatId, state = {}) {
-    try {
-        await chatCommercialStatusService.upsertChatCommercialStatus(tenantId, {
-            chatId: normalizeChatId(chatId),
-            scopeModuleId: lower(moduleId),
-            status: 'en_conversacion',
-            source: 'system',
-            reason: 'patty_reopen_after_accepted_window',
-            changedByUserId: null,
-            lastTransitionAt: new Date().toISOString(),
-            metadata: {
-                trigger: 'patty_quote_after_accepted_window',
-                previousStatus: state.status || 'aceptado',
-                previousLastTransitionAt: state.lastTransitionAt || null
-            }
-        });
-        console.log('[Patty] accepted chat reopened before quote', {
-            tenantId,
-            moduleId: lower(moduleId),
-            chatId: normalizeChatId(chatId),
-            previousLastTransitionAt: state.lastTransitionAt || null
-        });
-    } catch (error) {
-        console.warn('[Patty] accepted chat reopen failed:', error?.message || error);
-    }
-}
-
 function getAutomationEventKeyForStatus(status = '') {
     const cleanStatus = lower(status);
     if (cleanStatus === 'aceptado') return 'quote_accepted';
@@ -1388,20 +1360,6 @@ async function createAndSendPattyQuote({
     if (!request || !Array.isArray(request.products) || !request.products.length) return null;
 
     const currentState = await getCurrentCommercialState(cleanTenantId, cleanModuleId, cleanChatId);
-    if (currentState.status === 'aceptado') {
-        const acceptedMinutes = minutesSince(currentState.lastTransitionAt);
-        if (acceptedMinutes === null || acceptedMinutes < ACCEPTED_REOPEN_MINUTES) {
-            console.log('[Patty] quote blocked: order recently accepted', {
-                tenantId: cleanTenantId,
-                moduleId: cleanModuleId,
-                chatId: cleanChatId,
-                lastTransitionAt: currentState.lastTransitionAt || null,
-                minutesSinceAccepted: acceptedMinutes
-            });
-            return null;
-        }
-        await reopenAcceptedChatForQuote(cleanTenantId, cleanModuleId, cleanChatId, currentState);
-    }
     if (currentState.status === 'cotizado') {
         const lastCustomerMessage = await getLastInboundCustomerText(cleanTenantId, cleanModuleId, cleanChatId);
         if (!hasQuoteChangeIntent(lastCustomerMessage)) {
@@ -1736,6 +1694,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '- Si el contexto incluye "PEDIDO DEL CATALOGO META RECIBIDO", reconoce ese pedido y genera quoteRequest con exactamente esos productos, cantidades y titulos.',
         '- El title debe copiarse del catalogo tal como aparece despues del SKU entre corchetes. No inventes SKUs ni codigos. Si incluyes sku, debe ser exactamente uno de los SKUs entre corchetes.',
         '- Incluye quoteRequest solo cuando haya una aceptacion o solicitud clara de cotizacion.',
+        '- IMPORTANTE: Solo genera quoteRequest cuando el cliente confirma EXPLICITAMENTE que productos quiere cotizar. "Si", "claro", "ok" o "dale" como respuesta a opciones o informacion NO confirma cotizacion; significa que quiere mas informacion. Cotiza solo con frases como "cotizame eso", "quiero esos productos", "dame el precio de todo" o "haz el pedido".',
         '- Cuando el cliente mencione su ubicacion, busca en las zonas de cobertura y responde con las opciones de envio y metodos de pago disponibles para esa zona. Si la ubicacion no esta en cobertura, dilo claramente.',
         '- Cuando el cliente indique su ubicacion, identifica su zona de cobertura y menciona el costo de envio y metodos de pago disponibles para esa zona.',
         '- No digas "Sugerencia", no expliques tu razonamiento y no inventes datos.',
@@ -1779,6 +1738,7 @@ async function generatePattySuggestion(tenantId, moduleId, chatId) {
             'Cuando incluyas quoteRequest, messages[] debe contener solo una intro corta de maximo 1 linea. No repitas productos ni precios en el texto.',
             'Si quoteRequest modifica una cotizacion existente, products[] debe incluir TODOS los productos del resultado final, no solo el producto agregado/quitado/cambiado.',
             'Para quoteRequest usa el title exacto del catalogo. No uses SKUs inventados; si agregas sku, debe existir exactamente entre corchetes en el catalogo.',
+            'IMPORTANTE: Solo genera quoteRequest cuando el cliente confirma EXPLICITAMENTE que productos quiere cotizar. "Si", "claro", "ok" o "dale" como respuesta a opciones o informacion NO confirma cotizacion; significa que quiere mas informacion. Cotiza solo con frases como "cotizame eso", "quiero esos productos", "dame el precio de todo" o "haz el pedido".',
             'Omite quoteRequest si no corresponde generar cotizacion.'
         ].join('\n'),
         null,
@@ -1934,26 +1894,6 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
     const inboundMessageId = text(options.messageId || options.message_id || options.inboundMessageId || options.inbound_message_id);
     const currentState = await getCurrentCommercialState(cleanTenantId, cleanModuleId, cleanChatId);
     const currentStatus = currentState.status;
-    if (currentStatus === 'aceptado') {
-        const acceptedMinutes = minutesSince(currentState.lastTransitionAt);
-        if (acceptedMinutes === null || acceptedMinutes < ACCEPTED_REOPEN_MINUTES) {
-            console.log('[Patty] skipped: order recently accepted', {
-                tenantId: cleanTenantId,
-                moduleId: cleanModuleId,
-                chatId: cleanChatId,
-                lastTransitionAt: currentState.lastTransitionAt || null,
-                minutesSinceAccepted: acceptedMinutes
-            });
-            return;
-        }
-        console.log('[Patty] accepted window elapsed; intervention allowed', {
-            tenantId: cleanTenantId,
-            moduleId: cleanModuleId,
-            chatId: cleanChatId,
-            lastTransitionAt: currentState.lastTransitionAt || null,
-            minutesSinceAccepted: acceptedMinutes
-        });
-    }
     if (await isQuoteButtonReplyMessage(cleanTenantId, cleanModuleId, cleanChatId, inboundMessageId)) {
         const hasAutomation = await hasActiveAutomationForStatus(cleanTenantId, cleanModuleId, currentStatus);
         if (hasAutomation) {
