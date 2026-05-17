@@ -140,13 +140,18 @@ export const normalizeBusinessDataPayload = (data = {}, apiUrl = '') => {
 
 export const normalizeWaModuleItem = (item = {}, apiUrl = '') => {
   const source = item && typeof item === 'object' ? item : {};
-  const moduleId = String(source.moduleId || source.id || '').trim().toLowerCase();
+  const moduleId = String(source.moduleId || source.module_id || source.id || '').trim().toLowerCase();
   if (!moduleId) return null;
   const transportMode = String(source.transportMode || source.transport || source.mode || '').trim().toLowerCase();
+  const metadata = source.metadata && typeof source.metadata === 'object' ? source.metadata : {};
+  const aiConfig = source.aiConfig && typeof source.aiConfig === 'object'
+    ? source.aiConfig
+    : (metadata.aiConfig && typeof metadata.aiConfig === 'object' ? metadata.aiConfig : {});
+  const scheduleId = String(source.scheduleId || source.schedule_id || metadata.scheduleId || metadata.schedule_id || '').trim() || null;
   return {
     moduleId,
-    name: String(source.name || moduleId).trim() || moduleId,
-    phoneNumber: String(source.phoneNumber || source.phone || '').trim() || null,
+    name: String(source.name || source.module_name || moduleId).trim() || moduleId,
+    phoneNumber: String(source.phoneNumber || source.phone_number || source.phone || '').trim() || null,
     transportMode: transportMode || 'cloud',
     isActive: source.isActive !== false,
     isDefault: source.isDefault === true,
@@ -154,6 +159,13 @@ export const normalizeWaModuleItem = (item = {}, apiUrl = '') => {
     channelType: String(source.channelType || source.channel || '').trim().toLowerCase() || null,
     imageUrl: normalizeModuleImageUrl(source.imageUrl || source.logoUrl || source.avatarUrl || '', apiUrl) || null,
     logoUrl: normalizeModuleImageUrl(source.logoUrl || source.imageUrl || source.avatarUrl || '', apiUrl) || null,
+    scheduleId,
+    aiConfig,
+    metadata: {
+      ...metadata,
+      scheduleId,
+      aiConfig
+    },
     assignedUserIds: Array.isArray(source.assignedUserIds)
       ? source.assignedUserIds.map((entry) => String(entry || '').trim()).filter(Boolean)
       : []

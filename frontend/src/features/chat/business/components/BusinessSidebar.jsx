@@ -241,6 +241,9 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             : null;
         return direct || metadataConfig || {};
     }, [activeBusinessModule]);
+    useEffect(() => {
+        console.log('[Patty debug] activeBusinessModule:', JSON.stringify(activeBusinessModule?.metadata?.aiConfig));
+    }, [activeBusinessModule]);
     const enablePatty = activeAiConfig.enablePatty !== false;
     const enableCopilot = activeAiConfig.enableCopilot !== false;
     const aiPanelAvailable = enablePatty || enableCopilot;

@@ -21,20 +21,11 @@ export default function useWaModuleSocketEvents({
   useEffect(() => {
     if (!socket) return;
 
-    const handleWaModuleSelected = (payload) => {
-      const selected = normalizeWaModuleItem(payload?.selected || payload?.item || payload || null);
+    const syncSelectedModuleContext = (selected = null) => {
       if (!selected?.moduleId) return;
       const previousModuleId = String(selectedWaModuleRef.current?.moduleId || '').trim().toLowerCase();
       const selectedModuleId = String(selected?.moduleId || '').trim().toLowerCase();
 
-      setWaModules((prev) => {
-        const base = normalizeWaModules(prev || []);
-        const hasExisting = base.some((item) => item.moduleId === selected.moduleId);
-        const merged = hasExisting
-          ? base.map((item) => (item.moduleId === selected.moduleId ? { ...item, ...selected, isSelected: true } : { ...item, isSelected: false }))
-          : [{ ...selected, isSelected: true }, ...base.map((item) => ({ ...item, isSelected: false }))];
-        return normalizeWaModules(merged);
-      });
       setSelectedWaModule(selected);
       setWaModuleError('');
 
@@ -65,14 +56,38 @@ export default function useWaModuleSocketEvents({
       }
     };
 
+    const handleWaModuleContext = (payload = {}) => {
+      const modules = normalizeWaModules(payload?.modules || payload?.items || payload?.waModules || []);
+      const selected = normalizeWaModuleItem(payload?.selected || payload?.selectedModule || payload?.item || null);
+      if (modules.length) setWaModules(modules);
+      if (selected?.moduleId) syncSelectedModuleContext(selected);
+    };
+
+    const handleWaModuleSelected = (payload) => {
+      const selected = normalizeWaModuleItem(payload?.selected || payload?.item || payload || null);
+      if (!selected?.moduleId) return;
+
+      setWaModules((prev) => {
+        const base = normalizeWaModules(prev || []);
+        const hasExisting = base.some((item) => item.moduleId === selected.moduleId);
+        const merged = hasExisting
+          ? base.map((item) => (item.moduleId === selected.moduleId ? { ...item, ...selected, isSelected: true } : { ...item, isSelected: false }))
+          : [{ ...selected, isSelected: true }, ...base.map((item) => ({ ...item, isSelected: false }))];
+        return normalizeWaModules(merged);
+      });
+      syncSelectedModuleContext(selected);
+    };
+
     const handleWaModuleError = (message) => {
       setWaModuleError(String(message || 'No se pudo actualizar el modulo WhatsApp.'));
     };
 
+    socket.on('wa_module_context', handleWaModuleContext);
     socket.on('wa_module_selected', handleWaModuleSelected);
     socket.on('wa_module_error', handleWaModuleError);
 
     return () => {
+      socket.off('wa_module_context', handleWaModuleContext);
       socket.off('wa_module_selected', handleWaModuleSelected);
       socket.off('wa_module_error', handleWaModuleError);
     };
