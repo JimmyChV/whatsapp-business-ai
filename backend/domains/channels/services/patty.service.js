@@ -6,6 +6,7 @@ const {
 } = require('../../../config/persistence-runtime');
 const tenantIntegrationsService = require('../../tenant/services/integrations.service');
 const tenantScheduleService = require('../../tenant/services/tenant-schedule.service');
+const tenantAutomationService = require('../../tenant/services/tenant-automation.service');
 const quickRepliesManagerService = require('../../tenant/services/quick-replies-manager.service');
 const tenantZoneRulesService = require('../../tenant/services/tenant-zone-rules.service');
 const waModulesService = require('../../tenant/services/wa-modules.service');
@@ -925,6 +926,31 @@ async function getCurrentCommercialStatus(tenantId, moduleId, chatId) {
     }
 }
 
+function getAutomationEventKeyForStatus(status = '') {
+    const cleanStatus = lower(status);
+    if (cleanStatus === 'aceptado') return 'quote_accepted';
+    if (cleanStatus === 'programado') return 'order_programmed';
+    if (cleanStatus === 'atendido') return 'order_attended';
+    if (cleanStatus === 'vendido') return 'order_sold';
+    if (cleanStatus === 'perdido') return 'order_lost';
+    if (cleanStatus === 'expirado') return 'order_expired';
+    return '';
+}
+
+async function hasActiveAutomationForStatus(tenantId, moduleId, status = '') {
+    const eventKey = getAutomationEventKeyForStatus(status);
+    if (!eventKey) return false;
+    try {
+        const rules = await tenantAutomationService.listActiveRulesForEvent(tenantId, eventKey, {
+            moduleId: lower(moduleId)
+        });
+        return Array.isArray(rules) && rules.length > 0;
+    } catch (error) {
+        console.warn('[Patty] automation lookup skipped:', error?.message || error);
+        return false;
+    }
+}
+
 async function getOriginContext(tenantId, moduleId, chatId) {
     const cleanChatId = normalizeChatId(chatId);
     const phoneE164 = firstPhoneE164FromChatId(chatId);
@@ -1736,23 +1762,26 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
     const cleanModuleId = lower(moduleId);
     const cleanChatId = normalizeChatId(chatId);
     const inboundMessageId = text(options.messageId || options.message_id || options.inboundMessageId || options.inbound_message_id);
+    const currentStatus = await getCurrentCommercialStatus(cleanTenantId, cleanModuleId, cleanChatId);
     if (await isQuoteButtonReplyMessage(cleanTenantId, cleanModuleId, cleanChatId, inboundMessageId)) {
-        console.log('[Patty] skipped: quote button_reply inbound', {
+        const hasAutomation = await hasActiveAutomationForStatus(cleanTenantId, cleanModuleId, currentStatus);
+        if (hasAutomation) {
+            console.log('[Patty] skipped: quote button_reply handled by automation', {
+                tenantId: cleanTenantId,
+                moduleId: cleanModuleId,
+                chatId: cleanChatId,
+                messageId: inboundMessageId,
+                status: currentStatus
+            });
+            return;
+        }
+        console.log('[Patty] quote button_reply has no automation; continuing intervention', {
             tenantId: cleanTenantId,
             moduleId: cleanModuleId,
             chatId: cleanChatId,
-            messageId: inboundMessageId
+            messageId: inboundMessageId,
+            status: currentStatus || 'sin_estado'
         });
-        return;
-    }
-    const currentStatus = await getCurrentCommercialStatus(cleanTenantId, cleanModuleId, cleanChatId);
-    if (['aceptado', 'programado', 'atendido', 'vendido'].includes(currentStatus)) {
-        console.log(`[Patty] skipped: status=${currentStatus} not eligible`, {
-            tenantId: cleanTenantId,
-            moduleId: cleanModuleId,
-            chatId: cleanChatId
-        });
-        return;
     }
     const moduleConfig = await getModuleConfig(cleanTenantId, cleanModuleId);
     const aiConfig = moduleConfig?.aiConfig;
