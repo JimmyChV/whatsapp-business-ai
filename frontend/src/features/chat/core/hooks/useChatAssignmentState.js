@@ -193,14 +193,26 @@ export default function useChatAssignmentState({
       }
     };
 
+    const handlePattyResumed = (payload = {}) => {
+      const chatId = asText(payload?.chatId || '');
+      notify({
+        type: 'info',
+        message: chatId
+          ? `Patty retomo el chat ${chatId} por inactividad.`
+          : 'Patty retomo un chat por inactividad.'
+      });
+    };
+
     socket.on('chat_assignment_bulk_snapshot', handleBulkSnapshot);
     socket.on('chat_assignment_updated', handleAssignmentUpdated);
     socket.on('chat_assignment_take_result', handleTakeResult);
+    socket.on('patty_resumed', handlePattyResumed);
 
     return () => {
       socket.off('chat_assignment_bulk_snapshot', handleBulkSnapshot);
       socket.off('chat_assignment_updated', handleAssignmentUpdated);
       socket.off('chat_assignment_take_result', handleTakeResult);
+      socket.off('patty_resumed', handlePattyResumed);
     };
   }, [socket, resolveAssignmentKey, putAssignment, clearTakePending, notify]);
 

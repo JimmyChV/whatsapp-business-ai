@@ -1808,6 +1808,23 @@ class SocketManager {
                         status: 'active'
                     });
 
+                    if (chatCommercialStatusService && typeof chatCommercialStatusService.setChatPattyMode === 'function') {
+                        const pattyModeResult = await chatCommercialStatusService.setChatPattyMode(tenantId, {
+                            chatId: baseChatId,
+                            scopeModuleId,
+                            mode: 'review',
+                            pattyTakenBy: actorUserId,
+                            reason: 'socket_take_chat'
+                        });
+                        this.emitCommercialStatusUpdated({
+                            tenantId,
+                            chatId: baseChatId,
+                            scopeModuleId,
+                            result: pattyModeResult,
+                            source: 'socket.take_chat.patty_mode'
+                        });
+                    }
+
                     await authzAudit.auditSocketAction('chat.assignment.taken', {
                         resourceType: 'chat',
                         resourceId: baseChatId,

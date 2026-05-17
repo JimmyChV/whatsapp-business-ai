@@ -264,6 +264,16 @@ function registerOperationsHttpRoutes({
         : async () => {
             throw new Error('Servicio de estado comercial no disponible.');
         };
+    const setChatPattyMode = typeof commercialStatusApi.setChatPattyMode === 'function'
+        ? commercialStatusApi.setChatPattyMode.bind(commercialStatusApi)
+        : async () => {
+            throw new Error('Servicio de modo Patty no disponible.');
+        };
+    const resetChatPattyMode = typeof commercialStatusApi.resetChatPattyMode === 'function'
+        ? commercialStatusApi.resetChatPattyMode.bind(commercialStatusApi)
+        : async () => {
+            throw new Error('Servicio de modo Patty no disponible.');
+        };
     const metaTemplatesApi = metaTemplatesService && typeof metaTemplatesService === 'object'
         ? metaTemplatesService
         : {};
@@ -1465,6 +1475,90 @@ function registerOperationsHttpRoutes({
         }
     });
 
+    app.get('/api/tenant/chats/:chatId/patty-mode', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+
+            const chatId = String(req.params?.chatId || '').trim();
+            if (!chatId) return res.status(400).json({ ok: false, error: 'chatId invalido.' });
+
+            const scopeModuleId = normalizeScopeModuleId(req.query?.scopeModuleId || '');
+            const commercialStatus = await getChatCommercialStatus(tenantId, { chatId, scopeModuleId });
+            const overrideMode = toLower(commercialStatus?.pattyMode || '');
+
+            return res.json({
+                ok: true,
+                tenantId,
+                chatId,
+                scopeModuleId,
+                mode: overrideMode || null,
+                effectiveMode: overrideMode || null,
+                pattyModeUntil: commercialStatus?.pattyModeUntil || null,
+                pattyTakenBy: commercialStatus?.pattyTakenBy || null,
+                commercialStatus
+            });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar el modo Patty del chat.') });
+        }
+    });
+
+    app.post('/api/tenant/chats/:chatId/patty-mode', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsWriteAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+
+            const chatId = String(req.params?.chatId || '').trim();
+            if (!chatId) return res.status(400).json({ ok: false, error: 'chatId invalido.' });
+
+            const scopeModuleId = normalizeScopeModuleId(req.body?.scopeModuleId || req.query?.scopeModuleId || '');
+            const mode = toLower(req.body?.mode || '');
+            if (!['autonomous', 'review', 'off'].includes(mode)) {
+                return res.status(400).json({ ok: false, error: 'Modo Patty invalido.' });
+            }
+
+            const actorUserId = resolveActorUserId(req);
+            const result = await setChatPattyMode(tenantId, {
+                chatId,
+                scopeModuleId,
+                mode,
+                pattyTakenBy: mode === 'review' ? actorUserId : null,
+                reason: 'http_patty_mode'
+            });
+
+            if (typeof emitCommercialStatusUpdated === 'function') {
+                emitCommercialStatusUpdated({
+                    tenantId,
+                    chatId,
+                    scopeModuleId,
+                    result,
+                    source: 'http.patty_mode'
+                });
+            }
+
+            return res.json({
+                ok: true,
+                tenantId,
+                chatId,
+                scopeModuleId,
+                mode,
+                pattyModeUntil: result?.status?.pattyModeUntil || null,
+                pattyTakenBy: result?.status?.pattyTakenBy || null,
+                commercialStatus: result?.status || null
+            });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar el modo Patty del chat.') });
+        }
+    });
+
     app.get('/api/tenant/commercial-statuses', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
@@ -2113,6 +2207,25 @@ function registerOperationsHttpRoutes({
                 status: assigneeUserId ? 'active' : 'released'
             });
 
+            if (assigneeUserId) {
+                const pattyModeResult = await setChatPattyMode(tenantId, {
+                    chatId,
+                    scopeModuleId,
+                    mode: 'review',
+                    pattyTakenBy: assigneeUserId,
+                    reason: 'assignment_manual'
+                });
+                if (typeof emitCommercialStatusUpdated === 'function') {
+                    emitCommercialStatusUpdated({
+                        tenantId,
+                        chatId,
+                        scopeModuleId,
+                        result: pattyModeResult,
+                        source: 'http.assignment.patty_mode'
+                    });
+                }
+            }
+
             await auditLogService.writeAuditLog(tenantId, {
                 userId: actorUserId,
                 userEmail: req?.authContext?.user?.email || null,
@@ -2173,6 +2286,23 @@ function registerOperationsHttpRoutes({
                 status: 'active'
             });
 
+            const pattyModeResult = await setChatPattyMode(tenantId, {
+                chatId,
+                scopeModuleId,
+                mode: 'review',
+                pattyTakenBy: actorUserId,
+                reason: 'take_chat'
+            });
+            if (typeof emitCommercialStatusUpdated === 'function') {
+                emitCommercialStatusUpdated({
+                    tenantId,
+                    chatId,
+                    scopeModuleId,
+                    result: pattyModeResult,
+                    source: 'http.take_chat.patty_mode'
+                });
+            }
+
             await auditLogService.writeAuditLog(tenantId, {
                 userId: actorUserId,
                 userEmail: req?.authContext?.user?.email || null,
@@ -2228,6 +2358,21 @@ function registerOperationsHttpRoutes({
                 assignmentMode: 'manual',
                 assignmentReason: 'release'
             });
+
+            const pattyModeResult = await resetChatPattyMode(tenantId, {
+                chatId,
+                scopeModuleId,
+                reason: 'assignment_release'
+            });
+            if (typeof emitCommercialStatusUpdated === 'function') {
+                emitCommercialStatusUpdated({
+                    tenantId,
+                    chatId,
+                    scopeModuleId,
+                    result: pattyModeResult,
+                    source: 'http.assignment_release.patty_mode'
+                });
+            }
 
             await auditLogService.writeAuditLog(tenantId, {
                 userId: actorUserId,

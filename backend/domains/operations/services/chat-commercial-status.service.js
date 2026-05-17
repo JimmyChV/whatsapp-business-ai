@@ -644,6 +644,9 @@ function normalizeRecord(item = {}, { fallbackChatId = '', fallbackScopeModuleId
         soldAt: normalizeIso(source.soldAt || source.sold_at) || null,
         lostAt: normalizeIso(source.lostAt || source.lost_at) || null,
         lastTransitionAt,
+        pattyMode: toLower(source.pattyMode || source.patty_mode || '') || null,
+        pattyModeUntil: normalizeIso(source.pattyModeUntil || source.patty_mode_until) || null,
+        pattyTakenBy: toText(source.pattyTakenBy || source.patty_taken_by || '') || null,
         metadata: normalizeMetadata(source.metadata),
         createdAt,
         updatedAt
@@ -674,6 +677,9 @@ function toDbRecord(record = {}) {
         sold_at: record.soldAt,
         lost_at: record.lostAt,
         last_transition_at: record.lastTransitionAt,
+        patty_mode: record.pattyMode,
+        patty_mode_until: record.pattyModeUntil,
+        patty_taken_by: record.pattyTakenBy,
         metadata: record.metadata,
         created_at: record.createdAt,
         updated_at: record.updatedAt
@@ -706,11 +712,25 @@ async function ensurePostgresSchema() {
                 sold_at TIMESTAMPTZ NULL,
                 lost_at TIMESTAMPTZ NULL,
                 last_transition_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                patty_mode TEXT NULL,
+                patty_mode_until TIMESTAMPTZ NULL,
+                patty_taken_by TEXT NULL,
                 metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 PRIMARY KEY (tenant_id, chat_id, scope_module_id)
             )
+        `);
+        await queryPostgres(`
+            ALTER TABLE tenant_chat_commercial_status
+              ADD COLUMN IF NOT EXISTS patty_mode TEXT DEFAULT NULL,
+              ADD COLUMN IF NOT EXISTS patty_mode_until TIMESTAMPTZ DEFAULT NULL,
+              ADD COLUMN IF NOT EXISTS patty_taken_by TEXT DEFAULT NULL;
+            ALTER TABLE tenant_chat_commercial_status
+              DROP CONSTRAINT IF EXISTS tenant_chat_commercial_status_patty_mode_check;
+            ALTER TABLE tenant_chat_commercial_status
+              ADD CONSTRAINT tenant_chat_commercial_status_patty_mode_check
+              CHECK (patty_mode IS NULL OR patty_mode IN ('autonomous', 'review', 'off'));
         `);
         await queryPostgres(`
             CREATE INDEX IF NOT EXISTS idx_chat_commercial_status_tenant_status
@@ -745,7 +765,8 @@ async function getChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, options = {
         const result = await queryPostgres(
             `SELECT chat_id, scope_module_id, status, source, reason, changed_by_user_id,
                     first_customer_message_at, first_agent_response_at, quoted_at, sold_at, lost_at,
-                    last_transition_at, metadata, created_at, updated_at
+                    last_transition_at, patty_mode, patty_mode_until, patty_taken_by,
+                    metadata, created_at, updated_at
                FROM tenant_chat_commercial_status
               WHERE tenant_id = $1
                 AND chat_id = $2
@@ -805,7 +826,8 @@ async function listCommercialStatuses(tenantId = DEFAULT_TENANT_ID, options = {}
         const rowsResult = await queryPostgres(
             `SELECT chat_id, scope_module_id, status, source, reason, changed_by_user_id,
                     first_customer_message_at, first_agent_response_at, quoted_at, sold_at, lost_at,
-                    last_transition_at, metadata, created_at, updated_at
+                    last_transition_at, patty_mode, patty_mode_until, patty_taken_by,
+                    metadata, created_at, updated_at
                FROM tenant_chat_commercial_status
               WHERE ${whereSql}
               ORDER BY updated_at DESC
@@ -821,6 +843,135 @@ async function listCommercialStatuses(tenantId = DEFAULT_TENANT_ID, options = {}
         if (missingRelation(error)) return { items: [], total: 0, limit, offset };
         throw error;
     }
+}
+
+function normalizePattyMode(value = '') {
+    const mode = toLower(value);
+    return ['autonomous', 'review', 'off'].includes(mode) ? mode : null;
+}
+
+function buildPattyModeUntil(mode = '') {
+    if (mode !== 'review') return null;
+    return new Date(Date.now() + 30 * 60 * 1000).toISOString();
+}
+
+async function setChatPattyMode(tenantId = DEFAULT_TENANT_ID, payload = {}) {
+    const cleanTenantId = resolveTenantId(tenantId);
+    const chatId = normalizeChatId(payload.chatId || payload.chat_id);
+    const scopeModuleId = normalizeScopeModuleId(payload.scopeModuleId || payload.scope_module_id || '');
+    const mode = normalizePattyMode(payload.mode);
+    if (!chatId) throw new Error('chatId requerido para modo Patty.');
+    if (!mode) throw new Error('Modo Patty invalido.');
+    const pattyModeUntil = payload.pattyModeUntil !== undefined
+        ? normalizeIso(payload.pattyModeUntil)
+        : buildPattyModeUntil(mode);
+    const pattyTakenBy = payload.pattyTakenBy !== undefined
+        ? toText(payload.pattyTakenBy || '') || null
+        : null;
+
+    const current = await getChatCommercialStatus(cleanTenantId, { chatId, scopeModuleId });
+    const base = current || normalizeRecord({
+        chatId,
+        scopeModuleId,
+        status: 'nuevo',
+        source: 'system'
+    });
+    return upsertChatCommercialStatus(cleanTenantId, {
+        ...base,
+        chatId,
+        scopeModuleId,
+        pattyMode: mode,
+        pattyModeUntil,
+        pattyTakenBy: mode === 'review' ? pattyTakenBy : null,
+        metadata: {
+            ...(base.metadata || {}),
+            pattyModeUpdatedAt: nowIso(),
+            pattyModeReason: toText(payload.reason || '') || null
+        }
+    });
+}
+
+async function resetChatPattyMode(tenantId = DEFAULT_TENANT_ID, payload = {}) {
+    const cleanTenantId = resolveTenantId(tenantId);
+    const chatId = normalizeChatId(payload.chatId || payload.chat_id);
+    const scopeModuleId = normalizeScopeModuleId(payload.scopeModuleId || payload.scope_module_id || '');
+    if (!chatId) throw new Error('chatId requerido para reset Patty.');
+    const current = await getChatCommercialStatus(cleanTenantId, { chatId, scopeModuleId });
+    if (!current) return { status: null, previous: null, changed: false };
+    return upsertChatCommercialStatus(cleanTenantId, {
+        ...current,
+        chatId,
+        scopeModuleId,
+        pattyMode: null,
+        pattyModeUntil: null,
+        pattyTakenBy: null,
+        metadata: {
+            ...(current.metadata || {}),
+            pattyModeResetAt: nowIso(),
+            pattyModeResetReason: toText(payload.reason || '') || null
+        }
+    });
+}
+
+async function extendPattyReviewWindow(tenantId = DEFAULT_TENANT_ID, payload = {}) {
+    const cleanTenantId = resolveTenantId(tenantId);
+    const chatId = normalizeChatId(payload.chatId || payload.chat_id);
+    const scopeModuleId = normalizeScopeModuleId(payload.scopeModuleId || payload.scope_module_id || '');
+    if (!chatId) return null;
+    const current = await getChatCommercialStatus(cleanTenantId, { chatId, scopeModuleId });
+    if (!current || current.pattyMode !== 'review') return current;
+    const until = buildPattyModeUntil('review');
+    await upsertChatCommercialStatus(cleanTenantId, {
+        ...current,
+        chatId,
+        scopeModuleId,
+        pattyMode: 'review',
+        pattyModeUntil: until,
+        pattyTakenBy: current.pattyTakenBy || payload.pattyTakenBy || null,
+        metadata: {
+            ...(current.metadata || {}),
+            pattyModeExtendedAt: nowIso(),
+            pattyModeExtendReason: toText(payload.reason || '') || null
+        }
+    });
+    return getChatCommercialStatus(cleanTenantId, { chatId, scopeModuleId });
+}
+
+async function resumeExpiredPattyReviewModes(tenantId = DEFAULT_TENANT_ID, { limit = 100 } = {}) {
+    const cleanTenantId = resolveTenantId(tenantId);
+    if (getStorageDriver() !== 'postgres') return { items: [], count: 0 };
+    await ensurePostgresSchema();
+    const { rows } = await queryPostgres(
+        `WITH candidates AS (
+            SELECT ctid
+              FROM tenant_chat_commercial_status
+             WHERE tenant_id = $1
+               AND patty_mode = 'review'
+               AND patty_mode_until IS NOT NULL
+               AND patty_mode_until < NOW()
+               AND patty_taken_by IS NOT NULL
+             ORDER BY patty_mode_until ASC
+             LIMIT $2
+        )
+        UPDATE tenant_chat_commercial_status
+            SET patty_mode = NULL,
+                patty_mode_until = NULL,
+                patty_taken_by = NULL,
+                metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb,
+                updated_at = NOW()
+          WHERE ctid IN (SELECT ctid FROM candidates)
+          RETURNING chat_id, scope_module_id`,
+        [
+            cleanTenantId,
+            Math.max(1, Number(limit || 100)),
+            JSON.stringify({ pattyResumedAt: nowIso(), pattyResumeReason: 'advisor_inactive' })
+        ]
+    );
+    const items = (Array.isArray(rows) ? rows : []).map((row) => ({
+        chatId: normalizeChatId(row.chat_id),
+        scopeModuleId: normalizeScopeModuleId(row.scope_module_id || '')
+    }));
+    return { items, count: items.length };
 }
 
 async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload = {}) {
@@ -845,6 +996,9 @@ async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload 
         soldAt: source.soldAt !== undefined ? source.soldAt : (previous?.soldAt || null),
         lostAt: source.lostAt !== undefined ? source.lostAt : (previous?.lostAt || null),
         lastTransitionAt: source.lastTransitionAt !== undefined ? source.lastTransitionAt : (previous?.lastTransitionAt || now),
+        pattyMode: source.pattyMode !== undefined ? source.pattyMode : (previous?.pattyMode || null),
+        pattyModeUntil: source.pattyModeUntil !== undefined ? source.pattyModeUntil : (previous?.pattyModeUntil || null),
+        pattyTakenBy: source.pattyTakenBy !== undefined ? source.pattyTakenBy : (previous?.pattyTakenBy || null),
         metadata: {
             ...(previous?.metadata || {}),
             ...normalizeMetadata(source.metadata)
@@ -901,11 +1055,11 @@ async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload 
         `INSERT INTO tenant_chat_commercial_status (
             tenant_id, chat_id, scope_module_id, status, source, reason, changed_by_user_id,
             first_customer_message_at, first_agent_response_at, quoted_at, sold_at, lost_at,
-            last_transition_at, metadata, created_at, updated_at
+            last_transition_at, patty_mode, patty_mode_until, patty_taken_by, metadata, created_at, updated_at
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7,
             $8, $9, $10, $11, $12,
-            $13, $14::jsonb, $15, $16
+            $13, $14, $15, $16, $17::jsonb, $18, $19
         )
         ON CONFLICT (tenant_id, chat_id, scope_module_id)
         DO UPDATE SET
@@ -919,6 +1073,9 @@ async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload 
             sold_at = EXCLUDED.sold_at,
             lost_at = EXCLUDED.lost_at,
             last_transition_at = EXCLUDED.last_transition_at,
+            patty_mode = EXCLUDED.patty_mode,
+            patty_mode_until = EXCLUDED.patty_mode_until,
+            patty_taken_by = EXCLUDED.patty_taken_by,
             metadata = COALESCE(tenant_chat_commercial_status.metadata, '{}'::jsonb) || COALESCE(EXCLUDED.metadata, '{}'::jsonb),
             updated_at = EXCLUDED.updated_at`,
         [
@@ -935,6 +1092,9 @@ async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload 
             row.sold_at,
             row.lost_at,
             row.last_transition_at,
+            row.patty_mode,
+            row.patty_mode_until,
+            row.patty_taken_by,
             JSON.stringify(row.metadata || {}),
             row.created_at,
             row.updated_at
@@ -1113,6 +1273,10 @@ module.exports = {
     getChatCommercialStatus,
     listCommercialStatuses,
     upsertChatCommercialStatus,
+    setChatPattyMode,
+    resetChatPattyMode,
+    extendPattyReviewWindow,
+    resumeExpiredPattyReviewModes,
     markInboundCustomerFirstContact,
     markFirstAgentReply,
     markQuoteSent,

@@ -826,6 +826,26 @@ function createSocketWaEventsBridgeService({
                     // silent: outbound processing should not fail by commercial status lifecycle issues
                 }
             }
+            if (historyTenantId && relatedChatIdBase && cleanScopeModuleId && chatCommercialStatusService) {
+                try {
+                    const sentByRole = String(agentMeta?.sentByRole || '').trim().toLowerCase();
+                    const sentByUserId = String(agentMeta?.sentByUserId || '').trim().toLowerCase();
+                    const isPattyOrAutomation = sentByRole === 'assistant'
+                        || ['patty', 'automation'].includes(sentByUserId)
+                        || Boolean(agentMeta?.patty)
+                        || String(agentMeta?.automationSource || '').trim();
+                    if (!isPattyOrAutomation && typeof chatCommercialStatusService.extendPattyReviewWindow === 'function') {
+                        await chatCommercialStatusService.extendPattyReviewWindow(historyTenantId, {
+                            chatId: relatedChatIdBase,
+                            scopeModuleId: cleanScopeModuleId,
+                            pattyTakenBy: String(agentMeta?.sentByUserId || '').trim() || null,
+                            reason: 'advisor_outbound_message'
+                        });
+                    }
+                } catch (_) {
+                    // silent: Patty handoff state should not block outbound delivery
+                }
+            }
             emitToRuntimeContext('message', {
                 id: messageId,
                 chatId: scopedChatId || relatedChatIdBase,

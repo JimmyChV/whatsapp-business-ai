@@ -68,6 +68,7 @@ const {
     assignmentRulesService,
     chatAssignmentRouterService,
     chatAssignmentInactivityJobService,
+    pattyHandoffJobService,
     quoteExpiryJobService,
     operationsKpiService,
     globalLabelsService,
@@ -543,6 +544,13 @@ const quoteExpiryJob = quoteExpiryJobService.createQuoteExpiryJob({
     logger,
     opsTelemetry
 });
+const pattyHandoffJob = pattyHandoffJobService.createPattyHandoffJob({
+    chatCommercialStatusService,
+    tenantService,
+    logger,
+    opsTelemetry,
+    emitToTenant: (...args) => socketManager.emitToTenant(...args)
+});
 
 registerProcessHandlers();
 
@@ -564,6 +572,7 @@ async function startServer() {
         chatAssignmentInactivityJob.start();
         campaignDispatcherJob.start();
         quoteExpiryJob.start();
+        pattyHandoffJob.start();
         scheduleWaInitialize();
     });
 }

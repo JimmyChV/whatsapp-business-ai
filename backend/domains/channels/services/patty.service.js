@@ -944,7 +944,7 @@ async function getCurrentCommercialStatus(tenantId, moduleId, chatId) {
 async function getCurrentCommercialState(tenantId, moduleId, chatId) {
     try {
         const { rows } = await pgQuery(
-            `SELECT status, last_transition_at
+            `SELECT status, last_transition_at, patty_mode, patty_mode_until, patty_taken_by
                FROM tenant_chat_commercial_status
               WHERE tenant_id = $1
                 AND chat_id = $2
@@ -955,7 +955,10 @@ async function getCurrentCommercialState(tenantId, moduleId, chatId) {
         );
         return {
             status: lower(rows?.[0]?.status),
-            lastTransitionAt: rows?.[0]?.last_transition_at || null
+            lastTransitionAt: rows?.[0]?.last_transition_at || null,
+            pattyMode: lower(rows?.[0]?.patty_mode),
+            pattyModeUntil: rows?.[0]?.patty_mode_until || null,
+            pattyTakenBy: text(rows?.[0]?.patty_taken_by)
         };
     } catch (error) {
         console.warn('[Patty] commercial status lookup skipped:', error?.message || error);
@@ -1013,6 +1016,28 @@ async function hasActiveAutomationForStatus(tenantId, moduleId, status = '') {
         console.warn('[Patty] automation lookup skipped:', error?.message || error);
         return false;
     }
+}
+
+async function getChatPattyMode(tenantId, chatId, moduleId, moduleConfig = null) {
+    const state = await getCurrentCommercialState(tenantId, moduleId, chatId);
+    if (['autonomous', 'review', 'off'].includes(state.pattyMode)) {
+        return {
+            mode: state.pattyMode,
+            source: 'chat_override',
+            state
+        };
+    }
+    const scheduleState = await resolveScheduleState(tenantId, moduleConfig || {});
+    const aiConfig = moduleConfig?.aiConfig || {};
+    const mode = scheduleState.open
+        ? lower(aiConfig.withinHoursMode || aiConfig.within_hours_mode || 'off')
+        : lower(aiConfig.outsideHoursMode || aiConfig.outside_hours_mode || 'off');
+    return {
+        mode,
+        source: 'module_config',
+        state,
+        scheduleState
+    };
 }
 
 async function getOriginContext(tenantId, moduleId, chatId) {
@@ -1968,17 +1993,17 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
         return;
     }
 
-    const scheduleState = await resolveScheduleState(cleanTenantId, moduleConfig);
-    const mode = scheduleState.open
-        ? lower(aiConfig.withinHoursMode || aiConfig.within_hours_mode || 'off')
-        : lower(aiConfig.outsideHoursMode || aiConfig.outside_hours_mode || 'off');
+    const modeState = await getChatPattyMode(cleanTenantId, cleanChatId, cleanModuleId, moduleConfig);
+    const scheduleState = modeState.scheduleState || await resolveScheduleState(cleanTenantId, moduleConfig);
+    const mode = lower(modeState.mode || 'off');
     if (!['review', 'autonomous'].includes(mode)) {
         console.log('[Patty] skipped: mode off or unsupported', {
             tenantId: cleanTenantId,
             moduleId: cleanModuleId,
             chatId: cleanChatId,
             scheduleOpen: scheduleState.open,
-            mode
+            mode,
+            modeSource: modeState.source
         });
         return;
     }
@@ -2006,7 +2031,8 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
         configuredWaitSeconds,
         waitSeconds,
         inboundAt,
-        scheduleOpen: scheduleState.open
+        scheduleOpen: scheduleState.open,
+        modeSource: modeState.source
     });
     const timer = setTimeout(async () => {
         try {
