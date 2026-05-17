@@ -26,6 +26,19 @@ function normalizePattyMessages(pattySuggestion = null) {
         : (fallbackSuggestion ? [{ text: fallbackSuggestion, quotedMessageId: null }] : []);
 }
 
+function normalizePattyMode(value = '') {
+    const mode = String(value || '').trim().toLowerCase();
+    return ['autonomous', 'review', 'off'].includes(mode) ? mode : '';
+}
+
+function firstPattyMode(...values) {
+    for (const value of values) {
+        const mode = normalizePattyMode(value);
+        if (mode) return mode;
+    }
+    return '';
+}
+
 export default function BusinessAiTabSection({
     aiMessages = [],
     isAiLoading = false,
@@ -73,25 +86,44 @@ export default function BusinessAiTabSection({
     const isAssignedToMe = typeof chatAssignmentState?.isAssignedToMe === 'function'
         ? chatAssignmentState.isAssignedToMe(activeChatId)
         : false;
-    const globalWithinMode = String(activeAiConfig?.withinHoursMode || activeAiConfig?.within_hours_mode || '').trim().toLowerCase();
-    const globalOutsideMode = String(activeAiConfig?.outsideHoursMode || activeAiConfig?.outside_hours_mode || '').trim().toLowerCase();
-    const globalMode = globalWithinMode && globalWithinMode === globalOutsideMode
-        ? globalWithinMode
-        : (globalOutsideMode || globalWithinMode || 'off');
-    const selectedOverrideMode = String(
+    const globalWithinMode = normalizePattyMode(activeAiConfig?.withinHoursMode || activeAiConfig?.within_hours_mode);
+    const globalOutsideMode = normalizePattyMode(activeAiConfig?.outsideHoursMode || activeAiConfig?.outside_hours_mode);
+    const scheduleOpenValue = activeAiConfig?.isWithinSchedule
+        ?? activeAiConfig?.withinSchedule
+        ?? activeAiConfig?.isWithinBusinessHours
+        ?? activeAiConfig?.scheduleOpen
+        ?? null;
+    const hasScheduleSignal = typeof scheduleOpenValue === 'boolean';
+    const modulePattyMode = firstPattyMode(
+        pattyModePayload?.effectiveMode,
+        pattyModePayload?.modulePattyMode,
+        pattyModePayload?.globalMode,
+        activeChatCommercialStatus?.effectivePattyMode,
+        activeChatCommercialStatus?.modulePattyMode,
+        activeChatCommercialStatus?.globalPattyMode,
+        activeAiConfig?.effectiveMode,
+        activeAiConfig?.currentMode,
+        activeAiConfig?.mode,
+        hasScheduleSignal ? (scheduleOpenValue ? globalWithinMode : globalOutsideMode) : '',
+        globalWithinMode && globalWithinMode === globalOutsideMode ? globalWithinMode : '',
+        globalOutsideMode,
+        globalWithinMode,
+        'off'
+    );
+    const selectedOverrideMode = firstPattyMode(
         pattyModePayload
             ? (pattyModePayload.mode || '')
-            : (activeChatCommercialStatus?.pattyMode || '')
-    ).trim().toLowerCase();
-    const visualMode = selectedOverrideMode || globalMode;
-    const canReleaseChat = isAssignedToMe && visualMode === 'autonomous';
+            : (activeChatCommercialStatus?.pattyMode || activeChatCommercialStatus?.patty_mode || '')
+    );
+    const effectiveMode = selectedOverrideMode || modulePattyMode;
+    const canReleaseChat = isAssignedToMe && effectiveMode === 'autonomous';
 
     const modeMeta = useMemo(() => {
-        if (visualMode === 'autonomous') return { label: 'Autonoma', color: '#22c55e' };
-        if (visualMode === 'review') return { label: 'Sugerencias', color: '#f5b301' };
-        if (visualMode === 'off') return { label: 'Desactivada', color: '#8a8f98' };
+        if (effectiveMode === 'autonomous') return { label: 'Autonoma', color: '#22c55e' };
+        if (effectiveMode === 'review') return { label: 'Sugerencias', color: '#f5b301' };
+        if (effectiveMode === 'off') return { label: 'Desactivada', color: '#8a8f98' };
         return { label: 'Modo global', color: '#8a8f98' };
-    }, [visualMode]);
+    }, [effectiveMode]);
 
     const buildJsonHeaders = useCallback(() => {
         const headers = typeof buildApiHeaders === 'function'
