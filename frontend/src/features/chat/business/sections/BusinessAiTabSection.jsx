@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Send, Sparkles } from 'lucide-react';
+import { API_URL } from '../../../../config/runtime';
+import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 
 const QUICK_PROMPTS = [
     'Dame 3 respuestas sugeridas para este cliente',
@@ -41,8 +43,17 @@ export default function BusinessAiTabSection({
     onDismissPattySuggestion = null,
     onGeneratePattyQuote = null,
     enablePatty = true,
-    enableCopilot = true
+    enableCopilot = true,
+    activeTenantId = '',
+    activeChatId = '',
+    activeScopeModuleId = '',
+    activeChatAssignment = null,
+    activeChatCommercialStatus = null,
+    activeAiConfig = {},
+    chatAssignmentState = null,
+    buildApiHeaders = null
 }) {
+    const { notify } = useUiFeedback();
     const pattyEnabled = enablePatty !== false;
     const copilotEnabled = enableCopilot !== false;
     const visiblePattyMessages = useMemo(() => normalizePattyMessages(pattySuggestion), [pattySuggestion]);
@@ -50,14 +61,202 @@ export default function BusinessAiTabSection({
     const hasQuoteRequest = Boolean(pattySuggestion?.quoteRequest);
     const showTabs = pattyEnabled && copilotEnabled;
     const [activeInnerTab, setActiveInnerTab] = useState(pattyEnabled ? 'patty' : 'copilot');
+    const [pattyModePayload, setPattyModePayload] = useState(null);
+    const [pattyModeLoading, setPattyModeLoading] = useState(false);
+    const [pattyModeSaving, setPattyModeSaving] = useState(false);
+
+    const baseChatId = useMemo(
+        () => String(activeChatId || '').split('::mod::')[0] || String(activeChatId || '').trim(),
+        [activeChatId]
+    );
+    const scopeModuleId = String(activeScopeModuleId || activeChatAssignment?.scopeModuleId || '').trim().toLowerCase();
+    const isAssignedToMe = typeof chatAssignmentState?.isAssignedToMe === 'function'
+        ? chatAssignmentState.isAssignedToMe(activeChatId)
+        : false;
+    const globalWithinMode = String(activeAiConfig?.withinHoursMode || activeAiConfig?.within_hours_mode || '').trim().toLowerCase();
+    const globalOutsideMode = String(activeAiConfig?.outsideHoursMode || activeAiConfig?.outside_hours_mode || '').trim().toLowerCase();
+    const globalMode = globalWithinMode && globalWithinMode === globalOutsideMode
+        ? globalWithinMode
+        : (globalOutsideMode || globalWithinMode || 'off');
+    const selectedOverrideMode = String(
+        pattyModePayload
+            ? (pattyModePayload.mode || '')
+            : (activeChatCommercialStatus?.pattyMode || '')
+    ).trim().toLowerCase();
+    const visualMode = selectedOverrideMode || globalMode;
+    const canReleaseChat = isAssignedToMe && visualMode === 'autonomous';
+
+    const modeMeta = useMemo(() => {
+        if (visualMode === 'autonomous') return { label: 'Autonoma', color: '#22c55e' };
+        if (visualMode === 'review') return { label: 'Sugerencias', color: '#f5b301' };
+        if (visualMode === 'off') return { label: 'Desactivada', color: '#8a8f98' };
+        return { label: 'Modo global', color: '#8a8f98' };
+    }, [visualMode]);
+
+    const buildJsonHeaders = useCallback(() => {
+        const headers = typeof buildApiHeaders === 'function'
+            ? (buildApiHeaders({ includeJson: true }) || {})
+            : { 'Content-Type': 'application/json' };
+        const nextHeaders = { 'Content-Type': 'application/json', ...headers };
+        if (activeTenantId) nextHeaders['x-tenant-id'] = String(activeTenantId).trim();
+        return nextHeaders;
+    }, [activeTenantId, buildApiHeaders]);
 
     useEffect(() => {
         if (activeInnerTab === 'patty' && !pattyEnabled) setActiveInnerTab('copilot');
         if (activeInnerTab === 'copilot' && !copilotEnabled) setActiveInnerTab('patty');
     }, [activeInnerTab, copilotEnabled, pattyEnabled]);
 
+    useEffect(() => {
+        setPattyModePayload(null);
+        if (!baseChatId || !activeTenantId) return undefined;
+        let cancelled = false;
+        const run = async () => {
+            try {
+                setPattyModeLoading(true);
+                const response = await fetch(`${API_URL}/api/tenant/chats/${encodeURIComponent(baseChatId)}/patty-mode?scopeModuleId=${encodeURIComponent(scopeModuleId || '')}`, {
+                    headers: buildJsonHeaders()
+                });
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || payload?.ok === false) throw new Error(String(payload?.error || 'No se pudo cargar modo Patty.'));
+                if (!cancelled) setPattyModePayload(payload);
+            } catch (_) {
+                if (!cancelled) setPattyModePayload(null);
+            } finally {
+                if (!cancelled) setPattyModeLoading(false);
+            }
+        };
+        run();
+        return () => { cancelled = true; };
+    }, [activeTenantId, baseChatId, buildJsonHeaders, scopeModuleId]);
+
+    const updatePattyMode = useCallback(async (mode = '') => {
+        if (!baseChatId) return;
+        try {
+            setPattyModeSaving(true);
+            const payloadMode = mode ? String(mode).trim().toLowerCase() : null;
+            const response = await fetch(`${API_URL}/api/tenant/chats/${encodeURIComponent(baseChatId)}/patty-mode`, {
+                method: 'POST',
+                headers: buildJsonHeaders(),
+                body: JSON.stringify({
+                    mode: payloadMode,
+                    scopeModuleId: scopeModuleId || ''
+                })
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.ok === false) throw new Error(String(payload?.error || 'No se pudo actualizar modo Patty.'));
+            setPattyModePayload(payload);
+            const label = payloadMode === 'review'
+                ? 'Sugerencias'
+                : payloadMode === 'autonomous'
+                    ? 'Autonoma'
+                    : payloadMode === 'off'
+                        ? 'Desactivada'
+                        : 'Modo global';
+            notify({ type: 'info', message: `Modo Patty: ${label}.` });
+        } catch (error) {
+            notify({ type: 'error', message: String(error?.message || 'No se pudo actualizar modo Patty.') });
+        } finally {
+            setPattyModeSaving(false);
+        }
+    }, [baseChatId, buildJsonHeaders, notify, scopeModuleId]);
+
+    const releaseChat = useCallback(async () => {
+        if (!baseChatId || !canReleaseChat) return;
+        try {
+            setPattyModeSaving(true);
+            const response = await fetch(`${API_URL}/api/tenant/chats/${encodeURIComponent(baseChatId)}/assignment?scopeModuleId=${encodeURIComponent(scopeModuleId || '')}`, {
+                method: 'DELETE',
+                headers: buildJsonHeaders()
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.ok === false) throw new Error(String(payload?.error || 'No se pudo dejar el chat.'));
+            setPattyModePayload(null);
+            notify({ type: 'info', message: 'Chat liberado. Patty vuelve a la configuracion global.' });
+        } catch (error) {
+            notify({ type: 'error', message: String(error?.message || 'No se pudo dejar el chat.') });
+        } finally {
+            setPattyModeSaving(false);
+        }
+    }, [baseChatId, buildJsonHeaders, canReleaseChat, notify, scopeModuleId]);
+
+    const renderPattyModeControl = () => (
+        <div
+            style={{
+                border: '1px solid var(--chat-card-border)',
+                background: 'var(--chat-card-surface)',
+                color: 'var(--text-primary)',
+                borderRadius: '16px',
+                padding: '12px',
+                boxShadow: '0 10px 24px rgba(0,0,0,0.06)'
+            }}
+        >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 900 }}>
+                    <Sparkles size={15} />
+                    <span>Patty IA</span>
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 800, color: 'var(--chat-control-text-soft)' }}>
+                    Modo:
+                    <select
+                        value={selectedOverrideMode || ''}
+                        onChange={(event) => updatePattyMode(event.target.value)}
+                        disabled={pattyModeLoading || pattyModeSaving || !baseChatId}
+                        style={{
+                            border: '1px solid var(--chat-card-border)',
+                            background: 'var(--chat-control-surface-strong)',
+                            color: 'var(--text-primary)',
+                            borderRadius: '999px',
+                            padding: '6px 9px',
+                            fontWeight: 800,
+                            outline: 'none'
+                        }}
+                    >
+                        <option value="">Modo global</option>
+                        <option value="review">Sugerencias</option>
+                        <option value="autonomous">Autonoma</option>
+                        <option value="off">Desactivada</option>
+                    </select>
+                </label>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '0.78rem', color: 'var(--chat-control-text-soft)' }}>
+                    <span style={{ width: '9px', height: '9px', borderRadius: '50%', background: modeMeta.color, display: 'inline-block', boxShadow: `0 0 0 3px color-mix(in srgb, ${modeMeta.color} 18%, transparent)` }} />
+                    <strong style={{ color: 'var(--text-primary)' }}>{selectedOverrideMode ? modeMeta.label : `Global: ${modeMeta.label}`}</strong>
+                    {!selectedOverrideMode && globalWithinMode !== globalOutsideMode && (
+                        <span title="Modo global definido por horario">
+                            Dentro: {globalWithinMode || 'off'} · Fuera: {globalOutsideMode || 'off'}
+                        </span>
+                    )}
+                </div>
+                {isAssignedToMe && (
+                    <button
+                        type="button"
+                        onClick={releaseChat}
+                        disabled={pattyModeSaving || !canReleaseChat}
+                        title={canReleaseChat ? 'Dejar chat' : 'Cambia a Autonoma para poder dejar el chat'}
+                        style={{
+                            border: '1px solid var(--chat-card-border)',
+                            background: canReleaseChat ? 'var(--chat-card-surface)' : 'var(--chat-control-disabled)',
+                            color: canReleaseChat ? 'var(--text-primary)' : 'var(--chat-control-text-soft)',
+                            borderRadius: '999px',
+                            padding: '6px 10px',
+                            cursor: canReleaseChat ? 'pointer' : 'not-allowed',
+                            fontWeight: 800,
+                            fontSize: '0.74rem',
+                            opacity: canReleaseChat ? 1 : 0.75
+                        }}
+                    >
+                        Dejar chat
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+
     const renderPattyPanel = () => (
         <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {renderPattyModeControl()}
             {!hasPattySuggestion && (
                 <div
                     style={{

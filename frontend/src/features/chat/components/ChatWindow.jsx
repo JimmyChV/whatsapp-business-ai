@@ -1,9 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React from 'react';
+import { useEffect, useRef } from 'react';
 import { Search, MoreVertical, ChevronUp, ChevronDown, Tag, MapPin, Share2, X } from 'lucide-react';
 import MessageBubble from './message-bubble/MessageBubble';
 import moment from 'moment';
-import { API_URL } from '../../../config/runtime';
-import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import ChannelBrandIcon from './ChannelBrandIcon';
 import ChatInput from './ChatInput';
 import SendTemplateModal from './SendTemplateModal';
@@ -53,7 +52,6 @@ const ChatWindow = ({
     chatCommercialStatusState = null,
     ...inputProps
 }) => {
-    const { notify } = useUiFeedback();
     const {
         showMenu,
         setShowMenu,
@@ -134,99 +132,6 @@ const ChatWindow = ({
     const hasAssignee = Boolean(String(activeChatAssignment?.assigneeUserId || '').trim());
     const canWriteByAssignment = hasAssignee && isAssignedToMe;
     const activeScopeModuleId = String(activeChatDetails?.scopeModuleId || activeChatAssignment?.scopeModuleId || '').trim().toLowerCase();
-    const activeBaseChatId = String(activeChatScopedId || '').split('::mod::')[0] || activeChatScopedId;
-    const [pattyModeState, setPattyModeState] = useState(null);
-    const [pattyModeLoading, setPattyModeLoading] = useState(false);
-    const [pattyModeSaving, setPattyModeSaving] = useState(false);
-    const currentPattyMode = String(
-        activeChatCommercialStatus?.pattyMode
-        || pattyModeState?.mode
-        || pattyModeState?.effectiveMode
-        || ''
-    ).trim().toLowerCase();
-    const canReleaseWithPattyMode = currentPattyMode === 'autonomous';
-    const pattyModeLabel = useMemo(() => {
-        if (currentPattyMode === 'autonomous') return 'Autonoma';
-        if (currentPattyMode === 'off') return 'Desactivada';
-        if (currentPattyMode === 'review') return 'Sugerencias';
-        return 'Global';
-    }, [currentPattyMode]);
-
-    const buildJsonHeaders = useCallback(() => {
-        const headers = typeof buildApiHeaders === 'function'
-            ? (buildApiHeaders({ includeJson: true }) || {})
-            : { 'Content-Type': 'application/json' };
-        const nextHeaders = { 'Content-Type': 'application/json', ...headers };
-        if (activeTenantId) nextHeaders['x-tenant-id'] = String(activeTenantId).trim();
-        return nextHeaders;
-    }, [activeTenantId, buildApiHeaders]);
-
-    useEffect(() => {
-        if (!activeBaseChatId || !activeTenantId) {
-            setPattyModeState(null);
-            return undefined;
-        }
-        let cancelled = false;
-        const loadPattyMode = async () => {
-            try {
-                setPattyModeLoading(true);
-                const url = `${API_URL}/api/tenant/chats/${encodeURIComponent(activeBaseChatId)}/patty-mode?scopeModuleId=${encodeURIComponent(activeScopeModuleId || '')}`;
-                const response = await fetch(url, { headers: buildJsonHeaders() });
-                const payload = await response.json().catch(() => ({}));
-                if (!response.ok || payload?.ok === false) throw new Error(String(payload?.error || 'No se pudo cargar modo Patty.'));
-                if (!cancelled) setPattyModeState(payload);
-            } catch (_) {
-                if (!cancelled) setPattyModeState(null);
-            } finally {
-                if (!cancelled) setPattyModeLoading(false);
-            }
-        };
-        loadPattyMode();
-        return () => { cancelled = true; };
-    }, [activeBaseChatId, activeScopeModuleId, activeTenantId, buildJsonHeaders]);
-
-    const updatePattyMode = useCallback(async (mode = '') => {
-        const safeMode = String(mode || '').trim().toLowerCase();
-        if (!activeBaseChatId || !['autonomous', 'review', 'off'].includes(safeMode)) return;
-        try {
-            setPattyModeSaving(true);
-            const response = await fetch(`${API_URL}/api/tenant/chats/${encodeURIComponent(activeBaseChatId)}/patty-mode`, {
-                method: 'POST',
-                headers: buildJsonHeaders(),
-                body: JSON.stringify({
-                    mode: safeMode,
-                    scopeModuleId: activeScopeModuleId || ''
-                })
-            });
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok || payload?.ok === false) throw new Error(String(payload?.error || 'No se pudo actualizar modo Patty.'));
-            setPattyModeState(payload);
-            notify({ type: 'info', message: `Modo Patty: ${safeMode === 'review' ? 'Sugerencias' : safeMode === 'autonomous' ? 'Autonoma' : 'Desactivada'}.` });
-        } catch (error) {
-            notify({ type: 'error', message: String(error?.message || 'No se pudo actualizar modo Patty.') });
-        } finally {
-            setPattyModeSaving(false);
-        }
-    }, [activeBaseChatId, activeScopeModuleId, buildJsonHeaders, notify]);
-
-    const releaseChat = useCallback(async () => {
-        if (!activeBaseChatId || !canReleaseWithPattyMode) return;
-        try {
-            setPattyModeSaving(true);
-            const response = await fetch(`${API_URL}/api/tenant/chats/${encodeURIComponent(activeBaseChatId)}/assignment?scopeModuleId=${encodeURIComponent(activeScopeModuleId || '')}`, {
-                method: 'DELETE',
-                headers: buildJsonHeaders()
-            });
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok || payload?.ok === false) throw new Error(String(payload?.error || 'No se pudo dejar el chat.'));
-            setPattyModeState(null);
-            notify({ type: 'info', message: 'Chat liberado. Patty vuelve a la configuracion global.' });
-        } catch (error) {
-            notify({ type: 'error', message: String(error?.message || 'No se pudo dejar el chat.') });
-        } finally {
-            setPattyModeSaving(false);
-        }
-    }, [activeBaseChatId, activeScopeModuleId, buildJsonHeaders, canReleaseWithPattyMode, notify]);
     const headerLabels = Array.isArray(activeChatDetails?.labels) ? activeChatDetails.labels : [];
     const visibleHeaderLabels = headerLabels.slice(0, 2);
     const hiddenHeaderLabelsCount = Math.max(0, headerLabels.length - visibleHeaderLabels.length);
@@ -310,35 +215,6 @@ const ChatWindow = ({
                                 chatCommercialStatusState={chatCommercialStatusState}
                                 currentUserRole={currentUserRole}
                             />
-                            {hasAssignee && (
-                                <div
-                                    className="commercial-status-actions commercial-status-actions--dropdown"
-                                    onClick={(event) => event.stopPropagation()}
-                                    title={`Modo Patty actual: ${pattyModeLabel}`}
-                                >
-                                    <select
-                                        className="assignment-selector-select"
-                                        value={currentPattyMode || ''}
-                                        onChange={(event) => updatePattyMode(event.target.value)}
-                                        disabled={pattyModeLoading || pattyModeSaving}
-                                        aria-label="Modo Patty"
-                                    >
-                                        <option value="">Modo global</option>
-                                        <option value="review">Sugerencias</option>
-                                        <option value="autonomous">Autonoma</option>
-                                        <option value="off">Desactivada</option>
-                                    </select>
-                                    <button
-                                        type="button"
-                                        className="commercial-status-dropdown-trigger"
-                                        onClick={releaseChat}
-                                        disabled={pattyModeSaving || !canReleaseWithPattyMode}
-                                        title={canReleaseWithPattyMode ? 'Dejar chat' : 'Activa modo Autonoma para poder dejar el chat'}
-                                    >
-                                        Dejar chat
-                                    </button>
-                                </div>
-                            )}
                         </div>
                     </div>
                     <div className="chat-header-subline chat-header-subline--summary">
@@ -713,5 +589,4 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
-
 

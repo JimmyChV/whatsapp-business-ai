@@ -1520,19 +1520,27 @@ function registerOperationsHttpRoutes({
             if (!chatId) return res.status(400).json({ ok: false, error: 'chatId invalido.' });
 
             const scopeModuleId = normalizeScopeModuleId(req.body?.scopeModuleId || req.query?.scopeModuleId || '');
-            const mode = toLower(req.body?.mode || '');
-            if (!['autonomous', 'review', 'off'].includes(mode)) {
+            const rawMode = req.body?.mode;
+            const mode = rawMode === null ? '' : toLower(rawMode || '');
+            if (mode && !['autonomous', 'review', 'off', 'global'].includes(mode)) {
                 return res.status(400).json({ ok: false, error: 'Modo Patty invalido.' });
             }
 
             const actorUserId = resolveActorUserId(req);
-            const result = await setChatPattyMode(tenantId, {
-                chatId,
-                scopeModuleId,
-                mode,
-                pattyTakenBy: mode === 'review' ? actorUserId : null,
-                reason: 'http_patty_mode'
-            });
+            const isGlobalMode = !mode || mode === 'global';
+            const result = isGlobalMode
+                ? await resetChatPattyMode(tenantId, {
+                    chatId,
+                    scopeModuleId,
+                    reason: 'http_patty_mode_global'
+                })
+                : await setChatPattyMode(tenantId, {
+                    chatId,
+                    scopeModuleId,
+                    mode,
+                    pattyTakenBy: mode === 'review' ? actorUserId : null,
+                    reason: 'http_patty_mode'
+                });
 
             if (typeof emitCommercialStatusUpdated === 'function') {
                 emitCommercialStatusUpdated({
@@ -1549,7 +1557,7 @@ function registerOperationsHttpRoutes({
                 tenantId,
                 chatId,
                 scopeModuleId,
-                mode,
+                mode: isGlobalMode ? null : mode,
                 pattyModeUntil: result?.status?.pattyModeUntil || null,
                 pattyTakenBy: result?.status?.pattyTakenBy || null,
                 commercialStatus: result?.status || null

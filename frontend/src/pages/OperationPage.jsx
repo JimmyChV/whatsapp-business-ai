@@ -412,6 +412,7 @@ export default function OperationPage({
             setCartDraftsByChat={setCartDraftsByChat}
             chatAssignmentState={chatAssignmentState}
             chatCommercialStatusState={chatCommercialStatusState}
+            buildApiHeaders={buildApiHeaders}
           />
         )}
       </div>

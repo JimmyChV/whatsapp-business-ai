@@ -51,7 +51,7 @@ export { ClientProfilePanel };
 
 // =========================================================
 
-const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messagesRef = null, activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, onSendCatalogProduct = null, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null, cartDraftsByChat: externalCartDraftsByChat = {}, setCartDraftsByChat: externalSetCartDraftsByChat = null, chatAssignmentState = null }) => {
+const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messagesRef = null, activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, onSendCatalogProduct = null, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null, cartDraftsByChat: externalCartDraftsByChat = {}, setCartDraftsByChat: externalSetCartDraftsByChat = null, chatAssignmentState = null, chatCommercialStatusState = null, buildApiHeaders = null }) => {
     const { notify } = useUiFeedback();
     const [activeTab, setActiveTab] = useState('ai');
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
@@ -113,6 +113,12 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const canWriteByAssignment = typeof chatAssignmentState?.isAssignedToMe === 'function'
         ? chatAssignmentState.isAssignedToMe(activeChatId)
         : false;
+    const activeChatAssignment = typeof chatAssignmentState?.getAssignment === 'function'
+        ? chatAssignmentState.getAssignment(activeChatId)
+        : null;
+    const activeChatCommercialStatus = typeof chatCommercialStatusState?.getCommercialStatus === 'function'
+        ? chatCommercialStatusState.getCommercialStatus(activeChatId)
+        : null;
     const conversationWindowOpen = activeChatDetails?.windowOpen !== false;
     const canUseMessageTools = canWriteByAssignment && conversationWindowOpen;
     const ASSIGNMENT_LOCK_MESSAGE = 'Toma este chat para responder';
@@ -895,6 +901,14 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     pattySuggestion={pattySuggestion}
                     enablePatty={enablePatty}
                     enableCopilot={enableCopilot}
+                    activeTenantId={normalizedTenantScopeKey}
+                    activeChatId={activeChatId}
+                    activeScopeModuleId={String(activeChatDetails?.scopeModuleId || activeModuleId || '').trim().toLowerCase()}
+                    activeChatAssignment={activeChatAssignment}
+                    activeChatCommercialStatus={activeChatCommercialStatus}
+                    activeAiConfig={activeAiConfig}
+                    chatAssignmentState={chatAssignmentState}
+                    buildApiHeaders={buildApiHeaders}
                     onUsePattySuggestion={() => {
                         const messages = Array.isArray(pattySuggestion?.messages) ? pattySuggestion.messages : [];
                         const suggestion = messages.length
