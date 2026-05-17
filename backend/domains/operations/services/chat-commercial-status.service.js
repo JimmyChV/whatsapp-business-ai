@@ -229,10 +229,16 @@ function normalizeMetadata(value = {}) {
     return {};
 }
 
+function formatAssistantDisplayName(value = '') {
+    const clean = toText(value);
+    if (!clean) return 'Asistente Virtual';
+    return /\bIA$/i.test(clean) ? clean : `${clean} IA`;
+}
+
 async function getAssistantName(tenantId = DEFAULT_TENANT_ID, moduleId = '') {
     const cleanTenantId = resolveTenantId(tenantId);
     const cleanModuleId = toText(moduleId);
-    if (!cleanTenantId || !cleanModuleId || getStorageDriver() !== 'postgres') return 'Asistente IA';
+    if (!cleanTenantId || !cleanModuleId || getStorageDriver() !== 'postgres') return 'Asistente Virtual';
     try {
         const { rows } = await queryPostgres(
             `SELECT metadata
@@ -246,9 +252,9 @@ async function getAssistantName(tenantId = DEFAULT_TENANT_ID, moduleId = '') {
             ? rows[0].metadata
             : {};
         const assistantName = toText(metadata?.aiConfig?.assistantName);
-        return assistantName || 'Asistente IA';
+        return formatAssistantDisplayName(assistantName);
     } catch (_) {
-        return 'Asistente IA';
+        return 'Asistente Virtual';
     }
 }
 

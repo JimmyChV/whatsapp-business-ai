@@ -422,6 +422,16 @@ function getAssistantNameFromModule(moduleConfig = {}) {
     return text(moduleConfig?.aiConfig?.assistantName) || DEFAULT_ASSISTANT_NAME;
 }
 
+function formatAssistantDisplayName(value = '') {
+    const clean = text(value);
+    if (!clean) return 'Asistente Virtual';
+    return /\bIA$/i.test(clean) ? clean : `${clean} IA`;
+}
+
+function getAssistantDisplayNameFromModule(moduleConfig = {}) {
+    return formatAssistantDisplayName(getAssistantNameFromModule(moduleConfig));
+}
+
 async function resolveScheduleState(tenantId, moduleConfig) {
     const scheduleId = text(moduleConfig?.scheduleId);
     if (!scheduleId) return { open: true, label: 'Sin horario asignado' };
@@ -600,6 +610,7 @@ async function getCatalogRowsBySkus(tenantId, skus = []) {
 }
 
 async function sendPattyCatalogProducts({ tenantId, moduleId = '', chatId, skus = [], assistantName = DEFAULT_ASSISTANT_NAME } = {}) {
+    const assistantDisplayName = formatAssistantDisplayName(assistantName);
     const rows = await getCatalogRowsBySkus(tenantId, skus);
     if (!rows.length) return { sent: 0 };
     let sent = 0;
@@ -609,7 +620,7 @@ async function sendPattyCatalogProducts({ tenantId, moduleId = '', chatId, skus 
             metadata: {
                 agentMeta: {
                     sentByUserId: 'patty',
-                    sentByName: assistantName,
+                    sentByName: assistantDisplayName,
                     sentByRole: 'assistant',
                     sentViaModuleId: lower(moduleId)
                 },
@@ -895,6 +906,25 @@ async function getCommercialStatusContext(tenantId, moduleId, chatId) {
     }
 }
 
+async function getCurrentCommercialStatus(tenantId, moduleId, chatId) {
+    try {
+        const { rows } = await pgQuery(
+            `SELECT status
+               FROM tenant_chat_commercial_status
+              WHERE tenant_id = $1
+                AND chat_id = $2
+                AND (scope_module_id IS NULL OR scope_module_id = '' OR LOWER(scope_module_id) = LOWER($3))
+              ORDER BY updated_at DESC NULLS LAST
+              LIMIT 1`,
+            [tenantId, normalizeChatId(chatId), lower(moduleId)]
+        );
+        return lower(rows?.[0]?.status);
+    } catch (error) {
+        console.warn('[Patty] commercial status lookup skipped:', error?.message || error);
+        return '';
+    }
+}
+
 async function getOriginContext(tenantId, moduleId, chatId) {
     const cleanChatId = normalizeChatId(chatId);
     const phoneE164 = firstPhoneE164FromChatId(chatId);
@@ -1170,6 +1200,27 @@ async function createAndSendPattyQuote({
     const request = quoteRequest && typeof quoteRequest === 'object' ? quoteRequest : null;
     if (!request || !Array.isArray(request.products) || !request.products.length) return null;
 
+    const currentStatus = await getCurrentCommercialStatus(cleanTenantId, cleanModuleId, cleanChatId);
+    if (currentStatus === 'aceptado') {
+        console.log('[Patty] quote blocked: order already accepted', {
+            tenantId: cleanTenantId,
+            moduleId: cleanModuleId,
+            chatId: cleanChatId
+        });
+        return null;
+    }
+    if (currentStatus === 'cotizado') {
+        const lastCustomerMessage = await getLastInboundCustomerText(cleanTenantId, cleanModuleId, cleanChatId);
+        if (!hasQuoteChangeIntent(lastCustomerMessage)) {
+            console.log('[Patty] quote blocked: awaiting client decision', {
+                tenantId: cleanTenantId,
+                moduleId: cleanModuleId,
+                chatId: cleanChatId
+            });
+            return null;
+        }
+    }
+
     const activeQuote = await getRecentSentQuote(cleanTenantId, cleanModuleId, cleanChatId);
     if (activeQuote) {
         const lastCustomerMessage = await getLastInboundCustomerText(cleanTenantId, cleanModuleId, cleanChatId);
@@ -1214,7 +1265,7 @@ async function createAndSendPattyQuote({
     const metadata = {
         source: 'patty',
         sourceType: 'quote',
-        assistantName: text(assistantName) || DEFAULT_ASSISTANT_NAME,
+        assistantName: formatAssistantDisplayName(assistantName),
         ...(delivery.zoneName ? { deliveryZoneName: delivery.zoneName } : {})
     };
     const createdQuote = await quotesService.createQuoteRecord(cleanTenantId, {
@@ -1412,7 +1463,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     const cleanModuleId = lower(moduleId);
     const cleanChatId = normalizeChatId(chatId);
     const moduleConfig = await getModuleConfig(cleanTenantId, cleanModuleId);
-    const assistantName = getAssistantNameFromModule(moduleConfig || {});
+    const assistantName = getAssistantDisplayNameFromModule(moduleConfig || {});
     const [scheduleState, basePrompt, quickReplies, customer, commercialStatus, origin, conversation, quote] = await Promise.all([
         resolveScheduleState(cleanTenantId, moduleConfig || {}),
         getBasePrompt(cleanTenantId),
@@ -1694,6 +1745,15 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
         });
         return;
     }
+    const currentStatus = await getCurrentCommercialStatus(cleanTenantId, cleanModuleId, cleanChatId);
+    if (['aceptado', 'programado', 'atendido', 'vendido'].includes(currentStatus)) {
+        console.log(`[Patty] skipped: status=${currentStatus} not eligible`, {
+            tenantId: cleanTenantId,
+            moduleId: cleanModuleId,
+            chatId: cleanChatId
+        });
+        return;
+    }
     const moduleConfig = await getModuleConfig(cleanTenantId, cleanModuleId);
     const aiConfig = moduleConfig?.aiConfig;
     if (!aiConfig) {
@@ -1789,7 +1849,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 });
                 return;
             }
-            const assistantName = result.assistantName || DEFAULT_ASSISTANT_NAME;
+            const assistantName = formatAssistantDisplayName(result.assistantName || DEFAULT_ASSISTANT_NAME);
             if (mode === 'review') {
                 emitSuggestion(socketEmitter, cleanTenantId, {
                     chatId: cleanChatId,
