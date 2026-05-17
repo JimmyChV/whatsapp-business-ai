@@ -1274,6 +1274,78 @@ function formatOrderContext(orderPayload) {
     return `Pedido del catalogo: ${lines.join(', ')}${total ? ` Total: S/ ${total.toFixed(2)}` : ''}`;
 }
 
+function extractOrderPayloadProducts(orderPayload) {
+    const order = safeJsonObject(orderPayload);
+    const candidates = [
+        order.products,
+        order.items,
+        order.product_items,
+        order.order?.products,
+        order.order?.product_items
+    ];
+    const rawProducts = candidates.find((items) => Array.isArray(items) && items.length) || [];
+    return rawProducts.map((item) => {
+        const quantity = Math.max(1, Number(item.quantity || item.qty || item.count || 1) || 1);
+        const price = money(item.price || item.unitPrice || item.unit_price || item.lineTotal || item.line_total);
+        const lineTotal = money(item.lineTotal || item.line_total || (Number.isFinite(price) ? price * quantity : null));
+        return {
+            sku: text(item.sku || item.itemId || item.item_id || item.product_retailer_id || item.id),
+            title: text(item.name || item.title || item.productName || item.product_name || item.sku || item.id || 'Producto'),
+            quantity,
+            price: Number.isFinite(price) ? price : null,
+            lineTotal: Number.isFinite(lineTotal) ? lineTotal : null
+        };
+    }).filter((item) => item.title || item.sku);
+}
+
+function buildMetaCatalogOrderContext(row = {}) {
+    const order = safeJsonObject(row.order_payload);
+    const products = extractOrderPayloadProducts(order);
+    if (!products.length) return '';
+    const total = money(
+        order.total
+        || order.totalPayable
+        || order.subtotal
+        || order.summary?.totalPayable
+        || products.reduce((acc, item) => acc + (money(item.lineTotal) || 0), 0)
+    );
+    const productLines = products.map((item) => {
+        const sku = item.sku ? `[${item.sku}] ` : '';
+        const priceText = item.lineTotal !== null ? ` = S/ ${item.lineTotal.toFixed(2)}` : '';
+        return `- ${sku}${item.title} x ${item.quantity}${priceText}`;
+    });
+    return [
+        '⚠️ PEDIDO DEL CATALOGO META RECIBIDO:',
+        'El cliente envio un pedido desde el catalogo WhatsApp:',
+        ...productLines,
+        Number.isFinite(total) ? `Total: S/ ${total.toFixed(2)}` : '',
+        '',
+        'INSTRUCCION CRITICA: Reconoce el pedido, confirma los productos y genera quoteRequest con exactamente esos productos. NO ignores este pedido.'
+    ].filter(Boolean).join('\n');
+}
+
+async function getRecentMetaCatalogOrderContext(tenantId, moduleId, chatId) {
+    try {
+        const { rows } = await pgQuery(
+            `SELECT message_id, order_payload, metadata, created_at
+               FROM tenant_messages
+              WHERE tenant_id = $1
+                AND chat_id = $2
+                AND COALESCE(from_me, FALSE) = FALSE
+                AND message_type = 'order'
+                AND created_at >= NOW() - INTERVAL '2 hours'
+                AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($3))
+              ORDER BY created_at DESC
+              LIMIT 1`,
+            [tenantId, normalizeChatId(chatId), lower(moduleId)]
+        );
+        return buildMetaCatalogOrderContext(rows?.[0] || {});
+    } catch (error) {
+        console.warn('[Patty] recent Meta order context skipped:', error?.message || error);
+        return '';
+    }
+}
+
 async function createAndSendPattyQuote({
     tenantId,
     moduleId,
@@ -1560,7 +1632,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     const cleanChatId = normalizeChatId(chatId);
     const moduleConfig = await getModuleConfig(cleanTenantId, cleanModuleId);
     const assistantName = getAssistantDisplayNameFromModule(moduleConfig || {});
-    const [scheduleState, basePrompt, quickReplies, customer, commercialStatus, origin, conversation, quote] = await Promise.all([
+    const [scheduleState, basePrompt, quickReplies, customer, commercialStatus, origin, conversation, quote, metaCatalogOrder] = await Promise.all([
         resolveScheduleState(cleanTenantId, moduleConfig || {}),
         getBasePrompt(cleanTenantId),
         getQuickRepliesContext(cleanTenantId, cleanModuleId),
@@ -1568,7 +1640,8 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         getCommercialStatusContext(cleanTenantId, cleanModuleId, cleanChatId),
         getOriginContext(cleanTenantId, cleanModuleId, cleanChatId),
         getConversationContext(cleanTenantId, cleanModuleId, cleanChatId),
-        getActiveQuoteContext(cleanTenantId, cleanModuleId, cleanChatId)
+        getActiveQuoteContext(cleanTenantId, cleanModuleId, cleanChatId),
+        getRecentMetaCatalogOrderContext(cleanTenantId, cleanModuleId, cleanChatId)
     ]);
     const recentConversationText = [
         ...(Array.isArray(conversation.lines) ? conversation.lines : []),
@@ -1614,6 +1687,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         labels ? `\n${labels}` : '',
         commercialStatus ? `\n${commercialStatus}` : '',
         quote ? `\n${quote}` : '',
+        metaCatalogOrder ? `\n${metaCatalogOrder}` : '',
         '',
         'ORIGEN DEL CONTACTO:',
         origin,
@@ -1634,6 +1708,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '- Cuando el cliente pida ver productos o el catalogo, incluye catalogProducts con los SKUs relevantes. Maximo 5 productos por respuesta.',
         '- Cuando generes quoteRequest, messages[] solo debe tener un mensaje corto de intro maximo 1 linea. No repitas productos ni precios en el texto.',
         '- Cuando generes quoteRequest para modificar una cotizacion existente, products[] debe incluir TODOS los productos del resultado final, no solo los cambios. Ejemplo: si hay 2 productos actuales y el cliente agrega 1, products[] debe tener 3 items.',
+        '- Si el contexto incluye "PEDIDO DEL CATALOGO META RECIBIDO", reconoce ese pedido y genera quoteRequest con exactamente esos productos, cantidades y titulos.',
         '- El title debe copiarse del catalogo tal como aparece despues del SKU entre corchetes. No inventes SKUs ni codigos. Si incluyes sku, debe ser exactamente uno de los SKUs entre corchetes.',
         '- Incluye quoteRequest solo cuando haya una aceptacion o solicitud clara de cotizacion.',
         '- Cuando el cliente mencione su ubicacion, busca en las zonas de cobertura y responde con las opciones de envio y metodos de pago disponibles para esa zona. Si la ubicacion no esta en cobertura, dilo claramente.',
