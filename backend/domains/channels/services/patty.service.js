@@ -1857,6 +1857,65 @@ async function isQuoteButtonReplyMessage(tenantId, moduleId, chatId, messageId =
     }
 }
 
+function isQuoteButtonReplyMessageObject(msg = null) {
+    if (!msg || typeof msg !== 'object') return false;
+    const rawInteractive = msg.rawInteractive
+        || msg.interactive
+        || msg?._data?.interactive
+        || msg?.raw?.interactive
+        || null;
+    const msgType = lower(msg.message_type || msg.type || msg?._data?.type || msg?.raw?.type);
+    const msgBody = lower(msg.body || msg.text || msg.caption || msg?._data?.body || msg?._data?.caption);
+    const interactiveType = lower(rawInteractive?.type || msg?.interactive?.type || msg?._data?.interactive?.type);
+    const buttonId = lower(extractInteractiveButtonId({
+        ...safeJsonObject(msg),
+        interactive: rawInteractive || msg?.interactive,
+        rawInteractive,
+        raw: msg?.raw || msg?._data || {}
+    }));
+    return msgType === 'interactive'
+        || interactiveType === 'button_reply'
+        || rawInteractive?.button_reply != null
+        || rawInteractive?.buttonReply != null
+        || buttonId.startsWith('quote_confirm_')
+        || buttonId.startsWith('quote_change_')
+        || msgBody.startsWith('quote_confirm_')
+        || msgBody.startsWith('quote_change_');
+}
+
+async function shouldSkipPattyForQuoteButtonReply({
+    tenantId,
+    moduleId,
+    chatId,
+    messageId = '',
+    status = '',
+    detected = false,
+    source = 'unknown'
+} = {}) {
+    if (!detected) return false;
+    const hasAutomation = await hasActiveAutomationForStatus(tenantId, moduleId, status);
+    if (hasAutomation) {
+        console.log('[Patty] skipped: quote button_reply handled by automation', {
+            tenantId,
+            moduleId,
+            chatId,
+            messageId,
+            status,
+            source
+        });
+        return true;
+    }
+    console.log('[Patty] quote button_reply has no automation; continuing intervention', {
+        tenantId,
+        moduleId,
+        chatId,
+        messageId,
+        status: status || 'sin_estado',
+        source
+    });
+    return false;
+}
+
 function emitSuggestion(socketEmitter, tenantId, payload) {
     if (typeof socketEmitter === 'function') {
         socketEmitter('patty_suggestion', payload);
@@ -1892,27 +1951,19 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
     const cleanModuleId = lower(moduleId);
     const cleanChatId = normalizeChatId(chatId);
     const inboundMessageId = text(options.messageId || options.message_id || options.inboundMessageId || options.inbound_message_id);
+    const rawMessage = options.msg || options.message || options.rawMessage || options.raw_message || null;
     const currentState = await getCurrentCommercialState(cleanTenantId, cleanModuleId, cleanChatId);
     const currentStatus = currentState.status;
-    if (await isQuoteButtonReplyMessage(cleanTenantId, cleanModuleId, cleanChatId, inboundMessageId)) {
-        const hasAutomation = await hasActiveAutomationForStatus(cleanTenantId, cleanModuleId, currentStatus);
-        if (hasAutomation) {
-            console.log('[Patty] skipped: quote button_reply handled by automation', {
-                tenantId: cleanTenantId,
-                moduleId: cleanModuleId,
-                chatId: cleanChatId,
-                messageId: inboundMessageId,
-                status: currentStatus
-            });
-            return;
-        }
-        console.log('[Patty] quote button_reply has no automation; continuing intervention', {
-            tenantId: cleanTenantId,
-            moduleId: cleanModuleId,
-            chatId: cleanChatId,
-            messageId: inboundMessageId,
-            status: currentStatus || 'sin_estado'
-        });
+    if (await shouldSkipPattyForQuoteButtonReply({
+        tenantId: cleanTenantId,
+        moduleId: cleanModuleId,
+        chatId: cleanChatId,
+        messageId: inboundMessageId,
+        status: currentStatus,
+        detected: isQuoteButtonReplyMessageObject(rawMessage),
+        source: 'raw_message'
+    })) {
+        return;
     }
     const moduleConfig = await getModuleConfig(cleanTenantId, cleanModuleId);
     const aiConfig = moduleConfig?.aiConfig;
@@ -1986,6 +2037,17 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 mode,
                 inboundAt
             });
+            if (await shouldSkipPattyForQuoteButtonReply({
+                tenantId: cleanTenantId,
+                moduleId: cleanModuleId,
+                chatId: cleanChatId,
+                messageId: inboundMessageId,
+                status: currentStatus,
+                detected: await isQuoteButtonReplyMessage(cleanTenantId, cleanModuleId, cleanChatId, inboundMessageId),
+                source: 'persisted_message'
+            })) {
+                return;
+            }
             const outboundCheck = await hasOutboundAfter(cleanTenantId, cleanModuleId, cleanChatId, inboundAt);
             if (outboundCheck.hasOutbound) {
                 console.log('[Patty] cancelled: outbound response found after inbound', {
