@@ -28,6 +28,7 @@ const DEFAULT_ASSISTANT_NAME = 'Patty';
 const DEFAULT_WAIT_SECONDS = 15;
 const MIN_WAIT_SECONDS = 5;
 const MAX_WAIT_SECONDS = 300;
+const ACCEPTED_REOPEN_MINUTES = 30;
 const pattyChatDebounce = new Map();
 
 function text(value = '') {
@@ -36,6 +37,12 @@ function text(value = '') {
 
 function lower(value = '') {
     return text(value).toLowerCase();
+}
+
+function minutesSince(value) {
+    const timestamp = value ? new Date(value).getTime() : NaN;
+    if (!Number.isFinite(timestamp)) return null;
+    return Math.floor((Date.now() - timestamp) / 60000);
 }
 
 function normalizeProductLookupKey(value = '') {
@@ -908,9 +915,14 @@ async function getCommercialStatusContext(tenantId, moduleId, chatId) {
 }
 
 async function getCurrentCommercialStatus(tenantId, moduleId, chatId) {
+    const state = await getCurrentCommercialState(tenantId, moduleId, chatId);
+    return state.status;
+}
+
+async function getCurrentCommercialState(tenantId, moduleId, chatId) {
     try {
         const { rows } = await pgQuery(
-            `SELECT status
+            `SELECT status, last_transition_at
                FROM tenant_chat_commercial_status
               WHERE tenant_id = $1
                 AND chat_id = $2
@@ -919,10 +931,40 @@ async function getCurrentCommercialStatus(tenantId, moduleId, chatId) {
               LIMIT 1`,
             [tenantId, normalizeChatId(chatId), lower(moduleId)]
         );
-        return lower(rows?.[0]?.status);
+        return {
+            status: lower(rows?.[0]?.status),
+            lastTransitionAt: rows?.[0]?.last_transition_at || null
+        };
     } catch (error) {
         console.warn('[Patty] commercial status lookup skipped:', error?.message || error);
-        return '';
+        return { status: '', lastTransitionAt: null };
+    }
+}
+
+async function reopenAcceptedChatForQuote(tenantId, moduleId, chatId, state = {}) {
+    try {
+        await chatCommercialStatusService.upsertChatCommercialStatus(tenantId, {
+            chatId: normalizeChatId(chatId),
+            scopeModuleId: lower(moduleId),
+            status: 'en_conversacion',
+            source: 'system',
+            reason: 'patty_reopen_after_accepted_window',
+            changedByUserId: null,
+            lastTransitionAt: new Date().toISOString(),
+            metadata: {
+                trigger: 'patty_quote_after_accepted_window',
+                previousStatus: state.status || 'aceptado',
+                previousLastTransitionAt: state.lastTransitionAt || null
+            }
+        });
+        console.log('[Patty] accepted chat reopened before quote', {
+            tenantId,
+            moduleId: lower(moduleId),
+            chatId: normalizeChatId(chatId),
+            previousLastTransitionAt: state.lastTransitionAt || null
+        });
+    } catch (error) {
+        console.warn('[Patty] accepted chat reopen failed:', error?.message || error);
     }
 }
 
@@ -1226,16 +1268,22 @@ async function createAndSendPattyQuote({
     const request = quoteRequest && typeof quoteRequest === 'object' ? quoteRequest : null;
     if (!request || !Array.isArray(request.products) || !request.products.length) return null;
 
-    const currentStatus = await getCurrentCommercialStatus(cleanTenantId, cleanModuleId, cleanChatId);
-    if (currentStatus === 'aceptado') {
-        console.log('[Patty] quote blocked: order already accepted', {
-            tenantId: cleanTenantId,
-            moduleId: cleanModuleId,
-            chatId: cleanChatId
-        });
-        return null;
+    const currentState = await getCurrentCommercialState(cleanTenantId, cleanModuleId, cleanChatId);
+    if (currentState.status === 'aceptado') {
+        const acceptedMinutes = minutesSince(currentState.lastTransitionAt);
+        if (acceptedMinutes === null || acceptedMinutes < ACCEPTED_REOPEN_MINUTES) {
+            console.log('[Patty] quote blocked: order recently accepted', {
+                tenantId: cleanTenantId,
+                moduleId: cleanModuleId,
+                chatId: cleanChatId,
+                lastTransitionAt: currentState.lastTransitionAt || null,
+                minutesSinceAccepted: acceptedMinutes
+            });
+            return null;
+        }
+        await reopenAcceptedChatForQuote(cleanTenantId, cleanModuleId, cleanChatId, currentState);
     }
-    if (currentStatus === 'cotizado') {
+    if (currentState.status === 'cotizado') {
         const lastCustomerMessage = await getLastInboundCustomerText(cleanTenantId, cleanModuleId, cleanChatId);
         if (!hasQuoteChangeIntent(lastCustomerMessage)) {
             console.log('[Patty] quote blocked: awaiting client decision', {
@@ -1762,7 +1810,28 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
     const cleanModuleId = lower(moduleId);
     const cleanChatId = normalizeChatId(chatId);
     const inboundMessageId = text(options.messageId || options.message_id || options.inboundMessageId || options.inbound_message_id);
-    const currentStatus = await getCurrentCommercialStatus(cleanTenantId, cleanModuleId, cleanChatId);
+    const currentState = await getCurrentCommercialState(cleanTenantId, cleanModuleId, cleanChatId);
+    const currentStatus = currentState.status;
+    if (currentStatus === 'aceptado') {
+        const acceptedMinutes = minutesSince(currentState.lastTransitionAt);
+        if (acceptedMinutes === null || acceptedMinutes < ACCEPTED_REOPEN_MINUTES) {
+            console.log('[Patty] skipped: order recently accepted', {
+                tenantId: cleanTenantId,
+                moduleId: cleanModuleId,
+                chatId: cleanChatId,
+                lastTransitionAt: currentState.lastTransitionAt || null,
+                minutesSinceAccepted: acceptedMinutes
+            });
+            return;
+        }
+        console.log('[Patty] accepted window elapsed; intervention allowed', {
+            tenantId: cleanTenantId,
+            moduleId: cleanModuleId,
+            chatId: cleanChatId,
+            lastTransitionAt: currentState.lastTransitionAt || null,
+            minutesSinceAccepted: acceptedMinutes
+        });
+    }
     if (await isQuoteButtonReplyMessage(cleanTenantId, cleanModuleId, cleanChatId, inboundMessageId)) {
         const hasAutomation = await hasActiveAutomationForStatus(cleanTenantId, cleanModuleId, currentStatus);
         if (hasAutomation) {
