@@ -865,6 +865,7 @@ async function getZonesContext(tenantId, recentConversationText = '') {
         return matchedRules
             .slice(0, 20)
             .map((rule) => {
+                const zoneName = text(rule.name) || 'Zona';
                 const meta = safeJsonObject(rule.rulesJson || rule.rules_json || rule.metadata);
                 const coverageParts = [
                     ...ensureTextArray(meta.districts || meta.districtNames || meta.distritos),
@@ -877,32 +878,46 @@ async function getZonesContext(tenantId, recentConversationText = '') {
                 const shippingOptions = Array.isArray(rule.shippingOptions || rule.shipping_options)
                     ? (rule.shippingOptions || rule.shipping_options)
                     : [];
-                const shippingLines = shippingOptions
+                const activeShippingOptions = shippingOptions
                     .filter((item) => item?.is_active !== false && item?.isActive !== false)
+                    .slice(0, 8);
+                const shippingLines = activeShippingOptions
                     .map((item) => {
-                        const type = lower(item.type) === 'courier' ? `Courier ${text(item.label) || 'Courier'}` : (text(item.label) || 'Delivery propio');
+                        const label = lower(item.type) === 'courier' ? `Courier ${text(item.label) || 'Courier'}` : (text(item.label) || 'Delivery propio');
                         const cost = money(item.cost);
                         const freeFrom = money(item.free_from ?? item.freeFrom);
                         const estimatedTime = text(item.estimated_time || item.estimatedTime);
                         return [
-                            `    - ${type}: ${cost !== null ? `S/ ${cost.toFixed(2)}` : 'Costo por confirmar'}`,
-                            freeFrom !== null ? `      (gratis en pedidos +S/ ${freeFrom.toFixed(2)})` : '',
-                            estimatedTime ? `      Tiempo: ${estimatedTime}` : ''
+                            `    - ${label}: ${cost !== null ? `S/ ${cost.toFixed(2)}` : 'Costo por confirmar'}`,
+                            freeFrom !== null ? `      Gratis desde S/ ${freeFrom.toFixed(2)}` : '      Gratis desde: No aplica',
+                            estimatedTime ? `      Tiempo estimado: ${estimatedTime} dias habiles` : '      Tiempo estimado: Por confirmar'
                         ].filter(Boolean).join('\n');
                     });
+                const primaryShipping = activeShippingOptions[0] || null;
+                if (primaryShipping) {
+                    const shippingLabel = lower(primaryShipping.type) === 'courier'
+                        ? `Courier ${text(primaryShipping.label) || 'Courier'}`
+                        : (text(primaryShipping.label) || 'Delivery propio');
+                    const deliveryAmount = money(primaryShipping.cost);
+                    console.log('[Patty] zone matched:', zoneName, 'shipping:', shippingLabel, 'cost:', deliveryAmount);
+                } else {
+                    console.log('[Patty] zone matched:', zoneName, 'shipping:', 'Sin envio configurado', 'cost:', null);
+                }
                 const payments = safeJsonObject(rule.paymentMethods || rule.payment_methods);
                 const paymentLabels = [
                     payments.yape ? 'Yape' : '',
                     payments.plin ? 'Plin' : '',
                     payments.bank_transfer || payments.bankTransfer ? 'Transferencia bancaria' : '',
-                    payments.credit_card || payments.creditCard ? 'Tarjeta de credito' : ''
+                    payments.credit_card || payments.creditCard ? 'Tarjeta' : ''
                 ].filter(Boolean);
                 return [
-                    `${text(rule.name)}:`,
+                    `ZONA DETECTADA PARA ESTE CLIENTE: ${zoneName}`,
                     `  Cobertura: ${coverage}`,
                     '  Envio disponible:',
                     shippingLines.length ? shippingLines.join('\n') : '    - Sin opciones de envio configuradas',
-                    `  Pagos aceptados: ${paymentLabels.length ? paymentLabels.join(', ') : 'No configurados'}`
+                    '  Metodos de pago aceptados:',
+                    `    - ${paymentLabels.length ? paymentLabels.join(', ') : 'No configurados'}`,
+                    '  INSTRUCCION: Cuando el cliente pregunte por envio o pago, usa EXACTAMENTE estos datos. No inventes costos ni metodos.'
                 ].join('\n');
             })
             .filter(Boolean);
@@ -1863,7 +1878,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '- Si solo hay un tema, usa un array con un solo mensaje. Maximo 3 mensajes por respuesta.',
         '- Si el cliente claramente acepta o pide una cotizacion, agrega quoteRequest con products usando el titulo EXACTO del catalogo: {"products":[{"title":"Nombre exacto del producto","qty":1}]}.',
         '- quoteRequest NO debe incluir campo note. Solo incluir: {"products":[{"title":"Nombre exacto del producto","qty":1}]}.',
-        '- Cuando el cliente pida ver productos o el catalogo, incluye catalogProducts con los SKUs relevantes. Maximo 5 productos por respuesta.',
+        '- Cuando el cliente pida ver productos o el catalogo, incluye catalogProducts como array de SKUs exactos entre corchetes del catalogo. Ejemplo: si el catalogo dice "- [MAT0502005] Lavavajillas 4L: S/ 39.90", entonces catalogProducts debe ser ["MAT0502005"]. NUNCA uses el titulo, SIEMPRE el codigo entre corchetes. Maximo 5 productos por respuesta.',
         '- Cuando generes quoteRequest, messages[] solo debe tener UNA linea de intro como "He agregado [producto] a tu pedido 😊" o "Aquí va tu cotización actualizada 👇". NUNCA incluyas lista de productos, precios ni subtotales en el texto; la cotizacion ya los muestra.',
         '- Cuando generes quoteRequest para modificar una cotizacion existente, products[] debe incluir TODOS los productos del resultado final, no solo los cambios. Ejemplo: si hay 2 productos actuales y el cliente agrega 1, products[] debe tener 3 items.',
         '- Si el estado es PROGRAMADO y el cliente pide cambios, responde SOLO: "Entendido, en un momento te confirmamos si podemos agregar eso a tu pedido 🙌". NO incluyas lista de productos ni precios. NO generes quoteRequest.',
@@ -1908,9 +1923,9 @@ async function generatePattySuggestion(tenantId, moduleId, chatId) {
             'INSTRUCCIÓN CRÍTICA: Si el contexto incluye "⚠️ COTIZACIÓN ACTIVA", NO incluyas quoteRequest salvo que este último mensaje pida cambios explícitos en productos, cantidades o reemplazos.',
             '',
             'Responde con JSON valido exactamente en este formato:',
-            '{"messages":[{"text":"texto listo para enviar por WhatsApp","quotedMessageId":"message_id inbound relevante o null"}],"quoteRequest":{"products":[{"title":"Nombre exacto del producto del catalogo","qty":1}]},"catalogProducts":["SKU1","SKU2"]}',
+            '{"messages":[{"text":"texto listo para enviar por WhatsApp","quotedMessageId":"message_id inbound relevante o null"}],"quoteRequest":{"products":[{"title":"Nombre exacto del producto del catalogo","qty":1}]},"catalogProducts":["MAT0502005","MAT05040004"]}',
             'quoteRequest NO debe incluir campo note. Solo incluir products con title y qty.',
-            'Cuando el cliente pida ver productos o catalogo, incluye catalogProducts con SKUs reales del catalogo. Maximo 5 productos por respuesta.',
+            'catalogProducts debe ser un array de SKUs exactos entre corchetes del catalogo. Ejemplo: si el catalogo dice "- [MAT0502005] Lavavajillas 4L: S/ 39.90", entonces catalogProducts debe ser ["MAT0502005"]. NUNCA uses el titulo del producto, SIEMPRE el codigo entre corchetes. Maximo 5 productos por respuesta.',
             'Cuando incluyas quoteRequest, messages[] debe contener UNA sola linea de intro como "He agregado [producto] a tu pedido 😊" o "Aquí va tu cotización actualizada 👇". NUNCA incluyas lista de productos, precios ni subtotales en el texto; la cotizacion ya los muestra.',
             'Si quoteRequest modifica una cotizacion existente, products[] debe incluir TODOS los productos del resultado final, no solo el producto agregado/quitado/cambiado.',
             'Si el estado es PROGRAMADO y el cliente pide cambios, responde SOLO: "Entendido, en un momento te confirmamos si podemos agregar eso a tu pedido 🙌". NO incluyas lista de productos ni precios. NO generes quoteRequest.',
