@@ -15,6 +15,7 @@ module.exports = {
     customerService: tenantDomainServices.customerService,
     customerAddressesService: tenantDomainServices.customerAddressesService,
     customerCatalogsService: tenantDomainServices.customerCatalogsService,
+    geoLocationService: tenantDomainServices.geoLocationService,
     quickReplyLibrariesService: tenantDomainServices.quickReplyLibrariesService,
     quickRepliesManagerService: tenantDomainServices.quickRepliesManagerService,
     tenantAutomationService: tenantDomainServices.tenantAutomationService,
