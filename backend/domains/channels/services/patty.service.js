@@ -15,6 +15,11 @@ const chatCommercialStatusService = require('../../operations/services/chat-comm
 const conversationOpsService = require('../../operations/services/conversation-ops.service');
 const { getChatSuggestion } = require('../../operations/services/ai.service');
 const waClient = require('./wa-provider.service');
+const fs = require('fs');
+const path = require('path');
+const { resolveAndValidatePublicHost } = require('../../security/helpers/security-utils');
+const { createMessageMediaAssetsHelpers } = require('../helpers/message-media-assets.helpers');
+const { createLazySharpLoader } = require('../helpers/socket-runtime-bootstrap.helpers');
 const {
     buildScopedChatId
 } = require('../helpers/chat-scope.helpers');
@@ -31,6 +36,23 @@ const MIN_WAIT_SECONDS = 5;
 const MAX_WAIT_SECONDS = 300;
 const PROGRAMMED_CHANGE_RESPONSE = 'Entendido, en un momento te confirmamos si podemos agregar eso a tu pedido 🙌';
 const pattyChatDebounce = new Map();
+const PATTY_UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || path.resolve(__dirname, '../../../uploads')).trim());
+const pattyProcessedMediaCache = new Map();
+const {
+    slugifyFileName,
+    resolveCatalogProductMediaForSend
+} = createMessageMediaAssetsHelpers({
+    fs,
+    path,
+    URL,
+    Buffer,
+    resolveAndValidatePublicHost,
+    getSharpImageProcessor: createLazySharpLoader(),
+    SAAS_UPLOADS_ROOT: PATTY_UPLOADS_ROOT,
+    QUICK_REPLY_MEDIA_MAX_BYTES: Math.max(256 * 1024, Number(process.env.QUICK_REPLY_MEDIA_MAX_BYTES || process.env.ADMIN_ASSET_QUICK_REPLY_MAX_BYTES || (50 * 1024 * 1024))),
+    QUICK_REPLY_MEDIA_TIMEOUT_MS: Math.max(2000, Number(process.env.QUICK_REPLY_MEDIA_TIMEOUT_MS || 15000)),
+    processedMediaCache: pattyProcessedMediaCache
+});
 
 function text(value = '') {
     return String(value ?? '').trim();
@@ -705,7 +727,7 @@ async function getCatalogRowsBySkus(tenantId, skus = []) {
     if (!cleanSkus.length) return [];
     const placeholders = cleanSkus.map((_, index) => `$${index + 2}`).join(', ');
     const { rows } = await pgQuery(
-        `SELECT item_id, title, price, metadata
+        `SELECT item_id, title, price, image_url, metadata
            FROM catalog_items
           WHERE tenant_id = $1
             AND UPPER(item_id) IN (${placeholders})`,
@@ -722,7 +744,9 @@ async function sendPattyCatalogProducts({ tenantId, moduleId = '', chatId, skus 
     let sent = 0;
     for (let index = 0; index < rows.length; index += 1) {
         const row = rows[index];
-        await waClient.sendMessage(chatId, buildPattyCatalogProductCaption(row), {
+        const caption = buildPattyCatalogProductCaption(row);
+        const imageUrl = text(row.image_url || row.imageUrl || safeJsonObject(row.metadata).imageUrl || safeJsonObject(row.metadata).image_url);
+        const metadata = {
             metadata: {
                 agentMeta: {
                     sentByUserId: 'patty',
@@ -737,7 +761,37 @@ async function sendPattyCatalogProducts({ tenantId, moduleId = '', chatId, skus 
                     title: text(row.title)
                 }
             }
-        });
+        };
+        let sentWithImage = false;
+        if (imageUrl) {
+            try {
+                const compatibleMedia = await resolveCatalogProductMediaForSend(imageUrl, {
+                    tenantId,
+                    maxBytes: Number(process.env.CATALOG_IMAGE_MAX_BYTES || 4 * 1024 * 1024),
+                    timeoutMs: Number(process.env.CATALOG_IMAGE_TIMEOUT_MS || 7000)
+                });
+                if (compatibleMedia) {
+                    const baseName = slugifyFileName(row.title || row.item_id || 'producto');
+                    const filename = `${baseName || 'producto'}.${compatibleMedia.extension || 'jpg'}`;
+                    await waClient.sendMedia(
+                        chatId,
+                        compatibleMedia.mediaData,
+                        compatibleMedia.mimetype,
+                        filename,
+                        caption,
+                        false,
+                        null,
+                        metadata
+                    );
+                    sentWithImage = true;
+                }
+            } catch (error) {
+                console.warn('[Patty] catalog product image send skipped:', error?.message || error);
+            }
+        }
+        if (!sentWithImage) {
+            await waClient.sendMessage(chatId, caption, metadata);
+        }
         sent += 1;
         if (index < rows.length - 1) await sleep(1200);
     }
@@ -894,12 +948,16 @@ async function getZonesContext(tenantId, recentConversationText = '') {
                         ].filter(Boolean).join('\n');
                     });
                 const primaryShipping = activeShippingOptions[0] || null;
-                if (primaryShipping) {
-                    const shippingLabel = lower(primaryShipping.type) === 'courier'
+                const primaryShippingLabel = primaryShipping
+                    ? (lower(primaryShipping.type) === 'courier'
                         ? `Courier ${text(primaryShipping.label) || 'Courier'}`
-                        : (text(primaryShipping.label) || 'Delivery propio');
-                    const deliveryAmount = money(primaryShipping.cost);
-                    console.log('[Patty] zone matched:', zoneName, 'shipping:', shippingLabel, 'cost:', deliveryAmount);
+                        : (text(primaryShipping.label) || 'Delivery propio'))
+                    : 'Sin envio configurado';
+                const primaryCost = primaryShipping ? money(primaryShipping.cost) : null;
+                const primaryFreeFrom = primaryShipping ? money(primaryShipping.free_from ?? primaryShipping.freeFrom) : null;
+                const primaryEstimatedTime = primaryShipping ? text(primaryShipping.estimated_time || primaryShipping.estimatedTime) : '';
+                if (primaryShipping) {
+                    console.log('[Patty] zone matched:', zoneName, 'shipping:', primaryShippingLabel, 'cost:', primaryCost);
                 } else {
                     console.log('[Patty] zone matched:', zoneName, 'shipping:', 'Sin envio configurado', 'cost:', null);
                 }
@@ -908,16 +966,22 @@ async function getZonesContext(tenantId, recentConversationText = '') {
                     payments.yape ? 'Yape' : '',
                     payments.plin ? 'Plin' : '',
                     payments.bank_transfer || payments.bankTransfer ? 'Transferencia bancaria' : '',
-                    payments.credit_card || payments.creditCard ? 'Tarjeta' : ''
+                    payments.credit_card || payments.creditCard ? 'Tarjeta de credito' : ''
                 ].filter(Boolean);
                 return [
                     `ZONA DETECTADA PARA ESTE CLIENTE: ${zoneName}`,
+                    '  ⚠️ USA ESTOS DATOS EXACTOS AL RESPONDER:',
+                    `  Envio: ${primaryShippingLabel}`,
+                    `  Costo: ${primaryCost !== null ? `S/ ${primaryCost.toFixed(2)}` : 'Por confirmar'}`,
+                    `  Gratis desde: ${primaryFreeFrom !== null ? `S/ ${primaryFreeFrom.toFixed(2)}` : 'No aplica'}`,
+                    `  Tiempo: ${primaryEstimatedTime ? `${primaryEstimatedTime} dias habiles` : 'Por confirmar'}`,
+                    `  Metodos de pago: ${paymentLabels.length ? paymentLabels.join(', ') : 'No configurados'}`,
                     `  Cobertura: ${coverage}`,
                     '  Envio disponible:',
                     shippingLines.length ? shippingLines.join('\n') : '    - Sin opciones de envio configuradas',
                     '  Metodos de pago aceptados:',
                     `    - ${paymentLabels.length ? paymentLabels.join(', ') : 'No configurados'}`,
-                    '  INSTRUCCION: Cuando el cliente pregunte por envio o pago, usa EXACTAMENTE estos datos. No inventes costos ni metodos.'
+                    `  INSTRUCCION CRITICA: Cuando el cliente pregunte por envio o metodos de pago, usa EXACTAMENTE estos datos. NO digas "depende de la cantidad" ni inventes datos. El costo de envio es ${primaryCost !== null ? `S/ ${primaryCost.toFixed(2)}` : 'el indicado arriba'} fijo${primaryFreeFrom !== null ? `, gratis si el pedido supera S/ ${primaryFreeFrom.toFixed(2)}` : ''}.`
                 ].join('\n');
             })
             .filter(Boolean);
@@ -1828,6 +1892,8 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     const recentOrder = formatOrderContext(conversation.recentOrder);
     const catalogText = lineList(catalog.lines);
     const mentionedCatalogText = lineList(catalog.mentionedDetails, '');
+    const zonesText = lineList(zones);
+    const hasDetectedZone = (Array.isArray(zones) ? zones : []).some((entry) => text(entry).startsWith('ZONA DETECTADA PARA ESTE CLIENTE:'));
     if (String(process.env.PATTY_DEBUG || '').trim().toLowerCase() === 'true') {
         console.log('[Patty] catalog context preview', {
             tenantId: cleanTenantId,
@@ -1842,6 +1908,9 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         `Tu nombre visible es: ${assistantName}.`,
         `Modulo: ${moduleConfig?.name || cleanModuleId || 'sin modulo'}. ${scheduleState.label}.`,
         '',
+        hasDetectedZone ? 'ZONA PRIORITARIA DETECTADA PARA RESPONDER ENVIO/PAGO:' : '',
+        hasDetectedZone ? zonesText : '',
+        hasDetectedZone ? '' : '',
         'INSTRUCCIÓN CRÍTICA: Si el contexto incluye una sección "⚠️ COTIZACIÓN ACTIVA", NO incluyas quoteRequest salvo que el último mensaje del cliente pida cambios explícitos en productos, cantidades o reemplazos.',
         '',
         'NEGOCIO / CATALOGO:',
@@ -1852,8 +1921,8 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         'RESPUESTAS RAPIDAS PARA PATTY:',
         lineList(quickReplies),
         '',
-        'ZONAS DE COBERTURA Y ENVIO:',
-        lineList(zones),
+        hasDetectedZone ? '' : 'ZONAS DE COBERTURA Y ENVIO:',
+        hasDetectedZone ? '' : zonesText,
         '',
         'DATOS DEL CLIENTE:',
         customer.summary,
