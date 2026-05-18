@@ -669,7 +669,7 @@ class SocketManager {
         const previousStatus = result?.previous && typeof result.previous === 'object' ? result.previous : null;
         const cleanScopeModuleId = String(scopeModuleId || status?.scopeModuleId || '').trim().toLowerCase();
 
-        this.emitToTenant(cleanTenantId, 'chat_commercial_status_updated', {
+        const payload = {
             tenantId: cleanTenantId,
             chatId: cleanChatId,
             scopeModuleId: cleanScopeModuleId || '',
@@ -678,7 +678,20 @@ class SocketManager {
             changed: Boolean(result?.changed),
             source: String(source || 'socket').trim().toLowerCase() || 'socket',
             generatedAt: new Date().toISOString()
-        });
+        };
+
+        this.emitToTenant(cleanTenantId, 'chat_commercial_status_updated', payload);
+        if (status?.needsAdvisor === true) {
+            this.emitToTenant(cleanTenantId, 'chat_needs_advisor', {
+                tenantId: cleanTenantId,
+                chatId: cleanChatId,
+                scopeModuleId: cleanScopeModuleId || '',
+                reason: status.needsAdvisorReason || status.reason || '',
+                needsAdvisor: true,
+                at: status.needsAdvisorAt || payload.generatedAt,
+                source: payload.source
+            });
+        }
     }
 
     emitMetaTemplateStatusUpdated({

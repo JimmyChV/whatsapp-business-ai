@@ -29,6 +29,7 @@ const DEFAULT_ASSISTANT_NAME = 'Patty';
 const DEFAULT_WAIT_SECONDS = 15;
 const MIN_WAIT_SECONDS = 5;
 const MAX_WAIT_SECONDS = 300;
+const PROGRAMMED_CHANGE_RESPONSE = 'Entendido, en un momento te confirmamos si podemos agregar eso a tu pedido 🙌';
 const pattyChatDebounce = new Map();
 
 function text(value = '') {
@@ -1211,6 +1212,77 @@ async function getRecentSentQuote(tenantId, moduleId, chatId) {
     }
 }
 
+async function activateNeedsAdvisorForProgrammedChange({
+    tenantId,
+    moduleId,
+    chatId,
+    assistantName,
+    emitToRuntimeContext,
+    emitCommercialStatusUpdated
+} = {}) {
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const cleanModuleId = lower(moduleId);
+    const cleanChatId = normalizeChatId(chatId);
+    const assistantDisplayName = formatAssistantDisplayName(assistantName);
+    const advisorReason = 'cliente_solicita_cambio_programado';
+    await waClient.sendMessage(cleanChatId, PROGRAMMED_CHANGE_RESPONSE, {
+        metadata: {
+            agentMeta: {
+                sentByUserId: 'patty',
+                sentByName: assistantDisplayName,
+                sentByRole: 'assistant',
+                sentViaModuleId: cleanModuleId
+            },
+            patty: true,
+            automationSource: 'patty_needs_advisor'
+        }
+    });
+    const advisorResult = await chatCommercialStatusService.setNeedsAdvisor(
+        cleanTenantId,
+        cleanChatId,
+        cleanModuleId,
+        advisorReason
+    );
+    await chatCommercialStatusService.resetChatPattyMode(cleanTenantId, {
+        chatId: cleanChatId,
+        scopeModuleId: cleanModuleId,
+        reason: advisorReason
+    });
+    await conversationOpsService.clearChatAssignment(cleanTenantId, {
+        chatId: cleanChatId,
+        scopeModuleId: cleanModuleId,
+        assignedByUserId: 'patty',
+        assignmentMode: 'system',
+        assignmentReason: advisorReason
+    });
+    if (typeof emitCommercialStatusUpdated === 'function') {
+        emitCommercialStatusUpdated({
+            tenantId: cleanTenantId,
+            chatId: cleanChatId,
+            scopeModuleId: cleanModuleId,
+            result: advisorResult,
+            source: 'patty.needs_advisor'
+        });
+    }
+    if (typeof emitCommercialStatusUpdated !== 'function' && typeof emitToRuntimeContext === 'function') {
+        emitToRuntimeContext('chat_needs_advisor', {
+            tenantId: cleanTenantId,
+            chatId: cleanChatId,
+            scopeModuleId: cleanModuleId,
+            reason: advisorReason,
+            needsAdvisor: true,
+            at: new Date().toISOString()
+        });
+    }
+    console.log('[Patty] needs advisor activated for programmed order change', {
+        tenantId: cleanTenantId,
+        moduleId: cleanModuleId,
+        chatId: cleanChatId,
+        reason: advisorReason
+    });
+    return advisorResult;
+}
+
 const QUOTE_CHANGE_WORDS = [
     'agrega',
     'anade',
@@ -1392,76 +1464,16 @@ async function createAndSendPattyQuote({
 
     const currentState = await getCurrentCommercialState(cleanTenantId, cleanModuleId, cleanChatId);
     if (currentState.status === 'programado') {
-        const assistantDisplayName = formatAssistantDisplayName(assistantName);
-        const advisorReason = 'cliente_solicita_cambio_programado';
-        await waClient.sendMessage(cleanChatId, 'Entendido, en un momento te confirmamos si podemos agregar eso a tu pedido 🙌', {
-            metadata: {
-                agentMeta: {
-                    sentByUserId: 'patty',
-                    sentByName: assistantDisplayName,
-                    sentByRole: 'assistant',
-                    sentViaModuleId: cleanModuleId
-                },
-                patty: true,
-                automationSource: 'patty_needs_advisor'
-            }
-        });
-        const advisorResult = await chatCommercialStatusService.setNeedsAdvisor(
-            cleanTenantId,
-            cleanChatId,
-            cleanModuleId,
-            advisorReason
-        );
-        await chatCommercialStatusService.resetChatPattyMode(cleanTenantId, {
-            chatId: cleanChatId,
-            scopeModuleId: cleanModuleId,
-            reason: advisorReason
-        });
-        await conversationOpsService.clearChatAssignment(cleanTenantId, {
-            chatId: cleanChatId,
-            scopeModuleId: cleanModuleId,
-            assignedByUserId: 'patty',
-            assignmentMode: 'system',
-            assignmentReason: advisorReason
-        });
-        if (typeof emitCommercialStatusUpdated === 'function') {
-            emitCommercialStatusUpdated({
-                tenantId: cleanTenantId,
-                chatId: cleanChatId,
-                scopeModuleId: cleanModuleId,
-                result: advisorResult,
-                source: 'patty.needs_advisor'
-            });
-        }
-        if (typeof emitToRuntimeContext === 'function') {
-            emitToRuntimeContext('chat_needs_advisor', {
-                tenantId: cleanTenantId,
-                chatId: cleanChatId,
-                scopeModuleId: cleanModuleId,
-                reason: advisorReason,
-                at: new Date().toISOString()
-            });
-        }
-        console.log('[Patty] needs advisor activated for programmed order change', {
+        await activateNeedsAdvisorForProgrammedChange({
             tenantId: cleanTenantId,
             moduleId: cleanModuleId,
             chatId: cleanChatId,
-            reason: advisorReason
+            assistantName,
+            emitToRuntimeContext,
+            emitCommercialStatusUpdated
         });
         return null;
     }
-    if (currentState.status === 'cotizado') {
-        const lastCustomerMessage = await getLastInboundCustomerText(cleanTenantId, cleanModuleId, cleanChatId);
-        if (!hasQuoteChangeIntent(lastCustomerMessage)) {
-            console.log('[Patty] quote blocked: awaiting client decision', {
-                tenantId: cleanTenantId,
-                moduleId: cleanModuleId,
-                chatId: cleanChatId
-            });
-            return null;
-        }
-    }
-
     const activeQuote = await getRecentSentQuote(cleanTenantId, cleanModuleId, cleanChatId);
     if (activeQuote) {
         const lastCustomerMessage = await getLastInboundCustomerText(cleanTenantId, cleanModuleId, cleanChatId);
@@ -2155,9 +2167,24 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 return;
             }
             const result = await generatePattySuggestion(cleanTenantId, cleanModuleId, cleanChatId);
-            const messages = Array.isArray(result.messages) && result.messages.length
+            let messages = Array.isArray(result.messages) && result.messages.length
                 ? result.messages
                 : normalizePattyMessages(result.suggestion);
+            const assistantName = formatAssistantDisplayName(result.assistantName || DEFAULT_ASSISTANT_NAME);
+            const lastCustomerMessage = text(result.lastCustomerMessage || '');
+            const programadoChangeRequested = currentStatus === 'programado'
+                && (Boolean(result.quoteRequest) || hasQuoteChangeIntent(lastCustomerMessage));
+            if (programadoChangeRequested) {
+                await activateNeedsAdvisorForProgrammedChange({
+                    tenantId: cleanTenantId,
+                    moduleId: cleanModuleId,
+                    chatId: cleanChatId,
+                    assistantName,
+                    emitToRuntimeContext: socketEmitter,
+                    emitCommercialStatusUpdated: options.emitCommercialStatusUpdated
+                });
+                return;
+            }
             const hasCatalogProducts = Array.isArray(result.catalogProducts) && result.catalogProducts.length > 0;
             if (!messages.length && !result.quoteRequest && !hasCatalogProducts) {
                 console.log('[Patty] skipped: empty suggestion', {
@@ -2167,7 +2194,6 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 });
                 return;
             }
-            const assistantName = formatAssistantDisplayName(result.assistantName || DEFAULT_ASSISTANT_NAME);
             if (mode === 'review') {
                 emitSuggestion(socketEmitter, cleanTenantId, {
                     chatId: cleanChatId,

@@ -230,7 +230,13 @@ export default function useChatCommercialStatusState({
           needsAdvisorReason: payload?.reason || current?.needsAdvisorReason || '',
           needsAdvisorAt: payload?.at || current?.needsAdvisorAt || new Date().toISOString()
         }, incomingChatId, incomingScopeModuleId);
-        return nextStatus ? { ...prev, [key]: nextStatus } : prev;
+        if (!nextStatus) return prev;
+        const next = { ...prev, [key]: nextStatus };
+        const baseKey = resolveCommercialStatusKey(nextStatus.chatId, '');
+        if (baseKey) next[baseKey] = { ...nextStatus, scopeModuleId: '' };
+        const scopedKey = resolveCommercialStatusKey(nextStatus.chatId, nextStatus.scopeModuleId);
+        if (scopedKey) next[scopedKey] = nextStatus;
+        return next;
       });
     };
 

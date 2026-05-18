@@ -5618,9 +5618,9 @@ body {
 }
 
 .assignment-badge--needs-advisor {
-  background: color-mix(in srgb, var(--saas-accent-warning) 24%, var(--saas-bg-surface));
-  border-color: color-mix(in srgb, var(--saas-accent-warning) 50%, transparent);
-  color: color-mix(in srgb, var(--saas-accent-warning) 30%, var(--saas-bg-surface));
+  background: var(--color-warning, var(--saas-accent-warning, #f59e0b));
+  border-color: var(--color-warning, var(--saas-accent-warning, #f59e0b));
+  color: var(--color-on-warning, #ffffff);
 }
 
 .assignment-badge--assistant {
