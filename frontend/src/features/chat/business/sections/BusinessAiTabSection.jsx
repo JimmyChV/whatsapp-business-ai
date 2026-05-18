@@ -72,6 +72,7 @@ export default function BusinessAiTabSection({
     const visiblePattyMessages = useMemo(() => normalizePattyMessages(pattySuggestion), [pattySuggestion]);
     const hasPattySuggestion = visiblePattyMessages.length > 0;
     const hasQuoteRequest = Boolean(pattySuggestion?.quoteRequest);
+    const needsAdvisor = Boolean(activeChatCommercialStatus?.needsAdvisor);
     const showTabs = pattyEnabled && copilotEnabled;
     const [activeInnerTab, setActiveInnerTab] = useState(pattyEnabled ? 'patty' : 'copilot');
     const [pattyModePayload, setPattyModePayload] = useState(null);
@@ -212,6 +213,18 @@ export default function BusinessAiTabSection({
         }
     }, [baseChatId, buildJsonHeaders, canReleaseChat, notify, scopeModuleId]);
 
+    const takeAdvisorChat = useCallback(() => {
+        if (!baseChatId || typeof chatAssignmentState?.takeChat !== 'function') return;
+        chatAssignmentState.takeChat(baseChatId, {
+            scopeModuleId: scopeModuleId || undefined,
+            assignmentReason: 'needs_advisor',
+            metadata: {
+                source: 'patty_needs_advisor_panel',
+                needsAdvisorReason: activeChatCommercialStatus?.needsAdvisorReason || null
+            }
+        });
+    }, [activeChatCommercialStatus?.needsAdvisorReason, baseChatId, chatAssignmentState, scopeModuleId]);
+
     const renderPattyModeControl = () => (
         <div
             style={{
@@ -289,6 +302,42 @@ export default function BusinessAiTabSection({
     const renderPattyPanel = () => (
         <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {renderPattyModeControl()}
+            {needsAdvisor && (
+                <div
+                    style={{
+                        border: '1px solid color-mix(in srgb, #f59e0b 55%, var(--chat-card-border))',
+                        background: 'color-mix(in srgb, #f59e0b 14%, var(--chat-card-surface))',
+                        color: 'var(--text-primary)',
+                        borderRadius: '16px',
+                        padding: '12px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '9px'
+                    }}
+                >
+                    <strong style={{ fontSize: '0.82rem' }}>⚠️ Este chat requiere atención de un asesor.</strong>
+                    <span style={{ color: 'var(--chat-control-text-soft)', fontSize: '0.78rem', lineHeight: 1.35 }}>
+                        Patty ha pausado la intervención{activeChatCommercialStatus?.needsAdvisorReason ? `: ${activeChatCommercialStatus.needsAdvisorReason}` : '.'}
+                    </span>
+                    <button
+                        type="button"
+                        onClick={takeAdvisorChat}
+                        disabled={!baseChatId || typeof chatAssignmentState?.takeChat !== 'function'}
+                        style={{
+                            alignSelf: 'flex-start',
+                            border: '1px solid #f59e0b',
+                            background: '#f59e0b',
+                            color: '#111827',
+                            borderRadius: '999px',
+                            padding: '6px 12px',
+                            fontWeight: 900,
+                            cursor: baseChatId && typeof chatAssignmentState?.takeChat === 'function' ? 'pointer' : 'not-allowed'
+                        }}
+                    >
+                        Tomar chat
+                    </button>
+                </div>
+            )}
             {!hasPattySuggestion && (
                 <div
                     style={{

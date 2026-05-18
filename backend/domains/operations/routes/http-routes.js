@@ -274,6 +274,9 @@ function registerOperationsHttpRoutes({
         : async () => {
             throw new Error('Servicio de modo Patty no disponible.');
         };
+    const clearNeedsAdvisor = typeof commercialStatusApi.clearNeedsAdvisor === 'function'
+        ? commercialStatusApi.clearNeedsAdvisor.bind(commercialStatusApi)
+        : async () => ({ status: null, previous: null, changed: false });
     const metaTemplatesApi = metaTemplatesService && typeof metaTemplatesService === 'object'
         ? metaTemplatesService
         : {};
@@ -2216,6 +2219,16 @@ function registerOperationsHttpRoutes({
             });
 
             if (assigneeUserId) {
+                const needsAdvisorResult = await clearNeedsAdvisor(tenantId, chatId, scopeModuleId);
+                if (typeof emitCommercialStatusUpdated === 'function' && needsAdvisorResult?.changed) {
+                    emitCommercialStatusUpdated({
+                        tenantId,
+                        chatId,
+                        scopeModuleId,
+                        result: needsAdvisorResult,
+                        source: 'http.assignment.clear_needs_advisor'
+                    });
+                }
                 const pattyModeResult = await setChatPattyMode(tenantId, {
                     chatId,
                     scopeModuleId,
@@ -2308,6 +2321,16 @@ function registerOperationsHttpRoutes({
                     scopeModuleId,
                     result: pattyModeResult,
                     source: 'http.take_chat.patty_mode'
+                });
+            }
+            const needsAdvisorResult = await clearNeedsAdvisor(tenantId, chatId, scopeModuleId);
+            if (typeof emitCommercialStatusUpdated === 'function' && needsAdvisorResult?.changed) {
+                emitCommercialStatusUpdated({
+                    tenantId,
+                    chatId,
+                    scopeModuleId,
+                    result: needsAdvisorResult,
+                    source: 'http.take_chat.clear_needs_advisor'
                 });
             }
 

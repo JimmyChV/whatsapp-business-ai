@@ -206,8 +206,18 @@ const ChatWindow = ({
                                 <AssignmentBadge
                                     assignment={activeChatAssignment}
                                     isAssignedToMe={isAssignedToMe}
+                                    needsAdvisor={Boolean(activeChatCommercialStatus?.needsAdvisor)}
                                     compact
                                 />
+                                {activeChatCommercialStatus?.needsAdvisor && (
+                                    <TakeChatButton
+                                        chatId={activeChatScopedId}
+                                        scopeModuleId={activeScopeModuleId}
+                                        assignment={activeChatAssignment}
+                                        chatAssignmentState={chatAssignmentState}
+                                        className="take-chat-button--header"
+                                    />
+                                )}
                             </div>
                             <CommercialStatusActions
                                 chatId={activeChatScopedId}
@@ -589,4 +599,3 @@ const ChatWindow = ({
 
 export { ChatInput };
 export default ChatWindow;
-

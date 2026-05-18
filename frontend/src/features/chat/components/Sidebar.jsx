@@ -158,6 +158,15 @@ const Sidebar = ({
     const commercialMenuRef = React.useRef(null);
     const labelPanelRef = React.useRef(null);
     const customerSearchRequestRef = React.useRef(0);
+    const visibleChats = React.useMemo(() => {
+        const items = Array.isArray(filteredChats) ? [...filteredChats] : [];
+        return items.sort((a, b) => {
+            const aNeedsAdvisor = Boolean(getCommercialStatus(a?.id)?.needsAdvisor);
+            const bNeedsAdvisor = Boolean(getCommercialStatus(b?.id)?.needsAdvisor);
+            if (aNeedsAdvisor !== bNeedsAdvisor) return aNeedsAdvisor ? -1 : 1;
+            return 0;
+        });
+    }, [filteredChats, getCommercialStatus]);
 
     React.useEffect(() => {
         const handlePointerDown = (event) => {
@@ -701,7 +710,7 @@ const Sidebar = ({
                     </div>
                 ) : (
                     <>
-                    {filteredChats.map((chat) => {
+                    {visibleChats.map((chat) => {
                         const displayName = getDisplayName(chat);
                         const contactHint = getContactHint(chat, displayName);
                         const contactMeta = getContactMeta(chat, displayName);
@@ -721,7 +730,7 @@ const Sidebar = ({
                         return (
                             <div
                                 key={chat.id}
-                                className={`chat-item chat-item-modern ${activeChatId === chat.id ? 'active' : ''}`}
+                                className={`chat-item chat-item-modern ${activeChatId === chat.id ? 'active' : ''}${chatCommercialStatus?.needsAdvisor ? ' chat-item-modern--needs-advisor' : ''}`}
                                 onClick={() => onChatSelect(chat.id, { clearSearch: true })}
                             >
                                 <div
@@ -786,6 +795,7 @@ const Sidebar = ({
                                             <AssignmentBadge
                                                 assignment={chatAssignment}
                                                 isAssignedToMe={isAssignedToMe}
+                                                needsAdvisor={Boolean(chatCommercialStatus?.needsAdvisor)}
                                                 compact
                                             />
                                         </div>

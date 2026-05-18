@@ -650,6 +650,9 @@ function normalizeRecord(item = {}, { fallbackChatId = '', fallbackScopeModuleId
         pattyMode: toLower(source.pattyMode || source.patty_mode || '') || null,
         pattyModeUntil: normalizeIso(source.pattyModeUntil || source.patty_mode_until) || null,
         pattyTakenBy: toText(source.pattyTakenBy || source.patty_taken_by || '') || null,
+        needsAdvisor: Boolean(source.needsAdvisor ?? source.needs_advisor ?? false),
+        needsAdvisorReason: toText(source.needsAdvisorReason || source.needs_advisor_reason || '') || null,
+        needsAdvisorAt: normalizeIso(source.needsAdvisorAt || source.needs_advisor_at) || null,
         metadata: normalizeMetadata(source.metadata),
         createdAt,
         updatedAt
@@ -683,6 +686,9 @@ function toDbRecord(record = {}) {
         patty_mode: record.pattyMode,
         patty_mode_until: record.pattyModeUntil,
         patty_taken_by: record.pattyTakenBy,
+        needs_advisor: Boolean(record.needsAdvisor),
+        needs_advisor_reason: record.needsAdvisorReason,
+        needs_advisor_at: record.needsAdvisorAt,
         metadata: record.metadata,
         created_at: record.createdAt,
         updated_at: record.updatedAt
@@ -718,6 +724,9 @@ async function ensurePostgresSchema() {
                 patty_mode TEXT NULL,
                 patty_mode_until TIMESTAMPTZ NULL,
                 patty_taken_by TEXT NULL,
+                needs_advisor BOOLEAN NOT NULL DEFAULT FALSE,
+                needs_advisor_reason TEXT NULL,
+                needs_advisor_at TIMESTAMPTZ NULL,
                 metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -728,7 +737,10 @@ async function ensurePostgresSchema() {
             ALTER TABLE tenant_chat_commercial_status
               ADD COLUMN IF NOT EXISTS patty_mode TEXT DEFAULT NULL,
               ADD COLUMN IF NOT EXISTS patty_mode_until TIMESTAMPTZ DEFAULT NULL,
-              ADD COLUMN IF NOT EXISTS patty_taken_by TEXT DEFAULT NULL;
+              ADD COLUMN IF NOT EXISTS patty_taken_by TEXT DEFAULT NULL,
+              ADD COLUMN IF NOT EXISTS needs_advisor BOOLEAN DEFAULT FALSE,
+              ADD COLUMN IF NOT EXISTS needs_advisor_reason TEXT DEFAULT NULL,
+              ADD COLUMN IF NOT EXISTS needs_advisor_at TIMESTAMPTZ DEFAULT NULL;
             ALTER TABLE tenant_chat_commercial_status
               DROP CONSTRAINT IF EXISTS tenant_chat_commercial_status_patty_mode_check;
             ALTER TABLE tenant_chat_commercial_status
@@ -769,6 +781,7 @@ async function getChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, options = {
             `SELECT chat_id, scope_module_id, status, source, reason, changed_by_user_id,
                     first_customer_message_at, first_agent_response_at, quoted_at, sold_at, lost_at,
                     last_transition_at, patty_mode, patty_mode_until, patty_taken_by,
+                    needs_advisor, needs_advisor_reason, needs_advisor_at,
                     metadata, created_at, updated_at
                FROM tenant_chat_commercial_status
               WHERE tenant_id = $1
@@ -830,6 +843,7 @@ async function listCommercialStatuses(tenantId = DEFAULT_TENANT_ID, options = {}
             `SELECT chat_id, scope_module_id, status, source, reason, changed_by_user_id,
                     first_customer_message_at, first_agent_response_at, quoted_at, sold_at, lost_at,
                     last_transition_at, patty_mode, patty_mode_until, patty_taken_by,
+                    needs_advisor, needs_advisor_reason, needs_advisor_at,
                     metadata, created_at, updated_at
                FROM tenant_chat_commercial_status
               WHERE ${whereSql}
@@ -977,6 +991,66 @@ async function resumeExpiredPattyReviewModes(tenantId = DEFAULT_TENANT_ID, { lim
     return { items, count: items.length };
 }
 
+async function setNeedsAdvisor(tenantId = DEFAULT_TENANT_ID, chatId = '', scopeModuleId = '', reason = '') {
+    const cleanTenantId = resolveTenantId(tenantId);
+    const cleanChatId = normalizeChatId(chatId);
+    const cleanScopeModuleId = normalizeScopeModuleId(scopeModuleId || '');
+    if (!cleanChatId) throw new Error('chatId requerido para solicitar asesor.');
+    const current = await getChatCommercialStatus(cleanTenantId, {
+        chatId: cleanChatId,
+        scopeModuleId: cleanScopeModuleId
+    });
+    const at = nowIso();
+    const result = await upsertChatCommercialStatus(cleanTenantId, {
+        ...(current || {}),
+        chatId: cleanChatId,
+        scopeModuleId: cleanScopeModuleId,
+        status: current?.status || 'en_conversacion',
+        source: 'system',
+        reason: reason || current?.reason || 'needs_advisor',
+        needsAdvisor: true,
+        needsAdvisorReason: reason || 'needs_advisor',
+        needsAdvisorAt: at,
+        metadata: {
+            ...(current?.metadata || {}),
+            needsAdvisorSetAt: at,
+            needsAdvisorReason: reason || 'needs_advisor'
+        }
+    });
+    console.log('[advisor] chat needs advisor:', reason || 'needs_advisor', {
+        tenantId: cleanTenantId,
+        chatId: cleanChatId,
+        scopeModuleId: cleanScopeModuleId
+    });
+    return result;
+}
+
+async function clearNeedsAdvisor(tenantId = DEFAULT_TENANT_ID, chatId = '', scopeModuleId = '') {
+    const cleanTenantId = resolveTenantId(tenantId);
+    const cleanChatId = normalizeChatId(chatId);
+    const cleanScopeModuleId = normalizeScopeModuleId(scopeModuleId || '');
+    if (!cleanChatId) return { status: null, previous: null, changed: false };
+    const current = await getChatCommercialStatus(cleanTenantId, {
+        chatId: cleanChatId,
+        scopeModuleId: cleanScopeModuleId
+    });
+    if (!current || !current.needsAdvisor) {
+        return { status: current, previous: current, changed: false };
+    }
+    return upsertChatCommercialStatus(cleanTenantId, {
+        ...current,
+        chatId: cleanChatId,
+        scopeModuleId: cleanScopeModuleId,
+        needsAdvisor: false,
+        needsAdvisorReason: null,
+        needsAdvisorAt: null,
+        metadata: {
+            ...(current.metadata || {}),
+            needsAdvisorClearedAt: nowIso()
+        }
+    });
+}
+
 async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload = {}) {
     const cleanTenantId = resolveTenantId(tenantId);
     const source = payload && typeof payload === 'object' ? payload : {};
@@ -1002,6 +1076,9 @@ async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload 
         pattyMode: source.pattyMode !== undefined ? source.pattyMode : (previous?.pattyMode || null),
         pattyModeUntil: source.pattyModeUntil !== undefined ? source.pattyModeUntil : (previous?.pattyModeUntil || null),
         pattyTakenBy: source.pattyTakenBy !== undefined ? source.pattyTakenBy : (previous?.pattyTakenBy || null),
+        needsAdvisor: source.needsAdvisor !== undefined ? source.needsAdvisor : Boolean(previous?.needsAdvisor),
+        needsAdvisorReason: source.needsAdvisorReason !== undefined ? source.needsAdvisorReason : (previous?.needsAdvisorReason || null),
+        needsAdvisorAt: source.needsAdvisorAt !== undefined ? source.needsAdvisorAt : (previous?.needsAdvisorAt || null),
         metadata: {
             ...(previous?.metadata || {}),
             ...normalizeMetadata(source.metadata)
@@ -1058,11 +1135,15 @@ async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload 
         `INSERT INTO tenant_chat_commercial_status (
             tenant_id, chat_id, scope_module_id, status, source, reason, changed_by_user_id,
             first_customer_message_at, first_agent_response_at, quoted_at, sold_at, lost_at,
-            last_transition_at, patty_mode, patty_mode_until, patty_taken_by, metadata, created_at, updated_at
+            last_transition_at, patty_mode, patty_mode_until, patty_taken_by,
+            needs_advisor, needs_advisor_reason, needs_advisor_at,
+            metadata, created_at, updated_at
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7,
             $8, $9, $10, $11, $12,
-            $13, $14, $15, $16, $17::jsonb, $18, $19
+            $13, $14, $15, $16,
+            $17, $18, $19,
+            $20::jsonb, $21, $22
         )
         ON CONFLICT (tenant_id, chat_id, scope_module_id)
         DO UPDATE SET
@@ -1079,6 +1160,9 @@ async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload 
             patty_mode = EXCLUDED.patty_mode,
             patty_mode_until = EXCLUDED.patty_mode_until,
             patty_taken_by = EXCLUDED.patty_taken_by,
+            needs_advisor = EXCLUDED.needs_advisor,
+            needs_advisor_reason = EXCLUDED.needs_advisor_reason,
+            needs_advisor_at = EXCLUDED.needs_advisor_at,
             metadata = COALESCE(tenant_chat_commercial_status.metadata, '{}'::jsonb) || COALESCE(EXCLUDED.metadata, '{}'::jsonb),
             updated_at = EXCLUDED.updated_at`,
         [
@@ -1098,6 +1182,9 @@ async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload 
             row.patty_mode,
             row.patty_mode_until,
             row.patty_taken_by,
+            row.needs_advisor,
+            row.needs_advisor_reason,
+            row.needs_advisor_at,
             JSON.stringify(row.metadata || {}),
             row.created_at,
             row.updated_at
@@ -1280,6 +1367,8 @@ module.exports = {
     resetChatPattyMode,
     extendPattyReviewWindow,
     resumeExpiredPattyReviewModes,
+    setNeedsAdvisor,
+    clearNeedsAdvisor,
     markInboundCustomerFirstContact,
     markFirstAgentReply,
     markQuoteSent,

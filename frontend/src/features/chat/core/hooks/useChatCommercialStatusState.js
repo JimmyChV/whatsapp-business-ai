@@ -30,6 +30,12 @@ const normalizeCommercialStatusRecord = (status = null, fallbackChatId = '', fal
     soldAt: asText(status.soldAt || ''),
     lostAt: asText(status.lostAt || ''),
     lastTransitionAt: asText(status.lastTransitionAt || ''),
+    pattyMode: asScope(status.pattyMode || status.patty_mode || ''),
+    pattyModeUntil: asText(status.pattyModeUntil || status.patty_mode_until || ''),
+    pattyTakenBy: asText(status.pattyTakenBy || status.patty_taken_by || ''),
+    needsAdvisor: Boolean(status.needsAdvisor ?? status.needs_advisor ?? false),
+    needsAdvisorReason: asText(status.needsAdvisorReason || status.needs_advisor_reason || ''),
+    needsAdvisorAt: asText(status.needsAdvisorAt || status.needs_advisor_at || ''),
     updatedAt: asText(status.updatedAt || ''),
     createdAt: asText(status.createdAt || '')
   };
@@ -207,12 +213,35 @@ export default function useChatCommercialStatusState({
       setCommercialStatusesByChatId((prev) => ({ ...prev, [key]: nextStatus }));
     };
 
+    const handleChatNeedsAdvisor = (payload = {}) => {
+      const incomingChatId = asText(payload?.chatId || '');
+      const incomingScopeModuleId = asScope(payload?.scopeModuleId || '');
+      if (!incomingChatId) return;
+      const key = resolveCommercialStatusKey(incomingChatId, incomingScopeModuleId);
+      if (!key) return;
+      setCommercialStatusesByChatId((prev) => {
+        const current = prev[key] || normalizeCommercialStatusRecord({
+          chatId: incomingChatId,
+          scopeModuleId: incomingScopeModuleId
+        }, incomingChatId, incomingScopeModuleId);
+        const nextStatus = normalizeCommercialStatusRecord({
+          ...current,
+          needsAdvisor: true,
+          needsAdvisorReason: payload?.reason || current?.needsAdvisorReason || '',
+          needsAdvisorAt: payload?.at || current?.needsAdvisorAt || new Date().toISOString()
+        }, incomingChatId, incomingScopeModuleId);
+        return nextStatus ? { ...prev, [key]: nextStatus } : prev;
+      });
+    };
+
     socket.on('chat_commercial_status_bulk_snapshot', handleBulkSnapshot);
     socket.on('chat_commercial_status_updated', handleCommercialStatusUpdated);
+    socket.on('chat_needs_advisor', handleChatNeedsAdvisor);
 
     return () => {
       socket.off('chat_commercial_status_bulk_snapshot', handleBulkSnapshot);
       socket.off('chat_commercial_status_updated', handleCommercialStatusUpdated);
+      socket.off('chat_needs_advisor', handleChatNeedsAdvisor);
     };
   }, [socket, resolveCommercialStatusKey]);
 

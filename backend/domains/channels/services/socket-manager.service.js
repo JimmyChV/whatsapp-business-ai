@@ -1824,6 +1824,18 @@ class SocketManager {
                             source: 'socket.take_chat.patty_mode'
                         });
                     }
+                    if (chatCommercialStatusService && typeof chatCommercialStatusService.clearNeedsAdvisor === 'function') {
+                        const needsAdvisorResult = await chatCommercialStatusService.clearNeedsAdvisor(tenantId, baseChatId, scopeModuleId);
+                        if (needsAdvisorResult?.changed) {
+                            this.emitCommercialStatusUpdated({
+                                tenantId,
+                                chatId: baseChatId,
+                                scopeModuleId,
+                                result: needsAdvisorResult,
+                                source: 'socket.take_chat.clear_needs_advisor'
+                            });
+                        }
+                    }
 
                     await authzAudit.auditSocketAction('chat.assignment.taken', {
                         resourceType: 'chat',

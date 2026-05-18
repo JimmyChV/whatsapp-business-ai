@@ -5114,6 +5114,11 @@ body {
   background: linear-gradient(120deg, rgba(47, 83, 104, 0.34), rgba(28, 55, 71, 0.42));
 }
 
+.chat-item-modern--needs-advisor {
+  border-color: color-mix(in srgb, var(--saas-accent-warning) 60%, var(--saas-border-subtle));
+  box-shadow: 0 12px 26px color-mix(in srgb, var(--saas-accent-warning) 16%, transparent);
+}
+
 .chat-info-modern {
   gap: 7px;
 }
@@ -5612,6 +5617,12 @@ body {
   color: color-mix(in srgb, var(--saas-accent-info) 25%, var(--saas-bg-surface));
 }
 
+.assignment-badge--needs-advisor {
+  background: color-mix(in srgb, var(--saas-accent-warning) 24%, var(--saas-bg-surface));
+  border-color: color-mix(in srgb, var(--saas-accent-warning) 50%, transparent);
+  color: color-mix(in srgb, var(--saas-accent-warning) 30%, var(--saas-bg-surface));
+}
+
 .commercial-status-badge {
   display: inline-flex;
   align-items: center;
@@ -5787,6 +5798,15 @@ body {
 .take-chat-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.take-chat-button--header {
+  border-radius: 999px;
+  padding: 4px 10px;
+  min-height: 26px;
+  font-size: 0.72rem;
+  border-color: color-mix(in srgb, var(--saas-accent-warning) 55%, transparent);
+  background: color-mix(in srgb, var(--saas-accent-warning) 18%, var(--saas-bg-surface));
 }
 
 .chat-assignment-lock {

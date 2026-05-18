@@ -12,6 +12,7 @@ const tenantZoneRulesService = require('../../tenant/services/tenant-zone-rules.
 const waModulesService = require('../../tenant/services/wa-modules.service');
 const quotesService = require('../../tenant/services/quotes.service');
 const chatCommercialStatusService = require('../../operations/services/chat-commercial-status.service');
+const conversationOpsService = require('../../operations/services/conversation-ops.service');
 const { getChatSuggestion } = require('../../operations/services/ai.service');
 const waClient = require('./wa-provider.service');
 const {
@@ -1376,6 +1377,65 @@ async function createAndSendPattyQuote({
     if (!request || !Array.isArray(request.products) || !request.products.length) return null;
 
     const currentState = await getCurrentCommercialState(cleanTenantId, cleanModuleId, cleanChatId);
+    if (currentState.status === 'programado') {
+        const assistantDisplayName = formatAssistantDisplayName(assistantName);
+        const advisorReason = 'cliente_solicita_cambio_programado';
+        await waClient.sendMessage(cleanChatId, 'Entendido, en un momento te confirmamos si podemos agregar eso a tu pedido 🙌', {
+            metadata: {
+                agentMeta: {
+                    sentByUserId: 'patty',
+                    sentByName: assistantDisplayName,
+                    sentByRole: 'assistant',
+                    sentViaModuleId: cleanModuleId
+                },
+                patty: true,
+                automationSource: 'patty_needs_advisor'
+            }
+        });
+        const advisorResult = await chatCommercialStatusService.setNeedsAdvisor(
+            cleanTenantId,
+            cleanChatId,
+            cleanModuleId,
+            advisorReason
+        );
+        await chatCommercialStatusService.resetChatPattyMode(cleanTenantId, {
+            chatId: cleanChatId,
+            scopeModuleId: cleanModuleId,
+            reason: advisorReason
+        });
+        await conversationOpsService.clearChatAssignment(cleanTenantId, {
+            chatId: cleanChatId,
+            scopeModuleId: cleanModuleId,
+            assignedByUserId: 'patty',
+            assignmentMode: 'system',
+            assignmentReason: advisorReason
+        });
+        if (typeof emitCommercialStatusUpdated === 'function') {
+            emitCommercialStatusUpdated({
+                tenantId: cleanTenantId,
+                chatId: cleanChatId,
+                scopeModuleId: cleanModuleId,
+                result: advisorResult,
+                source: 'patty.needs_advisor'
+            });
+        }
+        if (typeof emitToRuntimeContext === 'function') {
+            emitToRuntimeContext('chat_needs_advisor', {
+                tenantId: cleanTenantId,
+                chatId: cleanChatId,
+                scopeModuleId: cleanModuleId,
+                reason: advisorReason,
+                at: new Date().toISOString()
+            });
+        }
+        console.log('[Patty] needs advisor activated for programmed order change', {
+            tenantId: cleanTenantId,
+            moduleId: cleanModuleId,
+            chatId: cleanChatId,
+            reason: advisorReason
+        });
+        return null;
+    }
     if (currentState.status === 'cotizado') {
         const lastCustomerMessage = await getLastInboundCustomerText(cleanTenantId, cleanModuleId, cleanChatId);
         if (!hasQuoteChangeIntent(lastCustomerMessage)) {
