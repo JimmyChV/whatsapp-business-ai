@@ -5624,9 +5624,9 @@ body {
 }
 
 .assignment-badge--assistant {
-  background: color-mix(in srgb, var(--saas-accent-primary) 18%, var(--saas-bg-surface));
-  border-color: color-mix(in srgb, var(--saas-accent-primary) 42%, transparent);
-  color: color-mix(in srgb, var(--saas-accent-primary) 28%, var(--saas-bg-surface));
+  background: var(--color-primary, var(--saas-accent-primary, #16a34a));
+  border-color: var(--color-primary, var(--saas-accent-primary, #16a34a));
+  color: var(--color-on-primary, #ffffff);
 }
 
 .commercial-status-badge {

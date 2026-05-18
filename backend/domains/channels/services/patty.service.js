@@ -320,6 +320,19 @@ function normalizePattyQuoteRequest(rawSuggestion = '') {
     };
 }
 
+function normalizeQuoteIntroMessages(messages = []) {
+    const first = Array.isArray(messages) ? messages.find((item) => text(item?.text)) : null;
+    const firstLine = text(first?.text || '').split(/\r?\n/).map((line) => text(line)).filter(Boolean)[0] || '';
+    const looksDetailed = /(?:^|\n)\s*[-*•]|\bS\/\s*\d|\bsubtotal\b|\btotal\b|\bprecio\b|\bproducto\b/i.test(text(first?.text || ''));
+    const intro = firstLine && !looksDetailed
+        ? firstLine.slice(0, 180)
+        : 'Aquí va tu cotización actualizada 👇';
+    return [{
+        text: intro,
+        quotedMessageId: first?.quotedMessageId || null
+    }];
+}
+
 function normalizePattyCatalogProducts(rawSuggestion = '') {
     const parsed = extractJsonObject(rawSuggestion);
     const source = Array.isArray(parsed?.catalogProducts)
@@ -1141,7 +1154,7 @@ async function getActiveQuoteContext(tenantId, moduleId, chatId) {
                 '',
                 'INSTRUCCION: Si el cliente pide agregar o quitar productos, usa estos como base en el nuevo quoteRequest.',
                 status === 'programado'
-                    ? 'INSTRUCCION CRITICA: Si el pedido esta PROGRAMADO, no generes nueva cotizacion; activa el modo de asistencia (needs_advisor=true).'
+                    ? 'INSTRUCCION CRITICA: Si el pedido esta PROGRAMADO y el cliente pide cambios, responde SOLO: "Entendido, en un momento te confirmamos si podemos agregar eso a tu pedido 🙌". NO incluyas lista de productos ni precios. NO generes quoteRequest; activa el modo de asistencia (needs_advisor=true).'
                     : ''
             ].filter(Boolean).join('\n');
         }
@@ -1159,7 +1172,8 @@ async function getActiveQuoteContext(tenantId, moduleId, chatId) {
                 '  - QUITAR producto: incluir solo los que quedan',
                 '  - CAMBIAR cantidad: incluir todos con cantidad actualizada',
                 '  - REEMPLAZAR producto: quitar el anterior, agregar el nuevo',
-                '  - Si el cliente confirma sin cambios: NO generar quoteRequest'
+                '  - Si el cliente confirma sin cambios: NO generar quoteRequest',
+                '  - Si el estado es PROGRAMADO y el cliente pide cambios: responder SOLO con el mensaje de confirmacion pendiente, sin productos, sin precios y sin quoteRequest.'
             ].join('\n');
         }
         return [
@@ -1765,8 +1779,9 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '- Si el cliente claramente acepta o pide una cotizacion, agrega quoteRequest con products usando el titulo EXACTO del catalogo: {"products":[{"title":"Nombre exacto del producto","qty":1}]}.',
         '- quoteRequest NO debe incluir campo note. Solo incluir: {"products":[{"title":"Nombre exacto del producto","qty":1}]}.',
         '- Cuando el cliente pida ver productos o el catalogo, incluye catalogProducts con los SKUs relevantes. Maximo 5 productos por respuesta.',
-        '- Cuando generes quoteRequest, messages[] solo debe tener un mensaje corto de intro maximo 1 linea. No repitas productos ni precios en el texto.',
+        '- Cuando generes quoteRequest, messages[] solo debe tener UNA linea de intro como "He agregado [producto] a tu pedido 😊" o "Aquí va tu cotización actualizada 👇". NUNCA incluyas lista de productos, precios ni subtotales en el texto; la cotizacion ya los muestra.',
         '- Cuando generes quoteRequest para modificar una cotizacion existente, products[] debe incluir TODOS los productos del resultado final, no solo los cambios. Ejemplo: si hay 2 productos actuales y el cliente agrega 1, products[] debe tener 3 items.',
+        '- Si el estado es PROGRAMADO y el cliente pide cambios, responde SOLO: "Entendido, en un momento te confirmamos si podemos agregar eso a tu pedido 🙌". NO incluyas lista de productos ni precios. NO generes quoteRequest.',
         '- Si el contexto incluye "PEDIDO DEL CATALOGO META RECIBIDO", reconoce ese pedido y genera quoteRequest con exactamente esos productos, cantidades y titulos.',
         '- El title debe copiarse del catalogo tal como aparece despues del SKU entre corchetes. No inventes SKUs ni codigos. Si incluyes sku, debe ser exactamente uno de los SKUs entre corchetes.',
         '- Incluye quoteRequest solo cuando haya una aceptacion o solicitud clara de cotizacion.',
@@ -1811,8 +1826,9 @@ async function generatePattySuggestion(tenantId, moduleId, chatId) {
             '{"messages":[{"text":"texto listo para enviar por WhatsApp","quotedMessageId":"message_id inbound relevante o null"}],"quoteRequest":{"products":[{"title":"Nombre exacto del producto del catalogo","qty":1}]},"catalogProducts":["SKU1","SKU2"]}',
             'quoteRequest NO debe incluir campo note. Solo incluir products con title y qty.',
             'Cuando el cliente pida ver productos o catalogo, incluye catalogProducts con SKUs reales del catalogo. Maximo 5 productos por respuesta.',
-            'Cuando incluyas quoteRequest, messages[] debe contener solo una intro corta de maximo 1 linea. No repitas productos ni precios en el texto.',
+            'Cuando incluyas quoteRequest, messages[] debe contener UNA sola linea de intro como "He agregado [producto] a tu pedido 😊" o "Aquí va tu cotización actualizada 👇". NUNCA incluyas lista de productos, precios ni subtotales en el texto; la cotizacion ya los muestra.',
             'Si quoteRequest modifica una cotizacion existente, products[] debe incluir TODOS los productos del resultado final, no solo el producto agregado/quitado/cambiado.',
+            'Si el estado es PROGRAMADO y el cliente pide cambios, responde SOLO: "Entendido, en un momento te confirmamos si podemos agregar eso a tu pedido 🙌". NO incluyas lista de productos ni precios. NO generes quoteRequest.',
             'Para quoteRequest usa el title exacto del catalogo. No uses SKUs inventados; si agregas sku, debe existir exactamente entre corchetes en el catalogo.',
             'IMPORTANTE: Solo genera quoteRequest cuando el cliente confirma EXPLICITAMENTE que productos quiere cotizar. "Si", "claro", "ok" o "dale" como respuesta a opciones o informacion NO confirma cotizacion; significa que quiere mas informacion. Cotiza solo con frases como "cotizame eso", "quiero esos productos", "dame el precio de todo" o "haz el pedido".',
             'Omite quoteRequest si no corresponde generar cotizacion.'
@@ -1838,8 +1854,11 @@ async function generatePattySuggestion(tenantId, moduleId, chatId) {
                 : null
         }
     );
-    const messages = normalizePattyMessages(rawSuggestion);
     const quoteRequest = normalizePattyQuoteRequest(rawSuggestion);
+    let messages = normalizePattyMessages(rawSuggestion);
+    if (quoteRequest) {
+        messages = normalizeQuoteIntroMessages(messages);
+    }
     const catalogProducts = normalizePattyCatalogProducts(rawSuggestion);
     const suggestion = messages.map((item) => item.text).join('\n\n');
     console.log('[Patty] suggestion generated', {

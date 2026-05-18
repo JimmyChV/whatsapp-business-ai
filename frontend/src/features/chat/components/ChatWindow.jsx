@@ -16,6 +16,21 @@ import useChatWindowSearchController from './hooks/useChatWindowSearchController
 import useChatWindowHeaderModel from './hooks/useChatWindowHeaderModel';
 import useChatWindowUiToggles from './hooks/useChatWindowUiToggles';
 
+const normalizePattyMode = (value = '') => {
+    const mode = String(value || '').trim().toLowerCase();
+    return ['autonomous', 'review', 'off'].includes(mode) ? mode : '';
+};
+
+const resolveModulePattyMode = (moduleConfig = null) => {
+    const aiConfig = moduleConfig?.metadata?.aiConfig || moduleConfig?.aiConfig || {};
+    const explicitMode = normalizePattyMode(aiConfig.effectiveMode || aiConfig.currentMode || aiConfig.mode);
+    if (explicitMode) return explicitMode;
+    const withinMode = normalizePattyMode(aiConfig.withinHoursMode || aiConfig.within_hours_mode);
+    const outsideMode = normalizePattyMode(aiConfig.outsideHoursMode || aiConfig.outside_hours_mode);
+    if (withinMode && withinMode === outsideMode) return withinMode;
+    return outsideMode || withinMode || 'off';
+};
+
 // ============================================================
 // ChatWindow - Full component with Profile Panel
 // ============================================================
@@ -129,9 +144,22 @@ const ChatWindow = ({
     const isAssignedToMe = typeof chatAssignmentState?.isAssignedToMe === 'function'
         ? chatAssignmentState.isAssignedToMe(activeChatScopedId)
         : false;
-    const hasAssignee = Boolean(String(activeChatAssignment?.assigneeUserId || '').trim());
-    const canWriteByAssignment = hasAssignee && isAssignedToMe;
     const activeScopeModuleId = String(activeChatDetails?.scopeModuleId || activeChatAssignment?.scopeModuleId || '').trim().toLowerCase();
+    const activeModuleConfig = React.useMemo(() => {
+        const moduleId = String(activeScopeModuleId || '').trim().toLowerCase();
+        const moduleName = String(headerModuleName || activeChatDetails?.moduleName || '').trim().toLowerCase();
+        return (Array.isArray(waModules) ? waModules : []).find((entry) => {
+            const entryId = String(entry?.moduleId || entry?.id || '').trim().toLowerCase();
+            const entryName = String(entry?.name || '').trim().toLowerCase();
+            return (moduleId && entryId === moduleId) || (moduleName && entryName === moduleName);
+        }) || null;
+    }, [activeChatDetails?.moduleName, activeScopeModuleId, headerModuleName, waModules]);
+    const hasAssignee = Boolean(String(activeChatAssignment?.assigneeUserId || '').trim())
+        && String(activeChatAssignment?.status || '').trim().toLowerCase() !== 'released';
+    const canWriteByAssignment = hasAssignee && isAssignedToMe;
+    const showPattyAssignee = !hasAssignee
+        && !activeChatCommercialStatus?.needsAdvisor
+        && resolveModulePattyMode(activeModuleConfig) === 'autonomous';
     const headerLabels = Array.isArray(activeChatDetails?.labels) ? activeChatDetails.labels : [];
     const visibleHeaderLabels = headerLabels.slice(0, 2);
     const hiddenHeaderLabelsCount = Math.max(0, headerLabels.length - visibleHeaderLabels.length);
@@ -207,6 +235,7 @@ const ChatWindow = ({
                                     assignment={activeChatAssignment}
                                     isAssignedToMe={isAssignedToMe}
                                     needsAdvisor={Boolean(activeChatCommercialStatus?.needsAdvisor)}
+                                    virtualAssigneeLabel={showPattyAssignee ? 'Patty IA' : ''}
                                     compact
                                 />
                                 {activeChatCommercialStatus?.needsAdvisor && (
@@ -580,9 +609,15 @@ const ChatWindow = ({
                         <AssignmentBadge
                             assignment={activeChatAssignment}
                             isAssignedToMe={isAssignedToMe}
+                            needsAdvisor={Boolean(activeChatCommercialStatus?.needsAdvisor)}
+                            virtualAssigneeLabel={showPattyAssignee ? 'Patty IA' : ''}
                         />
                         <span className="chat-assignment-lock-text">
-                            Toma este chat para responder al cliente.
+                            {activeChatCommercialStatus?.needsAdvisor
+                                ? '⚠️ Solicita asistencia · Tomar chat'
+                                : showPattyAssignee
+                                    ? 'Patty IA está respondiendo · Tomar chat'
+                                    : 'Sin asignar · Toma este chat para responder al cliente'}
                         </span>
                     </div>
                     <TakeChatButton
