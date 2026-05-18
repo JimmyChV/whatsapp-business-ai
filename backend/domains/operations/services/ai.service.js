@@ -165,6 +165,9 @@ async function getChatSuggestion(context, customPrompt = '', onChunk = null, ext
         const explicitUserInstruction = customPrompt.trim()
             ? `\n\nInstruccion puntual de la vendedora: ${customPrompt.trim()}`
             : '';
+        const preservedFullContext = options?.preserveFullContext && String(context || '').trim()
+            ? `\n\nCONTEXTO COMPLETO PRIORITARIO (usar sin recortar y por encima del resumen):\n${String(context || '').trim()}`
+            : '';
 
         const fallbackLegacyContext = !options?.runtimeContext && externalBusinessContext
             ? `\n\nCONTEXTO BASE LEGACY:\n${clipText(buildBusinessContext(externalBusinessContext), 900)}`
@@ -178,7 +181,7 @@ async function getChatSuggestion(context, customPrompt = '', onChunk = null, ext
             .filter(Boolean)
             .join('\n\n');
 
-        const userPrompt = `${promptPackage.dynamicUserPrompt}${legacyBusinessContext}${fallbackLegacyContext}${explicitUserInstruction}
+        const userPrompt = `${preservedFullContext}${promptPackage.dynamicUserPrompt}${legacyBusinessContext}${fallbackLegacyContext}${explicitUserInstruction}
 
 OBJETIVO DE ESTA EJECUCION:
 - Generar una sola respuesta sugerida, lista para enviar al cliente por WhatsApp.

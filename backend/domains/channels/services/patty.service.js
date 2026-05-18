@@ -1155,6 +1155,57 @@ async function getZonesContext(tenantId, recentConversationText = '') {
     }
 }
 
+function parseFirstDetectedZoneContext(zones = []) {
+    const source = (Array.isArray(zones) ? zones : [])
+        .map((entry) => text(entry))
+        .find((entry) => entry.startsWith('ZONA DETECTADA PARA ESTE CLIENTE:'));
+    if (!source) return null;
+    const pick = (pattern) => text(source.match(pattern)?.[1] || '');
+    const timeRaw = pick(/^\s*Tiempo de entrega:\s*(.+)$/mi)
+        .replace(/\s+exactos?$/i, '')
+        .trim();
+    return {
+        zoneName: pick(/^ZONA DETECTADA PARA ESTE CLIENTE:\s*(.+)$/mi),
+        shipping: pick(/^\s*Envio:\s*(.+)$/mi),
+        cost: pick(/^\s*Costo:\s*(.+)$/mi),
+        freeFrom: pick(/^\s*Gratis desde:\s*(.+)$/mi),
+        deliveryTime: timeRaw,
+        payments: pick(/^\s*Metodos de pago:\s*(.+)$/mi)
+    };
+}
+
+function isPureDeliveryOrPaymentQuestion(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized) return false;
+    const hasDeliveryOrPayment = /\b(envio|delivery|entrega|demora|demorar|tiempo|pago|pagar|pagos|yape|plin|transferencia|tarjeta)\b/.test(normalized)
+        || normalized.includes('forma de pago')
+        || normalized.includes('metodos de pago')
+        || normalized.includes('cuanto cuesta el envio')
+        || normalized.includes('cuanto demora');
+    if (!hasDeliveryOrPayment) return false;
+    const hasProductRequest = /\b(cotiza|cotizame|pedido|comprar|catalogo|muestrame|mostrarme|quiero\s+(?!pagar)|dame\s+\d|unidades)\b/.test(normalized);
+    return !hasProductRequest;
+}
+
+function buildDeterministicDeliveryPaymentResponse(zones = [], lastCustomerMessage = '') {
+    if (!isPureDeliveryOrPaymentQuestion(lastCustomerMessage)) return null;
+    const zone = parseFirstDetectedZoneContext(zones);
+    if (!zone) return null;
+    const lines = [
+        `El envio a ${zone.zoneName || 'tu zona'} es con ${zone.shipping || 'el courier configurado'} a ${zone.cost || 'costo por confirmar'}.`
+    ];
+    if (zone.freeFrom && !/^no aplica$/i.test(zone.freeFrom)) {
+        lines.push(`Gratis en pedidos desde ${zone.freeFrom}.`);
+    }
+    if (zone.deliveryTime) {
+        lines.push(`Tiempo de entrega: ${zone.deliveryTime}.`);
+    }
+    if (zone.payments && !/^no configurados$/i.test(zone.payments)) {
+        lines.push(`Metodos de pago: ${zone.payments} 🙌`);
+    }
+    return lines.join('\n');
+}
+
 function ensureTextArray(value = []) {
     return (Array.isArray(value) ? value : [value]).map(text).filter(Boolean);
 }
@@ -2059,6 +2110,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     const mentionedCatalogText = lineList(catalog.mentionedDetails, '');
     const zonesText = lineList(zones);
     const hasDetectedZone = (Array.isArray(zones) ? zones : []).some((entry) => text(entry).startsWith('ZONA DETECTADA PARA ESTE CLIENTE:'));
+    const deterministicResponse = buildDeterministicDeliveryPaymentResponse(zones, conversation.lastCustomerMessage || '');
     if (String(process.env.PATTY_DEBUG || '').trim().toLowerCase() === 'true') {
         console.log('[Patty] catalog context preview', {
             tenantId: cleanTenantId,
@@ -2068,14 +2120,21 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         });
     }
     const system = [
+        'CONTEXTO CRITICO DE ESTA RESPUESTA:',
+        hasDetectedZone ? 'ZONA PRIORITARIA DETECTADA PARA RESPONDER ENVIO/PAGO:' : '',
+        hasDetectedZone ? zonesText : '',
+        quote ? '\nCOTIZACION / PEDIDO ACTUAL:' : '',
+        quote || '',
+        `ULTIMO MENSAJE DEL CLIENTE: ${conversation.lastCustomerMessage || 'Sin ultimo mensaje registrado.'}`,
+        relevantCatalogText ? '\nPRODUCTOS RELEVANTES PARA TU CONSULTA:' : '',
+        relevantCatalogText,
+        '',
+        'PROMPT BASE DEL ASISTENTE:',
         basePrompt || 'Eres una asesora comercial experta de WhatsApp. Responde de forma breve, clara, humana y orientada a venta consultiva.',
         '',
         `Tu nombre visible es: ${assistantName}.`,
         `Modulo: ${moduleConfig?.name || cleanModuleId || 'sin modulo'}. ${scheduleState.label}.`,
         '',
-        hasDetectedZone ? 'ZONA PRIORITARIA DETECTADA PARA RESPONDER ENVIO/PAGO:' : '',
-        hasDetectedZone ? zonesText : '',
-        hasDetectedZone ? '' : '',
         'INSTRUCCIÓN CRÍTICA: Si el contexto incluye una sección "⚠️ COTIZACIÓN ACTIVA", NO incluyas quoteRequest salvo que el último mensaje del cliente pida cambios explícitos en productos, cantidades o reemplazos.',
         '',
         'NEGOCIO / CATALOGO:',
@@ -2096,7 +2155,6 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         customer.summary,
         labels ? `\n${labels}` : '',
         commercialStatus ? `\n${commercialStatus}` : '',
-        quote ? `\n${quote}` : '',
         metaCatalogOrder ? `\n${metaCatalogOrder}` : '',
         '',
         'ORIGEN DEL CONTACTO:',
@@ -2140,6 +2198,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         moduleConfig,
         assistantName,
         system,
+        deterministicResponse,
         lastCustomerMessage: conversation.lastCustomerMessage || 'Continua la conversacion con el cliente.'
     };
 }
@@ -2155,6 +2214,22 @@ async function generatePattySuggestion(tenantId, moduleId, chatId) {
         contextChars: context.system.length,
         lastCustomerMessageChars: context.lastCustomerMessage.length
     });
+    if (context.deterministicResponse) {
+        const messages = [{ text: context.deterministicResponse, quotedMessageId: null }];
+        console.log('[Patty] deterministic delivery/payment response', {
+            tenantId: context.tenantId,
+            moduleId: context.moduleId,
+            chatId: context.chatId
+        });
+        return {
+            ...context,
+            suggestion: context.deterministicResponse,
+            messages,
+            quoteRequest: null,
+            catalogProducts: [],
+            rawSuggestion: context.deterministicResponse
+        };
+    }
     const rawSuggestion = await getChatSuggestion(
         context.system,
         [
@@ -2194,7 +2269,8 @@ async function generatePattySuggestion(tenantId, moduleId, chatId) {
                     name: context.moduleConfig.name,
                     metadata: context.moduleConfig.metadata
                 }
-                : null
+                : null,
+            preserveFullContext: true
         }
     );
     const quoteRequest = normalizePattyQuoteRequest(rawSuggestion);
