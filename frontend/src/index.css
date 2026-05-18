@@ -5623,6 +5623,12 @@ body {
   color: color-mix(in srgb, var(--saas-accent-warning) 30%, var(--saas-bg-surface));
 }
 
+.assignment-badge--assistant {
+  background: color-mix(in srgb, var(--saas-accent-primary) 18%, var(--saas-bg-surface));
+  border-color: color-mix(in srgb, var(--saas-accent-primary) 42%, transparent);
+  color: color-mix(in srgb, var(--saas-accent-primary) 28%, var(--saas-bg-surface));
+}
+
 .commercial-status-badge {
   display: inline-flex;
   align-items: center;

@@ -48,6 +48,21 @@ const normalizeSearchText = (value = '') => String(value || '')
     .trim()
     .toLowerCase();
 
+const normalizePattyMode = (value = '') => {
+    const mode = String(value || '').trim().toLowerCase();
+    return ['autonomous', 'review', 'off'].includes(mode) ? mode : '';
+};
+
+const resolveModulePattyMode = (moduleConfig = null) => {
+    const aiConfig = moduleConfig?.metadata?.aiConfig || moduleConfig?.aiConfig || {};
+    const explicitMode = normalizePattyMode(aiConfig.effectiveMode || aiConfig.currentMode || aiConfig.mode);
+    if (explicitMode) return explicitMode;
+    const withinMode = normalizePattyMode(aiConfig.withinHoursMode || aiConfig.within_hours_mode);
+    const outsideMode = normalizePattyMode(aiConfig.outsideHoursMode || aiConfig.outside_hours_mode);
+    if (withinMode && withinMode === outsideMode) return withinMode;
+    return outsideMode || withinMode || 'off';
+};
+
 const Sidebar = ({
     chats,
     chatsLoaded = false,
@@ -719,6 +734,9 @@ const Sidebar = ({
                         const chatAssignment = getAssignment(chat.id);
                         const isAssignedToMe = isAssignedToMeResolver(chat.id);
                         const chatCommercialStatus = getCommercialStatus(chat.id);
+                        const moduleConfig = moduleConfigById.get(String(moduleBadge?.moduleId || chat?.scopeModuleId || '').trim().toLowerCase()) || null;
+                        const hasAssignee = Boolean(String(chatAssignment?.assigneeUserId || '').trim()) && String(chatAssignment?.status || '').trim().toLowerCase() !== 'released';
+                        const showPattyAssignee = !hasAssignee && !chatCommercialStatus?.needsAdvisor && resolveModulePattyMode(moduleConfig) === 'autonomous';
                         const moduleAvatarImage = moduleBadge?.imageUrl || null;
                         const avatarFallback = moduleBadge?.moduleName
                             ? avatarLetter(moduleBadge.moduleName)
@@ -796,6 +814,7 @@ const Sidebar = ({
                                                 assignment={chatAssignment}
                                                 isAssignedToMe={isAssignedToMe}
                                                 needsAdvisor={Boolean(chatCommercialStatus?.needsAdvisor)}
+                                                virtualAssigneeLabel={showPattyAssignee ? 'Patty IA' : ''}
                                                 compact
                                             />
                                         </div>

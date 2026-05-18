@@ -47,6 +47,13 @@ function resolveAssignmentVisual(assignment = null, isAssignedToMe = false, comp
   const status = String(assignment?.status || '').trim().toLowerCase();
 
   if (!hasAssignee || status === 'released') {
+    const virtualAssigneeLabel = String(assignment?.virtualAssigneeLabel || '').trim();
+    if (virtualAssigneeLabel) {
+      return {
+        tone: 'assistant',
+        label: compact ? virtualAssigneeLabel : virtualAssigneeLabel
+      };
+    }
     return {
       tone: 'unassigned',
       label: compact ? 'Sin asignar' : 'Sin asignar'
@@ -80,9 +87,10 @@ export default function AssignmentBadge({
   isAssignedToMe = false,
   compact = false,
   needsAdvisor = false,
+  virtualAssigneeLabel = '',
   className = ''
 }) {
-  const { tone, label } = resolveAssignmentVisual({ ...(assignment || {}), needsAdvisor }, isAssignedToMe, compact);
+  const { tone, label } = resolveAssignmentVisual({ ...(assignment || {}), needsAdvisor, virtualAssigneeLabel }, isAssignedToMe, compact);
   return (
     <span
       className={`assignment-badge assignment-badge--${tone}${compact ? ' assignment-badge--compact' : ''}${className ? ` ${className}` : ''}`}
