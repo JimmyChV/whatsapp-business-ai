@@ -112,9 +112,7 @@ export default function useChatSelectionAction({
     setShowClientProfile(false);
     setClientContact(null);
     setQuickReplyDraft(null);
-    if (!Array.isArray(cachedMessages) || cachedMessages.length === 0) {
-      socket.emit('get_chat_history', resolvedChatId);
-    }
+    socket.emit('get_chat_history', resolvedChatId);
     socket.emit('mark_chat_read', resolvedChatId);
     socket.emit('get_contact_info', resolvedChatId);
     setChats((prev) => prev.map((c) => chatIdsReferSameScope(String(c?.id || ''), resolvedChatId) ? { ...c, unreadCount: 0 } : c));

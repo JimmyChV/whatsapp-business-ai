@@ -6,8 +6,7 @@ import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 import {
     patchCachedMessages,
     replaceMessageByClientTempId,
-    upsertMessageById,
-    writeCachedMessages
+    upsertMessageById
 } from '../helpers/messageCache.helpers';
 import { mergeTemplateMessageContent } from '../helpers/templateMessages.helpers';
 
@@ -732,8 +731,8 @@ export default function useSocketChatConversationEvents({
                 ? String(getMessagePreviewText(latestHistoryMessage) || '').trim()
                 : '';
             const latestHistoryTimestamp = Number(latestHistoryMessage?.timestamp || 0) || 0;
-            setMessages((prev) => {
-                const previous = Array.isArray(prev) ? prev : [];
+            const mergeHistoryMessages = (currentMessages = []) => {
+                const previous = Array.isArray(currentMessages) ? currentMessages : [];
                 if (previous.length === 0) return hydratedMessages;
                 if (hydratedMessages.length === 0) return previous;
 
@@ -768,10 +767,11 @@ export default function useSocketChatConversationEvents({
                 const merged = Array.from(mergedById.values());
                 merged.sort((a, b) => Number(a?.timestamp || 0) - Number(b?.timestamp || 0));
                 return merged;
-            });
+            };
+            setMessages(mergeHistoryMessages);
             const activeChatId = String(activeChatIdRef.current || '').trim();
             if (activeChatId) {
-                writeCachedMessages(messagesCacheRef, activeChatId, hydratedMessages);
+                patchCachedMessages(messagesCacheRef, activeChatId, mergeHistoryMessages);
             }
             const nextWindowOpen = Boolean(data?.windowOpen);
             const nextWindowExpiresAt = String(data?.windowExpiresAt || '').trim() || null;
