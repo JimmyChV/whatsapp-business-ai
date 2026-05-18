@@ -1102,13 +1102,14 @@ async function getConversationContext(tenantId, moduleId, chatId) {
 async function getActiveQuoteContext(tenantId, moduleId, chatId) {
     try {
         const { rows } = await pgQuery(
-            `SELECT quote_id, status, items_json, summary_json, sent_at
+            `SELECT quote_id, status, items_json, summary_json, sent_at, created_at, updated_at
                FROM tenant_quotes
               WHERE tenant_id = $1
                 AND chat_id = $2
-                AND status IN ('sent', 'draft')
+                AND status IN ('sent', 'draft', 'accepted', 'programado')
+                AND created_at > NOW() - INTERVAL '72 hours'
                 AND (scope_module_id IS NULL OR scope_module_id = '' OR LOWER(scope_module_id) = LOWER($3))
-              ORDER BY sent_at DESC NULLS LAST, updated_at DESC NULLS LAST
+              ORDER BY created_at DESC
               LIMIT 1`,
             [tenantId, normalizeChatId(chatId), lower(moduleId)]
         );
@@ -1128,6 +1129,21 @@ async function getActiveQuoteContext(tenantId, moduleId, chatId) {
         const products = productLines.length ? productLines.join('\n') : '  - Sin productos legibles';
         const total = money(summary.totalPayable ?? summary.total_payable ?? summary.total);
         const status = lower(row.status);
+        if (status === 'accepted' || status === 'programado') {
+            return [
+                'COTIZACION BASE PARA MODIFICACIONES:',
+                `ID: ${text(row.quote_id)}`,
+                `Estado: ${status}`,
+                'Productos:',
+                products,
+                `Total: S/ ${formatMoney(total)}`,
+                '',
+                'INSTRUCCION: Si el cliente pide agregar o quitar productos, usa estos como base en el nuevo quoteRequest.',
+                status === 'programado'
+                    ? 'INSTRUCCION CRITICA: Si el pedido esta PROGRAMADO, no generes nueva cotizacion; activa el modo de asistencia (needs_advisor=true).'
+                    : ''
+            ].filter(Boolean).join('\n');
+        }
         if (status === 'sent') {
             return [
                 '⚠️ COTIZACIÓN ACTIVA — GESTIONAR MODIFICACIONES:',
