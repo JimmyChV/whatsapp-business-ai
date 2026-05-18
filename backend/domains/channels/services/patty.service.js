@@ -257,25 +257,97 @@ function safeJsonObject(value) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
+function stripJsonCodeFences(value = '') {
+    return text(value)
+        .trim()
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```\s*$/i, '')
+        .trim();
+}
+
+function extractBalancedJsonCandidate(value = '') {
+    const raw = text(value);
+    const start = raw.indexOf('{');
+    if (start < 0) return '';
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < raw.length; index += 1) {
+        const char = raw[index];
+        if (inString) {
+            if (escaped) {
+                escaped = false;
+            } else if (char === '\\') {
+                escaped = true;
+            } else if (char === '"') {
+                inString = false;
+            }
+            continue;
+        }
+        if (char === '"') {
+            inString = true;
+        } else if (char === '{') {
+            depth += 1;
+        } else if (char === '}') {
+            depth -= 1;
+            if (depth === 0) return raw.slice(start, index + 1);
+        }
+    }
+    return raw.slice(start).trim();
+}
+
+function repairJsonCandidate(value = '') {
+    let candidate = stripJsonCodeFences(value).replace(/,\s*([}\]])/g, '$1');
+    if (!candidate) return '';
+    const stack = [];
+    let inString = false;
+    let escaped = false;
+    for (const char of candidate) {
+        if (inString) {
+            if (escaped) {
+                escaped = false;
+            } else if (char === '\\') {
+                escaped = true;
+            } else if (char === '"') {
+                inString = false;
+            }
+            continue;
+        }
+        if (char === '"') {
+            inString = true;
+        } else if (char === '{') {
+            stack.push('}');
+        } else if (char === '[') {
+            stack.push(']');
+        } else if ((char === '}' || char === ']') && stack[stack.length - 1] === char) {
+            stack.pop();
+        }
+    }
+    if (inString) candidate += '"';
+    while (stack.length) candidate += stack.pop();
+    return candidate;
+}
+
 function extractJsonObject(value = '') {
     const raw = text(value);
     if (!raw) return null;
-    const stripped = raw
-        .replace(/^```(?:json)?\s*/i, '')
-        .replace(/\s*```$/i, '')
-        .trim();
+    const stripped = stripJsonCodeFences(raw);
+    const balancedCandidate = extractBalancedJsonCandidate(raw);
     const regexCandidate = raw.match(/\{[\s\S]*\}/)?.[0];
     const candidates = [
         raw,
         stripped,
-        regexCandidate
+        balancedCandidate,
+        regexCandidate,
+        repairJsonCandidate(balancedCandidate || stripped || raw)
     ].filter(Boolean);
     const firstBrace = raw.indexOf('{');
     const lastBrace = raw.lastIndexOf('}');
     if (firstBrace >= 0 && lastBrace > firstBrace) {
         candidates.push(raw.slice(firstBrace, lastBrace + 1));
+        candidates.push(repairJsonCandidate(raw.slice(firstBrace, lastBrace + 1)));
     }
-    for (const candidate of candidates) {
+    for (const candidate of Array.from(new Set(candidates))) {
         try {
             const parsed = JSON.parse(candidate);
             if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
@@ -283,7 +355,8 @@ function extractJsonObject(value = '') {
             // Try the next candidate.
         }
     }
-    console.warn('[Patty] JSON parse failed, using raw text fallback', { raw });
+    console.warn('[Patty] JSON parse failed, using raw text fallback');
+    console.warn('[Patty] JSON parse failed raw:', raw);
     return null;
 }
 
@@ -1251,7 +1324,7 @@ async function activateNeedsAdvisorForProgrammedChange({
     await conversationOpsService.clearChatAssignment(cleanTenantId, {
         chatId: cleanChatId,
         scopeModuleId: cleanModuleId,
-        assignedByUserId: 'patty',
+        assignedByUserId: null,
         assignmentMode: 'system',
         assignmentReason: advisorReason
     });
