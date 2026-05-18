@@ -35,6 +35,25 @@ const STORE_FILE = 'conversation_ops.json';
 const EVENTS_FILE_LIMIT = Math.max(500, Number(process.env.CONVERSATION_EVENTS_FILE_LIMIT || 5000));
 const ASSIGNMENT_EVENTS_FILE_LIMIT = Math.max(500, Number(process.env.ASSIGNMENT_EVENTS_FILE_LIMIT || 5000));
 const assignmentChangedListeners = new Set();
+const SYSTEM_ASSIGNMENT_ACTOR_IDS = new Set([
+    'patty',
+    'patty ia',
+    'automation',
+    'automations',
+    'automatizacion',
+    'automatización',
+    'system',
+    'sistema',
+    'assistant',
+    'asistente',
+    'asistente virtual'
+]);
+
+function normalizeAssignedByUserId(value = '') {
+    const clean = toText(value || '');
+    if (!clean) return null;
+    return SYSTEM_ASSIGNMENT_ACTOR_IDS.has(clean.toLowerCase()) ? null : clean;
+}
 
 function extractPhoneCandidatesFromChatId(chatId = '') {
     const clean = toText(chatId);
@@ -458,7 +477,7 @@ async function markChatAssignmentWaiting(tenantId = DEFAULT_TENANT_ID, payload =
         scopeModuleId,
         assigneeUserId: current.assigneeUserId,
         assigneeRole: current.assigneeRole,
-        assignedByUserId: toText(payload.actorUserId || payload.assignedByUserId || '') || null,
+        assignedByUserId: normalizeAssignedByUserId(payload.actorUserId || payload.assignedByUserId),
         assignmentMode: 'auto',
         assignmentReason: reason,
         metadata: normalizeObject(payload.metadata),
@@ -485,7 +504,7 @@ async function reactivateChatAssignmentOnCustomerReply(tenantId = DEFAULT_TENANT
         scopeModuleId,
         assigneeUserId: null,
         assigneeRole: null,
-        assignedByUserId: toText(payload.actorUserId || payload.assignedByUserId || '') || null,
+        assignedByUserId: normalizeAssignedByUserId(payload.actorUserId || payload.assignedByUserId),
         assignmentMode: 'auto',
         assignmentReason: 'customer_reply_after_waiting',
         metadata: normalizeObject(payload.metadata),
@@ -551,7 +570,7 @@ async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) 
     const scopeModuleId = normalizeScopeModuleId(payload.scopeModuleId || '');
     const assigneeUserId = toText(payload.assigneeUserId || '') || null;
     const assigneeRole = assigneeUserId ? (toLower(payload.assigneeRole || '') || null) : null;
-    const assignedByUserId = toText(payload.assignedByUserId || '') || null;
+    const assignedByUserId = normalizeAssignedByUserId(payload.assignedByUserId);
     const assignmentMode = normalizeMode(payload.assignmentMode || 'manual');
     const assignmentReason = toText(payload.assignmentReason || '') || null;
     const metadata = normalizeObject(payload.metadata);

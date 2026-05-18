@@ -287,6 +287,12 @@ function stripJsonCodeFences(value = '') {
         .trim();
 }
 
+function repairKnownPattyJsonPatterns(value = '') {
+    return text(value)
+        .replace(/\}\s*,\s*"quotedMessageId"\s*:/g, ',"quotedMessageId":')
+        .replace(/("quotedMessageId"\s*:\s*(?:"[^"]*"|null|true|false|-?\d+(?:\.\d+)?))\s*\]/g, '$1}]');
+}
+
 function extractBalancedJsonCandidate(value = '') {
     const raw = text(value);
     const start = raw.indexOf('{');
@@ -319,7 +325,7 @@ function extractBalancedJsonCandidate(value = '') {
 }
 
 function repairJsonCandidate(value = '') {
-    let candidate = stripJsonCodeFences(value).replace(/,\s*([}\]])/g, '$1');
+    let candidate = repairKnownPattyJsonPatterns(stripJsonCodeFences(value)).replace(/,\s*([}\]])/g, '$1');
     if (!candidate) return '';
     const stack = [];
     let inString = false;
@@ -359,8 +365,12 @@ function extractJsonObject(value = '') {
     const candidates = [
         raw,
         stripped,
+        repairKnownPattyJsonPatterns(raw),
+        repairKnownPattyJsonPatterns(stripped),
         balancedCandidate,
+        repairKnownPattyJsonPatterns(balancedCandidate),
         regexCandidate,
+        repairKnownPattyJsonPatterns(regexCandidate),
         repairJsonCandidate(balancedCandidate || stripped || raw)
     ].filter(Boolean);
     const firstBrace = raw.indexOf('{');
@@ -1945,9 +1955,12 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '- Cada mensaje debe tener maximo 3 lineas.',
         '- quotedMessageId debe ser el message_id del mensaje CLIENTE mas relevante para esa respuesta.',
         '- Si solo hay un tema, usa un array con un solo mensaje. Maximo 3 mensajes por respuesta.',
+        '- FORMATO CORRECTO (copiar exactamente): {"messages":[{"text":"tu mensaje aqui","quotedMessageId":null}],"quoteRequest":{},"catalogProducts":[]}.',
+        '- FORMATO INCORRECTO (nunca hacer esto): {"messages":[{"text":"..."},"quotedMessageId":null]}. quotedMessageId va DENTRO del mismo objeto del mensaje.',
         '- Si el cliente claramente acepta o pide una cotizacion, agrega quoteRequest con products usando el titulo EXACTO del catalogo: {"products":[{"title":"Nombre exacto del producto","qty":1}]}.',
         '- quoteRequest NO debe incluir campo note. Solo incluir: {"products":[{"title":"Nombre exacto del producto","qty":1}]}.',
         '- Cuando el cliente pida ver productos o el catalogo, incluye catalogProducts como array de SKUs exactos entre corchetes del catalogo. Ejemplo: si el catalogo dice "- [MAT0502005] Lavavajillas 4L: S/ 39.90", entonces catalogProducts debe ser ["MAT0502005"]. NUNCA uses el titulo, SIEMPRE el codigo entre corchetes. Maximo 5 productos por respuesta.',
+        '- En catalogProducts incluye SOLO los SKUs de los productos que mencionaste en tu respuesta de texto. Si mencionaste "Detergente Concentrado 4L", incluye su SKU. No incluyas productos adicionales ni kits salvo que el cliente los haya pedido explicitamente.',
         '- Cuando generes quoteRequest, messages[] solo debe tener UNA linea de intro como "He agregado [producto] a tu pedido 😊" o "Aquí va tu cotización actualizada 👇". NUNCA incluyas lista de productos, precios ni subtotales en el texto; la cotizacion ya los muestra.',
         '- Cuando generes quoteRequest para modificar una cotizacion existente, products[] debe incluir TODOS los productos del resultado final, no solo los cambios. Ejemplo: si hay 2 productos actuales y el cliente agrega 1, products[] debe tener 3 items.',
         '- Si el estado es PROGRAMADO y el cliente pide cambios, responde SOLO: "Entendido, en un momento te confirmamos si podemos agregar eso a tu pedido 🙌". NO incluyas lista de productos ni precios. NO generes quoteRequest.',
@@ -1993,8 +2006,11 @@ async function generatePattySuggestion(tenantId, moduleId, chatId) {
             '',
             'Responde con JSON valido exactamente en este formato:',
             '{"messages":[{"text":"texto listo para enviar por WhatsApp","quotedMessageId":"message_id inbound relevante o null"}],"quoteRequest":{"products":[{"title":"Nombre exacto del producto del catalogo","qty":1}]},"catalogProducts":["MAT0502005","MAT05040004"]}',
+            'FORMATO CORRECTO (copiar exactamente): {"messages":[{"text":"tu mensaje aqui","quotedMessageId":null}],"quoteRequest":{},"catalogProducts":[]}',
+            'FORMATO INCORRECTO (nunca hacer esto): {"messages":[{"text":"..."},"quotedMessageId":null]}. quotedMessageId va DENTRO del mismo objeto del mensaje.',
             'quoteRequest NO debe incluir campo note. Solo incluir products con title y qty.',
             'catalogProducts debe ser un array de SKUs exactos entre corchetes del catalogo. Ejemplo: si el catalogo dice "- [MAT0502005] Lavavajillas 4L: S/ 39.90", entonces catalogProducts debe ser ["MAT0502005"]. NUNCA uses el titulo del producto, SIEMPRE el codigo entre corchetes. Maximo 5 productos por respuesta.',
+            'En catalogProducts incluye SOLO los SKUs de los productos que mencionaste en tu respuesta de texto. Si mencionaste "Detergente Concentrado 4L", incluye su SKU. No incluyas productos adicionales ni kits salvo que el cliente los haya pedido explicitamente.',
             'Cuando incluyas quoteRequest, messages[] debe contener UNA sola linea de intro como "He agregado [producto] a tu pedido 😊" o "Aquí va tu cotización actualizada 👇". NUNCA incluyas lista de productos, precios ni subtotales en el texto; la cotizacion ya los muestra.',
             'Si quoteRequest modifica una cotizacion existente, products[] debe incluir TODOS los productos del resultado final, no solo el producto agregado/quitado/cambiado.',
             'Si el estado es PROGRAMADO y el cliente pide cambios, responde SOLO: "Entendido, en un momento te confirmamos si podemos agregar eso a tu pedido 🙌". NO incluyas lista de productos ni precios. NO generes quoteRequest.',
