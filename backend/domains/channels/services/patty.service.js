@@ -9,6 +9,7 @@ const tenantScheduleService = require('../../tenant/services/tenant-schedule.ser
 const tenantAutomationService = require('../../tenant/services/tenant-automation.service');
 const quickRepliesManagerService = require('../../tenant/services/quick-replies-manager.service');
 const tenantZoneRulesService = require('../../tenant/services/tenant-zone-rules.service');
+const geoLocationService = require('../../tenant/services/geo-location.service');
 const waModulesService = require('../../tenant/services/wa-modules.service');
 const quotesService = require('../../tenant/services/quotes.service');
 const chatCommercialStatusService = require('../../operations/services/chat-commercial-status.service');
@@ -978,65 +979,198 @@ function buildPattyQuoteSummary(items = [], delivery = {}) {
     };
 }
 
-function collectZoneCoverageValues(rule = {}) {
-    const meta = safeJsonObject(rule.rulesJson || rule.rules_json || rule.metadata);
+function getActiveShippingOptions(rule = {}) {
+    const options = Array.isArray(rule.shippingOptions || rule.shipping_options)
+        ? (rule.shippingOptions || rule.shipping_options)
+        : [];
+    return options.filter((item) => item && item.is_active !== false && item.isActive !== false);
+}
+
+function getPrimaryShippingOption(rule = {}) {
+    const activeOptions = getActiveShippingOptions(rule);
+    return activeOptions.find((item) => {
+        const type = lower(item?.type || '');
+        return !type || type === 'delivery';
+    }) || activeOptions[0] || null;
+}
+
+function formatShippingOptionLabel(option = null) {
+    if (!option) return 'Sin envio configurado';
+    return lower(option.type) === 'courier'
+        ? `Courier ${text(option.label) || 'Courier'}`
+        : (text(option.label) || 'Delivery propio');
+}
+
+function formatDeliveryTimeLabel(value = '') {
+    const clean = text(value);
+    if (!clean) return 'Por confirmar';
+    const normalized = normalizeLocationLookup(clean);
+    if (/\b(dia|dias|habil|habiles|hora|horas)\b/.test(normalized)) return clean;
+    if (/\d/.test(clean)) return `${clean} dias habiles`;
+    return clean;
+}
+
+function getZonePaymentLabels(rule = {}) {
+    const payments = safeJsonObject(rule.paymentMethods || rule.payment_methods);
     return [
-        rule.name,
-        meta.description,
-        meta.notes,
-        ...ensureTextArray(meta.districts || meta.districtNames || meta.distritos || meta.district),
-        ...ensureTextArray(meta.provinces || meta.provinceNames || meta.provincias || meta.province),
-        ...ensureTextArray(meta.departments || meta.departmentNames || meta.departamentos || meta.department),
-        ...ensureTextArray(meta.cities || meta.cityNames || meta.ciudades || meta.city)
-    ].map(normalizeLocationLookup).filter(Boolean);
+        payments.yape ? 'Yape' : '',
+        payments.plin ? 'Plin' : '',
+        payments.bank_transfer || payments.bankTransfer ? 'Transferencia bancaria' : '',
+        payments.credit_card || payments.creditCard ? 'Tarjeta de credito' : ''
+    ].filter(Boolean);
+}
+
+function getZoneCoverageDescription(rule = {}) {
+    const meta = safeJsonObject(rule.rulesJson || rule.rules_json || rule.metadata);
+    const coverageParts = [
+        ...ensureTextArray(meta.districts || meta.districtNames || meta.distritos),
+        ...ensureTextArray(meta.provinces || meta.provinceNames || meta.provincias),
+        ...ensureTextArray(meta.departments || meta.departmentNames || meta.departamentos)
+    ];
+    return text(meta.description || meta.notes)
+        || Array.from(new Set(coverageParts)).join(', ')
+        || 'Cobertura no detallada';
+}
+
+function buildZoneShippingSummary(rule = {}, subtotal = 0) {
+    const primaryShipping = getPrimaryShippingOption(rule);
+    const cost = primaryShipping ? money(primaryShipping.cost) : null;
+    const freeFrom = primaryShipping ? money(primaryShipping.free_from ?? primaryShipping.freeFrom) : null;
+    const deliveryCost = cost || 0;
+    const isFree = deliveryCost <= 0 || (freeFrom !== null && subtotal >= freeFrom);
+    return {
+        zoneName: text(rule.name) || 'Zona',
+        shippingLabel: formatShippingOptionLabel(primaryShipping),
+        cost,
+        costText: cost !== null ? `S/ ${cost.toFixed(2)}` : 'Por confirmar',
+        freeFrom,
+        freeFromText: freeFrom !== null ? `S/ ${freeFrom.toFixed(2)}` : 'No aplica',
+        estimatedTime: formatDeliveryTimeLabel(primaryShipping?.estimated_time || primaryShipping?.estimatedTime || ''),
+        paymentLabels: getZonePaymentLabels(rule),
+        coverage: getZoneCoverageDescription(rule),
+        activeShippingOptions: getActiveShippingOptions(rule),
+        deliveryAmount: isFree ? 0 : deliveryCost,
+        deliveryFree: isFree
+    };
 }
 
 function resolveZoneDelivery(rule = null, subtotal = 0) {
     if (!rule) return { deliveryAmount: 0, deliveryFree: true, zoneName: null };
-    const options = Array.isArray(rule.shippingOptions || rule.shipping_options)
-        ? (rule.shippingOptions || rule.shipping_options)
-        : [];
-    const activeDelivery = options.find((item) => {
-        const type = lower(item?.type || '');
-        return item && item.is_active !== false && item.isActive !== false && (!type || type === 'delivery');
-    }) || options.find((item) => item && item.is_active !== false && item.isActive !== false);
-    if (!activeDelivery) return { deliveryAmount: 0, deliveryFree: true, zoneName: text(rule.name) || null };
-    const cost = money(activeDelivery.cost) || 0;
-    const freeFrom = money(activeDelivery.free_from ?? activeDelivery.freeFrom);
-    const isFree = cost <= 0 || (freeFrom !== null && subtotal >= freeFrom);
+    const summary = buildZoneShippingSummary(rule, subtotal);
     return {
-        deliveryAmount: isFree ? 0 : cost,
-        deliveryFree: isFree,
-        zoneName: text(rule.name) || null,
-        shippingLabel: text(activeDelivery.label || activeDelivery.type || '')
+        deliveryAmount: summary.deliveryAmount,
+        deliveryFree: summary.deliveryFree,
+        zoneName: summary.zoneName,
+        shippingLabel: summary.shippingLabel
     };
+}
+
+function formatResolvedLocation(location = {}) {
+    const parts = [
+        location?.district,
+        location?.province,
+        location?.department
+    ].map(text).filter(Boolean);
+    return parts.length ? parts.join(', ') : 'Ubicacion no reconocida';
+}
+
+function hasLocationMentionIntent(value = '') {
+    const normalized = normalizeLocationLookup(value);
+    if (!normalized) return false;
+    return /\b(vivo|vive|soy|estoy|esta|ubicado|ubicada|direccion|domicilio|llegan|llega|delivery|envio)\b/.test(normalized)
+        || /\ben\s+[a-z0-9]{4,}\b/.test(normalized);
+}
+
+async function buildZoneDecision(tenantId, recentConversationText = '') {
+    const rules = await tenantZoneRulesService.listZoneRules(tenantId, { includeInactive: false });
+    const sourceRules = Array.isArray(rules) ? rules : [];
+    const location = await geoLocationService.resolveLocationFromText(recentConversationText);
+    const zoneMatch = geoLocationService.resolveZoneFromLocation(location, sourceRules);
+    const confidence = text(location?.confidence);
+    return {
+        rules: sourceRules,
+        location,
+        zoneRule: zoneMatch?.rule || null,
+        matchedLevel: zoneMatch?.matchedLevel || null,
+        locationMentioned: hasLocationMentionIntent(recentConversationText),
+        locationRecognized: ['exact', 'partial'].includes(confidence),
+        locationAmbiguous: confidence === 'ambiguous'
+    };
+}
+
+function buildZoneContextFromDecision(decision = {}) {
+    const sourceRules = Array.isArray(decision.rules) ? decision.rules : [];
+    const location = decision.location || {};
+    const zoneRule = decision.zoneRule || null;
+    if (zoneRule) {
+        const summary = buildZoneShippingSummary(zoneRule);
+        const shippingLines = summary.activeShippingOptions
+            .slice(0, 8)
+            .map((item) => {
+                const itemCost = money(item.cost);
+                const itemFreeFrom = money(item.free_from ?? item.freeFrom);
+                const itemTime = formatDeliveryTimeLabel(item.estimated_time || item.estimatedTime || '');
+                return [
+                    `    - ${formatShippingOptionLabel(item)}: ${itemCost !== null ? `S/ ${itemCost.toFixed(2)}` : 'Costo por confirmar'}`,
+                    itemFreeFrom !== null ? `      Gratis desde S/ ${itemFreeFrom.toFixed(2)}` : '      Gratis desde: No aplica',
+                    `      Tiempo: ${itemTime}`
+                ].join('\n');
+            });
+        console.log('[Patty] zone matched:', summary.zoneName, 'shipping:', summary.shippingLabel, 'cost:', summary.cost);
+        return [[
+            `ZONA DETECTADA PARA ESTE CLIENTE: ${summary.zoneName}`,
+            '  ADVERTENCIA: USA ESTOS DATOS EXACTOS:',
+            `  Ubicacion resuelta: ${formatResolvedLocation(location)}`,
+            `  Envio: ${summary.shippingLabel}`,
+            `  Costo: ${summary.costText}`,
+            `  Gratis desde: ${summary.freeFromText}`,
+            `  Tiempo: ${summary.estimatedTime} exactos`,
+            `  Metodos de pago: ${summary.paymentLabels.length ? summary.paymentLabels.join(', ') : 'No configurados'}`,
+            `  Cobertura: ${summary.coverage}`,
+            '  Envio disponible:',
+            shippingLines.length ? shippingLines.join('\n') : '    - Sin opciones de envio configuradas',
+            '  INSTRUCCION CRITICA: Cuando el cliente pregunte por envio o metodos de pago, usa EXACTAMENTE estos datos. NO digas "depende de la cantidad" ni inventes datos.'
+        ].join('\n')];
+    }
+
+    if (decision.locationRecognized) {
+        return [[
+            'UBICACION RESUELTA SIN ZONA:',
+            `  ${formatResolvedLocation(location)}`,
+            '  INSTRUCCION: Informa que no tienes cobertura directa en esa zona y ofrece coordinar envio por courier. NO inventes costos.'
+        ].join('\n')];
+    }
+
+    if (decision.locationMentioned || decision.locationAmbiguous) {
+        return [[
+            'UBICACION NO RECONOCIDA EN EL SISTEMA:',
+            '  INSTRUCCION: Pregunta en que provincia o departamento esta el cliente antes de confirmar cobertura o dar precio de envio.'
+        ].join('\n')];
+    }
+
+    const names = sourceRules.map((rule) => text(rule.name)).filter(Boolean).slice(0, 30);
+    return names.length ? [`Zonas disponibles: ${names.join(', ')}`] : [];
 }
 
 async function resolveDeliveryForChatQuote(tenantId, chatId, subtotal = 0) {
     try {
-        const [{ rows }, rules] = await Promise.all([
-            pgQuery(
-                `SELECT body
-                   FROM tenant_messages
-                  WHERE tenant_id = $1
-                    AND chat_id = $2
-                    AND COALESCE(from_me, FALSE) = FALSE
-                  ORDER BY created_at DESC
-                  LIMIT 20`,
-                [tenantId, chatId]
-            ),
-            tenantZoneRulesService.listZoneRules(tenantId, { includeInactive: false })
-        ]);
+        const { rows } = await pgQuery(
+            `SELECT body
+               FROM tenant_messages
+              WHERE tenant_id = $1
+                AND chat_id = $2
+                AND COALESCE(from_me, FALSE) = FALSE
+              ORDER BY created_at DESC
+              LIMIT 20`,
+            [tenantId, chatId]
+        );
         const recentText = (rows || [])
-            .map((row) => normalizeLocationLookup(row.body || ''))
+            .map((row) => text(row.body || ''))
             .filter(Boolean)
-            .join(' ');
+            .join('\n');
         if (!recentText) return { deliveryAmount: 0, deliveryFree: true, zoneName: null };
-        const match = (Array.isArray(rules) ? rules : []).find((rule) => {
-            const values = collectZoneCoverageValues(rule);
-            return values.some((value) => value && (recentText.includes(value) || value.includes(recentText)));
-        });
-        return resolveZoneDelivery(match || null, subtotal);
+        const decision = await buildZoneDecision(tenantId, recentText);
+        return resolveZoneDelivery(decision.zoneRule || null, subtotal);
     } catch (error) {
         console.warn('[Patty] zone delivery resolution skipped:', error?.message || error);
         return { deliveryAmount: 0, deliveryFree: true, zoneName: null };
@@ -1063,13 +1197,13 @@ async function getQuickRepliesContext(tenantId, moduleId) {
 }
 
 function matchesZoneInRecentText(rule = {}, recentConversationText = '') {
-    const normalizedRecent = normalizeLocationLookup(recentConversationText);
-    if (!normalizedRecent) return false;
-    return collectZoneCoverageValues(rule).some((value) => value && (normalizedRecent.includes(value) || value.includes(normalizedRecent)));
+    return Boolean(rule && recentConversationText && false);
 }
 
-async function getZonesContext(tenantId, recentConversationText = '') {
+async function getZonesContext(tenantId, recentConversationText = '', zoneDecision = null) {
     try {
+        const strictDecision = zoneDecision || await buildZoneDecision(tenantId, recentConversationText);
+        return buildZoneContextFromDecision(strictDecision);
         const rules = await tenantZoneRulesService.listZoneRules(tenantId, { includeInactive: false });
         const sourceRules = Array.isArray(rules) ? rules : [];
         const matchedRules = sourceRules.filter((rule) => matchesZoneInRecentText(rule, recentConversationText));
@@ -1177,18 +1311,68 @@ function parseFirstDetectedZoneContext(zones = []) {
 function isPureDeliveryOrPaymentQuestion(value = '') {
     const normalized = normalizeProductLookupKey(value);
     if (!normalized) return false;
-    const hasDeliveryOrPayment = /\b(envio|delivery|entrega|demora|demorar|tiempo|pago|pagar|pagos|yape|plin|transferencia|tarjeta)\b/.test(normalized)
+    const hasDeliveryOrPayment = /\b(envio|delivery|entrega|demora|demorar|tiempo|pago|pagar|pagos|yape|plin|transferencia|tarjeta|domicilio)\b/.test(normalized)
         || normalized.includes('forma de pago')
+        || normalized.includes('formas de pago')
         || normalized.includes('metodos de pago')
+        || normalized.includes('como pago')
         || normalized.includes('cuanto cuesta el envio')
-        || normalized.includes('cuanto demora');
+        || normalized.includes('precio envio')
+        || normalized.includes('costo envio')
+        || normalized.includes('cuanto es el envio')
+        || normalized.includes('cuanto demora')
+        || normalized.includes('tiempo de entrega')
+        || normalized.includes('aceptan yape')
+        || normalized.includes('aceptan plin')
+        || normalized.includes('es a domicilio')
+        || normalized.includes('llegan a domicilio');
     if (!hasDeliveryOrPayment) return false;
     const hasProductRequest = /\b(cotiza|cotizame|pedido|comprar|catalogo|muestrame|mostrarme|quiero\s+(?!pagar)|dame\s+\d|unidades)\b/.test(normalized);
     return !hasProductRequest;
 }
 
-function buildDeterministicDeliveryPaymentResponse(zones = [], lastCustomerMessage = '') {
+function getDeliveryPaymentIntent(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    const wantsPayment = /\b(pago|pagar|pagos|yape|plin|transferencia|tarjeta)\b/.test(normalized)
+        || normalized.includes('forma de pago')
+        || normalized.includes('formas de pago')
+        || normalized.includes('metodos de pago')
+        || normalized.includes('como pago');
+    const wantsDelivery = /\b(envio|delivery|entrega|demora|demorar|tiempo|domicilio)\b/.test(normalized)
+        || normalized.includes('cuanto cuesta el envio')
+        || normalized.includes('precio envio')
+        || normalized.includes('costo envio')
+        || normalized.includes('cuanto es el envio')
+        || normalized.includes('cuanto demora')
+        || normalized.includes('tiempo de entrega')
+        || normalized.includes('es a domicilio')
+        || normalized.includes('llegan a domicilio');
+    return { wantsDelivery, wantsPayment };
+}
+
+function buildDeterministicDeliveryPaymentResponse(zoneDecision = {}, lastCustomerMessage = '') {
     if (!isPureDeliveryOrPaymentQuestion(lastCustomerMessage)) return null;
+    const zoneRule = zoneDecision?.zoneRule || null;
+    if (zoneRule) {
+        const summary = buildZoneShippingSummary(zoneRule);
+        const { wantsDelivery, wantsPayment } = getDeliveryPaymentIntent(lastCustomerMessage);
+        const responseLines = [];
+        if (wantsDelivery || !wantsPayment) {
+            const deliveryParts = [
+                `El envio a ${summary.zoneName} es con *${summary.shippingLabel}* a *${summary.costText}*.`
+            ];
+            if (summary.freeFrom !== null) {
+                deliveryParts.push(`Gratis en pedidos desde S/ ${summary.freeFrom.toFixed(2)}.`);
+            }
+            deliveryParts.push(`Tiempo de entrega: ${summary.estimatedTime}.`);
+            responseLines.push(deliveryParts.join(' '));
+        }
+        if (wantsPayment) {
+            responseLines.push(`Aceptamos: *${summary.paymentLabels.length ? summary.paymentLabels.join('*, *') : 'metodos por confirmar'}* 🙌`);
+        }
+        return responseLines.filter(Boolean).join('\n');
+    }
+    return null;
     const zone = parseFirstDetectedZoneContext(zones);
     if (!zone) return null;
     const lines = [
@@ -2099,10 +2283,11 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         ...(Array.isArray(conversation.lines) ? conversation.lines : []),
         conversation.lastCustomerMessage || ''
     ].join('\n');
-    const [catalog, zones] = await Promise.all([
+    const [catalog, zoneDecision] = await Promise.all([
         getCatalogContext(cleanTenantId, recentConversationText, conversation.lastCustomerMessage || ''),
-        getZonesContext(cleanTenantId, recentConversationText)
+        buildZoneDecision(cleanTenantId, recentConversationText)
     ]);
+    const zones = await getZonesContext(cleanTenantId, recentConversationText, zoneDecision);
     const labels = await getCustomerLabelsContext(cleanTenantId, customer.customerId);
     const recentOrder = formatOrderContext(conversation.recentOrder);
     const catalogText = lineList(catalog.lines);
@@ -2110,7 +2295,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     const mentionedCatalogText = lineList(catalog.mentionedDetails, '');
     const zonesText = lineList(zones);
     const hasDetectedZone = (Array.isArray(zones) ? zones : []).some((entry) => text(entry).startsWith('ZONA DETECTADA PARA ESTE CLIENTE:'));
-    const deterministicResponse = buildDeterministicDeliveryPaymentResponse(zones, conversation.lastCustomerMessage || '');
+    const deterministicResponse = buildDeterministicDeliveryPaymentResponse(zoneDecision, conversation.lastCustomerMessage || '');
     if (String(process.env.PATTY_DEBUG || '').trim().toLowerCase() === 'true') {
         console.log('[Patty] catalog context preview', {
             tenantId: cleanTenantId,
@@ -2197,14 +2382,15 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         chatId: cleanChatId,
         moduleConfig,
         assistantName,
+        zoneDecision,
         system,
         deterministicResponse,
         lastCustomerMessage: conversation.lastCustomerMessage || 'Continua la conversacion con el cliente.'
     };
 }
 
-async function generatePattySuggestion(tenantId, moduleId, chatId) {
-    const context = await buildPattyContext(tenantId, moduleId, chatId);
+async function generatePattySuggestion(tenantId, moduleId, chatId, prebuiltContext = null) {
+    const context = prebuiltContext || await buildPattyContext(tenantId, moduleId, chatId);
     const moduleAssistantId = text(context.moduleConfig?.metadata?.moduleSettings?.aiAssistantId).toUpperCase();
     console.log('[Patty] generating suggestion', {
         tenantId: context.tenantId,
@@ -2578,7 +2764,29 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 });
                 return;
             }
-            const result = await generatePattySuggestion(cleanTenantId, cleanModuleId, cleanChatId);
+            const prebuiltContext = await buildPattyContext(cleanTenantId, cleanModuleId, cleanChatId);
+            if (prebuiltContext.deterministicResponse) {
+                const assistantName = formatAssistantDisplayName(prebuiltContext.assistantName || DEFAULT_ASSISTANT_NAME);
+                await waClient.sendMessage(cleanChatId, prebuiltContext.deterministicResponse, {
+                    metadata: {
+                        agentMeta: {
+                            sentByUserId: 'patty',
+                            sentByName: assistantName,
+                            sentByRole: 'assistant',
+                            sentViaModuleId: cleanModuleId
+                        },
+                        patty: true,
+                        automationSource: 'patty_deterministic_delivery_payment'
+                    }
+                });
+                console.log('[Patty] deterministic delivery/payment response', {
+                    tenantId: cleanTenantId,
+                    moduleId: cleanModuleId,
+                    chatId: cleanChatId
+                });
+                return;
+            }
+            const result = await generatePattySuggestion(cleanTenantId, cleanModuleId, cleanChatId, prebuiltContext);
             let messages = Array.isArray(result.messages) && result.messages.length
                 ? result.messages
                 : normalizePattyMessages(result.suggestion);
