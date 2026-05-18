@@ -1074,6 +1074,25 @@ function formatResolvedLocation(location = {}) {
     return parts.length ? parts.join(', ') : 'Ubicacion no reconocida';
 }
 
+function formatAmbiguousLocationCandidates(location = {}) {
+    const candidates = Array.isArray(location?.candidates) ? location.candidates : [];
+    if (!candidates.length) return '  - Sin candidatos detallados en el maestro geografico';
+    return candidates
+        .slice(0, 8)
+        .map((candidate) => {
+            const typeLabel = candidate.type === 'department'
+                ? 'Departamento'
+                : (candidate.type === 'province' ? 'Provincia' : 'Distrito');
+            const parts = [
+                candidate.district,
+                candidate.province,
+                candidate.department
+            ].map(text).filter(Boolean);
+            return `  - ${typeLabel}: ${parts.join(', ') || candidate.name || 'Ubicacion'}`;
+        })
+        .join('\n');
+}
+
 function hasLocationMentionIntent(value = '') {
     const normalized = normalizeLocationLookup(value);
     if (!normalized) return false;
@@ -1130,6 +1149,15 @@ function buildZoneContextFromDecision(decision = {}) {
             '  Envio disponible:',
             shippingLines.length ? shippingLines.join('\n') : '    - Sin opciones de envio configuradas',
             '  INSTRUCCION CRITICA: Cuando el cliente pregunte por envio o metodos de pago, usa EXACTAMENTE estos datos. NO digas "depende de la cantidad" ni inventes datos.'
+        ].join('\n')];
+    }
+
+    if (decision.locationAmbiguous) {
+        return [[
+            'UBICACION AMBIGUA DETECTADA:',
+            `  El cliente menciono "${text(location.matchedText) || 'una ubicacion'}" que puede corresponder a varios lugares:`,
+            formatAmbiguousLocationCandidates(location),
+            '  INSTRUCCION: Pregunta al cliente en que provincia o departamento esta para confirmar su ubicacion. No asumas ni uses ninguna zona hasta confirmar.'
         ].join('\n')];
     }
 

@@ -86,7 +86,7 @@ async function loadGeoLocations() {
     }
 }
 
-function hydrateLocation(match = null, byId = new Map(), confidence = 'none', matchedText = '') {
+function hydrateLocation(match = null, byId = new Map(), confidence = 'none', matchedText = '', candidates = []) {
     if (!match) {
         return {
             district: null,
@@ -94,7 +94,8 @@ function hydrateLocation(match = null, byId = new Map(), confidence = 'none', ma
             department: null,
             confidence: 'none',
             matchedType: null,
-            matchedText: null
+            matchedText: null,
+            candidates: []
         };
     }
 
@@ -121,7 +122,63 @@ function hydrateLocation(match = null, byId = new Map(), confidence = 'none', ma
         matchedType: match.type,
         matchedText: text(matchedText) || match.name || null,
         locationId: match.id,
-        ubigeo: district?.ubigeo || province?.ubigeo || department?.ubigeo || null
+        ubigeo: district?.ubigeo || province?.ubigeo || department?.ubigeo || null,
+        candidates
+    };
+}
+
+function describeLocationCandidate(row = {}, byId = new Map(), matchedText = '') {
+    const hydrated = hydrateLocation(row, byId, 'exact', matchedText);
+    return {
+        id: hydrated.locationId || row.id || null,
+        type: row.type || null,
+        name: row.name || null,
+        district: hydrated.district,
+        province: hydrated.province,
+        department: hydrated.department,
+        ubigeo: hydrated.ubigeo || null
+    };
+}
+
+function sameKnownBranch(left = {}, right = {}) {
+    for (const key of ['department', 'province', 'district']) {
+        if (left[key] && right[key] && left[key] !== right[key]) return false;
+    }
+    return true;
+}
+
+function allCandidatesShareBranch(candidates = []) {
+    if (candidates.length <= 1) return true;
+    for (let i = 0; i < candidates.length; i += 1) {
+        for (let j = i + 1; j < candidates.length; j += 1) {
+            if (!sameKnownBranch(candidates[i], candidates[j])) return false;
+        }
+    }
+    return true;
+}
+
+function uniqueLocationCandidates(candidates = []) {
+    const seen = new Set();
+    return candidates.filter((candidate) => {
+        const key = candidate.id || [candidate.type, candidate.name, candidate.province, candidate.department].join('|');
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
+function hydrateAmbiguousLocation(matches = [], byId = new Map(), matchedText = '') {
+    const candidates = uniqueLocationCandidates(
+        matches.map((match) => describeLocationCandidate(match.row, byId, matchedText))
+    );
+    return {
+        district: null,
+        province: null,
+        department: null,
+        confidence: 'ambiguous',
+        matchedType: null,
+        matchedText: text(matchedText) || null,
+        candidates
     };
 }
 
@@ -150,8 +207,25 @@ function chooseBestMatch(matches = []) {
     const topMatches = sorted.filter((match) => bestScore(match) === topScore);
     return {
         ...sorted[0],
-        ambiguous: topMatches.length > 1
+        ambiguous: topMatches.length > 1,
+        topMatches
     };
+}
+
+function resolveExactMatchSet(matches = [], byId = new Map(), candidate = '') {
+    if (!matches.length) return null;
+    const candidateRows = uniqueLocationCandidates(
+        matches.map((match) => describeLocationCandidate(match.row, byId, candidate))
+    );
+    if (!allCandidatesShareBranch(candidateRows)) {
+        return hydrateAmbiguousLocation(matches, byId, candidate);
+    }
+    const sorted = [...matches].sort((left, right) => {
+        const priorityDelta = (TYPE_PRIORITY[right.row.type] || 0) - (TYPE_PRIORITY[left.row.type] || 0);
+        if (priorityDelta !== 0) return priorityDelta;
+        return right.row.normalizedName.length - left.row.normalizedName.length;
+    });
+    return hydrateLocation(sorted[0].row, byId, sorted[0].confidence, candidate);
 }
 
 async function resolveLocationFromText(value = '') {
@@ -163,21 +237,22 @@ async function resolveLocationFromText(value = '') {
 
     const byId = new Map(locations.map((row) => [row.id, row]));
 
-    for (const allowPartial of [false, true]) {
-        for (const candidate of candidates) {
-            for (const type of GEO_TYPES) {
-                const matches = findMatches(locations, candidate, type, { allowPartial });
-                if (!matches.length) continue;
-                const best = chooseBestMatch(matches);
-                if (!best) continue;
-                return hydrateLocation(
-                    best.row,
-                    byId,
-                    best.ambiguous ? 'ambiguous' : best.confidence,
-                    candidate
-                );
-            }
+    for (const candidate of candidates) {
+        const exactMatches = GEO_TYPES.flatMap((type) => findMatches(locations, candidate, type, { allowPartial: false }));
+        const exactResult = resolveExactMatchSet(exactMatches, byId, candidate);
+        if (exactResult) return exactResult;
+    }
+
+    for (const candidate of candidates) {
+        const partialMatches = GEO_TYPES.flatMap((type) => findMatches(locations, candidate, type, { allowPartial: true }))
+            .filter((match) => match.confidence === 'partial');
+        if (!partialMatches.length) continue;
+        const best = chooseBestMatch(partialMatches);
+        if (!best) continue;
+        if (best.ambiguous) {
+            return hydrateAmbiguousLocation(best.topMatches || partialMatches, byId, candidate);
         }
+        return hydrateLocation(best.row, byId, best.confidence, candidate);
     }
 
     return hydrateLocation(null);
