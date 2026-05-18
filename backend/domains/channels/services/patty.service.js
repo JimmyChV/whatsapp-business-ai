@@ -366,9 +366,15 @@ function stripJsonCodeFences(value = '') {
 }
 
 function repairKnownPattyJsonPatterns(value = '') {
+    return repairMisplacedMessageFields(value)
+        .replace(/("quotedMessageId"\s*:\s*(?:"[^"]*"|null|true|false|-?\d+(?:\.\d+)?))\s*\]/g, '$1}]')
+        .replace(/("quoted_message_id"\s*:\s*(?:"[^"]*"|null|true|false|-?\d+(?:\.\d+)?))\s*\]/g, '$1}]');
+}
+
+function repairMisplacedMessageFields(value = '') {
     return text(value)
         .replace(/\}\s*,\s*"quotedMessageId"\s*:/g, ',"quotedMessageId":')
-        .replace(/("quotedMessageId"\s*:\s*(?:"[^"]*"|null|true|false|-?\d+(?:\.\d+)?))\s*\]/g, '$1}]');
+        .replace(/\}\s*,\s*"quoted_message_id"\s*:/g, ',"quoted_message_id":');
 }
 
 function extractBalancedJsonCandidate(value = '') {
@@ -400,6 +406,45 @@ function extractBalancedJsonCandidate(value = '') {
         }
     }
     return raw.slice(start).trim();
+}
+
+function balanceJsonObject(value = '') {
+    return extractBalancedJsonCandidate(value);
+}
+
+function escapeControlCharsInsideStrings(value = '') {
+    const raw = text(value);
+    let out = '';
+    let inString = false;
+    let escaped = false;
+    for (const char of raw) {
+        if (!inString) {
+            out += char;
+            if (char === '"') inString = true;
+            continue;
+        }
+        if (escaped) {
+            out += char;
+            escaped = false;
+            continue;
+        }
+        if (char === '\\') {
+            out += char;
+            escaped = true;
+            continue;
+        }
+        if (char === '"') {
+            out += char;
+            inString = false;
+            continue;
+        }
+        if (char === '\n') out += '\\n';
+        else if (char === '\r') out += '\\r';
+        else if (char === '\t') out += '\\t';
+        else if (char.charCodeAt(0) < 32) out += ' ';
+        else out += char;
+    }
+    return out;
 }
 
 function repairJsonCandidate(value = '') {
@@ -438,24 +483,37 @@ function extractJsonObject(value = '') {
     const raw = text(value);
     if (!raw) return null;
     const stripped = stripJsonCodeFences(raw);
-    const balancedCandidate = extractBalancedJsonCandidate(raw);
+    const balancedCandidate = balanceJsonObject(stripped) || balanceJsonObject(raw);
     const regexCandidate = raw.match(/\{[\s\S]*\}/)?.[0];
-    const candidates = [
+    const sourceCandidates = [
         raw,
         stripped,
-        repairKnownPattyJsonPatterns(raw),
-        repairKnownPattyJsonPatterns(stripped),
         balancedCandidate,
-        repairKnownPattyJsonPatterns(balancedCandidate),
-        regexCandidate,
-        repairKnownPattyJsonPatterns(regexCandidate),
-        repairJsonCandidate(balancedCandidate || stripped || raw)
+        regexCandidate
     ].filter(Boolean);
+    const candidates = [];
+    for (const source of sourceCandidates) {
+        const repaired = repairKnownPattyJsonPatterns(source);
+        const escaped = escapeControlCharsInsideStrings(source);
+        const escapedRepaired = escapeControlCharsInsideStrings(repaired);
+        candidates.push(
+            source,
+            repaired,
+            escaped,
+            escapedRepaired,
+            balanceJsonObject(source),
+            balanceJsonObject(repaired),
+            repairJsonCandidate(source),
+            repairJsonCandidate(repaired),
+            repairJsonCandidate(escapedRepaired)
+        );
+    }
     const firstBrace = raw.indexOf('{');
     const lastBrace = raw.lastIndexOf('}');
     if (firstBrace >= 0 && lastBrace > firstBrace) {
-        candidates.push(raw.slice(firstBrace, lastBrace + 1));
-        candidates.push(repairJsonCandidate(raw.slice(firstBrace, lastBrace + 1)));
+        const sliced = raw.slice(firstBrace, lastBrace + 1);
+        const repaired = repairKnownPattyJsonPatterns(sliced);
+        candidates.push(sliced, repaired, escapeControlCharsInsideStrings(repaired), repairJsonCandidate(repaired));
     }
     for (const candidate of Array.from(new Set(candidates))) {
         try {
@@ -515,6 +573,21 @@ function normalizeQuoteIntroMessages(messages = []) {
         text: intro,
         quotedMessageId: first?.quotedMessageId || null
     }];
+}
+
+function sanitizePattyMessageQuotes(messages = [], pendingMessageIds = []) {
+    const allowed = new Set((Array.isArray(pendingMessageIds) ? pendingMessageIds : []).map(text).filter(Boolean));
+    const source = Array.isArray(messages) ? messages : [];
+    if (source.length <= 1) {
+        return source.map((item) => ({ ...item, quotedMessageId: null }));
+    }
+    return source.map((item) => {
+        const quotedMessageId = text(item?.quotedMessageId || '');
+        return {
+            ...item,
+            quotedMessageId: allowed.has(quotedMessageId) ? quotedMessageId : null
+        };
+    });
 }
 
 function normalizePattyCatalogProducts(rawSuggestion = '') {
@@ -1693,6 +1766,52 @@ async function getConversationContext(tenantId, moduleId, chatId) {
     };
 }
 
+async function getPendingInboundMessagesContext(tenantId, moduleId, chatId) {
+    try {
+        const { rows } = await pgQuery(
+            `WITH last_patty AS (
+                SELECT created_at
+                  FROM tenant_messages
+                 WHERE tenant_id = $1
+                   AND chat_id = $2
+                   AND COALESCE(from_me, FALSE) = TRUE
+                   AND (
+                        COALESCE(metadata->>'patty', '') = 'true'
+                        OR LOWER(COALESCE(metadata->'agentMeta'->>'sentByUserId', '')) = 'patty'
+                        OR LOWER(COALESCE(metadata->>'automationSource', '')) LIKE 'patty%'
+                   )
+                   AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($3))
+                 ORDER BY created_at DESC
+                 LIMIT 1
+            )
+            SELECT message_id, body, created_at
+              FROM tenant_messages
+             WHERE tenant_id = $1
+               AND chat_id = $2
+               AND COALESCE(from_me, FALSE) = FALSE
+               AND COALESCE(body, '') <> ''
+               AND created_at > COALESCE((SELECT created_at FROM last_patty), '-infinity'::timestamptz)
+               AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($3))
+             ORDER BY created_at DESC
+             LIMIT 5`,
+            [tenantId, normalizeChatId(chatId), lower(moduleId)]
+        );
+        const ordered = [...(rows || [])].reverse();
+        const ids = ordered.map((row) => text(row.message_id)).filter(Boolean);
+        const lines = ordered
+            .map((row) => {
+                const messageId = text(row.message_id);
+                const body = text(row.body).replace(/\s+/g, ' ');
+                return messageId && body ? `  [${messageId}] "${body.slice(0, 240)}"` : '';
+            })
+            .filter(Boolean);
+        return { lines, ids };
+    } catch (error) {
+        console.warn('[Patty] pending inbound context skipped:', error?.message || error);
+        return { lines: [], ids: [] };
+    }
+}
+
 async function getActiveQuoteContext(tenantId, moduleId, chatId) {
     try {
         const { rows } = await pgQuery(
@@ -2296,7 +2415,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     const cleanChatId = normalizeChatId(chatId);
     const moduleConfig = await getModuleConfig(cleanTenantId, cleanModuleId);
     const assistantName = getAssistantDisplayNameFromModule(moduleConfig || {});
-    const [scheduleState, basePrompt, quickReplies, customer, commercialStatus, origin, conversation, quote, metaCatalogOrder] = await Promise.all([
+    const [scheduleState, basePrompt, quickReplies, customer, commercialStatus, origin, conversation, pendingInbound, quote, metaCatalogOrder] = await Promise.all([
         resolveScheduleState(cleanTenantId, moduleConfig || {}),
         getBasePrompt(cleanTenantId),
         getQuickRepliesContext(cleanTenantId, cleanModuleId),
@@ -2304,6 +2423,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         getCommercialStatusContext(cleanTenantId, cleanModuleId, cleanChatId),
         getOriginContext(cleanTenantId, cleanModuleId, cleanChatId),
         getConversationContext(cleanTenantId, cleanModuleId, cleanChatId),
+        getPendingInboundMessagesContext(cleanTenantId, cleanModuleId, cleanChatId),
         getActiveQuoteContext(cleanTenantId, cleanModuleId, cleanChatId),
         getRecentMetaCatalogOrderContext(cleanTenantId, cleanModuleId, cleanChatId)
     ]);
@@ -2321,6 +2441,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     const catalogText = lineList(catalog.lines);
     const relevantCatalogText = lineList(catalog.relevantLines, '');
     const mentionedCatalogText = lineList(catalog.mentionedDetails, '');
+    const pendingInboundText = lineList(pendingInbound.lines, '');
     const zonesText = lineList(zones);
     const hasDetectedZone = (Array.isArray(zones) ? zones : []).some((entry) => text(entry).startsWith('ZONA DETECTADA PARA ESTE CLIENTE:'));
     const deterministicResponse = buildDeterministicDeliveryPaymentResponse(zoneDecision, conversation.lastCustomerMessage || '');
@@ -2375,6 +2496,8 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '',
         'CONVERSACION RECIENTE:',
         lineList(conversation.lines),
+        pendingInboundText ? '\nMENSAJES PENDIENTES DE RESPUESTA:' : '',
+        pendingInboundText,
         recentOrder ? `\n${recentOrder}` : '',
         '',
         'INSTRUCCIONES:',
@@ -2383,6 +2506,9 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '- Si el cliente envio multiples mensajes sobre temas distintos, responde cada tema en un mensaje separado.',
         '- Cada mensaje debe tener maximo 3 lineas.',
         '- quotedMessageId debe ser el message_id del mensaje CLIENTE mas relevante para esa respuesta.',
+        '- REGLA DE CITADO: Si hay UNA sola pregunta o intencion, genera UN mensaje con quotedMessageId: null.',
+        '- REGLA DE CITADO: Si hay MULTIPLES preguntas sobre temas DISTINTOS, genera UN mensaje por pregunta y usa quotedMessageId de la seccion MENSAJES PENDIENTES DE RESPUESTA.',
+        '- REGLA DE CITADO: Una sola intencion con varios mensajes sobre el mismo tema NO se cita. Multiples intenciones distintas SI se citan.',
         '- Si solo hay un tema, usa un array con un solo mensaje. Maximo 3 mensajes por respuesta.',
         '- FORMATO CORRECTO (copiar exactamente): {"messages":[{"text":"tu mensaje aqui","quotedMessageId":null}],"quoteRequest":{},"catalogProducts":[]}.',
         '- FORMATO INCORRECTO (nunca hacer esto): {"messages":[{"text":"..."},"quotedMessageId":null]}. quotedMessageId va DENTRO del mismo objeto del mensaje.',
@@ -2411,6 +2537,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         moduleConfig,
         assistantName,
         zoneDecision,
+        pendingInboundMessageIds: Array.isArray(pendingInbound.ids) ? pendingInbound.ids : [],
         system,
         deterministicResponse,
         lastCustomerMessage: conversation.lastCustomerMessage || 'Continua la conversacion con el cliente.'
@@ -2455,6 +2582,7 @@ async function generatePattySuggestion(tenantId, moduleId, chatId, prebuiltConte
             '{"messages":[{"text":"texto listo para enviar por WhatsApp","quotedMessageId":"message_id inbound relevante o null"}],"quoteRequest":{"products":[{"title":"Nombre exacto del producto del catalogo","qty":1}]},"catalogProducts":["SKU_DEL_PRODUCTO_MENCIONADO_EN_TU_TEXTO"]}',
             'FORMATO CORRECTO (copiar exactamente): {"messages":[{"text":"tu mensaje aqui","quotedMessageId":null}],"quoteRequest":{},"catalogProducts":[]}',
             'FORMATO INCORRECTO (nunca hacer esto): {"messages":[{"text":"..."},"quotedMessageId":null]}. quotedMessageId va DENTRO del mismo objeto del mensaje.',
+            'REGLA DE CITADO: Si hay UNA sola pregunta o intencion, devuelve un solo mensaje con quotedMessageId:null. Si hay MULTIPLES preguntas sobre temas distintos, devuelve un mensaje por pregunta y usa solo message_id reales de MENSAJES PENDIENTES DE RESPUESTA.',
             'quoteRequest NO debe incluir campo note. Solo incluir products con title y qty.',
             'catalogProducts debe ser un array de SKUs exactos entre corchetes del catalogo. Ejemplo: si el catalogo dice "- [SKU_DEL_PRODUCTO_MENCIONADO_EN_TU_TEXTO] Producto elegido: S/ 39.90", entonces catalogProducts debe ser ["SKU_DEL_PRODUCTO_MENCIONADO_EN_TU_TEXTO"]. NUNCA uses el titulo del producto, SIEMPRE el codigo entre corchetes. Maximo 5 productos por respuesta.',
             'En catalogProducts incluye SOLO los SKUs de los productos que mencionaste en tu respuesta de texto. Si mencionaste "Detergente Concentrado 4L", incluye su SKU. No incluyas productos adicionales ni kits salvo que el cliente los haya pedido explicitamente.',
@@ -2492,6 +2620,7 @@ async function generatePattySuggestion(tenantId, moduleId, chatId, prebuiltConte
     if (quoteRequest) {
         messages = normalizeQuoteIntroMessages(messages);
     }
+    messages = sanitizePattyMessageQuotes(messages, context.pendingInboundMessageIds);
     const suggestion = messages.map((item) => item.text).join('\n\n');
     const catalogProducts = await filterCatalogProductsForContext(
         context.tenantId,

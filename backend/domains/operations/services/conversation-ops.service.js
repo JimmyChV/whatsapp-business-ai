@@ -55,6 +55,26 @@ function normalizeAssignedByUserId(value = '') {
     return SYSTEM_ASSIGNMENT_ACTOR_IDS.has(clean.toLowerCase()) ? null : clean;
 }
 
+async function normalizeAssignmentActorForDb(tenantId = DEFAULT_TENANT_ID, userId = '') {
+    const cleanTenantId = resolveTenantId(tenantId);
+    const cleanUserId = normalizeAssignedByUserId(userId);
+    if (!cleanUserId) return null;
+    try {
+        const { rows } = await queryPostgres(
+            `SELECT user_id
+               FROM users
+              WHERE user_id = $1
+                AND tenant_id = $2
+              LIMIT 1`,
+            [cleanUserId, cleanTenantId]
+        );
+        return rows?.length ? cleanUserId : null;
+    } catch (error) {
+        if (missingRelation(error)) return null;
+        throw error;
+    }
+}
+
 function extractPhoneCandidatesFromChatId(chatId = '') {
     const clean = toText(chatId);
     const base = clean.split('@')[0].trim();
@@ -688,6 +708,16 @@ async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) 
 
     await ensureConversationOpsSchema();
 
+    const dbAssigneeUserId = await normalizeAssignmentActorForDb(cleanTenantId, nextRecord.assigneeUserId);
+    const dbAssignedByUserId = await normalizeAssignmentActorForDb(cleanTenantId, nextRecord.assignedByUserId);
+    const dbRecord = normalizeAssignmentRecord({
+        ...nextRecord,
+        assigneeUserId: dbAssigneeUserId,
+        assigneeRole: dbAssigneeUserId ? nextRecord.assigneeRole : null,
+        assignedByUserId: dbAssignedByUserId,
+        status: dbAssigneeUserId ? nextRecord.status : (nextRecord.status === 'active' ? 'released' : nextRecord.status)
+    });
+
     await queryPostgres(
         `INSERT INTO tenant_chat_assignments (
             tenant_id, chat_id, scope_module_id, assignee_user_id, assignee_role, assigned_by_user_id,
@@ -712,16 +742,16 @@ async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) 
             cleanTenantId,
             chatId,
             scopeModuleId,
-            nextRecord.assigneeUserId,
-            nextRecord.assigneeRole,
-            nextRecord.assignedByUserId,
-            nextRecord.assignmentMode,
-            nextRecord.assignmentReason,
-            JSON.stringify(nextRecord.metadata || {}),
-            nextRecord.status,
-            nextRecord.lastActivityAt,
-            nextRecord.lastCustomerMessageAt,
-            nextRecord.waitingSince
+            dbRecord.assigneeUserId,
+            dbRecord.assigneeRole,
+            dbRecord.assignedByUserId,
+            dbRecord.assignmentMode,
+            dbRecord.assignmentReason,
+            JSON.stringify(dbRecord.metadata || {}),
+            dbRecord.status,
+            dbRecord.lastActivityAt,
+            dbRecord.lastCustomerMessageAt,
+            dbRecord.waitingSince
         ]
     );
 
@@ -736,12 +766,12 @@ async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) 
             chatId,
             scopeModuleId,
             previous?.assigneeUserId || null,
-            nextRecord.assigneeUserId,
-            nextRecord.assigneeRole,
-            nextRecord.assignedByUserId,
-            nextRecord.assignmentMode,
-            nextRecord.assignmentReason,
-            JSON.stringify(nextRecord.metadata || {})
+            dbRecord.assigneeUserId,
+            dbRecord.assigneeRole,
+            dbRecord.assignedByUserId,
+            dbRecord.assignmentMode,
+            dbRecord.assignmentReason,
+            JSON.stringify(dbRecord.metadata || {})
         ]
     );
 
@@ -750,25 +780,25 @@ async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) 
         eventSource: 'system',
         chatId,
         scopeModuleId,
-        actorUserId: assignedByUserId,
+        actorUserId: dbRecord.assignedByUserId,
         actorRole: null,
         payload: {
             previousAssigneeUserId: previous?.assigneeUserId || null,
-            nextAssigneeUserId: nextRecord.assigneeUserId,
-            nextAssigneeRole: nextRecord.assigneeRole,
+            nextAssigneeUserId: dbRecord.assigneeUserId,
+            nextAssigneeRole: dbRecord.assigneeRole,
             assignmentMode,
             assignmentReason
         }
     });
 
-    const changedAssignee = (previous?.assigneeUserId || null) !== (nextRecord.assigneeUserId || null);
-    const changedStatus = normalizeStatus(previous?.status || 'active') !== normalizeStatus(nextRecord.status || 'active');
+    const changedAssignee = (previous?.assigneeUserId || null) !== (dbRecord.assigneeUserId || null);
+    const changedStatus = normalizeStatus(previous?.status || 'active') !== normalizeStatus(dbRecord.status || 'active');
     const changed = changedAssignee || changedStatus;
     emitChatAssignmentChanged({
         tenantId: cleanTenantId,
         chatId,
         scopeModuleId,
-        assignment: nextRecord,
+        assignment: dbRecord,
         previousAssignment: previous || null,
         changed,
         assignmentMode,
@@ -776,7 +806,7 @@ async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) 
         source: 'conversation_ops.upsert'
     });
     try {
-        const moduleId = toText(nextRecord.scopeModuleId || '');
+        const moduleId = toText(dbRecord.scopeModuleId || '');
         if (moduleId) {
             const customerId = await resolveCustomerIdFromChat(cleanTenantId, {
                 chatId,
@@ -786,8 +816,8 @@ async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) 
                 await customerModuleContextsService.upsertContext(cleanTenantId, {
                     customerId,
                     moduleId,
-                    assignmentUserId: nextRecord.assigneeUserId || null,
-                    lastInteractionAt: nextRecord.lastActivityAt || now,
+                    assignmentUserId: dbRecord.assigneeUserId || null,
+                    lastInteractionAt: dbRecord.lastActivityAt || now,
                     metadata: {
                         dualWriteSource: 'conversation_ops.upsert'
                     }
@@ -797,7 +827,7 @@ async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) 
     } catch (_) {
         // silent: dual-write must not interrupt assignment lifecycle
     }
-    return { assignment: nextRecord, previous, changed };
+    return { assignment: dbRecord, previous, changed };
 }
 
 async function clearChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) {
