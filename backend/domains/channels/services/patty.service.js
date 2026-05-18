@@ -954,7 +954,7 @@ async function getZonesContext(tenantId, recentConversationText = '') {
                         return [
                             `    - ${label}: ${cost !== null ? `S/ ${cost.toFixed(2)}` : 'Costo por confirmar'}`,
                             freeFrom !== null ? `      Gratis desde S/ ${freeFrom.toFixed(2)}` : '      Gratis desde: No aplica',
-                            estimatedTime ? `      Tiempo estimado: ${estimatedTime} dias habiles` : '      Tiempo estimado: Por confirmar'
+                            estimatedTime ? `      Tiempo de entrega: ${estimatedTime} dias habiles exactos` : '      Tiempo de entrega: Por confirmar'
                         ].filter(Boolean).join('\n');
                     });
                 const primaryShipping = activeShippingOptions[0] || null;
@@ -984,7 +984,10 @@ async function getZonesContext(tenantId, recentConversationText = '') {
                     `  Envio: ${primaryShippingLabel}`,
                     `  Costo: ${primaryCost !== null ? `S/ ${primaryCost.toFixed(2)}` : 'Por confirmar'}`,
                     `  Gratis desde: ${primaryFreeFrom !== null ? `S/ ${primaryFreeFrom.toFixed(2)}` : 'No aplica'}`,
-                    `  Tiempo: ${primaryEstimatedTime ? `${primaryEstimatedTime} dias habiles` : 'Por confirmar'}`,
+                    `  Tiempo de entrega: ${primaryEstimatedTime ? `${primaryEstimatedTime} dias habiles exactos` : 'Por confirmar'}`,
+                    primaryEstimatedTime
+                        ? `  INSTRUCCION: cuando el cliente pregunte cuanto demora, di exactamente "${primaryEstimatedTime} dias habiles", no inventes rangos como "3 a 5 dias".`
+                        : '  INSTRUCCION: si el tiempo no esta configurado, indica que el tiempo esta por confirmar.',
                     `  Metodos de pago: ${paymentLabels.length ? paymentLabels.join(', ') : 'No configurados'}`,
                     `  Cobertura: ${coverage}`,
                     '  Envio disponible:',
@@ -2418,7 +2421,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                         tenantId: cleanTenantId,
                         moduleId: cleanModuleId,
                         chatId: cleanChatId,
-                        requested: result.catalogProducts.length,
+                        requested: result.catalogProducts,
                         sent: catalogResult.sent
                     });
                 } catch (catalogError) {
