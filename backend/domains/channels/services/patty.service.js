@@ -1303,15 +1303,27 @@ function formatDisambiguationCandidateLabel(candidate = {}) {
     const district = formatLocationOptionPart(clean.district || clean.name);
     const province = formatLocationOptionPart(clean.province);
     const department = formatLocationOptionPart(clean.department);
-    if (district && province && department) {
-        return normalizeLocationLookup(province) === normalizeLocationLookup(department)
-            ? `${district} en ${province} (provincia)`
-            : `${district} en ${province}, ${department}`;
+    const sameProvinceDepartment = province
+        && department
+        && normalizeLocationLookup(province) === normalizeLocationLookup(department);
+
+    if (district) {
+        if (province && department) {
+            return sameProvinceDepartment
+                ? `${district}, ${province}`
+                : `${district}, ${province}, ${department}`;
+        }
+        if (province) return `${district}, ${province}`;
+        if (department) return `${district}, ${department}`;
+        return district;
     }
-    const context = Array.from(new Set([province, department].filter(Boolean))).join(', ');
-    if (district && context) return `${district} en ${context}`;
-    if (province && department && province !== department) return `${province}, ${department}`;
-    return district || province || department || 'esa ubicacion';
+    if (province) {
+        return department
+            ? `Provincia de ${province}, ${department}`
+            : `Provincia de ${province}`;
+    }
+    if (department) return `Departamento de ${department}`;
+    return 'esa ubicacion';
 }
 
 function getAmbiguousLocationName(candidates = [], matchedText = '') {
