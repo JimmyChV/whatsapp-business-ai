@@ -2,6 +2,7 @@ const { queryPostgres } = require('../../../config/persistence-runtime');
 
 const GEO_TYPES = Object.freeze(['district', 'province', 'department']);
 const TYPE_PRIORITY = Object.freeze({ district: 3, province: 2, department: 1 });
+const geoLocationWarnings = new Set();
 const STOPWORDS = new Set([
     'vivo', 'vive', 'soy', 'estoy', 'esta', 'ubicado', 'ubicada', 'ubicacion',
     'direccion', 'donde', 'para', 'envio', 'delivery', 'pedido', 'cliente',
@@ -34,6 +35,17 @@ function ensureArray(value = []) {
 
 function missingRelation(error) {
     return text(error?.code) === '42P01';
+}
+
+function warnGeoLocationsEmptyOrUnreachable(reason = 'empty', error = null) {
+    const key = `${reason}:${text(error?.code || '')}:${text(error?.message || '')}`;
+    if (geoLocationWarnings.has(key)) return;
+    geoLocationWarnings.add(key);
+    console.warn('[Geo] geo_locations table empty or unreachable', {
+        reason,
+        code: text(error?.code || '') || null,
+        message: text(error?.message || '') || null
+    });
 }
 
 function normalizeLocationRow(row = {}) {
@@ -79,9 +91,17 @@ async function loadGeoLocations() {
               WHERE is_active = TRUE
               ORDER BY type ASC, normalized_name ASC`
         );
-        return (Array.isArray(rows) ? rows : []).map(normalizeLocationRow).filter((row) => row.id && GEO_TYPES.includes(row.type));
+        const sourceRows = Array.isArray(rows) ? rows : [];
+        if (!sourceRows.length) {
+            warnGeoLocationsEmptyOrUnreachable('empty');
+        }
+        return sourceRows.map(normalizeLocationRow).filter((row) => row.id && GEO_TYPES.includes(row.type));
     } catch (error) {
-        if (missingRelation(error)) return [];
+        if (missingRelation(error)) {
+            warnGeoLocationsEmptyOrUnreachable('missing_relation', error);
+            return [];
+        }
+        warnGeoLocationsEmptyOrUnreachable('query_failed', error);
         throw error;
     }
 }

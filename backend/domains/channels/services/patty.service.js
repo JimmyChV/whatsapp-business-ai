@@ -1190,6 +1190,20 @@ async function buildZoneDecision(tenantId, recentConversationText = '') {
     };
 }
 
+function logGeoResolveAttempt(recentText = '', zoneDecision = {}, deterministicResponse = null) {
+    const geoResult = zoneDecision?.location || {};
+    const matchedZone = zoneDecision?.zoneRule || null;
+    console.log('[Patty] geo resolve attempt', {
+        textSample: text(recentText).substring(0, 80),
+        confidence: text(geoResult.confidence || 'none') || 'none',
+        district: geoResult.district || null,
+        province: geoResult.province || null,
+        department: geoResult.department || null,
+        matchedZone: matchedZone?.name || null,
+        deterministic: Boolean(deterministicResponse)
+    });
+}
+
 function buildZoneContextFromDecision(decision = {}) {
     const sourceRules = Array.isArray(decision.rules) ? decision.rules : [];
     const location = decision.location || {};
@@ -2445,6 +2459,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     const zonesText = lineList(zones);
     const hasDetectedZone = (Array.isArray(zones) ? zones : []).some((entry) => text(entry).startsWith('ZONA DETECTADA PARA ESTE CLIENTE:'));
     const deterministicResponse = buildDeterministicDeliveryPaymentResponse(zoneDecision, conversation.lastCustomerMessage || '');
+    logGeoResolveAttempt(recentConversationText, zoneDecision, deterministicResponse);
     if (String(process.env.PATTY_DEBUG || '').trim().toLowerCase() === 'true') {
         console.log('[Patty] catalog context preview', {
             tenantId: cleanTenantId,
