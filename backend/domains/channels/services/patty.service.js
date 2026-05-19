@@ -1086,10 +1086,7 @@ function getActiveShippingOptions(rule = {}) {
 
 function getPrimaryShippingOption(rule = {}) {
     const activeOptions = getActiveShippingOptions(rule);
-    return activeOptions.find((item) => {
-        const type = lower(item?.type || '');
-        return !type || type === 'delivery';
-    }) || activeOptions[0] || null;
+    return activeOptions[0] || null;
 }
 
 function formatShippingOptionLabel(option = null) {
@@ -1600,6 +1597,31 @@ function hasLocationMentionIntent(value = '') {
         || /\ben\s+[a-z0-9]{4,}\b/.test(normalized);
 }
 
+function mentionsProductIntent(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized) return false;
+    return /\b(detergente|lavavajillas|lavajillas|quitamanchas|quita\s+manchas|suavizante|sacagrasa|saca\s+grasa|limpiador|desinfectante|jabon|jabÃ³n|kit|ropa|cocina|bano|baÃ±o|producto|productos|catalogo|catalogo|cotiza|cotizame|pedido|comprar|unidades)\b/.test(normalized);
+}
+
+function hasCoverageQuestionIntent(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized) return false;
+    return [
+        'cobertura',
+        'llegan',
+        'tienen envio',
+        'hacen envio',
+        'reparten',
+        'entregan',
+        'despachan',
+        'mandan',
+        'llega',
+        'llegaria',
+        'llego',
+        'envian'
+    ].some((keyword) => normalized.includes(normalizeProductLookupKey(keyword)));
+}
+
 function shouldUseLocationResult(location = {}) {
     const confidence = text(location?.confidence);
     return Boolean(location) && confidence && confidence !== 'none';
@@ -2069,11 +2091,95 @@ function getDeliveryPaymentIntent(value = '') {
     return { wantsDelivery, wantsPayment };
 }
 
+function detectRequestedExternalCourier(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized) return null;
+    const knownAgencies = [
+        'olva',
+        'shalom',
+        'cruz del sur',
+        'civa',
+        'flores',
+        'movil tours',
+        'tepsa',
+        'ormeno',
+        'ormeÃ±o'
+    ];
+    const match = knownAgencies.find((agency) => normalized.includes(normalizeProductLookupKey(agency)));
+    if (match) return match;
+    if (/\b(?:otra?\s+)?(?:transporte|agencia|courier)\b/.test(normalized)) return 'agencia';
+    return null;
+}
+
+function requestedCourierMatchesSummary(requestedAgency = '', summary = {}) {
+    const requested = normalizeProductLookupKey(requestedAgency);
+    if (!requested) return true;
+    const configuredValues = [
+        summary.shippingDisplayName,
+        summary.shippingLabel
+    ].map(normalizeProductLookupKey).filter(Boolean);
+    if ((requested === 'agencia' || requested === 'courier' || requested === 'transporte') && summary.shippingType === 'courier') {
+        return true;
+    }
+    return configuredValues.some((value) => value.includes(requested) || requested.includes(value));
+}
+
+function shouldUseDeterministicResponse(lastMessage = '', zoneDecision = {}, context = {}) {
+    if (zoneDecision?.deterministicResponseOverride) return true;
+    if (isPureDeliveryOrPaymentQuestion(lastMessage)) return true;
+    if (detectRequestedExternalCourier(lastMessage)) return true;
+    const hasResolvedZone = Boolean(zoneDecision?.zoneRule);
+    if (!hasResolvedZone) return false;
+    if (hasLocationMentionIntent(lastMessage) && !mentionsProductIntent(lastMessage)) return true;
+    if (hasCoverageQuestionIntent(lastMessage)) return true;
+    return Boolean(context?.forceDeterministicDeliveryPayment);
+}
+
+function shouldUseKnownLocationNoZoneResponse(lastMessage = '', zoneDecision = {}) {
+    if (zoneDecision?.zoneRule) return false;
+    if (zoneDecision?.locationRecognized !== true) return false;
+    if (zoneDecision?.locationAmbiguous === true) return false;
+    return isPureDeliveryOrPaymentQuestion(lastMessage)
+        || detectRequestedExternalCourier(lastMessage)
+        || (hasLocationMentionIntent(lastMessage) && !mentionsProductIntent(lastMessage))
+        || hasCoverageQuestionIntent(lastMessage);
+}
+
+function buildKnownLocationNoZoneResponse(zoneDecision = {}) {
+    const locationLabel = formatCustomerLocationLabel(zoneDecision?.location || {}, 'tu zona');
+    return [
+        `Por el momento no tenemos cobertura directa en ${locationLabel} 😊`,
+        'Déjame consultar con el equipo si podemos hacer llegar tu pedido.',
+        'En breve te confirmamos.'
+    ].join('\n');
+}
+
+function buildUnconfiguredCourierResponse(zoneDecision = {}, summary = {}, requestedAgency = '') {
+    const locationLabel = formatCustomerLocationLabel(zoneDecision?.location || {}, summary.zoneName);
+    const requestedLabel = text(requestedAgency) || 'esa agencia';
+    const configuredLabel = summary.shippingType === 'courier'
+        ? summary.shippingDisplayName
+        : summary.shippingLabel;
+    return [
+        `Para ${locationLabel} trabajamos con *${configuredLabel}* 📦`,
+        `Si prefieres ${requestedLabel}, el costo del flete lo asumes directamente con esa agencia 😊`,
+        `¿Te gustaría coordinar con ${configuredLabel} o prefieres la otra opción?`
+    ].join('\n');
+}
+
 function buildDeterministicDeliveryPaymentResponse(zoneDecision = {}, lastCustomerMessage = '') {
     if (zoneDecision?.deterministicResponseOverride) return zoneDecision.deterministicResponseOverride;
     const forceResponse = zoneDecision?.forceDeterministicDeliveryPayment === true;
-    if (!forceResponse && !isPureDeliveryOrPaymentQuestion(lastCustomerMessage)) return null;
+    const useDeterministic = shouldUseDeterministicResponse(lastCustomerMessage, zoneDecision, { forceDeterministicDeliveryPayment: forceResponse });
+    if (!forceResponse && !useDeterministic) return null;
     const zoneRule = zoneDecision?.zoneRule || null;
+    if (!zoneRule) {
+        if (shouldUseKnownLocationNoZoneResponse(lastCustomerMessage, zoneDecision)) {
+            console.log('[Patty] no zone for known location:', formatResolvedLocation(zoneDecision?.location || {}));
+            return buildKnownLocationNoZoneResponse(zoneDecision);
+        }
+        return null;
+    }
     if (zoneRule) {
         const summary = buildZoneShippingSummary(zoneRule);
         const locationLabel = formatCustomerLocationLabel(zoneDecision?.location || {}, summary.zoneName);
@@ -2085,6 +2191,14 @@ function buildDeterministicDeliveryPaymentResponse(zoneDecision = {}, lastCustom
             : fallbackIntent.wantsDelivery === true;
         const responseLines = [];
         if (wantsDelivery || !wantsPayment) {
+            const requestedAgency = detectRequestedExternalCourier(lastCustomerMessage);
+            if (requestedAgency && !requestedCourierMatchesSummary(requestedAgency, summary)) {
+                console.log('[Patty] external courier requested:', requestedAgency, {
+                    zoneName: summary.zoneName,
+                    configuredShipping: summary.shippingLabel
+                });
+                return buildUnconfiguredCourierResponse(zoneDecision, summary, requestedAgency);
+            }
             const deliveryLead = summary.shippingType === 'courier'
                 ? `Para ${locationLabel} enviamos por *agencia ${summary.shippingDisplayName}* 📦`
                 : `Para ${locationLabel} hacemos *reparto a domicilio* 🚚`;
@@ -2098,6 +2212,13 @@ function buildDeterministicDeliveryPaymentResponse(zoneDecision = {}, lastCustom
         } else if (wantsPayment) {
             responseLines.push(`Para ${locationLabel}, ${buildZonePaymentPhrase(summary, { sentenceStart: false })}`);
         }
+        console.log('[Patty] deterministic delivery details', {
+            zoneName: summary.zoneName,
+            shippingType: summary.shippingType,
+            shippingLabel: summary.shippingLabel,
+            paymentLabels: summary.paymentLabels,
+            paymentModalityText: summary.paymentModalityText
+        });
         return responseLines.filter(Boolean).join('\n');
     }
     return null;
@@ -2682,6 +2803,51 @@ async function activateNeedsAdvisorForProgrammedChange({
     return advisorResult;
 }
 
+async function markNeedsAdvisorFromPatty({
+    tenantId,
+    moduleId,
+    chatId,
+    reason,
+    emitToRuntimeContext,
+    emitCommercialStatusUpdated,
+    source = 'patty.needs_advisor'
+} = {}) {
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const cleanModuleId = lower(moduleId);
+    const cleanChatId = normalizeChatId(chatId);
+    const cleanReason = text(reason) || 'patty_needs_advisor';
+    const result = await chatCommercialStatusService.setNeedsAdvisor(
+        cleanTenantId,
+        cleanChatId,
+        cleanModuleId,
+        cleanReason
+    );
+    if (typeof emitCommercialStatusUpdated === 'function') {
+        emitCommercialStatusUpdated({
+            tenantId: cleanTenantId,
+            chatId: cleanChatId,
+            scopeModuleId: cleanModuleId,
+            result,
+            source
+        });
+    } else if (typeof emitToRuntimeContext === 'function') {
+        emitToRuntimeContext('chat_needs_advisor', {
+            tenantId: cleanTenantId,
+            chatId: cleanChatId,
+            scopeModuleId: cleanModuleId,
+            reason: cleanReason,
+            needsAdvisor: true,
+            at: new Date().toISOString()
+        });
+    }
+    console.log('[Patty] needs advisor activated:', cleanReason, {
+        tenantId: cleanTenantId,
+        moduleId: cleanModuleId,
+        chatId: cleanChatId
+    });
+    return result;
+}
+
 const QUOTE_CHANGE_WORDS = [
     'agrega',
     'anade',
@@ -3160,6 +3326,9 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     const pendingInboundText = lineList(pendingInbound.lines, '');
     const zonesText = lineList(zones);
     const hasDetectedZone = (Array.isArray(zones) ? zones : []).some((entry) => text(entry).startsWith('ZONA DETECTADA PARA ESTE CLIENTE:'));
+    const deterministicNeedsAdvisorReason = shouldUseKnownLocationNoZoneResponse(conversation.lastCustomerMessage || '', zoneDecision)
+        ? 'sin_cobertura_zona'
+        : '';
     const deterministicResponse = applyGreetingToResponse(
         buildDeterministicDeliveryPaymentResponse(zoneDecision, conversation.lastCustomerMessage || ''),
         pattyGreetingInstruction,
@@ -3281,6 +3450,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         pendingInboundMessageIds: Array.isArray(pendingInbound.ids) ? pendingInbound.ids : [],
         system,
         deterministicResponse,
+        deterministicNeedsAdvisorReason,
         lastCustomerMessage: conversation.lastCustomerMessage || 'Continua la conversacion con el cliente.'
     };
 }
@@ -3683,6 +3853,17 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                     moduleId: cleanModuleId,
                     chatId: cleanChatId
                 });
+                if (prebuiltContext.deterministicNeedsAdvisorReason) {
+                    await markNeedsAdvisorFromPatty({
+                        tenantId: cleanTenantId,
+                        moduleId: cleanModuleId,
+                        chatId: cleanChatId,
+                        reason: prebuiltContext.deterministicNeedsAdvisorReason,
+                        emitToRuntimeContext: socketEmitter,
+                        emitCommercialStatusUpdated: options.emitCommercialStatusUpdated,
+                        source: 'patty.no_zone'
+                    });
+                }
                 return;
             }
             const result = await generatePattySuggestion(cleanTenantId, cleanModuleId, cleanChatId, prebuiltContext);
