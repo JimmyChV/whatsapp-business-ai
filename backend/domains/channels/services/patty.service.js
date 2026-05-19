@@ -209,7 +209,20 @@ function greetingTextForTimeOfDay(timeOfDay = '') {
 function hasClientGreeting(value = '') {
     const normalized = normalizeProductLookupKey(value);
     if (!normalized) return false;
-    return /\b(hola|buenas|buenos dias|buen dia|buenas tardes|buenas noches|hi|hey|saludos|que tal)\b/.test(normalized);
+    return /\b(hola|buenas|buenos dias|buen dia|buenas tardes|buenas noches|hi|hey|saludos|que tal|como estan|como estÃ¡n)\b/.test(normalized);
+}
+
+function isPureGreetingMessage(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized || !hasClientGreeting(value)) return false;
+    const words = normalized.split(/\s+/).filter(Boolean);
+    if (words.length > 5) return false;
+    if (mentionsProductIntent(value)) return false;
+    if (isPureDeliveryOrPaymentQuestion(value)) return false;
+    if (hasCoverageQuestionIntent(value)) return false;
+    if (detectRequestedExternalCourier(value)) return false;
+    if (isCreditOrInstallmentQuestion(value)) return false;
+    return true;
 }
 
 function normalizeProductTitleForFuzzyMatch(value = '') {
@@ -2515,6 +2528,39 @@ async function getConversationContext(tenantId, moduleId, chatId) {
     };
 }
 
+async function getPendingInboundRowsSinceLastPatty(tenantId, moduleId, chatId, limit = 5) {
+    const cleanLimit = Math.max(1, Math.min(20, Number.parseInt(String(limit), 10) || 5));
+    const { rows } = await pgQuery(
+        `WITH last_patty AS (
+            SELECT created_at
+              FROM tenant_messages
+             WHERE tenant_id = $1
+               AND chat_id = $2
+               AND COALESCE(from_me, FALSE) = TRUE
+               AND (
+                    COALESCE(metadata->>'patty', '') = 'true'
+                    OR LOWER(COALESCE(metadata->'agentMeta'->>'sentByUserId', '')) = 'patty'
+                    OR LOWER(COALESCE(metadata->>'automationSource', '')) LIKE 'patty%'
+               )
+               AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($3))
+             ORDER BY created_at DESC
+             LIMIT 1
+        )
+        SELECT message_id, body, created_at
+          FROM tenant_messages
+         WHERE tenant_id = $1
+           AND chat_id = $2
+           AND COALESCE(from_me, FALSE) = FALSE
+           AND COALESCE(body, '') <> ''
+           AND created_at > COALESCE((SELECT created_at FROM last_patty), '-infinity'::timestamptz)
+           AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($3))
+         ORDER BY created_at DESC
+         LIMIT $4`,
+        [tenantId, normalizeChatId(chatId), lower(moduleId), cleanLimit]
+    );
+    return [...(rows || [])].reverse();
+}
+
 async function getGreetingInstructionContext(tenantId, moduleId, chatId, lastCustomerMessage = '') {
     const timeOfDay = getLimaTimeOfDay();
     const greetingText = greetingTextForTimeOfDay(timeOfDay);
@@ -2526,7 +2572,8 @@ async function getGreetingInstructionContext(tenantId, moduleId, chatId, lastCus
     };
     const clientGreeted = hasClientGreeting(lastCustomerMessage);
     try {
-        const { rows } = await pgQuery(
+        const [statsResult, pendingRows] = await Promise.all([
+            pgQuery(
             `SELECT
                     COUNT(*)::INTEGER AS total_messages,
                     COUNT(*) FILTER (WHERE COALESCE(from_me, FALSE) = FALSE)::INTEGER AS inbound_messages,
@@ -2543,14 +2590,17 @@ async function getGreetingInstructionContext(tenantId, moduleId, chatId, lastCus
                 AND chat_id = $2
                 AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($3))`,
             [tenantId, normalizeChatId(chatId), lower(moduleId)]
-        );
-        const row = rows?.[0] || {};
+            ),
+            getPendingInboundRowsSinceLastPatty(tenantId, moduleId, chatId, 5)
+        ]);
+        const pendingClientGreeted = pendingRows.some((row) => hasClientGreeting(row.body));
+        const row = statsResult.rows?.[0] || {};
         const totalMessages = Number(row.total_messages || 0);
         const inboundMessages = Number(row.inbound_messages || 0);
         if (totalMessages <= 1 || inboundMessages <= 1) {
             return { ...base, shouldGreet: true, reason: 'first_message' };
         }
-        if (clientGreeted) {
+        if (clientGreeted || pendingClientGreeted) {
             return { ...base, shouldGreet: true, reason: 'client_greeted' };
         }
         const lastPattyAt = row.last_patty_outbound_at ? new Date(row.last_patty_outbound_at).getTime() : NaN;
@@ -2569,11 +2619,26 @@ function normalizeCustomerNameForGreeting(value = '') {
     return clean && !/^cliente registrado$/i.test(clean) ? clean : '';
 }
 
+function isLocationDisambiguationResponse(value = '') {
+    const clean = text(value);
+    if (!clean) return false;
+    return /^Mmm, tenemos dos\s+/i.test(clean)
+        || /^Encontr[eé]\s+varios\s+lugares\s+llamados\s+/i.test(clean)
+        || clean.includes('¿Cuál es el tuyo?')
+        || clean.includes('Â¿CuÃ¡l es el tuyo?');
+}
+
 function applyGreetingToResponse(response = '', greetingInstruction = {}, customerName = '', assistantName = DEFAULT_ASSISTANT_NAME, moduleName = '') {
     const cleanResponse = text(response);
     if (!cleanResponse || greetingInstruction?.shouldGreet !== true) return cleanResponse;
     const greeting = text(greetingInstruction.greetingText) || greetingTextForTimeOfDay(greetingInstruction.timeOfDay);
     const cleanName = normalizeCustomerNameForGreeting(customerName);
+    if (isLocationDisambiguationResponse(cleanResponse)) {
+        const prefix = cleanName
+            ? `¡${greeting}, ${cleanName}! 😊`
+            : `¡${greeting}! 😊`;
+        return `${prefix}\n${cleanResponse}`;
+    }
     if (greetingInstruction?.isFirstInteraction === true && greetingInstruction?.isKnownCustomer !== true) {
         const cleanAssistantName = text(assistantName) || DEFAULT_ASSISTANT_NAME;
         const cleanModuleName = text(moduleName);
@@ -2590,35 +2655,7 @@ function applyGreetingToResponse(response = '', greetingInstruction = {}, custom
 
 async function getPendingInboundMessagesContext(tenantId, moduleId, chatId) {
     try {
-        const { rows } = await pgQuery(
-            `WITH last_patty AS (
-                SELECT created_at
-                  FROM tenant_messages
-                 WHERE tenant_id = $1
-                   AND chat_id = $2
-                   AND COALESCE(from_me, FALSE) = TRUE
-                   AND (
-                        COALESCE(metadata->>'patty', '') = 'true'
-                        OR LOWER(COALESCE(metadata->'agentMeta'->>'sentByUserId', '')) = 'patty'
-                        OR LOWER(COALESCE(metadata->>'automationSource', '')) LIKE 'patty%'
-                   )
-                   AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($3))
-                 ORDER BY created_at DESC
-                 LIMIT 1
-            )
-            SELECT message_id, body, created_at
-              FROM tenant_messages
-             WHERE tenant_id = $1
-               AND chat_id = $2
-               AND COALESCE(from_me, FALSE) = FALSE
-               AND COALESCE(body, '') <> ''
-               AND created_at > COALESCE((SELECT created_at FROM last_patty), '-infinity'::timestamptz)
-               AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($3))
-             ORDER BY created_at DESC
-             LIMIT 5`,
-            [tenantId, normalizeChatId(chatId), lower(moduleId)]
-        );
-        const ordered = [...(rows || [])].reverse();
+        const ordered = await getPendingInboundRowsSinceLastPatty(tenantId, moduleId, chatId, 5);
         const ids = ordered.map((row) => text(row.message_id)).filter(Boolean);
         const lines = ordered
             .map((row) => {
@@ -3774,7 +3811,22 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
     }
 
     const configuredWaitSeconds = resolveWaitSeconds(aiConfig);
-    const waitSeconds = mode === 'review' ? 0 : configuredWaitSeconds;
+    let settlePendingInboundRows = [];
+    try {
+        settlePendingInboundRows = mode === 'review'
+            ? await getPendingInboundRowsSinceLastPatty(cleanTenantId, cleanModuleId, cleanChatId, 3)
+            : [];
+    } catch (error) {
+        console.warn('[Patty] greeting settle lookup skipped:', error?.message || error);
+    }
+    const rawInboundText = text(rawMessage?.body || rawMessage?.text || rawMessage?.message || rawMessage?.caption || '');
+    const latestPendingInboundText = text(settlePendingInboundRows[settlePendingInboundRows.length - 1]?.body) || rawInboundText;
+    const pendingInboundCountForSettle = settlePendingInboundRows.length || (isPureGreetingMessage(latestPendingInboundText) ? 1 : 0);
+    const shouldSettleGreeting = mode === 'review'
+        && pendingInboundCountForSettle > 0
+        && pendingInboundCountForSettle < 2
+        && isPureGreetingMessage(latestPendingInboundText);
+    const waitSeconds = mode === 'review' ? (shouldSettleGreeting ? 2 : 0) : configuredWaitSeconds;
     const inboundAt = text(options.inboundAt) || new Date().toISOString();
     const debounceKey = buildDebounceKey(cleanTenantId, cleanModuleId, cleanChatId);
     const previousTimer = pattyChatDebounce.get(debounceKey);
@@ -3785,7 +3837,9 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
             moduleId: cleanModuleId,
             chatId: cleanChatId,
             configuredWaitSeconds,
-            waitSeconds
+            waitSeconds,
+            shouldSettleGreeting,
+            pendingInboundCount: pendingInboundCountForSettle
         });
     }
     console.log('[Patty] scheduled intervention', {
@@ -3795,6 +3849,8 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
         mode,
         configuredWaitSeconds,
         waitSeconds,
+        shouldSettleGreeting,
+        pendingInboundCount: pendingInboundCountForSettle,
         inboundAt,
         scheduleOpen: scheduleState.open,
         modeSource: modeState.source
