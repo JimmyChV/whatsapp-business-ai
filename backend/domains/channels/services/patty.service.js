@@ -188,6 +188,30 @@ function extractProductVolume(value = '') {
     return { unit: 'ml', amount: Math.round(amount) };
 }
 
+function getLimaTimeOfDay(now = new Date()) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Lima',
+        hour: 'numeric',
+        hour12: false
+    }).formatToParts(now);
+    const hour = Number(parts.find((part) => part.type === 'hour')?.value || 0);
+    if (hour >= 5 && hour < 12) return 'mañana';
+    if (hour >= 12 && hour < 18) return 'tarde';
+    return 'noche';
+}
+
+function greetingTextForTimeOfDay(timeOfDay = '') {
+    if (timeOfDay === 'mañana') return 'Buenos días';
+    if (timeOfDay === 'tarde') return 'Buenas tardes';
+    return 'Buenas noches';
+}
+
+function hasClientGreeting(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized) return false;
+    return /\b(hola|buenas|buenos dias|buen dia|buenas tardes|buenas noches|hi|hey|saludos|que tal)\b/.test(normalized);
+}
+
 function normalizeProductTitleForFuzzyMatch(value = '') {
     return lower(value)
         .normalize('NFD')
@@ -1161,11 +1185,14 @@ function formatResolvedLocation(location = {}) {
 }
 
 function formatCustomerLocationLabel(location = {}, fallback = '') {
-    const raw = text(location?.district)
-        || text(location?.province)
-        || text(location?.department)
-        || text(fallback)
-        || 'tu zona';
+    const district = text(location?.district);
+    const province = text(location?.province);
+    const department = text(location?.department);
+    const raw = district && province
+        ? `${district}, ${province}`
+        : (province && department
+            ? `${province}, ${department}`
+            : (department || text(fallback) || 'tu zona'));
     return raw
         .toLowerCase()
         .split(/\s+/)
@@ -2042,7 +2069,7 @@ function ensureTextArray(value = []) {
 
 async function getCustomerContext(tenantId, moduleId, chatId) {
     const phoneE164 = firstPhoneE164FromChatId(chatId);
-    if (!phoneE164) return { summary: 'CLIENTE: Prospecto nuevo (no registrado en BD)', customerId: null };
+    if (!phoneE164) return { summary: 'CLIENTE: Prospecto nuevo (no registrado en BD)', customerId: null, customerName: null };
     try {
         const { rows } = await pgQuery(
             `SELECT customer_id, contact_name, first_name, last_name_paternal, phone_e164,
@@ -2057,7 +2084,7 @@ async function getCustomerContext(tenantId, moduleId, chatId) {
             [tenantId, phoneE164, lower(moduleId)]
         );
         const row = rows?.[0];
-        if (!row) return { summary: 'CLIENTE: Prospecto nuevo (no registrado en BD)', customerId: null };
+        if (!row) return { summary: 'CLIENTE: Prospecto nuevo (no registrado en BD)', customerId: null, customerName: null };
         const name = text([row.first_name, row.last_name_paternal].filter(Boolean).join(' '))
             || text(row.contact_name)
             || 'Cliente registrado';
@@ -2076,9 +2103,9 @@ async function getCustomerContext(tenantId, moduleId, chatId) {
                 : '- Cadencia promedio: Sin datos',
             `- Rango de compras: ${text(row.rango_compras) || 'Sin rango'}`
         ];
-        return { summary: lines.join('\n'), customerId: text(row.customer_id) || null };
+        return { summary: lines.join('\n'), customerId: text(row.customer_id) || null, customerName: name };
     } catch (error) {
-        return { summary: 'CLIENTE: Prospecto nuevo (no registrado en BD)', customerId: null };
+        return { summary: 'CLIENTE: Prospecto nuevo (no registrado en BD)', customerId: null, customerName: null };
     }
 }
 
@@ -2310,6 +2337,66 @@ async function getConversationContext(tenantId, moduleId, chatId) {
         lastCustomerMessageId: text(lastInbound?.message_id) || '',
         recentOrder: recentOrder?.order_payload || null
     };
+}
+
+async function getGreetingInstructionContext(tenantId, moduleId, chatId, lastCustomerMessage = '') {
+    const timeOfDay = getLimaTimeOfDay();
+    const greetingText = greetingTextForTimeOfDay(timeOfDay);
+    const base = {
+        shouldGreet: false,
+        timeOfDay,
+        greetingText,
+        reason: 'none'
+    };
+    const clientGreeted = hasClientGreeting(lastCustomerMessage);
+    try {
+        const { rows } = await pgQuery(
+            `SELECT
+                    COUNT(*)::INTEGER AS total_messages,
+                    COUNT(*) FILTER (WHERE COALESCE(from_me, FALSE) = FALSE)::INTEGER AS inbound_messages,
+                    MAX(created_at) FILTER (
+                        WHERE COALESCE(from_me, FALSE) = TRUE
+                          AND (
+                            COALESCE(metadata->>'patty', '') = 'true'
+                            OR LOWER(COALESCE(metadata->'agentMeta'->>'sentByUserId', '')) = 'patty'
+                            OR LOWER(COALESCE(metadata->>'automationSource', '')) LIKE 'patty%'
+                          )
+                    ) AS last_patty_outbound_at
+               FROM tenant_messages
+              WHERE tenant_id = $1
+                AND chat_id = $2
+                AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($3))`,
+            [tenantId, normalizeChatId(chatId), lower(moduleId)]
+        );
+        const row = rows?.[0] || {};
+        const totalMessages = Number(row.total_messages || 0);
+        const inboundMessages = Number(row.inbound_messages || 0);
+        if (totalMessages <= 1 || inboundMessages <= 1) {
+            return { ...base, shouldGreet: true, reason: 'first_message' };
+        }
+        if (clientGreeted) {
+            return { ...base, shouldGreet: true, reason: 'client_greeted' };
+        }
+        const lastPattyAt = row.last_patty_outbound_at ? new Date(row.last_patty_outbound_at).getTime() : NaN;
+        if (Number.isFinite(lastPattyAt) && Date.now() - lastPattyAt > 4 * 60 * 60 * 1000) {
+            return { ...base, shouldGreet: true, reason: 'long_absence' };
+        }
+    } catch (error) {
+        if (clientGreeted) return { ...base, shouldGreet: true, reason: 'client_greeted' };
+        console.warn('[Patty] greeting context skipped:', error?.message || error);
+    }
+    return clientGreeted ? { ...base, shouldGreet: true, reason: 'client_greeted' } : base;
+}
+
+function applyGreetingToResponse(response = '', greetingInstruction = {}, customerName = '') {
+    const cleanResponse = text(response);
+    if (!cleanResponse || greetingInstruction?.shouldGreet !== true) return cleanResponse;
+    const greeting = text(greetingInstruction.greetingText) || greetingTextForTimeOfDay(greetingInstruction.timeOfDay);
+    const cleanName = text(customerName);
+    const prefix = cleanName && !/^cliente registrado$/i.test(cleanName)
+        ? `${greeting}, ${cleanName}.`
+        : `${greeting}.`;
+    return `${prefix}\n${cleanResponse}`;
 }
 
 async function getPendingInboundMessagesContext(tenantId, moduleId, chatId) {
@@ -2977,13 +3064,14 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         ...(Array.isArray(conversation.lines) ? conversation.lines : []),
         conversation.lastCustomerMessage || ''
     ].join('\n');
-    const [catalog, zoneDecision] = await Promise.all([
+    const [catalog, zoneDecision, greetingInstruction] = await Promise.all([
         getCatalogContext(cleanTenantId, recentConversationText, conversation.lastCustomerMessage || ''),
         buildZoneDecision(cleanTenantId, recentConversationText, conversation.lastCustomerMessage || '', {
             chatId: cleanChatId,
             scopeModuleId: cleanModuleId,
             sourceMessageId: conversation.lastCustomerMessageId || ''
-        })
+        }),
+        getGreetingInstructionContext(cleanTenantId, cleanModuleId, cleanChatId, conversation.lastCustomerMessage || '')
     ]);
     const zones = await getZonesContext(cleanTenantId, recentConversationText, zoneDecision, conversation.lastCustomerMessage || '');
     const labels = await getCustomerLabelsContext(cleanTenantId, customer.customerId);
@@ -2994,7 +3082,11 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     const pendingInboundText = lineList(pendingInbound.lines, '');
     const zonesText = lineList(zones);
     const hasDetectedZone = (Array.isArray(zones) ? zones : []).some((entry) => text(entry).startsWith('ZONA DETECTADA PARA ESTE CLIENTE:'));
-    const deterministicResponse = buildDeterministicDeliveryPaymentResponse(zoneDecision, conversation.lastCustomerMessage || '');
+    const deterministicResponse = applyGreetingToResponse(
+        buildDeterministicDeliveryPaymentResponse(zoneDecision, conversation.lastCustomerMessage || ''),
+        greetingInstruction,
+        customer.customerName
+    );
     logGeoResolveAttempt(recentConversationText, zoneDecision, deterministicResponse);
     if (String(process.env.PATTY_DEBUG || '').trim().toLowerCase() === 'true') {
         console.log('[Patty] catalog context preview', {
@@ -3013,6 +3105,12 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         `ULTIMO MENSAJE DEL CLIENTE: ${conversation.lastCustomerMessage || 'Sin ultimo mensaje registrado.'}`,
         relevantCatalogText ? '\nPRODUCTOS RELEVANTES PARA TU CONSULTA:' : '',
         relevantCatalogText,
+        '',
+        'INSTRUCCION DE SALUDO:',
+        `shouldGreet: ${greetingInstruction.shouldGreet ? 'true' : 'false'}`,
+        `timeOfDay: ${greetingInstruction.timeOfDay}`,
+        `reason: ${greetingInstruction.reason}`,
+        `saludo: ${greetingInstruction.greetingText}`,
         '',
         'PROMPT BASE DEL ASISTENTE:',
         basePrompt || 'Eres una asesora comercial experta de WhatsApp. Responde de forma breve, clara, humana y orientada a venta consultiva.',
@@ -3076,6 +3174,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '- IMPORTANTE: Solo genera quoteRequest cuando el cliente confirma EXPLICITAMENTE que productos quiere cotizar. "Si", "claro", "ok" o "dale" como respuesta a opciones o informacion NO confirma cotizacion; significa que quiere mas informacion. Cotiza solo con frases como "cotizame eso", "quiero esos productos", "dame el precio de todo" o "haz el pedido".',
         '- Cuando el cliente mencione su ubicacion, busca en las zonas de cobertura y responde con las opciones de envio y metodos de pago disponibles para esa zona. Si la ubicacion no esta en cobertura, dilo claramente.',
         '- Cuando el cliente indique su ubicacion, identifica su zona de cobertura y menciona el costo de envio y metodos de pago disponibles para esa zona.',
+        '- Si INSTRUCCION DE SALUDO indica shouldGreet: true, comienza tu respuesta con el saludo correspondiente segun timeOfDay: Buenos días / Buenas tardes / Buenas noches, seguido del nombre del cliente si lo conoces. Si shouldGreet: false, NO saludes; continua natural.',
         '- Si el cliente pregunta por credito, cuotas o pagos a plazos, responde empaticamente que Lavitat no ofrece credito directo. Si el cliente insiste, activa needs_advisor con reason: "cliente_solicita_credito" para que un asesor lo atienda.',
         '- No digas "Sugerencia", no expliques tu razonamiento y no inventes datos.',
         '- Si falta informacion, pregunta de forma breve y amable.',
@@ -3089,6 +3188,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         moduleConfig,
         assistantName,
         zoneDecision,
+        greetingInstruction,
         pendingInboundMessageIds: Array.isArray(pendingInbound.ids) ? pendingInbound.ids : [],
         system,
         deterministicResponse,
