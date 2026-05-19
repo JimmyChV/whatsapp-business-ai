@@ -83,6 +83,48 @@ function extractLocationCandidates(value = '') {
         .sort((left, right) => right.length - left.length || left.localeCompare(right, 'es'));
 }
 
+function stripLocationPrefix(value = '') {
+    return text(value)
+        .replace(/^\s*(?:cliente|asesor|patty|usuario)?\s*:?\s*/i, '')
+        .replace(/^\s*(?:vivo|vive|soy|estoy|esta|ubicado|ubicada|direccion|domicilio|llegan|llega|delivery|envio)\s+(?:en|de|desde|a)?\s+/i, '')
+        .replace(/^\s*(?:en|de|desde|a)\s+/i, '')
+        .trim();
+}
+
+function extractCompoundLocationSegments(value = '') {
+    const source = text(value);
+    if (!source) return [];
+    const normalized = normalizeLocationName(source);
+    if (/\b(?:cerca|referencia|referencia de)\s+de\b/.test(normalized)) {
+        return [];
+    }
+    const pieces = source
+        .split(/[,;|/\n\r]+/g)
+        .map(stripLocationPrefix)
+        .map((piece) => piece.replace(/\s+/g, ' ').trim())
+        .filter((piece) => {
+            const clean = normalizeLocationName(piece);
+            if (!clean || clean.length < 4) return false;
+            return clean.split(' ').some((word) => word.length >= 4 && !STOPWORDS.has(word));
+        });
+    const seen = new Set();
+    return pieces.filter((piece) => {
+        const key = normalizeLocationName(piece);
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
+function shouldAskForDistrictInsteadOfAssuming(value = '') {
+    const normalized = normalizeLocationName(value);
+    if (!normalized) return false;
+    return /\blima\s+(?:norte|sur|este|oeste|centro)\b/.test(normalized)
+        || /\b(?:norte|sur|este|oeste|centro)\s+de\s+lima\b/.test(normalized)
+        || /\blima\b.*\bcerca\s+de\b/.test(normalized)
+        || /\bcerca\s+de\b.*\blima\b/.test(normalized);
+}
+
 async function loadGeoLocations() {
     try {
         const { rows } = await queryPostgres(
@@ -248,14 +290,9 @@ function resolveExactMatchSet(matches = [], byId = new Map(), candidate = '') {
     return hydrateLocation(sorted[0].row, byId, sorted[0].confidence, candidate);
 }
 
-async function resolveLocationFromText(value = '') {
+function resolveAgainstLoadedLocations(value = '', locations = [], byId = new Map()) {
     const candidates = extractLocationCandidates(value);
     if (!candidates.length) return hydrateLocation(null);
-
-    const locations = await loadGeoLocations();
-    if (!locations.length) return hydrateLocation(null);
-
-    const byId = new Map(locations.map((row) => [row.id, row]));
 
     for (const candidate of candidates) {
         const exactMatches = GEO_TYPES.flatMap((type) => findMatches(locations, candidate, type, { allowPartial: false }));
@@ -276,6 +313,102 @@ async function resolveLocationFromText(value = '') {
     }
 
     return hydrateLocation(null);
+}
+
+function contextBranchesFromResult(result = {}) {
+    if (Array.isArray(result.candidates) && result.candidates.length) return result.candidates;
+    if (!result || result.confidence === 'none') return [];
+    return [{
+        id: result.locationId || null,
+        type: result.matchedType || null,
+        name: result.matchedText || null,
+        district: result.district || null,
+        province: result.province || null,
+        department: result.department || null,
+        ubigeo: result.ubigeo || null
+    }];
+}
+
+function scoreCandidateAgainstContext(candidate = {}, context = {}) {
+    let score = 0;
+    if (context.province && candidate.province === context.province) score += 60;
+    if (context.department && candidate.department === context.department) score += 30;
+    if (context.district && candidate.district === context.district) score += 10;
+    return score;
+}
+
+function disambiguateWithContext(primaryResult = {}, contextResults = [], byId = new Map()) {
+    const candidates = Array.isArray(primaryResult.candidates) ? primaryResult.candidates : [];
+    if (primaryResult.confidence !== 'ambiguous' || !candidates.length || !contextResults.length) return null;
+    const contextBranches = contextResults.flatMap((entry) => contextBranchesFromResult(entry.result || entry));
+    if (!contextBranches.length) return null;
+
+    const scored = candidates
+        .map((candidate) => ({
+            candidate,
+            score: Math.max(0, ...contextBranches.map((context) => scoreCandidateAgainstContext(candidate, context)))
+        }))
+        .filter((entry) => entry.score > 0)
+        .sort((left, right) => right.score - left.score || (TYPE_PRIORITY[right.candidate.type] || 0) - (TYPE_PRIORITY[left.candidate.type] || 0));
+
+    if (!scored.length) return null;
+    const topScore = scored[0].score;
+    const top = scored.filter((entry) => entry.score === topScore);
+    if (top.length !== 1) return null;
+    const row = byId.get(top[0].candidate.id);
+    if (!row) return null;
+    return hydrateLocation(row, byId, 'exact', primaryResult.matchedText || top[0].candidate.name, [top[0].candidate]);
+}
+
+function chooseBestCompoundResult(segmentResults = [], byId = new Map()) {
+    if (segmentResults.length < 2) return null;
+
+    const primary = segmentResults[0];
+    if (primary?.result?.confidence === 'ambiguous') {
+        const disambiguated = disambiguateWithContext(
+            primary.result,
+            segmentResults.slice(1),
+            byId
+        );
+        if (disambiguated) return disambiguated;
+        return null;
+    }
+
+    if (['exact', 'partial'].includes(primary?.result?.confidence) && primary?.result?.matchedType === 'district') {
+        return primary.result;
+    }
+
+    const resolved = segmentResults
+        .filter((entry) => ['exact', 'partial'].includes(entry.result?.confidence))
+        .sort((left, right) => {
+            const priorityDelta = (TYPE_PRIORITY[right.result?.matchedType] || 0) - (TYPE_PRIORITY[left.result?.matchedType] || 0);
+            if (priorityDelta !== 0) return priorityDelta;
+            return left.index - right.index;
+        });
+    return resolved[0]?.result || null;
+}
+
+async function resolveLocationFromText(value = '') {
+    if (shouldAskForDistrictInsteadOfAssuming(value)) return hydrateLocation(null);
+
+    const locations = await loadGeoLocations();
+    if (!locations.length) return hydrateLocation(null);
+
+    const byId = new Map(locations.map((row) => [row.id, row]));
+    const compoundSegments = extractCompoundLocationSegments(value);
+    if (compoundSegments.length >= 2) {
+        const segmentResults = compoundSegments
+            .map((segment, index) => ({
+                segment,
+                index,
+                result: resolveAgainstLoadedLocations(segment, locations, byId)
+            }))
+            .filter((entry) => entry.result?.confidence && entry.result.confidence !== 'none');
+        const compoundResult = chooseBestCompoundResult(segmentResults, byId);
+        if (compoundResult) return compoundResult;
+    }
+
+    return resolveAgainstLoadedLocations(value, locations, byId);
 }
 
 function collectRuleValues(rulesJson = {}, keys = []) {
