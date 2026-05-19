@@ -1686,8 +1686,37 @@ function hasCoverageQuestionIntent(value = '') {
         'llega',
         'llegaria',
         'llego',
-        'envian'
+        'envian',
+        'reparto'
     ].some((keyword) => normalized.includes(normalizeProductLookupKey(keyword)));
+}
+
+function isPaymentQuestionWithoutLocation(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized) return false;
+    const paymentIntent = isCreditOrInstallmentQuestion(normalized)
+        || /\b(pago|pagar|pagos|yape|plin|transferencia|tarjeta|contraentrega)\b/.test(normalized)
+        || normalized.includes('contra entrega')
+        || normalized.includes('metodos de pago')
+        || normalized.includes('forma de pago')
+        || normalized.includes('formas de pago')
+        || normalized.includes('como pago');
+    return paymentIntent && !hasLocationMentionIntent(value);
+}
+
+function extractRecentCustomerLocationTexts(recentConversationText = '') {
+    const lines = text(recentConversationText)
+        .split(/\r?\n/)
+        .map((line) => text(line))
+        .filter(Boolean);
+    const customerLines = lines
+        .filter((line) => /^\[CLIENTE/i.test(line))
+        .map((line) => line
+            .replace(/^\[CLIENTE[^\]]*\]\s*:?\s*/i, '')
+            .replace(/\s+\(\d{1,2}\/\d{1,2}\/\d{4}[^)]*\)\s*$/i, '')
+            .trim())
+        .filter(Boolean);
+    return customerLines.length ? customerLines : lines;
 }
 
 function shouldUseLocationResult(location = {}) {
@@ -1697,7 +1726,7 @@ function shouldUseLocationResult(location = {}) {
 
 async function resolveLocationForZoneDecision(recentConversationText = '', lastCustomerMessage = '') {
     const lastText = text(lastCustomerMessage);
-    if (lastText) {
+    if (lastText && !isPaymentQuestionWithoutLocation(lastText)) {
         const lastLocation = await geoLocationService.resolveLocationFromText(lastText);
         if (shouldUseLocationResult(lastLocation)) {
             return {
@@ -1714,6 +1743,18 @@ async function resolveLocationForZoneDecision(recentConversationText = '', lastC
             source: 'none',
             lookupText: ''
         };
+    }
+    const recentCustomerTexts = extractRecentCustomerLocationTexts(historyText).reverse();
+    for (const candidateText of recentCustomerTexts) {
+        if (!candidateText || isPaymentQuestionWithoutLocation(candidateText)) continue;
+        const candidateLocation = await geoLocationService.resolveLocationFromText(candidateText);
+        if (shouldUseLocationResult(candidateLocation)) {
+            return {
+                location: candidateLocation,
+                source: 'history_line',
+                lookupText: candidateText
+            };
+        }
     }
     const historyLocation = await geoLocationService.resolveLocationFromText(historyText);
     return {
@@ -1772,6 +1813,7 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
                     locationRecognized: true,
                     locationAmbiguous: false,
                     forceDeterministicDeliveryPayment: Boolean(zoneMatch?.rule),
+                    forceKnownLocationNoZone: !zoneMatch?.rule,
                     deliveryPaymentIntent: safeJsonObject(pending.intent),
                     disambiguationResolved: true
                 };
@@ -1830,7 +1872,14 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
     let deterministicResponseOverride = '';
     const subdistrictClarification = isSubdistrictClarification(lastCustomerMessage);
     const locationMentioned = hasLocationMentionIntent(locationMentionedText) || subdistrictClarification;
-    if (cleanChatId && resolvedLocation.source === 'last_message' && locationAmbiguous) {
+    const shouldAskAmbiguousLocation = cleanChatId
+        && locationAmbiguous
+        && (
+            resolvedLocation.source === 'last_message'
+            || hasCoverageQuestionIntent(lastCustomerMessage)
+            || isPureDeliveryOrPaymentQuestion(lastCustomerMessage)
+        );
+    if (shouldAskAmbiguousLocation) {
         const candidates = normalizeLocationCandidates(location?.candidates);
         if (candidates.length) {
             const rankedCandidates = rankLocationDisambiguationCandidates(candidates, sourceRules);
@@ -2117,7 +2166,8 @@ function isPureDeliveryOrPaymentQuestion(value = '') {
     const normalized = normalizeProductLookupKey(value);
     if (!normalized) return false;
     if (isCreditOrInstallmentQuestion(normalized)) return false;
-    const hasDeliveryOrPayment = /\b(envio|delivery|entrega|demora|demorar|tiempo|pago|pagar|pagos|yape|plin|transferencia|tarjeta|domicilio)\b/.test(normalized)
+    const hasDeliveryOrPayment = /\b(envio|delivery|entrega|demora|demorar|tiempo|pago|pagar|pagos|yape|plin|transferencia|tarjeta|domicilio|reparto|contraentrega)\b/.test(normalized)
+        || normalized.includes('contra entrega')
         || normalized.includes('forma de pago')
         || normalized.includes('formas de pago')
         || normalized.includes('metodos de pago')
@@ -2142,20 +2192,26 @@ function getDeliveryPaymentIntent(value = '') {
     if (isCreditOrInstallmentQuestion(normalized)) {
         return { wantsDelivery: false, wantsPayment: false };
     }
-    const wantsPayment = /\b(pago|pagar|pagos|yape|plin|transferencia|tarjeta)\b/.test(normalized)
+    const deliveryLookup = normalized
+        .replace(/\bcontra\s+entrega\b/g, ' ')
+        .replace(/\bcontraentrega\b/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const wantsPayment = /\b(pago|pagar|pagos|yape|plin|transferencia|tarjeta|contraentrega)\b/.test(normalized)
+        || normalized.includes('contra entrega')
         || normalized.includes('forma de pago')
         || normalized.includes('formas de pago')
         || normalized.includes('metodos de pago')
         || normalized.includes('como pago');
-    const wantsDelivery = /\b(envio|delivery|entrega|demora|demorar|tiempo|domicilio)\b/.test(normalized)
-        || normalized.includes('cuanto cuesta el envio')
-        || normalized.includes('precio envio')
-        || normalized.includes('costo envio')
-        || normalized.includes('cuanto es el envio')
-        || normalized.includes('cuanto demora')
-        || normalized.includes('tiempo de entrega')
-        || normalized.includes('es a domicilio')
-        || normalized.includes('llegan a domicilio');
+    const wantsDelivery = /\b(envio|delivery|entrega|demora|demorar|tiempo|domicilio|reparto)\b/.test(deliveryLookup)
+        || deliveryLookup.includes('cuanto cuesta el envio')
+        || deliveryLookup.includes('precio envio')
+        || deliveryLookup.includes('costo envio')
+        || deliveryLookup.includes('cuanto es el envio')
+        || deliveryLookup.includes('cuanto demora')
+        || deliveryLookup.includes('tiempo de entrega')
+        || deliveryLookup.includes('es a domicilio')
+        || deliveryLookup.includes('llegan a domicilio');
     return { wantsDelivery, wantsPayment };
 }
 
@@ -2204,6 +2260,7 @@ function shouldUseDeterministicResponse(lastMessage = '', zoneDecision = {}, con
 }
 
 function shouldUseKnownLocationNoZoneResponse(lastMessage = '', zoneDecision = {}) {
+    if (zoneDecision?.forceKnownLocationNoZone === true) return true;
     if (zoneDecision?.zoneRule) return false;
     if (zoneDecision?.locationRecognized !== true) return false;
     if (zoneDecision?.locationAmbiguous === true) return false;

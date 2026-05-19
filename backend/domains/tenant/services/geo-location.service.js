@@ -8,7 +8,11 @@ const STOPWORDS = new Set([
     'direccion', 'donde', 'para', 'envio', 'delivery', 'pedido', 'cliente',
     'quiero', 'quisiera', 'necesito', 'precio', 'cuanto', 'cuesta', 'demora',
     'llegan', 'llega', 'domicilio', 'distrito', 'provincia', 'departamento',
-    'peru', 'casa', 'zona'
+    'peru', 'casa', 'zona', 'reparto', 'pago', 'pagar', 'pagos', 'metodo',
+    'metodos', 'yape', 'plin', 'transferencia', 'tarjeta', 'credito',
+    'creditos', 'cuota', 'cuotas', 'plazo', 'plazos', 'financiamiento',
+    'fiado', 'abono', 'abonos', 'adelanto', 'contra', 'contraentrega',
+    'entrega', 'puedo', 'puedes', 'podria', 'podrias', 'hablo'
 ]);
 
 function text(value = '') {
