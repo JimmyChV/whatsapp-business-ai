@@ -61,10 +61,11 @@ async function normalizeAssignmentActorForDb(tenantId = DEFAULT_TENANT_ID, userI
     if (!cleanUserId) return null;
     try {
         const { rows } = await queryPostgres(
-            `SELECT user_id
-               FROM users
-              WHERE user_id = $1
-                AND tenant_id = $2
+            `SELECT u.user_id
+               FROM users u
+               LEFT JOIN memberships m ON m.user_id = u.user_id
+              WHERE u.user_id = $1
+                AND (m.tenant_id = $2 OR $2 = '')
               LIMIT 1`,
             [cleanUserId, cleanTenantId]
         );
@@ -716,6 +717,13 @@ async function upsertChatAssignment(tenantId = DEFAULT_TENANT_ID, payload = {}) 
         assigneeRole: dbAssigneeUserId ? nextRecord.assigneeRole : null,
         assignedByUserId: dbAssignedByUserId,
         status: dbAssigneeUserId ? nextRecord.status : (nextRecord.status === 'active' ? 'released' : nextRecord.status)
+    });
+
+    console.warn('[assignment] normalized actors', {
+        rawAssigneeUserId: nextRecord.assigneeUserId || null,
+        rawAssignedByUserId: nextRecord.assignedByUserId || null,
+        dbAssigneeUserId,
+        dbAssignedByUserId
     });
 
     await queryPostgres(

@@ -2378,10 +2378,16 @@ function registerOperationsHttpRoutes({
 
             const scopeModuleId = normalizeScopeModuleId(req.query?.scopeModuleId || req.body?.scopeModuleId || '');
             const actorUserId = resolveActorUserId(req);
+            const currentAssignment = await conversationOpsService.getChatAssignment(tenantId, { chatId, scopeModuleId });
+            const isOwnChat = Boolean(
+                actorUserId
+                && String(currentAssignment?.assigneeUserId || '').trim() === String(actorUserId).trim()
+            );
             const policyResult = assertReleaseAllowed({ req, tenantId });
-            if (!policyResult?.ok) {
-                return res.status(Number(policyResult?.statusCode || 403)).json({ ok: false, error: String(policyResult?.error || 'No autorizado.') });
+            if (!policyResult?.ok && !isOwnChat) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
             }
+
             const result = await conversationOpsService.clearChatAssignment(tenantId, {
                 chatId,
                 scopeModuleId,
@@ -2421,7 +2427,8 @@ function registerOperationsHttpRoutes({
 
             return res.json({ ok: true, tenantId, chatId, scopeModuleId, ...result });
         } catch (error) {
-            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo liberar la asignacion.') });
+            console.error('[assignment] release failed:', error);
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo liberar la asignacion.') });
         }
     });
 
