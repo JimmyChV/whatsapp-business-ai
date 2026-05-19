@@ -895,6 +895,7 @@ function buildCatalogProductDetails(row = {}) {
     const metadata = safeJsonObject(row.metadata);
     const details = [
         text(metadata.description || metadata.descripcion || metadata.shortDescription || metadata.short_description),
+        text(metadata.components || metadata.componentes || metadata.includedItems || metadata.included_items || metadata.includes || metadata.incluye),
         text(metadata.variants || metadata.variantes),
         text(metadata.benefits || metadata.beneficios),
         text(metadata.usage || metadata.uso)
@@ -902,6 +903,40 @@ function buildCatalogProductDetails(row = {}) {
     const sku = text(row.item_id).toUpperCase();
     const title = text(row.title) || sku || 'Producto';
     return `  [${sku}] ${title}${details ? `: ${details}` : ': Sin detalle adicional registrado.'}`;
+}
+
+async function getRecentlySentCatalogSkuSet(tenantId, moduleId = '', chatId = '', catalogRows = []) {
+    const cleanChatId = normalizeChatId(chatId);
+    if (!cleanChatId || !Array.isArray(catalogRows) || !catalogRows.length) return new Set();
+    try {
+        const { rows } = await pgQuery(
+            `SELECT body
+               FROM tenant_messages
+              WHERE tenant_id = $1
+                AND chat_id = $2
+                AND COALESCE(from_me, FALSE) = TRUE
+                AND created_at >= NOW() - INTERVAL '20 minutes'
+                AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($3))
+              ORDER BY created_at DESC
+              LIMIT 40`,
+            [tenantId, cleanChatId, lower(moduleId)]
+        );
+        const recentTextUpper = (rows || []).map((row) => text(row.body).toUpperCase()).join('\n');
+        const recentTextKey = normalizeProductLookupKey((rows || []).map((row) => text(row.body)).join('\n'));
+        const sent = new Set();
+        catalogRows.forEach((row) => {
+            const sku = text(row.item_id).toUpperCase();
+            const titleKey = normalizeProductLookupKey(row.title);
+            if (!sku) return;
+            if (recentTextUpper.includes(sku) || (titleKey && recentTextKey.includes(titleKey))) {
+                sent.add(sku);
+            }
+        });
+        return sent;
+    } catch (error) {
+        console.warn('[Patty] recent catalog dedupe skipped:', error?.message || error);
+        return new Set();
+    }
 }
 
 async function getCatalogContext(tenantId, recentConversationText = '', lastCustomerMessage = '') {
@@ -1055,7 +1090,7 @@ async function getCatalogRowsBySkus(tenantId, skus = []) {
     return cleanSkus.map((sku) => bySku.get(sku)).filter(Boolean);
 }
 
-async function filterCatalogProductsForContext(tenantId, skus = [], lastCustomerMessage = '', responseText = '') {
+async function filterCatalogProductsForContext(tenantId, skus = [], lastCustomerMessage = '', responseText = '', options = {}) {
     const cleanSkus = Array.from(new Set((Array.isArray(skus) ? skus : [])
         .map((sku) => text(sku).toUpperCase())
         .filter(Boolean)))
@@ -1073,8 +1108,11 @@ async function filterCatalogProductsForContext(tenantId, skus = [], lastCustomer
     if (!rows.length) return [];
     const lastMessageKeywords = extractCatalogSearchKeywords(lastCustomerMessage);
     const responseKey = normalizeProductLookupKey(responseText);
+    const quotedReferenceUpper = text(options.quotedReferenceContext).toUpperCase();
+    const recentlySent = await getRecentlySentCatalogSkuSet(tenantId, options.moduleId, options.chatId, rows);
     const allowed = [];
     const allowedSet = new Set();
+    const skippedRepeated = [];
     rows.forEach((row) => {
         const sku = text(row.item_id).toUpperCase();
         const titleKey = normalizeProductLookupKey(row.title);
@@ -1082,6 +1120,12 @@ async function filterCatalogProductsForContext(tenantId, skus = [], lastCustomer
         const matchesLastMessage = Array.from(lastMessageKeywords).some((keyword) => titleKey.includes(keyword));
         const appearsInResponse = responseKey.includes(sku.toLowerCase())
             || productWords.some((word) => responseKey.includes(word));
+        const alreadyReferenced = quotedReferenceUpper.includes(sku);
+        const recentlySentSameProduct = recentlySent.has(sku);
+        if (sku && (alreadyReferenced || recentlySentSameProduct)) {
+            skippedRepeated.push(sku);
+            return;
+        }
         if (sku && !allowedSet.has(sku) && (matchesLastMessage || appearsInResponse)) {
             allowed.push(sku);
             allowedSet.add(sku);
@@ -1091,6 +1135,14 @@ async function filterCatalogProductsForContext(tenantId, skus = [], lastCustomer
         console.log('[Patty] catalog products filtered', {
             tenantId,
             requested: cleanSkus,
+            allowed
+        });
+    }
+    if (skippedRepeated.length) {
+        console.log('[Patty] catalog products deduped', {
+            tenantId,
+            requested: cleanSkus,
+            skippedRepeated,
             allowed
         });
     }
@@ -1576,6 +1628,28 @@ function buildNaturalLocationDisambiguationQuestion(candidates = [], zoneRules =
     return 'No logro ubicar eso con certeza. Â¿Puedes ser mÃ¡s especÃ­fico?';
 }
 
+function buildConversationalLocationDisambiguationQuestion(candidates = [], zoneRules = [], matchedText = '') {
+    const cleanCandidates = rankLocationDisambiguationCandidates(candidates, zoneRules).slice(0, 5);
+    const locationName = getAmbiguousLocationName(cleanCandidates, matchedText);
+    const labels = cleanCandidates.map(formatDisambiguationCandidateLabel);
+    if (cleanCandidates.length === 2) {
+        return [
+            'Para confirmarte bien el reparto 😊',
+            `¿Te refieres a ${labels[0]} o a ${labels[1]}?`
+        ].join('\n');
+    }
+    if (cleanCandidates.length > 0) {
+        const lines = labels.slice(1).map((label, index) => `${index + 1}. ${label}`);
+        return [
+            'Para no darte un dato equivocado 😊',
+            `¿Te refieres a ${labels[0]}?`,
+            ...(lines.length ? [`También encontré otros ${locationName}:`, ...lines] : []),
+            'Dime cuál es y te confirmo el reparto.'
+        ].join('\n');
+    }
+    return 'No logro ubicar eso con certeza. ¿Me indicas el distrito o provincia?';
+}
+
 function isLocationDisambiguationTopicChange(value = '') {
     const normalized = normalizeProductLookupKey(value);
     if (!normalized) return false;
@@ -1994,7 +2068,7 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
                 });
                 const candidates = renewed?.candidates || pending.candidates;
                 const deterministicResponseOverride = resolution.status === 'narrowed'
-                    ? buildNaturalLocationDisambiguationQuestion(candidates, sourceRules, pending.matchedText)
+                    ? buildConversationalLocationDisambiguationQuestion(candidates, sourceRules, pending.matchedText)
                     : (isSubdistrictClarification(lastCustomerMessage)
                         ? buildSubdistrictClarificationResponse(lastCustomerMessage)
                         : 'No logro identificar esa ubicacion entre las opciones. ¿Puedes ser mas especifico?');
@@ -2055,7 +2129,7 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
                 candidates: rankedCandidates,
                 intent: getDeliveryPaymentIntent(lastCustomerMessage)
             });
-            deterministicResponseOverride = buildNaturalLocationDisambiguationQuestion(rankedCandidates, sourceRules, location?.matchedText || lastCustomerMessage);
+            deterministicResponseOverride = buildConversationalLocationDisambiguationQuestion(rankedCandidates, sourceRules, location?.matchedText || lastCustomerMessage);
             console.log('[Patty] location disambiguation asked:', rankedCandidates.map(formatDisambiguationCandidateLabel), {
                 tenantId: cleanTenantId,
                 chatId: cleanChatId,
@@ -2686,6 +2760,31 @@ function buildAntiHallucinationGuardResponse({
     return null;
 }
 
+function isSoftPauseIntent(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized) return false;
+    const hasPause = normalized === 'ok'
+        || normalized === 'ok te aviso'
+        || normalized === 'te aviso'
+        || normalized.includes('te aviso')
+        || normalized.includes('luego te confirmo')
+        || normalized.includes('despues te confirmo')
+        || normalized.includes('lo voy a pensar')
+        || normalized.includes('lo pienso')
+        || normalized.includes('mas tarde')
+        || normalized.includes('te escribo luego');
+    if (!hasPause) return false;
+    return !/\b(cuanto|precio|envio|delivery|reparto|pago|producto|productos|cotiza|cotizame|quiero|tienes|tienen)\b/.test(normalized);
+}
+
+function buildSoftPauseResponse(lastCustomerMessage = '') {
+    if (!isSoftPauseIntent(lastCustomerMessage)) return null;
+    return [
+        'Perfecto 😊 Te dejo la idea a la mano.',
+        'Cuando quieras avanzar, me dices qué uso tienes en mente o tu presupuesto y te ayudo a elegir sin vueltas.'
+    ].join('\n');
+}
+
 function buildDeterministicDeliveryPaymentResponse(zoneDecision = {}, lastCustomerMessage = '', options = {}) {
     if (zoneDecision?.deterministicResponseOverride) return zoneDecision.deterministicResponseOverride;
     const forceResponse = zoneDecision?.forceDeterministicDeliveryPayment === true;
@@ -3246,6 +3345,10 @@ function normalizeCustomerNameForGreeting(value = '') {
 function isLocationDisambiguationResponse(value = '') {
     const clean = text(value);
     if (!clean) return false;
+    if (/^Para confirmarte bien el reparto/i.test(clean)
+        || /^Para no darte un dato equivocado/i.test(clean)) {
+        return true;
+    }
     return /^Mmm, tenemos dos\s+/i.test(clean)
         || /^Encontr[eé]\s+varios\s+lugares\s+llamados\s+/i.test(clean)
         || clean.includes('¿Cuál es el tuyo?')
@@ -4106,6 +4209,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         zoneDecision
     });
     const rawDeterministicResponse = antiHallucinationGuard?.response
+        || buildSoftPauseResponse(latestCustomerMessage || effectiveCustomerMessage || '')
         || buildDeterministicDeliveryPaymentResponse(zoneDecision, latestCustomerMessage || effectiveCustomerMessage || '', {
             conversationLines: conversation.lines
         });
@@ -4116,7 +4220,9 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     const deterministicSource = antiHallucinationGuard?.source
         || (deterministicNeedsAdvisorReason === 'sin_cobertura_zona'
             ? 'patty.no_zone'
-            : (rawDeterministicResponse ? 'patty.deterministic_delivery_payment' : ''));
+            : (isSoftPauseIntent(latestCustomerMessage || effectiveCustomerMessage || '')
+                ? 'patty.soft_pause'
+                : (rawDeterministicResponse ? 'patty.deterministic_delivery_payment' : '')));
     const deterministicResponse = applyGreetingToResponse(
         rawDeterministicResponse,
         pattyGreetingInstruction,
@@ -4226,6 +4332,8 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '- IMPORTANTE: Solo genera quoteRequest cuando el cliente confirma EXPLICITAMENTE que productos quiere cotizar. "Si", "claro", "ok" o "dale" como respuesta a opciones o informacion NO confirma cotizacion; significa que quiere mas informacion. Cotiza solo con frases como "cotizame eso", "quiero esos productos", "dame el precio de todo" o "haz el pedido".',
         '- Si el cliente dice "este", "ese", "me interesa", "lo quiero", "ese producto" o "el primero" sin indicar cantidad, NO generes quoteRequest. Pregunta primero: "¿Cuántas unidades te gustaría? 😊".',
         '- Si el cliente pregunta por promociones, ofertas, combos, paquetes o kits, responde con kits del catalogo si existen. No lo trates como descuento no confirmado.',
+        '- Para kits o combos: NUNCA inventes componentes, presentaciones, aromas ni contenido del kit. Solo di "incluye" si los componentes aparecen literalmente en PRODUCTOS MENCIONADOS EN CONVERSACION o en el detalle del catalogo. Si no hay detalle, explica la finalidad del kit y ofrece confirmar el contenido.',
+        '- Si el cliente dice "ok te aviso", "luego te confirmo" o algo similar, no cierres la conversacion con frases tipo "aqui estare". Mantente disponible y deja una siguiente accion suave: elegir por uso, cantidad o presupuesto.',
         '- Cuando el cliente mencione su ubicacion, busca en las zonas de cobertura y responde con las opciones de envio y metodos de pago disponibles para esa zona. Si la ubicacion no esta en cobertura, dilo claramente.',
         '- Cuando el cliente indique su ubicacion, identifica su zona de cobertura y menciona el costo de envio y metodos de pago disponibles para esa zona.',
         '- Si INSTRUCCION DE SALUDO indica shouldGreet: true, comienza tu respuesta con el saludo correspondiente segun timeOfDay: Buenos días / Buenas tardes / Buenas noches, seguido del nombre del cliente si lo conoces. Si shouldGreet: false, NO saludes; continua natural.',
@@ -4250,6 +4358,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         isKnownCustomer,
         customerName: customerNameForPrompt || null,
         pendingInboundMessageIds: Array.isArray(pendingInbound.ids) ? pendingInbound.ids : [],
+        quotedReferenceContext: conversation.quotedReferenceContext || '',
         system,
         deterministicResponse,
         deterministicNeedsAdvisorReason,
@@ -4312,6 +4421,8 @@ async function generatePattySuggestion(tenantId, moduleId, chatId, prebuiltConte
             'IMPORTANTE: Solo genera quoteRequest cuando el cliente confirma EXPLICITAMENTE que productos quiere cotizar. "Si", "claro", "ok" o "dale" como respuesta a opciones o informacion NO confirma cotizacion; significa que quiere mas informacion. Cotiza solo con frases como "cotizame eso", "quiero esos productos", "dame el precio de todo" o "haz el pedido".',
             'Si el cliente dice "este", "ese", "me interesa", "lo quiero", "ese producto" o "el primero" sin indicar cantidad, NO generes quoteRequest. Pregunta primero: "¿Cuántas unidades te gustaría? 😊".',
             'Si el cliente pregunta por promociones, ofertas, combos, paquetes o kits, responde con kits del catalogo si existen. No lo trates como descuento no confirmado.',
+            'Para kits o combos: NUNCA inventes componentes, presentaciones, aromas ni contenido del kit. Solo di "incluye" si los componentes aparecen literalmente en el contexto del catalogo. Si no hay detalle, explica la finalidad del kit y ofrece confirmar el contenido.',
+            'Si el cliente dice "ok te aviso", "luego te confirmo" o algo similar, no cierres la conversacion con frases tipo "aqui estare". Mantente disponible y deja una siguiente accion suave: elegir por uso, cantidad o presupuesto.',
             'Si el cliente pregunta por credito, cuotas o pagos a plazos, responde empaticamente que Lavitat no ofrece credito directo. Si insiste, solicita apoyo de asesor con reason cliente_solicita_credito.',
             'Omite quoteRequest si no corresponde generar cotizacion.'
         ].join('\n'),
@@ -4354,7 +4465,12 @@ async function generatePattySuggestion(tenantId, moduleId, chatId, prebuiltConte
             context.tenantId,
             normalizePattyCatalogProducts(rawSuggestion),
             context.lastCustomerMessage,
-            suggestion
+            suggestion,
+            {
+                chatId: context.chatId,
+                moduleId: context.moduleId,
+                quotedReferenceContext: context.quotedReferenceContext
+            }
         );
     console.log('[Patty] suggestion generated', {
         tenantId: context.tenantId,
