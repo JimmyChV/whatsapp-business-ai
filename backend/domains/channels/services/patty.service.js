@@ -81,6 +81,7 @@ const UNVERIFIED_DATA_TOPIC_KEYWORDS = [
     'caracteristicas'
 ];
 const pattyChatDebounce = new Map();
+const pattyInFlight = new Map();
 const PATTY_UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || path.resolve(__dirname, '../../../uploads')).trim());
 const pattyProcessedMediaCache = new Map();
 const {
@@ -4172,6 +4173,38 @@ async function hasOutboundAfter(tenantId, moduleId, chatId, sinceIso) {
     };
 }
 
+async function hasInboundAfter(tenantId, moduleId, chatId, sinceIso, excludeMessageId = '') {
+    if (!sinceIso) return { hasInbound: false, latest: null };
+    const { rows } = await pgQuery(
+        `SELECT message_id, created_at, body
+           FROM tenant_messages
+          WHERE tenant_id = $1
+            AND chat_id = $2
+            AND from_me = FALSE
+            AND created_at > $4::timestamptz
+            AND ($5 = '' OR message_id <> $5)
+            AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($3))
+          ORDER BY created_at DESC
+          LIMIT 1`,
+        [tenantId, normalizeChatId(chatId), lower(moduleId), sinceIso, text(excludeMessageId)]
+    );
+    const latest = rows?.[0] || null;
+    return {
+        hasInbound: Boolean(latest),
+        latest: latest
+            ? {
+                messageId: text(latest.message_id),
+                createdAt: latest.created_at,
+                bodyPreview: text(latest.body).slice(0, 80)
+            }
+            : null
+    };
+}
+
+function isPattyRunCurrent(debounceKey = '', token = null) {
+    return Boolean(token && !token.cancelled && pattyInFlight.get(debounceKey) === token);
+}
+
 function extractInteractiveButtonId(metadata = {}) {
     const source = safeJsonObject(metadata);
     const candidates = [
@@ -4317,7 +4350,22 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
     const cleanModuleId = lower(moduleId);
     const cleanChatId = normalizeChatId(chatId);
     const inboundMessageId = text(options.messageId || options.message_id || options.inboundMessageId || options.inbound_message_id);
+    const inboundAt = text(options.inboundAt) || new Date().toISOString();
+    const debounceKey = buildDebounceKey(cleanTenantId, cleanModuleId, cleanChatId);
     const rawMessage = options.msg || options.message || options.rawMessage || options.raw_message || null;
+    const activeInFlight = pattyInFlight.get(debounceKey);
+    if (activeInFlight) {
+        activeInFlight.cancelled = true;
+        pattyInFlight.delete(debounceKey);
+        console.log('[Patty] in-flight cancelled: newer inbound scheduled', {
+            tenantId: cleanTenantId,
+            moduleId: cleanModuleId,
+            chatId: cleanChatId,
+            previousInboundAt: activeInFlight.inboundAt || null,
+            inboundAt,
+            messageId: inboundMessageId || null
+        });
+    }
     const currentState = await getCurrentCommercialState(cleanTenantId, cleanModuleId, cleanChatId);
     const currentStatus = currentState.status;
     if (await shouldSkipPattyForQuoteButtonReply({
@@ -4382,8 +4430,6 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
         && pendingInboundCountForSettle < 2
         && isPureGreetingMessage(latestPendingInboundText);
     const waitSeconds = configuredWaitSeconds;
-    const inboundAt = text(options.inboundAt) || new Date().toISOString();
-    const debounceKey = buildDebounceKey(cleanTenantId, cleanModuleId, cleanChatId);
     const previousTimer = pattyChatDebounce.get(debounceKey);
     if (previousTimer) {
         clearTimeout(previousTimer);
@@ -4411,6 +4457,50 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
         modeSource: modeState.source
     });
     const timer = setTimeout(async () => {
+        const previousRun = pattyInFlight.get(debounceKey);
+        if (previousRun) previousRun.cancelled = true;
+        const runToken = {
+            cancelled: false,
+            inboundAt,
+            messageId: inboundMessageId || null,
+            startedAt: Date.now()
+        };
+        pattyInFlight.set(debounceKey, runToken);
+        const shouldAbortRun = async (stage = 'unknown') => {
+            if (!isPattyRunCurrent(debounceKey, runToken)) {
+                console.log('[Patty] cancelled: in-flight superseded', {
+                    tenantId: cleanTenantId,
+                    moduleId: cleanModuleId,
+                    chatId: cleanChatId,
+                    inboundAt,
+                    stage
+                });
+                return true;
+            }
+            const inboundCheck = await hasInboundAfter(
+                cleanTenantId,
+                cleanModuleId,
+                cleanChatId,
+                inboundAt,
+                inboundMessageId
+            );
+            if (inboundCheck.hasInbound) {
+                runToken.cancelled = true;
+                if (pattyInFlight.get(debounceKey) === runToken) {
+                    pattyInFlight.delete(debounceKey);
+                }
+                console.log('[Patty] cancelled: newer inbound found before send', {
+                    tenantId: cleanTenantId,
+                    moduleId: cleanModuleId,
+                    chatId: cleanChatId,
+                    inboundAt,
+                    stage,
+                    latestInbound: inboundCheck.latest
+                });
+                return true;
+            }
+            return false;
+        };
         try {
             if (pattyChatDebounce.get(debounceKey) === timer) {
                 pattyChatDebounce.delete(debounceKey);
@@ -4444,10 +4534,13 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 });
                 return;
             }
+            if (await shouldAbortRun('before_context')) return;
             const prebuiltContext = await buildPattyContext(cleanTenantId, cleanModuleId, cleanChatId);
+            if (await shouldAbortRun('after_context')) return;
             if (prebuiltContext.deterministicResponse) {
                 const assistantName = formatAssistantDisplayName(prebuiltContext.assistantName || DEFAULT_ASSISTANT_NAME);
                 if (prebuiltContext.deterministicNeedsAdvisorReason) {
+                    if (await shouldAbortRun('before_deterministic_escalation')) return;
                     await escalateToAdvisor(
                         cleanTenantId,
                         cleanChatId,
@@ -4460,6 +4553,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                     );
                     return;
                 }
+                if (await shouldAbortRun('before_deterministic_send')) return;
                 await waClient.sendMessage(cleanChatId, prebuiltContext.deterministicResponse, {
                     metadata: {
                         agentMeta: {
@@ -4481,6 +4575,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 return;
             }
             const result = await generatePattySuggestion(cleanTenantId, cleanModuleId, cleanChatId, prebuiltContext);
+            if (await shouldAbortRun('after_ai_generation')) return;
             let messages = Array.isArray(result.messages) && result.messages.length
                 ? result.messages
                 : normalizePattyMessages(result.suggestion);
@@ -4489,6 +4584,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
             const programadoChangeRequested = currentStatus === 'programado'
                 && (Boolean(result.quoteRequest) || hasQuoteChangeIntent(lastCustomerMessage));
             if (programadoChangeRequested) {
+                if (await shouldAbortRun('before_programmed_change_escalation')) return;
                 await activateNeedsAdvisorForProgrammedChange({
                     tenantId: cleanTenantId,
                     moduleId: cleanModuleId,
@@ -4518,6 +4614,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 return;
             }
             if (mode === 'review') {
+                if (await shouldAbortRun('before_review_emit')) return;
                 emitSuggestion(socketEmitter, cleanTenantId, {
                     chatId: cleanChatId,
                     moduleId: cleanModuleId,
@@ -4539,6 +4636,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
             });
             for (let index = 0; index < messages.length; index += 1) {
                 const msg = messages[index];
+                if (await shouldAbortRun(`before_autonomous_message_${index + 1}`)) return;
                 await waClient.sendMessage(cleanChatId, msg.text, {
                     quotedMessageId: msg.quotedMessageId || null,
                     metadata: {
@@ -4557,6 +4655,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
             if (hasCatalogProducts) {
                 try {
                     await sleep(1200);
+                    if (await shouldAbortRun('before_catalog_products')) return;
                     const catalogResult = await sendPattyCatalogProducts({
                         tenantId: cleanTenantId,
                         moduleId: cleanModuleId,
@@ -4578,6 +4677,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
             if (result.quoteRequest) {
                 try {
                     await sleep(1500);
+                    if (await shouldAbortRun('before_quote_request')) return;
                     await createAndSendPattyQuote({
                         tenantId: cleanTenantId,
                         moduleId: cleanModuleId,
@@ -4604,6 +4704,10 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 pattyChatDebounce.delete(debounceKey);
             }
             console.warn('[Patty] intervention skipped:', error?.message || error);
+        } finally {
+            if (pattyInFlight.get(debounceKey) === runToken) {
+                pattyInFlight.delete(debounceKey);
+            }
         }
     }, waitSeconds * 1000);
     pattyChatDebounce.set(debounceKey, timer);
