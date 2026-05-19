@@ -1249,6 +1249,15 @@ function hasExplicitQuoteQuantity(value = '') {
 function isAmbiguousQuoteReference(value = '') {
     const normalized = normalizeProductLookupKey(value);
     if (!normalized) return false;
+    return isDeicticProductReference(normalized)
+        || /\bme\s+interesa\b/.test(normalized)
+        || /\blo\s+quiero\b/.test(normalized)
+        || /\bla\s+quiero\b/.test(normalized);
+}
+
+function isDeicticProductReference(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized) return false;
     return normalized === 'este'
         || normalized === 'ese'
         || normalized === 'esa'
@@ -1256,9 +1265,6 @@ function isAmbiguousQuoteReference(value = '') {
         || normalized === 'eso'
         || /\b(este|ese|esa)\s+producto\b/.test(normalized)
         || /\b(esta|esa)\s+opcion\b/.test(normalized)
-        || /\bme\s+interesa\b/.test(normalized)
-        || /\blo\s+quiero\b/.test(normalized)
-        || /\bla\s+quiero\b/.test(normalized)
         || /\bel\s+primero\b/.test(normalized)
         || /\bla\s+primera\b/.test(normalized)
         || /\bel\s+segundo\b/.test(normalized)
@@ -3008,9 +3014,121 @@ async function getOriginContext(tenantId, moduleId, chatId) {
     return 'ORIGEN: Contacto directo';
 }
 
+function getCatalogProductFromReferenceMetadata(metadata = {}) {
+    const source = safeJsonObject(metadata);
+    const candidates = [
+        source.catalogProduct,
+        source.catalog_product,
+        source.product,
+        source.catalogItem,
+        source.catalog_item,
+        source.metadata?.catalogProduct,
+        source.metadata?.catalog_product
+    ];
+    return candidates.map((item) => safeJsonObject(item)).find((item) => (
+        text(item.title || item.name) || text(item.sku || item.item_id || item.itemId)
+    )) || {};
+}
+
+function summarizeQuotedMessageRow(row = {}) {
+    const orderPayload = safeJsonObject(row.order_payload);
+    const orderProducts = extractOrderPayloadProducts(orderPayload);
+    if (orderProducts.length) {
+        return {
+            type: 'cotizacion/pedido',
+            lines: orderProducts.slice(0, 8).map((item) => {
+                const sku = item.sku ? `[${item.sku}] ` : '';
+                const quantity = item.quantity ? ` x ${item.quantity}` : '';
+                const lineTotal = money(item.lineTotal);
+                const price = Number.isFinite(lineTotal) ? ` = S/ ${lineTotal.toFixed(2)}` : '';
+                return `- ${sku}${item.title}${quantity}${price}`;
+            })
+        };
+    }
+
+    const catalogProduct = getCatalogProductFromReferenceMetadata(row.metadata);
+    const catalogTitle = text(catalogProduct.title || catalogProduct.name);
+    const catalogSku = text(catalogProduct.sku || catalogProduct.item_id || catalogProduct.itemId).toUpperCase();
+    if (catalogTitle || catalogSku) {
+        return {
+            type: 'producto',
+            lines: [
+                catalogTitle ? `- Producto: ${catalogTitle}` : '',
+                catalogSku ? `- SKU: ${catalogSku}` : ''
+            ].filter(Boolean)
+        };
+    }
+
+    const body = text(row.body);
+    const messageType = lower(row.message_type || '');
+    const isMedia = Boolean(row.has_media) || ['image', 'video', 'document', 'audio'].includes(messageType);
+    if (isMedia) {
+        return {
+            type: messageType || 'imagen/adjunto',
+            lines: [body ? `- Caption: ${body.slice(0, 800)}` : '- Adjunto sin texto registrado']
+        };
+    }
+
+    if (body) {
+        return {
+            type: 'texto',
+            lines: [`- Texto: ${body.slice(0, 1000)}`]
+        };
+    }
+
+    return {
+        type: messageType || 'mensaje',
+        lines: ['- Sin contenido textual registrado']
+    };
+}
+
+function buildUnresolvedQuotedReferenceContext(lastText = '') {
+    if (!isDeicticProductReference(lastText)) return '';
+    return [
+        'EL CLIENTE MENCIONO "ESTE/ESE" PERO NO SE PUDO RESOLVER EL MENSAJE CITADO:',
+        'INSTRUCCION: Preguntale amablemente a que producto o mensaje se refiere antes de cotizar.',
+        'INSTRUCCION: Si falta cantidad, pregunta cuantas unidades desea antes de generar quoteRequest.'
+    ].join('\n');
+}
+
+async function getQuotedMessageReferenceContext(tenantId, moduleId, chatId, lastInboundRow = {}) {
+    const quotedMessageId = text(lastInboundRow?.quoted_message_id || lastInboundRow?.quotedMessageId || '');
+    const lastText = text(lastInboundRow?.body || '');
+    if (!quotedMessageId) return buildUnresolvedQuotedReferenceContext(lastText);
+
+    try {
+        const { rows } = await pgQuery(
+            `SELECT message_id, from_me, body, message_type, has_media, order_payload, metadata, created_at
+               FROM tenant_messages
+              WHERE tenant_id = $1
+                AND chat_id = $2
+                AND message_id = $3
+                AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($4))
+              ORDER BY created_at DESC
+              LIMIT 1`,
+            [tenantId, normalizeChatId(chatId), quotedMessageId, lower(moduleId)]
+        );
+        const row = rows?.[0] || null;
+        if (!row) return buildUnresolvedQuotedReferenceContext(lastText);
+        const summary = summarizeQuotedMessageRow(row);
+        return [
+            'EL CLIENTE RESPONDIO A ESTE MENSAJE:',
+            `  Tipo: ${summary.type}`,
+            `  MessageId: ${quotedMessageId}`,
+            '  Contenido:',
+            ...summary.lines.map((line) => `  ${line}`),
+            'INSTRUCCION: Usa esta referencia para entender "este", "ese", "este producto" o respuestas similares.',
+            'INSTRUCCION: Si vas a cotizar y el cliente no indico cantidad, pregunta cuantas unidades desea antes de generar quoteRequest.'
+        ].join('\n');
+    } catch (error) {
+        console.warn('[Patty] quoted message context skipped:', error?.message || error);
+        return buildUnresolvedQuotedReferenceContext(lastText);
+    }
+}
+
 async function getConversationContext(tenantId, moduleId, chatId) {
     const { rows } = await pgQuery(
-        `SELECT message_id, from_me, body, message_type, order_payload, created_at
+        `SELECT message_id, from_me, body, message_type, has_media, quoted_message_id, order_payload, metadata, created_at
            FROM tenant_messages
           WHERE tenant_id = $1
             AND chat_id = $2
@@ -3029,10 +3147,12 @@ async function getConversationContext(tenantId, moduleId, chatId) {
     });
     const lastInbound = [...rows].find((row) => row.from_me !== true && text(row.body));
     const recentOrder = rows.find((row) => row.order_payload && Object.keys(safeJsonObject(row.order_payload)).length > 0);
+    const quotedReferenceContext = await getQuotedMessageReferenceContext(tenantId, moduleId, chatId, lastInbound || {});
     return {
         lines,
         lastCustomerMessage: text(lastInbound?.body) || '',
         lastCustomerMessageId: text(lastInbound?.message_id) || '',
+        quotedReferenceContext,
         recentOrder: recentOrder?.order_payload || null
     };
 }
@@ -4027,6 +4147,8 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         quote || '',
         `ULTIMO MENSAJE DEL CLIENTE: ${latestCustomerMessage || 'Sin ultimo mensaje registrado.'}`,
         pendingBatchText ? `BLOQUE COMPLETO PENDIENTE DEL CLIENTE:\n${pendingBatchText}` : '',
+        conversation.quotedReferenceContext ? '\nREFERENCIA DEL MENSAJE RESPONDIDO:' : '',
+        conversation.quotedReferenceContext || '',
         relevantCatalogText ? '\nPRODUCTOS RELEVANTES PARA TU CONSULTA:' : '',
         relevantCatalogText,
         '',
@@ -4072,6 +4194,8 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '',
         'CONVERSACION RECIENTE:',
         lineList(conversation.lines),
+        conversation.quotedReferenceContext ? '\nREFERENCIA DEL MENSAJE RESPONDIDO:' : '',
+        conversation.quotedReferenceContext || '',
         pendingInboundText ? '\nMENSAJES PENDIENTES DE RESPUESTA:' : '',
         pendingInboundText,
         recentOrder ? `\n${recentOrder}` : '',
