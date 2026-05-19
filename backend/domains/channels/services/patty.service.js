@@ -2461,12 +2461,14 @@ function buildUnavailablePaymentResponse(zoneDecision = {}, summary = {}, issue 
     if (mentionCount > 1) {
         return [
             `Te entiendo. Para ${locationLabel} todavia no tenemos ${unavailableText}.`,
-            `Lo manejamos con ${modalityText}; puedes pagar con ${paymentText}.`
+            `Lo manejamos con ${modalityText}; puedes pagar con ${paymentText}.`,
+            'Si te parece, dime que productos necesitas y te ayudo a armar tu pedido.'
         ].join('\n');
     }
     return [
         `Por ahora para ${locationLabel} trabajamos con ${modalityText}.`,
-        `No tenemos ${unavailableText} en esa zona; puedes pagar con ${paymentText}.`
+        `No tenemos ${unavailableText} en esa zona; puedes pagar con ${paymentText}.`,
+        'Si deseas, seguimos con tu pedido y te ayudo a elegir lo que necesitas.'
     ].join('\n');
 }
 
@@ -3083,6 +3085,13 @@ async function getPendingInboundMessagesContext(tenantId, moduleId, chatId) {
     try {
         const ordered = await getPendingInboundRowsSinceLastPatty(tenantId, moduleId, chatId, 5);
         const ids = ordered.map((row) => text(row.message_id)).filter(Boolean);
+        const messages = ordered
+            .map((row) => ({
+                messageId: text(row.message_id),
+                body: text(row.body).replace(/\s+/g, ' '),
+                createdAt: row.created_at || null
+            }))
+            .filter((row) => row.body);
         const lines = ordered
             .map((row) => {
                 const messageId = text(row.message_id);
@@ -3090,10 +3099,22 @@ async function getPendingInboundMessagesContext(tenantId, moduleId, chatId) {
                 return messageId && body ? `  [${messageId}] "${body.slice(0, 240)}"` : '';
             })
             .filter(Boolean);
-        return { lines, ids };
+        const combinedText = messages
+            .map((row) => row.body)
+            .filter(Boolean)
+            .join('\n');
+        const latest = messages[messages.length - 1] || null;
+        return {
+            lines,
+            ids,
+            messages,
+            combinedText,
+            latestText: latest?.body || '',
+            latestId: latest?.messageId || ''
+        };
     } catch (error) {
         console.warn('[Patty] pending inbound context skipped:', error?.message || error);
-        return { lines: [], ids: [] };
+        return { lines: [], ids: [], messages: [], combinedText: '', latestText: '', latestId: '' };
     }
 }
 
@@ -3833,20 +3854,24 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         getActiveQuoteContext(cleanTenantId, cleanModuleId, cleanChatId),
         getRecentMetaCatalogOrderContext(cleanTenantId, cleanModuleId, cleanChatId)
     ]);
+    const pendingBatchText = text(pendingInbound.combinedText || '');
+    const latestCustomerMessage = text(pendingInbound.latestText || conversation.lastCustomerMessage || '');
+    const effectiveCustomerMessage = pendingBatchText || latestCustomerMessage || conversation.lastCustomerMessage || '';
+    const latestCustomerMessageId = text(pendingInbound.latestId || conversation.lastCustomerMessageId || '');
     const recentConversationText = [
         ...(Array.isArray(conversation.lines) ? conversation.lines : []),
-        conversation.lastCustomerMessage || ''
+        effectiveCustomerMessage || ''
     ].join('\n');
     const [catalog, zoneDecision, greetingInstruction] = await Promise.all([
-        getCatalogContext(cleanTenantId, recentConversationText, conversation.lastCustomerMessage || ''),
-        buildZoneDecision(cleanTenantId, recentConversationText, conversation.lastCustomerMessage || '', {
+        getCatalogContext(cleanTenantId, recentConversationText, effectiveCustomerMessage || latestCustomerMessage || ''),
+        buildZoneDecision(cleanTenantId, recentConversationText, latestCustomerMessage || effectiveCustomerMessage || '', {
             chatId: cleanChatId,
             scopeModuleId: cleanModuleId,
-            sourceMessageId: conversation.lastCustomerMessageId || ''
+            sourceMessageId: latestCustomerMessageId || ''
         }),
-        getGreetingInstructionContext(cleanTenantId, cleanModuleId, cleanChatId, conversation.lastCustomerMessage || '')
+        getGreetingInstructionContext(cleanTenantId, cleanModuleId, cleanChatId, latestCustomerMessage || effectiveCustomerMessage || '')
     ]);
-    const zones = await getZonesContext(cleanTenantId, recentConversationText, zoneDecision, conversation.lastCustomerMessage || '');
+    const zones = await getZonesContext(cleanTenantId, recentConversationText, zoneDecision, latestCustomerMessage || effectiveCustomerMessage || '');
     const labels = await getCustomerLabelsContext(cleanTenantId, customer.customerId);
     const recentOrder = formatOrderContext(conversation.recentOrder);
     const moduleName = text(moduleConfig?.name || moduleConfig?.moduleName || moduleConfig?.module_name || cleanModuleId);
@@ -3866,16 +3891,16 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     const zonesText = lineList(zones);
     const hasDetectedZone = (Array.isArray(zones) ? zones : []).some((entry) => text(entry).startsWith('ZONA DETECTADA PARA ESTE CLIENTE:'));
     const antiHallucinationGuard = buildAntiHallucinationGuardResponse({
-        lastMessage: conversation.lastCustomerMessage || '',
+        lastMessage: latestCustomerMessage || effectiveCustomerMessage || '',
         conversationLines: conversation.lines,
         zoneDecision
     });
     const rawDeterministicResponse = antiHallucinationGuard?.response
-        || buildDeterministicDeliveryPaymentResponse(zoneDecision, conversation.lastCustomerMessage || '', {
+        || buildDeterministicDeliveryPaymentResponse(zoneDecision, latestCustomerMessage || effectiveCustomerMessage || '', {
             conversationLines: conversation.lines
         });
     const deterministicNeedsAdvisorReason = antiHallucinationGuard?.needsAdvisorReason
-        || (shouldUseKnownLocationNoZoneResponse(conversation.lastCustomerMessage || '', zoneDecision)
+        || (shouldUseKnownLocationNoZoneResponse(latestCustomerMessage || effectiveCustomerMessage || '', zoneDecision)
         ? 'sin_cobertura_zona'
         : '');
     const deterministicSource = antiHallucinationGuard?.source
@@ -3910,7 +3935,8 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         hasDetectedZone ? zonesText : '',
         quote ? '\nCOTIZACION / PEDIDO ACTUAL:' : '',
         quote || '',
-        `ULTIMO MENSAJE DEL CLIENTE: ${conversation.lastCustomerMessage || 'Sin ultimo mensaje registrado.'}`,
+        `ULTIMO MENSAJE DEL CLIENTE: ${latestCustomerMessage || 'Sin ultimo mensaje registrado.'}`,
+        pendingBatchText ? `BLOQUE COMPLETO PENDIENTE DEL CLIENTE:\n${pendingBatchText}` : '',
         relevantCatalogText ? '\nPRODUCTOS RELEVANTES PARA TU CONSULTA:' : '',
         relevantCatalogText,
         '',
@@ -4012,7 +4038,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         deterministicResponse,
         deterministicNeedsAdvisorReason,
         deterministicSource,
-        lastCustomerMessage: conversation.lastCustomerMessage || 'Continua la conversacion con el cliente.'
+        lastCustomerMessage: effectiveCustomerMessage || 'Continua la conversacion con el cliente.'
     };
 }
 
