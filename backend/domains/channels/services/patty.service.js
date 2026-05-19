@@ -35,6 +35,7 @@ const DEFAULT_ASSISTANT_NAME = 'Patty';
 const DEFAULT_WAIT_SECONDS = 15;
 const MIN_WAIT_SECONDS = 5;
 const MAX_WAIT_SECONDS = 300;
+const LOCATION_DISAMBIGUATION_TTL_MS = 24 * 60 * 60 * 1000;
 const PROGRAMMED_CHANGE_RESPONSE = 'Entendido, en un momento te confirmamos si podemos agregar eso a tu pedido 🙌';
 const pattyChatDebounce = new Map();
 const PATTY_UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || path.resolve(__dirname, '../../../uploads')).trim());
@@ -1172,6 +1173,14 @@ function formatCustomerLocationLabel(location = {}, fallback = '') {
         .join(' ');
 }
 
+function formatLocationOptionPart(value = '') {
+    return text(value)
+        .toLowerCase()
+        .split(/\s+/)
+        .map((part) => part ? `${part.charAt(0).toUpperCase()}${part.slice(1)}` : '')
+        .join(' ');
+}
+
 function formatAmbiguousLocationCandidates(location = {}) {
     const candidates = Array.isArray(location?.candidates) ? location.candidates : [];
     if (!candidates.length) return '  - Sin candidatos detallados en el maestro geografico';
@@ -1189,6 +1198,191 @@ function formatAmbiguousLocationCandidates(location = {}) {
             return `  - ${typeLabel}: ${parts.join(', ') || candidate.name || 'Ubicacion'}`;
         })
         .join('\n');
+}
+
+function normalizeLocationCandidate(candidate = {}) {
+    return {
+        district: text(candidate.district || (candidate.type === 'district' ? candidate.name : '')),
+        province: text(candidate.province || (candidate.type === 'province' ? candidate.name : '')),
+        department: text(candidate.department || (candidate.type === 'department' ? candidate.name : '')),
+        locationId: text(candidate.locationId || candidate.location_id || candidate.id || ''),
+        type: text(candidate.type || ''),
+        name: text(candidate.name || ''),
+        ubigeo: text(candidate.ubigeo || '')
+    };
+}
+
+function normalizeLocationCandidates(candidates = []) {
+    return (Array.isArray(candidates) ? candidates : [])
+        .map(normalizeLocationCandidate)
+        .filter((candidate) => candidate.district || candidate.province || candidate.department || candidate.name)
+        .slice(0, 12);
+}
+
+function buildLocationFromCandidate(candidate = {}, matchedText = '') {
+    const clean = normalizeLocationCandidate(candidate);
+    return {
+        district: clean.district || null,
+        province: clean.province || null,
+        department: clean.department || null,
+        confidence: 'exact',
+        matchedType: clean.district ? 'district' : (clean.province ? 'province' : (clean.department ? 'department' : null)),
+        matchedText: text(matchedText || clean.name || clean.district || clean.province || clean.department) || null,
+        locationId: clean.locationId || null,
+        ubigeo: clean.ubigeo || null,
+        candidates: []
+    };
+}
+
+function formatDisambiguationCandidateLabel(candidate = {}) {
+    const clean = normalizeLocationCandidate(candidate);
+    const district = formatLocationOptionPart(clean.district || clean.name);
+    const province = formatLocationOptionPart(clean.province);
+    const department = formatLocationOptionPart(clean.department);
+    const context = Array.from(new Set([province, department].filter(Boolean))).join(', ');
+    if (district && context) return `${district} en ${context}`;
+    if (province && department && province !== department) return `${province}, ${department}`;
+    return district || province || department || 'esa ubicacion';
+}
+
+function buildLocationDisambiguationQuestion(candidates = []) {
+    const cleanCandidates = normalizeLocationCandidates(candidates);
+    if (cleanCandidates.length === 2) {
+        return `¿Te refieres a ${formatDisambiguationCandidateLabel(cleanCandidates[0])} o a ${formatDisambiguationCandidateLabel(cleanCandidates[1])}? 😊`;
+    }
+    return '¿En que provincia o departamento estas? Asi te confirmo si tenemos cobertura 😊';
+}
+
+function isLocationDisambiguationTopicChange(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized) return false;
+    return /\b(precio|precios|producto|productos|cuanto cuesta|quiero|cotiza|cotizame|tienes|tienen|detergente|lavavajillas|informacion|catalogo)\b/.test(normalized);
+}
+
+function candidateMatchKeys(candidate = {}) {
+    const clean = normalizeLocationCandidate(candidate);
+    return [
+        clean.district,
+        clean.province,
+        clean.department,
+        clean.name
+    ]
+        .map(normalizeLocationLookup)
+        .filter((item) => item && item.length >= 4);
+}
+
+function matchesLocationCandidateAnswer(answer = '', candidate = {}) {
+    const normalizedAnswer = normalizeLocationLookup(answer);
+    if (!normalizedAnswer) return false;
+    return candidateMatchKeys(candidate).some((key) => (
+        normalizedAnswer === key
+        || normalizedAnswer.includes(key)
+        || key.includes(normalizedAnswer)
+    ));
+}
+
+function resolvePendingLocationCandidate(answer = '', candidates = []) {
+    const matches = normalizeLocationCandidates(candidates)
+        .filter((candidate) => matchesLocationCandidateAnswer(answer, candidate));
+    if (matches.length === 1) return { status: 'resolved', candidate: matches[0], matches };
+    if (matches.length > 1) return { status: 'ambiguous', candidate: null, matches };
+    return { status: 'none', candidate: null, matches: [] };
+}
+
+function normalizePendingLocationDisambiguation(value = {}) {
+    const source = safeJsonObject(value);
+    const candidates = normalizeLocationCandidates(source.candidates);
+    if (!candidates.length) return null;
+    return {
+        matchedText: text(source.matchedText || source.matched_text || ''),
+        sourceMessageId: text(source.sourceMessageId || source.source_message_id || ''),
+        createdAt: text(source.createdAt || source.created_at || ''),
+        expiresAt: text(source.expiresAt || source.expires_at || ''),
+        candidates,
+        intent: safeJsonObject(source.intent)
+    };
+}
+
+async function getPendingLocationDisambiguation(tenantId, chatId, scopeModuleId = '') {
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const cleanChatId = normalizeChatId(chatId);
+    const cleanScopeModuleId = lower(scopeModuleId);
+    if (!cleanChatId) return null;
+    try {
+        const current = await chatCommercialStatusService.getChatCommercialStatus(cleanTenantId, {
+            chatId: cleanChatId,
+            scopeModuleId: cleanScopeModuleId
+        });
+        const pending = normalizePendingLocationDisambiguation(current?.metadata?.pendingLocationDisambiguation);
+        if (!pending) return null;
+        const expiresAt = pending.expiresAt ? new Date(pending.expiresAt).getTime() : NaN;
+        if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+            await clearPendingLocationDisambiguation(cleanTenantId, cleanChatId, cleanScopeModuleId, 'expired');
+            console.log('[Patty] location disambiguation expired', {
+                tenantId: cleanTenantId,
+                chatId: cleanChatId,
+                scopeModuleId: cleanScopeModuleId
+            });
+            return null;
+        }
+        console.log('[Patty] location disambiguation pending found', {
+            tenantId: cleanTenantId,
+            chatId: cleanChatId,
+            scopeModuleId: cleanScopeModuleId,
+            matchedText: pending.matchedText,
+            candidates: pending.candidates.length
+        });
+        return pending;
+    } catch (error) {
+        console.warn('[Patty] location disambiguation lookup skipped:', error?.message || error);
+        return null;
+    }
+}
+
+async function setPendingLocationDisambiguation(tenantId, chatId, scopeModuleId, data = {}) {
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const cleanChatId = normalizeChatId(chatId);
+    const cleanScopeModuleId = lower(scopeModuleId);
+    const candidates = normalizeLocationCandidates(data.candidates);
+    if (!cleanChatId || !candidates.length) return null;
+    const now = new Date();
+    const payload = {
+        matchedText: text(data.matchedText || ''),
+        sourceMessageId: text(data.sourceMessageId || ''),
+        createdAt: text(data.createdAt || '') || now.toISOString(),
+        expiresAt: text(data.expiresAt || '') || new Date(now.getTime() + LOCATION_DISAMBIGUATION_TTL_MS).toISOString(),
+        candidates,
+        intent: safeJsonObject(data.intent)
+    };
+    await chatCommercialStatusService.upsertChatCommercialStatus(cleanTenantId, {
+        chatId: cleanChatId,
+        scopeModuleId: cleanScopeModuleId,
+        source: 'patty',
+        metadata: {
+            pendingLocationDisambiguation: payload
+        }
+    });
+    return payload;
+}
+
+async function clearPendingLocationDisambiguation(tenantId, chatId, scopeModuleId = '', reason = '') {
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const cleanChatId = normalizeChatId(chatId);
+    const cleanScopeModuleId = lower(scopeModuleId);
+    if (!cleanChatId) return;
+    await chatCommercialStatusService.upsertChatCommercialStatus(cleanTenantId, {
+        chatId: cleanChatId,
+        scopeModuleId: cleanScopeModuleId,
+        source: 'patty',
+        metadata: {
+            pendingLocationDisambiguation: null
+        }
+    });
+    console.log(`[Patty] location disambiguation cleared: ${reason || 'cleared'}`, {
+        tenantId: cleanTenantId,
+        chatId: cleanChatId,
+        scopeModuleId: cleanScopeModuleId
+    });
 }
 
 function hasLocationMentionIntent(value = '') {
@@ -1231,9 +1425,88 @@ async function resolveLocationForZoneDecision(recentConversationText = '', lastC
     };
 }
 
-async function buildZoneDecision(tenantId, recentConversationText = '', lastCustomerMessage = '') {
-    const rules = await tenantZoneRulesService.listZoneRules(tenantId, { includeInactive: false });
+async function buildZoneDecision(tenantId, recentConversationText = '', lastCustomerMessage = '', options = {}) {
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const cleanChatId = normalizeChatId(options.chatId || '');
+    const cleanScopeModuleId = lower(options.scopeModuleId || options.moduleId || '');
+    const rules = await tenantZoneRulesService.listZoneRules(cleanTenantId, { includeInactive: false });
     const sourceRules = Array.isArray(rules) ? rules : [];
+    const pending = cleanChatId
+        ? await getPendingLocationDisambiguation(cleanTenantId, cleanChatId, cleanScopeModuleId)
+        : null;
+    if (pending) {
+        if (isLocationDisambiguationTopicChange(lastCustomerMessage)) {
+            console.log('[Patty] location disambiguation topic change detected', {
+                tenantId: cleanTenantId,
+                chatId: cleanChatId,
+                scopeModuleId: cleanScopeModuleId,
+                message: text(lastCustomerMessage).slice(0, 120)
+            });
+            await clearPendingLocationDisambiguation(cleanTenantId, cleanChatId, cleanScopeModuleId, 'topic_change');
+        } else {
+            const resolution = resolvePendingLocationCandidate(lastCustomerMessage, pending.candidates);
+            if (resolution.status === 'resolved') {
+                const location = buildLocationFromCandidate(resolution.candidate, pending.matchedText);
+                const zoneMatch = geoLocationService.resolveZoneFromLocation(location, sourceRules);
+                await clearPendingLocationDisambiguation(cleanTenantId, cleanChatId, cleanScopeModuleId, 'resolved');
+                console.log('[Patty] location disambiguation resolved:', formatResolvedLocation(location), {
+                    tenantId: cleanTenantId,
+                    chatId: cleanChatId,
+                    scopeModuleId: cleanScopeModuleId,
+                    matchedZone: zoneMatch?.rule?.name || null
+                });
+                return {
+                    rules: sourceRules,
+                    location,
+                    locationSource: 'pending_disambiguation',
+                    locationLookupText: text(lastCustomerMessage),
+                    zoneRule: zoneMatch?.rule || null,
+                    matchedLevel: zoneMatch?.matchedLevel || null,
+                    locationMentioned: true,
+                    locationRecognized: true,
+                    locationAmbiguous: false,
+                    forceDeterministicDeliveryPayment: Boolean(zoneMatch?.rule),
+                    deliveryPaymentIntent: safeJsonObject(pending.intent),
+                    disambiguationResolved: true
+                };
+            }
+
+            const renewed = await setPendingLocationDisambiguation(cleanTenantId, cleanChatId, cleanScopeModuleId, {
+                ...pending,
+                expiresAt: new Date(Date.now() + LOCATION_DISAMBIGUATION_TTL_MS).toISOString()
+            });
+            const candidates = renewed?.candidates || pending.candidates;
+            const deterministicResponseOverride = resolution.status === 'ambiguous'
+                ? buildLocationDisambiguationQuestion(candidates)
+                : 'No logro ubicar eso con certeza. ¿Puedes indicarme tu provincia o departamento? 😊';
+            console.log('[Patty] location disambiguation asked:', candidates.map(formatDisambiguationCandidateLabel), {
+                tenantId: cleanTenantId,
+                chatId: cleanChatId,
+                scopeModuleId: cleanScopeModuleId
+            });
+            return {
+                rules: sourceRules,
+                location: {
+                    district: null,
+                    province: null,
+                    department: null,
+                    confidence: 'ambiguous',
+                    matchedType: null,
+                    matchedText: pending.matchedText,
+                    candidates
+                },
+                locationSource: 'pending_disambiguation',
+                locationLookupText: text(lastCustomerMessage),
+                zoneRule: null,
+                matchedLevel: null,
+                locationMentioned: true,
+                locationRecognized: false,
+                locationAmbiguous: true,
+                deterministicResponseOverride
+            };
+        }
+    }
+
     const resolvedLocation = await resolveLocationForZoneDecision(recentConversationText, lastCustomerMessage);
     const location = resolvedLocation.location;
     const zoneMatch = geoLocationService.resolveZoneFromLocation(location, sourceRules);
@@ -1241,6 +1514,25 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
     const locationMentionedText = resolvedLocation.source === 'last_message'
         ? lastCustomerMessage
         : recentConversationText;
+    const locationAmbiguous = confidence === 'ambiguous';
+    let deterministicResponseOverride = '';
+    if (cleanChatId && resolvedLocation.source === 'last_message' && locationAmbiguous) {
+        const candidates = normalizeLocationCandidates(location?.candidates);
+        if (candidates.length) {
+            await setPendingLocationDisambiguation(cleanTenantId, cleanChatId, cleanScopeModuleId, {
+                matchedText: text(location?.matchedText || lastCustomerMessage),
+                sourceMessageId: text(options.sourceMessageId || ''),
+                candidates,
+                intent: getDeliveryPaymentIntent(lastCustomerMessage)
+            });
+            deterministicResponseOverride = buildLocationDisambiguationQuestion(candidates);
+            console.log('[Patty] location disambiguation asked:', candidates.map(formatDisambiguationCandidateLabel), {
+                tenantId: cleanTenantId,
+                chatId: cleanChatId,
+                scopeModuleId: cleanScopeModuleId
+            });
+        }
+    }
     return {
         rules: sourceRules,
         location,
@@ -1250,7 +1542,8 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
         matchedLevel: zoneMatch?.matchedLevel || null,
         locationMentioned: hasLocationMentionIntent(locationMentionedText),
         locationRecognized: ['exact', 'partial'].includes(confidence),
-        locationAmbiguous: confidence === 'ambiguous'
+        locationAmbiguous,
+        deterministicResponseOverride
     };
 }
 
@@ -1533,12 +1826,19 @@ function getDeliveryPaymentIntent(value = '') {
 }
 
 function buildDeterministicDeliveryPaymentResponse(zoneDecision = {}, lastCustomerMessage = '') {
-    if (!isPureDeliveryOrPaymentQuestion(lastCustomerMessage)) return null;
+    if (zoneDecision?.deterministicResponseOverride) return zoneDecision.deterministicResponseOverride;
+    const forceResponse = zoneDecision?.forceDeterministicDeliveryPayment === true;
+    if (!forceResponse && !isPureDeliveryOrPaymentQuestion(lastCustomerMessage)) return null;
     const zoneRule = zoneDecision?.zoneRule || null;
     if (zoneRule) {
         const summary = buildZoneShippingSummary(zoneRule);
         const locationLabel = formatCustomerLocationLabel(zoneDecision?.location || {}, summary.zoneName);
-        const { wantsDelivery, wantsPayment } = getDeliveryPaymentIntent(lastCustomerMessage);
+        const storedIntent = safeJsonObject(zoneDecision?.deliveryPaymentIntent);
+        const fallbackIntent = getDeliveryPaymentIntent(lastCustomerMessage);
+        const wantsPayment = storedIntent.wantsPayment === true || fallbackIntent.wantsPayment === true;
+        const wantsDelivery = forceResponse
+            ? (storedIntent.wantsDelivery !== false || !wantsPayment)
+            : fallbackIntent.wantsDelivery === true;
         const responseLines = [];
         if (wantsDelivery || !wantsPayment) {
             const deliveryLead = summary.shippingType === 'courier'
@@ -1845,6 +2145,7 @@ async function getConversationContext(tenantId, moduleId, chatId) {
     return {
         lines,
         lastCustomerMessage: text(lastInbound?.body) || '',
+        lastCustomerMessageId: text(lastInbound?.message_id) || '',
         recentOrder: recentOrder?.order_payload || null
     };
 }
@@ -2516,7 +2817,11 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     ].join('\n');
     const [catalog, zoneDecision] = await Promise.all([
         getCatalogContext(cleanTenantId, recentConversationText, conversation.lastCustomerMessage || ''),
-        buildZoneDecision(cleanTenantId, recentConversationText, conversation.lastCustomerMessage || '')
+        buildZoneDecision(cleanTenantId, recentConversationText, conversation.lastCustomerMessage || '', {
+            chatId: cleanChatId,
+            scopeModuleId: cleanModuleId,
+            sourceMessageId: conversation.lastCustomerMessageId || ''
+        })
     ]);
     const zones = await getZonesContext(cleanTenantId, recentConversationText, zoneDecision, conversation.lastCustomerMessage || '');
     const labels = await getCustomerLabelsContext(cleanTenantId, customer.customerId);
