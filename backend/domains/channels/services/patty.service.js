@@ -1872,9 +1872,17 @@ function parseFirstDetectedZoneContext(zones = []) {
     };
 }
 
+function isCreditOrInstallmentQuestion(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized) return false;
+    return /\b(credito|creditos|cuota|cuotas|plazo|plazos|financiamiento|fiado|resto|abono|abonos|adelanto|debe|debo)\b/.test(normalized)
+        || normalized.includes('fin de mes');
+}
+
 function isPureDeliveryOrPaymentQuestion(value = '') {
     const normalized = normalizeProductLookupKey(value);
     if (!normalized) return false;
+    if (isCreditOrInstallmentQuestion(normalized)) return false;
     const hasDeliveryOrPayment = /\b(envio|delivery|entrega|demora|demorar|tiempo|pago|pagar|pagos|yape|plin|transferencia|tarjeta|domicilio)\b/.test(normalized)
         || normalized.includes('forma de pago')
         || normalized.includes('formas de pago')
@@ -1897,6 +1905,9 @@ function isPureDeliveryOrPaymentQuestion(value = '') {
 
 function getDeliveryPaymentIntent(value = '') {
     const normalized = normalizeProductLookupKey(value);
+    if (isCreditOrInstallmentQuestion(normalized)) {
+        return { wantsDelivery: false, wantsPayment: false };
+    }
     const wantsPayment = /\b(pago|pagar|pagos|yape|plin|transferencia|tarjeta)\b/.test(normalized)
         || normalized.includes('forma de pago')
         || normalized.includes('formas de pago')
@@ -3003,6 +3014,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '- IMPORTANTE: Solo genera quoteRequest cuando el cliente confirma EXPLICITAMENTE que productos quiere cotizar. "Si", "claro", "ok" o "dale" como respuesta a opciones o informacion NO confirma cotizacion; significa que quiere mas informacion. Cotiza solo con frases como "cotizame eso", "quiero esos productos", "dame el precio de todo" o "haz el pedido".',
         '- Cuando el cliente mencione su ubicacion, busca en las zonas de cobertura y responde con las opciones de envio y metodos de pago disponibles para esa zona. Si la ubicacion no esta en cobertura, dilo claramente.',
         '- Cuando el cliente indique su ubicacion, identifica su zona de cobertura y menciona el costo de envio y metodos de pago disponibles para esa zona.',
+        '- Si el cliente pregunta por credito, cuotas o pagos a plazos, responde empaticamente que Lavitat no ofrece credito directo. Si el cliente insiste, activa needs_advisor con reason: "cliente_solicita_credito" para que un asesor lo atienda.',
         '- No digas "Sugerencia", no expliques tu razonamiento y no inventes datos.',
         '- Si falta informacion, pregunta de forma breve y amable.',
         '- Mantén el tono comercial, cercano y natural.'
@@ -3069,6 +3081,7 @@ async function generatePattySuggestion(tenantId, moduleId, chatId, prebuiltConte
             'Si el estado es PROGRAMADO y el cliente pide cambios, responde SOLO: "Entendido, en un momento te confirmamos si podemos agregar eso a tu pedido 🙌". NO incluyas lista de productos ni precios. NO generes quoteRequest.',
             'Para quoteRequest usa el title exacto del catalogo. No uses SKUs inventados; si agregas sku, debe existir exactamente entre corchetes en el catalogo.',
             'IMPORTANTE: Solo genera quoteRequest cuando el cliente confirma EXPLICITAMENTE que productos quiere cotizar. "Si", "claro", "ok" o "dale" como respuesta a opciones o informacion NO confirma cotizacion; significa que quiere mas informacion. Cotiza solo con frases como "cotizame eso", "quiero esos productos", "dame el precio de todo" o "haz el pedido".',
+            'Si el cliente pregunta por credito, cuotas o pagos a plazos, responde empaticamente que Lavitat no ofrece credito directo. Si insiste, solicita apoyo de asesor con reason cliente_solicita_credito.',
             'Omite quoteRequest si no corresponde generar cotizacion.'
         ].join('\n'),
         null,
@@ -3440,7 +3453,15 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 });
                 return;
             }
-            const hasCatalogProducts = Array.isArray(result.catalogProducts) && result.catalogProducts.length > 0;
+            const skipCatalogProducts = Boolean(
+                prebuiltContext?.deterministicResponse
+                || result?.deterministicResponse
+                || isPureDeliveryOrPaymentQuestion(lastCustomerMessage)
+            );
+            const catalogProducts = skipCatalogProducts
+                ? []
+                : (Array.isArray(result.catalogProducts) ? result.catalogProducts : []);
+            const hasCatalogProducts = catalogProducts.length > 0;
             if (!messages.length && !result.quoteRequest && !hasCatalogProducts) {
                 console.log('[Patty] skipped: empty suggestion', {
                     tenantId: cleanTenantId,
@@ -3456,7 +3477,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                     suggestion: result.suggestion,
                     messages,
                     quoteRequest: result.quoteRequest || null,
-                    catalogProducts: Array.isArray(result.catalogProducts) ? result.catalogProducts : [],
+                    catalogProducts,
                     assistantName,
                     timestamp: Date.now()
                 });
@@ -3493,14 +3514,14 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                         tenantId: cleanTenantId,
                         moduleId: cleanModuleId,
                         chatId: cleanChatId,
-                        skus: result.catalogProducts,
+                        skus: catalogProducts,
                         assistantName
                     });
                     console.log('[Patty] catalog products sent', {
                         tenantId: cleanTenantId,
                         moduleId: cleanModuleId,
                         chatId: cleanChatId,
-                        requested: result.catalogProducts,
+                        requested: catalogProducts,
                         sent: catalogResult.sent
                     });
                 } catch (catalogError) {
