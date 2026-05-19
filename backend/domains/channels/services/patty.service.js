@@ -1308,6 +1308,49 @@ function isLocationDisambiguationTopicChange(value = '') {
     return /\b(precio|precios|producto|productos|cuanto cuesta|quiero|cotiza|cotizame|tienes|tienen|detergente|lavavajillas|informacion|catalogo)\b/.test(normalized);
 }
 
+const NEW_LOCATION_PATTERNS = [
+    /\by\s+en\b/i,
+    /\by\s+para\b/i,
+    /\bque\s+tal\s+en\b/i,
+    /\bllegan\s+a\b/i,
+    /\benvio\s+a\b/i,
+    /\bdelivery\s+a\b/i,
+    /\bestoy\s+en\b/i,
+    /\bvivo\s+en\b/i,
+    /\bsoy\s+de\b/i,
+    /\bpara\b.*\?/i,
+    /\btambien\s+en\b/i,
+    /\bahora\s+en\b/i
+];
+
+function looksLikeNewLocationQuestion(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized) return false;
+    return NEW_LOCATION_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+function isSubdistrictClarification(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized) return false;
+    return /\b(urbanizacion|urb|barrio|sector|zona|centro\s+poblado|caserio|anexo|referencia|asentamiento|aa\s*hh|habilitacion)\b/.test(normalized);
+}
+
+function extractSubdistrictClarificationLabel(value = '') {
+    const clean = text(value).replace(/[¿?!.]+$/g, '').trim();
+    if (!clean) return 'ese lugar';
+    const keyword = '(?:urbanizaci[oó]n|urb\\.?|barrio|sector|zona|centro\\s+poblado|caser[ií]o|anexo|referencia|asentamiento|aa\\.?hh\\.?|habilitaci[oó]n)';
+    const beforeKeyword = clean.match(new RegExp(`^(.+?)\\s+(?:es|queda|esta|está|es una|es un)\\s+(?:una?\\s+)?${keyword}\\b`, 'i'));
+    if (beforeKeyword?.[1]) return text(beforeKeyword[1]) || 'ese lugar';
+    const afterPrep = clean.match(new RegExp(`\\b(?:en|de|para|a)\\s+(.+?)(?:\\s+(?:es|queda|esta|está)\\s+(?:una?\\s+)?${keyword}\\b|$)`, 'i'));
+    if (afterPrep?.[1]) return text(afterPrep[1]) || 'ese lugar';
+    return clean.length <= 60 ? clean : 'ese lugar';
+}
+
+function buildSubdistrictClarificationResponse(value = '') {
+    const label = extractSubdistrictClarificationLabel(value);
+    return `Entendido, ${label} puede ser una urbanizacion o sector. ¿Me indicas el distrito o ciudad donde esta ubicado? Así verifico si tenemos cobertura 😊`;
+}
+
 function candidateMatchKeys(candidate = {}) {
     const clean = normalizeLocationCandidate(candidate);
     return [
@@ -1519,7 +1562,15 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
         ? await getPendingLocationDisambiguation(cleanTenantId, cleanChatId, cleanScopeModuleId)
         : null;
     if (pending) {
-        if (isLocationDisambiguationTopicChange(lastCustomerMessage)) {
+        if (looksLikeNewLocationQuestion(lastCustomerMessage)) {
+            console.log('[Patty] disambiguation cleared: new location', {
+                tenantId: cleanTenantId,
+                chatId: cleanChatId,
+                scopeModuleId: cleanScopeModuleId,
+                message: text(lastCustomerMessage).slice(0, 120)
+            });
+            await clearPendingLocationDisambiguation(cleanTenantId, cleanChatId, cleanScopeModuleId, 'new_location_detected');
+        } else if (isLocationDisambiguationTopicChange(lastCustomerMessage)) {
             console.log('[Patty] location disambiguation topic change detected', {
                 tenantId: cleanTenantId,
                 chatId: cleanChatId,
@@ -1566,7 +1617,9 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
             const candidates = renewed?.candidates || pending.candidates;
             const deterministicResponseOverride = resolution.status === 'narrowed'
                 ? buildLocationDisambiguationQuestion(candidates, sourceRules)
-                : 'No logro identificar esa ubicación entre las opciones. ¿Puedes ser más específico?';
+                : (isSubdistrictClarification(lastCustomerMessage)
+                    ? buildSubdistrictClarificationResponse(lastCustomerMessage)
+                    : 'No logro identificar esa ubicacion entre las opciones. ¿Puedes ser mas especifico?');
             console.log('[Patty] location disambiguation asked:', candidates.map(formatDisambiguationCandidateLabel), {
                 tenantId: cleanTenantId,
                 chatId: cleanChatId,
@@ -1604,6 +1657,8 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
         : recentConversationText;
     const locationAmbiguous = confidence === 'ambiguous';
     let deterministicResponseOverride = '';
+    const subdistrictClarification = isSubdistrictClarification(lastCustomerMessage);
+    const locationMentioned = hasLocationMentionIntent(locationMentionedText) || subdistrictClarification;
     if (cleanChatId && resolvedLocation.source === 'last_message' && locationAmbiguous) {
         const candidates = normalizeLocationCandidates(location?.candidates);
         if (candidates.length) {
@@ -1622,6 +1677,13 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
             });
         }
     }
+    if (!deterministicResponseOverride
+        && !locationAmbiguous
+        && !['exact', 'partial'].includes(confidence)
+        && locationMentioned
+        && subdistrictClarification) {
+        deterministicResponseOverride = buildSubdistrictClarificationResponse(lastCustomerMessage);
+    }
     return {
         rules: sourceRules,
         location,
@@ -1629,7 +1691,7 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
         locationLookupText: resolvedLocation.lookupText,
         zoneRule: zoneMatch?.rule || null,
         matchedLevel: zoneMatch?.matchedLevel || null,
-        locationMentioned: hasLocationMentionIntent(locationMentionedText),
+        locationMentioned,
         locationRecognized: ['exact', 'partial'].includes(confidence),
         locationAmbiguous,
         deterministicResponseOverride
