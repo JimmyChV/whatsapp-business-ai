@@ -1198,18 +1198,57 @@ function hasLocationMentionIntent(value = '') {
         || /\ben\s+[a-z0-9]{4,}\b/.test(normalized);
 }
 
-async function buildZoneDecision(tenantId, recentConversationText = '') {
+function shouldUseLocationResult(location = {}) {
+    const confidence = text(location?.confidence);
+    return Boolean(location) && confidence && confidence !== 'none';
+}
+
+async function resolveLocationForZoneDecision(recentConversationText = '', lastCustomerMessage = '') {
+    const lastText = text(lastCustomerMessage);
+    if (lastText) {
+        const lastLocation = await geoLocationService.resolveLocationFromText(lastText);
+        if (shouldUseLocationResult(lastLocation)) {
+            return {
+                location: lastLocation,
+                source: 'last_message',
+                lookupText: lastText
+            };
+        }
+    }
+    const historyText = text(recentConversationText);
+    if (!historyText) {
+        return {
+            location: await geoLocationService.resolveLocationFromText(''),
+            source: 'none',
+            lookupText: ''
+        };
+    }
+    const historyLocation = await geoLocationService.resolveLocationFromText(historyText);
+    return {
+        location: historyLocation,
+        source: 'history',
+        lookupText: historyText
+    };
+}
+
+async function buildZoneDecision(tenantId, recentConversationText = '', lastCustomerMessage = '') {
     const rules = await tenantZoneRulesService.listZoneRules(tenantId, { includeInactive: false });
     const sourceRules = Array.isArray(rules) ? rules : [];
-    const location = await geoLocationService.resolveLocationFromText(recentConversationText);
+    const resolvedLocation = await resolveLocationForZoneDecision(recentConversationText, lastCustomerMessage);
+    const location = resolvedLocation.location;
     const zoneMatch = geoLocationService.resolveZoneFromLocation(location, sourceRules);
     const confidence = text(location?.confidence);
+    const locationMentionedText = resolvedLocation.source === 'last_message'
+        ? lastCustomerMessage
+        : recentConversationText;
     return {
         rules: sourceRules,
         location,
+        locationSource: resolvedLocation.source,
+        locationLookupText: resolvedLocation.lookupText,
         zoneRule: zoneMatch?.rule || null,
         matchedLevel: zoneMatch?.matchedLevel || null,
-        locationMentioned: hasLocationMentionIntent(recentConversationText),
+        locationMentioned: hasLocationMentionIntent(locationMentionedText),
         locationRecognized: ['exact', 'partial'].includes(confidence),
         locationAmbiguous: confidence === 'ambiguous'
     };
@@ -1218,12 +1257,14 @@ async function buildZoneDecision(tenantId, recentConversationText = '') {
 function logGeoResolveAttempt(recentText = '', zoneDecision = {}, deterministicResponse = null) {
     const geoResult = zoneDecision?.location || {};
     const matchedZone = zoneDecision?.zoneRule || null;
+    const lookupText = text(zoneDecision?.locationLookupText || recentText);
     console.log('[Patty] geo resolve attempt', {
-        textSample: text(recentText).substring(0, 80),
+        textSample: lookupText.substring(0, 80),
         confidence: text(geoResult.confidence || 'none') || 'none',
         district: geoResult.district || null,
         province: geoResult.province || null,
         department: geoResult.department || null,
+        source: zoneDecision?.locationSource || null,
         matchedZone: matchedZone?.name || null,
         deterministic: Boolean(deterministicResponse)
     });
@@ -1309,7 +1350,8 @@ async function resolveDeliveryForChatQuote(tenantId, chatId, subtotal = 0) {
             .filter(Boolean)
             .join('\n');
         if (!recentText) return { deliveryAmount: 0, deliveryFree: true, zoneName: null };
-        const decision = await buildZoneDecision(tenantId, recentText);
+        const lastCustomerMessage = text(rows?.[0]?.body || '');
+        const decision = await buildZoneDecision(tenantId, recentText, lastCustomerMessage);
         return resolveZoneDelivery(decision.zoneRule || null, subtotal);
     } catch (error) {
         console.warn('[Patty] zone delivery resolution skipped:', error?.message || error);
@@ -1340,9 +1382,9 @@ function matchesZoneInRecentText(rule = {}, recentConversationText = '') {
     return Boolean(rule && recentConversationText && false);
 }
 
-async function getZonesContext(tenantId, recentConversationText = '', zoneDecision = null) {
+async function getZonesContext(tenantId, recentConversationText = '', zoneDecision = null, lastCustomerMessage = '') {
     try {
-        const strictDecision = zoneDecision || await buildZoneDecision(tenantId, recentConversationText);
+        const strictDecision = zoneDecision || await buildZoneDecision(tenantId, recentConversationText, lastCustomerMessage);
         return buildZoneContextFromDecision(strictDecision);
         const rules = await tenantZoneRulesService.listZoneRules(tenantId, { includeInactive: false });
         const sourceRules = Array.isArray(rules) ? rules : [];
@@ -2474,9 +2516,9 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     ].join('\n');
     const [catalog, zoneDecision] = await Promise.all([
         getCatalogContext(cleanTenantId, recentConversationText, conversation.lastCustomerMessage || ''),
-        buildZoneDecision(cleanTenantId, recentConversationText)
+        buildZoneDecision(cleanTenantId, recentConversationText, conversation.lastCustomerMessage || '')
     ]);
-    const zones = await getZonesContext(cleanTenantId, recentConversationText, zoneDecision);
+    const zones = await getZonesContext(cleanTenantId, recentConversationText, zoneDecision, conversation.lastCustomerMessage || '');
     const labels = await getCustomerLabelsContext(cleanTenantId, customer.customerId);
     const recentOrder = formatOrderContext(conversation.recentOrder);
     const catalogText = lineList(catalog.lines);

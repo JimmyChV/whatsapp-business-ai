@@ -85,6 +85,7 @@ function extractLocationCandidates(value = '') {
 
 function stripLocationPrefix(value = '') {
     return text(value)
+        .replace(/^\s*\[(?:cliente|asesor|patty|usuario)[^\]]*\]\s*:?\s*/i, '')
         .replace(/^\s*(?:cliente|asesor|patty|usuario)?\s*:?\s*/i, '')
         .replace(/^\s*(?:vivo|vive|soy|estoy|esta|ubicado|ubicada|direccion|domicilio|llegan|llega|delivery|envio)\s+(?:en|de|desde|a)?\s+/i, '')
         .replace(/^\s*(?:en|de|desde|a)\s+/i, '')
