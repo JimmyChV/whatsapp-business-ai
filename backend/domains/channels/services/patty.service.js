@@ -820,6 +820,18 @@ function getAssistantDisplayNameFromModule(moduleConfig = {}) {
     return formatAssistantDisplayName(getAssistantNameFromModule(moduleConfig));
 }
 
+function getModuleDisplayNameFromConfig(moduleConfig = {}) {
+    return text(
+        moduleConfig?.name
+        || moduleConfig?.moduleName
+        || moduleConfig?.module_name
+        || moduleConfig?.metadata?.moduleName
+        || moduleConfig?.metadata?.module_name
+        || moduleConfig?.moduleId
+        || moduleConfig?.module_id
+    );
+}
+
 async function resolveScheduleState(tenantId, moduleConfig) {
     const scheduleId = text(moduleConfig?.scheduleId);
     if (!scheduleId) return { open: true, label: 'Sin horario asignado' };
@@ -1079,8 +1091,9 @@ async function filterCatalogProductsForContext(tenantId, skus = [], lastCustomer
     return allowed;
 }
 
-async function sendPattyCatalogProducts({ tenantId, moduleId = '', chatId, skus = [], assistantName = DEFAULT_ASSISTANT_NAME } = {}) {
+async function sendPattyCatalogProducts({ tenantId, moduleId = '', chatId, skus = [], assistantName = DEFAULT_ASSISTANT_NAME, moduleName = '' } = {}) {
     const assistantDisplayName = formatAssistantDisplayName(assistantName);
+    const cleanModuleName = text(moduleName);
     const rows = await getCatalogRowsBySkus(tenantId, skus);
     if (!rows.length) return { sent: 0 };
     let sent = 0;
@@ -1094,7 +1107,8 @@ async function sendPattyCatalogProducts({ tenantId, moduleId = '', chatId, skus 
                     sentByUserId: 'patty',
                     sentByName: assistantDisplayName,
                     sentByRole: 'assistant',
-                    sentViaModuleId: lower(moduleId)
+                    sentViaModuleId: lower(moduleId),
+                    sentViaModuleName: cleanModuleName || null
                 },
                 patty: true,
                 automationSource: 'patty_catalog_product',
@@ -3222,6 +3236,7 @@ async function activateNeedsAdvisorForProgrammedChange({
     moduleId,
     chatId,
     assistantName,
+    moduleName = '',
     emitToRuntimeContext,
     emitCommercialStatusUpdated
 } = {}) {
@@ -3229,6 +3244,7 @@ async function activateNeedsAdvisorForProgrammedChange({
     const cleanModuleId = lower(moduleId);
     const cleanChatId = normalizeChatId(chatId);
     const assistantDisplayName = formatAssistantDisplayName(assistantName);
+    const cleanModuleName = text(moduleName);
     const advisorReason = 'cliente_solicita_cambio_programado';
     await waClient.sendMessage(cleanChatId, PROGRAMMED_CHANGE_RESPONSE, {
         metadata: {
@@ -3236,7 +3252,8 @@ async function activateNeedsAdvisorForProgrammedChange({
                 sentByUserId: 'patty',
                 sentByName: assistantDisplayName,
                 sentByRole: 'assistant',
-                sentViaModuleId: cleanModuleId
+                sentViaModuleId: cleanModuleId,
+                sentViaModuleName: cleanModuleName || null
             },
             patty: true,
             automationSource: 'patty_needs_advisor'
@@ -3341,13 +3358,15 @@ async function escalateToAdvisor(
     responseText,
     emitCommercialStatusUpdated,
     socketEmitter,
-    assistantName = DEFAULT_ASSISTANT_NAME
+    assistantName = DEFAULT_ASSISTANT_NAME,
+    moduleName = ''
 ) {
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
     const cleanChatId = normalizeChatId(chatId);
     const cleanScopeModuleId = lower(scopeModuleId);
     const cleanReason = text(reason) || 'patty_needs_advisor';
     const assistantDisplayName = formatAssistantDisplayName(assistantName);
+    const cleanModuleName = text(moduleName);
     const cleanResponse = text(responseText);
     if (cleanResponse) {
         await waClient.sendMessage(cleanChatId, cleanResponse, {
@@ -3356,7 +3375,8 @@ async function escalateToAdvisor(
                     sentByUserId: 'patty',
                     sentByName: assistantDisplayName,
                     sentByRole: 'assistant',
-                    sentViaModuleId: cleanScopeModuleId
+                    sentViaModuleId: cleanScopeModuleId,
+                    sentViaModuleName: cleanModuleName || null
                 },
                 patty: true,
                 automationSource: 'patty_escalation'
@@ -3577,6 +3597,7 @@ async function createAndSendPattyQuote({
     moduleId,
     chatId,
     assistantName,
+    moduleName = '',
     quoteRequest,
     emitToRuntimeContext,
     emitCommercialStatusUpdated,
@@ -3585,6 +3606,7 @@ async function createAndSendPattyQuote({
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
     const cleanModuleId = lower(moduleId);
     const cleanChatId = normalizeChatId(chatId);
+    const cleanModuleName = text(moduleName);
     const request = quoteRequest && typeof quoteRequest === 'object' ? quoteRequest : null;
     if (!request || !Array.isArray(request.products) || !request.products.length) return null;
 
@@ -3595,6 +3617,7 @@ async function createAndSendPattyQuote({
             moduleId: cleanModuleId,
             chatId: cleanChatId,
             assistantName,
+            moduleName: cleanModuleName,
             emitToRuntimeContext,
             emitCommercialStatusUpdated
         });
@@ -3645,6 +3668,7 @@ async function createAndSendPattyQuote({
         source: 'patty',
         sourceType: 'quote',
         assistantName: formatAssistantDisplayName(assistantName),
+        moduleName: cleanModuleName || null,
         ...(delivery.zoneName ? { deliveryZoneName: delivery.zoneName } : {})
     };
     const createdQuote = await quotesService.createQuoteRecord(cleanTenantId, {
@@ -3682,7 +3706,8 @@ async function createAndSendPattyQuote({
                     sentByUserId: 'patty',
                     sentByName: metadata.assistantName,
                     sentByRole: 'assistant',
-                    sentViaModuleId: cleanModuleId
+                    sentViaModuleId: cleanModuleId,
+                    sentViaModuleName: cleanModuleName || null
                 },
                 patty: true,
                 automationSource: 'patty_quote'
@@ -3696,7 +3721,8 @@ async function createAndSendPattyQuote({
                     sentByUserId: 'patty',
                     sentByName: metadata.assistantName,
                     sentByRole: 'assistant',
-                    sentViaModuleId: cleanModuleId
+                    sentViaModuleId: cleanModuleId,
+                    sentViaModuleName: cleanModuleName || null
                 },
                 patty: true,
                 automationSource: 'patty_quote'
@@ -3735,6 +3761,7 @@ async function createAndSendPattyQuote({
             sentByName: metadata.assistantName,
             sentByRole: 'assistant',
             sentViaModuleId: cleanModuleId || null,
+            sentViaModuleName: cleanModuleName || null,
             patty: true,
             automationSource: 'patty_quote'
         });
@@ -3763,7 +3790,8 @@ async function createAndSendPattyQuote({
                     sentByUserId: 'patty',
                     sentByName: metadata.assistantName,
                     sentByRole: 'assistant',
-                    sentViaModuleId: cleanModuleId
+                    sentViaModuleId: cleanModuleId,
+                    sentViaModuleName: cleanModuleName || null
                 },
                 moduleContext: { moduleId: cleanModuleId }
             });
@@ -4537,6 +4565,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
             if (await shouldAbortRun('before_context')) return;
             const prebuiltContext = await buildPattyContext(cleanTenantId, cleanModuleId, cleanChatId);
             if (await shouldAbortRun('after_context')) return;
+            const prebuiltModuleName = getModuleDisplayNameFromConfig(prebuiltContext.moduleConfig || moduleConfig || {});
             if (prebuiltContext.deterministicResponse) {
                 const assistantName = formatAssistantDisplayName(prebuiltContext.assistantName || DEFAULT_ASSISTANT_NAME);
                 if (prebuiltContext.deterministicNeedsAdvisorReason) {
@@ -4549,7 +4578,8 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                         prebuiltContext.deterministicResponse,
                         options.emitCommercialStatusUpdated,
                         socketEmitter,
-                        prebuiltContext.assistantName || DEFAULT_ASSISTANT_NAME
+                        prebuiltContext.assistantName || DEFAULT_ASSISTANT_NAME,
+                        prebuiltModuleName
                     );
                     return;
                 }
@@ -4560,7 +4590,8 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                             sentByUserId: 'patty',
                             sentByName: assistantName,
                             sentByRole: 'assistant',
-                            sentViaModuleId: cleanModuleId
+                            sentViaModuleId: cleanModuleId,
+                            sentViaModuleName: prebuiltModuleName || null
                         },
                         patty: true,
                         automationSource: prebuiltContext.deterministicSource || 'patty_deterministic_delivery_payment'
@@ -4580,6 +4611,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 ? result.messages
                 : normalizePattyMessages(result.suggestion);
             const assistantName = formatAssistantDisplayName(result.assistantName || DEFAULT_ASSISTANT_NAME);
+            const resultModuleName = getModuleDisplayNameFromConfig(result.moduleConfig || prebuiltContext.moduleConfig || moduleConfig || {});
             const lastCustomerMessage = text(result.lastCustomerMessage || '');
             const programadoChangeRequested = currentStatus === 'programado'
                 && (Boolean(result.quoteRequest) || hasQuoteChangeIntent(lastCustomerMessage));
@@ -4590,6 +4622,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                     moduleId: cleanModuleId,
                     chatId: cleanChatId,
                     assistantName,
+                    moduleName: resultModuleName,
                     emitToRuntimeContext: socketEmitter,
                     emitCommercialStatusUpdated: options.emitCommercialStatusUpdated
                 });
@@ -4644,7 +4677,8 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                             sentByUserId: 'patty',
                             sentByName: assistantName,
                             sentByRole: 'assistant',
-                            sentViaModuleId: cleanModuleId
+                            sentViaModuleId: cleanModuleId,
+                            sentViaModuleName: resultModuleName || null
                         },
                         patty: true,
                         automationSource: 'patty_autonomous'
@@ -4661,7 +4695,8 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                         moduleId: cleanModuleId,
                         chatId: cleanChatId,
                         skus: catalogProducts,
-                        assistantName
+                        assistantName,
+                        moduleName: resultModuleName
                     });
                     console.log('[Patty] catalog products sent', {
                         tenantId: cleanTenantId,
@@ -4683,6 +4718,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                         moduleId: cleanModuleId,
                         chatId: cleanChatId,
                         assistantName,
+                        moduleName: resultModuleName,
                         quoteRequest: result.quoteRequest,
                         emitToRuntimeContext: socketEmitter,
                         emitCommercialStatusUpdated: options.emitCommercialStatusUpdated,

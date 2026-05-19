@@ -157,6 +157,14 @@ export const normalizeSearchText = (value = '') => String(value || '')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
 
+const isQuoteButtonItemName = (value = '') => {
+    const normalized = normalizeSearchText(value)
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return ['confirmar', 'cambios', 'ver en carrito', 'confirm', 'changes'].includes(normalized);
+};
+
 export const parseQuoteItemsFromBody = (value = '') => {
     const source = String(value || '');
     const normalized = normalizeSearchText(source);
@@ -176,7 +184,7 @@ export const parseQuoteItemsFromBody = (value = '') => {
             ? Math.max(1, Math.round(qtyParsed * 1000) / 1000)
             : 1;
         const name = String(match[2] || '').replace(/[\*_`~]+/g, '').trim();
-        if (!name) continue;
+        if (!name || isQuoteButtonItemName(name)) continue;
 
         items.push({
             name,

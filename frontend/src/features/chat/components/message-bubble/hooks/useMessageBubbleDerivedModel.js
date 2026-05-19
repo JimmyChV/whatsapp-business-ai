@@ -13,6 +13,14 @@ import {
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
+const isQuoteButtonProductName = (value = '') => {
+    const normalized = normalizeSearchText(value)
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return ['confirmar', 'cambios', 'ver en carrito', 'confirm', 'changes'].includes(normalized);
+};
+
 export default function useMessageBubbleDerivedModel({
     msg,
     senderDisplayName,
@@ -47,9 +55,19 @@ export default function useMessageBubbleDerivedModel({
             }
             : null;
         const hasOrder = Boolean(safeMsg.order);
-        const actionOrder = hasOrder ? safeMsg.order : quoteOrderPayload;
+        const rawActionOrder = hasOrder ? safeMsg.order : quoteOrderPayload;
+        const rawOrderItems = Array.isArray(rawActionOrder?.products) ? rawActionOrder.products : [];
+        const orderItems = rawOrderItems.filter((item) => !isQuoteButtonProductName(item?.title || item?.name || item?.productName || ''));
+        const actionOrder = rawActionOrder && rawOrderItems.length !== orderItems.length
+            ? {
+                ...rawActionOrder,
+                products: orderItems,
+                rawPreview: rawActionOrder?.rawPreview && typeof rawActionOrder.rawPreview === 'object'
+                    ? { ...rawActionOrder.rawPreview, itemCount: orderItems.length }
+                    : rawActionOrder?.rawPreview
+            }
+            : rawActionOrder;
         const orderRawType = String(actionOrder?.rawPreview?.type || safeMsg.type || '').toLowerCase();
-        const orderItems = Array.isArray(actionOrder?.products) ? actionOrder.products : [];
         const rawItemCount = parseOrderMoneyValue(actionOrder?.rawPreview?.itemCount);
         const reportedItemCount = Number.isFinite(rawItemCount) ? Math.max(0, Math.round(rawItemCount)) : orderItems.length;
         const isProductPayload = orderRawType.includes('product');

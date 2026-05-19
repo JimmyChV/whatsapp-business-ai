@@ -303,7 +303,7 @@ function createSocketChatHistoryMediaService({
                         edited: Boolean(m?._data?.latestEditMsgKey || m?._data?.latestEditSenderTimestampMs || m?._data?.edited),
                         editedAt: Number(m?._data?.latestEditSenderTimestampMs || 0) > 0 ? Math.floor(Number(m._data.latestEditSenderTimestampMs) / 1000) : null,
                         canEdit: Boolean(editableMap[String(m?.id?._serialized || '')]),
-                        order: extractOrderInfo(m) || (persistedEntry?.orderPayload && typeof persistedEntry.orderPayload === 'object' ? persistedEntry.orderPayload : null),
+                        order: (persistedEntry?.orderPayload && typeof persistedEntry.orderPayload === 'object' ? persistedEntry.orderPayload : null) || extractOrderInfo(m),
                         location: extractLocationInfo(m),
                         quotedMessage: await extractQuotedMessageInfo(m),
                         reactions: Array.isArray(persistedMeta?.reactions) ? persistedMeta.reactions : [],

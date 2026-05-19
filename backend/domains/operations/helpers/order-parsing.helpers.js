@@ -51,6 +51,21 @@ function normalizeOrderSkuKey(value = '') {
     return normalized || null;
 }
 
+function normalizeOrderItemTitle(value = '') {
+    return String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function isWhatsappQuoteButtonTitle(value = '') {
+    const normalized = normalizeOrderItemTitle(value);
+    return ['confirmar', 'cambios', 'ver en carrito', 'confirm', 'changes'].includes(normalized);
+}
+
 function parseOrderLineFromObject(input = {}, indexHint = 1) {
     if (!input || typeof input !== 'object') return null;
 
@@ -62,6 +77,7 @@ function parseOrderLineFromObject(input = {}, indexHint = 1) {
         || input.display_name
         || ''
     ).trim();
+    if (isWhatsappQuoteButtonTitle(rawName)) return null;
 
     const rawSku = normalizeOrderSku(
         input.sku
@@ -201,9 +217,11 @@ function parseProductsFromBodyText(body = '') {
         const m = line.match(linePattern);
         if (!m) continue;
         const quantity = parseOrderNumber(m[1]) || 1;
+        const name = m[2].trim();
+        if (isWhatsappQuoteButtonTitle(name)) continue;
         const unitPrice = m[3] ? normalizeOrderCurrencyAmount(m[3], { scaleHint: 'price' }) : null;
         parsed.push({
-            name: m[2].trim(),
+            name,
             quantity: Math.max(1, quantity),
             price: Number.isFinite(unitPrice) ? unitPrice : null,
             lineTotal: Number.isFinite(unitPrice) ? Math.round((unitPrice * quantity) * 100) / 100 : null,
@@ -242,7 +260,7 @@ function parseProductsFromOrderTitle(orderTitle = '') {
         }
 
         name = name.replace(/^["'`]+|["'`]+$/g, '').trim();
-        if (!name) return null;
+        if (!name || isWhatsappQuoteButtonTitle(name)) return null;
 
         return {
             name,
