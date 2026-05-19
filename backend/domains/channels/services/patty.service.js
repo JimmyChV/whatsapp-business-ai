@@ -1207,10 +1207,29 @@ function getZonePaymentLabels(rule = {}) {
     ].filter(Boolean);
 }
 
-function getZonePaymentModalityText(rule = {}) {
+function getZonePaymentMethodFlags(rule = {}) {
+    const payments = safeJsonObject(rule.paymentMethods || rule.payment_methods);
+    return {
+        yape: payments.yape === true,
+        plin: payments.plin === true,
+        bankTransfer: payments.bank_transfer === true || payments.bankTransfer === true,
+        creditCard: payments.credit_card === true || payments.creditCard === true,
+        cash: payments.cash === true
+    };
+}
+
+function getZonePaymentModalityFlags(rule = {}) {
     const modality = safeJsonObject(rule.paymentModality || rule.payment_modality);
-    const advance = modality.advance !== false;
-    const cashOnDelivery = modality.cash_on_delivery === true || modality.cashOnDelivery === true;
+    return {
+        advance: modality.advance !== false,
+        cashOnDelivery: modality.cash_on_delivery === true || modality.cashOnDelivery === true
+    };
+}
+
+function getZonePaymentModalityText(rule = {}) {
+    const modality = getZonePaymentModalityFlags(rule);
+    const advance = modality.advance === true;
+    const cashOnDelivery = modality.cashOnDelivery === true;
     if (advance && cashOnDelivery) return 'anticipado o contraentrega según tu preferencia';
     if (cashOnDelivery) return 'contraentrega';
     if (advance) return 'pago anticipado';
@@ -1261,6 +1280,8 @@ function buildZoneShippingSummary(rule = {}, subtotal = 0) {
         freeFromText: freeFrom !== null ? `S/ ${freeFrom.toFixed(2)}` : 'No aplica',
         estimatedTime: formatDeliveryTimeLabel(primaryShipping?.estimated_time || primaryShipping?.estimatedTime || ''),
         paymentLabels: getZonePaymentLabels(rule),
+        paymentMethods: getZonePaymentMethodFlags(rule),
+        paymentModality: getZonePaymentModalityFlags(rule),
         paymentModalityText: getZonePaymentModalityText(rule),
         coverage: getZoneCoverageDescription(rule),
         activeShippingOptions: getActiveShippingOptions(rule),
@@ -2387,6 +2408,55 @@ function getZonePaymentMethodsForMessage(zoneDecision = {}) {
     return formatSpanishList(summary.paymentLabels || [], 'o');
 }
 
+function detectUnavailablePaymentRequest(value = '', summary = {}) {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized) return null;
+    const requestedCashOnDelivery = /\b(contraentrega|contra\s+entrega|pago\s+contra\s+entrega|pagar\s+al\s+recibir|pago\s+al\s+recibir|al\s+recibir)\b/.test(normalized);
+    const requestedCash = /\b(efectivo|cash)\b/.test(normalized);
+    if (!requestedCashOnDelivery && !requestedCash) return null;
+
+    const modality = safeJsonObject(summary.paymentModality);
+    const methods = safeJsonObject(summary.paymentMethods);
+    const unavailable = [];
+    if (requestedCashOnDelivery && modality.cashOnDelivery !== true) unavailable.push('contraentrega');
+    if (requestedCash && methods.cash !== true) unavailable.push('efectivo');
+    if (!unavailable.length) return null;
+    return {
+        requestedCashOnDelivery,
+        requestedCash,
+        unavailable
+    };
+}
+
+function buildUnavailablePaymentResponse(zoneDecision = {}, summary = {}, issue = {}, mentionCount = 1) {
+    const locationLabel = formatCustomerLocationLabel(zoneDecision?.location || {}, summary.zoneName);
+    const paymentText = formatSpanishList(summary.paymentLabels || [], 'o') || 'los metodos configurados';
+    const unavailableText = issue.unavailable.includes('contraentrega') && issue.unavailable.includes('efectivo')
+        ? 'contraentrega ni efectivo al recibir'
+        : (issue.unavailable.includes('contraentrega') ? 'contraentrega' : 'efectivo');
+    const modalityText = text(summary.paymentModalityText) || 'pago anticipado';
+    if (mentionCount > 1) {
+        return [
+            `Te entiendo. Para ${locationLabel} todavia no tenemos ${unavailableText}.`,
+            `Lo manejamos con ${modalityText}; puedes pagar con ${paymentText}.`
+        ].join('\n');
+    }
+    return [
+        `Por ahora para ${locationLabel} trabajamos con ${modalityText}.`,
+        `No tenemos ${unavailableText} en esa zona; puedes pagar con ${paymentText}.`
+    ].join('\n');
+}
+
+function getUnavailablePaymentMentionCount(conversationLines = [], issue = {}) {
+    const keywords = [
+        issue.requestedCashOnDelivery ? 'contraentrega' : '',
+        issue.requestedCashOnDelivery ? 'contra entrega' : '',
+        issue.requestedCashOnDelivery ? 'al recibir' : '',
+        issue.requestedCash ? 'efectivo' : ''
+    ].filter(Boolean);
+    return Math.max(1, countTopicMentions(conversationLines, keywords));
+}
+
 function buildCreditGuardResponse(level = 1, zoneDecision = {}) {
     const paymentMethods = getZonePaymentMethodsForMessage(zoneDecision);
     if (level >= 3) {
@@ -2509,7 +2579,7 @@ function buildAntiHallucinationGuardResponse({
     return null;
 }
 
-function buildDeterministicDeliveryPaymentResponse(zoneDecision = {}, lastCustomerMessage = '') {
+function buildDeterministicDeliveryPaymentResponse(zoneDecision = {}, lastCustomerMessage = '', options = {}) {
     if (zoneDecision?.deterministicResponseOverride) return zoneDecision.deterministicResponseOverride;
     const forceResponse = zoneDecision?.forceDeterministicDeliveryPayment === true;
     const useDeterministic = shouldUseDeterministicResponse(lastCustomerMessage, zoneDecision, { forceDeterministicDeliveryPayment: forceResponse });
@@ -2531,6 +2601,15 @@ function buildDeterministicDeliveryPaymentResponse(zoneDecision = {}, lastCustom
         const wantsDelivery = forceResponse
             ? (storedIntent.wantsDelivery !== false || !wantsPayment)
             : fallbackIntent.wantsDelivery === true;
+        const unavailablePayment = detectUnavailablePaymentRequest(lastCustomerMessage, summary);
+        if (unavailablePayment && wantsPayment) {
+            return buildUnavailablePaymentResponse(
+                zoneDecision,
+                summary,
+                unavailablePayment,
+                getUnavailablePaymentMentionCount(options.conversationLines, unavailablePayment)
+            );
+        }
         const responseLines = [];
         if (wantsDelivery || !wantsPayment) {
             const requestedAgency = detectRequestedExternalCourier(lastCustomerMessage);
@@ -2860,20 +2939,13 @@ async function getConversationContext(tenantId, moduleId, chatId) {
 async function getPendingInboundRowsSinceLastPatty(tenantId, moduleId, chatId, limit = 5) {
     const cleanLimit = Math.max(1, Math.min(20, Number.parseInt(String(limit), 10) || 5));
     const { rows } = await pgQuery(
-        `WITH last_patty AS (
-            SELECT created_at
+        `WITH last_outbound AS (
+            SELECT MAX(created_at) AS created_at
               FROM tenant_messages
              WHERE tenant_id = $1
                AND chat_id = $2
                AND COALESCE(from_me, FALSE) = TRUE
-               AND (
-                    COALESCE(metadata->>'patty', '') = 'true'
-                    OR LOWER(COALESCE(metadata->'agentMeta'->>'sentByUserId', '')) = 'patty'
-                    OR LOWER(COALESCE(metadata->>'automationSource', '')) LIKE 'patty%'
-               )
                AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($3))
-             ORDER BY created_at DESC
-             LIMIT 1
         )
         SELECT message_id, body, created_at
           FROM tenant_messages
@@ -2881,7 +2953,7 @@ async function getPendingInboundRowsSinceLastPatty(tenantId, moduleId, chatId, l
            AND chat_id = $2
            AND COALESCE(from_me, FALSE) = FALSE
            AND COALESCE(body, '') <> ''
-           AND created_at > COALESCE((SELECT created_at FROM last_patty), '-infinity'::timestamptz)
+           AND created_at > COALESCE((SELECT created_at FROM last_outbound), '-infinity'::timestamptz)
            AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($3))
          ORDER BY created_at DESC
          LIMIT $4`,
@@ -2913,7 +2985,8 @@ async function getGreetingInstructionContext(tenantId, moduleId, chatId, lastCus
                             OR LOWER(COALESCE(metadata->'agentMeta'->>'sentByUserId', '')) = 'patty'
                             OR LOWER(COALESCE(metadata->>'automationSource', '')) LIKE 'patty%'
                           )
-                    ) AS last_patty_outbound_at
+                    ) AS last_patty_outbound_at,
+                    MAX(created_at) FILTER (WHERE COALESCE(from_me, FALSE) = TRUE) AS last_outbound_at
                FROM tenant_messages
               WHERE tenant_id = $1
                 AND chat_id = $2
@@ -2932,8 +3005,9 @@ async function getGreetingInstructionContext(tenantId, moduleId, chatId, lastCus
         if (clientGreeted || pendingClientGreeted) {
             return { ...base, shouldGreet: true, reason: 'client_greeted' };
         }
-        const lastPattyAt = row.last_patty_outbound_at ? new Date(row.last_patty_outbound_at).getTime() : NaN;
-        if (Number.isFinite(lastPattyAt) && Date.now() - lastPattyAt > 4 * 60 * 60 * 1000) {
+        const lastResponseAtValue = row.last_patty_outbound_at || row.last_outbound_at;
+        const lastResponseAt = lastResponseAtValue ? new Date(lastResponseAtValue).getTime() : NaN;
+        if (Number.isFinite(lastResponseAt) && Date.now() - lastResponseAt > 4 * 60 * 60 * 1000) {
             return { ...base, shouldGreet: true, reason: 'long_absence' };
         }
     } catch (error) {
@@ -3774,7 +3848,9 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         zoneDecision
     });
     const rawDeterministicResponse = antiHallucinationGuard?.response
-        || buildDeterministicDeliveryPaymentResponse(zoneDecision, conversation.lastCustomerMessage || '');
+        || buildDeterministicDeliveryPaymentResponse(zoneDecision, conversation.lastCustomerMessage || '', {
+            conversationLines: conversation.lines
+        });
     const deterministicNeedsAdvisorReason = antiHallucinationGuard?.needsAdvisorReason
         || (shouldUseKnownLocationNoZoneResponse(conversation.lastCustomerMessage || '', zoneDecision)
         ? 'sin_cobertura_zona'
