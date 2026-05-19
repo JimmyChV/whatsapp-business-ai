@@ -1074,6 +1074,16 @@ function formatShippingOptionLabel(option = null) {
         : (text(option.label) || 'Delivery propio');
 }
 
+function getShippingType(option = null) {
+    return lower(option?.type) === 'courier' ? 'courier' : 'delivery';
+}
+
+function getShippingDisplayName(option = null) {
+    const clean = text(option?.label);
+    if (clean) return clean;
+    return getShippingType(option) === 'courier' ? 'Courier' : 'Delivery propio';
+}
+
 function formatDeliveryTimeLabel(value = '') {
     const clean = text(value);
     if (!clean) return 'Por confirmar';
@@ -1113,6 +1123,8 @@ function buildZoneShippingSummary(rule = {}, subtotal = 0) {
     const isFree = deliveryCost <= 0 || (freeFrom !== null && subtotal >= freeFrom);
     return {
         zoneName: text(rule.name) || 'Zona',
+        shippingType: getShippingType(primaryShipping),
+        shippingDisplayName: getShippingDisplayName(primaryShipping),
         shippingLabel: formatShippingOptionLabel(primaryShipping),
         cost,
         costText: cost !== null ? `S/ ${cost.toFixed(2)}` : 'Por confirmar',
@@ -1145,6 +1157,19 @@ function formatResolvedLocation(location = {}) {
         location?.department
     ].map(text).filter(Boolean);
     return parts.length ? parts.join(', ') : 'Ubicacion no reconocida';
+}
+
+function formatCustomerLocationLabel(location = {}, fallback = '') {
+    const raw = text(location?.district)
+        || text(location?.province)
+        || text(location?.department)
+        || text(fallback)
+        || 'tu zona';
+    return raw
+        .toLowerCase()
+        .split(/\s+/)
+        .map((part) => part ? `${part.charAt(0).toUpperCase()}${part.slice(1)}` : '')
+        .join(' ');
 }
 
 function formatAmbiguousLocationCandidates(location = {}) {
@@ -1470,16 +1495,18 @@ function buildDeterministicDeliveryPaymentResponse(zoneDecision = {}, lastCustom
     const zoneRule = zoneDecision?.zoneRule || null;
     if (zoneRule) {
         const summary = buildZoneShippingSummary(zoneRule);
+        const locationLabel = formatCustomerLocationLabel(zoneDecision?.location || {}, summary.zoneName);
         const { wantsDelivery, wantsPayment } = getDeliveryPaymentIntent(lastCustomerMessage);
         const responseLines = [];
         if (wantsDelivery || !wantsPayment) {
-            const deliveryParts = [
-                `El envio a ${summary.zoneName} es con *${summary.shippingLabel}* a *${summary.costText}*.`
-            ];
+            const deliveryLead = summary.shippingType === 'courier'
+                ? `Enviamos por *agencia ${summary.shippingDisplayName}* a ${locationLabel}.`
+                : `Hacemos *reparto a domicilio* en ${locationLabel}.`;
+            const deliveryParts = [deliveryLead, `Costo: *${summary.costText}*.`];
             if (summary.freeFrom !== null) {
                 deliveryParts.push(`Gratis en pedidos desde S/ ${summary.freeFrom.toFixed(2)}.`);
             }
-            deliveryParts.push(`Tiempo de entrega: ${summary.estimatedTime}.`);
+            deliveryParts.push(`Tiempo: ${summary.estimatedTime}.`);
             responseLines.push(deliveryParts.join(' '));
         }
         if (wantsPayment) {
