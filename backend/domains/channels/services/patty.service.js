@@ -1509,6 +1509,28 @@ function buildLocationDisambiguationQuestion(candidates = [], zoneRules = [], ma
     return 'No logro ubicar eso con certeza. ¿Puedes ser más específico?';
 }
 
+function buildNaturalLocationDisambiguationQuestion(candidates = [], zoneRules = [], matchedText = '') {
+    const cleanCandidates = rankLocationDisambiguationCandidates(candidates, zoneRules).slice(0, 5);
+    const locationName = getAmbiguousLocationName(cleanCandidates, matchedText);
+    const labels = cleanCandidates.map(formatDisambiguationCandidateLabel);
+    if (cleanCandidates.length === 2) {
+        return [
+            'Para confirmarte el reparto sin equivocarme:',
+            `Â¿Te refieres a ${labels[0]}? Tambien encontre ${labels[1]}.`
+        ].join('\n');
+    }
+    if (cleanCandidates.length > 0) {
+        const lines = labels.slice(1).map((label, index) => `${index + 1}. ${label}`);
+        return [
+            `Puede referirse a mas de una zona llamada ${locationName}.`,
+            `Â¿Es ${labels[0]}?`,
+            ...(lines.length ? ['Tambien encontre:', ...lines] : []),
+            'Dime cual es y te confirmo el reparto.'
+        ].join('\n');
+    }
+    return 'No logro ubicar eso con certeza. Â¿Puedes ser mÃ¡s especÃ­fico?';
+}
+
 function isLocationDisambiguationTopicChange(value = '') {
     const normalized = normalizeProductLookupKey(value);
     if (!normalized) return false;
@@ -1806,10 +1828,10 @@ function shouldUseLocationResult(location = {}) {
     return Boolean(location) && confidence && confidence !== 'none';
 }
 
-async function resolveLocationForZoneDecision(recentConversationText = '', lastCustomerMessage = '') {
+async function resolveLocationForZoneDecision(recentConversationText = '', lastCustomerMessage = '', zoneRules = []) {
     const lastText = text(lastCustomerMessage);
     if (shouldResolveLocationFromMessage(lastText)) {
-        const lastLocation = await geoLocationService.resolveLocationFromText(lastText);
+        const lastLocation = await geoLocationService.resolveLocationFromText(lastText, { zoneRules });
         if (shouldUseLocationResult(lastLocation)) {
             return {
                 location: lastLocation,
@@ -1821,7 +1843,7 @@ async function resolveLocationForZoneDecision(recentConversationText = '', lastC
     const historyText = text(recentConversationText);
     if (!historyText) {
         return {
-            location: await geoLocationService.resolveLocationFromText(''),
+            location: await geoLocationService.resolveLocationFromText('', { zoneRules }),
             source: 'none',
             lookupText: ''
         };
@@ -1829,7 +1851,7 @@ async function resolveLocationForZoneDecision(recentConversationText = '', lastC
     const recentCustomerTexts = extractRecentCustomerLocationTexts(historyText).reverse();
     for (const candidateText of recentCustomerTexts) {
         if (!shouldResolveLocationFromMessage(candidateText)) continue;
-        const candidateLocation = await geoLocationService.resolveLocationFromText(candidateText);
+        const candidateLocation = await geoLocationService.resolveLocationFromText(candidateText, { zoneRules });
         if (shouldUseLocationResult(candidateLocation)) {
             return {
                 location: candidateLocation,
@@ -1839,7 +1861,7 @@ async function resolveLocationForZoneDecision(recentConversationText = '', lastC
         }
     }
     return {
-        location: await geoLocationService.resolveLocationFromText(''),
+        location: await geoLocationService.resolveLocationFromText('', { zoneRules }),
         source: 'none',
         lookupText: ''
     };
@@ -1904,7 +1926,7 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
             if (resolution.status !== 'narrowed') {
                 const isNewLocationLikeMessage = shouldResolveLocationFromMessage(lastCustomerMessage);
                 if (isNewLocationLikeMessage) {
-                    const directLocation = await geoLocationService.resolveLocationFromText(lastCustomerMessage);
+                    const directLocation = await geoLocationService.resolveLocationFromText(lastCustomerMessage, { zoneRules: sourceRules });
                     if (shouldUseLocationResult(directLocation)) {
                         await clearPendingLocationDisambiguation(cleanTenantId, cleanChatId, cleanScopeModuleId, 'new_location_replaces_pending');
                         continueNormalFlow = true;
@@ -1927,7 +1949,7 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
                 });
                 const candidates = renewed?.candidates || pending.candidates;
                 const deterministicResponseOverride = resolution.status === 'narrowed'
-                    ? buildLocationDisambiguationQuestion(candidates, sourceRules, pending.matchedText)
+                    ? buildNaturalLocationDisambiguationQuestion(candidates, sourceRules, pending.matchedText)
                     : (isSubdistrictClarification(lastCustomerMessage)
                         ? buildSubdistrictClarificationResponse(lastCustomerMessage)
                         : 'No logro identificar esa ubicacion entre las opciones. ¿Puedes ser mas especifico?');
@@ -1960,7 +1982,7 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
         }
     }
 
-    const resolvedLocation = await resolveLocationForZoneDecision(recentConversationText, lastCustomerMessage);
+    const resolvedLocation = await resolveLocationForZoneDecision(recentConversationText, lastCustomerMessage, sourceRules);
     const location = resolvedLocation.location;
     const zoneMatch = geoLocationService.resolveZoneFromLocation(location, sourceRules);
     const confidence = text(location?.confidence);
@@ -1988,7 +2010,7 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
                 candidates: rankedCandidates,
                 intent: getDeliveryPaymentIntent(lastCustomerMessage)
             });
-            deterministicResponseOverride = buildLocationDisambiguationQuestion(rankedCandidates, sourceRules, location?.matchedText || lastCustomerMessage);
+            deterministicResponseOverride = buildNaturalLocationDisambiguationQuestion(rankedCandidates, sourceRules, location?.matchedText || lastCustomerMessage);
             console.log('[Patty] location disambiguation asked:', rankedCandidates.map(formatDisambiguationCandidateLabel), {
                 tenantId: cleanTenantId,
                 chatId: cleanChatId,
