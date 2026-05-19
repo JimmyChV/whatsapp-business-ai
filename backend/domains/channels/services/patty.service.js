@@ -1304,6 +1304,29 @@ function formatDisambiguationCandidateLabel(candidate = {}) {
     return district || province || department || 'esa ubicacion';
 }
 
+function getAmbiguousLocationName(candidates = [], matchedText = '') {
+    const cleanMatchedText = formatLocationOptionPart(matchedText);
+    if (cleanMatchedText) return cleanMatchedText;
+    const cleanCandidates = normalizeLocationCandidates(candidates);
+    const names = cleanCandidates
+        .map((candidate) => formatLocationOptionPart(candidate.district || candidate.name || candidate.province || candidate.department))
+        .filter(Boolean);
+    const first = names[0] || 'lugar';
+    return names.every((name) => normalizeLocationLookup(name) === normalizeLocationLookup(first))
+        ? first
+        : first;
+}
+
+function formatDisambiguationProvinceContext(candidate = {}) {
+    const clean = normalizeLocationCandidate(candidate);
+    const province = formatLocationOptionPart(clean.province);
+    const department = formatLocationOptionPart(clean.department);
+    if (province && department && normalizeLocationLookup(province) !== normalizeLocationLookup(department)) {
+        return `${province}, ${department}`;
+    }
+    return province || department || formatDisambiguationCandidateLabel(clean);
+}
+
 function getZoneRuleLocationValues(rule = {}, keys = []) {
     const meta = safeJsonObject(rule.rulesJson || rule.rules_json || rule.metadata);
     return keys
@@ -1340,17 +1363,21 @@ function rankLocationDisambiguationCandidates(candidates = [], zoneRules = []) {
         .map((item) => item.candidate);
 }
 
-function buildLocationDisambiguationQuestion(candidates = [], zoneRules = []) {
+function buildLocationDisambiguationQuestion(candidates = [], zoneRules = [], matchedText = '') {
     const cleanCandidates = rankLocationDisambiguationCandidates(candidates, zoneRules).slice(0, 5);
+    const locationName = getAmbiguousLocationName(cleanCandidates, matchedText);
     if (cleanCandidates.length === 2) {
-        return `¿Te refieres a ${formatDisambiguationCandidateLabel(cleanCandidates[0])} o a ${formatDisambiguationCandidateLabel(cleanCandidates[1])}? 😊`;
+        return [
+            `Mmm, tenemos dos ${locationName} en nuestro sistema 🤔`,
+            `¿Te refieres al de ${formatDisambiguationProvinceContext(cleanCandidates[0])} o al de ${formatDisambiguationProvinceContext(cleanCandidates[1])}?`
+        ].join('\n');
     }
     if (cleanCandidates.length > 0) {
         const lines = cleanCandidates.map((candidate, index) => `${index + 1}. ${formatDisambiguationCandidateLabel(candidate)}`);
         return [
-            'Encontramos varios lugares con ese nombre:',
+            `Encontré varios lugares llamados ${locationName} 🤔`,
+            '¿Cuál es el tuyo?',
             ...lines,
-            '¿Cuál es el tuyo? 😊'
         ].join('\n');
     }
     return 'No logro ubicar eso con certeza. ¿Puedes ser más específico?';
@@ -1670,7 +1697,7 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
             });
             const candidates = renewed?.candidates || pending.candidates;
             const deterministicResponseOverride = resolution.status === 'narrowed'
-                ? buildLocationDisambiguationQuestion(candidates, sourceRules)
+                ? buildLocationDisambiguationQuestion(candidates, sourceRules, pending.matchedText)
                 : (isSubdistrictClarification(lastCustomerMessage)
                     ? buildSubdistrictClarificationResponse(lastCustomerMessage)
                     : 'No logro identificar esa ubicacion entre las opciones. ¿Puedes ser mas especifico?');
@@ -1723,7 +1750,7 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
                 candidates: rankedCandidates,
                 intent: getDeliveryPaymentIntent(lastCustomerMessage)
             });
-            deterministicResponseOverride = buildLocationDisambiguationQuestion(rankedCandidates, sourceRules);
+            deterministicResponseOverride = buildLocationDisambiguationQuestion(rankedCandidates, sourceRules, location?.matchedText || lastCustomerMessage);
             console.log('[Patty] location disambiguation asked:', rankedCandidates.map(formatDisambiguationCandidateLabel), {
                 tenantId: cleanTenantId,
                 chatId: cleanChatId,
@@ -2416,12 +2443,25 @@ async function getGreetingInstructionContext(tenantId, moduleId, chatId, lastCus
     return clientGreeted ? { ...base, shouldGreet: true, reason: 'client_greeted' } : base;
 }
 
-function applyGreetingToResponse(response = '', greetingInstruction = {}, customerName = '') {
+function normalizeCustomerNameForGreeting(value = '') {
+    const clean = text(value);
+    return clean && !/^cliente registrado$/i.test(clean) ? clean : '';
+}
+
+function applyGreetingToResponse(response = '', greetingInstruction = {}, customerName = '', assistantName = DEFAULT_ASSISTANT_NAME, moduleName = '') {
     const cleanResponse = text(response);
     if (!cleanResponse || greetingInstruction?.shouldGreet !== true) return cleanResponse;
     const greeting = text(greetingInstruction.greetingText) || greetingTextForTimeOfDay(greetingInstruction.timeOfDay);
-    const cleanName = text(customerName);
-    const prefix = cleanName && !/^cliente registrado$/i.test(cleanName)
+    const cleanName = normalizeCustomerNameForGreeting(customerName);
+    if (greetingInstruction?.isFirstInteraction === true && greetingInstruction?.isKnownCustomer !== true) {
+        const cleanAssistantName = text(assistantName) || DEFAULT_ASSISTANT_NAME;
+        const cleanModuleName = text(moduleName);
+        const intro = cleanModuleName
+            ? `¡${greeting}, soy ${cleanAssistantName} de ${cleanModuleName}! 😊`
+            : `¡${greeting}, soy ${cleanAssistantName}! 😊`;
+        return `${intro}\nEstoy aquí para ayudarte con lo que necesites.\n${cleanResponse}`;
+    }
+    const prefix = cleanName
         ? `${greeting}, ${cleanName}.`
         : `${greeting}.`;
     return `${prefix}\n${cleanResponse}`;
@@ -3104,6 +3144,16 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     const zones = await getZonesContext(cleanTenantId, recentConversationText, zoneDecision, conversation.lastCustomerMessage || '');
     const labels = await getCustomerLabelsContext(cleanTenantId, customer.customerId);
     const recentOrder = formatOrderContext(conversation.recentOrder);
+    const moduleName = text(moduleConfig?.name || moduleConfig?.moduleName || moduleConfig?.module_name || cleanModuleId);
+    const isKnownCustomer = Boolean(customer.customerId);
+    const customerNameForPrompt = normalizeCustomerNameForGreeting(customer.customerName);
+    const isFirstInteraction = !isKnownCustomer && greetingInstruction.reason === 'first_message';
+    const pattyGreetingInstruction = {
+        ...greetingInstruction,
+        isFirstInteraction,
+        isKnownCustomer,
+        customerName: customerNameForPrompt || null
+    };
     const catalogText = lineList(catalog.lines);
     const relevantCatalogText = lineList(catalog.relevantLines, '');
     const mentionedCatalogText = lineList(catalog.mentionedDetails, '');
@@ -3112,8 +3162,10 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     const hasDetectedZone = (Array.isArray(zones) ? zones : []).some((entry) => text(entry).startsWith('ZONA DETECTADA PARA ESTE CLIENTE:'));
     const deterministicResponse = applyGreetingToResponse(
         buildDeterministicDeliveryPaymentResponse(zoneDecision, conversation.lastCustomerMessage || ''),
-        greetingInstruction,
-        customer.customerName
+        pattyGreetingInstruction,
+        customerNameForPrompt,
+        assistantName,
+        moduleName
     );
     logGeoResolveAttempt(recentConversationText, zoneDecision, deterministicResponse);
     if (String(process.env.PATTY_DEBUG || '').trim().toLowerCase() === 'true') {
@@ -3135,16 +3187,19 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         relevantCatalogText,
         '',
         'INSTRUCCION DE SALUDO:',
-        `shouldGreet: ${greetingInstruction.shouldGreet ? 'true' : 'false'}`,
-        `timeOfDay: ${greetingInstruction.timeOfDay}`,
-        `reason: ${greetingInstruction.reason}`,
-        `saludo: ${greetingInstruction.greetingText}`,
+        `shouldGreet: ${pattyGreetingInstruction.shouldGreet ? 'true' : 'false'}`,
+        `timeOfDay: ${pattyGreetingInstruction.timeOfDay}`,
+        `reason: ${pattyGreetingInstruction.reason}`,
+        `saludo: ${pattyGreetingInstruction.greetingText}`,
+        `isFirstInteraction: ${pattyGreetingInstruction.isFirstInteraction ? 'true' : 'false'}`,
+        `isKnownCustomer: ${pattyGreetingInstruction.isKnownCustomer ? 'true' : 'false'}`,
+        `customerName: ${pattyGreetingInstruction.customerName || 'null'}`,
         '',
         'PROMPT BASE DEL ASISTENTE:',
         basePrompt || 'Eres una asesora comercial experta de WhatsApp. Responde de forma breve, clara, humana y orientada a venta consultiva.',
         '',
         `Tu nombre visible es: ${assistantName}.`,
-        `Modulo: ${moduleConfig?.name || cleanModuleId || 'sin modulo'}. ${scheduleState.label}.`,
+        `Modulo: ${moduleName || 'sin modulo'}. ${scheduleState.label}.`,
         '',
         'INSTRUCCIÓN CRÍTICA: Si el contexto incluye una sección "⚠️ COTIZACIÓN ACTIVA", NO incluyas quoteRequest salvo que el último mensaje del cliente pida cambios explícitos en productos, cantidades o reemplazos.',
         '',
@@ -3203,6 +3258,9 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '- Cuando el cliente mencione su ubicacion, busca en las zonas de cobertura y responde con las opciones de envio y metodos de pago disponibles para esa zona. Si la ubicacion no esta en cobertura, dilo claramente.',
         '- Cuando el cliente indique su ubicacion, identifica su zona de cobertura y menciona el costo de envio y metodos de pago disponibles para esa zona.',
         '- Si INSTRUCCION DE SALUDO indica shouldGreet: true, comienza tu respuesta con el saludo correspondiente segun timeOfDay: Buenos días / Buenas tardes / Buenas noches, seguido del nombre del cliente si lo conoces. Si shouldGreet: false, NO saludes; continua natural.',
+        '- PRIMER CONTACTO: Si isFirstInteraction=true e isKnownCustomer=false, preséntate siempre con: "¡[saludo según hora], soy [assistantName] de [nombre del módulo]! 😊 Estoy aquí para ayudarte con lo que necesites." Luego pregunta en qué puedes ayudar.',
+        '- CLIENTE CONOCIDO: Si isKnownCustomer=true y shouldGreet=true, saluda por nombre si customerName existe: "¡[saludo], [nombre]! ¿En qué te ayudo hoy? 😊". Si customerName=null, saluda sin nombre: "¡[saludo]! ¿En qué te ayudo? 😊".',
+        '- NUNCA te presentes si ya hubo interacción previa. Si shouldGreet=false, continúa natural sin saludo.',
         '- Si el cliente pregunta por credito, cuotas o pagos a plazos, responde empaticamente que Lavitat no ofrece credito directo. Si el cliente insiste, activa needs_advisor con reason: "cliente_solicita_credito" para que un asesor lo atienda.',
         '- No digas "Sugerencia", no expliques tu razonamiento y no inventes datos.',
         '- Si falta informacion, pregunta de forma breve y amable.',
@@ -3216,7 +3274,10 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         moduleConfig,
         assistantName,
         zoneDecision,
-        greetingInstruction,
+        greetingInstruction: pattyGreetingInstruction,
+        isFirstInteraction,
+        isKnownCustomer,
+        customerName: customerNameForPrompt || null,
         pendingInboundMessageIds: Array.isArray(pendingInbound.ids) ? pendingInbound.ids : [],
         system,
         deterministicResponse,
