@@ -37,6 +37,49 @@ const MIN_WAIT_SECONDS = 5;
 const MAX_WAIT_SECONDS = 300;
 const LOCATION_DISAMBIGUATION_TTL_MS = 24 * 60 * 60 * 1000;
 const PROGRAMMED_CHANGE_RESPONSE = 'Entendido, en un momento te confirmamos si podemos agregar eso a tu pedido 🙌';
+const CREDIT_TOPIC_KEYWORDS = [
+    'credito',
+    'creditos',
+    'cuota',
+    'cuotas',
+    'plazo',
+    'plazos',
+    'financiamiento',
+    'fiado',
+    'fin de mes',
+    'resto',
+    'abono',
+    'abonos',
+    'adelanto',
+    'debe',
+    'debo'
+];
+const UNVERIFIED_DATA_TOPIC_KEYWORDS = [
+    'stock',
+    'disponible',
+    'disponibilidad',
+    'queda',
+    'quedan',
+    'aroma',
+    'aromas',
+    'fragancia',
+    'olor',
+    'perfume',
+    'descuento',
+    'descuentos',
+    'rebaja',
+    'promocion',
+    'promociones',
+    'fecha de llegada',
+    'cuando llega',
+    'cuando vuelve',
+    'reposicion',
+    'reingreso',
+    'ingredientes',
+    'composicion',
+    'ficha tecnica',
+    'caracteristicas'
+];
 const pattyChatDebounce = new Map();
 const PATTY_UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || path.resolve(__dirname, '../../../uploads')).trim());
 const pattyProcessedMediaCache = new Map();
@@ -2192,6 +2235,160 @@ function buildUnconfiguredCourierResponse(zoneDecision = {}, summary = {}, reque
     ].join('\n');
 }
 
+function lineLooksInboundCustomer(line = '') {
+    const clean = text(line);
+    if (!clean) return false;
+    if (/^\[CLIENTE/i.test(clean)) return true;
+    if (/^\[(ASESOR|WA|PATTY|OPERADOR)/i.test(clean)) return false;
+    return !clean.startsWith('[');
+}
+
+function countTopicMentions(chatHistory = [], keywords = []) {
+    const lines = Array.isArray(chatHistory)
+        ? chatHistory
+        : String(chatHistory || '').split(/\r?\n/);
+    const normalizedKeywords = (Array.isArray(keywords) ? keywords : [])
+        .map(normalizeProductLookupKey)
+        .filter(Boolean);
+    if (!normalizedKeywords.length) return 0;
+    return lines.reduce((count, line) => {
+        if (!lineLooksInboundCustomer(line)) return count;
+        const normalizedLine = normalizeProductLookupKey(line);
+        return normalizedKeywords.some((keyword) => normalizedLine.includes(keyword))
+            ? count + 1
+            : count;
+    }, 0);
+}
+
+function getZonePaymentMethodsForMessage(zoneDecision = {}) {
+    const zoneRule = zoneDecision?.zoneRule || null;
+    if (!zoneRule) return '';
+    const summary = buildZoneShippingSummary(zoneRule);
+    return formatSpanishList(summary.paymentLabels || [], 'o');
+}
+
+function buildCreditGuardResponse(level = 1, zoneDecision = {}) {
+    const paymentMethods = getZonePaymentMethodsForMessage(zoneDecision);
+    if (level >= 3) {
+        return 'Déjame consultar eso con mi supervisor para ver si hay alguna excepción que podamos hacer por ti 🙌\nEn breve te confirmamos.';
+    }
+    if (level === 2) {
+        return [
+            'Entiendo que sería conveniente 😊',
+            paymentMethods
+                ? `Por ahora no contamos con esa modalidad, pero puedes pagar con ${paymentMethods}.`
+                : 'Por ahora no contamos con esa modalidad, pero te confirmo las opciones de pago apenas validemos tu zona.',
+            '¿Te ayudo a armar tu pedido?'
+        ].join('\n');
+    }
+    return [
+        'Por el momento Lávitat no ofrece crédito directo 😊',
+        paymentMethods
+            ? `Puedes pagar con ${paymentMethods}.`
+            : 'Cuando confirmemos tu zona te indico los métodos de pago disponibles.',
+        '¿Te ayudo a continuar con tu pedido?'
+    ].join('\n');
+}
+
+function getUnverifiedDataTopic(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized) return null;
+    if (/\b(stock|disponible|disponibilidad|queda|quedan)\b/.test(normalized)) return 'stock_no_confirmado';
+    if (/\b(aroma|aromas|fragancia|olor|perfume)\b/.test(normalized)) return 'aroma_no_confirmado';
+    if (/\b(descuento|descuentos|rebaja|promocion|promociones)\b/.test(normalized)) return 'descuento_no_configurado';
+    if (normalized.includes('fecha de llegada')
+        || normalized.includes('cuando llega')
+        || normalized.includes('cuando vuelve')
+        || /\b(reposicion|reingreso)\b/.test(normalized)) {
+        return 'fecha_no_confirmada';
+    }
+    if (/\b(ingredientes|composicion|ficha tecnica|caracteristicas)\b/.test(normalized)) return 'dato_no_disponible';
+    return null;
+}
+
+function getUnverifiedDataKeywordsForReason(reason = '') {
+    if (reason === 'stock_no_confirmado') {
+        return ['stock', 'disponible', 'disponibilidad', 'queda', 'quedan'];
+    }
+    if (reason === 'aroma_no_confirmado') {
+        return ['aroma', 'aromas', 'fragancia', 'olor', 'perfume'];
+    }
+    if (reason === 'descuento_no_configurado') {
+        return ['descuento', 'descuentos', 'rebaja', 'promocion', 'promociones'];
+    }
+    if (reason === 'fecha_no_confirmada') {
+        return ['fecha de llegada', 'cuando llega', 'cuando vuelve', 'reposicion', 'reingreso'];
+    }
+    return UNVERIFIED_DATA_TOPIC_KEYWORDS;
+}
+
+function buildUnverifiedDataGuardResponse(level = 1) {
+    if (level >= 3) {
+        return 'Déjame verificar ese dato con el equipo para darte la información exacta 🙌\nEn breve te confirmamos.';
+    }
+    if (level === 2) {
+        return 'No tengo ese detalle disponible ahora mismo.\n¿Hay algo más en lo que pueda ayudarte? 😊';
+    }
+    return 'No tengo ese dato confirmado en este momento 😊\n¿Te puedo ayudar con información sobre los productos del catálogo que tenemos disponibles?';
+}
+
+function buildExternalCourierEscalationResponse(requestedAgency = '') {
+    const requestedLabel = text(requestedAgency) || 'esa agencia';
+    return `Déjame consultar eso con mi supervisor para ver qué opciones tenemos con ${requestedLabel} 😊\nEn breve te confirmamos.`;
+}
+
+function buildAntiHallucinationGuardResponse({
+    lastMessage = '',
+    conversationLines = [],
+    zoneDecision = {}
+} = {}) {
+    if (isCreditOrInstallmentQuestion(lastMessage)) {
+        const creditMentions = Math.max(1, countTopicMentions(conversationLines, CREDIT_TOPIC_KEYWORDS));
+        return {
+            response: buildCreditGuardResponse(creditMentions, zoneDecision),
+            needsAdvisorReason: creditMentions >= 3 ? 'credito_insistente' : '',
+            source: 'patty.credit_guard',
+            level: Math.min(creditMentions, 3)
+        };
+    }
+
+    const requestedAgency = detectRequestedExternalCourier(lastMessage);
+    if (requestedAgency && zoneDecision?.zoneRule) {
+        const summary = buildZoneShippingSummary(zoneDecision.zoneRule);
+        const isConfigured = requestedCourierMatchesSummary(requestedAgency, summary);
+        const agencyMentions = countTopicMentions(conversationLines, [
+            requestedAgency,
+            'agencia',
+            'courier',
+            'transporte'
+        ]);
+        if (!isConfigured && agencyMentions >= 3) {
+            return {
+                response: buildExternalCourierEscalationResponse(requestedAgency),
+                needsAdvisorReason: 'agencia_externa_insistente',
+                source: 'patty.external_courier_escalation',
+                level: 3
+            };
+        }
+    }
+
+    const unavailableReason = getUnverifiedDataTopic(lastMessage);
+    if (unavailableReason) {
+        const unavailableMentions = Math.max(1, countTopicMentions(
+            conversationLines,
+            getUnverifiedDataKeywordsForReason(unavailableReason)
+        ));
+        return {
+            response: buildUnverifiedDataGuardResponse(unavailableMentions),
+            needsAdvisorReason: unavailableMentions >= 3 ? 'dato_no_disponible' : '',
+            source: `patty.${unavailableReason}`,
+            level: Math.min(unavailableMentions, 3)
+        };
+    }
+
+    return null;
+}
+
 function buildDeterministicDeliveryPaymentResponse(zoneDecision = {}, lastCustomerMessage = '') {
     if (zoneDecision?.deterministicResponseOverride) return zoneDecision.deterministicResponseOverride;
     const forceResponse = zoneDecision?.forceDeterministicDeliveryPayment === true;
@@ -2897,6 +3094,82 @@ async function markNeedsAdvisorFromPatty({
     return result;
 }
 
+async function escalateToAdvisor(
+    tenantId,
+    chatId,
+    scopeModuleId,
+    reason,
+    responseText,
+    emitCommercialStatusUpdated,
+    socketEmitter,
+    assistantName = DEFAULT_ASSISTANT_NAME
+) {
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const cleanChatId = normalizeChatId(chatId);
+    const cleanScopeModuleId = lower(scopeModuleId);
+    const cleanReason = text(reason) || 'patty_needs_advisor';
+    const assistantDisplayName = formatAssistantDisplayName(assistantName);
+    const cleanResponse = text(responseText);
+    if (cleanResponse) {
+        await waClient.sendMessage(cleanChatId, cleanResponse, {
+            metadata: {
+                agentMeta: {
+                    sentByUserId: 'patty',
+                    sentByName: assistantDisplayName,
+                    sentByRole: 'assistant',
+                    sentViaModuleId: cleanScopeModuleId
+                },
+                patty: true,
+                automationSource: 'patty_escalation'
+            }
+        });
+    }
+    const result = await chatCommercialStatusService.setNeedsAdvisor(
+        cleanTenantId,
+        cleanChatId,
+        cleanScopeModuleId,
+        cleanReason
+    );
+    await chatCommercialStatusService.setChatPattyMode(cleanTenantId, {
+        chatId: cleanChatId,
+        scopeModuleId: cleanScopeModuleId,
+        mode: 'review',
+        reason: cleanReason
+    });
+    if (typeof emitCommercialStatusUpdated === 'function') {
+        emitCommercialStatusUpdated({
+            tenantId: cleanTenantId,
+            chatId: cleanChatId,
+            scopeModuleId: cleanScopeModuleId,
+            result,
+            source: 'patty.escalated_to_advisor'
+        });
+    } else if (typeof socketEmitter === 'function') {
+        socketEmitter('chat_needs_advisor', {
+            tenantId: cleanTenantId,
+            chatId: cleanChatId,
+            scopeModuleId: cleanScopeModuleId,
+            reason: cleanReason,
+            needsAdvisor: true,
+            at: new Date().toISOString()
+        });
+    } else if (socketEmitter?.to && typeof socketEmitter.to === 'function') {
+        socketEmitter.to(cleanTenantId).emit('chat_needs_advisor', {
+            chatId: cleanChatId,
+            scopeModuleId: cleanScopeModuleId,
+            reason: cleanReason,
+            needsAdvisor: true,
+            at: new Date().toISOString()
+        });
+    }
+    console.log('[Patty] escalated to advisor:', cleanReason, {
+        tenantId: cleanTenantId,
+        moduleId: cleanScopeModuleId,
+        chatId: cleanChatId
+    });
+    return result;
+}
+
 const QUOTE_CHANGE_WORDS = [
     'agrega',
     'anade',
@@ -3375,11 +3648,23 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     const pendingInboundText = lineList(pendingInbound.lines, '');
     const zonesText = lineList(zones);
     const hasDetectedZone = (Array.isArray(zones) ? zones : []).some((entry) => text(entry).startsWith('ZONA DETECTADA PARA ESTE CLIENTE:'));
-    const deterministicNeedsAdvisorReason = shouldUseKnownLocationNoZoneResponse(conversation.lastCustomerMessage || '', zoneDecision)
+    const antiHallucinationGuard = buildAntiHallucinationGuardResponse({
+        lastMessage: conversation.lastCustomerMessage || '',
+        conversationLines: conversation.lines,
+        zoneDecision
+    });
+    const rawDeterministicResponse = antiHallucinationGuard?.response
+        || buildDeterministicDeliveryPaymentResponse(zoneDecision, conversation.lastCustomerMessage || '');
+    const deterministicNeedsAdvisorReason = antiHallucinationGuard?.needsAdvisorReason
+        || (shouldUseKnownLocationNoZoneResponse(conversation.lastCustomerMessage || '', zoneDecision)
         ? 'sin_cobertura_zona'
-        : '';
+        : '');
+    const deterministicSource = antiHallucinationGuard?.source
+        || (deterministicNeedsAdvisorReason === 'sin_cobertura_zona'
+            ? 'patty.no_zone'
+            : (rawDeterministicResponse ? 'patty.deterministic_delivery_payment' : ''));
     const deterministicResponse = applyGreetingToResponse(
-        buildDeterministicDeliveryPaymentResponse(zoneDecision, conversation.lastCustomerMessage || ''),
+        rawDeterministicResponse,
         pattyGreetingInstruction,
         customerNameForPrompt,
         assistantName,
@@ -3395,6 +3680,12 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         });
     }
     const system = [
+        'REGLA FUNDAMENTAL - NUNCA INVENTAR:',
+        'Solo afirma lo que esta verificado en el contexto. Si no tienes el dato, usa una frase de escalado natural y no inventes ni supongas.',
+        'Aplica especialmente a precios, costos de envio, cobertura geografica, metodos de pago, agencias, stock, aromas, descuentos y caracteristicas de productos no listadas en el catalogo.',
+        'Cuando no tienes el dato, usa frases como: "Dejame consultar eso con mi supervisor. En breve te confirmamos.", "Dejame verificar ese dato con el equipo." o "No tengo ese dato ahora. Lo consulto y te escribo."',
+        'NUNCA digas: "te derivo", "no puedo ayudarte", "consulta con soporte". Mantén el tono de que tu estas gestionando la situacion.',
+        '',
         'CONTEXTO CRITICO DE ESTA RESPUESTA:',
         hasDetectedZone ? 'ZONA PRIORITARIA DETECTADA PARA RESPONDER ENVIO/PAGO:' : '',
         hasDetectedZone ? zonesText : '',
@@ -3500,6 +3791,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         system,
         deterministicResponse,
         deterministicNeedsAdvisorReason,
+        deterministicSource,
         lastCustomerMessage: conversation.lastCustomerMessage || 'Continua la conversacion con el cliente.'
     };
 }
@@ -3534,6 +3826,10 @@ async function generatePattySuggestion(tenantId, moduleId, chatId, prebuiltConte
     const rawSuggestion = await getChatSuggestion(
         context.system,
         [
+            'REGLA FUNDAMENTAL - NUNCA INVENTAR: Solo afirma lo que esta verificado en el contexto. Si no tienes el dato, usa una frase de escalado natural y no inventes ni supongas.',
+            'Aplica especialmente a precios, costos de envio, cobertura geografica, metodos de pago, agencias, stock, aromas, descuentos y caracteristicas de productos no listadas en el catalogo.',
+            'NUNCA digas "te derivo", "no puedo ayudarte" ni "consulta con soporte"; mantén el tono de que tu estas gestionando la situacion.',
+            '',
             `Ultimo mensaje del cliente: ${context.lastCustomerMessage}`,
             '',
             'INSTRUCCIÓN CRÍTICA: Si el contexto incluye "⚠️ COTIZACIÓN ACTIVA", NO incluyas quoteRequest salvo que este último mensaje pida cambios explícitos en productos, cantidades o reemplazos.',
@@ -3904,6 +4200,19 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
             const prebuiltContext = await buildPattyContext(cleanTenantId, cleanModuleId, cleanChatId);
             if (prebuiltContext.deterministicResponse) {
                 const assistantName = formatAssistantDisplayName(prebuiltContext.assistantName || DEFAULT_ASSISTANT_NAME);
+                if (prebuiltContext.deterministicNeedsAdvisorReason) {
+                    await escalateToAdvisor(
+                        cleanTenantId,
+                        cleanChatId,
+                        cleanModuleId,
+                        prebuiltContext.deterministicNeedsAdvisorReason,
+                        prebuiltContext.deterministicResponse,
+                        options.emitCommercialStatusUpdated,
+                        socketEmitter,
+                        prebuiltContext.assistantName || DEFAULT_ASSISTANT_NAME
+                    );
+                    return;
+                }
                 await waClient.sendMessage(cleanChatId, prebuiltContext.deterministicResponse, {
                     metadata: {
                         agentMeta: {
@@ -3913,25 +4222,15 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                             sentViaModuleId: cleanModuleId
                         },
                         patty: true,
-                        automationSource: 'patty_deterministic_delivery_payment'
+                        automationSource: prebuiltContext.deterministicSource || 'patty_deterministic_delivery_payment'
                     }
                 });
-                console.log('[Patty] deterministic delivery/payment response', {
+                console.log('[Patty] deterministic response sent', {
                     tenantId: cleanTenantId,
                     moduleId: cleanModuleId,
-                    chatId: cleanChatId
+                    chatId: cleanChatId,
+                    source: prebuiltContext.deterministicSource || 'patty_deterministic_delivery_payment'
                 });
-                if (prebuiltContext.deterministicNeedsAdvisorReason) {
-                    await markNeedsAdvisorFromPatty({
-                        tenantId: cleanTenantId,
-                        moduleId: cleanModuleId,
-                        chatId: cleanChatId,
-                        reason: prebuiltContext.deterministicNeedsAdvisorReason,
-                        emitToRuntimeContext: socketEmitter,
-                        emitCommercialStatusUpdated: options.emitCommercialStatusUpdated,
-                        source: 'patty.no_zone'
-                    });
-                }
                 return;
             }
             const result = await generatePattySuggestion(cleanTenantId, cleanModuleId, cleanChatId, prebuiltContext);
