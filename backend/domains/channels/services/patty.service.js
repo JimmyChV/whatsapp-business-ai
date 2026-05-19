@@ -68,8 +68,9 @@ const UNVERIFIED_DATA_TOPIC_KEYWORDS = [
     'descuento',
     'descuentos',
     'rebaja',
-    'promocion',
-    'promociones',
+    'gratis',
+    'sin costo',
+    'precio especial',
     'fecha de llegada',
     'cuando llega',
     'cuando vuelve',
@@ -201,6 +202,11 @@ function extractCatalogSearchKeywords(value = '') {
     normalized.split(' ').forEach((word) => addCatalogKeywordVariant(out, word));
     if (normalized.includes('lava vajilla')) addCatalogKeywordVariant(out, 'lavavajillas');
     if (normalized.includes('quita mancha')) addCatalogKeywordVariant(out, 'quitamanchas');
+    if (/\b(promocion|promociones|oferta|ofertas|kit|kits|combo|combos|paquete|paquetes)\b/.test(normalized)) {
+        addCatalogKeywordVariant(out, 'kit');
+        addCatalogKeywordVariant(out, 'combo');
+        addCatalogKeywordVariant(out, 'paquete');
+    }
     return out;
 }
 
@@ -1231,6 +1237,39 @@ function getZonePaymentMethodFlags(rule = {}) {
         creditCard: payments.credit_card === true || payments.creditCard === true,
         cash: payments.cash === true
     };
+}
+
+function hasExplicitQuoteQuantity(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized) return false;
+    if (/\b\d+\b/.test(normalized)) return true;
+    return /\b(un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|unidad|unidades|uds|und)\b/.test(normalized);
+}
+
+function isAmbiguousQuoteReference(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized) return false;
+    return normalized === 'este'
+        || normalized === 'ese'
+        || normalized === 'esa'
+        || normalized === 'esto'
+        || normalized === 'eso'
+        || /\b(este|ese|esa)\s+producto\b/.test(normalized)
+        || /\b(esta|esa)\s+opcion\b/.test(normalized)
+        || /\bme\s+interesa\b/.test(normalized)
+        || /\blo\s+quiero\b/.test(normalized)
+        || /\bla\s+quiero\b/.test(normalized)
+        || /\bel\s+primero\b/.test(normalized)
+        || /\bla\s+primera\b/.test(normalized)
+        || /\bel\s+segundo\b/.test(normalized)
+        || /\bla\s+segunda\b/.test(normalized);
+}
+
+function shouldBlockQuoteForMissingQuantity(quoteRequest, lastCustomerMessage = '') {
+    const products = Array.isArray(quoteRequest?.products) ? quoteRequest.products : [];
+    if (!products.length) return false;
+    if (!isAmbiguousQuoteReference(lastCustomerMessage)) return false;
+    return !hasExplicitQuoteQuantity(lastCustomerMessage);
 }
 
 function getZonePaymentModalityFlags(rule = {}) {
@@ -2547,7 +2586,7 @@ function getUnverifiedDataTopic(value = '') {
     if (!normalized) return null;
     if (/\b(stock|disponible|disponibilidad|queda|quedan)\b/.test(normalized)) return 'stock_no_confirmado';
     if (/\b(aroma|aromas|fragancia|olor|perfume)\b/.test(normalized)) return 'aroma_no_confirmado';
-    if (/\b(descuento|descuentos|rebaja|promocion|promociones)\b/.test(normalized)) return 'descuento_no_configurado';
+    if (/\b(descuento|descuentos|rebaja|gratis|sin\s+costo|precio\s+especial)\b/.test(normalized)) return 'descuento_no_configurado';
     if (normalized.includes('fecha de llegada')
         || normalized.includes('cuando llega')
         || normalized.includes('cuando vuelve')
@@ -2566,7 +2605,7 @@ function getUnverifiedDataKeywordsForReason(reason = '') {
         return ['aroma', 'aromas', 'fragancia', 'olor', 'perfume'];
     }
     if (reason === 'descuento_no_configurado') {
-        return ['descuento', 'descuentos', 'rebaja', 'promocion', 'promociones'];
+        return ['descuento', 'descuentos', 'rebaja', 'gratis', 'sin costo', 'precio especial'];
     }
     if (reason === 'fecha_no_confirmada') {
         return ['fecha de llegada', 'cuando llega', 'cuando vuelve', 'reposicion', 'reingreso'];
@@ -4061,6 +4100,8 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '- El title debe copiarse del catalogo tal como aparece despues del SKU entre corchetes. No inventes SKUs ni codigos. Si incluyes sku, debe ser exactamente uno de los SKUs entre corchetes.',
         '- Incluye quoteRequest solo cuando haya una aceptacion o solicitud clara de cotizacion.',
         '- IMPORTANTE: Solo genera quoteRequest cuando el cliente confirma EXPLICITAMENTE que productos quiere cotizar. "Si", "claro", "ok" o "dale" como respuesta a opciones o informacion NO confirma cotizacion; significa que quiere mas informacion. Cotiza solo con frases como "cotizame eso", "quiero esos productos", "dame el precio de todo" o "haz el pedido".',
+        '- Si el cliente dice "este", "ese", "me interesa", "lo quiero", "ese producto" o "el primero" sin indicar cantidad, NO generes quoteRequest. Pregunta primero: "¿Cuántas unidades te gustaría? 😊".',
+        '- Si el cliente pregunta por promociones, ofertas, combos, paquetes o kits, responde con kits del catalogo si existen. No lo trates como descuento no confirmado.',
         '- Cuando el cliente mencione su ubicacion, busca en las zonas de cobertura y responde con las opciones de envio y metodos de pago disponibles para esa zona. Si la ubicacion no esta en cobertura, dilo claramente.',
         '- Cuando el cliente indique su ubicacion, identifica su zona de cobertura y menciona el costo de envio y metodos de pago disponibles para esa zona.',
         '- Si INSTRUCCION DE SALUDO indica shouldGreet: true, comienza tu respuesta con el saludo correspondiente segun timeOfDay: Buenos días / Buenas tardes / Buenas noches, seguido del nombre del cliente si lo conoces. Si shouldGreet: false, NO saludes; continua natural.',
@@ -4145,6 +4186,8 @@ async function generatePattySuggestion(tenantId, moduleId, chatId, prebuiltConte
             'Si el estado es PROGRAMADO y el cliente pide cambios, responde SOLO: "Entendido, en un momento te confirmamos si podemos agregar eso a tu pedido 🙌". NO incluyas lista de productos ni precios. NO generes quoteRequest.',
             'Para quoteRequest usa el title exacto del catalogo. No uses SKUs inventados; si agregas sku, debe existir exactamente entre corchetes en el catalogo.',
             'IMPORTANTE: Solo genera quoteRequest cuando el cliente confirma EXPLICITAMENTE que productos quiere cotizar. "Si", "claro", "ok" o "dale" como respuesta a opciones o informacion NO confirma cotizacion; significa que quiere mas informacion. Cotiza solo con frases como "cotizame eso", "quiero esos productos", "dame el precio de todo" o "haz el pedido".',
+            'Si el cliente dice "este", "ese", "me interesa", "lo quiero", "ese producto" o "el primero" sin indicar cantidad, NO generes quoteRequest. Pregunta primero: "¿Cuántas unidades te gustaría? 😊".',
+            'Si el cliente pregunta por promociones, ofertas, combos, paquetes o kits, responde con kits del catalogo si existen. No lo trates como descuento no confirmado.',
             'Si el cliente pregunta por credito, cuotas o pagos a plazos, responde empaticamente que Lavitat no ofrece credito directo. Si insiste, solicita apoyo de asesor con reason cliente_solicita_credito.',
             'Omite quoteRequest si no corresponde generar cotizacion.'
         ].join('\n'),
@@ -4170,19 +4213,25 @@ async function generatePattySuggestion(tenantId, moduleId, chatId, prebuiltConte
             preserveFullContext: true
         }
     );
-    const quoteRequest = normalizePattyQuoteRequest(rawSuggestion);
+    let quoteRequest = normalizePattyQuoteRequest(rawSuggestion);
     let messages = normalizePattyMessages(rawSuggestion);
-    if (quoteRequest) {
+    const blockedMissingQuantity = shouldBlockQuoteForMissingQuantity(quoteRequest, context.lastCustomerMessage);
+    if (blockedMissingQuantity) {
+        quoteRequest = null;
+        messages = [{ text: '¿Cuántas unidades te gustaría? 😊', quotedMessageId: null }];
+    } else if (quoteRequest) {
         messages = normalizeQuoteIntroMessages(messages);
     }
     messages = sanitizePattyMessageQuotes(messages, context.pendingInboundMessageIds);
     const suggestion = messages.map((item) => item.text).join('\n\n');
-    const catalogProducts = await filterCatalogProductsForContext(
-        context.tenantId,
-        normalizePattyCatalogProducts(rawSuggestion),
-        context.lastCustomerMessage,
-        suggestion
-    );
+    const catalogProducts = blockedMissingQuantity
+        ? []
+        : await filterCatalogProductsForContext(
+            context.tenantId,
+            normalizePattyCatalogProducts(rawSuggestion),
+            context.lastCustomerMessage,
+            suggestion
+        );
     console.log('[Patty] suggestion generated', {
         tenantId: context.tenantId,
         moduleId: context.moduleId,
@@ -4190,6 +4239,7 @@ async function generatePattySuggestion(tenantId, moduleId, chatId, prebuiltConte
         suggestionChars: text(suggestion).length,
         messageCount: messages.length,
         hasQuoteRequest: Boolean(quoteRequest),
+        blockedMissingQuantity,
         catalogProductCount: catalogProducts.length,
         isAiError: text(rawSuggestion).startsWith('Error IA:') || lower(rawSuggestion).includes('ia no configurada')
     });
