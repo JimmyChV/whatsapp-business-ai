@@ -1114,7 +1114,7 @@ function formatDeliveryTimeLabel(value = '') {
     if (!clean) return 'Por confirmar';
     const normalized = normalizeLocationLookup(clean);
     if (/\b(dia|dias|habil|habiles|hora|horas)\b/.test(normalized)) return clean;
-    if (/\d/.test(clean)) return `${clean} dias habiles`;
+    if (/\d/.test(clean)) return `${clean} días hábiles`;
     return clean;
 }
 
@@ -1124,8 +1124,34 @@ function getZonePaymentLabels(rule = {}) {
         payments.yape ? 'Yape' : '',
         payments.plin ? 'Plin' : '',
         payments.bank_transfer || payments.bankTransfer ? 'Transferencia bancaria' : '',
-        payments.credit_card || payments.creditCard ? 'Tarjeta de credito' : ''
+        payments.credit_card || payments.creditCard ? 'Tarjeta de crédito' : '',
+        payments.cash ? 'Efectivo' : ''
     ].filter(Boolean);
+}
+
+function getZonePaymentModalityText(rule = {}) {
+    const modality = safeJsonObject(rule.paymentModality || rule.payment_modality);
+    const advance = modality.advance !== false;
+    const cashOnDelivery = modality.cash_on_delivery === true || modality.cashOnDelivery === true;
+    if (advance && cashOnDelivery) return 'anticipado o contraentrega según tu preferencia';
+    if (cashOnDelivery) return 'contraentrega';
+    if (advance) return 'pago anticipado';
+    return 'modalidad por confirmar';
+}
+
+function formatSpanishList(items = [], connector = 'o') {
+    const cleanItems = (Array.isArray(items) ? items : []).map(text).filter(Boolean);
+    if (!cleanItems.length) return '';
+    if (cleanItems.length === 1) return cleanItems[0];
+    if (cleanItems.length === 2) return `${cleanItems[0]} ${connector} ${cleanItems[1]}`;
+    return `${cleanItems.slice(0, -1).join(', ')} ${connector} ${cleanItems[cleanItems.length - 1]}`;
+}
+
+function buildZonePaymentPhrase(summary = {}, { sentenceStart = true } = {}) {
+    const paymentText = formatSpanishList(summary.paymentLabels || [], 'o') || 'métodos por confirmar';
+    const modalityText = text(summary.paymentModalityText);
+    const prefix = sentenceStart ? 'Puedes' : 'puedes';
+    return `${prefix} pagar con ${paymentText}${modalityText ? `, ${modalityText}` : ''} 😊`;
 }
 
 function getZoneCoverageDescription(rule = {}) {
@@ -1157,6 +1183,7 @@ function buildZoneShippingSummary(rule = {}, subtotal = 0) {
         freeFromText: freeFrom !== null ? `S/ ${freeFrom.toFixed(2)}` : 'No aplica',
         estimatedTime: formatDeliveryTimeLabel(primaryShipping?.estimated_time || primaryShipping?.estimatedTime || ''),
         paymentLabels: getZonePaymentLabels(rule),
+        paymentModalityText: getZonePaymentModalityText(rule),
         coverage: getZoneCoverageDescription(rule),
         activeShippingOptions: getActiveShippingOptions(rule),
         deliveryAmount: isFree ? 0 : deliveryCost,
@@ -1769,6 +1796,7 @@ function buildZoneContextFromDecision(decision = {}) {
             `  Gratis desde: ${summary.freeFromText}`,
             `  Tiempo: ${summary.estimatedTime} exactos`,
             `  Metodos de pago: ${summary.paymentLabels.length ? summary.paymentLabels.join(', ') : 'No configurados'}`,
+            `  Modalidad de pago: ${summary.paymentModalityText}`,
             `  Cobertura: ${summary.coverage}`,
             '  Envio disponible:',
             shippingLines.length ? shippingLines.join('\n') : '    - Sin opciones de envio configuradas',
@@ -2031,17 +2059,17 @@ function buildDeterministicDeliveryPaymentResponse(zoneDecision = {}, lastCustom
         const responseLines = [];
         if (wantsDelivery || !wantsPayment) {
             const deliveryLead = summary.shippingType === 'courier'
-                ? `Enviamos por *agencia ${summary.shippingDisplayName}* a ${locationLabel}.`
-                : `Hacemos *reparto a domicilio* en ${locationLabel}.`;
-            const deliveryParts = [deliveryLead, `Costo: *${summary.costText}*.`];
-            if (summary.freeFrom !== null) {
-                deliveryParts.push(`Gratis en pedidos desde S/ ${summary.freeFrom.toFixed(2)}.`);
-            }
-            deliveryParts.push(`Tiempo: ${summary.estimatedTime}.`);
-            responseLines.push(deliveryParts.join(' '));
-        }
-        if (wantsPayment) {
-            responseLines.push(`Aceptamos: *${summary.paymentLabels.length ? summary.paymentLabels.join('*, *') : 'metodos por confirmar'}* 🙌`);
+                ? `Para ${locationLabel} enviamos por *agencia ${summary.shippingDisplayName}* 📦`
+                : `Para ${locationLabel} hacemos *reparto a domicilio* 🚚`;
+            const freeFromText = summary.freeFrom !== null
+                ? `, gratis en pedidos desde S/ ${summary.freeFrom.toFixed(2)}`
+                : '';
+            responseLines.push([
+                deliveryLead,
+                `El costo es *${summary.costText}*${freeFromText}, y llega en ${summary.estimatedTime}. ${buildZonePaymentPhrase(summary)}`
+            ].join('\n'));
+        } else if (wantsPayment) {
+            responseLines.push(`Para ${locationLabel}, ${buildZonePaymentPhrase(summary, { sentenceStart: false })}`);
         }
         return responseLines.filter(Boolean).join('\n');
     }
