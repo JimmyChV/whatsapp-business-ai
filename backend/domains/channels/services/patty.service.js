@@ -1239,18 +1239,67 @@ function formatDisambiguationCandidateLabel(candidate = {}) {
     const district = formatLocationOptionPart(clean.district || clean.name);
     const province = formatLocationOptionPart(clean.province);
     const department = formatLocationOptionPart(clean.department);
+    if (district && province && department) {
+        return normalizeLocationLookup(province) === normalizeLocationLookup(department)
+            ? `${district} en ${province} (provincia)`
+            : `${district} en ${province}, ${department}`;
+    }
     const context = Array.from(new Set([province, department].filter(Boolean))).join(', ');
     if (district && context) return `${district} en ${context}`;
     if (province && department && province !== department) return `${province}, ${department}`;
     return district || province || department || 'esa ubicacion';
 }
 
-function buildLocationDisambiguationQuestion(candidates = []) {
-    const cleanCandidates = normalizeLocationCandidates(candidates);
+function getZoneRuleLocationValues(rule = {}, keys = []) {
+    const meta = safeJsonObject(rule.rulesJson || rule.rules_json || rule.metadata);
+    return keys
+        .flatMap((key) => ensureTextArray(meta[key]))
+        .map(normalizeLocationLookup)
+        .filter(Boolean);
+}
+
+function candidateZoneRelevance(candidate = {}, zoneRules = []) {
+    const clean = normalizeLocationCandidate(candidate);
+    const district = normalizeLocationLookup(clean.district);
+    const province = normalizeLocationLookup(clean.province);
+    const department = normalizeLocationLookup(clean.department);
+    let score = 0;
+    (Array.isArray(zoneRules) ? zoneRules : []).forEach((rule) => {
+        const districts = getZoneRuleLocationValues(rule, ['districts', 'districtNames', 'distritos', 'district']);
+        const provinces = getZoneRuleLocationValues(rule, ['provinces', 'provinceNames', 'provincias', 'province']);
+        const departments = getZoneRuleLocationValues(rule, ['departments', 'departmentNames', 'departamentos', 'department']);
+        if (district && districts.includes(district)) score = Math.max(score, 30);
+        if (province && provinces.includes(province)) score = Math.max(score, 20);
+        if (department && departments.includes(department)) score = Math.max(score, 10);
+    });
+    return score;
+}
+
+function rankLocationDisambiguationCandidates(candidates = [], zoneRules = []) {
+    return normalizeLocationCandidates(candidates)
+        .map((candidate, index) => ({
+            candidate,
+            index,
+            score: candidateZoneRelevance(candidate, zoneRules)
+        }))
+        .sort((a, b) => (b.score - a.score) || (a.index - b.index))
+        .map((item) => item.candidate);
+}
+
+function buildLocationDisambiguationQuestion(candidates = [], zoneRules = []) {
+    const cleanCandidates = rankLocationDisambiguationCandidates(candidates, zoneRules).slice(0, 5);
     if (cleanCandidates.length === 2) {
         return `¿Te refieres a ${formatDisambiguationCandidateLabel(cleanCandidates[0])} o a ${formatDisambiguationCandidateLabel(cleanCandidates[1])}? 😊`;
     }
-    return '¿En que provincia o departamento estas? Asi te confirmo si tenemos cobertura 😊';
+    if (cleanCandidates.length > 0) {
+        const lines = cleanCandidates.map((candidate, index) => `${index + 1}. ${formatDisambiguationCandidateLabel(candidate)}`);
+        return [
+            'Encontramos varios lugares con ese nombre:',
+            ...lines,
+            '¿Cuál es el tuyo? 😊'
+        ].join('\n');
+    }
+    return 'No logro ubicar eso con certeza. ¿Puedes ser más específico?';
 }
 
 function isLocationDisambiguationTopicChange(value = '') {
@@ -1271,21 +1320,56 @@ function candidateMatchKeys(candidate = {}) {
         .filter((item) => item && item.length >= 4);
 }
 
-function matchesLocationCandidateAnswer(answer = '', candidate = {}) {
+function extractDisambiguationOptionNumber(answer = '') {
+    const normalized = normalizeLocationLookup(answer);
+    if (!normalized) return null;
+    const numeric = normalized.match(/\b(?:opcion|el|la|numero|nro)?\s*([1-9])\b/);
+    if (numeric) return Number.parseInt(numeric[1], 10);
+    if (/\bprimer[oa]?\b/.test(normalized)) return 1;
+    if (/\bsegund[oa]?\b/.test(normalized)) return 2;
+    if (/\btercer[oa]?\b/.test(normalized)) return 3;
+    if (/\bcuart[oa]?\b/.test(normalized)) return 4;
+    if (/\bquint[oa]?\b/.test(normalized)) return 5;
+    return null;
+}
+
+function locationValueMatchesAnswer(answer = '', value = '') {
     const normalizedAnswer = normalizeLocationLookup(answer);
-    if (!normalizedAnswer) return false;
-    return candidateMatchKeys(candidate).some((key) => (
-        normalizedAnswer === key
-        || normalizedAnswer.includes(key)
-        || key.includes(normalizedAnswer)
-    ));
+    const normalizedValue = normalizeLocationLookup(value);
+    if (!normalizedAnswer || !normalizedValue || normalizedValue.length < 4) return false;
+    if (normalizedAnswer === normalizedValue) return true;
+    const escaped = normalizedValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(?:^|\\s)${escaped}(?:\\s|$)`).test(normalizedAnswer);
+}
+
+function filterCandidatesByField(answer = '', candidates = [], field = '') {
+    return normalizeLocationCandidates(candidates)
+        .filter((candidate) => locationValueMatchesAnswer(answer, candidate[field]));
 }
 
 function resolvePendingLocationCandidate(answer = '', candidates = []) {
-    const matches = normalizeLocationCandidates(candidates)
-        .filter((candidate) => matchesLocationCandidateAnswer(answer, candidate));
-    if (matches.length === 1) return { status: 'resolved', candidate: matches[0], matches };
-    if (matches.length > 1) return { status: 'ambiguous', candidate: null, matches };
+    const cleanCandidates = normalizeLocationCandidates(candidates);
+    const optionNumber = extractDisambiguationOptionNumber(answer);
+    if (optionNumber !== null && optionNumber >= 1 && optionNumber <= Math.min(5, cleanCandidates.length)) {
+        return { status: 'resolved', candidate: cleanCandidates[optionNumber - 1], matches: [cleanCandidates[optionNumber - 1]], reason: 'option_number' };
+    }
+
+    const normalizedAnswer = normalizeLocationLookup(answer);
+    const preferProvince = /\bprovincia\b/.test(normalizedAnswer);
+    const preferDepartment = /\bdepartamento\b/.test(normalizedAnswer);
+    const orderedFields = preferProvince
+        ? ['province', 'department']
+        : (preferDepartment ? ['department', 'province'] : ['department', 'province']);
+
+    for (const field of orderedFields) {
+        const matches = filterCandidatesByField(answer, cleanCandidates, field);
+        if (matches.length === 1) return { status: 'resolved', candidate: matches[0], matches, reason: field };
+        if (matches.length > 1) return { status: 'narrowed', candidate: null, matches, reason: field };
+    }
+
+    const broadMatches = cleanCandidates.filter((candidate) => candidateMatchKeys(candidate).some((key) => locationValueMatchesAnswer(answer, key)));
+    if (broadMatches.length === 1) return { status: 'resolved', candidate: broadMatches[0], matches: broadMatches, reason: 'broad' };
+    if (broadMatches.length > 1) return { status: 'narrowed', candidate: null, matches: broadMatches, reason: 'broad' };
     return { status: 'none', candidate: null, matches: [] };
 }
 
@@ -1471,14 +1555,18 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
                 };
             }
 
+            const nextCandidates = resolution.status === 'narrowed' && resolution.matches.length > 1
+                ? rankLocationDisambiguationCandidates(resolution.matches, sourceRules)
+                : pending.candidates;
             const renewed = await setPendingLocationDisambiguation(cleanTenantId, cleanChatId, cleanScopeModuleId, {
                 ...pending,
+                candidates: nextCandidates,
                 expiresAt: new Date(Date.now() + LOCATION_DISAMBIGUATION_TTL_MS).toISOString()
             });
             const candidates = renewed?.candidates || pending.candidates;
-            const deterministicResponseOverride = resolution.status === 'ambiguous'
-                ? buildLocationDisambiguationQuestion(candidates)
-                : 'No logro ubicar eso con certeza. ¿Puedes indicarme tu provincia o departamento? 😊';
+            const deterministicResponseOverride = resolution.status === 'narrowed'
+                ? buildLocationDisambiguationQuestion(candidates, sourceRules)
+                : 'No logro identificar esa ubicación entre las opciones. ¿Puedes ser más específico?';
             console.log('[Patty] location disambiguation asked:', candidates.map(formatDisambiguationCandidateLabel), {
                 tenantId: cleanTenantId,
                 chatId: cleanChatId,
@@ -1519,14 +1607,15 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
     if (cleanChatId && resolvedLocation.source === 'last_message' && locationAmbiguous) {
         const candidates = normalizeLocationCandidates(location?.candidates);
         if (candidates.length) {
+            const rankedCandidates = rankLocationDisambiguationCandidates(candidates, sourceRules);
             await setPendingLocationDisambiguation(cleanTenantId, cleanChatId, cleanScopeModuleId, {
                 matchedText: text(location?.matchedText || lastCustomerMessage),
                 sourceMessageId: text(options.sourceMessageId || ''),
-                candidates,
+                candidates: rankedCandidates,
                 intent: getDeliveryPaymentIntent(lastCustomerMessage)
             });
-            deterministicResponseOverride = buildLocationDisambiguationQuestion(candidates);
-            console.log('[Patty] location disambiguation asked:', candidates.map(formatDisambiguationCandidateLabel), {
+            deterministicResponseOverride = buildLocationDisambiguationQuestion(rankedCandidates, sourceRules);
+            console.log('[Patty] location disambiguation asked:', rankedCandidates.map(formatDisambiguationCandidateLabel), {
                 tenantId: cleanTenantId,
                 chatId: cleanChatId,
                 scopeModuleId: cleanScopeModuleId
