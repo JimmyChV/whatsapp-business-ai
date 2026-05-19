@@ -203,6 +203,23 @@ function extractCatalogSearchKeywords(value = '') {
     return out;
 }
 
+function isBroadCatalogQuestion(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized) return false;
+    const broadCatalogIntent = normalized.includes('que productos')
+        || normalized.includes('productos tiene')
+        || normalized.includes('productos tienen')
+        || normalized.includes('que venden')
+        || normalized.includes('que manejan')
+        || normalized.includes('catalogo')
+        || normalized.includes('ver productos')
+        || normalized.includes('muestrame productos')
+        || normalized.includes('mostrarme productos');
+    if (!broadCatalogIntent) return false;
+    const specificProductIntent = /\b(detergente|lavavajillas|lavajillas|quitamanchas|quita\s+manchas|suavizante|sacagrasa|saca\s+grasa|limpiador|desinfectante|jabon|kit|ropa|cocina|bano|producto\s+\w{4,})\b/.test(normalized);
+    return !specificProductIntent;
+}
+
 function extractProductSignificantWords(value = '') {
     return normalizeProductLookupKey(value)
         .split(' ')
@@ -1025,6 +1042,14 @@ async function filterCatalogProductsForContext(tenantId, skus = [], lastCustomer
         .filter(Boolean)))
         .slice(0, 5);
     if (!cleanSkus.length) return [];
+    if (isBroadCatalogQuestion(lastCustomerMessage)) {
+        console.log('[Patty] catalog products skipped for broad catalog question', {
+            tenantId,
+            requested: cleanSkus,
+            lastCustomerMessage: text(lastCustomerMessage).slice(0, 120)
+        });
+        return [];
+    }
     const rows = await getCatalogRowsBySkus(tenantId, cleanSkus);
     if (!rows.length) return [];
     const lastMessageKeywords = extractCatalogSearchKeywords(lastCustomerMessage);
@@ -1704,6 +1729,27 @@ function isPaymentQuestionWithoutLocation(value = '') {
     return paymentIntent && !hasLocationMentionIntent(value);
 }
 
+function looksLikeBareLocationText(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized) return false;
+    if (hasClientGreeting(value) || isPureGreetingMessage(value)) return false;
+    if (isPaymentQuestionWithoutLocation(value)) return false;
+    if (mentionsProductIntent(value) || isCreditOrInstallmentQuestion(value)) return false;
+    if (/\b(que|como|cual|cuanto|cuando|tienes|tienen|puedo|puedes|pasa|hola|buenos|buenas|dias|tardes|noches)\b/.test(normalized)) {
+        return false;
+    }
+    const words = normalized.split(/\s+/).filter(Boolean);
+    return words.length > 0 && words.length <= 3 && words.some((word) => word.length >= 4);
+}
+
+function shouldResolveLocationFromMessage(value = '') {
+    const clean = text(value);
+    if (!clean || isPaymentQuestionWithoutLocation(clean)) return false;
+    return hasLocationMentionIntent(clean)
+        || hasCoverageQuestionIntent(clean)
+        || looksLikeBareLocationText(clean);
+}
+
 function extractRecentCustomerLocationTexts(recentConversationText = '') {
     const lines = text(recentConversationText)
         .split(/\r?\n/)
@@ -1726,7 +1772,7 @@ function shouldUseLocationResult(location = {}) {
 
 async function resolveLocationForZoneDecision(recentConversationText = '', lastCustomerMessage = '') {
     const lastText = text(lastCustomerMessage);
-    if (lastText && !isPaymentQuestionWithoutLocation(lastText)) {
+    if (shouldResolveLocationFromMessage(lastText)) {
         const lastLocation = await geoLocationService.resolveLocationFromText(lastText);
         if (shouldUseLocationResult(lastLocation)) {
             return {
@@ -1746,7 +1792,7 @@ async function resolveLocationForZoneDecision(recentConversationText = '', lastC
     }
     const recentCustomerTexts = extractRecentCustomerLocationTexts(historyText).reverse();
     for (const candidateText of recentCustomerTexts) {
-        if (!candidateText || isPaymentQuestionWithoutLocation(candidateText)) continue;
+        if (!shouldResolveLocationFromMessage(candidateText)) continue;
         const candidateLocation = await geoLocationService.resolveLocationFromText(candidateText);
         if (shouldUseLocationResult(candidateLocation)) {
             return {
@@ -1756,11 +1802,10 @@ async function resolveLocationForZoneDecision(recentConversationText = '', lastC
             };
         }
     }
-    const historyLocation = await geoLocationService.resolveLocationFromText(historyText);
     return {
-        location: historyLocation,
-        source: 'history',
-        lookupText: historyText
+        location: await geoLocationService.resolveLocationFromText(''),
+        source: 'none',
+        lookupText: ''
     };
 }
 
@@ -1819,45 +1864,63 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
                 };
             }
 
-            const nextCandidates = resolution.status === 'narrowed' && resolution.matches.length > 1
-                ? rankLocationDisambiguationCandidates(resolution.matches, sourceRules)
-                : pending.candidates;
-            const renewed = await setPendingLocationDisambiguation(cleanTenantId, cleanChatId, cleanScopeModuleId, {
-                ...pending,
-                candidates: nextCandidates,
-                expiresAt: new Date(Date.now() + LOCATION_DISAMBIGUATION_TTL_MS).toISOString()
-            });
-            const candidates = renewed?.candidates || pending.candidates;
-            const deterministicResponseOverride = resolution.status === 'narrowed'
-                ? buildLocationDisambiguationQuestion(candidates, sourceRules, pending.matchedText)
-                : (isSubdistrictClarification(lastCustomerMessage)
-                    ? buildSubdistrictClarificationResponse(lastCustomerMessage)
-                    : 'No logro identificar esa ubicacion entre las opciones. ¿Puedes ser mas especifico?');
-            console.log('[Patty] location disambiguation asked:', candidates.map(formatDisambiguationCandidateLabel), {
-                tenantId: cleanTenantId,
-                chatId: cleanChatId,
-                scopeModuleId: cleanScopeModuleId
-            });
-            return {
-                rules: sourceRules,
-                location: {
-                    district: null,
-                    province: null,
-                    department: null,
-                    confidence: 'ambiguous',
-                    matchedType: null,
-                    matchedText: pending.matchedText,
-                    candidates
-                },
-                locationSource: 'pending_disambiguation',
-                locationLookupText: text(lastCustomerMessage),
-                zoneRule: null,
-                matchedLevel: null,
-                locationMentioned: true,
-                locationRecognized: false,
-                locationAmbiguous: true,
-                deterministicResponseOverride
-            };
+            let continueNormalFlow = false;
+            if (resolution.status !== 'narrowed') {
+                const isNewLocationLikeMessage = shouldResolveLocationFromMessage(lastCustomerMessage);
+                if (isNewLocationLikeMessage) {
+                    const directLocation = await geoLocationService.resolveLocationFromText(lastCustomerMessage);
+                    if (shouldUseLocationResult(directLocation)) {
+                        await clearPendingLocationDisambiguation(cleanTenantId, cleanChatId, cleanScopeModuleId, 'new_location_replaces_pending');
+                        continueNormalFlow = true;
+                    }
+                } else {
+                    await clearPendingLocationDisambiguation(cleanTenantId, cleanChatId, cleanScopeModuleId, 'non_location_message');
+                    continueNormalFlow = true;
+                }
+            }
+            if (continueNormalFlow) {
+                // Fall through and process the current message normally.
+            } else {
+                const nextCandidates = resolution.status === 'narrowed' && resolution.matches.length > 1
+                    ? rankLocationDisambiguationCandidates(resolution.matches, sourceRules)
+                    : pending.candidates;
+                const renewed = await setPendingLocationDisambiguation(cleanTenantId, cleanChatId, cleanScopeModuleId, {
+                    ...pending,
+                    candidates: nextCandidates,
+                    expiresAt: new Date(Date.now() + LOCATION_DISAMBIGUATION_TTL_MS).toISOString()
+                });
+                const candidates = renewed?.candidates || pending.candidates;
+                const deterministicResponseOverride = resolution.status === 'narrowed'
+                    ? buildLocationDisambiguationQuestion(candidates, sourceRules, pending.matchedText)
+                    : (isSubdistrictClarification(lastCustomerMessage)
+                        ? buildSubdistrictClarificationResponse(lastCustomerMessage)
+                        : 'No logro identificar esa ubicacion entre las opciones. ¿Puedes ser mas especifico?');
+                console.log('[Patty] location disambiguation asked:', candidates.map(formatDisambiguationCandidateLabel), {
+                    tenantId: cleanTenantId,
+                    chatId: cleanChatId,
+                    scopeModuleId: cleanScopeModuleId
+                });
+                return {
+                    rules: sourceRules,
+                    location: {
+                        district: null,
+                        province: null,
+                        department: null,
+                        confidence: 'ambiguous',
+                        matchedType: null,
+                        matchedText: pending.matchedText,
+                        candidates
+                    },
+                    locationSource: 'pending_disambiguation',
+                    locationLookupText: text(lastCustomerMessage),
+                    zoneRule: null,
+                    matchedLevel: null,
+                    locationMentioned: true,
+                    locationRecognized: false,
+                    locationAmbiguous: true,
+                    deterministicResponseOverride
+                };
+            }
         }
     }
 
@@ -3813,6 +3876,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '- Si el cliente claramente acepta o pide una cotizacion, agrega quoteRequest con products usando el titulo EXACTO del catalogo: {"products":[{"title":"Nombre exacto del producto","qty":1}]}.',
         '- quoteRequest NO debe incluir campo note. Solo incluir: {"products":[{"title":"Nombre exacto del producto","qty":1}]}.',
         '- Cuando el cliente pida ver productos o el catalogo, incluye catalogProducts como array de SKUs exactos entre corchetes del catalogo. Ejemplo: si el catalogo dice "- [SKU_DEL_PRODUCTO_MENCIONADO_EN_TU_TEXTO] Producto elegido: S/ 39.90", entonces catalogProducts debe ser ["SKU_DEL_PRODUCTO_MENCIONADO_EN_TU_TEXTO"]. NUNCA uses el titulo, SIEMPRE el codigo entre corchetes. Maximo 5 productos por respuesta.',
+        '- Si el cliente pregunta de forma general "que productos tienen", "que venden" o "catalogo" sin mencionar una categoria concreta, NO incluyas catalogProducts. Responde con una lista breve en texto y pregunta que tipo de producto quiere ver.',
         '- En catalogProducts incluye SOLO los SKUs de los productos que mencionaste en tu respuesta de texto. Si mencionaste "Detergente Concentrado 4L", incluye su SKU. No incluyas productos adicionales ni kits salvo que el cliente los haya pedido explicitamente.',
         '- Cuando generes quoteRequest, messages[] solo debe tener UNA linea de intro como "He agregado [producto] a tu pedido 😊" o "Aquí va tu cotización actualizada 👇". NUNCA incluyas lista de productos, precios ni subtotales en el texto; la cotizacion ya los muestra.',
         '- Cuando generes quoteRequest para modificar una cotizacion existente, products[] debe incluir TODOS los productos del resultado final, no solo los cambios. Ejemplo: si hay 2 productos actuales y el cliente agrega 1, products[] debe tener 3 items.',
@@ -3898,6 +3962,7 @@ async function generatePattySuggestion(tenantId, moduleId, chatId, prebuiltConte
             'REGLA DE CITADO: Si hay UNA sola pregunta o intencion, devuelve un solo mensaje con quotedMessageId:null. Si hay MULTIPLES preguntas sobre temas distintos, devuelve un mensaje por pregunta y usa solo message_id reales de MENSAJES PENDIENTES DE RESPUESTA.',
             'quoteRequest NO debe incluir campo note. Solo incluir products con title y qty.',
             'catalogProducts debe ser un array de SKUs exactos entre corchetes del catalogo. Ejemplo: si el catalogo dice "- [SKU_DEL_PRODUCTO_MENCIONADO_EN_TU_TEXTO] Producto elegido: S/ 39.90", entonces catalogProducts debe ser ["SKU_DEL_PRODUCTO_MENCIONADO_EN_TU_TEXTO"]. NUNCA uses el titulo del producto, SIEMPRE el codigo entre corchetes. Maximo 5 productos por respuesta.',
+            'Si el cliente pregunta de forma general "que productos tienen", "que venden" o "catalogo" sin mencionar una categoria concreta, NO incluyas catalogProducts. Responde con una lista breve en texto y pregunta que tipo de producto quiere ver.',
             'En catalogProducts incluye SOLO los SKUs de los productos que mencionaste en tu respuesta de texto. Si mencionaste "Detergente Concentrado 4L", incluye su SKU. No incluyas productos adicionales ni kits salvo que el cliente los haya pedido explicitamente.',
             'Cuando incluyas quoteRequest, messages[] debe contener UNA sola linea de intro como "He agregado [producto] a tu pedido 😊" o "Aquí va tu cotización actualizada 👇". NUNCA incluyas lista de productos, precios ni subtotales en el texto; la cotizacion ya los muestra.',
             'Si quoteRequest modifica una cotizacion existente, products[] debe incluir TODOS los productos del resultado final, no solo el producto agregado/quitado/cambiado.',
@@ -4312,6 +4377,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
             const skipCatalogProducts = Boolean(
                 prebuiltContext?.deterministicResponse
                 || result?.deterministicResponse
+                || isBroadCatalogQuestion(lastCustomerMessage)
                 || isPureDeliveryOrPaymentQuestion(lastCustomerMessage)
             );
             const catalogProducts = skipCatalogProducts

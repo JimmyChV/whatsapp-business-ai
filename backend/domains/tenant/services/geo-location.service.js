@@ -12,7 +12,9 @@ const STOPWORDS = new Set([
     'metodos', 'yape', 'plin', 'transferencia', 'tarjeta', 'credito',
     'creditos', 'cuota', 'cuotas', 'plazo', 'plazos', 'financiamiento',
     'fiado', 'abono', 'abonos', 'adelanto', 'contra', 'contraentrega',
-    'entrega', 'puedo', 'puedes', 'podria', 'podrias', 'hablo'
+    'entrega', 'puedo', 'puedes', 'podria', 'podrias', 'hablo',
+    'hola', 'buen', 'buenos', 'buenas', 'dias', 'dia', 'tardes',
+    'noches', 'saludos', 'uenos'
 ]);
 
 function text(value = '') {
