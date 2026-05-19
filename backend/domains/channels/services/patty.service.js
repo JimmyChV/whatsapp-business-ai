@@ -2299,6 +2299,25 @@ function getDeliveryPaymentIntent(value = '') {
     return { wantsDelivery, wantsPayment };
 }
 
+function normalizedContainsPhrase(source = '', phrase = '') {
+    const cleanSource = normalizeProductLookupKey(source);
+    const cleanPhrase = normalizeProductLookupKey(phrase);
+    if (!cleanSource || !cleanPhrase) return false;
+    const escaped = cleanPhrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+    return new RegExp(`(?:^|\\s)${escaped}(?:\\s|$)`).test(cleanSource);
+}
+
+function hasCourierRequestIntentForAgency(normalized = '', agency = '') {
+    const cleanAgency = normalizeProductLookupKey(agency);
+    if (!normalized || !cleanAgency) return false;
+    const escapedAgency = cleanAgency.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+    const explicitAgencyPattern = new RegExp(`\\b(?:por|via|vía|agencia|courier|transporte)\\s+${escapedAgency}\\b|\\b${escapedAgency}\\s+(?:agencia|courier|transporte)\\b`);
+    if (explicitAgencyPattern.test(normalized)) return true;
+    const hasShippingVerb = /\b(enviar|envia|envian|enviame|mandar|manda|mandame|despachar|despachan|coordinar|prefiero|quisiera|quiero|pueden|puedes)\b/.test(normalized);
+    const hasShippingContext = /\b(agencia|courier|transporte|flete|envio|delivery|despacho)\b/.test(normalized);
+    return hasShippingVerb && hasShippingContext;
+}
+
 function detectRequestedExternalCourier(value = '') {
     const normalized = normalizeProductLookupKey(value);
     if (!normalized) return null;
@@ -2313,9 +2332,13 @@ function detectRequestedExternalCourier(value = '') {
         'ormeno',
         'ormeÃ±o'
     ];
-    const match = knownAgencies.find((agency) => normalized.includes(normalizeProductLookupKey(agency)));
+    const match = knownAgencies.find((agency) => normalizedContainsPhrase(normalized, agency));
+    if (match && !hasCourierRequestIntentForAgency(normalized, match)) return null;
     if (match) return match;
-    if (/\b(?:otra?\s+)?(?:transporte|agencia|courier)\b/.test(normalized)) return 'agencia';
+    if (/\b(?:otra?\s+)?(?:transporte|agencia|courier)\b/.test(normalized)
+        && /\b(enviar|envia|envian|enviame|mandar|manda|mandame|despachar|prefiero|quisiera|quiero|pueden|puedes|por|via|vía)\b/.test(normalized)) {
+        return 'agencia';
+    }
     return null;
 }
 
@@ -4332,7 +4355,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
         && pendingInboundCountForSettle > 0
         && pendingInboundCountForSettle < 2
         && isPureGreetingMessage(latestPendingInboundText);
-    const waitSeconds = mode === 'review' ? (shouldSettleGreeting ? 2 : 0) : configuredWaitSeconds;
+    const waitSeconds = configuredWaitSeconds;
     const inboundAt = text(options.inboundAt) || new Date().toISOString();
     const debounceKey = buildDebounceKey(cleanTenantId, cleanModuleId, cleanChatId);
     const previousTimer = pattyChatDebounce.get(debounceKey);
