@@ -45,6 +45,7 @@ export default function buildEntitySectionContext(c) {
         aiUsageByTenant: c.aiUsageByTenant,
         settingsTenantId: c.settingsTenantId,
         canManageUsers: c.canManageUsers,
+        canManageCustomers: c.canManageCustomers,
         openUserCreate: c.openUserCreate,
         hasAccessCatalogData: c.hasAccessCatalogData,
         loadingAccessCatalog: c.loadingAccessCatalog,

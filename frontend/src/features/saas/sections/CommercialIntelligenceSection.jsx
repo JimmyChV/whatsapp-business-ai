@@ -210,6 +210,7 @@ function CommercialIntelligenceSection(props = {}) {
         busy,
         requestJson,
         runAction,
+        canManageCommercialIntelligence = false,
         activeCatalogOptions = []
     } = context;
     const { notify } = useUiFeedback();
@@ -226,7 +227,7 @@ function CommercialIntelligenceSection(props = {}) {
     const [expandedCategories, setExpandedCategories] = React.useState(() => new Set());
     const [expandedCatalogItems, setExpandedCatalogItems] = React.useState(() => new Set());
     const seededCategoryProfileRef = React.useRef('');
-    const canEdit = Boolean(settingsTenantId && requestJson);
+    const canEdit = Boolean(settingsTenantId && requestJson && canManageCommercialIntelligence);
 
     const selectedProfile = React.useMemo(
         () => profiles.find((profile) => profile.profileId === selectedProfileId) || null,

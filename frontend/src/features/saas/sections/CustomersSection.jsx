@@ -968,6 +968,7 @@ function CustomersSection(props = {}) {
         filteredCustomers,
         busy,
         tenantScopeLocked,
+        canManageCustomers = false,
         openCustomerCreate,
         customerSearch,
         setCustomerSearch,
@@ -2131,6 +2132,7 @@ function CustomersSection(props = {}) {
     }, [isCustomersSection, requestJson]);
 
     const handleModuleConsentChange = useCallback(async (moduleIdRaw = '', nextStatusRaw = '') => {
+        if (!canManageCustomers) return;
         const moduleId = String(moduleIdRaw || '').trim();
         const customerId = selectedCustomerIdResolved;
         if (!customerId || !moduleId) return;
@@ -2162,9 +2164,10 @@ function CustomersSection(props = {}) {
         } finally {
             setModuleConsentBusyByModuleId((prev) => ({ ...prev, [moduleId]: false }));
         }
-    }, [loadCustomers, loadModuleContextsByCustomer, requestJson, selectedCustomerIdResolved, tenantScopeId]);
+    }, [canManageCustomers, loadCustomers, loadModuleContextsByCustomer, requestJson, selectedCustomerIdResolved, tenantScopeId]);
 
     const handleOpenCustomerEdit = useCallback(() => {
+        if (!canManageCustomers) return;
         if (editClickBusy) return;
         setEditClickBusy(true);
         try {
@@ -2178,7 +2181,7 @@ function CustomersSection(props = {}) {
         } finally {
             setEditClickBusy(false);
         }
-    }, [editClickBusy, selectedCustomer, setCustomerForm, setCustomerPanelMode]);
+    }, [canManageCustomers, editClickBusy, selectedCustomer, setCustomerForm, setCustomerPanelMode]);
 
     const handleCloseDetail = useCallback(() => {
         setSelectedCustomerId('');
@@ -2284,6 +2287,7 @@ function CustomersSection(props = {}) {
     ]);
 
     const handleSoftDeleteCustomer = useCallback(() => {
+        if (!canManageCustomers) return;
         const customerId = resolveCustomerId(selectedCustomer);
         if (!customerId) return;
         runAction('Cliente marcado como inactivo', async () => {
@@ -2293,7 +2297,7 @@ function CustomersSection(props = {}) {
             });
             await loadCustomers(tenantScopeId);
         });
-    }, [loadCustomers, requestJson, runAction, selectedCustomer, tenantScopeId]);
+    }, [canManageCustomers, loadCustomers, requestJson, runAction, selectedCustomer, tenantScopeId]);
 
     const resetSendTemplateFlow = useCallback(() => {
         setSendTemplateOpen(false);
@@ -3033,6 +3037,7 @@ function CustomersSection(props = {}) {
     ]);
 
     const handleSaveCustomer = useCallback(() => {
+        if (!canManageCustomers) return;
         if (savingCustomer) return;
         setShowCustomerSynced(false);
         const payload = buildCustomerSubmitPayload();
@@ -3114,6 +3119,7 @@ function CustomersSection(props = {}) {
         })();
     }, [
         buildCustomerSubmitPayload,
+        canManageCustomers,
         customerPanelMode,
         maxCustomersUpdatedAt,
         notify,
@@ -3497,6 +3503,7 @@ function CustomersSection(props = {}) {
     }, []);
 
     const handleStartCreateAddress = useCallback(() => {
+        if (!canManageCustomers) return;
         if (!selectedCustomerIdResolved) return;
         setAddressPanelMode('address-edit');
         setAddressEditorMode('create');
@@ -3504,9 +3511,10 @@ function CustomersSection(props = {}) {
         setAddressForm({ ...EMPTY_ADDRESS_FORM });
         setAddressesError('');
         setSelectedAddressId('');
-    }, [selectedCustomerIdResolved]);
+    }, [canManageCustomers, selectedCustomerIdResolved]);
 
     const handleStartEditAddress = useCallback((address = {}) => {
+        if (!canManageCustomers) return;
         if (!selectedCustomerIdResolved) return;
         const addressId = String(address?.addressId || '').trim();
         setAddressPanelMode('address-edit');
@@ -3515,7 +3523,7 @@ function CustomersSection(props = {}) {
         setAddressForm(buildAddressFormFromRecord(address));
         setAddressesError('');
         setSelectedAddressId(addressId);
-    }, [selectedCustomerIdResolved]);
+    }, [canManageCustomers, selectedCustomerIdResolved]);
 
     const handleBackToCustomerDetail = useCallback(() => {
         setAddressPanelMode('customer');
@@ -3526,6 +3534,7 @@ function CustomersSection(props = {}) {
     }, []);
 
     const handleSaveAddress = useCallback(async () => {
+        if (!canManageCustomers) return;
         const customerId = selectedCustomerIdResolved;
         if (!customerId) return;
         const street = String(addressForm.street || '').trim();
@@ -3576,9 +3585,10 @@ function CustomersSection(props = {}) {
         } finally {
             setAddressBusy(false);
         }
-    }, [addressEditorMode, addressForm, loadCustomerAddressesByCustomer, requestJson, resetAddressEditor, selectedCustomerIdResolved]);
+    }, [addressEditorMode, addressForm, canManageCustomers, loadCustomerAddressesByCustomer, requestJson, resetAddressEditor, selectedCustomerIdResolved]);
 
     const handleDeleteAddress = useCallback(async (addressIdRaw = '') => {
+        if (!canManageCustomers) return;
         const customerId = selectedCustomerIdResolved;
         const addressId = String(addressIdRaw || '').trim();
         if (!customerId || !addressId) return;
@@ -3602,9 +3612,10 @@ function CustomersSection(props = {}) {
         } finally {
             setAddressBusy(false);
         }
-    }, [addressForm.addressId, loadCustomerAddressesByCustomer, requestJson, resetAddressEditor, selectedAddressId, selectedCustomerIdResolved]);
+    }, [addressForm.addressId, canManageCustomers, loadCustomerAddressesByCustomer, requestJson, resetAddressEditor, selectedAddressId, selectedCustomerIdResolved]);
 
     const handleSetPrimaryAddress = useCallback(async (addressIdRaw = '') => {
+        if (!canManageCustomers) return;
         const customerId = selectedCustomerIdResolved;
         const addressId = String(addressIdRaw || '').trim();
         if (!customerId || !addressId) return;
@@ -3620,7 +3631,7 @@ function CustomersSection(props = {}) {
         } finally {
             setAddressBusy(false);
         }
-    }, [loadCustomerAddressesByCustomer, requestJson, selectedCustomerIdResolved]);
+    }, [canManageCustomers, loadCustomerAddressesByCustomer, requestJson, selectedCustomerIdResolved]);
 
     useEffect(() => {
         if (!isCustomersSection || customerPanelMode === 'create') {
@@ -3705,7 +3716,7 @@ function CustomersSection(props = {}) {
                                     onChange={(event) => {
                                         handleModuleConsentChange(moduleId, event.target.value);
                                     }}
-                                    disabled={busy || languageBusy || consentBusyForModule || !moduleId}
+                                    disabled={busy || languageBusy || consentBusyForModule || !canManageCustomers || !moduleId}
                                 >
                                     <option value="unknown">Sin definir</option>
                                     <option value="opted_in">Opted in</option>
@@ -3729,7 +3740,7 @@ function CustomersSection(props = {}) {
                 <div className="saas-customers-address-toolbar">
                     <button
                         type="button"
-                        disabled={busy || addressBusy || !selectedCustomerIdResolved}
+                        disabled={busy || addressBusy || !canManageCustomers || !selectedCustomerIdResolved}
                         onClick={handleStartCreateAddress}
                     >
                         Agregar direccion
@@ -3779,7 +3790,7 @@ function CustomersSection(props = {}) {
                 <select
                     value={addressForm.addressType}
                     onChange={(event) => setAddressForm((prev) => ({ ...prev, addressType: event.target.value }))}
-                    disabled={busy || addressBusy}
+                    disabled={busy || addressBusy || !canManageCustomers}
                 >
                     {ADDRESS_TYPE_OPTIONS.map((option) => (
                         <option key={`address-type-${option.value}`} value={option.value}>
@@ -3792,7 +3803,7 @@ function CustomersSection(props = {}) {
                         type="checkbox"
                         checked={Boolean(addressForm.isPrimary)}
                         onChange={(event) => setAddressForm((prev) => ({ ...prev, isPrimary: event.target.checked }))}
-                        disabled={busy || addressBusy}
+                        disabled={busy || addressBusy || !canManageCustomers}
                     />
                     <span>Principal</span>
                 </label>
@@ -3802,20 +3813,20 @@ function CustomersSection(props = {}) {
                     value={addressForm.street}
                     onChange={(event) => setAddressForm((prev) => ({ ...prev, street: event.target.value }))}
                     placeholder="Direccion"
-                    disabled={busy || addressBusy}
+                    disabled={busy || addressBusy || !canManageCustomers}
                 />
                 <input
                     value={addressForm.reference}
                     onChange={(event) => setAddressForm((prev) => ({ ...prev, reference: event.target.value }))}
                     placeholder="Referencia"
-                    disabled={busy || addressBusy}
+                    disabled={busy || addressBusy || !canManageCustomers}
                 />
             </div>
             <div className="saas-admin-form-row">
                 <select
                     value={String(addressForm.departmentId || '').trim()}
                     onChange={(event) => handleAddressDepartmentChange(event.target.value)}
-                    disabled={busy || addressBusy || loadingGeoCatalog}
+                    disabled={busy || addressBusy || !canManageCustomers || loadingGeoCatalog}
                 >
                     <option value="">
                         {loadingGeoCatalog ? 'Cargando departamentos...' : 'Departamento'}
@@ -3827,7 +3838,7 @@ function CustomersSection(props = {}) {
                 <select
                     value={String(addressForm.provinceId || '').trim()}
                     onChange={(event) => handleAddressProvinceChange(event.target.value)}
-                    disabled={busy || addressBusy || !String(addressForm.departmentId || '').trim()}
+                    disabled={busy || addressBusy || !canManageCustomers || !String(addressForm.departmentId || '').trim()}
                 >
                     <option value="">
                         {String(addressForm.departmentId || '').trim() ? 'Provincia' : 'Selecciona departamento'}
@@ -3841,7 +3852,7 @@ function CustomersSection(props = {}) {
                 <select
                     value={String(addressForm.districtId || '').trim()}
                     onChange={(event) => handleAddressDistrictChange(event.target.value)}
-                    disabled={busy || addressBusy || !String(addressForm.provinceId || '').trim()}
+                    disabled={busy || addressBusy || !canManageCustomers || !String(addressForm.provinceId || '').trim()}
                 >
                     <option value="">
                         {String(addressForm.provinceId || '').trim() ? 'Distrito' : 'Selecciona provincia'}
@@ -3854,7 +3865,7 @@ function CustomersSection(props = {}) {
                     value={addressForm.mapsUrl}
                     onChange={(event) => setAddressForm((prev) => ({ ...prev, mapsUrl: event.target.value }))}
                     placeholder="URL Google Maps"
-                    disabled={busy || addressBusy}
+                    disabled={busy || addressBusy || !canManageCustomers}
                 />
             </div>
             {geoCatalogError ? (
@@ -3865,13 +3876,13 @@ function CustomersSection(props = {}) {
                     value={addressForm.latitude}
                     onChange={(event) => setAddressForm((prev) => ({ ...prev, latitude: event.target.value }))}
                     placeholder="Latitud"
-                    disabled={busy || addressBusy}
+                    disabled={busy || addressBusy || !canManageCustomers}
                 />
                 <input
                     value={addressForm.longitude}
                     onChange={(event) => setAddressForm((prev) => ({ ...prev, longitude: event.target.value }))}
                     placeholder="Longitud"
-                    disabled={busy || addressBusy}
+                    disabled={busy || addressBusy || !canManageCustomers}
                 />
             </div>
             {addressesError ? (
@@ -3909,14 +3920,14 @@ function CustomersSection(props = {}) {
             label: 'Agregar',
             onClick: openCustomerCreate,
             variant: 'primary',
-            disabled: busy || tenantScopeLocked
+            disabled: busy || tenantScopeLocked || !canManageCustomers
         },
         {
             key: 'import-erp',
             label: 'Importar ERP',
             onClick: () => setShowImportModal(true),
             variant: 'primary',
-            disabled: busy || tenantScopeLocked
+            disabled: busy || tenantScopeLocked || !canManageCustomers
         },
         {
             key: 'toggle-selection',
@@ -4161,9 +4172,9 @@ function CustomersSection(props = {}) {
                     bodyClassName="saas-customers-detail-panel__body"
                     actions={(
                         <div className="saas-customers-detail-actions">
-                            <button type="button" disabled={busy || addressBusy || !selectedAddress} onClick={() => handleStartEditAddress(selectedAddress || {})}>Editar direccion</button>
-                            <button type="button" disabled={busy || addressBusy || !selectedAddress || Boolean(selectedAddress?.isPrimary)} onClick={() => handleSetPrimaryAddress(selectedAddress?.addressId || '')}>Marcar principal</button>
-                            <button type="button" disabled={busy || addressBusy || !selectedAddress} onClick={() => handleDeleteAddress(selectedAddress?.addressId || '')}>Eliminar direccion</button>
+                            <button type="button" disabled={busy || addressBusy || !canManageCustomers || !selectedAddress} onClick={() => handleStartEditAddress(selectedAddress || {})}>Editar direccion</button>
+                            <button type="button" disabled={busy || addressBusy || !canManageCustomers || !selectedAddress || Boolean(selectedAddress?.isPrimary)} onClick={() => handleSetPrimaryAddress(selectedAddress?.addressId || '')}>Marcar principal</button>
+                            <button type="button" disabled={busy || addressBusy || !canManageCustomers || !selectedAddress} onClick={() => handleDeleteAddress(selectedAddress?.addressId || '')}>Eliminar direccion</button>
                             <button type="button" disabled={busy || addressBusy} onClick={handleBackToCustomerDetail}>Volver al cliente</button>
                         </div>
                     )}
@@ -4182,7 +4193,7 @@ function CustomersSection(props = {}) {
                         <div className="saas-customers-detail-actions">
                             <button
                                 type="button"
-                                disabled={busy || addressBusy || !selectedCustomerIdResolved}
+                                disabled={busy || addressBusy || !canManageCustomers || !selectedCustomerIdResolved}
                                 onClick={handleSaveAddress}
                             >
                                 {addressEditorMode === 'edit' ? 'Actualizar direccion' : 'Guardar direccion'}
@@ -4207,8 +4218,8 @@ function CustomersSection(props = {}) {
                             <button type="button" disabled={busy || !selectedCustomerPhone} onClick={() => { void handleOpenDirectTemplateModal(); }}>
                                 Iniciar conversacion
                             </button>
-                            <button type="button" disabled={editClickBusy} onClick={handleOpenCustomerEdit}>Editar</button>
-                            <button type="button" disabled={busy} onClick={handleSoftDeleteCustomer}>Eliminar</button>
+                            <button type="button" disabled={editClickBusy || !canManageCustomers} onClick={handleOpenCustomerEdit}>Editar</button>
+                            <button type="button" disabled={busy || !canManageCustomers} onClick={handleSoftDeleteCustomer}>Eliminar</button>
                             <button type="button" className="saas-btn-close" disabled={busy} onClick={() => { void handleRequestCloseCustomersPanel(); }}>Volver</button>
                         </div>
                     )}
@@ -4248,7 +4259,7 @@ function CustomersSection(props = {}) {
                                 onChange={(event) => {
                                     handlePreferredLanguageChange(event.target.value);
                                 }}
-                                disabled={busy || languageBusy}
+                                disabled={busy || languageBusy || !canManageCustomers}
                             >
                                 <option value="es">Espanol (es)</option>
                                 <option value="en">Ingles (en)</option>
@@ -4283,7 +4294,7 @@ function CustomersSection(props = {}) {
                         <div className="saas-customers-detail-actions">
                             <button
                                 type="button"
-                                disabled={busy || savingCustomer || !customerForm.contactName.trim() || !customerForm.phoneE164.trim()}
+                                disabled={busy || savingCustomer || !canManageCustomers || !customerForm.contactName.trim() || !customerForm.phoneE164.trim()}
                                 onClick={handleSaveCustomer}
                             >
                                 {customerPanelMode === 'create' ? 'Guardar cliente' : 'Actualizar cliente'}
@@ -4295,7 +4306,7 @@ function CustomersSection(props = {}) {
                 >
                     <SaasDetailPanelSection title="Datos personales" defaultOpen>
                     <div className="saas-admin-form-row">
-                        <input value={customerForm.contactName} onChange={(event) => setCustomerForm((prev) => ({ ...prev, contactName: event.target.value }))} placeholder="Nombre contacto" disabled={busy} />
+                        <input value={customerForm.contactName} onChange={(event) => setCustomerForm((prev) => ({ ...prev, contactName: event.target.value }))} placeholder="Nombre contacto" disabled={busy || !canManageCustomers} />
                         <input
                             value={firstNameValue}
                             onChange={(event) => setCustomerForm((prev) => ({
@@ -4305,7 +4316,7 @@ function CustomersSection(props = {}) {
                                 profileFirstNames: event.target.value
                             }))}
                             placeholder="Nombres"
-                            disabled={busy}
+                            disabled={busy || !canManageCustomers}
                         />
                     </div>
                     <div className="saas-admin-form-row">
@@ -4318,7 +4329,7 @@ function CustomersSection(props = {}) {
                                 profileLastNamePaternal: event.target.value
                             }))}
                             placeholder="Apellido paterno"
-                            disabled={busy}
+                            disabled={busy || !canManageCustomers}
                         />
                         <input
                             value={lastNameMaternalValue}
@@ -4329,14 +4340,14 @@ function CustomersSection(props = {}) {
                                 profileLastNameMaternal: event.target.value
                             }))}
                             placeholder="Apellido materno"
-                            disabled={busy}
+                            disabled={busy || !canManageCustomers}
                         />
                     </div>
                     <div className="saas-admin-form-row">
                         <select
                             value={resolveCatalogSelectValue(customerForm.customerTypeId, customerTypeOptions)}
                             onChange={(event) => setCustomerForm((prev) => ({ ...prev, customerTypeId: event.target.value }))}
-                            disabled={busy || loadingCustomerCatalogs}
+                            disabled={busy || !canManageCustomers || loadingCustomerCatalogs}
                         >
                             <option value="">{loadingCustomerCatalogs ? 'Cargando tipos...' : 'Tipo de cliente'}</option>
                             {customerTypeOptions.map((item) => (
@@ -4346,7 +4357,7 @@ function CustomersSection(props = {}) {
                         <select
                             value={resolveCatalogSelectValue(customerForm.treatmentId, treatmentOptions)}
                             onChange={(event) => setCustomerForm((prev) => ({ ...prev, treatmentId: event.target.value }))}
-                            disabled={busy || loadingCustomerCatalogs}
+                            disabled={busy || !canManageCustomers || loadingCustomerCatalogs}
                         >
                             <option value="">{loadingCustomerCatalogs ? 'Cargando tratamientos...' : 'Tratamiento'}</option>
                             {treatmentOptions.map((item) => (
@@ -4358,7 +4369,7 @@ function CustomersSection(props = {}) {
                         <select
                             value={resolveCatalogSelectValue(customerForm.acquisitionSourceId, sourceOptions)}
                             onChange={(event) => setCustomerForm((prev) => ({ ...prev, acquisitionSourceId: event.target.value }))}
-                            disabled={busy || loadingCustomerCatalogs}
+                            disabled={busy || !canManageCustomers || loadingCustomerCatalogs}
                         >
                             <option value="">{loadingCustomerCatalogs ? 'Cargando fuentes...' : 'Fuente de adquisicion'}</option>
                             {sourceOptions.map((item) => (
@@ -4370,15 +4381,15 @@ function CustomersSection(props = {}) {
 
                 <SaasDetailPanelSection title="Contacto" defaultOpen>
                     <div className="saas-admin-form-row">
-                        <input value={customerForm.phoneE164} onChange={(event) => setCustomerForm((prev) => ({ ...prev, phoneE164: event.target.value }))} placeholder="Telefono principal (+51...)" disabled={busy} />
-                        <input value={customerForm.phoneAlt} onChange={(event) => setCustomerForm((prev) => ({ ...prev, phoneAlt: event.target.value }))} placeholder="Telefono alterno" disabled={busy} />
+                        <input value={customerForm.phoneE164} onChange={(event) => setCustomerForm((prev) => ({ ...prev, phoneE164: event.target.value }))} placeholder="Telefono principal (+51...)" disabled={busy || !canManageCustomers} />
+                        <input value={customerForm.phoneAlt} onChange={(event) => setCustomerForm((prev) => ({ ...prev, phoneAlt: event.target.value }))} placeholder="Telefono alterno" disabled={busy || !canManageCustomers} />
                     </div>
                     <div className="saas-admin-form-row">
-                        <input value={customerForm.email} onChange={(event) => setCustomerForm((prev) => ({ ...prev, email: event.target.value }))} placeholder="Correo" disabled={busy} />
+                        <input value={customerForm.email} onChange={(event) => setCustomerForm((prev) => ({ ...prev, email: event.target.value }))} placeholder="Correo" disabled={busy || !canManageCustomers} />
                         <select
                             value={formPreferredLanguageValue}
                             onChange={(event) => setCustomerForm((prev) => ({ ...prev, preferredLanguage: event.target.value }))}
-                            disabled={busy}
+                            disabled={busy || !canManageCustomers}
                         >
                             {FORM_LANGUAGE_OPTIONS.map((option) => (
                                 <option key={`customer-form-lang-${option.value}`} value={option.value}>{option.label}</option>
@@ -4386,11 +4397,11 @@ function CustomersSection(props = {}) {
                         </select>
                     </div>
                     <div className="saas-admin-form-row">
-                        <input value={customerForm.tagsText} onChange={(event) => setCustomerForm((prev) => ({ ...prev, tagsText: event.target.value }))} placeholder="Etiquetas separadas por coma" disabled={busy} />
+                        <input value={customerForm.tagsText} onChange={(event) => setCustomerForm((prev) => ({ ...prev, tagsText: event.target.value }))} placeholder="Etiquetas separadas por coma" disabled={busy || !canManageCustomers} />
                     </div>
                     <div className="saas-admin-form-row">
                         <label className="saas-admin-module-toggle">
-                            <input type="checkbox" checked={customerForm.isActive !== false} onChange={(event) => setCustomerForm((prev) => ({ ...prev, isActive: event.target.checked }))} disabled={busy} />
+                            <input type="checkbox" checked={customerForm.isActive !== false} onChange={(event) => setCustomerForm((prev) => ({ ...prev, isActive: event.target.checked }))} disabled={busy || !canManageCustomers} />
                             <span>Cliente activo</span>
                         </label>
                     </div>
@@ -4401,7 +4412,7 @@ function CustomersSection(props = {}) {
                         <select
                             value={resolveCatalogSelectValue(customerForm.documentTypeId, documentTypeOptions)}
                             onChange={(event) => setCustomerForm((prev) => ({ ...prev, documentTypeId: event.target.value }))}
-                            disabled={busy || loadingCustomerCatalogs}
+                            disabled={busy || !canManageCustomers || loadingCustomerCatalogs}
                         >
                             <option value="">{loadingCustomerCatalogs ? 'Cargando tipos documento...' : 'Tipo de documento'}</option>
                             {documentTypeOptions.map((item) => (
@@ -4417,7 +4428,7 @@ function CustomersSection(props = {}) {
                                 profileDocumentNumber: event.target.value
                             }))}
                             placeholder="Documento"
-                            disabled={busy}
+                            disabled={busy || !canManageCustomers}
                         />
                     </div>
                     <div className="saas-admin-form-row">
@@ -4431,7 +4442,7 @@ function CustomersSection(props = {}) {
                             placeholder="Observaciones"
                             rows={3}
                             style={{ width: '100%' }}
-                            disabled={busy}
+                            disabled={busy || !canManageCustomers}
                         />
                     </div>
                     {customerCatalogsError ? (

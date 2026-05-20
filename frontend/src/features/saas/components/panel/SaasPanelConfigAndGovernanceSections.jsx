@@ -142,6 +142,7 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
         busy: context.busy,
         requestJson: context.requestJson,
         runAction: context.runAction,
+        canManageCommercialIntelligence: context.canManageCommercialIntelligence,
         activeCatalogOptions: context.activeCatalogOptions
     };
 

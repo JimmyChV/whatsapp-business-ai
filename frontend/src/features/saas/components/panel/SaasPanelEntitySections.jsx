@@ -123,6 +123,7 @@ export default function SaasPanelEntitySections(props = {}) {
         filteredCustomers: context.filteredCustomers,
         busy: context.busy,
         tenantScopeLocked: context.tenantScopeLocked,
+        canManageCustomers: context.canManageCustomers,
         openCustomerCreate: context.openCustomerCreate,
         customerSearch: context.customerSearch,
         setCustomerSearch: context.setCustomerSearch,
