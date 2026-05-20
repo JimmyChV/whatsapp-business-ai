@@ -236,6 +236,8 @@ function registerHttpRoutes({
         chatAssignmentRouterService,
         operationsKpiService,
         globalLabelsService,
+        accessPolicyService,
+        hasPermission,
         normalizeScopeModuleId,
         hasConversationEventsReadAccess,
         hasChatAssignmentsReadAccess,

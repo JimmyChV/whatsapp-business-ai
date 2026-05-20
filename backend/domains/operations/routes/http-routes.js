@@ -206,6 +206,8 @@ function registerOperationsHttpRoutes({
     chatAssignmentRouterService,
     operationsKpiService,
     globalLabelsService,
+    accessPolicyService,
+    hasPermission,
     normalizeScopeModuleId,
     hasConversationEventsReadAccess,
     hasChatAssignmentsReadAccess,
@@ -223,6 +225,19 @@ function registerOperationsHttpRoutes({
             return false;
         }
         return true;
+    }
+
+    function hasCommercialIntelligenceReadAccess(req = {}) {
+        if (authService && typeof authService.isAuthEnabled === 'function' && !authService.isAuthEnabled()) return true;
+        if (!accessPolicyService || typeof hasPermission !== 'function') return false;
+        return hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_COMMERCIAL_INTELLIGENCE_READ)
+            || hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_COMMERCIAL_INTELLIGENCE_MANAGE);
+    }
+
+    function hasCommercialIntelligenceManageAccess(req = {}) {
+        if (authService && typeof authService.isAuthEnabled === 'function' && !authService.isAuthEnabled()) return true;
+        if (!accessPolicyService || typeof hasPermission !== 'function') return false;
+        return hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_COMMERCIAL_INTELLIGENCE_MANAGE);
     }
 
     app.get('/api/ops/global-labels', async (req, res) => {
@@ -1609,6 +1624,7 @@ function registerOperationsHttpRoutes({
     app.get('/api/tenant/commercial-intelligence/profiles', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasCommercialIntelligenceReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
             const tenantId = resolveTenantIdFromContext(req);
             const profiles = await commercialIntelligenceService.listProfiles(tenantId);
             return res.json({ ok: true, tenantId, profiles });
@@ -1620,6 +1636,7 @@ function registerOperationsHttpRoutes({
     app.post('/api/tenant/commercial-intelligence/profiles', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasCommercialIntelligenceManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
             const tenantId = resolveTenantIdFromContext(req);
             const payload = isPlainObject(req.body) ? req.body : {};
             const profileId = toText(payload.profileId || payload.profile_id || createCommercialProfileId());
@@ -1636,6 +1653,7 @@ function registerOperationsHttpRoutes({
     app.get('/api/tenant/commercial-intelligence/profiles/:profileId', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasCommercialIntelligenceReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
             const tenantId = resolveTenantIdFromContext(req);
             const profileId = toText(req.params?.profileId || '');
             if (!profileId) return res.status(400).json({ ok: false, error: 'profileId requerido.' });
@@ -1650,6 +1668,7 @@ function registerOperationsHttpRoutes({
     app.put('/api/tenant/commercial-intelligence/profiles/:profileId', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasCommercialIntelligenceManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
             const tenantId = resolveTenantIdFromContext(req);
             const profileId = toText(req.params?.profileId || '');
             if (!profileId) return res.status(400).json({ ok: false, error: 'profileId requerido.' });
@@ -1667,6 +1686,7 @@ function registerOperationsHttpRoutes({
     app.patch('/api/tenant/commercial-intelligence/profiles/:profileId/section', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasCommercialIntelligenceManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
             const tenantId = resolveTenantIdFromContext(req);
             const profileId = toText(req.params?.profileId || '');
             if (!profileId) return res.status(400).json({ ok: false, error: 'profileId requerido.' });
@@ -1690,6 +1710,7 @@ function registerOperationsHttpRoutes({
     app.delete('/api/tenant/commercial-intelligence/profiles/:profileId', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasCommercialIntelligenceManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
             const tenantId = resolveTenantIdFromContext(req);
             const profileId = toText(req.params?.profileId || '');
             if (!profileId) return res.status(400).json({ ok: false, error: 'profileId requerido.' });
@@ -1704,6 +1725,7 @@ function registerOperationsHttpRoutes({
     app.get('/api/tenant/commercial-intelligence/catalog-enrichment', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasCommercialIntelligenceReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
             const tenantId = resolveTenantIdFromContext(req);
             const profileId = toText(req.query?.profileId || req.query?.profile_id || '');
             const items = await commercialIntelligenceService.getCatalogWithRoles(tenantId, profileId);

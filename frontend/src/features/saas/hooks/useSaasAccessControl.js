@@ -26,6 +26,8 @@ export default function useSaasAccessControl({
         PERMISSION_TENANT_LABELS_MANAGE,
         PERMISSION_TENANT_AI_READ,
         PERMISSION_TENANT_AI_MANAGE,
+        PERMISSION_TENANT_COMMERCIAL_INTELLIGENCE_READ,
+        PERMISSION_TENANT_COMMERCIAL_INTELLIGENCE_MANAGE,
         PERMISSION_TENANT_CUSTOMERS_READ,
         PERMISSION_TENANT_CUSTOMERS_MANAGE,
         PERMISSION_TENANT_CATALOGS_MANAGE,
@@ -51,6 +53,8 @@ export default function useSaasAccessControl({
     const roleBasedCanManageCustomers = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanViewAi = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanManageAi = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanViewCommercialIntelligence = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageCommercialIntelligence = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || noRoleContext);
 
     const actorRoleForPolicy = isSuperAdmin || normalizedRole === 'superadmin' ? 'superadmin' : (normalizedRole || 'seller');
     const actorRolePriority = getRolePriority(actorRoleForPolicy);
@@ -135,6 +139,15 @@ export default function useSaasAccessControl({
     const canManageAi = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_AI_MANAGE, PERMISSION_TENANT_INTEGRATIONS_MANAGE])
         : roleBasedCanManageAi;
+    const canViewCommercialIntelligence = hasPermissionContext
+        ? hasAnyActorPermission([
+            PERMISSION_TENANT_COMMERCIAL_INTELLIGENCE_READ,
+            PERMISSION_TENANT_COMMERCIAL_INTELLIGENCE_MANAGE
+        ])
+        : roleBasedCanViewCommercialIntelligence;
+    const canManageCommercialIntelligence = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_COMMERCIAL_INTELLIGENCE_MANAGE])
+        : roleBasedCanManageCommercialIntelligence;
     const canViewCustomers = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_CUSTOMERS_READ, PERMISSION_TENANT_CUSTOMERS_MANAGE])
         : roleBasedCanManageCustomers;
@@ -285,6 +298,8 @@ export default function useSaasAccessControl({
         canViewLabels,
         canViewAi,
         canManageAi,
+        canViewCommercialIntelligence,
+        canManageCommercialIntelligence,
         canViewCustomers,
         canManageCustomers,
         canViewOperations,

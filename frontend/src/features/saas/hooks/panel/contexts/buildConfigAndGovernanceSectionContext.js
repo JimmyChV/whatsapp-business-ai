@@ -4,6 +4,8 @@ export default function buildConfigAndGovernanceSectionContext(c) {
         isGeneralConfigSection: c.isGeneralConfigSection,
         isModulesSection: c.isModulesSection,
         isCommercialIntelligenceSection: c.isCommercialIntelligenceSection,
+        canViewCommercialIntelligence: c.canViewCommercialIntelligence,
+        canManageCommercialIntelligence: c.canManageCommercialIntelligence,
         isAutomationSection: c.isAutomationSection,
         isSchedulesSection: c.isSchedulesSection,
         settingsTenantId: c.settingsTenantId,

@@ -15,6 +15,7 @@ export default function useSaasPanelNavigation({
     canViewCustomers = false,
     canViewOperations = false,
     canViewAi = false,
+    canViewCommercialIntelligence = false,
     canViewLabels = false,
     canViewQuickReplies = false,
     canViewModules = false,
@@ -37,7 +38,7 @@ export default function useSaasPanelNavigation({
         if (cleanId === 'saas_campaigns') return canViewOperations;
         if (cleanId === 'saas_templates') return canViewModules;
         if (cleanId === 'saas_ia') return canViewAi;
-        if (cleanId === 'saas_commercial_intelligence') return canViewAi || canManageCatalog || canViewTenantSettings;
+        if (cleanId === 'saas_commercial_intelligence') return canViewCommercialIntelligence;
         if (cleanId === 'saas_automations') return canViewTenantSettings || canViewModules;
         if (cleanId === 'saas_etiquetas' || cleanId === 'saas_global_labels') return canViewLabels;
         if (cleanId === 'saas_quick_replies') return canViewQuickReplies;
@@ -54,6 +55,7 @@ export default function useSaasPanelNavigation({
         canViewCustomers,
         canViewOperations,
         canViewAi,
+        canViewCommercialIntelligence,
         canViewLabels,
         canViewQuickReplies,
         canViewModules,
