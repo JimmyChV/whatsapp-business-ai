@@ -12,14 +12,20 @@ export default function useSaasPanelNavigation({
     settingsTenantId = '',
     canManageTenants = false,
     canManageUsers = false,
+    canViewUsers = false,
     canViewCustomers = false,
     canViewOperations = false,
     canViewAi = false,
     canViewCommercialIntelligence = false,
+    canViewCampaigns = false,
+    canViewMetaTemplates = false,
+    canViewAutomations = false,
+    canViewSchedules = false,
     canViewLabels = false,
     canViewZones = false,
     canViewQuickReplies = false,
     canViewModules = false,
+    canViewCatalog = false,
     canManageCatalog = false,
     canViewSuperAdminSections = false,
     canViewTenantSettings = false
@@ -33,35 +39,41 @@ export default function useSaasPanelNavigation({
         const cleanId = String(sectionId || '').trim();
         if (cleanId === 'saas_resumen') return true;
         if (cleanId === 'saas_empresas') return canManageTenants;
-        if (cleanId === 'saas_usuarios') return canManageUsers;
+        if (cleanId === 'saas_usuarios') return canViewUsers || canManageUsers;
         if (cleanId === 'saas_clientes') return canViewCustomers;
         if (cleanId === 'saas_operacion') return canViewOperations;
-        if (cleanId === 'saas_campaigns') return canViewOperations;
-        if (cleanId === 'saas_templates') return canViewModules;
+        if (cleanId === 'saas_campaigns') return canViewCampaigns;
+        if (cleanId === 'saas_templates') return canViewMetaTemplates;
         if (cleanId === 'saas_ia') return canViewAi;
         if (cleanId === 'saas_commercial_intelligence') return canViewCommercialIntelligence;
-        if (cleanId === 'saas_automations') return canViewTenantSettings || canViewModules;
+        if (cleanId === 'saas_automations') return canViewAutomations;
         if (cleanId === 'saas_etiquetas') return canViewLabels || canViewZones;
         if (cleanId === 'saas_global_labels') return canViewLabels;
         if (cleanId === 'saas_quick_replies') return canViewQuickReplies;
         if (cleanId === 'saas_modulos') return canViewModules;
-        if (cleanId === 'saas_catalogos') return canManageCatalog;
+        if (cleanId === 'saas_catalogos') return canViewCatalog || canManageCatalog;
         if (cleanId === 'saas_planes') return canViewSuperAdminSections;
         if (cleanId === 'saas_roles') return canViewSuperAdminSections;
         if (cleanId === 'saas_config') return canViewTenantSettings;
-        if (cleanId === 'saas_schedules') return canViewTenantSettings || canViewModules;
+        if (cleanId === 'saas_schedules') return canViewSchedules;
         return false;
     }, [
         canManageTenants,
         canManageUsers,
+        canViewUsers,
         canViewCustomers,
         canViewOperations,
         canViewAi,
         canViewCommercialIntelligence,
+        canViewCampaigns,
+        canViewMetaTemplates,
+        canViewAutomations,
+        canViewSchedules,
         canViewLabels,
         canViewZones,
         canViewQuickReplies,
         canViewModules,
+        canViewCatalog,
         canManageCatalog,
         canViewSuperAdminSections,
         canViewTenantSettings

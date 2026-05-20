@@ -643,6 +643,10 @@
   gap: 12px;
 }
 
+.saas-admin-optional-access-grid--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .saas-admin-optional-access-column {
   border: 1px solid rgba(123, 170, 196, 0.22);
   border-radius: 12px;
@@ -654,7 +658,7 @@
 }
 
 .saas-admin-optional-access-title {
-  color: #cfe7f6;
+  color: var(--saas-text-secondary);
   font-size: 0.74rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;

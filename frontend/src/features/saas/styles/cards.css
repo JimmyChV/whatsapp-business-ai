@@ -310,6 +310,11 @@
   gap: 8px;
 }
 
+.saas-admin-permission-group .saas-admin-list-actions--row {
+  border-top: 1px solid var(--saas-divider-soft);
+  padding: 8px 10px 0;
+}
+
 .saas-admin-permission-toggle {
   border: 1px solid var(--saas-border-color);
   border-radius: 12px;

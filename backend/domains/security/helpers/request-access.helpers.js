@@ -85,6 +85,14 @@ function createRequestAccessHelpers({
         return hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_USERS_MANAGE);
     }
 
+    function hasTenantUsersReadAccess(req = {}, tenantId = '') {
+        if (tenantId && !isTenantAllowedForUser(req, tenantId)) return false;
+        return hasAnyPermission(req, [
+            accessPolicyService.PERMISSIONS.TENANT_USERS_READ,
+            accessPolicyService.PERMISSIONS.TENANT_USERS_MANAGE
+        ]);
+    }
+
     function isTenantAllowedForUser(req = {}, tenantId = '') {
         const cleanTenantId = String(tenantId || '').trim();
         if (!cleanTenantId) return false;
@@ -109,6 +117,51 @@ function createRequestAccessHelpers({
             accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE,
             accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE
         ]);
+    }
+
+    function hasTenantCatalogReadAccess(req = {}, tenantId = '') {
+        if (!tenantId) return false;
+        if (!isTenantAllowedForUser(req, tenantId)) return false;
+        return hasAnyPermission(req, [
+            accessPolicyService.PERMISSIONS.TENANT_CATALOGS_READ,
+            accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE
+        ]);
+    }
+
+    function hasTenantCatalogWriteAccess(req = {}, tenantId = '') {
+        if (!tenantId) return false;
+        if (!isTenantAllowedForUser(req, tenantId)) return false;
+        return hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE);
+    }
+
+    function hasTenantCampaignReadAccess(req = {}, tenantId = '') {
+        if (!tenantId) return false;
+        if (!isTenantAllowedForUser(req, tenantId)) return false;
+        return hasAnyPermission(req, [
+            accessPolicyService.PERMISSIONS.TENANT_CAMPAIGNS_READ,
+            accessPolicyService.PERMISSIONS.TENANT_CAMPAIGNS_MANAGE
+        ]);
+    }
+
+    function hasTenantCampaignWriteAccess(req = {}, tenantId = '') {
+        if (!tenantId) return false;
+        if (!isTenantAllowedForUser(req, tenantId)) return false;
+        return hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CAMPAIGNS_MANAGE);
+    }
+
+    function hasTenantMetaTemplateReadAccess(req = {}, tenantId = '') {
+        if (!tenantId) return false;
+        if (!isTenantAllowedForUser(req, tenantId)) return false;
+        return hasAnyPermission(req, [
+            accessPolicyService.PERMISSIONS.TENANT_META_TEMPLATES_READ,
+            accessPolicyService.PERMISSIONS.TENANT_META_TEMPLATES_MANAGE
+        ]);
+    }
+
+    function hasTenantMetaTemplateWriteAccess(req = {}, tenantId = '') {
+        if (!tenantId) return false;
+        if (!isTenantAllowedForUser(req, tenantId)) return false;
+        return hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_META_TEMPLATES_MANAGE);
     }
 
     function hasConversationEventsReadAccess(req = {}, tenantId = '') {
@@ -277,9 +330,16 @@ function createRequestAccessHelpers({
         hasSaasControlReadAccess,
         hasSaasControlWriteAccess,
         hasTenantAdminWriteAccess,
+        hasTenantUsersReadAccess,
         isTenantAllowedForUser,
         hasTenantModuleReadAccess,
         hasTenantModuleWriteAccess,
+        hasTenantCatalogReadAccess,
+        hasTenantCatalogWriteAccess,
+        hasTenantCampaignReadAccess,
+        hasTenantCampaignWriteAccess,
+        hasTenantMetaTemplateReadAccess,
+        hasTenantMetaTemplateWriteAccess,
         hasConversationEventsReadAccess,
         hasChatAssignmentsReadAccess,
         hasChatAssignmentsWriteAccess,

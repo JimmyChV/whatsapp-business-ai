@@ -5,6 +5,7 @@
     hasSaasControlReadAccess,
     hasSaasControlWriteAccess,
     hasTenantAdminWriteAccess,
+    hasTenantUsersReadAccess,
     hasTenantModuleReadAccess,
     isTenantAllowedForUser,
     sanitizeTenantPayload,
@@ -84,9 +85,12 @@
 
     app.get('/api/admin/saas/users', async (req, res) => {
         try {
-            if (!hasSaasControlReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
-
             const tenantId = String(req.query?.tenantId || '').trim();
+            if (tenantId) {
+                if (!hasTenantUsersReadAccess(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            } else if (!req?.authContext?.user?.isSuperAdmin && !hasTenantUsersReadAccess(req, '')) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
             if (tenantId && !isTenantAllowedForUser(req, tenantId)) return res.status(403).json({ ok: false, error: 'No tienes acceso a ese tenant.' });
 
             const users = await saasControlService.listUsers({ includeInactive: true, tenantId: tenantId || '' });

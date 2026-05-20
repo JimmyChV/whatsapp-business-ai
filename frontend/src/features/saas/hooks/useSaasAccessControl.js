@@ -15,6 +15,7 @@ export default function useSaasAccessControl({
         PERMISSION_PLATFORM_OVERVIEW_READ,
         PERMISSION_PLATFORM_TENANTS_MANAGE,
         PERMISSION_PLATFORM_PLANS_MANAGE,
+        PERMISSION_TENANT_USERS_READ,
         PERMISSION_TENANT_USERS_MANAGE,
         PERMISSION_TENANT_SETTINGS_READ,
         PERMISSION_TENANT_SETTINGS_MANAGE,
@@ -32,7 +33,17 @@ export default function useSaasAccessControl({
         PERMISSION_TENANT_COMMERCIAL_INTELLIGENCE_MANAGE,
         PERMISSION_TENANT_CUSTOMERS_READ,
         PERMISSION_TENANT_CUSTOMERS_MANAGE,
+        PERMISSION_TENANT_CATALOGS_READ,
         PERMISSION_TENANT_CATALOGS_MANAGE,
+        PERMISSION_TENANT_CAMPAIGNS_READ,
+        PERMISSION_TENANT_CAMPAIGNS_MANAGE,
+        PERMISSION_TENANT_META_TEMPLATES_READ,
+        PERMISSION_TENANT_META_TEMPLATES_MANAGE,
+        PERMISSION_TENANT_AUTOMATIONS_READ,
+        PERMISSION_TENANT_AUTOMATIONS_MANAGE,
+        PERMISSION_TENANT_SCHEDULES_READ,
+        PERMISSION_TENANT_SCHEDULES_MANAGE,
+        PERMISSION_TENANT_CHAT_OPERATE,
         PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ,
         PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE,
         PERMISSION_TENANT_KPIS_READ,
@@ -44,8 +55,10 @@ export default function useSaasAccessControl({
     const noRoleContext = !normalizedRole;
 
     const roleBasedCanManageTenants = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
+    const roleBasedCanViewUsers = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanManageUsers = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanManageTenantSettings = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || noRoleContext);
+    const roleBasedCanViewCatalog = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || normalizedRole === 'seller' || noRoleContext);
     const roleBasedCanManageCatalog = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanManageRoles = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
     const roleBasedCanViewSuperAdminSections = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
@@ -58,6 +71,14 @@ export default function useSaasAccessControl({
     const roleBasedCanManageAi = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanViewCommercialIntelligence = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanManageCommercialIntelligence = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || noRoleContext);
+    const roleBasedCanViewCampaigns = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageCampaigns = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanViewMetaTemplates = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageMetaTemplates = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanViewAutomations = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageAutomations = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanViewSchedules = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageSchedules = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
 
     const actorRoleForPolicy = isSuperAdmin || normalizedRole === 'superadmin' ? 'superadmin' : (normalizedRole || 'seller');
     const actorRolePriority = getRolePriority(actorRoleForPolicy);
@@ -87,12 +108,18 @@ export default function useSaasAccessControl({
     const canManageUsers = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_USERS_MANAGE])
         : roleBasedCanManageUsers;
+    const canViewUsers = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_USERS_READ, PERMISSION_TENANT_USERS_MANAGE])
+        : roleBasedCanViewUsers;
     const canManageTenantSettings = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_SETTINGS_MANAGE])
         : roleBasedCanManageTenantSettings;
     const canViewTenantSettings = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_SETTINGS_READ, PERMISSION_TENANT_SETTINGS_MANAGE])
         : roleBasedCanManageTenantSettings;
+    const canViewCatalog = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_CATALOGS_READ, PERMISSION_TENANT_CATALOGS_MANAGE])
+        : roleBasedCanViewCatalog;
     const canManageCatalog = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_CATALOGS_MANAGE])
         : roleBasedCanManageCatalog;
@@ -160,6 +187,30 @@ export default function useSaasAccessControl({
     const canManageCommercialIntelligence = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_COMMERCIAL_INTELLIGENCE_MANAGE])
         : roleBasedCanManageCommercialIntelligence;
+    const canViewCampaigns = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_CAMPAIGNS_READ, PERMISSION_TENANT_CAMPAIGNS_MANAGE])
+        : roleBasedCanViewCampaigns;
+    const canManageCampaigns = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_CAMPAIGNS_MANAGE])
+        : roleBasedCanManageCampaigns;
+    const canViewMetaTemplates = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_META_TEMPLATES_READ, PERMISSION_TENANT_META_TEMPLATES_MANAGE])
+        : roleBasedCanViewMetaTemplates;
+    const canManageMetaTemplates = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_META_TEMPLATES_MANAGE])
+        : roleBasedCanManageMetaTemplates;
+    const canViewAutomations = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_AUTOMATIONS_READ, PERMISSION_TENANT_AUTOMATIONS_MANAGE])
+        : roleBasedCanViewAutomations;
+    const canManageAutomations = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_AUTOMATIONS_MANAGE])
+        : roleBasedCanManageAutomations;
+    const canViewSchedules = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_SCHEDULES_READ, PERMISSION_TENANT_SCHEDULES_MANAGE])
+        : roleBasedCanViewSchedules;
+    const canManageSchedules = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_SCHEDULES_MANAGE])
+        : roleBasedCanManageSchedules;
     const canViewCustomers = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_CUSTOMERS_READ, PERMISSION_TENANT_CUSTOMERS_MANAGE])
         : roleBasedCanManageCustomers;
@@ -167,8 +218,11 @@ export default function useSaasAccessControl({
         ? hasAnyActorPermission([PERMISSION_TENANT_CUSTOMERS_MANAGE])
         : roleBasedCanManageCustomers;
     const canViewOperations = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_KPIS_READ, PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ, PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE])
+        ? hasAnyActorPermission([PERMISSION_TENANT_CHAT_OPERATE, PERMISSION_TENANT_KPIS_READ, PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ, PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE])
         : Boolean(roleBasedCanManageTenantSettings || roleBasedCanManageUsers);
+    const canOperateChat = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_CHAT_OPERATE, PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ, PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE])
+        : Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || normalizedRole === 'seller' || noRoleContext);
     const canManageAssignments = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE])
         : Boolean(roleBasedCanManageTenantSettings || roleBasedCanManageUsers);
@@ -296,9 +350,11 @@ export default function useSaasAccessControl({
         hasAnyActorPermission,
         canManageTenants,
         canManageUsers,
+        canViewUsers,
         canManageTenantSettings,
         canViewTenantSettings,
         canManageCatalog,
+        canViewCatalog,
         canManageRoles,
         canViewSuperAdminSections,
         canEditTenantSettings,
@@ -314,9 +370,18 @@ export default function useSaasAccessControl({
         canManageAi,
         canViewCommercialIntelligence,
         canManageCommercialIntelligence,
+        canViewCampaigns,
+        canManageCampaigns,
+        canViewMetaTemplates,
+        canManageMetaTemplates,
+        canViewAutomations,
+        canManageAutomations,
+        canViewSchedules,
+        canManageSchedules,
         canViewCustomers,
         canManageCustomers,
         canViewOperations,
+        canOperateChat,
         canManageAssignments,
         canEditCatalog,
         requiresTenantSelection,

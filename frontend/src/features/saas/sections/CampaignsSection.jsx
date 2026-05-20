@@ -621,6 +621,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         tenantScopeLocked = true,
         settingsTenantId = '',
         waModules = [],
+        canManageCampaigns = false,
         campaignsController = null,
         metaTemplatesController = null,
         availableLabels: availableLabelsFromContext = [],
@@ -2723,7 +2724,7 @@ export default React.memo(function CampaignsSection(props = {}) {
 
     const selectedMeta = statusMeta(selectedCampaign?.status);
     const selectedProgress = progress(selectedCampaign);
-    const canWrite = !tenantScopeLocked;
+    const canWrite = Boolean(canManageCampaigns) && !tenantScopeLocked;
     const layoutSelectedId = panelMode === 'create' ? '__create__' : (selectedCampaignId || '');
     const renderWizardPlaceholder = (stepNumber, title, description) => (
         <SaasDetailPanelSection title={`Paso ${stepNumber} - ${title}`}>

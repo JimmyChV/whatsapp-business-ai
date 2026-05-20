@@ -3,26 +3,21 @@ function registerTenantAdminAutomationHttpRoutes({
     tenantAutomationService,
     accessPolicyService,
     isTenantAllowedForUser,
-    hasAnyPermission,
     hasPermission
 }) {
     if (!app) throw new Error('registerTenantAdminAutomationHttpRoutes requiere app.');
     if (!tenantAutomationService) throw new Error('registerTenantAdminAutomationHttpRoutes requiere tenantAutomationService.');
 
     function canRead(req, tenantId) {
-        return isTenantAllowedForUser(req, tenantId) && hasAnyPermission(req, [
-            accessPolicyService.PERMISSIONS.TENANT_SETTINGS_READ,
-            accessPolicyService.PERMISSIONS.TENANT_SETTINGS_MANAGE,
-            accessPolicyService.PERMISSIONS.TENANT_MODULES_READ,
-            accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE
-        ]);
+        return isTenantAllowedForUser(req, tenantId) && (
+            hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_AUTOMATIONS_READ)
+            || hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_AUTOMATIONS_MANAGE)
+        );
     }
 
     function canWrite(req, tenantId) {
-        return isTenantAllowedForUser(req, tenantId) && (
-            hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_SETTINGS_MANAGE)
-            || hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_MODULES_MANAGE)
-        );
+        return isTenantAllowedForUser(req, tenantId)
+            && hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_AUTOMATIONS_MANAGE);
     }
 
     app.get('/api/admin/saas/tenants/:tenantId/automations', async (req, res) => {

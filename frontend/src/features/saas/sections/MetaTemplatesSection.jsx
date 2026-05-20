@@ -622,7 +622,7 @@ function MetaTemplatesSection(props = {}) {
         tenantScopeLocked = true,
         waModules = [],
         busy = false,
-        canEditModules = false,
+        canManageMetaTemplates = false,
         runAction = null,
         setError = null,
         requestJson = null,
@@ -891,7 +891,7 @@ function MetaTemplatesSection(props = {}) {
 
     const hasErrors = Boolean(listError || createError || deleteError || syncError);
     const templatesBusy = busy || loadingList || loadingCreate || loadingSync;
-    const canWrite = Boolean(settingsTenantId) && Boolean(canEditModules);
+    const canWrite = Boolean(settingsTenantId) && Boolean(canManageMetaTemplates);
 
     const reloadTemplates = useCallback(async (overrideFilters = null) => {
         if (typeof loadTemplates !== 'function') return;

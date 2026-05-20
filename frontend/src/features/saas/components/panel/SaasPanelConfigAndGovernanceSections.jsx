@@ -73,6 +73,7 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
         settingsTenantId: context.settingsTenantId,
         loadingTenantCatalogs: context.loadingTenantCatalogs,
         loadTenantCatalogs: context.loadTenantCatalogs,
+        canViewCatalog: context.canViewCatalog,
         canEditCatalog: context.canEditCatalog,
         openCatalogCreate: context.openCatalogCreate,
         tenantCatalogItems: context.tenantCatalogItems,

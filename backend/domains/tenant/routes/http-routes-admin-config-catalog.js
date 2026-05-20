@@ -73,6 +73,8 @@ function registerTenantAdminConfigCatalogHttpRoutes({
     isTenantAllowedForUser,
     hasPermission,
     hasAnyPermission,
+    hasTenantCatalogReadAccess,
+    hasTenantCatalogWriteAccess,
     sanitizeAiAssistantIdPayload,
     sanitizeAiAssistantPayload,
     sanitizeCatalogProductPayload,
@@ -233,15 +235,7 @@ function registerTenantAdminConfigCatalogHttpRoutes({
     app.get('/api/admin/saas/tenants/:tenantId/catalogs', async (req, res) => {
         const tenantId = String(req.params?.tenantId || '').trim();
         if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-        const requiredCatalogPermissions = [
-            accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE,
-            accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ,
-            accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE,
-            accessPolicyService.PERMISSIONS.TENANT_MODULES_READ
-        ];
-        const tenantAllowed = isTenantAllowedForUser(req, tenantId);
-        const hasRequiredPermission = hasAnyPermission(req, requiredCatalogPermissions);
-        if (!tenantAllowed || !hasRequiredPermission) {
+        if (!hasTenantCatalogReadAccess(req, tenantId)) {
             return res.status(403).json({ ok: false, error: 'No autorizado.' });
         }
 
@@ -256,7 +250,7 @@ function registerTenantAdminConfigCatalogHttpRoutes({
     app.post('/api/admin/saas/tenants/:tenantId/catalogs', async (req, res) => {
         const tenantId = String(req.params?.tenantId || '').trim();
         if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
-        if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE)) {
+        if (!hasTenantCatalogWriteAccess(req, tenantId)) {
             return res.status(403).json({ ok: false, error: 'No autorizado.' });
         }
 
@@ -277,7 +271,7 @@ function registerTenantAdminConfigCatalogHttpRoutes({
         const tenantId = String(req.params?.tenantId || '').trim();
         const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
         if (!tenantId || !catalogId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId invalido.' });
-        if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE)) {
+        if (!hasTenantCatalogWriteAccess(req, tenantId)) {
             return res.status(403).json({ ok: false, error: 'No autorizado.' });
         }
 
@@ -294,7 +288,7 @@ function registerTenantAdminConfigCatalogHttpRoutes({
         const tenantId = String(req.params?.tenantId || '').trim();
         const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
         if (!tenantId || !catalogId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId invalido.' });
-        if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE)) {
+        if (!hasTenantCatalogWriteAccess(req, tenantId)) {
             return res.status(403).json({ ok: false, error: 'No autorizado.' });
         }
 
@@ -310,12 +304,7 @@ function registerTenantAdminConfigCatalogHttpRoutes({
         const tenantId = String(req.params?.tenantId || '').trim();
         const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
         if (!tenantId || !catalogId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId invalido.' });
-        if (!isTenantAllowedForUser(req, tenantId)
-            || !hasAnyPermission(req, [
-                accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE,
-                accessPolicyService.PERMISSIONS.TENANT_MODULES_READ,
-                accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ
-            ])) {
+        if (!hasTenantCatalogReadAccess(req, tenantId)) {
             return res.status(403).json({ ok: false, error: 'No autorizado.' });
         }
 
@@ -331,7 +320,7 @@ function registerTenantAdminConfigCatalogHttpRoutes({
         const tenantId = String(req.params?.tenantId || '').trim();
         const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
         if (!tenantId || !catalogId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId invalido.' });
-        if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE)) {
+        if (!hasTenantCatalogWriteAccess(req, tenantId)) {
             return res.status(403).json({ ok: false, error: 'No autorizado.' });
         }
 
@@ -358,12 +347,7 @@ function registerTenantAdminConfigCatalogHttpRoutes({
         const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
         const moduleId = String(req.query?.moduleId || '').trim().toLowerCase();
         if (!tenantId || !catalogId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId invalido.' });
-        if (!isTenantAllowedForUser(req, tenantId)
-            || !hasAnyPermission(req, [
-                accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE,
-                accessPolicyService.PERMISSIONS.TENANT_MODULES_READ,
-                accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ
-            ])) {
+        if (!hasTenantCatalogReadAccess(req, tenantId)) {
             return res.status(403).json({ ok: false, error: 'No autorizado.' });
         }
 
@@ -383,7 +367,7 @@ function registerTenantAdminConfigCatalogHttpRoutes({
         const tenantId = String(req.params?.tenantId || '').trim();
         const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
         if (!tenantId || !catalogId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId invalido.' });
-        if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE)) {
+        if (!hasTenantCatalogWriteAccess(req, tenantId)) {
             return res.status(403).json({ ok: false, error: 'No autorizado.' });
         }
 
@@ -414,7 +398,7 @@ function registerTenantAdminConfigCatalogHttpRoutes({
         const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
         const productId = String(req.params?.productId || '').trim();
         if (!tenantId || !catalogId || !productId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId/productId invalido.' });
-        if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE)) {
+        if (!hasTenantCatalogWriteAccess(req, tenantId)) {
             return res.status(403).json({ ok: false, error: 'No autorizado.' });
         }
 
@@ -450,7 +434,7 @@ function registerTenantAdminConfigCatalogHttpRoutes({
         const catalogId = String(req.params?.catalogId || '').trim().toUpperCase();
         const productId = String(req.params?.productId || '').trim();
         if (!tenantId || !catalogId || !productId) return res.status(400).json({ ok: false, error: 'tenantId/catalogId/productId invalido.' });
-        if (!isTenantAllowedForUser(req, tenantId) || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CATALOGS_MANAGE)) {
+        if (!hasTenantCatalogWriteAccess(req, tenantId)) {
             return res.status(403).json({ ok: false, error: 'No autorizado.' });
         }
 

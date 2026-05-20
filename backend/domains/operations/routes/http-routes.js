@@ -208,6 +208,7 @@ function registerOperationsHttpRoutes({
     globalLabelsService,
     accessPolicyService,
     hasPermission,
+    isTenantAllowedForUser,
     normalizeScopeModuleId,
     hasConversationEventsReadAccess,
     hasChatAssignmentsReadAccess,
@@ -215,6 +216,10 @@ function registerOperationsHttpRoutes({
     hasAssignmentRulesReadAccess,
     hasAssignmentRulesWriteAccess,
     hasOperationsKpiReadAccess,
+    hasTenantCampaignReadAccess,
+    hasTenantCampaignWriteAccess,
+    hasTenantMetaTemplateReadAccess,
+    hasTenantMetaTemplateWriteAccess,
     emitCommercialStatusUpdated
 }) {
     if (!app) throw new Error('registerOperationsHttpRoutes requiere app.');
@@ -350,25 +355,25 @@ function registerOperationsHttpRoutes({
             throw new Error('Servicio de templates Meta no disponible.');
         };
 
+    function canReadMetaTemplates(req, tenantId) {
+        if (typeof hasTenantMetaTemplateReadAccess === 'function') return hasTenantMetaTemplateReadAccess(req, tenantId);
+        return hasChatAssignmentsReadAccess(req, tenantId);
+    }
     function ensureMetaTemplateWriteAccess(req, tenantId) {
-        if (!hasChatAssignmentsWriteAccess(req, tenantId)) {
-            return { ok: false, statusCode: 403, error: 'No autorizado.' };
+        if (typeof hasTenantMetaTemplateWriteAccess === 'function' && hasTenantMetaTemplateWriteAccess(req, tenantId)) {
+            return { ok: true };
         }
-        const role = String(resolveActorTenantRole({ req, tenantId }) || 'seller').trim().toLowerCase();
-        if (!['owner', 'admin'].includes(role)) {
-            return { ok: false, statusCode: 403, error: 'Solo owner/admin pueden gestionar templates Meta.' };
-        }
-        return { ok: true, role };
+        return { ok: false, statusCode: 403, error: 'No autorizado para gestionar templates Meta.' };
+    }
+    function canReadCampaigns(req, tenantId) {
+        if (typeof hasTenantCampaignReadAccess === 'function') return hasTenantCampaignReadAccess(req, tenantId);
+        return hasChatAssignmentsReadAccess(req, tenantId);
     }
     function ensureCampaignWriteAccess(req, tenantId) {
-        if (!hasChatAssignmentsWriteAccess(req, tenantId)) {
-            return { ok: false, statusCode: 403, error: 'No autorizado.' };
+        if (typeof hasTenantCampaignWriteAccess === 'function' && hasTenantCampaignWriteAccess(req, tenantId)) {
+            return { ok: true };
         }
-        const role = String(resolveActorTenantRole({ req, tenantId }) || 'seller').trim().toLowerCase();
-        if (!['owner', 'admin'].includes(role)) {
-            return { ok: false, statusCode: 403, error: 'Solo owner/admin pueden gestionar campanas.' };
-        }
-        return { ok: true, role };
+        return { ok: false, statusCode: 403, error: 'No autorizado para gestionar campanas.' };
     }
     const consentApi = customerConsentService && typeof customerConsentService === 'object'
         ? customerConsentService
@@ -1820,7 +1825,7 @@ function registerOperationsHttpRoutes({
             if (!ensureAuthenticated(req, res, authService)) return;
 
             const tenantId = resolveTenantIdFromContext(req);
-            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+            if (!canReadMetaTemplates(req, tenantId)) {
                 return res.status(403).json({ ok: false, error: 'No autorizado.' });
             }
 
@@ -2008,7 +2013,7 @@ function registerOperationsHttpRoutes({
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
             const tenantId = resolveTenantIdFromContext(req);
-            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+            if (!canReadCampaigns(req, tenantId)) {
                 return res.status(403).json({ ok: false, error: 'No autorizado.' });
             }
             const options = await listCampaignFilterOptions(tenantId);
@@ -2022,7 +2027,7 @@ function registerOperationsHttpRoutes({
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
             const tenantId = resolveTenantIdFromContext(req);
-            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+            if (!canReadCampaigns(req, tenantId)) {
                 return res.status(403).json({ ok: false, error: 'No autorizado.' });
             }
             const options = await listCampaignGeographyOptions(tenantId);
@@ -2037,7 +2042,7 @@ function registerOperationsHttpRoutes({
             if (!ensureAuthenticated(req, res, authService)) return;
 
             const tenantId = resolveTenantIdFromContext(req);
-            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+            if (!canReadCampaigns(req, tenantId)) {
                 return res.status(403).json({ ok: false, error: 'No autorizado.' });
             }
 
@@ -2076,7 +2081,7 @@ function registerOperationsHttpRoutes({
             if (!ensureAuthenticated(req, res, authService)) return;
 
             const tenantId = resolveTenantIdFromContext(req);
-            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+            if (!canReadCampaigns(req, tenantId)) {
                 return res.status(403).json({ ok: false, error: 'No autorizado.' });
             }
 
@@ -2269,7 +2274,7 @@ function registerOperationsHttpRoutes({
             if (!ensureAuthenticated(req, res, authService)) return;
 
             const tenantId = resolveTenantIdFromContext(req);
-            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+            if (!canReadCampaigns(req, tenantId)) {
                 return res.status(403).json({ ok: false, error: 'No autorizado.' });
             }
 
@@ -2302,7 +2307,7 @@ function registerOperationsHttpRoutes({
             if (!ensureAuthenticated(req, res, authService)) return;
 
             const tenantId = resolveTenantIdFromContext(req);
-            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+            if (!canReadCampaigns(req, tenantId)) {
                 return res.status(403).json({ ok: false, error: 'No autorizado.' });
             }
 
@@ -2541,10 +2546,6 @@ function registerOperationsHttpRoutes({
             if (!ensureAuthenticated(req, res, authService)) return;
 
             const tenantId = resolveTenantIdFromContext(req);
-            if (!hasChatAssignmentsWriteAccess(req, tenantId)) {
-                return res.status(403).json({ ok: false, error: 'No autorizado.' });
-            }
-
             const chatId = String(req.params?.chatId || '').trim();
             if (!chatId) return res.status(400).json({ ok: false, error: 'chatId invalido.' });
 
@@ -2555,6 +2556,9 @@ function registerOperationsHttpRoutes({
                 actorUserId
                 && String(currentAssignment?.assigneeUserId || '').trim() === String(actorUserId).trim()
             );
+            if (!hasChatAssignmentsWriteAccess(req, tenantId) && !isOwnChat) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
             const policyResult = assertReleaseAllowed({ req, tenantId });
             if (!policyResult?.ok && !isOwnChat) {
                 return res.status(403).json({ ok: false, error: 'No autorizado.' });
