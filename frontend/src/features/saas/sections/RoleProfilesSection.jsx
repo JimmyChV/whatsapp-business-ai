@@ -231,10 +231,22 @@ function RoleProfilesSection(props = {}) {
                                         const isRequired = Array.isArray(roleForm.required) && roleForm.required.includes(permissionKey);
                                         const isOptional = Array.isArray(roleForm.optional) && roleForm.optional.includes(permissionKey);
                                         const isBlocked = Array.isArray(roleForm.blocked) && roleForm.blocked.includes(permissionKey);
+                                        const hasSelection = isRequired || isOptional || isBlocked;
                                         const description = PERMISSION_DESCRIPTIONS[permissionKey] || 'Permiso granular del tenant.';
 
                                         return (
-                                            <div key={`role_permission_matrix_${permissionKey}`} className="saas-admin-permission-toggle saas-admin-permission-toggle--matrix" role="status">
+                                            <div
+                                                key={`role_permission_matrix_${permissionKey}`}
+                                                className={[
+                                                    'saas-admin-permission-toggle',
+                                                    'saas-admin-permission-toggle--matrix',
+                                                    hasSelection ? 'is-active' : '',
+                                                    isRequired ? 'is-required' : '',
+                                                    isOptional ? 'is-optional' : '',
+                                                    isBlocked ? 'is-blocked' : ''
+                                                ].filter(Boolean).join(' ')}
+                                                role="status"
+                                            >
                                                 <span className="saas-admin-permission-body">
                                                     <span className="saas-admin-permission-title-row">
                                                         <strong>{permission.label || permissionKey}</strong>
@@ -243,15 +255,15 @@ function RoleProfilesSection(props = {}) {
                                                     <code>{permissionKey}</code>
                                                 </span>
                                                 <div className="saas-admin-inline-checks">
-                                                    <label>
+                                                    <label className={`saas-admin-role-permission-chip saas-admin-role-permission-chip--required${isRequired ? ' is-selected' : ''}`.trim()}>
                                                         <input type="checkbox" checked={isRequired} onChange={(event) => toggleRolePermission?.('required', permissionKey, event.target.checked)} disabled={busy} />
                                                         <small>Obligatorio</small>
                                                     </label>
-                                                    <label>
+                                                    <label className={`saas-admin-role-permission-chip saas-admin-role-permission-chip--optional${isOptional ? ' is-selected' : ''}`.trim()}>
                                                         <input type="checkbox" checked={isOptional} onChange={(event) => toggleRolePermission?.('optional', permissionKey, event.target.checked)} disabled={busy} />
                                                         <small>Opcional</small>
                                                     </label>
-                                                    <label>
+                                                    <label className={`saas-admin-role-permission-chip saas-admin-role-permission-chip--blocked${isBlocked ? ' is-selected' : ''}`.trim()}>
                                                         <input type="checkbox" checked={isBlocked} onChange={(event) => toggleRolePermission?.('blocked', permissionKey, event.target.checked)} disabled={busy} />
                                                         <small>Bloqueado</small>
                                                     </label>

@@ -336,6 +336,22 @@
   justify-content: flex-end;
 }
 
+.saas-admin-permission-toggle--matrix.is-active {
+  border-color: color-mix(in srgb, var(--saas-accent-primary) 48%, var(--saas-border-color));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--saas-accent-primary) 12%, transparent), transparent 45%),
+    var(--saas-bg-surface);
+  box-shadow: inset 4px 0 0 color-mix(in srgb, var(--saas-accent-primary) 82%, var(--saas-border-color));
+}
+
+.saas-admin-permission-toggle--matrix.is-blocked {
+  border-color: color-mix(in srgb, var(--saas-accent-danger, #ef4444) 48%, var(--saas-border-color));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--saas-accent-danger, #ef4444) 10%, transparent), transparent 45%),
+    var(--saas-bg-surface);
+  box-shadow: inset 4px 0 0 color-mix(in srgb, var(--saas-accent-danger, #ef4444) 82%, var(--saas-border-color));
+}
+
 .saas-admin-permission-toggle input {
   position: absolute;
   opacity: 0;
@@ -995,6 +1011,59 @@ button.saas-admin-related-row small::after {
 .saas-admin-inline-checks small {
   font-size: 0.72rem;
   color: var(--saas-text-secondary);
+}
+
+.saas-admin-inline-checks .saas-admin-role-permission-chip {
+  min-width: 92px;
+  justify-content: center;
+  padding: 5px 10px;
+  border-color: color-mix(in srgb, var(--saas-border-color) 86%, var(--saas-text-secondary));
+  background: color-mix(in srgb, var(--saas-bg-surface) 88%, var(--saas-bg-input));
+  color: var(--saas-text-secondary);
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
+}
+
+.saas-admin-inline-checks .saas-admin-role-permission-chip:hover {
+  border-color: color-mix(in srgb, var(--saas-accent-primary) 42%, var(--saas-border-color));
+  color: var(--saas-text-primary);
+}
+
+.saas-admin-inline-checks .saas-admin-role-permission-chip.is-selected {
+  border-color: color-mix(in srgb, var(--saas-accent-primary) 82%, var(--saas-border-color));
+  background: color-mix(in srgb, var(--saas-accent-primary) 86%, var(--saas-bg-surface));
+  color: var(--saas-accent-on-primary, #fff);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--saas-accent-primary) 26%, transparent);
+  font-weight: 800;
+}
+
+.saas-admin-inline-checks .saas-admin-role-permission-chip.is-selected::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.saas-admin-inline-checks .saas-admin-role-permission-chip--blocked.is-selected {
+  border-color: color-mix(in srgb, var(--saas-accent-danger, #ef4444) 82%, var(--saas-border-color));
+  background: color-mix(in srgb, var(--saas-accent-danger, #ef4444) 86%, var(--saas-bg-surface));
+  color: var(--saas-accent-on-danger, #fff);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--saas-accent-danger, #ef4444) 24%, transparent);
+}
+
+.saas-admin-inline-checks .saas-admin-role-permission-chip:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.saas-admin-inline-checks .saas-admin-role-permission-chip.is-selected small {
+  color: currentColor;
 }
 
 .saas-admin-detail-metadata pre {
