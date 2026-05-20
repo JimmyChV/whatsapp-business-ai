@@ -234,6 +234,111 @@ function extractProductSignificantWords(value = '') {
         .filter((word) => word.length >= 4 && !PRODUCT_TITLE_STOPWORDS.has(word));
 }
 
+const CORE_CATALOG_WORDS = new Set([
+    'detergente',
+    'detergentes',
+    'suavizante',
+    'suavizantes',
+    'lavavajillas',
+    'lavajillas',
+    'quitamanchas',
+    'sacagrasa',
+    'desinfectante',
+    'limpiador',
+    'limpiadores',
+    'ropa',
+    'cocina',
+    'bano',
+    'baño'
+]);
+
+function isCoreCatalogWord(word = '') {
+    return CORE_CATALOG_WORDS.has(normalizeProductLookupKey(word));
+}
+
+function catalogRowMetadataText(row = {}) {
+    const metadata = safeJsonObject(row.metadata);
+    const categories = Array.isArray(metadata.categories)
+        ? metadata.categories
+        : (Array.isArray(row.categories) ? row.categories : []);
+    return [
+        row.title,
+        row.item_id,
+        metadata.sku,
+        metadata.category,
+        metadata.categoryName,
+        metadata.catalogName,
+        ...categories.map((entry) => (typeof entry === 'string' ? entry : text(entry?.name || entry?.slug || entry?.label))),
+        metadata.description,
+        metadata.descripcion,
+        metadata.shortDescription,
+        metadata.short_description,
+        metadata.components,
+        metadata.componentes,
+        metadata.includedItems,
+        metadata.included_items,
+        metadata.includes,
+        metadata.incluye,
+        metadata.benefits,
+        metadata.beneficios
+    ].map(text).filter(Boolean).join(' ');
+}
+
+function catalogRowSearchKey(row = {}) {
+    return normalizeProductLookupKey(catalogRowMetadataText(row));
+}
+
+function catalogRowCategoryTokens(row = {}) {
+    const metadata = safeJsonObject(row.metadata);
+    const categories = Array.isArray(metadata.categories)
+        ? metadata.categories
+        : (Array.isArray(row.categories) ? row.categories : []);
+    return new Set(categories
+        .map((entry) => (typeof entry === 'string' ? entry : text(entry?.name || entry?.slug || entry?.label)))
+        .flatMap((entry) => normalizeProductLookupKey(entry).split(' '))
+        .map((word) => word.trim())
+        .filter((word) => word.length >= 4 && !PRODUCT_TITLE_STOPWORDS.has(word)));
+}
+
+function isPromotionCatalogIntent(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    return /\b(promocion|promociones|oferta|ofertas|kit|kits|combo|combos|paquete|paquetes)\b/.test(normalized);
+}
+
+function isPromotionalCatalogRowForIntent(row = {}, lastCustomerMessage = '') {
+    const normalizedMessage = normalizeProductLookupKey(lastCustomerMessage);
+    const rowKey = catalogRowSearchKey(row);
+    if (!rowKey) return false;
+    if (/\b(kit|kits|combo|combos)\b/.test(rowKey)) return true;
+    if (/\b(paquete|paquetes|pack)\b/.test(normalizedMessage)) {
+        return /\b(paquete|paquetes|pack)\b/.test(rowKey);
+    }
+    return false;
+}
+
+function areCatalogRowsContextuallyRelated(candidate = {}, contextRows = [], lastCustomerMessage = '') {
+    const contexts = Array.isArray(contextRows) ? contextRows : [];
+    if (!contexts.length) return true;
+    const candidateKey = catalogRowSearchKey(candidate);
+    if (!candidateKey) return false;
+    const candidateCategories = catalogRowCategoryTokens(candidate);
+    const contextWords = new Set();
+    const contextCategories = new Set();
+    contexts.forEach((row) => {
+        extractProductSignificantWords(row.title).forEach((word) => contextWords.add(word));
+        catalogRowCategoryTokens(row).forEach((word) => contextCategories.add(word));
+    });
+    const sharesProductWord = Array.from(contextWords)
+        .some((word) => word.length >= 5 && candidateKey.includes(word));
+    const sharesCategory = Array.from(contextCategories)
+        .some((word) => candidateCategories.has(word) || candidateKey.includes(word));
+    if (isPromotionCatalogIntent(lastCustomerMessage)) {
+        return isPromotionalCatalogRowForIntent(candidate, lastCustomerMessage)
+            && (sharesProductWord || sharesCategory);
+    }
+    return sharesProductWord || sharesCategory;
+}
+
 function extractProductVolume(value = '') {
     const normalized = lower(value)
         .normalize('NFD')
@@ -939,6 +1044,57 @@ async function getRecentlySentCatalogSkuSet(tenantId, moduleId = '', chatId = ''
     }
 }
 
+async function getRecentCatalogContextRows(tenantId, moduleId = '', chatId = '', limit = 5) {
+    const cleanChatId = normalizeChatId(chatId);
+    if (!cleanChatId) return [];
+    try {
+        const { rows: messageRows } = await pgQuery(
+            `SELECT body, metadata
+               FROM tenant_messages
+              WHERE tenant_id = $1
+                AND chat_id = $2
+                AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($3))
+              ORDER BY created_at DESC
+              LIMIT $4`,
+            [tenantId, cleanChatId, lower(moduleId), Math.max(1, Math.min(10, Number(limit) || 5))]
+        );
+        const recentText = (messageRows || []).map((row) => {
+            const metadata = safeJsonObject(row.metadata);
+            const catalogProduct = getCatalogProductFromReferenceMetadata(metadata);
+            return [
+                row.body,
+                catalogProduct.title,
+                catalogProduct.name,
+                catalogProduct.sku,
+                catalogProduct.item_id,
+                catalogProduct.itemId
+            ].map(text).filter(Boolean).join(' ');
+        }).join('\n');
+        const recentUpper = recentText.toUpperCase();
+        const recentKey = normalizeProductLookupKey(recentText);
+        if (!recentUpper && !recentKey) return [];
+        const { rows: catalogRows } = await pgQuery(
+            `SELECT item_id, title, price, metadata
+               FROM catalog_items
+              WHERE tenant_id = $1
+              LIMIT 500`,
+            [tenantId]
+        );
+        return (catalogRows || []).filter((row) => {
+            const sku = text(row.item_id).toUpperCase();
+            const titleKey = normalizeProductLookupKey(row.title);
+            if (sku && recentUpper.includes(sku)) return true;
+            if (titleKey && recentKey.includes(titleKey)) return true;
+            const words = extractProductSignificantWords(row.title);
+            const matchedWords = words.filter((word) => recentKey.includes(word));
+            return matchedWords.length >= 2 || matchedWords.some((word) => isCoreCatalogWord(word));
+        }).slice(0, 20);
+    } catch (error) {
+        console.warn('[Patty] recent catalog context skipped:', error?.message || error);
+        return [];
+    }
+}
+
 async function getCatalogContext(tenantId, recentConversationText = '', lastCustomerMessage = '') {
     const { rows } = await pgQuery(
         `SELECT item_id, title, price, metadata
@@ -1068,7 +1224,7 @@ function buildPattyCatalogProductCaption(row = {}) {
         lines.push(`Detalle: ${description.length > 280 ? `${description.slice(0, 277)}...` : description}`);
     }
     const sku = text(row.item_id).toUpperCase();
-    if (sku) lines.push(`SKU: ${sku}`);
+    if (sku) lines.push(`Ref: ${sku}`);
     return lines.join('\n');
 }
 
@@ -1109,10 +1265,15 @@ async function filterCatalogProductsForContext(tenantId, skus = [], lastCustomer
     const lastMessageKeywords = extractCatalogSearchKeywords(lastCustomerMessage);
     const responseKey = normalizeProductLookupKey(responseText);
     const quotedReferenceUpper = text(options.quotedReferenceContext).toUpperCase();
-    const recentlySent = await getRecentlySentCatalogSkuSet(tenantId, options.moduleId, options.chatId, rows);
+    const [recentlySent, recentContextRows] = await Promise.all([
+        getRecentlySentCatalogSkuSet(tenantId, options.moduleId, options.chatId, rows),
+        getRecentCatalogContextRows(tenantId, options.moduleId, options.chatId, 5)
+    ]);
     const allowed = [];
     const allowedSet = new Set();
     const skippedRepeated = [];
+    const skippedOutOfContext = [];
+    const promotionIntent = isPromotionCatalogIntent(lastCustomerMessage);
     rows.forEach((row) => {
         const sku = text(row.item_id).toUpperCase();
         const titleKey = normalizeProductLookupKey(row.title);
@@ -1126,6 +1287,11 @@ async function filterCatalogProductsForContext(tenantId, skus = [], lastCustomer
             skippedRepeated.push(sku);
             return;
         }
+        const directCurrentProductMatch = matchesLastMessage && !promotionIntent;
+        if (sku && !directCurrentProductMatch && !areCatalogRowsContextuallyRelated(row, recentContextRows, lastCustomerMessage)) {
+            skippedOutOfContext.push(sku);
+            return;
+        }
         if (sku && !allowedSet.has(sku) && (matchesLastMessage || appearsInResponse)) {
             allowed.push(sku);
             allowedSet.add(sku);
@@ -1135,6 +1301,18 @@ async function filterCatalogProductsForContext(tenantId, skus = [], lastCustomer
         console.log('[Patty] catalog products filtered', {
             tenantId,
             requested: cleanSkus,
+            allowed
+        });
+    }
+    if (skippedOutOfContext.length) {
+        console.log('[Patty] catalog products skipped as out of context', {
+            tenantId,
+            requested: cleanSkus,
+            skippedOutOfContext,
+            recentContext: recentContextRows.slice(0, 5).map((row) => ({
+                sku: text(row.item_id).toUpperCase(),
+                title: text(row.title)
+            })),
             allowed
         });
     }
@@ -3292,6 +3470,21 @@ async function getGreetingInstructionContext(tenantId, moduleId, chatId, lastCus
         reason: 'none'
     };
     const clientGreeted = hasClientGreeting(lastCustomerMessage);
+    const logDecision = (decision = base, extra = {}) => {
+        console.log('[Patty] greeting decision', {
+            tenantId,
+            moduleId: lower(moduleId),
+            chatId: normalizeChatId(chatId),
+            shouldGreet: Boolean(decision.shouldGreet),
+            reason: decision.reason || 'none',
+            minutesSinceLastOutbound: extra.minutesSinceLastOutbound ?? null,
+            clientGreeted: Boolean(extra.clientGreeted),
+            pendingClientGreeted: Boolean(extra.pendingClientGreeted),
+            inboundMessages: extra.inboundMessages ?? null,
+            totalMessages: extra.totalMessages ?? null
+        });
+        return decision;
+    };
     try {
         const [statsResult, pendingRows] = await Promise.all([
             pgQuery(
@@ -3319,22 +3512,33 @@ async function getGreetingInstructionContext(tenantId, moduleId, chatId, lastCus
         const row = statsResult.rows?.[0] || {};
         const totalMessages = Number(row.total_messages || 0);
         const inboundMessages = Number(row.inbound_messages || 0);
-        if (totalMessages <= 1 || inboundMessages <= 1) {
-            return { ...base, shouldGreet: true, reason: 'first_message' };
-        }
-        if (clientGreeted || pendingClientGreeted) {
-            return { ...base, shouldGreet: true, reason: 'client_greeted' };
-        }
         const lastResponseAtValue = row.last_patty_outbound_at || row.last_outbound_at;
         const lastResponseAt = lastResponseAtValue ? new Date(lastResponseAtValue).getTime() : NaN;
-        if (Number.isFinite(lastResponseAt) && Date.now() - lastResponseAt > 4 * 60 * 60 * 1000) {
-            return { ...base, shouldGreet: true, reason: 'long_absence' };
+        const minutesSinceLastOutbound = Number.isFinite(lastResponseAt)
+            ? Math.floor((Date.now() - lastResponseAt) / 60000)
+            : null;
+        const decisionMeta = {
+            minutesSinceLastOutbound,
+            clientGreeted,
+            pendingClientGreeted,
+            inboundMessages,
+            totalMessages
+        };
+        if (!lastResponseAtValue && inboundMessages <= 3) {
+            return logDecision({ ...base, shouldGreet: true, reason: 'first_message' }, decisionMeta);
         }
+        if (clientGreeted || pendingClientGreeted) {
+            return logDecision({ ...base, shouldGreet: true, reason: 'client_greeted' }, decisionMeta);
+        }
+        if (Number.isFinite(lastResponseAt) && Date.now() - lastResponseAt > 4 * 60 * 60 * 1000) {
+            return logDecision({ ...base, shouldGreet: true, reason: 'long_absence' }, decisionMeta);
+        }
+        return logDecision(base, decisionMeta);
     } catch (error) {
-        if (clientGreeted) return { ...base, shouldGreet: true, reason: 'client_greeted' };
+        if (clientGreeted) return logDecision({ ...base, shouldGreet: true, reason: 'client_greeted' }, { clientGreeted });
         console.warn('[Patty] greeting context skipped:', error?.message || error);
     }
-    return clientGreeted ? { ...base, shouldGreet: true, reason: 'client_greeted' } : base;
+    return logDecision(clientGreeted ? { ...base, shouldGreet: true, reason: 'client_greeted' } : base, { clientGreeted });
 }
 
 function normalizeCustomerNameForGreeting(value = '') {
