@@ -43,6 +43,8 @@ function NavSectionIcon({ sectionId }) {
         return <svg {...commonProps}><path d="M12 2 3 7l9 5 9-5-9-5zM3 17l9 5 9-5M3 12l9 5 9-5" /></svg>;
     case 'saas_catalogos':
         return <svg {...commonProps}><path d="M4 6h16v14H4zM9 6V4h6v2M8 11h8M8 15h8" /></svg>;
+    case 'saas_commercial_intelligence':
+        return <svg {...commonProps}><path d="M9 3a3 3 0 0 0-3 3v1a3 3 0 0 0 0 6v1a3 3 0 0 0 5 2.24V4.76A3 3 0 0 0 9 3zM15 3a3 3 0 0 1 3 3v1a3 3 0 0 1 0 6v1a3 3 0 0 1-5 2.24V4.76A3 3 0 0 1 15 3zM7 9h4M13 9h4M8 15h3M13 15h3" /></svg>;
     case 'saas_config':
         return <svg {...commonProps}><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM3 12h2M19 12h2M12 3v2M12 19v2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4" /></svg>;
     default:

@@ -170,6 +170,7 @@ export const ADMIN_NAV_ITEMS = [
     { id: 'saas_modulos', label: 'Módulos' },
     { id: 'saas_usuarios', label: 'Usuarios' },
     { id: 'saas_catalogos', label: 'Catálogos' },
+    { id: 'saas_commercial_intelligence', label: 'Inteligencia Comercial' },
     { id: 'saas_etiquetas', label: 'Etiquetas' },
     { id: 'saas_quick_replies', label: 'Respuestas Rápidas' },
     { id: 'saas_ia', label: 'Asistentes IA' },

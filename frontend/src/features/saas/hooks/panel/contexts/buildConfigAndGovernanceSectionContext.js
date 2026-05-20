@@ -3,6 +3,7 @@ export default function buildConfigAndGovernanceSectionContext(c) {
         selectedSectionId: c.selectedSectionId,
         isGeneralConfigSection: c.isGeneralConfigSection,
         isModulesSection: c.isModulesSection,
+        isCommercialIntelligenceSection: c.isCommercialIntelligenceSection,
         isAutomationSection: c.isAutomationSection,
         isSchedulesSection: c.isSchedulesSection,
         settingsTenantId: c.settingsTenantId,

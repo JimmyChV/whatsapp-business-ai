@@ -1,6 +1,7 @@
 export { default as AiAssistantsSection } from './AiAssistantsSection';
 export { default as AutomationSection } from './AutomationSection';
 export { default as CatalogSection } from './CatalogSection';
+export { default as CommercialIntelligenceSection } from './CommercialIntelligenceSection';
 export { default as CampaignsSection } from './CampaignsSection';
 export { default as CompaniesSection } from './CompaniesSection';
 export { default as CustomersSection } from './CustomersSection';
