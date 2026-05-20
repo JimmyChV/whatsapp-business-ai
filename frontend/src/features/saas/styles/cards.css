@@ -327,6 +327,15 @@
   color: var(--saas-text-primary);
 }
 
+.saas-admin-permission-toggle--matrix {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.saas-admin-permission-toggle--matrix .saas-admin-inline-checks {
+  justify-content: flex-end;
+}
+
 .saas-admin-permission-toggle input {
   position: absolute;
   opacity: 0;

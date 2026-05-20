@@ -1,8 +1,14 @@
 import React from 'react';
 import { SaasEntityPage } from '../components/layout';
+import {
+    PERMISSION_DESCRIPTIONS,
+    PERMISSION_GROUPS,
+    buildPermissionMatrixGroups
+} from '../helpers/permissionMatrix.helpers';
 
 function PermissionList({ title, permissions = [], permissionLabelMap }) {
     const items = Array.isArray(permissions) ? permissions : [];
+    const groups = buildPermissionMatrixGroups(items, permissionLabelMap);
     return (
         <div className="saas-admin-related-block">
             <h4>{title}</h4>
@@ -12,15 +18,55 @@ function PermissionList({ title, permissions = [], permissionLabelMap }) {
                         <span>Sin permisos.</span>
                     </div>
                 ) : null}
-                {items.map((permissionKey) => (
-                    <div key={`${title}_${permissionKey}`} className="saas-admin-related-row" role="status">
-                        <span>{permissionLabelMap?.get(permissionKey) || permissionKey}</span>
-                        <small>{permissionKey}</small>
-                    </div>
+                {groups.map((group) => (
+                    <details key={`${title}_${group.id}`} className="saas-admin-permission-group" open>
+                        <summary>
+                            <span>{group.title}</span>
+                            <small>{group.permissions.length}</small>
+                        </summary>
+                        <div className="saas-admin-permission-list">
+                            {group.permissions.map((permissionKey) => (
+                                <div key={`${title}_${permissionKey}`} className="saas-admin-related-row" role="status">
+                                    <span>{permissionLabelMap?.get(permissionKey) || permissionKey}</span>
+                                    <small>{permissionKey}</small>
+                                </div>
+                            ))}
+                        </div>
+                    </details>
                 ))}
             </div>
         </div>
     );
+}
+
+function buildRoleMatrixGroups(rolePermissionOptions = [], permissionLabelMap = new Map()) {
+    const optionMap = new Map();
+    (Array.isArray(rolePermissionOptions) ? rolePermissionOptions : []).forEach((permission) => {
+        const key = String(permission?.key || '').trim();
+        if (!key) return;
+        optionMap.set(key, {
+            key,
+            label: String(permission?.label || permissionLabelMap?.get(key) || key).trim() || key
+        });
+    });
+
+    const groupedKeys = new Set(PERMISSION_GROUPS.flatMap((group) => group.permissions));
+    const groups = PERMISSION_GROUPS
+        .map((group) => ({
+            ...group,
+            permissions: group.permissions
+                .filter((permissionKey) => optionMap.has(permissionKey))
+                .map((permissionKey) => optionMap.get(permissionKey))
+        }))
+        .filter((group) => group.permissions.length > 0);
+
+    const fallback = Array.from(optionMap.values())
+        .filter((permission) => !groupedKeys.has(permission.key))
+        .sort((left, right) => left.label.localeCompare(right.label, 'es', { sensitivity: 'base' }));
+
+    return fallback.length > 0
+        ? [...groups, { id: 'other', title: 'OTROS PERMISOS', permissions: fallback }]
+        : groups;
 }
 
 function RoleProfilesSection(props = {}) {
@@ -51,6 +97,10 @@ function RoleProfilesSection(props = {}) {
 
     const isEditing = rolePanelMode === 'create' || rolePanelMode === 'edit';
     const selectedId = rolePanelMode === 'create' ? '__create_role' : selectedRoleKey || '';
+    const rolePermissionGroups = React.useMemo(
+        () => buildRoleMatrixGroups(rolePermissionOptions, permissionLabelMap),
+        [permissionLabelMap, rolePermissionOptions]
+    );
 
     const rows = React.useMemo(() => roleProfiles.map((profile) => {
         const role = String(profile?.role || '').trim().toLowerCase();
@@ -155,31 +205,62 @@ function RoleProfilesSection(props = {}) {
             </div>
             <div className="saas-admin-related-block">
                 <h4>Matriz de permisos</h4>
-                <div className="saas-admin-related-list">
-                    {rolePermissionOptions.map((permission) => {
-                        const permissionKey = String(permission?.key || '').trim();
-                        const isRequired = Array.isArray(roleForm.required) && roleForm.required.includes(permissionKey);
-                        const isOptional = Array.isArray(roleForm.optional) && roleForm.optional.includes(permissionKey);
-                        const isBlocked = Array.isArray(roleForm.blocked) && roleForm.blocked.includes(permissionKey);
-
+                <div className="saas-admin-empty-inline">
+                    Usa el mismo orden del editor de usuarios: primero permisos de lectura, luego permisos de gestion.
+                    Obligatorio siempre viene con el rol, Opcional se puede otorgar por usuario, Bloqueado nunca se puede asignar.
+                </div>
+                <div className="saas-admin-permission-groups">
+                    {rolePermissionGroups.map((group) => {
+                        const groupPermissionKeys = group.permissions.map((permission) => permission.key);
+                        const activeCount = groupPermissionKeys.filter((permissionKey) => (
+                            Array.isArray(roleForm.required) && roleForm.required.includes(permissionKey)
+                        ) || (
+                            Array.isArray(roleForm.optional) && roleForm.optional.includes(permissionKey)
+                        ) || (
+                            Array.isArray(roleForm.blocked) && roleForm.blocked.includes(permissionKey)
+                        )).length;
                         return (
-                            <div key={`role_permission_matrix_${permissionKey}`} className="saas-admin-related-row" role="status">
-                                <span>{permission.label || permissionKey}</span>
-                                <div className="saas-admin-inline-checks">
-                                    <label>
-                                        <input type="checkbox" checked={isRequired} onChange={(event) => toggleRolePermission?.('required', permissionKey, event.target.checked)} disabled={busy} />
-                                        <small>Obligatorio</small>
-                                    </label>
-                                    <label>
-                                        <input type="checkbox" checked={isOptional} onChange={(event) => toggleRolePermission?.('optional', permissionKey, event.target.checked)} disabled={busy} />
-                                        <small>Opcional</small>
-                                    </label>
-                                    <label>
-                                        <input type="checkbox" checked={isBlocked} onChange={(event) => toggleRolePermission?.('blocked', permissionKey, event.target.checked)} disabled={busy} />
-                                        <small>Bloqueado</small>
-                                    </label>
+                            <details key={`role_permission_group_${group.id}`} className="saas-admin-permission-group" open>
+                                <summary>
+                                    <span>{group.title}</span>
+                                    <small>{activeCount}/{group.permissions.length} definidos</small>
+                                </summary>
+                                <div className="saas-admin-permission-list">
+                                    {group.permissions.map((permission) => {
+                                        const permissionKey = String(permission?.key || '').trim();
+                                        const isRequired = Array.isArray(roleForm.required) && roleForm.required.includes(permissionKey);
+                                        const isOptional = Array.isArray(roleForm.optional) && roleForm.optional.includes(permissionKey);
+                                        const isBlocked = Array.isArray(roleForm.blocked) && roleForm.blocked.includes(permissionKey);
+                                        const description = PERMISSION_DESCRIPTIONS[permissionKey] || 'Permiso granular del tenant.';
+
+                                        return (
+                                            <div key={`role_permission_matrix_${permissionKey}`} className="saas-admin-permission-toggle saas-admin-permission-toggle--matrix" role="status">
+                                                <span className="saas-admin-permission-body">
+                                                    <span className="saas-admin-permission-title-row">
+                                                        <strong>{permission.label || permissionKey}</strong>
+                                                    </span>
+                                                    <small>{description}</small>
+                                                    <code>{permissionKey}</code>
+                                                </span>
+                                                <div className="saas-admin-inline-checks">
+                                                    <label>
+                                                        <input type="checkbox" checked={isRequired} onChange={(event) => toggleRolePermission?.('required', permissionKey, event.target.checked)} disabled={busy} />
+                                                        <small>Obligatorio</small>
+                                                    </label>
+                                                    <label>
+                                                        <input type="checkbox" checked={isOptional} onChange={(event) => toggleRolePermission?.('optional', permissionKey, event.target.checked)} disabled={busy} />
+                                                        <small>Opcional</small>
+                                                    </label>
+                                                    <label>
+                                                        <input type="checkbox" checked={isBlocked} onChange={(event) => toggleRolePermission?.('blocked', permissionKey, event.target.checked)} disabled={busy} />
+                                                        <small>Bloqueado</small>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
-                            </div>
+                            </details>
                         );
                     })}
                 </div>
@@ -195,7 +276,7 @@ function RoleProfilesSection(props = {}) {
         busy,
         roleForm,
         rolePanelMode,
-        rolePermissionOptions,
+        rolePermissionGroups,
         sanitizeRoleCode,
         saveRoleProfile,
         selectedRoleKey,
