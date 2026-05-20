@@ -234,6 +234,16 @@ function extractProductSignificantWords(value = '') {
         .filter((word) => word.length >= 4 && !PRODUCT_TITLE_STOPWORDS.has(word));
 }
 
+function compareRelevantCatalogItems(a = {}, b = {}) {
+    const av = a.volume?.amount || 0;
+    const bv = b.volume?.amount || 0;
+    if (av !== bv) return bv - av;
+    const ap = Number(a.score || 0);
+    const bp = Number(b.score || 0);
+    if (ap !== bp) return bp - ap;
+    return text(a.line).localeCompare(text(b.line));
+}
+
 const CORE_CATALOG_WORDS = new Set([
     'detergente',
     'detergentes',
@@ -303,6 +313,23 @@ function catalogRowCategoryTokens(row = {}) {
 function isPromotionCatalogIntent(value = '') {
     const normalized = normalizeProductLookupKey(value);
     return /\b(promocion|promociones|oferta|ofertas|kit|kits|combo|combos|paquete|paquetes)\b/.test(normalized);
+}
+
+function hasPreviousProductContextReference(value = '') {
+    const normalized = normalizeProductLookupKey(value);
+    if (!normalized) return false;
+    return [
+        'los productos que me indicaste',
+        'productos que me indicaste',
+        'lo que me indicaste',
+        'lo que me mostraste',
+        'los que me mostraste',
+        'esos productos',
+        'estos productos',
+        'lo anterior',
+        'los anteriores',
+        'los productos anteriores'
+    ].some((phrase) => normalized.includes(normalizeProductLookupKey(phrase)));
 }
 
 function isPromotionalCatalogRowForIntent(row = {}, lastCustomerMessage = '') {
@@ -992,6 +1019,7 @@ function buildCatalogLine(row = {}) {
     const sku = text(row.item_id).toUpperCase();
     return {
         score: display,
+        volume: extractProductVolume(row.title),
         line: `- [${sku}] ${text(row.title)}: S/ ${display.toFixed(2)}`
     };
 }
@@ -1044,16 +1072,26 @@ async function getRecentlySentCatalogSkuSet(tenantId, moduleId = '', chatId = ''
     }
 }
 
-async function getRecentCatalogContextRows(tenantId, moduleId = '', chatId = '', limit = 5) {
+async function getRecentCatalogContextRows(tenantId, moduleId = '', chatId = '', limit = 5, options = {}) {
     const cleanChatId = normalizeChatId(chatId);
     if (!cleanChatId) return [];
     try {
+        const onlyPattyOutbound = options.onlyPattyOutbound === true;
+        const pattyOnlyClause = onlyPattyOutbound
+            ? `AND COALESCE(from_me, FALSE) = TRUE
+               AND (
+                 COALESCE(metadata->>'patty', '') = 'true'
+                 OR LOWER(COALESCE(metadata->'agentMeta'->>'sentByUserId', '')) = 'patty'
+                 OR LOWER(COALESCE(metadata->>'automationSource', '')) LIKE 'patty%'
+               )`
+            : '';
         const { rows: messageRows } = await pgQuery(
             `SELECT body, metadata
                FROM tenant_messages
               WHERE tenant_id = $1
                 AND chat_id = $2
                 AND (wa_module_id IS NULL OR wa_module_id = '' OR LOWER(wa_module_id) = LOWER($3))
+                ${pattyOnlyClause}
               ORDER BY created_at DESC
               LIMIT $4`,
             [tenantId, cleanChatId, lower(moduleId), Math.max(1, Math.min(10, Number(limit) || 5))]
@@ -1138,7 +1176,7 @@ async function getCatalogContext(tenantId, recentConversationText = '', lastCust
     const relevantLines = relevantRows
         .map((row) => buildCatalogLine(row))
         .filter(Boolean)
-        .sort((a, b) => a.score - b.score)
+        .sort(compareRelevantCatalogItems)
         .slice(0, 12)
         .map((item) => item.line);
     const mentionedSkus = extractMentionedCatalogSkus(recentConversationText, rows);
@@ -1223,8 +1261,6 @@ function buildPattyCatalogProductCaption(row = {}) {
         lines.push('');
         lines.push(`Detalle: ${description.length > 280 ? `${description.slice(0, 277)}...` : description}`);
     }
-    const sku = text(row.item_id).toUpperCase();
-    if (sku) lines.push(`Ref: ${sku}`);
     return lines.join('\n');
 }
 
@@ -1265,10 +1301,16 @@ async function filterCatalogProductsForContext(tenantId, skus = [], lastCustomer
     const lastMessageKeywords = extractCatalogSearchKeywords(lastCustomerMessage);
     const responseKey = normalizeProductLookupKey(responseText);
     const quotedReferenceUpper = text(options.quotedReferenceContext).toUpperCase();
-    const [recentlySent, recentContextRows] = await Promise.all([
+    const needsStrictPreviousContext = isPromotionCatalogIntent(lastCustomerMessage)
+        && hasPreviousProductContextReference(lastCustomerMessage);
+    const [recentlySent, recentContextRows, recentPattyContextRows] = await Promise.all([
         getRecentlySentCatalogSkuSet(tenantId, options.moduleId, options.chatId, rows),
-        getRecentCatalogContextRows(tenantId, options.moduleId, options.chatId, 5)
+        getRecentCatalogContextRows(tenantId, options.moduleId, options.chatId, 5),
+        needsStrictPreviousContext
+            ? getRecentCatalogContextRows(tenantId, options.moduleId, options.chatId, 5, { onlyPattyOutbound: true })
+            : Promise.resolve([])
     ]);
+    const contextRowsForFilter = needsStrictPreviousContext ? recentPattyContextRows : recentContextRows;
     const allowed = [];
     const allowedSet = new Set();
     const skippedRepeated = [];
@@ -1288,7 +1330,8 @@ async function filterCatalogProductsForContext(tenantId, skus = [], lastCustomer
             return;
         }
         const directCurrentProductMatch = matchesLastMessage && !promotionIntent;
-        if (sku && !directCurrentProductMatch && !areCatalogRowsContextuallyRelated(row, recentContextRows, lastCustomerMessage)) {
+        const hasRequiredContext = !needsStrictPreviousContext || contextRowsForFilter.length > 0;
+        if (sku && (!hasRequiredContext || (!directCurrentProductMatch && !areCatalogRowsContextuallyRelated(row, contextRowsForFilter, lastCustomerMessage)))) {
             skippedOutOfContext.push(sku);
             return;
         }
@@ -1309,7 +1352,8 @@ async function filterCatalogProductsForContext(tenantId, skus = [], lastCustomer
             tenantId,
             requested: cleanSkus,
             skippedOutOfContext,
-            recentContext: recentContextRows.slice(0, 5).map((row) => ({
+            strictPreviousContext: needsStrictPreviousContext,
+            recentContext: contextRowsForFilter.slice(0, 5).map((row) => ({
                 sku: text(row.item_id).toUpperCase(),
                 title: text(row.title)
             })),
@@ -2041,7 +2085,8 @@ async function clearPendingLocationDisambiguation(tenantId, chatId, scopeModuleI
 function hasLocationMentionIntent(value = '') {
     const normalized = normalizeLocationLookup(value);
     if (!normalized) return false;
-    return /\b(vivo|vive|soy|estoy|esta|ubicado|ubicada|direccion|domicilio|llegan|llega|delivery|envio)\b/.test(normalized)
+    return /\b(vivo|vive|soy|estoy|esta|ubicado|ubicada|direccion|domicilio|llegan|llega|delivery|envio|entrega|reparto)\b/.test(normalized)
+        || /\bpara\s+[a-z0-9]{4,}\b/.test(normalized)
         || /\ben\s+[a-z0-9]{4,}\b/.test(normalized);
 }
 
@@ -2067,7 +2112,12 @@ function hasCoverageQuestionIntent(value = '') {
         'llegaria',
         'llego',
         'envian',
-        'reparto'
+        'reparto',
+        'entrega',
+        'como es la entrega',
+        'como llega',
+        'hay entrega',
+        'hacen entrega'
     ].some((keyword) => normalized.includes(normalizeProductLookupKey(keyword)));
 }
 
@@ -2689,15 +2739,20 @@ function requestedCourierMatchesSummary(requestedAgency = '', summary = {}) {
     return configuredValues.some((value) => value.includes(requested) || requested.includes(value));
 }
 
-function shouldUseDeterministicResponse(lastMessage = '', zoneDecision = {}, context = {}) {
-    if (zoneDecision?.deterministicResponseOverride) return true;
-    if (isPureDeliveryOrPaymentQuestion(lastMessage)) return true;
-    if (detectRequestedExternalCourier(lastMessage)) return true;
+function getDeterministicResponseDecision(lastMessage = '', zoneDecision = {}, context = {}) {
+    if (zoneDecision?.deterministicResponseOverride) return { activated: true, reason: 'override' };
+    if (isPureDeliveryOrPaymentQuestion(lastMessage)) return { activated: true, reason: 'pure_delivery_or_payment' };
+    if (detectRequestedExternalCourier(lastMessage)) return { activated: true, reason: 'external_courier' };
     const hasResolvedZone = Boolean(zoneDecision?.zoneRule);
-    if (!hasResolvedZone) return false;
-    if (hasLocationMentionIntent(lastMessage) && !mentionsProductIntent(lastMessage)) return true;
-    if (hasCoverageQuestionIntent(lastMessage)) return true;
-    return Boolean(context?.forceDeterministicDeliveryPayment);
+    if (!hasResolvedZone) return { activated: Boolean(context?.forceDeterministicDeliveryPayment), reason: context?.forceDeterministicDeliveryPayment ? 'forced_without_zone' : 'no_resolved_zone' };
+    if (hasLocationMentionIntent(lastMessage) && !mentionsProductIntent(lastMessage)) return { activated: true, reason: 'location_mention' };
+    if (hasCoverageQuestionIntent(lastMessage)) return { activated: true, reason: 'coverage_question' };
+    if (context?.forceDeterministicDeliveryPayment) return { activated: true, reason: 'forced' };
+    return { activated: false, reason: 'not_delivery_payment_or_coverage' };
+}
+
+function shouldUseDeterministicResponse(lastMessage = '', zoneDecision = {}, context = {}) {
+    return getDeterministicResponseDecision(lastMessage, zoneDecision, context).activated;
 }
 
 function shouldUseKnownLocationNoZoneResponse(lastMessage = '', zoneDecision = {}) {
@@ -2966,7 +3021,14 @@ function buildSoftPauseResponse(lastCustomerMessage = '') {
 function buildDeterministicDeliveryPaymentResponse(zoneDecision = {}, lastCustomerMessage = '', options = {}) {
     if (zoneDecision?.deterministicResponseOverride) return zoneDecision.deterministicResponseOverride;
     const forceResponse = zoneDecision?.forceDeterministicDeliveryPayment === true;
-    const useDeterministic = shouldUseDeterministicResponse(lastCustomerMessage, zoneDecision, { forceDeterministicDeliveryPayment: forceResponse });
+    const deterministicDecision = getDeterministicResponseDecision(lastCustomerMessage, zoneDecision, { forceDeterministicDeliveryPayment: forceResponse });
+    const useDeterministic = deterministicDecision.activated;
+    console.log('[Patty] deterministic check', {
+        lastMessage: text(lastCustomerMessage).slice(0, 160),
+        zoneResolved: Boolean(zoneDecision?.zoneRule),
+        deterministicActivated: Boolean(useDeterministic || forceResponse),
+        reason: forceResponse ? 'forced' : deterministicDecision.reason
+    });
     if (!forceResponse && !useDeterministic) return null;
     const zoneRule = zoneDecision?.zoneRule || null;
     if (!zoneRule) {
@@ -4536,6 +4598,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '- IMPORTANTE: Solo genera quoteRequest cuando el cliente confirma EXPLICITAMENTE que productos quiere cotizar. "Si", "claro", "ok" o "dale" como respuesta a opciones o informacion NO confirma cotizacion; significa que quiere mas informacion. Cotiza solo con frases como "cotizame eso", "quiero esos productos", "dame el precio de todo" o "haz el pedido".',
         '- Si el cliente dice "este", "ese", "me interesa", "lo quiero", "ese producto" o "el primero" sin indicar cantidad, NO generes quoteRequest. Pregunta primero: "¿Cuántas unidades te gustaría? 😊".',
         '- Si el cliente pregunta por promociones, ofertas, combos, paquetes o kits, responde con kits del catalogo si existen. No lo trates como descuento no confirmado.',
+        '- Cuando hay multiples presentaciones del mismo producto (1L, 4L, 16L), recomienda primero la presentacion de mayor volumen/valor como opcion principal, y menciona las presentaciones pequenas como alternativa economica o para prueba.',
         '- Para kits o combos: NUNCA inventes componentes, presentaciones, aromas ni contenido del kit. Solo di "incluye" si los componentes aparecen literalmente en PRODUCTOS MENCIONADOS EN CONVERSACION o en el detalle del catalogo. Si no hay detalle, explica la finalidad del kit y ofrece confirmar el contenido.',
         '- Si el cliente dice "ok te aviso", "luego te confirmo" o algo similar, no cierres la conversacion con frases tipo "aqui estare". Mantente disponible y deja una siguiente accion suave: elegir por uso, cantidad o presupuesto.',
         '- Cuando el cliente mencione su ubicacion, busca en las zonas de cobertura y responde con las opciones de envio y metodos de pago disponibles para esa zona. Si la ubicacion no esta en cobertura, dilo claramente.',
@@ -4625,6 +4688,7 @@ async function generatePattySuggestion(tenantId, moduleId, chatId, prebuiltConte
             'IMPORTANTE: Solo genera quoteRequest cuando el cliente confirma EXPLICITAMENTE que productos quiere cotizar. "Si", "claro", "ok" o "dale" como respuesta a opciones o informacion NO confirma cotizacion; significa que quiere mas informacion. Cotiza solo con frases como "cotizame eso", "quiero esos productos", "dame el precio de todo" o "haz el pedido".',
             'Si el cliente dice "este", "ese", "me interesa", "lo quiero", "ese producto" o "el primero" sin indicar cantidad, NO generes quoteRequest. Pregunta primero: "¿Cuántas unidades te gustaría? 😊".',
             'Si el cliente pregunta por promociones, ofertas, combos, paquetes o kits, responde con kits del catalogo si existen. No lo trates como descuento no confirmado.',
+            'Cuando hay multiples presentaciones del mismo producto (1L, 4L, 16L), recomienda primero la presentacion de mayor volumen/valor como opcion principal, y menciona las presentaciones pequenas como alternativa economica o para prueba.',
             'Para kits o combos: NUNCA inventes componentes, presentaciones, aromas ni contenido del kit. Solo di "incluye" si los componentes aparecen literalmente en el contexto del catalogo. Si no hay detalle, explica la finalidad del kit y ofrece confirmar el contenido.',
             'Si el cliente dice "ok te aviso", "luego te confirmo" o algo similar, no cierres la conversacion con frases tipo "aqui estare". Mantente disponible y deja una siguiente accion suave: elegir por uso, cantidad o presupuesto.',
             'Si el cliente pregunta por credito, cuotas o pagos a plazos, responde empaticamente que Lavitat no ofrece credito directo. Si insiste, solicita apoyo de asesor con reason cliente_solicita_credito.',
