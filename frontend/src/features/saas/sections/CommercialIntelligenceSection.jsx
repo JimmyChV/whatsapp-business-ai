@@ -138,6 +138,15 @@ function numberValue(value, fallback = 0) {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function optionLabel(options = [], value = '', fallback = '') {
+    const clean = text(value);
+    return options.find((option) => option.value === clean)?.label || fallback || clean;
+}
+
+function categoryKey(category = {}, index = 0) {
+    return text(category.id || category.name || `category_${index}`);
+}
+
 function ChipsEditor({ values = [], placeholder = 'Agregar item', disabled = false, onChange }) {
     const [draft, setDraft] = React.useState('');
     const addDraft = React.useCallback(() => {
@@ -205,6 +214,8 @@ function CommercialIntelligenceSection(props = {}) {
     const [synonymSearch, setSynonymSearch] = React.useState('');
     const [catalogPage, setCatalogPage] = React.useState(1);
     const [suggestionSku, setSuggestionSku] = React.useState('');
+    const [expandedCategories, setExpandedCategories] = React.useState(() => new Set());
+    const [expandedCatalogItems, setExpandedCatalogItems] = React.useState(() => new Set());
     const seededCategoryProfileRef = React.useRef('');
     const canEdit = Boolean(settingsTenantId && requestJson);
 
@@ -229,6 +240,15 @@ function CommercialIntelligenceSection(props = {}) {
             : {},
         [profileDraft]
     );
+
+    const categoryNamesById = React.useMemo(() => {
+        const map = new Map();
+        categories.forEach((category, index) => {
+            const id = category.id || makeCategoryId(category.name) || categoryKey(category, index);
+            map.set(id, category.name || id);
+        });
+        return map;
+    }, [categories]);
 
     const loadProfiles = React.useCallback(async () => {
         if (!settingsTenantId || !requestJson) {
@@ -307,6 +327,10 @@ function CommercialIntelligenceSection(props = {}) {
         setCatalogPage(1);
     }, [catalogSearch, selectedProfileId]);
 
+    React.useEffect(() => {
+        setExpandedCatalogItems(new Set());
+    }, [catalogPage, catalogSearch, selectedProfileId]);
+
     const updateConfigSection = React.useCallback((section, updater) => {
         setProfileDraft((prev) => {
             const current = normalizeProfile(prev);
@@ -320,6 +344,24 @@ function CommercialIntelligenceSection(props = {}) {
                     [section]: nextValue
                 }
             };
+        });
+    }, []);
+
+    const toggleCategoryExpanded = React.useCallback((key) => {
+        setExpandedCategories((prev) => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
+    }, []);
+
+    const toggleCatalogExpanded = React.useCallback((sku) => {
+        setExpandedCatalogItems((prev) => {
+            const next = new Set(prev);
+            if (next.has(sku)) next.delete(sku);
+            else next.add(sku);
+            return next;
         });
     }, []);
 
@@ -468,6 +510,8 @@ function CommercialIntelligenceSection(props = {}) {
     const totalCatalogPages = Math.max(1, Math.ceil(filteredCatalog.length / 20));
     const catalogPageItems = filteredCatalog.slice((catalogPage - 1) * 20, catalogPage * 20);
     const suggestionItem = catalogItems.find((item) => item.itemId === suggestionSku) || null;
+    const allCategoriesExpanded = categories.length > 0 && categories.every((category, index) => expandedCategories.has(categoryKey(category, index)));
+    const allCatalogPageExpanded = catalogPageItems.length > 0 && catalogPageItems.every((item) => expandedCatalogItems.has(text(item.itemId).toUpperCase()));
 
     const renderProfileTab = () => {
         const brand = profileDraft.config?.brandPositioning || DEFAULT_CONFIG.brandPositioning;
@@ -504,31 +548,65 @@ function CommercialIntelligenceSection(props = {}) {
 
     const renderCategoriesTab = () => (
         <div className="saas-admin-related-block">
-            <h4>Categorias comerciales</h4>
+            <div className="saas-commercial-section-head">
+                <div>
+                    <h4>Categorias comerciales</h4>
+                    <small>{categories.length} categorias configurables</small>
+                </div>
+                <button
+                    type="button"
+                    disabled={categories.length === 0 || busy}
+                    onClick={() => setExpandedCategories(allCategoriesExpanded ? new Set() : new Set(categories.map(categoryKey)))}
+                >
+                    {allCategoriesExpanded ? 'Contraer todo' : 'Expandir todo'}
+                </button>
+            </div>
             {wooCategorySuggestions.length > 0 ? (
                 <div className="saas-admin-empty-inline">
                     Detectamos {wooCategorySuggestions.length} categorias desde WooCommerce. Puedes ajustarlas aqui y guardar para convertirlas en categorias comerciales.
                 </div>
             ) : null}
             {categories.length === 0 ? <div className="saas-admin-empty-inline">Aun no hay categorias comerciales. Si WooCommerce tiene categorias, recarga el catalogo comercial para traerlas.</div> : null}
-            {categories.map((category, index) => (
-                <div key={`category_${index}`} className="saas-admin-related-block">
-                    <div className="saas-admin-form-row">
-                        <input className="saas-input" value={category.name || ''} disabled={!canEdit || busy} placeholder="Nombre" onChange={(event) => updateConfigSection('categories', (items) => toArray(items).map((entry, itemIndex) => (itemIndex === index ? { ...entry, name: event.target.value, id: entry.id || makeCategoryId(event.target.value) } : entry)))} />
-                        <input className="saas-input" value={category.id || ''} disabled={!canEdit || busy} placeholder="ID" onChange={(event) => updateConfigSection('categories', (items) => toArray(items).map((entry, itemIndex) => (itemIndex === index ? { ...entry, id: makeCategoryId(event.target.value) } : entry)))} />
+            {categories.map((category, index) => {
+                const key = categoryKey(category, index);
+                const expanded = expandedCategories.has(key);
+                const benefits = toArray(category.benefits);
+                const discoveryQuestions = toArray(category.discoveryQuestions);
+                return (
+                    <div key={`category_${key}_${index}`} className="saas-admin-related-block saas-commercial-accordion-card">
+                        <button
+                            type="button"
+                            className="saas-commercial-accordion-toggle"
+                            aria-expanded={expanded}
+                            onClick={() => toggleCategoryExpanded(key)}
+                        >
+                            <span>
+                                <strong>{category.name || 'Categoria sin nombre'}</strong>
+                                <small>{category.id || 'Sin ID'} - {benefits.length} beneficios - {discoveryQuestions.length} preguntas</small>
+                            </span>
+                            <em>{expanded ? 'Ocultar' : 'Editar'}</em>
+                        </button>
+                        {expanded ? (
+                            <div className="saas-commercial-accordion-body">
+                                <div className="saas-admin-form-row">
+                                    <input className="saas-input" value={category.name || ''} disabled={!canEdit || busy} placeholder="Nombre" onChange={(event) => updateConfigSection('categories', (items) => toArray(items).map((entry, itemIndex) => (itemIndex === index ? { ...entry, name: event.target.value, id: entry.id || makeCategoryId(event.target.value) } : entry)))} />
+                                    <input className="saas-input" value={category.id || ''} disabled={!canEdit || busy} placeholder="ID" onChange={(event) => updateConfigSection('categories', (items) => toArray(items).map((entry, itemIndex) => (itemIndex === index ? { ...entry, id: makeCategoryId(event.target.value) } : entry)))} />
+                                </div>
+                                <div className="saas-admin-form-row">
+                                    <textarea className="saas-input" rows={2} value={category.description || ''} disabled={!canEdit || busy} placeholder="Descripcion" onChange={(event) => updateConfigSection('categories', (items) => toArray(items).map((entry, itemIndex) => (itemIndex === index ? { ...entry, description: event.target.value } : entry)))} />
+                                </div>
+                                <h4>Beneficios</h4>
+                                <ChipsEditor values={benefits} disabled={!canEdit || busy} placeholder="Beneficio y Enter" onChange={(values) => updateConfigSection('categories', (items) => toArray(items).map((entry, itemIndex) => (itemIndex === index ? { ...entry, benefits: values } : entry)))} />
+                                <h4>Preguntas de descubrimiento</h4>
+                                <ChipsEditor values={discoveryQuestions} disabled={!canEdit || busy} placeholder="Pregunta y Enter" onChange={(values) => updateConfigSection('categories', (items) => toArray(items).map((entry, itemIndex) => (itemIndex === index ? { ...entry, discoveryQuestions: values } : entry)))} />
+                                <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                    <button type="button" className="danger" disabled={!canEdit || busy} onClick={() => updateConfigSection('categories', (items) => toArray(items).filter((_, itemIndex) => itemIndex !== index))}>Eliminar categoria</button>
+                                </div>
+                            </div>
+                        ) : null}
                     </div>
-                    <div className="saas-admin-form-row">
-                        <textarea className="saas-input" rows={2} value={category.description || ''} disabled={!canEdit || busy} placeholder="Descripcion" onChange={(event) => updateConfigSection('categories', (items) => toArray(items).map((entry, itemIndex) => (itemIndex === index ? { ...entry, description: event.target.value } : entry)))} />
-                    </div>
-                    <h4>Beneficios</h4>
-                    <ChipsEditor values={category.benefits || []} disabled={!canEdit || busy} placeholder="Beneficio y Enter" onChange={(values) => updateConfigSection('categories', (items) => toArray(items).map((entry, itemIndex) => (itemIndex === index ? { ...entry, benefits: values } : entry)))} />
-                    <h4>Preguntas de descubrimiento</h4>
-                    <ChipsEditor values={category.discoveryQuestions || []} disabled={!canEdit || busy} placeholder="Pregunta y Enter" onChange={(values) => updateConfigSection('categories', (items) => toArray(items).map((entry, itemIndex) => (itemIndex === index ? { ...entry, discoveryQuestions: values } : entry)))} />
-                    <div className="saas-admin-form-row saas-admin-form-row--actions">
-                        <button type="button" className="danger" disabled={!canEdit || busy} onClick={() => updateConfigSection('categories', (items) => toArray(items).filter((_, itemIndex) => itemIndex !== index))}>Eliminar categoria</button>
-                    </div>
-                </div>
-            ))}
+                );
+            })}
             <div className="saas-admin-form-row saas-admin-form-row--actions">
                 <button type="button" disabled={!canEdit || busy} onClick={() => updateConfigSection('categories', (items) => [...toArray(items), { id: '', name: '', description: '', benefits: [], discoveryQuestions: [] }])}>+ Agregar categoria</button>
                 <button type="button" disabled={!canEdit || busy || wooCategorySuggestions.length === 0} onClick={() => updateConfigSection('categories', wooCategorySuggestions)}>Usar categorias Woo</button>
@@ -574,7 +652,22 @@ function CommercialIntelligenceSection(props = {}) {
 
     const renderCatalogTab = () => (
         <div className="saas-admin-related-block">
-            <h4>Catalogo comercial</h4>
+            <div className="saas-commercial-section-head">
+                <div>
+                    <h4>Catalogo comercial</h4>
+                    <small>{filteredCatalog.length} productos encontrados - pagina {catalogPage} de {totalCatalogPages}</small>
+                </div>
+                <button
+                    type="button"
+                    disabled={catalogPageItems.length === 0 || busy}
+                    onClick={() => {
+                        const pageSkus = catalogPageItems.map((item) => text(item.itemId).toUpperCase()).filter(Boolean);
+                        setExpandedCatalogItems(allCatalogPageExpanded ? new Set() : new Set(pageSkus));
+                    }}
+                >
+                    {allCatalogPageExpanded ? 'Contraer pagina' : 'Expandir pagina'}
+                </button>
+            </div>
             <div className="saas-admin-form-row">
                 <input className="saas-input" value={catalogSearch} disabled={busy} placeholder="Buscar por nombre, SKU, tag o categoria..." onChange={(event) => setCatalogSearch(event.target.value)} />
                 <button type="button" disabled={busy || !selectedProfileId} onClick={() => loadCatalog(selectedProfileId)}>Recargar</button>
@@ -583,17 +676,31 @@ function CommercialIntelligenceSection(props = {}) {
                 const sku = text(item.itemId).toUpperCase();
                 const role = productRoles[sku] || {};
                 const suggestions = uniqueList([...toArray(item.relatedSkus), ...toArray(item.upsellSkus), ...toArray(item.crossSellSkus)]);
+                const expanded = expandedCatalogItems.has(sku);
+                const categoryLabel = categoryNamesById.get(role.category) || 'Sin categoria comercial';
+                const roleLabel = optionLabel(ROLE_OPTIONS, role.role || 'core', 'Principal');
                 return (
-                    <div key={sku} className="saas-admin-related-block">
-                        <div className="saas-admin-hero">
+                    <div key={sku} className="saas-admin-related-block saas-commercial-accordion-card">
+                        <div className="saas-commercial-product-summary">
+                        <div className="saas-admin-hero saas-admin-hero--compact">
                             <div className="saas-admin-hero-media">
                                 {item.imageUrl ? <img className="saas-admin-hero-image" src={item.imageUrl} alt={item.title || sku} /> : <div className="saas-admin-hero-placeholder">{sku.slice(0, 2)}</div>}
                             </div>
                             <div className="saas-admin-hero-content">
                                 <h4>{item.title || sku}</h4>
-                                <p>{sku} · S/ {item.price || '-'}</p>
+                                <p>{sku} - S/ {item.price || '-'}</p>
                             </div>
                         </div>
+                        <div className="saas-commercial-summary-meta">
+                            <span>{categoryLabel}</span>
+                            <span>{roleLabel}</span>
+                            <span>Prioridad {role.priority ?? 50}</span>
+                            {Number(role.rotationRank || 0) === 1 ? <span>Alta rotacion</span> : null}
+                        </div>
+                        <button type="button" disabled={busy} onClick={() => toggleCatalogExpanded(sku)}>{expanded ? 'Ocultar' : 'Editar'}</button>
+                        </div>
+                        {expanded ? (
+                        <div className="saas-commercial-accordion-body">
                         <div className="saas-admin-form-row">
                             <select className="saas-input" value={role.category || ''} disabled={!canEdit || busy} onChange={(event) => setProductRole(sku, { category: event.target.value })}>
                                 <option value="">Categoria comercial</option>
@@ -615,7 +722,7 @@ function CommercialIntelligenceSection(props = {}) {
                                 setProductRole(sku, { complements: uniqueList([...(role.complements || []), value]) });
                             }}>
                                 <option value="">Agregar complemento</option>
-                                {catalogItems.filter((candidate) => candidate.itemId !== sku).map((candidate) => <option key={`${sku}_comp_${candidate.itemId}`} value={candidate.itemId}>{candidate.itemId} · {candidate.title}</option>)}
+                                {catalogItems.filter((candidate) => candidate.itemId !== sku).map((candidate) => <option key={`${sku}_comp_${candidate.itemId}`} value={candidate.itemId}>{candidate.itemId} - {candidate.title}</option>)}
                             </select>
                             {suggestions.length ? (
                                 <button type="button" disabled={busy} onClick={() => setSuggestionSku((prev) => (prev === sku ? '' : sku))}>Sugerencias Woo</button>
@@ -623,6 +730,8 @@ function CommercialIntelligenceSection(props = {}) {
                         </div>
                         <ChipsEditor values={role.complements || []} disabled={!canEdit || busy} placeholder="Complemento SKU y Enter" onChange={(values) => setProductRole(sku, { complements: values.map((entry) => text(entry).toUpperCase()) })} />
                         <ChipsEditor values={role.tags || []} disabled={!canEdit || busy} placeholder="Tag comercial y Enter" onChange={(values) => setProductRole(sku, { tags: values })} />
+                        </div>
+                        ) : null}
                     </div>
                 );
             })}
@@ -724,7 +833,7 @@ function CommercialIntelligenceSection(props = {}) {
                             {profiles.length === 0 ? <option value="">Sin perfiles comerciales</option> : null}
                             {profiles.map((profile) => (
                                 <option key={profile.profileId} value={profile.profileId}>
-                                    {profile.name}{profile.isDefault ? ' · Por defecto' : ''}
+                                    {profile.name}{profile.isDefault ? ' - Por defecto' : ''}
                                 </option>
                             ))}
                         </select>
