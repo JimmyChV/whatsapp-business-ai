@@ -49,6 +49,39 @@ function toSafeObject(value = null) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
+const COMMERCIAL_PROFILE_SECTIONS = new Set([
+    'brandPositioning',
+    'categories',
+    'synonyms',
+    'productRoles',
+    'playbooks',
+    'offerRules',
+    'closingRules'
+]);
+
+function createCommercialProfileId() {
+    const stamp = Date.now().toString(36);
+    const random = Math.random().toString(36).slice(2, 8);
+    return `cip_${stamp}_${random}`;
+}
+
+function normalizeCommercialCatalogItem(item = {}) {
+    const source = isPlainObject(item) ? item : {};
+    return {
+        itemId: toText(source.itemId || source.item_id || '').toUpperCase(),
+        title: toText(source.title || ''),
+        price: source.price ?? '',
+        imageUrl: source.imageUrl || source.image_url || null,
+        wooCategories: Array.isArray(source.wooCategories) ? source.wooCategories : [],
+        wooTags: Array.isArray(source.wooTags) ? source.wooTags : [],
+        relatedSkus: Array.isArray(source.relatedSkus) ? source.relatedSkus : [],
+        upsellSkus: Array.isArray(source.upsellSkus) ? source.upsellSkus : [],
+        crossSellSkus: Array.isArray(source.crossSellSkus) ? source.crossSellSkus : [],
+        assignedRole: isPlainObject(source.assignedRole) ? source.assignedRole : null,
+        hasWooSuggestions: Boolean(source.hasWooSuggestions)
+    };
+}
+
 function normalizePreferredLanguage(value = '') {
     const normalized = toLower(value || 'es').replace(/[^a-z_-]/g, '');
     if (!normalized) return 'es';
@@ -164,6 +197,7 @@ function registerOperationsHttpRoutes({
     campaignsService,
     conversationOpsService,
     chatCommercialStatusService,
+    commercialIntelligenceService,
     metaTemplatesService,
     chatAssignmentPolicyService,
     assignmentRulesService,
@@ -1567,6 +1601,120 @@ function registerOperationsHttpRoutes({
             });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar el modo Patty del chat.') });
+        }
+    });
+
+    app.get('/api/tenant/commercial-intelligence/profiles', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            const profiles = await commercialIntelligenceService.listProfiles(tenantId);
+            return res.json({ ok: true, tenantId, profiles });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar los perfiles comerciales.') });
+        }
+    });
+
+    app.post('/api/tenant/commercial-intelligence/profiles', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            const payload = isPlainObject(req.body) ? req.body : {};
+            const profileId = toText(payload.profileId || payload.profile_id || createCommercialProfileId());
+            const profile = await commercialIntelligenceService.upsertProfile(tenantId, profileId, {
+                ...payload,
+                profileId
+            });
+            return res.status(201).json({ ok: true, tenantId, profile });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear el perfil comercial.') });
+        }
+    });
+
+    app.get('/api/tenant/commercial-intelligence/profiles/:profileId', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            const profileId = toText(req.params?.profileId || '');
+            if (!profileId) return res.status(400).json({ ok: false, error: 'profileId requerido.' });
+            const profile = await commercialIntelligenceService.getProfile(tenantId, profileId);
+            if (!profile) return res.status(404).json({ ok: false, error: 'Perfil comercial no encontrado.' });
+            return res.json({ ok: true, tenantId, profile });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar el perfil comercial.') });
+        }
+    });
+
+    app.put('/api/tenant/commercial-intelligence/profiles/:profileId', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            const profileId = toText(req.params?.profileId || '');
+            if (!profileId) return res.status(400).json({ ok: false, error: 'profileId requerido.' });
+            const payload = isPlainObject(req.body) ? req.body : {};
+            const profile = await commercialIntelligenceService.upsertProfile(tenantId, profileId, {
+                ...payload,
+                profileId
+            });
+            return res.json({ ok: true, tenantId, profile });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar el perfil comercial.') });
+        }
+    });
+
+    app.patch('/api/tenant/commercial-intelligence/profiles/:profileId/section', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            const profileId = toText(req.params?.profileId || '');
+            if (!profileId) return res.status(400).json({ ok: false, error: 'profileId requerido.' });
+            const section = toText(req.body?.section || '');
+            if (!COMMERCIAL_PROFILE_SECTIONS.has(section)) {
+                return res.status(400).json({ ok: false, error: 'Seccion comercial invalida.' });
+            }
+            const profile = await commercialIntelligenceService.patchProfileSection(
+                tenantId,
+                profileId,
+                section,
+                req.body?.data
+            );
+            if (!profile) return res.status(404).json({ ok: false, error: 'Perfil comercial no encontrado.' });
+            return res.json({ ok: true, tenantId, profile });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar la seccion comercial.') });
+        }
+    });
+
+    app.delete('/api/tenant/commercial-intelligence/profiles/:profileId', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            const profileId = toText(req.params?.profileId || '');
+            if (!profileId) return res.status(400).json({ ok: false, error: 'profileId requerido.' });
+            const profile = await commercialIntelligenceService.deleteProfile(tenantId, profileId);
+            if (!profile) return res.status(404).json({ ok: false, error: 'Perfil comercial no encontrado.' });
+            return res.json({ ok: true, tenantId, profile });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo eliminar el perfil comercial.') });
+        }
+    });
+
+    app.get('/api/tenant/commercial-intelligence/catalog-enrichment', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            const profileId = toText(req.query?.profileId || req.query?.profile_id || '');
+            const items = await commercialIntelligenceService.getCatalogWithRoles(tenantId, profileId);
+            const normalizedItems = Array.isArray(items) ? items.map(normalizeCommercialCatalogItem) : [];
+            return res.json({
+                ok: true,
+                tenantId,
+                profileId: profileId || null,
+                items: normalizedItems,
+                total: normalizedItems.length
+            });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar el catalogo comercial.') });
         }
     });
 
