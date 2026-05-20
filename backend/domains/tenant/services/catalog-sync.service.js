@@ -20,6 +20,43 @@ function normalizeIntervalHours(value) {
     return Math.min(168, Math.max(1, Math.floor(parsed)));
 }
 
+function isPlainObject(value) {
+    return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function normalizeWooId(value = null) {
+    if (value === null || value === undefined || value === '') return null;
+    const clean = String(value).trim();
+    return clean || null;
+}
+
+function normalizeWooIdArray(value = []) {
+    return Array.from(new Set((Array.isArray(value) ? value : [])
+        .map(normalizeWooId)
+        .filter(Boolean)));
+}
+
+function normalizeWooMetadata(product = {}) {
+    const sourceMetadata = isPlainObject(product?.metadata) ? product.metadata : {};
+    const existingWoo = isPlainObject(sourceMetadata.woo) ? sourceMetadata.woo : {};
+    const wooProductId = product?.wooProductId ?? existingWoo.wooProductId ?? sourceMetadata.wooProductId ?? null;
+    return {
+        ...existingWoo,
+        wooProductId,
+        relatedIds: normalizeWooIdArray(product?.relatedIds ?? existingWoo.relatedIds),
+        upsellIds: normalizeWooIdArray(product?.upsellIds ?? existingWoo.upsellIds),
+        crossSellIds: normalizeWooIdArray(product?.crossSellIds ?? existingWoo.crossSellIds),
+        tags: Array.isArray(product?.tags) ? product.tags : (Array.isArray(existingWoo.tags) ? existingWoo.tags : []),
+        attributes: Array.isArray(product?.attributes) ? product.attributes : (Array.isArray(existingWoo.attributes) ? existingWoo.attributes : []),
+        permalink: product?.permalink ?? existingWoo.permalink ?? null,
+        stockQuantity: product?.stockQuantity ?? existingWoo.stockQuantity ?? null,
+        manageStock: product?.manageStock ?? existingWoo.manageStock ?? false,
+        wooCategories: Array.isArray(product?.wooCategories)
+            ? product.wooCategories
+            : (Array.isArray(existingWoo.wooCategories) ? existingWoo.wooCategories : [])
+    };
+}
+
 function getStoredStatus(tenantId, catalogId) {
     const key = statusKey(tenantId, catalogId);
     return syncStatus.get(key) || {
@@ -62,6 +99,8 @@ function buildCatalogItemFromWooProduct(product = {}, { catalogId = '' } = {}) {
     const productId = String(product?.id || '').trim();
     const itemId = sku || productId;
     if (!itemId) return null;
+    const productMetadata = product?.metadata && typeof product.metadata === 'object' ? product.metadata : {};
+    const woo = normalizeWooMetadata(product);
 
     return {
         id: itemId,
@@ -74,17 +113,111 @@ function buildCatalogItemFromWooProduct(product = {}, { catalogId = '' } = {}) {
         imageUrl: product?.imageUrl || product?.image || null,
         source: 'woocommerce',
         metadata: {
-            ...(product?.metadata && typeof product.metadata === 'object' ? product.metadata : {}),
-            wooProductId: productId || null,
+            ...productMetadata,
+            wooProductId: woo.wooProductId ?? productId ?? null,
             sku: sku || null,
             regularPrice: product?.regularPrice ?? null,
             salePrice: product?.salePrice ?? null,
             discountPct: product?.discountPct ?? 0,
             stockStatus: product?.stockStatus || null,
+            stockQuantity: product?.stockQuantity ?? woo.stockQuantity ?? null,
+            permalink: product?.permalink ?? woo.permalink ?? null,
+            tags: Array.isArray(product?.tags) ? product.tags : [],
             categories: Array.isArray(product?.categories) ? product.categories : [],
+            woo,
             source: 'woocommerce'
         }
     };
+}
+
+function addWooIdLookupKeys(map, value = null, sku = '') {
+    const cleanSku = String(sku || '').trim();
+    const clean = normalizeWooId(value);
+    if (!clean || !cleanSku) return;
+    map.set(clean, cleanSku);
+    const stripped = clean.replace(/^woo_/i, '');
+    if (stripped && stripped !== clean) map.set(stripped, cleanSku);
+    map.set(`woo_${stripped || clean}`, cleanSku);
+}
+
+function resolveWooIdsToSkus(ids = [], lookup = new Map()) {
+    return Array.from(new Set(normalizeWooIdArray(ids)
+        .map((id) => lookup.get(id) || lookup.get(id.replace(/^woo_/i, '')) || lookup.get(`woo_${id}`) || '')
+        .filter(Boolean)));
+}
+
+function arraysEqual(a = [], b = []) {
+    const left = Array.isArray(a) ? a : [];
+    const right = Array.isArray(b) ? b : [];
+    return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+async function resolveWooRelatedSkusForCatalog(tenantId, catalogId) {
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const cleanCatalogId = String(catalogId || '').trim().toUpperCase();
+    if (!cleanTenantId || !cleanCatalogId) return { updated: 0 };
+    const { rows } = await queryPostgres(
+        `SELECT item_id, module_id, catalog_id, metadata
+           FROM catalog_items
+          WHERE tenant_id = $1
+            AND UPPER(COALESCE(catalog_id, '')) = UPPER($2)
+            AND LOWER(COALESCE(source, '')) = 'woocommerce'`,
+        [cleanTenantId, cleanCatalogId]
+    );
+    const catalogRows = Array.isArray(rows) ? rows : [];
+    const wooIdToSku = new Map();
+    catalogRows.forEach((row) => {
+        const metadata = isPlainObject(row.metadata) ? row.metadata : {};
+        const woo = isPlainObject(metadata.woo) ? metadata.woo : {};
+        addWooIdLookupKeys(wooIdToSku, woo.wooProductId ?? metadata.wooProductId, row.item_id);
+    });
+
+    let updated = 0;
+    for (const row of catalogRows) {
+        const metadata = isPlainObject(row.metadata) ? row.metadata : {};
+        const woo = isPlainObject(metadata.woo) ? metadata.woo : {};
+        const relatedSkus = resolveWooIdsToSkus(woo.relatedIds, wooIdToSku);
+        const upsellSkus = resolveWooIdsToSkus(woo.upsellIds, wooIdToSku);
+        const crossSellSkus = resolveWooIdsToSkus(woo.crossSellIds, wooIdToSku);
+        const nextWoo = {
+            ...woo,
+            relatedSkus,
+            upsellSkus,
+            crossSellSkus
+        };
+        if (
+            arraysEqual(woo.relatedSkus, relatedSkus)
+            && arraysEqual(woo.upsellSkus, upsellSkus)
+            && arraysEqual(woo.crossSellSkus, crossSellSkus)
+        ) {
+            continue;
+        }
+        await queryPostgres(
+            `UPDATE catalog_items
+                SET metadata = $5::jsonb,
+                    updated_at = NOW()
+              WHERE tenant_id = $1
+                AND item_id = $2
+                AND module_id = $3
+                AND catalog_id = $4`,
+            [
+                cleanTenantId,
+                row.item_id,
+                row.module_id || '',
+                row.catalog_id || '',
+                JSON.stringify({
+                    ...metadata,
+                    woo: nextWoo
+                })
+            ]
+        );
+        updated += 1;
+    }
+    console.log(`[WooSync] resolved related SKUs for ${updated} products`, {
+        tenantId: cleanTenantId,
+        catalogId: cleanCatalogId
+    });
+    return { updated };
 }
 
 async function syncCatalogFromWoocommerce(tenantId = DEFAULT_TENANT_ID, catalogId = '') {
@@ -123,6 +256,7 @@ async function syncCatalogFromWoocommerce(tenantId = DEFAULT_TENANT_ID, catalogI
                 errors += 1;
             }
         }
+        const relatedSkuResolution = await resolveWooRelatedSkusForCatalog(cleanTenantId, cleanCatalogId);
 
         const nowIso = new Date().toISOString();
         const productCount = await countCatalogProducts(cleanTenantId, cleanCatalogId);
@@ -134,7 +268,8 @@ async function syncCatalogFromWoocommerce(tenantId = DEFAULT_TENANT_ID, catalogI
             duration,
             timestamp: nowIso,
             source: wooResult?.source || 'woocommerce',
-            reason: wooResult?.reason || null
+            reason: wooResult?.reason || null,
+            relatedSkuResolution
         };
         setStoredStatus(cleanTenantId, cleanCatalogId, {
             lastSync: nowIso,

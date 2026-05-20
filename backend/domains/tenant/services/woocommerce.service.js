@@ -48,6 +48,42 @@ function calcDiscountPct(regularPrice, salePrice) {
     return Number(((1 - (sale / regular)) * 100).toFixed(1));
 }
 
+function normalizeWooIdArray(value = []) {
+    return Array.from(new Set((Array.isArray(value) ? value : [])
+        .map((entry) => {
+            const numeric = Number(entry);
+            return Number.isFinite(numeric) ? numeric : String(entry || '').trim();
+        })
+        .filter((entry) => entry !== null && entry !== undefined && String(entry).trim())));
+}
+
+function normalizeWooTags(tags = []) {
+    return (Array.isArray(tags) ? tags : [])
+        .map((tag) => String(tag?.name || tag?.slug || '').trim())
+        .filter(Boolean);
+}
+
+function normalizeWooAttributes(attributes = []) {
+    return (Array.isArray(attributes) ? attributes : [])
+        .map((attribute) => ({
+            name: String(attribute?.name || '').trim(),
+            options: Array.isArray(attribute?.options)
+                ? attribute.options.map((option) => String(option || '').trim()).filter(Boolean)
+                : []
+        }))
+        .filter((attribute) => attribute.name || attribute.options.length);
+}
+
+function normalizeWooCategories(categories = []) {
+    return (Array.isArray(categories) ? categories : [])
+        .map((category) => ({
+            id: category?.id ?? null,
+            name: String(category?.name || '').trim(),
+            slug: String(category?.slug || '').trim()
+        }))
+        .filter((category) => category.id !== null || category.name || category.slug);
+}
+
 function parseStoreApiPrice(rawPrice, minorUnit = null) {
     const raw = rawPrice == null ? '' : String(rawPrice).trim();
     if (!raw || raw === '0') return '0.00';
@@ -82,12 +118,35 @@ function normalizeWooV3Product(product) {
     const normalizedPrice = Number.isFinite(price) ? price.toFixed(2) : '0.00';
     const normalizedRegularPrice = Number.isFinite(regularPrice) ? regularPrice.toFixed(2) : normalizedPrice;
     const normalizedSalePrice = Number.isFinite(salePrice) && salePrice > 0 ? salePrice.toFixed(2) : null;
-    const categories = Array.isArray(product?.categories)
-        ? product.categories.map((c) => String(c?.name || c?.slug || '').trim()).filter(Boolean)
-        : [];
+    const wooProductId = product?.id || null;
+    const relatedIds = normalizeWooIdArray(product?.related_ids);
+    const upsellIds = normalizeWooIdArray(product?.upsell_ids);
+    const crossSellIds = normalizeWooIdArray(product?.cross_sell_ids);
+    const tags = normalizeWooTags(product?.tags);
+    const attributes = normalizeWooAttributes(product?.attributes);
+    const wooCategories = normalizeWooCategories(product?.categories);
+    const categories = wooCategories
+        .map((c) => String(c?.name || c?.slug || '').trim())
+        .filter(Boolean);
+    const permalink = product?.permalink || null;
+    const stockQuantity = product?.stock_quantity ?? null;
+    const manageStock = product?.manage_stock || false;
+    const woo = {
+        wooProductId,
+        relatedIds,
+        upsellIds,
+        crossSellIds,
+        tags,
+        attributes,
+        permalink,
+        stockQuantity,
+        manageStock,
+        wooCategories
+    };
 
     return {
         id: `woo_${product.id}`,
+        wooProductId,
         title: product?.name || `Producto ${product?.id || ''}`.trim(),
         price: normalizedPrice,
         regularPrice: normalizedRegularPrice,
@@ -97,7 +156,20 @@ function normalizeWooV3Product(product) {
         imageUrl: product?.images?.[0]?.src || null,
         sku: product?.sku || null,
         stockStatus: product?.stock_status || null,
+        stockQuantity,
+        manageStock,
         categories,
+        wooCategories,
+        tags,
+        attributes,
+        relatedIds,
+        upsellIds,
+        crossSellIds,
+        permalink,
+        metadata: {
+            wooProductId,
+            woo
+        },
         source: 'woocommerce'
     };
 }
