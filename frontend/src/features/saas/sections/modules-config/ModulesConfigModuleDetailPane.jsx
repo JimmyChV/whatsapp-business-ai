@@ -5,6 +5,7 @@ import ModulesConfigModuleEditForm from './ModulesConfigModuleEditForm';
 export default function ModulesConfigModuleDetailPane({ context = {} }) {
     const {
         settingsTenantId,
+        requestJson,
         isModulesSection,
         waModulePanelMode,
         selectedConfigModule,
@@ -42,6 +43,44 @@ export default function ModulesConfigModuleDetailPane({ context = {} }) {
         clearConfigSelection
     } = context;
 
+    const [commercialProfiles, setCommercialProfiles] = React.useState([]);
+
+    React.useEffect(() => {
+        let cancelled = false;
+        async function loadCommercialProfiles() {
+            if (!settingsTenantId || !isModulesSection || typeof requestJson !== 'function') {
+                setCommercialProfiles([]);
+                return;
+            }
+            try {
+                const payload = await requestJson('/api/tenant/commercial-intelligence/profiles', {
+                    method: 'GET',
+                    tenantIdOverride: settingsTenantId
+                });
+                if (cancelled) return;
+                const profiles = Array.isArray(payload?.profiles)
+                    ? payload.profiles
+                        .map((profile) => ({
+                            profileId: String(profile?.profileId || profile?.profile_id || '').trim(),
+                            name: String(profile?.name || '').trim() || 'Perfil comercial',
+                            isDefault: profile?.isDefault === true || profile?.is_default === true
+                        }))
+                        .filter((profile) => profile.profileId)
+                    : [];
+                setCommercialProfiles(profiles);
+            } catch (error) {
+                if (!cancelled) {
+                    console.warn('[SaaS] commercial profiles unavailable for module form:', error?.message || error);
+                    setCommercialProfiles([]);
+                }
+            }
+        }
+        loadCommercialProfiles();
+        return () => {
+            cancelled = true;
+        };
+    }, [isModulesSection, requestJson, settingsTenantId]);
+
     if (!(settingsTenantId && isModulesSection && (waModulePanelMode === 'create' || selectedConfigModule))) {
         return null;
     }
@@ -63,6 +102,11 @@ export default function ModulesConfigModuleDetailPane({ context = {} }) {
     const moduleAssistantLabel = moduleAssistantId
         ? (aiAssistantLabelMap.get(moduleAssistantId) || moduleAssistantId)
         : 'Asistente principal del tenant';
+    const moduleCommercialProfileId = String(moduleInDetail?.aiConfig?.commercialProfileId || '').trim();
+    const moduleCommercialProfile = commercialProfiles.find((profile) => profile.profileId === moduleCommercialProfileId) || null;
+    const moduleCommercialProfileLabel = moduleCommercialProfileId
+        ? (moduleCommercialProfile?.name || moduleCommercialProfileId)
+        : 'Perfil comercial por defecto';
     const activeSchedules = Array.isArray(schedules) ? schedules.filter((item) => item?.isActive !== false) : [];
     const selectedSchedule = activeSchedules.find((item) => String(item?.scheduleId || '').trim() === String(moduleInDetail?.scheduleId || '').trim()) || null;
 
@@ -74,6 +118,7 @@ export default function ModulesConfigModuleDetailPane({ context = {} }) {
                     assignedLabels={assignedLabels}
                     moduleCatalogLabels={moduleCatalogLabels}
                     moduleAssistantLabel={moduleAssistantLabel}
+                    moduleCommercialProfileLabel={moduleCommercialProfileLabel}
                     moduleCloudConfig={moduleCloudConfig}
                     selectedSchedule={selectedSchedule}
                     buildInitials={buildInitials}
@@ -93,6 +138,7 @@ export default function ModulesConfigModuleDetailPane({ context = {} }) {
                     activeAiAssistantOptions={activeAiAssistantOptions}
                     schedules={activeSchedules}
                     activeCatalogOptions={activeCatalogOptions}
+                    commercialProfiles={commercialProfiles}
                     normalizeCatalogIdsList={normalizeCatalogIdsList}
                     toggleCatalogForModule={toggleCatalogForModule}
                     activeQuickReplyLibraries={activeQuickReplyLibraries}

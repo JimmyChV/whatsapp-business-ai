@@ -135,7 +135,10 @@ function createTenantAdminPayloadSanitizers({
             assistantName: String(source.assistantName || '').trim() || 'Patty',
             withinHoursMode,
             outsideHoursMode,
-            waitSeconds
+            waitSeconds,
+            enablePatty: source.enablePatty !== false,
+            enableCopilot: source.enableCopilot !== false,
+            commercialProfileId: String(source.commercialProfileId || source.commercial_profile_id || '').trim() || null
         };
     }
 

@@ -11,6 +11,7 @@ const catalogManagerService = require('./catalog-manager.service');
 const COMMERCIAL_PROFILES_FILE = 'tenant_commercial_profiles.json';
 
 const DEFAULT_COMMERCIAL_CONFIG = {
+    catalogIds: [],
     brandPositioning: {
         description: '',
         salesStyle: 'consultivo',
@@ -85,6 +86,12 @@ function normalizeStringArray(value = []) {
     return Array.from(new Set(ensureArray(value)
         .map(toText)
         .filter(Boolean)));
+}
+
+function normalizeCatalogIds(value = []) {
+    return Array.from(new Set(ensureArray(value)
+        .map((entry) => toText(entry).toUpperCase())
+        .filter((entry) => /^CAT-[A-Z0-9]{4,}$/.test(entry))));
 }
 
 function normalizeBrandPositioning(value = {}) {
@@ -196,6 +203,7 @@ function normalizeClosingRules(value = {}) {
 function normalizeConfig(value = {}) {
     const input = isPlainObject(value) ? value : {};
     return {
+        catalogIds: normalizeCatalogIds(input.catalogIds || input.catalog_ids || DEFAULT_COMMERCIAL_CONFIG.catalogIds),
         brandPositioning: normalizeBrandPositioning(input.brandPositioning || input.brand_positioning || DEFAULT_COMMERCIAL_CONFIG.brandPositioning),
         categories: normalizeCategories(input.categories || DEFAULT_COMMERCIAL_CONFIG.categories),
         synonyms: normalizeSynonyms(input.synonyms || DEFAULT_COMMERCIAL_CONFIG.synonyms),
@@ -556,6 +564,7 @@ function catalogRowToCommercialProduct(row = {}, productRoles = {}) {
         title: toText(row.title),
         price: row.price ?? '',
         imageUrl: row.image_url || row.imageUrl || null,
+        catalogId: toText(row.catalog_id || row.catalogId).toUpperCase(),
         wooCategories,
         wooTags: ensureArray(woo.tags || metadata.tags),
         relatedSkus,
@@ -571,10 +580,15 @@ async function getCatalogWithRoles(tenantId = DEFAULT_TENANT_ID, profileId = '')
     const cleanTenantId = normalizeTenant(tenantId);
     const profile = await resolveProfileForRead(cleanTenantId, profileId);
     const productRoles = profile?.config?.productRoles || {};
+    const catalogIds = normalizeCatalogIds(profile?.config?.catalogIds || []);
     if (getStorageDriver() !== 'postgres') {
         const catalog = await catalogManagerService.loadCatalog({ tenantId: cleanTenantId });
-        return catalog.map((item) => catalogRowToCommercialProduct({
+        const filteredCatalog = catalogIds.length
+            ? catalog.filter((item) => catalogIds.includes(toText(item?.catalogId).toUpperCase()))
+            : catalog;
+        return filteredCatalog.map((item) => catalogRowToCommercialProduct({
             id: item.id,
+            catalogId: item.catalogId,
             title: item.title,
             price: item.price,
             imageUrl: item.imageUrl,
@@ -582,12 +596,16 @@ async function getCatalogWithRoles(tenantId = DEFAULT_TENANT_ID, profileId = '')
         }, productRoles));
     }
     try {
+        const params = [cleanTenantId];
+        const catalogFilter = catalogIds.length ? 'AND UPPER(catalog_id) = ANY($2::text[])' : '';
+        if (catalogIds.length) params.push(catalogIds);
         const { rows } = await queryPostgres(
-            `SELECT item_id, title, price, image_url, metadata
+            `SELECT item_id, catalog_id, title, price, image_url, metadata
                FROM catalog_items
               WHERE tenant_id = $1
+                ${catalogFilter}
               ORDER BY title ASC, item_id ASC`,
-            [cleanTenantId]
+            params
         );
         return (Array.isArray(rows) ? rows : []).map((row) => catalogRowToCommercialProduct(row, productRoles));
     } catch (error) {

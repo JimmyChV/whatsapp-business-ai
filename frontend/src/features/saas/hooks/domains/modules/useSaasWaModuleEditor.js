@@ -103,6 +103,7 @@ export default function useSaasWaModuleEditor({
             assignedUserIds: [...(item.assignedUserIds || [])],
             catalogIds: [...(item.catalogIds || [])],
             aiAssistantId: sanitizeAiAssistantCode(item.moduleAiAssistantId || ''),
+            aiCommercialProfileId: item?.aiConfig?.commercialProfileId || '',
             scheduleId: item.scheduleId || '',
             aiAssistantName: item?.aiConfig?.assistantName || 'Patty',
             aiWithinHoursMode: item?.aiConfig?.withinHoursMode || 'review',

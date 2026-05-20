@@ -121,6 +121,7 @@ export const EMPTY_WA_MODULE_FORM = {
     assignedUserIds: [],
     catalogIds: [],
     aiAssistantId: '',
+    aiCommercialProfileId: '',
     scheduleId: '',
     aiAssistantName: 'Patty',
     aiWithinHoursMode: 'review',
@@ -263,7 +264,8 @@ export function normalizeWaModule(item = {}) {
         outsideHoursMode,
         waitSeconds,
         enablePatty: aiConfigSource.enablePatty !== false,
-        enableCopilot: aiConfigSource.enableCopilot !== false
+        enableCopilot: aiConfigSource.enableCopilot !== false,
+        commercialProfileId: String(aiConfigSource.commercialProfileId || aiConfigSource.commercial_profile_id || '').trim()
     };
 
     return {

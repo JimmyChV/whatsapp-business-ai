@@ -150,7 +150,8 @@ function normalizeAiConfig(value = {}) {
         outsideHoursMode,
         waitSeconds,
         enablePatty: source.enablePatty !== false,
-        enableCopilot: source.enableCopilot !== false
+        enableCopilot: source.enableCopilot !== false,
+        commercialProfileId: toText(source.commercialProfileId || source.commercial_profile_id) || null
     };
 }
 

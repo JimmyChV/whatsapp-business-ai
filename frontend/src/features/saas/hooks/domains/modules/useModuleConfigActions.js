@@ -70,6 +70,7 @@ export default function useModuleConfigActions({
                 ? [String(activeCatalogOptions[0]?.catalogId || '').trim().toUpperCase()].filter(Boolean)
                 : [],
             aiAssistantId: defaultAiAssistantId || '',
+            aiCommercialProfileId: '',
             scheduleId: '',
             aiAssistantName: 'Patty',
             aiWithinHoursMode: 'review',

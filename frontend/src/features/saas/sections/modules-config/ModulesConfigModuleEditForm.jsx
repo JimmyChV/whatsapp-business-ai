@@ -28,6 +28,7 @@ export default function ModulesConfigModuleEditForm({
     CATALOG_MODE_OPTIONS,
     sanitizeAiAssistantCode,
     activeAiAssistantOptions,
+    commercialProfiles = [],
     activeCatalogOptions,
     normalizeCatalogIdsList,
     toggleCatalogForModule,
@@ -161,6 +162,24 @@ export default function ModulesConfigModuleEditForm({
                             disabled={!settingsTenantId || busy}
                         />
                     </div>
+                    <div className="saas-admin-field">
+                        <label htmlFor="wa-module-commercial-profile">Perfil comercial Patty</label>
+                        <select
+                            id="wa-module-commercial-profile"
+                            value={waModuleForm.aiCommercialProfileId || ''}
+                            onChange={(event) => setWaModuleForm((prev) => ({ ...prev, aiCommercialProfileId: event.target.value }))}
+                            disabled={!settingsTenantId || busy}
+                        >
+                            <option value="">Usar perfil comercial por defecto</option>
+                            {commercialProfiles.map((profile) => (
+                                <option key={`wa_module_commercial_profile_${profile.profileId}`} value={profile.profileId}>
+                                    {profile.name || profile.profileId}{profile.isDefault ? ' (por defecto)' : ''}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+                <div className="saas-admin-form-row">
                     <div className="saas-admin-field">
                         <label htmlFor="wa-module-ai-within-hours">Modo dentro de horario</label>
                         <select

@@ -5,6 +5,7 @@ export default function ModulesConfigModuleReadView({
     assignedLabels,
     moduleCatalogLabels,
     moduleAssistantLabel,
+    moduleCommercialProfileLabel,
     moduleCloudConfig,
     selectedSchedule,
     buildInitials,
@@ -95,6 +96,7 @@ export default function ModulesConfigModuleReadView({
                 <h4>ASISTENTE IA</h4>
                 <div className="saas-admin-detail-grid">
                     <div className="saas-admin-detail-field"><span>NOMBRE</span><strong>{aiConfig.assistantName || 'Patty'}</strong></div>
+                    <div className="saas-admin-detail-field"><span>PERFIL COMERCIAL</span><strong>{moduleCommercialProfileLabel || 'Perfil comercial por defecto'}</strong></div>
                     <div className="saas-admin-detail-field"><span>PATTY</span><strong>{aiConfig.enablePatty === false ? 'Desactivada' : 'Activa'}</strong></div>
                     <div className="saas-admin-detail-field"><span>COPILOTO</span><strong>{aiConfig.enableCopilot === false ? 'Desactivado' : 'Activo'}</strong></div>
                     <div className="saas-admin-detail-field"><span>DENTRO DE HORARIO</span><strong>{withinHoursModeLabel}</strong></div>

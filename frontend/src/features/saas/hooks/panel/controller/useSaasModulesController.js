@@ -49,7 +49,8 @@ function buildWaModulePayload({
                 outsideHoursMode,
                 waitSeconds,
                 enablePatty: waModuleForm.aiEnablePatty !== false,
-                enableCopilot: waModuleForm.aiEnableCopilot !== false
+                enableCopilot: waModuleForm.aiEnableCopilot !== false,
+                commercialProfileId: String(waModuleForm.aiCommercialProfileId || '').trim() || null
             },
             moduleSettings: {
                 catalogMode: CATALOG_MODE_OPTIONS.includes(String(waModuleForm.moduleCatalogMode || '').trim())

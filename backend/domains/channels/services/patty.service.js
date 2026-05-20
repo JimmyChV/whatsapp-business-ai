@@ -11,6 +11,7 @@ const quickRepliesManagerService = require('../../tenant/services/quick-replies-
 const tenantZoneRulesService = require('../../tenant/services/tenant-zone-rules.service');
 const geoLocationService = require('../../tenant/services/geo-location.service');
 const waModulesService = require('../../tenant/services/wa-modules.service');
+const commercialIntelligenceService = require('../../tenant/services/commercial-intelligence.service');
 const quotesService = require('../../tenant/services/quotes.service');
 const chatCommercialStatusService = require('../../operations/services/chat-commercial-status.service');
 const conversationOpsService = require('../../operations/services/conversation-ops.service');
@@ -133,6 +134,12 @@ function normalizeProductLookupKey(value = '') {
         .replace(/[^a-z0-9]+/g, ' ')
         .trim()
         .replace(/\s+/g, ' ');
+}
+
+function normalizePattyCatalogIds(value = []) {
+    return Array.from(new Set((Array.isArray(value) ? value : [])
+        .map((entry) => text(entry).toUpperCase())
+        .filter((entry) => /^CAT-[A-Z0-9]{4,}$/.test(entry))));
 }
 
 const CATALOG_QUERY_STOPWORDS = new Set([
@@ -970,6 +977,40 @@ function getModuleDisplayNameFromConfig(moduleConfig = {}) {
     );
 }
 
+function getModuleCatalogIdsFromConfig(moduleConfig = {}) {
+    const metadata = safeJsonObject(moduleConfig?.metadata);
+    const moduleSettings = safeJsonObject(metadata.moduleSettings || moduleConfig?.moduleSettings);
+    return normalizePattyCatalogIds(moduleSettings.catalogIds || moduleConfig?.catalogIds || []);
+}
+
+function getCommercialProfileIdFromModule(moduleConfig = {}) {
+    const metadata = safeJsonObject(moduleConfig?.metadata);
+    const aiConfig = safeJsonObject(moduleConfig?.aiConfig || metadata.aiConfig);
+    return text(aiConfig.commercialProfileId || aiConfig.commercial_profile_id || metadata.commercialProfileId || metadata.commercial_profile_id);
+}
+
+async function resolvePattyCommercialScope(tenantId, moduleConfig = {}) {
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const moduleCatalogIds = getModuleCatalogIdsFromConfig(moduleConfig);
+    const configuredProfileId = getCommercialProfileIdFromModule(moduleConfig);
+    let profile = null;
+    try {
+        profile = configuredProfileId
+            ? await commercialIntelligenceService.getProfile(cleanTenantId, configuredProfileId)
+            : await commercialIntelligenceService.getDefaultProfile(cleanTenantId);
+    } catch (error) {
+        console.warn('[Patty] commercial profile lookup skipped:', error?.message || error);
+    }
+    const profileCatalogIds = normalizePattyCatalogIds(profile?.config?.catalogIds || []);
+    const catalogIds = profileCatalogIds.length ? profileCatalogIds : moduleCatalogIds;
+    return {
+        profileId: text(profile?.profileId || configuredProfileId),
+        profileName: text(profile?.name) || (configuredProfileId ? configuredProfileId : 'Perfil comercial por defecto'),
+        catalogIds,
+        source: profileCatalogIds.length ? 'commercial_profile' : (moduleCatalogIds.length ? 'module_catalogs' : 'tenant_all')
+    };
+}
+
 async function resolveScheduleState(tenantId, moduleConfig) {
     const scheduleId = text(moduleConfig?.scheduleId);
     if (!scheduleId) return { open: true, label: 'Sin horario asignado' };
@@ -1076,6 +1117,9 @@ async function getRecentCatalogContextRows(tenantId, moduleId = '', chatId = '',
     const cleanChatId = normalizeChatId(chatId);
     if (!cleanChatId) return [];
     try {
+        const catalogIds = normalizePattyCatalogIds(options.catalogIds || []);
+        const catalogClause = catalogIds.length ? 'AND UPPER(catalog_id) = ANY($2::text[])' : '';
+        const catalogParams = catalogIds.length ? [tenantId, catalogIds] : [tenantId];
         const onlyPattyOutbound = options.onlyPattyOutbound === true;
         const pattyOnlyClause = onlyPattyOutbound
             ? `AND COALESCE(from_me, FALSE) = TRUE
@@ -1115,8 +1159,9 @@ async function getRecentCatalogContextRows(tenantId, moduleId = '', chatId = '',
             `SELECT item_id, title, price, metadata
                FROM catalog_items
               WHERE tenant_id = $1
+                ${catalogClause}
               LIMIT 500`,
-            [tenantId]
+            catalogParams
         );
         return (catalogRows || []).filter((row) => {
             const sku = text(row.item_id).toUpperCase();
@@ -1133,27 +1178,33 @@ async function getRecentCatalogContextRows(tenantId, moduleId = '', chatId = '',
     }
 }
 
-async function getCatalogContext(tenantId, recentConversationText = '', lastCustomerMessage = '') {
+async function getCatalogContext(tenantId, recentConversationText = '', lastCustomerMessage = '', catalogIds = []) {
+    const cleanCatalogIds = normalizePattyCatalogIds(catalogIds);
+    const catalogClause = cleanCatalogIds.length ? 'AND UPPER(catalog_id) = ANY($2::text[])' : '';
+    const baseParams = cleanCatalogIds.length ? [tenantId, cleanCatalogIds] : [tenantId];
     const { rows } = await pgQuery(
         `SELECT item_id, title, price, metadata
            FROM catalog_items
           WHERE tenant_id = $1
+            ${catalogClause}
           LIMIT 120`,
-        [tenantId]
+        baseParams
     );
     const intentKeywords = extractCatalogSearchKeywords(lastCustomerMessage || recentConversationText);
     let relevantRows = [];
     if (intentKeywords.size) {
         const keywords = Array.from(intentKeywords).slice(0, 8);
-        const clauses = keywords.map((_, index) => `title ILIKE $${index + 2}`).join(' OR ');
+        const keywordStartIndex = cleanCatalogIds.length ? 3 : 2;
+        const clauses = keywords.map((_, index) => `title ILIKE $${index + keywordStartIndex}`).join(' OR ');
         try {
             const relevantResult = await pgQuery(
                 `SELECT item_id, title, price, metadata
                    FROM catalog_items
                   WHERE tenant_id = $1
+                    ${catalogClause}
                     AND (${clauses})
                   LIMIT 30`,
-                [tenantId, ...keywords.map((keyword) => `%${keyword}%`)]
+                [...baseParams, ...keywords.map((keyword) => `%${keyword}%`)]
             );
             relevantRows = Array.isArray(relevantResult.rows) ? relevantResult.rows : [];
         } catch (error) {
@@ -1193,13 +1244,17 @@ async function getCatalogContext(tenantId, recentConversationText = '', lastCust
     return { lines, relevantLines, mentionedDetails };
 }
 
-async function getCatalogItemsForQuoteRequest(tenantId, products = []) {
+async function getCatalogItemsForQuoteRequest(tenantId, products = [], catalogIds = []) {
+    const cleanCatalogIds = normalizePattyCatalogIds(catalogIds);
+    const catalogClause = cleanCatalogIds.length ? 'AND UPPER(catalog_id) = ANY($2::text[])' : '';
+    const params = cleanCatalogIds.length ? [tenantId, cleanCatalogIds] : [tenantId];
     const { rows } = await pgQuery(
         `SELECT item_id, title, price, metadata
            FROM catalog_items
           WHERE tenant_id = $1
+            ${catalogClause}
           LIMIT 500`,
-        [tenantId]
+        params
     );
     const catalogRows = Array.isArray(rows) ? rows : [];
     const catalogBySku = new Map(
@@ -1264,19 +1319,26 @@ function buildPattyCatalogProductCaption(row = {}) {
     return lines.join('\n');
 }
 
-async function getCatalogRowsBySkus(tenantId, skus = []) {
+async function getCatalogRowsBySkus(tenantId, skus = [], catalogIds = []) {
     const cleanSkus = Array.from(new Set((Array.isArray(skus) ? skus : [])
         .map((sku) => text(sku).toUpperCase())
         .filter(Boolean)))
         .slice(0, 5);
     if (!cleanSkus.length) return [];
-    const placeholders = cleanSkus.map((_, index) => `$${index + 2}`).join(', ');
+    const cleanCatalogIds = normalizePattyCatalogIds(catalogIds);
+    const catalogClause = cleanCatalogIds.length ? 'AND UPPER(catalog_id) = ANY($2::text[])' : '';
+    const skuStartIndex = cleanCatalogIds.length ? 3 : 2;
+    const placeholders = cleanSkus.map((_, index) => `$${index + skuStartIndex}`).join(', ');
+    const params = cleanCatalogIds.length
+        ? [tenantId, cleanCatalogIds, ...cleanSkus]
+        : [tenantId, ...cleanSkus];
     const { rows } = await pgQuery(
         `SELECT item_id, title, price, image_url, metadata
            FROM catalog_items
           WHERE tenant_id = $1
+            ${catalogClause}
             AND UPPER(item_id) IN (${placeholders})`,
-        [tenantId, ...cleanSkus]
+        params
     );
     const bySku = new Map((rows || []).map((row) => [text(row.item_id).toUpperCase(), row]));
     return cleanSkus.map((sku) => bySku.get(sku)).filter(Boolean);
@@ -1296,7 +1358,7 @@ async function filterCatalogProductsForContext(tenantId, skus = [], lastCustomer
         });
         return [];
     }
-    const rows = await getCatalogRowsBySkus(tenantId, cleanSkus);
+    const rows = await getCatalogRowsBySkus(tenantId, cleanSkus, options.catalogIds || []);
     if (!rows.length) return [];
     const lastMessageKeywords = extractCatalogSearchKeywords(lastCustomerMessage);
     const responseKey = normalizeProductLookupKey(responseText);
@@ -1305,9 +1367,9 @@ async function filterCatalogProductsForContext(tenantId, skus = [], lastCustomer
         && hasPreviousProductContextReference(lastCustomerMessage);
     const [recentlySent, recentContextRows, recentPattyContextRows] = await Promise.all([
         getRecentlySentCatalogSkuSet(tenantId, options.moduleId, options.chatId, rows),
-        getRecentCatalogContextRows(tenantId, options.moduleId, options.chatId, 5),
+        getRecentCatalogContextRows(tenantId, options.moduleId, options.chatId, 5, { catalogIds: options.catalogIds || [] }),
         needsStrictPreviousContext
-            ? getRecentCatalogContextRows(tenantId, options.moduleId, options.chatId, 5, { onlyPattyOutbound: true })
+            ? getRecentCatalogContextRows(tenantId, options.moduleId, options.chatId, 5, { onlyPattyOutbound: true, catalogIds: options.catalogIds || [] })
             : Promise.resolve([])
     ]);
     const contextRowsForFilter = needsStrictPreviousContext ? recentPattyContextRows : recentContextRows;
@@ -1371,10 +1433,10 @@ async function filterCatalogProductsForContext(tenantId, skus = [], lastCustomer
     return allowed;
 }
 
-async function sendPattyCatalogProducts({ tenantId, moduleId = '', chatId, skus = [], assistantName = DEFAULT_ASSISTANT_NAME, moduleName = '' } = {}) {
+async function sendPattyCatalogProducts({ tenantId, moduleId = '', chatId, skus = [], assistantName = DEFAULT_ASSISTANT_NAME, moduleName = '', catalogIds = [] } = {}) {
     const assistantDisplayName = formatAssistantDisplayName(assistantName);
     const cleanModuleName = text(moduleName);
-    const rows = await getCatalogRowsBySkus(tenantId, skus);
+    const rows = await getCatalogRowsBySkus(tenantId, skus, catalogIds);
     if (!rows.length) return { sent: 0 };
     let sent = 0;
     for (let index = 0; index < rows.length; index += 1) {
@@ -4149,6 +4211,7 @@ async function createAndSendPattyQuote({
     assistantName,
     moduleName = '',
     quoteRequest,
+    catalogIds = [],
     emitToRuntimeContext,
     emitCommercialStatusUpdated,
     persistMessageHistory
@@ -4195,7 +4258,7 @@ async function createAndSendPattyQuote({
         });
     }
 
-    const items = await getCatalogItemsForQuoteRequest(cleanTenantId, request.products);
+    const items = await getCatalogItemsForQuoteRequest(cleanTenantId, request.products, catalogIds);
     if (!items.length) {
         console.warn('[Patty] quote request skipped: no catalog matches', {
             tenantId: cleanTenantId,
@@ -4421,7 +4484,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
     const cleanChatId = normalizeChatId(chatId);
     const moduleConfig = await getModuleConfig(cleanTenantId, cleanModuleId);
     const assistantName = getAssistantDisplayNameFromModule(moduleConfig || {});
-    const [scheduleState, basePrompt, quickReplies, customer, commercialStatus, origin, conversation, pendingInbound, quote, metaCatalogOrder] = await Promise.all([
+    const [scheduleState, basePrompt, quickReplies, customer, commercialStatus, origin, conversation, pendingInbound, quote, metaCatalogOrder, commercialScope] = await Promise.all([
         resolveScheduleState(cleanTenantId, moduleConfig || {}),
         getBasePrompt(cleanTenantId),
         getQuickRepliesContext(cleanTenantId, cleanModuleId),
@@ -4431,7 +4494,8 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         getConversationContext(cleanTenantId, cleanModuleId, cleanChatId),
         getPendingInboundMessagesContext(cleanTenantId, cleanModuleId, cleanChatId),
         getActiveQuoteContext(cleanTenantId, cleanModuleId, cleanChatId),
-        getRecentMetaCatalogOrderContext(cleanTenantId, cleanModuleId, cleanChatId)
+        getRecentMetaCatalogOrderContext(cleanTenantId, cleanModuleId, cleanChatId),
+        resolvePattyCommercialScope(cleanTenantId, moduleConfig || {})
     ]);
     const pendingBatchText = text(pendingInbound.combinedText || '');
     const latestCustomerMessage = text(pendingInbound.latestText || conversation.lastCustomerMessage || '');
@@ -4442,7 +4506,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         effectiveCustomerMessage || ''
     ].join('\n');
     const [catalog, zoneDecision, greetingInstruction] = await Promise.all([
-        getCatalogContext(cleanTenantId, recentConversationText, effectiveCustomerMessage || latestCustomerMessage || ''),
+        getCatalogContext(cleanTenantId, recentConversationText, effectiveCustomerMessage || latestCustomerMessage || '', commercialScope.catalogIds),
         buildZoneDecision(cleanTenantId, recentConversationText, latestCustomerMessage || effectiveCustomerMessage || '', {
             chatId: cleanChatId,
             scopeModuleId: cleanModuleId,
@@ -4538,6 +4602,10 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '',
         `Tu nombre visible es: ${assistantName}.`,
         `Modulo: ${moduleName || 'sin modulo'}. ${scheduleState.label}.`,
+        `Perfil comercial: ${commercialScope.profileName || 'Perfil comercial por defecto'}.`,
+        commercialScope.catalogIds.length
+            ? `Catalogos activos para esta respuesta: ${commercialScope.catalogIds.join(', ')}.`
+            : 'Catalogos activos para esta respuesta: todos los disponibles del tenant (perfil sin catalogos configurados).',
         '',
         'INSTRUCCIÓN CRÍTICA: Si el contexto incluye una sección "⚠️ COTIZACIÓN ACTIVA", NO incluyas quoteRequest salvo que el último mensaje del cliente pida cambios explícitos en productos, cantidades o reemplazos.',
         '',
@@ -4618,6 +4686,10 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         moduleId: cleanModuleId,
         chatId: cleanChatId,
         moduleConfig,
+        commercialProfileId: commercialScope.profileId || null,
+        commercialProfileName: commercialScope.profileName || null,
+        commercialCatalogIds: commercialScope.catalogIds,
+        commercialCatalogScopeSource: commercialScope.source,
         assistantName,
         zoneDecision,
         greetingInstruction: pattyGreetingInstruction,
@@ -4737,7 +4809,8 @@ async function generatePattySuggestion(tenantId, moduleId, chatId, prebuiltConte
             {
                 chatId: context.chatId,
                 moduleId: context.moduleId,
-                quotedReferenceContext: context.quotedReferenceContext
+                quotedReferenceContext: context.quotedReferenceContext,
+                catalogIds: context.commercialCatalogIds || []
             }
         );
     console.log('[Patty] suggestion generated', {
@@ -5276,7 +5349,8 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                         chatId: cleanChatId,
                         skus: catalogProducts,
                         assistantName,
-                        moduleName: resultModuleName
+                        moduleName: resultModuleName,
+                        catalogIds: result.commercialCatalogIds || prebuiltContext?.commercialCatalogIds || []
                     });
                     console.log('[Patty] catalog products sent', {
                         tenantId: cleanTenantId,
@@ -5300,6 +5374,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                         assistantName,
                         moduleName: resultModuleName,
                         quoteRequest: result.quoteRequest,
+                        catalogIds: result.commercialCatalogIds || prebuiltContext?.commercialCatalogIds || [],
                         emitToRuntimeContext: socketEmitter,
                         emitCommercialStatusUpdated: options.emitCommercialStatusUpdated,
                         persistMessageHistory: options.persistMessageHistory

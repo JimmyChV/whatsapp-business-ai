@@ -141,7 +141,8 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
         tenantScopeLocked: context.tenantScopeLocked,
         busy: context.busy,
         requestJson: context.requestJson,
-        runAction: context.runAction
+        runAction: context.runAction,
+        activeCatalogOptions: context.activeCatalogOptions
     };
 
     const schedulesContext = {

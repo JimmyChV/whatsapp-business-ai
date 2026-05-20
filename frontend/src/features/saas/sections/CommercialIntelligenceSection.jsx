@@ -21,6 +21,7 @@ const SALES_STYLE_OPTIONS = [
     { value: 'mixto', label: 'Mixto' }
 ];
 const DEFAULT_CONFIG = {
+    catalogIds: [],
     brandPositioning: {
         description: '',
         salesStyle: 'consultivo',
@@ -56,9 +57,16 @@ function clone(value) {
     return JSON.parse(JSON.stringify(value ?? null));
 }
 
+function normalizeCatalogIds(value = []) {
+    return [...new Set(toArray(value)
+        .map((entry) => text(entry).toUpperCase())
+        .filter((entry) => /^CAT-[A-Z0-9]{4,}$/.test(entry)))];
+}
+
 function normalizeConfig(config = {}) {
     const source = config && typeof config === 'object' ? config : {};
     return {
+        catalogIds: normalizeCatalogIds(source.catalogIds || source.catalog_ids),
         brandPositioning: {
             ...DEFAULT_CONFIG.brandPositioning,
             ...(source.brandPositioning || {})
@@ -201,7 +209,8 @@ function CommercialIntelligenceSection(props = {}) {
         settingsTenantId,
         busy,
         requestJson,
-        runAction
+        runAction,
+        activeCatalogOptions = []
     } = context;
     const { notify } = useUiFeedback();
     const [profiles, setProfiles] = React.useState([]);
@@ -232,6 +241,21 @@ function CommercialIntelligenceSection(props = {}) {
     const categories = React.useMemo(
         () => toArray(profileDraft?.config?.categories),
         [profileDraft]
+    );
+
+    const selectedCatalogIds = React.useMemo(
+        () => normalizeCatalogIds(profileDraft?.config?.catalogIds),
+        [profileDraft]
+    );
+
+    const commercialCatalogOptions = React.useMemo(
+        () => toArray(activeCatalogOptions)
+            .map((catalog) => ({
+                catalogId: text(catalog?.catalogId || catalog?.id).toUpperCase(),
+                name: text(catalog?.name || catalog?.label || catalog?.catalogId || catalog?.id)
+            }))
+            .filter((catalog) => /^CAT-[A-Z0-9]{4,}$/.test(catalog.catalogId)),
+        [activeCatalogOptions]
     );
 
     const productRoles = React.useMemo(
@@ -380,9 +404,10 @@ function CommercialIntelligenceSection(props = {}) {
                 return [...next, saved].sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.name.localeCompare(b.name));
             });
             setSelectedProfileId(saved.profileId);
+            await loadCatalog(saved.profileId);
             notify({ type: 'info', message });
         });
-    }, [canEdit, notify, profileDraft, requestJson, runAction, settingsTenantId]);
+    }, [canEdit, loadCatalog, notify, profileDraft, requestJson, runAction, settingsTenantId]);
 
     const saveSection = React.useCallback((section, data, message = 'Cambios guardados.') => {
         if (!canEdit || !selectedProfileId) return undefined;
@@ -395,7 +420,7 @@ function CommercialIntelligenceSection(props = {}) {
             const saved = normalizeProfile(result?.profile);
             setProfiles((prev) => toArray(prev).map((profile) => (profile.profileId === saved.profileId ? saved : profile)));
             setProfileDraft(saved);
-            if (section === 'productRoles') await loadCatalog(saved.profileId);
+            if (section === 'productRoles' || section === 'catalogIds') await loadCatalog(saved.profileId);
             notify({ type: 'info', message });
         });
     }, [canEdit, loadCatalog, notify, requestJson, runAction, selectedProfileId, settingsTenantId]);
@@ -433,7 +458,12 @@ function CommercialIntelligenceSection(props = {}) {
                     description: '',
                     isDefault: profiles.length === 0,
                     isActive: true,
-                    config: clone(DEFAULT_CONFIG)
+                    config: {
+                        ...clone(DEFAULT_CONFIG),
+                        catalogIds: commercialCatalogOptions.length === 1
+                            ? [commercialCatalogOptions[0].catalogId]
+                            : []
+                    }
                 }
             });
             const saved = normalizeProfile(result?.profile);
@@ -442,7 +472,7 @@ function CommercialIntelligenceSection(props = {}) {
             setActiveTab('profile');
             notify({ type: 'info', message: 'Perfil comercial creado.' });
         });
-    }, [canEdit, notify, profiles.length, requestJson, runAction, settingsTenantId]);
+    }, [canEdit, commercialCatalogOptions, notify, profiles.length, requestJson, runAction, settingsTenantId]);
 
     const duplicateProfile = React.useCallback(() => {
         if (!canEdit || !selectedProfile) return undefined;
@@ -533,6 +563,40 @@ function CommercialIntelligenceSection(props = {}) {
                 <div className="saas-admin-related-block">
                     <h4>Frases a evitar</h4>
                     <ChipsEditor values={brand.avoid || []} disabled={!canEdit || busy} placeholder="Agregar frase y Enter" onChange={(values) => updateConfigSection('brandPositioning', { ...brand, avoid: values })} />
+                </div>
+                <div className="saas-admin-related-block">
+                    <h4>Catalogos que usa este perfil</h4>
+                    <small>Estos catalogos alimentan las categorias, productos, reglas comerciales y respuestas de Patty cuando un modulo usa este perfil.</small>
+                    {commercialCatalogOptions.length === 0 ? (
+                        <div className="saas-admin-empty-inline">No hay catalogos activos disponibles. Crea o activa uno en Catalogos.</div>
+                    ) : (
+                        <div className="saas-admin-modules">
+                            {commercialCatalogOptions.map((catalog) => {
+                                const checked = selectedCatalogIds.includes(catalog.catalogId);
+                                return (
+                                    <label key={`commercial_profile_catalog_${catalog.catalogId}`} className="saas-admin-module-toggle">
+                                        <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            disabled={!canEdit || busy}
+                                            onChange={() => updateConfigSection('catalogIds', (current) => {
+                                                const set = new Set(normalizeCatalogIds(current));
+                                                if (set.has(catalog.catalogId)) set.delete(catalog.catalogId);
+                                                else set.add(catalog.catalogId);
+                                                return Array.from(set).sort((left, right) => left.localeCompare(right, 'es'));
+                                            })}
+                                        />
+                                        <span>{catalog.name || catalog.catalogId}</span>
+                                    </label>
+                                );
+                            })}
+                        </div>
+                    )}
+                    {selectedCatalogIds.length === 0 ? (
+                        <div className="saas-admin-empty-inline">Sin catalogos seleccionados: se mantiene compatibilidad con todos los productos hasta que guardes una seleccion.</div>
+                    ) : (
+                        <div className="saas-admin-empty-inline">{selectedCatalogIds.length} catalogo(s) seleccionados. Guarda el perfil para aplicar el filtro al catalogo comercial.</div>
+                    )}
                 </div>
                 <div className="saas-admin-modules">
                     <Toggle checked={profileDraft.isDefault} disabled={!canEdit || busy} label="Perfil por defecto" onChange={(checked) => setProfileDraft((prev) => ({ ...prev, isDefault: checked }))} />

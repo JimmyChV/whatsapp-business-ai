@@ -50,6 +50,7 @@ function toSafeObject(value = null) {
 }
 
 const COMMERCIAL_PROFILE_SECTIONS = new Set([
+    'catalogIds',
     'brandPositioning',
     'categories',
     'synonyms',
@@ -72,6 +73,7 @@ function normalizeCommercialCatalogItem(item = {}) {
         title: toText(source.title || ''),
         price: source.price ?? '',
         imageUrl: source.imageUrl || source.image_url || null,
+        catalogId: toText(source.catalogId || source.catalog_id || '').toUpperCase(),
         wooCategories: Array.isArray(source.wooCategories) ? source.wooCategories : [],
         wooTags: Array.isArray(source.wooTags) ? source.wooTags : [],
         relatedSkus: Array.isArray(source.relatedSkus) ? source.relatedSkus : [],
