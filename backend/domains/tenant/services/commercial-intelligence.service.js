@@ -506,6 +506,39 @@ function getWooMetadata(metadata = {}) {
     return isPlainObject(safe.woo) ? safe.woo : {};
 }
 
+function normalizeWooCategoryEntry(entry = null) {
+    if (isPlainObject(entry)) {
+        const name = toText(entry.name || entry.label || entry.slug || entry.id);
+        if (!name) return null;
+        return {
+            id: entry.id ?? entry.term_id ?? null,
+            name,
+            slug: toText(entry.slug || normalizeProfileId(name))
+        };
+    }
+    const name = toText(entry);
+    if (!name) return null;
+    return {
+        id: null,
+        name,
+        slug: normalizeProfileId(name)
+    };
+}
+
+function normalizeWooCategoriesForCatalog(...sources) {
+    const seen = new Set();
+    return sources
+        .flatMap((source) => ensureArray(source))
+        .map(normalizeWooCategoryEntry)
+        .filter(Boolean)
+        .filter((category) => {
+            const key = normalizeLookup(category.slug || category.name);
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+}
+
 function catalogRowToCommercialProduct(row = {}, productRoles = {}) {
     const itemId = toText(row.item_id || row.id).toUpperCase();
     const metadata = isPlainObject(row.metadata) ? row.metadata : {};
@@ -513,12 +546,17 @@ function catalogRowToCommercialProduct(row = {}, productRoles = {}) {
     const relatedSkus = normalizeStringArray(woo.relatedSkus);
     const upsellSkus = normalizeStringArray(woo.upsellSkus);
     const crossSellSkus = normalizeStringArray(woo.crossSellSkus);
+    const wooCategories = normalizeWooCategoriesForCatalog(
+        woo.wooCategories,
+        metadata.wooCategories,
+        metadata.categories
+    );
     return {
         itemId,
         title: toText(row.title),
         price: row.price ?? '',
         imageUrl: row.image_url || row.imageUrl || null,
-        wooCategories: ensureArray(woo.wooCategories),
+        wooCategories,
         wooTags: ensureArray(woo.tags || metadata.tags),
         relatedSkus,
         upsellSkus,

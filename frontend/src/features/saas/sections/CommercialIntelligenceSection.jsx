@@ -102,6 +102,33 @@ function makeCategoryId(name = '') {
         .slice(0, 48);
 }
 
+function normalizeWooCategoryForProfile(entry = null) {
+    const source = entry && typeof entry === 'object' ? entry : null;
+    const name = source
+        ? text(source.name || source.label || source.slug || source.id)
+        : text(entry);
+    if (!name) return null;
+    return {
+        id: makeCategoryId(source?.slug || source?.id || name),
+        name,
+        description: '',
+        benefits: [],
+        discoveryQuestions: []
+    };
+}
+
+function deriveWooCategoriesFromCatalog(items = []) {
+    const categories = new Map();
+    toArray(items).forEach((item) => {
+        toArray(item?.wooCategories).forEach((entry) => {
+            const category = normalizeWooCategoryForProfile(entry);
+            if (!category || categories.has(category.id)) return;
+            categories.set(category.id, category);
+        });
+    });
+    return Array.from(categories.values()).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+}
+
 function uniqueList(items = []) {
     return [...new Set(toArray(items).map((item) => text(item)).filter(Boolean))];
 }
@@ -178,11 +205,17 @@ function CommercialIntelligenceSection(props = {}) {
     const [synonymSearch, setSynonymSearch] = React.useState('');
     const [catalogPage, setCatalogPage] = React.useState(1);
     const [suggestionSku, setSuggestionSku] = React.useState('');
+    const seededCategoryProfileRef = React.useRef('');
     const canEdit = Boolean(settingsTenantId && requestJson);
 
     const selectedProfile = React.useMemo(
         () => profiles.find((profile) => profile.profileId === selectedProfileId) || null,
         [profiles, selectedProfileId]
+    );
+
+    const wooCategorySuggestions = React.useMemo(
+        () => deriveWooCategoriesFromCatalog(catalogItems),
+        [catalogItems]
     );
 
     const categories = React.useMemo(
@@ -251,6 +284,24 @@ function CommercialIntelligenceSection(props = {}) {
         if (!isCommercialIntelligenceSection || !selectedProfileId) return;
         void loadCatalog(selectedProfileId);
     }, [isCommercialIntelligenceSection, loadCatalog, selectedProfileId]);
+
+    React.useEffect(() => {
+        if (!selectedProfileId || wooCategorySuggestions.length === 0) return;
+        const seedKey = `${selectedProfileId}:${wooCategorySuggestions.map((category) => category.id).join('|')}`;
+        if (seededCategoryProfileRef.current === seedKey) return;
+        setProfileDraft((prev) => {
+            const current = normalizeProfile(prev);
+            if (toArray(current.config.categories).length > 0) return prev;
+            seededCategoryProfileRef.current = seedKey;
+            return {
+                ...current,
+                config: {
+                    ...current.config,
+                    categories: wooCategorySuggestions
+                }
+            };
+        });
+    }, [selectedProfileId, wooCategorySuggestions]);
 
     React.useEffect(() => {
         setCatalogPage(1);
@@ -454,7 +505,12 @@ function CommercialIntelligenceSection(props = {}) {
     const renderCategoriesTab = () => (
         <div className="saas-admin-related-block">
             <h4>Categorias comerciales</h4>
-            {categories.length === 0 ? <div className="saas-admin-empty-inline">Aun no hay categorias comerciales.</div> : null}
+            {wooCategorySuggestions.length > 0 ? (
+                <div className="saas-admin-empty-inline">
+                    Detectamos {wooCategorySuggestions.length} categorias desde WooCommerce. Puedes ajustarlas aqui y guardar para convertirlas en categorias comerciales.
+                </div>
+            ) : null}
+            {categories.length === 0 ? <div className="saas-admin-empty-inline">Aun no hay categorias comerciales. Si WooCommerce tiene categorias, recarga el catalogo comercial para traerlas.</div> : null}
             {categories.map((category, index) => (
                 <div key={`category_${index}`} className="saas-admin-related-block">
                     <div className="saas-admin-form-row">
@@ -475,6 +531,7 @@ function CommercialIntelligenceSection(props = {}) {
             ))}
             <div className="saas-admin-form-row saas-admin-form-row--actions">
                 <button type="button" disabled={!canEdit || busy} onClick={() => updateConfigSection('categories', (items) => [...toArray(items), { id: '', name: '', description: '', benefits: [], discoveryQuestions: [] }])}>+ Agregar categoria</button>
+                <button type="button" disabled={!canEdit || busy || wooCategorySuggestions.length === 0} onClick={() => updateConfigSection('categories', wooCategorySuggestions)}>Usar categorias Woo</button>
                 <button type="button" disabled={!canEdit || busy || !selectedProfileId} onClick={() => saveSection('categories', categories, 'Categorias guardadas.')}>Guardar</button>
             </div>
         </div>
@@ -639,7 +696,7 @@ function CommercialIntelligenceSection(props = {}) {
     ];
 
     return (
-        <section id="saas_commercial_intelligence" className="saas-admin-card saas-admin-card--full">
+        <section id="saas_commercial_intelligence" className="saas-admin-card saas-admin-card--full saas-commercial-intelligence">
             <div className="saas-admin-flow-card">
                 <div>
                     <h3>Estrategia de venta para Patty</h3>
@@ -652,15 +709,16 @@ function CommercialIntelligenceSection(props = {}) {
                 </div>
             </div>
 
-            {!settingsTenantId ? (
-                <div className="saas-admin-empty-state">
-                    <h4>Selecciona una empresa</h4>
-                    <p>La inteligencia comercial es multi-tenant y se configura por marca.</p>
-                </div>
-            ) : null}
+            <div className="saas-commercial-intelligence__body">
+                {!settingsTenantId ? (
+                    <div className="saas-admin-empty-state">
+                        <h4>Selecciona una empresa</h4>
+                        <p>La inteligencia comercial es multi-tenant y se configura por marca.</p>
+                    </div>
+                ) : null}
 
-            {settingsTenantId ? (
-                <>
+                {settingsTenantId ? (
+                    <>
                     <div className="saas-admin-form-row">
                         <select className="saas-input" value={selectedProfileId} disabled={busy || loading} onChange={(event) => setSelectedProfileId(event.target.value)}>
                             {profiles.length === 0 ? <option value="">Sin perfiles comerciales</option> : null}
@@ -695,8 +753,9 @@ function CommercialIntelligenceSection(props = {}) {
                     {selectedProfileId && activeTab === 'synonyms' ? renderSynonymsTab() : null}
                     {selectedProfileId && activeTab === 'catalog' ? renderCatalogTab() : null}
                     {selectedProfileId && activeTab === 'rules' ? renderRulesTab() : null}
-                </>
-            ) : null}
+                    </>
+                ) : null}
+            </div>
         </section>
     );
 }
