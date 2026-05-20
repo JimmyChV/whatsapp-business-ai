@@ -19,7 +19,8 @@
   tenantAutomationService: require('./tenant-automation.service'),
   tenantScheduleService: require('./tenant-schedule.service'),
   quotesService: require('./quotes.service'),
-  woocommerceService: require('./woocommerce.service')
+  woocommerceService: require('./woocommerce.service'),
+  commercialIntelligenceService: require('./commercial-intelligence.service')
 };
 
 
