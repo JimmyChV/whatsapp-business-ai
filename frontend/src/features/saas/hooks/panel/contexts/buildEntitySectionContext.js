@@ -60,6 +60,7 @@ export default function buildEntitySectionContext(c) {
         userForm: c.userForm,
         setUserForm: c.setUserForm,
         roleOptions: c.roleOptions,
+        roleProfiles: c.roleProfiles,
         canEditRoleInUserForm: c.canEditRoleInUserForm,
         canEditOptionalAccess: c.canEditOptionalAccess,
         allowedOptionalPermissionsForUserFormRole: c.allowedOptionalPermissionsForUserFormRole,

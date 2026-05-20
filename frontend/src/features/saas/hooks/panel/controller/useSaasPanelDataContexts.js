@@ -51,6 +51,7 @@ export default function useSaasPanelDataContexts(input = {}) {
         canManageTenants: c.canManageTenants,
         canManageCatalog: c.canManageCatalog,
         canManageLabels: c.canManageLabels,
+        canManageZones: c.canManageZones,
         canManageTenantSettings: c.canManageTenantSettings,
         canEditModules: c.canEditModules,
         canViewSuperAdminSections: c.canViewSuperAdminSections,

@@ -6,6 +6,116 @@ function text(value) {
     return String(value ?? '').trim();
 }
 
+const PERMISSION_DESCRIPTIONS = Object.freeze({
+    'tenant.customers.read': 'Acceso de lectura a la lista de clientes y sus datos.',
+    'tenant.customers.manage': 'Crear, editar, importar y actualizar datos de clientes.',
+    'tenant.labels.read': 'Ver etiquetas operativas usadas para clasificar chats.',
+    'tenant.labels.manage': 'Crear, editar y eliminar etiquetas del tenant.',
+    'tenant.zones.read': 'Ver zonas de delivery, cobertura y condiciones configuradas.',
+    'tenant.zones.manage': 'Configurar zonas de delivery, costos de envio y metodos de pago.',
+    'tenant.catalogs.manage': 'Administrar catalogos y productos disponibles para venta.',
+    'tenant.modules.read': 'Ver modulos de WhatsApp y su configuracion principal.',
+    'tenant.modules.manage': 'Crear, editar y activar modulos, integraciones y asignaciones.',
+    'tenant.quick_replies.read': 'Ver bibliotecas de respuestas rapidas disponibles.',
+    'tenant.quick_replies.manage': 'Crear y editar respuestas rapidas, variables y adjuntos.',
+    'tenant.ai.read': 'Ver IA, asistentes y configuraciones asociadas.',
+    'tenant.ai.manage': 'Configurar asistentes, prompts y parametros de IA.',
+    'tenant.commercial_intelligence.read': 'Ver perfiles comerciales, categorias y estrategia de venta.',
+    'tenant.commercial_intelligence.manage': 'Crear y editar perfiles comerciales, sinonimos y estrategias de venta.',
+    'tenant.chat_assignments.read': 'Ver asignaciones, responsables y reglas operativas del chat.',
+    'tenant.chat_assignments.manage': 'Tomar, liberar y reasignar chats entre asesores.',
+    'tenant.assignment_rules.read': 'Ver reglas de asignacion automatica.',
+    'tenant.assignment_rules.manage': 'Editar reglas de asignacion automatica de chats.',
+    'tenant.kpis.read': 'Ver KPIs y reportes operativos.',
+    'tenant.settings.read': 'Ver configuracion general del tenant.',
+    'tenant.settings.manage': 'Editar configuracion, limites y parametros generales del tenant.',
+    'tenant.integrations.read': 'Ver integraciones conectadas al tenant.',
+    'tenant.integrations.manage': 'Editar credenciales, integraciones y conexiones externas.',
+    'tenant.assets.upload': 'Subir imagenes y archivos usados por el tenant.',
+    'tenant.runtime.read': 'Ver datos runtime necesarios para operar el panel.',
+    'tenant.chat.operate': 'Responder y operar conversaciones desde el chat.',
+    'tenant.conversation_events.read': 'Ver eventos historicos de conversacion.',
+    'tenant.users.manage': 'Crear, editar y desactivar usuarios del tenant.',
+    'tenant.users.owner.assign': 'Asignar usuarios con rol owner.',
+    'tenant.overview.read': 'Ver resumen general del tenant.'
+});
+
+const PERMISSION_GROUPS = Object.freeze([
+    {
+        id: 'customers',
+        title: 'CLIENTES',
+        permissions: ['tenant.customers.read', 'tenant.customers.manage']
+    },
+    {
+        id: 'labels-zones',
+        title: 'ETIQUETAS Y ZONAS',
+        permissions: ['tenant.labels.read', 'tenant.labels.manage', 'tenant.zones.read', 'tenant.zones.manage']
+    },
+    {
+        id: 'catalogs',
+        title: 'CATALOGOS',
+        permissions: ['tenant.catalogs.manage']
+    },
+    {
+        id: 'modules',
+        title: 'MODULOS',
+        permissions: ['tenant.modules.read', 'tenant.modules.manage']
+    },
+    {
+        id: 'quick-replies',
+        title: 'RESPUESTAS RAPIDAS',
+        permissions: ['tenant.quick_replies.read', 'tenant.quick_replies.manage']
+    },
+    {
+        id: 'ai',
+        title: 'INTELIGENCIA ARTIFICIAL',
+        permissions: ['tenant.ai.read', 'tenant.ai.manage']
+    },
+    {
+        id: 'commercial',
+        title: 'INTELIGENCIA COMERCIAL',
+        permissions: ['tenant.commercial_intelligence.read', 'tenant.commercial_intelligence.manage']
+    },
+    {
+        id: 'operations',
+        title: 'OPERACIONES',
+        permissions: ['tenant.chat_assignments.read', 'tenant.chat_assignments.manage', 'tenant.assignment_rules.read', 'tenant.assignment_rules.manage', 'tenant.chat.operate', 'tenant.conversation_events.read', 'tenant.runtime.read']
+    },
+    {
+        id: 'reports',
+        title: 'REPORTES',
+        permissions: ['tenant.kpis.read']
+    },
+    {
+        id: 'settings',
+        title: 'CONFIGURACION',
+        permissions: ['tenant.settings.read', 'tenant.settings.manage', 'tenant.integrations.read', 'tenant.integrations.manage', 'tenant.assets.upload', 'tenant.users.manage', 'tenant.users.owner.assign', 'tenant.overview.read']
+    }
+]);
+
+const SENSITIVE_SELLER_PERMISSIONS = new Set(['tenant.modules.manage', 'tenant.settings.manage']);
+
+function buildSet(items = []) {
+    return new Set((Array.isArray(items) ? items : []).map((entry) => text(entry)).filter(Boolean));
+}
+
+function getRoleProfile(role = 'seller', roleProfiles = []) {
+    const cleanRole = text(role || 'seller').toLowerCase() || 'seller';
+    return (Array.isArray(roleProfiles) ? roleProfiles : [])
+        .find((entry) => text(entry?.role).toLowerCase() === cleanRole) || null;
+}
+
+function getPackPermissionSet(selectedPackIds = [], accessPackOptions = []) {
+    const selected = buildSet(selectedPackIds);
+    const permissions = [];
+    (Array.isArray(accessPackOptions) ? accessPackOptions : []).forEach((pack) => {
+        const packId = text(pack?.id);
+        if (!packId || !selected.has(packId)) return;
+        permissions.push(...(Array.isArray(pack?.permissions) ? pack.permissions : []));
+    });
+    return buildSet(permissions);
+}
+
 function UsersSection(props = {}) {
     const context = props.context && typeof props.context === 'object' ? props.context : props;
     const {
@@ -38,6 +148,7 @@ function UsersSection(props = {}) {
         userForm = {},
         setUserForm,
         roleOptions = [],
+        roleProfiles = [],
         canEditRoleInUserForm,
         canEditOptionalAccess,
         allowedOptionalPermissionsForUserFormRole = [],
@@ -307,6 +418,40 @@ function UsersSection(props = {}) {
         if (!canManageUsers || (userPanelMode === 'edit' && !canEditSelectedUser)) {
             return <div className="saas-admin-empty-inline">No tienes permisos para editar este usuario.</div>;
         }
+        const selectedRole = text(userForm.role || 'seller').toLowerCase() || 'seller';
+        const selectedRoleLabel = roleLabelMap.get(selectedRole) || selectedRole;
+        const roleProfile = getRoleProfile(selectedRole, roleProfiles);
+        const basePermissionSet = buildSet(roleProfile?.required || []);
+        const optionalPermissionSet = buildSet(allowedOptionalPermissionsForUserFormRole);
+        const directGrantSet = buildSet(userForm.permissionGrants);
+        const packedPermissionSet = getPackPermissionSet(userForm.permissionPacks, accessPackOptions);
+        const groupedPermissionKeys = new Set(PERMISSION_GROUPS.flatMap((group) => group.permissions));
+        const fallbackPermissionKeys = Array.from(new Set([
+            ...Array.from(basePermissionSet),
+            ...Array.from(optionalPermissionSet),
+            ...Array.from(directGrantSet),
+            ...Array.from(packedPermissionSet)
+        ])).filter((permissionKey) => !groupedPermissionKeys.has(permissionKey));
+        const permissionGroups = [
+            ...PERMISSION_GROUPS,
+            ...(fallbackPermissionKeys.length ? [{ id: 'other', title: 'OTROS PERMISOS', permissions: fallbackPermissionKeys }] : [])
+        ].map((group) => ({
+            ...group,
+            permissions: group.permissions.filter((permissionKey) => (
+                basePermissionSet.has(permissionKey)
+                || optionalPermissionSet.has(permissionKey)
+                || directGrantSet.has(permissionKey)
+                || packedPermissionSet.has(permissionKey)
+            ))
+        })).filter((group) => group.permissions.length > 0);
+        const togglePermissionGrant = (permissionKey, enabled) => {
+            setUserForm?.((prev) => {
+                const nextSet = buildSet(prev.permissionGrants);
+                if (enabled) nextSet.add(permissionKey);
+                else nextSet.delete(permissionKey);
+                return { ...prev, permissionGrants: Array.from(nextSet) };
+            });
+        };
         return (
             <>
                 <div className="saas-admin-form-row">
@@ -437,30 +582,58 @@ function UsersSection(props = {}) {
                                 </div>
                             </div>
                             <div className="saas-admin-optional-access-column">
-                                <small className="saas-admin-optional-access-title">Permisos directos por rol</small>
-                                <div className="saas-admin-modules">
-                                    {allowedOptionalPermissionsForUserFormRole.length === 0 ? (
+                                <small className="saas-admin-optional-access-title">Permisos por categoria</small>
+                                <div className="saas-admin-permission-groups">
+                                    {permissionGroups.length === 0 ? (
                                         <div className="saas-admin-empty-inline">El rol actual no tiene permisos opcionales habilitados.</div>
                                     ) : null}
-                                    {allowedOptionalPermissionsForUserFormRole.map((permissionKey) => {
-                                        const checked = Array.isArray(userForm.permissionGrants) && userForm.permissionGrants.includes(permissionKey);
-                                        const permissionLabel = permissionLabelMap.get(permissionKey) || permissionKey;
+                                    {permissionGroups.map((group) => {
+                                        const activeCount = group.permissions.filter((permissionKey) => (
+                                            basePermissionSet.has(permissionKey)
+                                            || directGrantSet.has(permissionKey)
+                                            || packedPermissionSet.has(permissionKey)
+                                        )).length;
+                                        const defaultOpen = activeCount > 0 || group.id === 'customers' || group.id === 'labels-zones';
                                         return (
-                                            <label key={`assignment_permission_${permissionKey}`} className="saas-admin-module-toggle">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={checked}
-                                                    disabled={busy || loadingAccessCatalog}
-                                                    onChange={(event) => setUserForm?.((prev) => {
-                                                        const current = Array.isArray(prev.permissionGrants) ? prev.permissionGrants : [];
-                                                        const nextSet = new Set(current.map((entry) => text(entry)).filter(Boolean));
-                                                        if (event.target.checked) nextSet.add(permissionKey);
-                                                        else nextSet.delete(permissionKey);
-                                                        return { ...prev, permissionGrants: Array.from(nextSet) };
+                                            <details key={`permission_group_${group.id}`} className="saas-admin-permission-group" open={defaultOpen}>
+                                                <summary>
+                                                    <span>{group.title}</span>
+                                                    <small>{activeCount}/{group.permissions.length} activos</small>
+                                                </summary>
+                                                <div className="saas-admin-permission-list">
+                                                    {group.permissions.map((permissionKey) => {
+                                                        const includedInRole = basePermissionSet.has(permissionKey);
+                                                        const fromPack = !includedInRole && packedPermissionSet.has(permissionKey);
+                                                        const checked = includedInRole || fromPack || directGrantSet.has(permissionKey);
+                                                        const canToggle = optionalPermissionSet.has(permissionKey) && !includedInRole && !fromPack;
+                                                        const permissionLabel = permissionLabelMap.get(permissionKey) || permissionKey;
+                                                        const description = PERMISSION_DESCRIPTIONS[permissionKey] || 'Permiso granular del tenant.';
+                                                        const sensitiveSeller = selectedRole === 'seller' && checked && SENSITIVE_SELLER_PERMISSIONS.has(permissionKey);
+                                                        return (
+                                                            <label key={`assignment_permission_${permissionKey}`} className={`saas-admin-permission-toggle${checked ? ' is-active' : ''}${!canToggle ? ' is-locked' : ''}`.trim()}>
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={checked}
+                                                                    disabled={busy || loadingAccessCatalog || !canToggle}
+                                                                    onChange={(event) => togglePermissionGrant(permissionKey, event.target.checked)}
+                                                                />
+                                                                <span className="saas-admin-permission-switch" aria-hidden="true" />
+                                                                <span className="saas-admin-permission-body">
+                                                                    <span className="saas-admin-permission-title-row">
+                                                                        <strong>{permissionLabel}</strong>
+                                                                        {includedInRole ? <em>incluido en {selectedRoleLabel}</em> : null}
+                                                                        {fromPack ? <em>por paquete</em> : null}
+                                                                        {!includedInRole && !fromPack && checked ? <em className="is-additional">permiso adicional</em> : null}
+                                                                        {sensitiveSeller ? <em className="is-warning">Permiso avanzado</em> : null}
+                                                                    </span>
+                                                                    <small>{description}</small>
+                                                                    <code>{permissionKey}</code>
+                                                                </span>
+                                                            </label>
+                                                        );
                                                     })}
-                                                />
-                                                <span>{permissionLabel}</span>
-                                            </label>
+                                                </div>
+                                            </details>
                                         );
                                     })}
                                 </div>
@@ -500,6 +673,7 @@ function UsersSection(props = {}) {
         permissionLabelMap,
         roleLabelMap,
         roleOptions,
+        roleProfiles,
         saveUser,
         selectedTenantId,
         setUserForm,

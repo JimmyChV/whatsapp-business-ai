@@ -63,6 +63,15 @@ function registerTenantCustomerHttpRoutes({
         return hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_LABELS_MANAGE);
     }
 
+    function hasZonesReadAccess(req) {
+        return hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_ZONES_READ)
+            || hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_ZONES_MANAGE);
+    }
+
+    function hasZonesManageAccess(req) {
+        return hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_ZONES_MANAGE);
+    }
+
     app.get('/api/admin/saas/tenants/:tenantId/customers', async (req, res) => {
         const tenantId = String(req.params?.tenantId || '').trim();
         if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
@@ -395,7 +404,7 @@ function registerTenantCustomerHttpRoutes({
     app.get('/api/tenant/zone-rules', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
-            if (!hasLabelsReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            if (!hasZonesReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
             const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
             const includeInactive = String(req.query?.includeInactive || '').trim().toLowerCase() === 'true';
             const items = await tenantZoneRulesService.listZoneRules(tenantId, { includeInactive });
@@ -408,7 +417,7 @@ function registerTenantCustomerHttpRoutes({
     app.post('/api/tenant/zone-rules', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
-            if (!hasLabelsManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            if (!hasZonesManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
             const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
             const payload = req.body && typeof req.body === 'object' ? req.body : {};
             const item = await tenantZoneRulesService.saveZoneRule(tenantId, payload);
@@ -421,7 +430,7 @@ function registerTenantCustomerHttpRoutes({
     app.put('/api/tenant/zone-rules/:ruleId', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
-            if (!hasLabelsManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            if (!hasZonesManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
             const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
             const ruleId = String(req.params?.ruleId || '').trim();
             const payload = req.body && typeof req.body === 'object' ? req.body : {};
@@ -435,7 +444,7 @@ function registerTenantCustomerHttpRoutes({
     app.delete('/api/tenant/zone-rules/:ruleId', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
-            if (!hasLabelsManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            if (!hasZonesManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
             const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
             const ruleId = String(req.params?.ruleId || '').trim();
             const result = await tenantZoneRulesService.deleteZoneRule(tenantId, ruleId);
@@ -448,7 +457,7 @@ function registerTenantCustomerHttpRoutes({
     app.post('/api/tenant/zone-rules/recalculate', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
-            if (!hasLabelsManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            if (!hasZonesManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
             const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
             const result = await tenantZoneRulesService.recalculateZonesForTenant(tenantId);
             return res.json({ ok: true, tenantId, ...result });

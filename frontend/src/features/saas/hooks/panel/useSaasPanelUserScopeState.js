@@ -15,6 +15,7 @@ export default function useSaasPanelUserScopeState({
     canManageTenants = false,
     canManageCatalog = false,
     canManageLabels = false,
+    canManageZones = false,
     canManageTenantSettings = false,
     canEditModules = false,
     canViewSuperAdminSections = false,
@@ -30,6 +31,7 @@ export default function useSaasPanelUserScopeState({
         if (canManageUsers) capabilities.push('Gestion de usuarios');
         if (canManageCatalog) capabilities.push('Gestion de catalogos');
         if (canManageLabels) capabilities.push('Etiquetas de chat');
+        if (canManageZones) capabilities.push('Zonas de delivery');
         if (canManageTenantSettings) capabilities.push('Configuracion de empresa');
         if (canEditModules) capabilities.push('Modulos WhatsApp');
         if (canViewSuperAdminSections) capabilities.push('Planes y roles globales');
@@ -40,6 +42,7 @@ export default function useSaasPanelUserScopeState({
         canManageUsers,
         canManageCatalog,
         canManageLabels,
+        canManageZones,
         canManageTenantSettings,
         canEditModules,
         canViewSuperAdminSections,

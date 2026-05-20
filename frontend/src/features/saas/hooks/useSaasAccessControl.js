@@ -24,6 +24,8 @@ export default function useSaasAccessControl({
         PERMISSION_TENANT_QUICK_REPLIES_MANAGE,
         PERMISSION_TENANT_LABELS_READ,
         PERMISSION_TENANT_LABELS_MANAGE,
+        PERMISSION_TENANT_ZONES_READ,
+        PERMISSION_TENANT_ZONES_MANAGE,
         PERMISSION_TENANT_AI_READ,
         PERMISSION_TENANT_AI_MANAGE,
         PERMISSION_TENANT_COMMERCIAL_INTELLIGENCE_READ,
@@ -50,6 +52,7 @@ export default function useSaasAccessControl({
     const roleBasedCanEditModules = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanManageQuickReplies = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanManageLabels = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageZones = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanManageCustomers = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanViewAi = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanManageAi = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
@@ -128,6 +131,15 @@ export default function useSaasAccessControl({
             PERMISSION_TENANT_MODULES_MANAGE
         ])
         : roleBasedCanManageLabels;
+    const canManageZones = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_ZONES_MANAGE])
+        : roleBasedCanManageZones;
+    const canViewZones = hasPermissionContext
+        ? hasAnyActorPermission([
+            PERMISSION_TENANT_ZONES_READ,
+            PERMISSION_TENANT_ZONES_MANAGE
+        ])
+        : roleBasedCanManageZones;
     const canViewAi = hasPermissionContext
         ? hasAnyActorPermission([
             PERMISSION_TENANT_AI_READ,
@@ -296,6 +308,8 @@ export default function useSaasAccessControl({
         canViewQuickReplies,
         canManageLabels,
         canViewLabels,
+        canManageZones,
+        canViewZones,
         canViewAi,
         canManageAi,
         canViewCommercialIntelligence,
