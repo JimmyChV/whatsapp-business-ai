@@ -214,7 +214,7 @@ export default function useSaasPanelLoadEffects({
             return;
         }
 
-        const bootKey = `${isOpen ? '1' : '0'}:${canManageSaas ? '1' : '0'}:${canViewSuperAdminSections ? '1' : '0'}:${canViewAccessCatalog ? '1' : '0'}`;
+        const bootKey = `${isOpen ? '1' : '0'}:${canManageSaas ? '1' : '0'}:${canViewSuperAdminSections ? '1' : '0'}:${canViewAccessCatalog ? '1' : '0'}:${canViewLabels ? '1' : '0'}`;
         if (
             bootLoadKeyRef.current === bootKey
             || bootInFlightKeyRef.current === bootKey
@@ -230,6 +230,7 @@ export default function useSaasPanelLoadEffects({
             runAction: runActionFn,
             refreshOverview: refreshOverviewFn,
             loadAccessCatalog: loadAccessCatalogFn,
+            loadGlobalLabels: loadGlobalLabelsFn,
             loadPlanMatrix: loadPlanMatrixFn,
             setError: setErrorFn
         } = loadersRef.current;
@@ -244,6 +245,7 @@ export default function useSaasPanelLoadEffects({
             const tasks = [];
             if (typeof refreshOverviewFn === 'function') tasks.push(refreshOverviewFn());
             pushPermittedLoad(tasks, 'access-catalog', canViewAccessCatalog, loadAccessCatalogFn, undefined);
+            pushPermittedLoad(tasks, 'global-labels', canViewSuperAdminSections && canViewLabels, loadGlobalLabelsFn, undefined);
             if (canViewSuperAdminSections && typeof loadPlanMatrixFn === 'function') {
                 tasks.push(loadPlanMatrixFn());
             }
@@ -265,7 +267,7 @@ export default function useSaasPanelLoadEffects({
                     bootInFlightKeyRef.current = '';
                 }
             });
-    }, [canManageSaas, canViewAccessCatalog, canViewSuperAdminSections, isOpen]);
+    }, [canManageSaas, canViewAccessCatalog, canViewLabels, canViewSuperAdminSections, isOpen]);
 
     useEffect(() => {
         if (!isOpen || !canManageSaas || !tenantScopeId) {
