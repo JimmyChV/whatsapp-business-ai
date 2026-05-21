@@ -28,6 +28,7 @@ const {
 const STORE_FILE = 'chat_commercial_status.json';
 const DEFAULT_LIMIT = 60;
 const MAX_LIMIT = 500;
+const SALES_STATE_TTL_MS = 48 * 60 * 60 * 1000;
 const VALID_STATUSES = new Set([
     'nuevo',
     'en_conversacion',
@@ -227,6 +228,52 @@ function normalizeSource(value = '') {
 function normalizeMetadata(value = {}) {
     if (value && typeof value === 'object' && !Array.isArray(value)) return value;
     return {};
+}
+
+function normalizeObject(value = {}) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function normalizeArray(value = []) {
+    return Array.isArray(value) ? value : [];
+}
+
+function createEmptySalesState() {
+    return {
+        stage: 'exploration',
+        intent: 'unknown',
+        understoodNeeds: [],
+        normalizedProducts: [],
+        proposedOptions: [],
+        chosenOption: null,
+        pendingAction: null,
+        lastUpdatedAt: null
+    };
+}
+
+function normalizeSalesState(value = {}) {
+    const input = normalizeObject(value);
+    const empty = createEmptySalesState();
+    return {
+        ...empty,
+        ...input,
+        stage: toText(input.stage || empty.stage) || empty.stage,
+        intent: toText(input.intent || empty.intent) || empty.intent,
+        understoodNeeds: normalizeArray(input.understoodNeeds || input.understood_needs),
+        normalizedProducts: normalizeArray(input.normalizedProducts || input.normalized_products),
+        proposedOptions: normalizeArray(input.proposedOptions || input.proposed_options),
+        chosenOption: input.chosenOption !== undefined ? input.chosenOption : (input.chosen_option ?? null),
+        pendingAction: toText(input.pendingAction || input.pending_action || '') || null,
+        lastUpdatedAt: normalizeIso(input.lastUpdatedAt || input.last_updated_at) || null
+    };
+}
+
+function isSalesStateExpired(salesState = {}) {
+    const state = normalizeSalesState(salesState);
+    if (!state.lastUpdatedAt) return false;
+    const timestamp = new Date(state.lastUpdatedAt).getTime();
+    if (!Number.isFinite(timestamp)) return true;
+    return (Date.now() - timestamp) > SALES_STATE_TTL_MS;
 }
 
 function formatAssistantDisplayName(value = '') {
@@ -1051,6 +1098,84 @@ async function clearNeedsAdvisor(tenantId = DEFAULT_TENANT_ID, chatId = '', scop
     });
 }
 
+async function getSalesState(tenantId = DEFAULT_TENANT_ID, chatId = '', scopeModuleId = '') {
+    const cleanTenantId = resolveTenantId(tenantId);
+    const cleanChatId = normalizeChatId(chatId);
+    const cleanScopeModuleId = normalizeScopeModuleId(scopeModuleId || '');
+    if (!cleanChatId) return createEmptySalesState();
+    const current = await getChatCommercialStatus(cleanTenantId, {
+        chatId: cleanChatId,
+        scopeModuleId: cleanScopeModuleId
+    });
+    const rawState = normalizeMetadata(current?.metadata || {}).salesState;
+    if (!rawState || typeof rawState !== 'object') return createEmptySalesState();
+    const state = normalizeSalesState(rawState);
+    if (isSalesStateExpired(state)) {
+        await clearSalesState(cleanTenantId, cleanChatId, cleanScopeModuleId, 'expired_48h');
+        return createEmptySalesState();
+    }
+    return state;
+}
+
+async function updateSalesState(tenantId = DEFAULT_TENANT_ID, chatId = '', scopeModuleId = '', updates = {}) {
+    const cleanTenantId = resolveTenantId(tenantId);
+    const cleanChatId = normalizeChatId(chatId);
+    const cleanScopeModuleId = normalizeScopeModuleId(scopeModuleId || '');
+    if (!cleanChatId) throw new Error('chatId requerido para salesState.');
+    const current = await getChatCommercialStatus(cleanTenantId, {
+        chatId: cleanChatId,
+        scopeModuleId: cleanScopeModuleId
+    });
+    const currentState = current?.metadata?.salesState && !isSalesStateExpired(current.metadata.salesState)
+        ? normalizeSalesState(current.metadata.salesState)
+        : createEmptySalesState();
+    const nextState = normalizeSalesState({
+        ...currentState,
+        ...normalizeObject(updates),
+        lastUpdatedAt: nowIso()
+    });
+    const result = await upsertChatCommercialStatus(cleanTenantId, {
+        ...(current || {}),
+        chatId: cleanChatId,
+        scopeModuleId: cleanScopeModuleId,
+        status: current?.status || 'en_conversacion',
+        source: 'system',
+        reason: current?.reason || 'sales_state_update',
+        metadata: {
+            ...(current?.metadata || {}),
+            salesState: nextState
+        }
+    });
+    return result?.status?.metadata?.salesState
+        ? normalizeSalesState(result.status.metadata.salesState)
+        : nextState;
+}
+
+async function clearSalesState(tenantId = DEFAULT_TENANT_ID, chatId = '', scopeModuleId = '', reason = '') {
+    const cleanTenantId = resolveTenantId(tenantId);
+    const cleanChatId = normalizeChatId(chatId);
+    const cleanScopeModuleId = normalizeScopeModuleId(scopeModuleId || '');
+    if (!cleanChatId) return { status: null, previous: null, changed: false };
+    const current = await getChatCommercialStatus(cleanTenantId, {
+        chatId: cleanChatId,
+        scopeModuleId: cleanScopeModuleId
+    });
+    if (!current?.metadata?.salesState) {
+        return { status: current, previous: current, changed: false };
+    }
+    return upsertChatCommercialStatus(cleanTenantId, {
+        ...current,
+        chatId: cleanChatId,
+        scopeModuleId: cleanScopeModuleId,
+        metadata: {
+            ...(current.metadata || {}),
+            salesState: null,
+            salesStateClearedAt: nowIso(),
+            salesStateClearReason: toText(reason || '') || 'manual'
+        }
+    });
+}
+
 async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload = {}) {
     const cleanTenantId = resolveTenantId(tenantId);
     const source = payload && typeof payload === 'object' ? payload : {};
@@ -1341,6 +1466,12 @@ async function markManualStatus(tenantId = DEFAULT_TENANT_ID, options = {}) {
         scopeModuleId: normalizeScopeModuleId(options.scopeModuleId || '')
     };
     if (!base.chatId) throw new Error('chatId requerido para marcado manual.');
+    const metadata = normalizeMetadata(options.metadata);
+    if (targetStatus === 'aceptado' || targetStatus === 'vendido') {
+        metadata.salesState = null;
+        metadata.salesStateClearedAt = at;
+        metadata.salesStateClearReason = `manual_mark_${targetStatus}`;
+    }
 
     return upsertChatCommercialStatus(tenantId, {
         chatId: base.chatId,
@@ -1355,7 +1486,7 @@ async function markManualStatus(tenantId = DEFAULT_TENANT_ID, options = {}) {
         firstCustomerMessageAt: current?.firstCustomerMessageAt || null,
         firstAgentResponseAt: current?.firstAgentResponseAt || null,
         lastTransitionAt: at,
-        metadata: normalizeMetadata(options.metadata)
+        metadata
     });
 }
 
@@ -1369,6 +1500,9 @@ module.exports = {
     resumeExpiredPattyReviewModes,
     setNeedsAdvisor,
     clearNeedsAdvisor,
+    getSalesState,
+    updateSalesState,
+    clearSalesState,
     markInboundCustomerFirstContact,
     markFirstAgentReply,
     markQuoteSent,
