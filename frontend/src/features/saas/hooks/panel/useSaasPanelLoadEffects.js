@@ -285,6 +285,7 @@ export default function useSaasPanelLoadEffects({
             canViewLabels,
             canViewZones,
             canViewQuickReplies,
+            canViewMetaTemplates,
             canViewAi,
             canViewAutomations,
             canViewSchedules,
@@ -314,6 +315,7 @@ export default function useSaasPanelLoadEffects({
             loadTenantCatalogs: loadTenantCatalogsFn,
             loadTenantAiAssistants: loadTenantAiAssistantsFn,
             loadCustomers: loadCustomersFn,
+            loadMetaTemplates: loadMetaTemplatesFn,
             loadAutomations: loadAutomationsFn,
             loadSchedules: loadSchedulesFn,
             loadQuickReplyData: loadQuickReplyDataFn,
@@ -340,10 +342,16 @@ export default function useSaasPanelLoadEffects({
                         sectionId: 'modules',
                         allowed: canViewModules,
                         deps: [tenantScopeId, 'modules'],
-                        loader: () => Promise.all([
-                            loadTenantSettingsFn?.(tenantScopeId),
-                            loadWaModulesFn?.(tenantScopeId)
-                        ])
+                        loader: () => {
+                            const tasks = [];
+                            if (canViewTenantSettings && typeof loadTenantSettingsFn === 'function') {
+                                tasks.push(loadTenantSettingsFn(tenantScopeId));
+                            }
+                            if (typeof loadWaModulesFn === 'function') {
+                                tasks.push(loadWaModulesFn(tenantScopeId));
+                            }
+                            return Promise.all(tasks);
+                        }
                     },
                     {
                         name: 'operations',
@@ -387,6 +395,13 @@ export default function useSaasPanelLoadEffects({
                         allowed: canViewQuickReplies,
                         deps: [tenantScopeId],
                         loader: () => loadQuickReplyDataFn?.(tenantScopeId)
+                    },
+                    {
+                        name: 'meta-templates',
+                        sectionId: 'meta_templates',
+                        allowed: canViewMetaTemplates,
+                        deps: [tenantScopeId],
+                        loader: () => loadMetaTemplatesFn?.()
                     }
                 ]
             },
@@ -488,10 +503,12 @@ export default function useSaasPanelLoadEffects({
         canViewCommercialIntelligence,
         canViewCustomers,
         canViewLabels,
+        canViewMetaTemplates,
         canViewModules,
         canViewOperations,
         canViewQuickReplies,
         canViewSchedules,
+        canViewTenantSettings,
         canViewUsers,
         canViewZones,
         isOpen,

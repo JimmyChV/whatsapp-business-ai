@@ -216,6 +216,31 @@ export default function useSaasMetaTemplatesController({
         setSyncError('');
         try {
             const response = await syncMetaTemplates(requestJson, { moduleId });
+            const syncedItems = sortTemplates(Array.isArray(response?.items) ? response.items : []);
+            if (syncedItems.length > 0) {
+                const activeScopeModuleId = String(response?.scopeModuleId || moduleId || '').trim().toLowerCase();
+                setItems((prev) => {
+                    const previousItems = Array.isArray(prev) ? prev : [];
+                    const nextItems = sortTemplates([
+                        ...syncedItems,
+                        ...previousItems.filter((entry) => {
+                            const entryScope = String(entry?.scopeModuleId || entry?.moduleId || '').trim().toLowerCase();
+                            const syncedKey = `${entryScope}::${String(entry?.templateName || '').trim().toLowerCase()}::${String(entry?.templateLanguage || '').trim().toLowerCase()}`;
+                            const isSameScope = activeScopeModuleId && entryScope === activeScopeModuleId;
+                            const alreadySynced = syncedItems.some((item) => {
+                                const itemScope = String(item?.scopeModuleId || item?.moduleId || '').trim().toLowerCase();
+                                const itemKey = `${itemScope}::${String(item?.templateName || '').trim().toLowerCase()}::${String(item?.templateLanguage || '').trim().toLowerCase()}`;
+                                return itemKey === syncedKey;
+                            });
+                            return !alreadySynced && (!isSameScope || filtersRef.current?.scopeModuleId !== activeScopeModuleId);
+                        })
+                    ]);
+                    const nextTotal = Math.max(Number(cacheRef.current.total) || 0, nextItems.length);
+                    writeCache(nextItems, nextTotal);
+                    setTotal(nextTotal);
+                    return nextItems;
+                });
+            }
             if (reload) {
                 const activeScopeModuleId = String(filtersRef.current?.scopeModuleId || '').trim().toLowerCase();
                 await loadTemplates({

@@ -180,6 +180,7 @@ export default function useSaasPanelActionContexts(input = {}) {
                 canViewCampaigns: c.canViewCampaigns,
                 canViewAutomations: c.canViewAutomations,
                 canViewSchedules: c.canViewSchedules,
+                canViewUsers: c.canViewUsers,
                 canViewQuickReplies: c.canViewQuickReplies,
                 canViewLabels: c.canViewLabels,
                 canViewZones: c.canViewZones,
