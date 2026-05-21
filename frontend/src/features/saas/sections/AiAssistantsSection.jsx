@@ -143,18 +143,18 @@ function AiAssistantsSection(props = {}) {
     ]);
 
     const detailActions = React.useMemo(() => {
-        if (!selectedAiAssistant || isEditing) return null;
+        if (!selectedAiAssistant || isEditing || !canManageAi) return null;
         return (
             <>
-                <button type="button" disabled={busy || !canManageAi} onClick={openAiAssistantEdit}>Editar</button>
+                <button type="button" disabled={busy} onClick={openAiAssistantEdit}>Editar</button>
                 <button
                     type="button"
-                    disabled={busy || !canManageAi || selectedAiAssistant.isDefault || selectedAiAssistant.isActive === false}
+                    disabled={busy || selectedAiAssistant.isDefault || selectedAiAssistant.isActive === false}
                     onClick={() => markAiAssistantAsDefault?.(selectedAiAssistant.assistantId)}
                 >
                     Marcar principal
                 </button>
-                <button type="button" disabled={busy || !canManageAi} onClick={() => toggleAiAssistantActive?.(selectedAiAssistant)}>
+                <button type="button" disabled={busy} onClick={() => toggleAiAssistantActive?.(selectedAiAssistant)}>
                     {selectedAiAssistant.isActive ? 'Desactivar' : 'Activar'}
                 </button>
             </>
@@ -169,7 +169,11 @@ function AiAssistantsSection(props = {}) {
         toggleAiAssistantActive
     ]);
 
-    const renderForm = React.useCallback(({ close: requestClose } = {}) => (
+    const renderForm = React.useCallback(({ close: requestClose } = {}) => {
+        if (!canManageAi) {
+            return <div className="saas-admin-empty-inline">No tienes permisos para modificar asistentes IA.</div>;
+        }
+        return (
         <>
             {aiAssistantPanelMode === 'edit' ? (
                 <div className="saas-admin-detail-grid">
@@ -225,12 +229,14 @@ function AiAssistantsSection(props = {}) {
                 <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { void requestClose?.(); }}>Cancelar</button>
             </div>
         </>
-    ), [
+        );
+    }, [
         AI_MODEL_OPTIONS,
         aiAssistantForm,
         aiAssistantPanelMode,
         applyLavitatAssistantPreset,
         busy,
+        canManageAi,
         saveAiAssistant,
         setAiAssistantForm
     ]);
@@ -258,7 +264,7 @@ function AiAssistantsSection(props = {}) {
             filters={filters}
             actions={[
                 { label: 'Recargar', onClick: () => settingsTenantId && loadTenantAiAssistants?.(settingsTenantId), disabled: busy || !settingsTenantId || loadingAiAssistants },
-                { label: 'Nuevo', onClick: openAiAssistantCreate, disabled: busy || !settingsTenantId || !canManageAi }
+                ...(canManageAi ? [{ label: 'Nuevo', onClick: openAiAssistantCreate, disabled: busy || !settingsTenantId }] : [])
             ]}
             detailTitle={aiAssistantPanelMode === 'create' ? 'Nuevo asistente IA' : (selectedAiAssistant?.name || 'Detalle IA')}
             detailSubtitle={aiAssistantPanelMode === 'create' ? 'Define contexto y parametros de inferencia.' : (selectedAiAssistant?.assistantId || '')}

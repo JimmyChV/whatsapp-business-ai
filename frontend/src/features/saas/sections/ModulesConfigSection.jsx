@@ -232,16 +232,20 @@ function ModulesConfigSection(props = {}) {
                 >
                     Ir a operacion
                 </button>
-                <button type="button" disabled={busy || !canEditModules} onClick={openConfigModuleEdit}>
-                    Editar
-                </button>
-                <button
-                    type="button"
-                    disabled={busy || !canEditModules}
-                    onClick={() => toggleWaModuleActive(selectedConfigModule)}
-                >
-                    {selectedConfigModule.isActive ? 'Desactivar' : 'Activar'}
-                </button>
+                {canEditModules ? (
+                    <>
+                        <button type="button" disabled={busy} onClick={openConfigModuleEdit}>
+                            Editar
+                        </button>
+                        <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => toggleWaModuleActive(selectedConfigModule)}
+                        >
+                            {selectedConfigModule.isActive ? 'Desactivar' : 'Activar'}
+                        </button>
+                    </>
+                ) : null}
             </>
         );
     }, [

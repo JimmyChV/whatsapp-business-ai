@@ -169,10 +169,11 @@ function SchedulesSection(props = {}) {
     ], []);
 
     const openCreate = React.useCallback(() => {
+        if (!canManageSchedules) return;
         setForm(normalizeForm(null));
         setSelectedScheduleId('__new_schedule__');
         setPanelMode('create');
-    }, []);
+    }, [canManageSchedules]);
 
     const openView = React.useCallback((scheduleId) => {
         setSelectedScheduleId(text(scheduleId));
@@ -180,9 +181,10 @@ function SchedulesSection(props = {}) {
     }, []);
 
     const openEdit = React.useCallback(() => {
+        if (!canManageSchedules) return;
         setForm(normalizeForm(selectedSchedule));
         setPanelMode('edit');
-    }, [selectedSchedule]);
+    }, [canManageSchedules, selectedSchedule]);
 
     const close = React.useCallback(() => {
         if (panelMode === 'create' || panelMode === 'edit') {
@@ -196,6 +198,7 @@ function SchedulesSection(props = {}) {
     const saveSchedule = React.useCallback(() => runAction?.(
         panelMode === 'create' ? 'Horario creado' : 'Horario actualizado',
         async () => {
+            if (!canManageSchedules) throw new Error('No tienes permiso para modificar horarios.');
             const payload = {
                 name: form.name,
                 timezone: form.timezone,
@@ -213,16 +216,16 @@ function SchedulesSection(props = {}) {
             }
             setPanelMode('view');
         }
-    ), [createSchedule, form, panelMode, runAction, selectedSchedule, updateSchedule]);
+    ), [canManageSchedules, createSchedule, form, panelMode, runAction, selectedSchedule, updateSchedule]);
 
     const removeSchedule = React.useCallback(() => {
-        if (!selectedSchedule?.scheduleId) return;
+        if (!selectedSchedule?.scheduleId || !canManageSchedules) return;
         runAction?.('Horario eliminado', async () => {
             await deleteSchedule?.(selectedSchedule.scheduleId);
             setSelectedScheduleId('');
             setPanelMode('view');
         });
-    }, [deleteSchedule, runAction, selectedSchedule]);
+    }, [canManageSchedules, deleteSchedule, runAction, selectedSchedule]);
 
     const updateDay = React.useCallback((dayKey, patch = {}) => {
         setForm((prev) => {
@@ -254,11 +257,11 @@ function SchedulesSection(props = {}) {
     }, []);
 
     const detailActions = React.useMemo(() => {
-        if (!selectedSchedule || panelMode !== 'view') return null;
+        if (!selectedSchedule || panelMode !== 'view' || !canManageSchedules) return null;
         return (
             <>
-                <button type="button" disabled={busy || !canManageSchedules} onClick={openEdit}>Editar</button>
-                <button type="button" disabled={busy || !canManageSchedules} onClick={removeSchedule}>Eliminar</button>
+                <button type="button" disabled={busy} onClick={openEdit}>Editar</button>
+                <button type="button" disabled={busy} onClick={removeSchedule}>Eliminar</button>
             </>
         );
     }, [busy, canManageSchedules, openEdit, panelMode, removeSchedule, selectedSchedule]);
@@ -314,7 +317,11 @@ function SchedulesSection(props = {}) {
         );
     }, [selectedSchedule]);
 
-    const renderForm = React.useCallback(({ close: requestClose } = {}) => (
+    const renderForm = React.useCallback(({ close: requestClose } = {}) => {
+        if (!canManageSchedules) {
+            return <div className="saas-admin-empty-inline">No tienes permisos para modificar horarios.</div>;
+        }
+        return (
         <>
             <div className="saas-admin-form-row">
                 <input
@@ -450,7 +457,8 @@ function SchedulesSection(props = {}) {
                 <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { void requestClose?.(); }}>Cancelar</button>
             </div>
         </>
-    ), [busy, form, panelMode, saveSchedule, updateDay, updateHoliday]);
+        );
+    }, [busy, canManageSchedules, form, panelMode, saveSchedule, updateDay, updateHoliday]);
 
     if (!isSection) return null;
 
@@ -475,7 +483,7 @@ function SchedulesSection(props = {}) {
             filters={filters}
             actions={[
                 { label: 'Recargar', onClick: () => loadSchedules?.().catch(() => {}), disabled: busy || loadingSchedules || !settingsTenantId },
-                { label: 'Nuevo', onClick: openCreate, disabled: busy || !canManageSchedules || !settingsTenantId }
+                ...(canManageSchedules ? [{ label: 'Nuevo', onClick: openCreate, disabled: busy || !settingsTenantId }] : [])
             ]}
             detailTitle={panelMode === 'create' ? 'Nuevo horario' : (selectedSchedule ? selectedSchedule.name : 'Horario')}
             detailSubtitle={panelMode === 'view' ? 'Horario reutilizable para modulos y automatizaciones.' : 'Configura dias laborables, feriados y excepciones.'}

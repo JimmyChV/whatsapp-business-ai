@@ -231,10 +231,11 @@ function AutomationSection(props = {}) {
     ], []);
 
     const openCreate = React.useCallback(() => {
+        if (!canManageAutomations) return;
         setForm({ ...EMPTY_FORM, moduleId: moduleOptions[0]?.moduleId || '' });
         setSelectedRuleId('__new_automation__');
         setPanelMode('create');
-    }, [moduleOptions]);
+    }, [canManageAutomations, moduleOptions]);
 
     const openView = React.useCallback((ruleId) => {
         const cleanRuleId = text(ruleId);
@@ -243,9 +244,10 @@ function AutomationSection(props = {}) {
     }, []);
 
     const openEdit = React.useCallback(() => {
+        if (!canManageAutomations) return;
         setForm(buildForm(selectedRule));
         setPanelMode('edit');
-    }, [selectedRule]);
+    }, [canManageAutomations, selectedRule]);
 
     const close = React.useCallback(() => {
         if (panelMode === 'create' || panelMode === 'edit') {
@@ -259,6 +261,7 @@ function AutomationSection(props = {}) {
     const saveRule = React.useCallback(() => runAction?.(
         panelMode === 'create' ? 'Automatizacion creada' : 'Automatizacion actualizada',
         async () => {
+            if (!canManageAutomations) throw new Error('No tienes permiso para modificar automatizaciones.');
             const payload = {
                 eventKey: form.eventKey,
                 moduleId: form.moduleId || null,
@@ -278,16 +281,16 @@ function AutomationSection(props = {}) {
             }
             setPanelMode('view');
         }
-    ), [createAutomationRule, form, panelMode, runAction, selectedRule, updateAutomationRule]);
+    ), [canManageAutomations, createAutomationRule, form, panelMode, runAction, selectedRule, updateAutomationRule]);
 
     const removeRule = React.useCallback(() => {
-        if (!selectedRule?.ruleId) return;
+        if (!selectedRule?.ruleId || !canManageAutomations) return;
         runAction?.('Automatizacion eliminada', async () => {
             await deleteAutomationRule(selectedRule.ruleId);
             setSelectedRuleId('');
             setPanelMode('view');
         });
-    }, [deleteAutomationRule, runAction, selectedRule]);
+    }, [canManageAutomations, deleteAutomationRule, runAction, selectedRule]);
 
     const selectedTemplate = React.useMemo(
         () => templateItems.find((item) => item.templateName === form.templateName) || null,
@@ -329,11 +332,11 @@ function AutomationSection(props = {}) {
     );
 
     const detailActions = React.useMemo(() => {
-        if (!selectedRule || panelMode !== 'view') return null;
+        if (!selectedRule || panelMode !== 'view' || !canManageAutomations) return null;
         return (
             <>
-                <button type="button" disabled={busy || !canManageAutomations} onClick={openEdit}>Editar</button>
-                <button type="button" disabled={busy || !canManageAutomations} onClick={removeRule}>Eliminar</button>
+                <button type="button" disabled={busy} onClick={openEdit}>Editar</button>
+                <button type="button" disabled={busy} onClick={removeRule}>Eliminar</button>
             </>
         );
     }, [busy, canManageAutomations, openEdit, panelMode, removeRule, selectedRule]);
@@ -358,7 +361,11 @@ function AutomationSection(props = {}) {
         );
     }, [moduleLabelMap, selectedRule]);
 
-    const renderForm = React.useCallback(({ requestClose } = {}) => (
+    const renderForm = React.useCallback(({ requestClose } = {}) => {
+        if (!canManageAutomations) {
+            return <div className="saas-admin-empty-inline">No tienes permisos para modificar automatizaciones.</div>;
+        }
+        return (
         <>
             <div className="saas-admin-form-row">
                 <select
@@ -474,7 +481,8 @@ function AutomationSection(props = {}) {
                 <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { void requestClose?.(); }}>Cancelar</button>
             </div>
         </>
-    ), [busy, form, loadingQuickReplies, moduleOptions, panelMode, quickReplyOptions, saveRule, selectedQuickReply, selectedTemplate, templateItems]);
+        );
+    }, [busy, canManageAutomations, form, loadingQuickReplies, moduleOptions, panelMode, quickReplyOptions, saveRule, selectedQuickReply, selectedTemplate, templateItems]);
 
     if (!isSection) return null;
 
@@ -499,7 +507,7 @@ function AutomationSection(props = {}) {
             filters={filters}
             actions={[
                 { label: 'Recargar', onClick: () => loadAutomations().catch(() => {}), disabled: busy || loadingAutomations || !settingsTenantId },
-                { label: 'Nuevo', onClick: openCreate, disabled: busy || !canManageAutomations || !settingsTenantId }
+                ...(canManageAutomations ? [{ label: 'Nuevo', onClick: openCreate, disabled: busy || !settingsTenantId }] : [])
             ]}
             detailTitle={panelMode === 'create' ? 'Nueva automatizacion' : (selectedRule ? eventLabel(selectedRule.eventKey) : 'Automatizacion')}
             detailSubtitle={panelMode === 'view' ? 'Template por evento comercial.' : 'Configura evento, modulo, template y delay.'}

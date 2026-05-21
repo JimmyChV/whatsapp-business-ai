@@ -41,11 +41,11 @@ export default function ModulesConfigMasterPane({
             </div>
 
             <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                {isModulesSection && (
-                    <button type="button" disabled={busy || !settingsTenantId || !canEditModules} onClick={openConfigModuleCreate}>
+                {isModulesSection && canEditModules ? (
+                    <button type="button" disabled={busy || !settingsTenantId} onClick={openConfigModuleCreate}>
                         Nuevo módulo
                     </button>
-                )}
+                ) : null}
                 {isGeneralConfigSection && (
                     <button type="button" disabled={busy || !settingsTenantId} onClick={openConfigSettingsView}>
                         Abrir configuración general

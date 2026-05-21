@@ -86,7 +86,8 @@ export default function ModulesConfigModuleDetailPane({ context = {} }) {
     }
 
     const moduleInDetail = waModulePanelMode === 'create' ? null : selectedConfigModule;
-    const isModuleEditing = waModulePanelMode === 'edit' || waModulePanelMode === 'create';
+    const requestedModuleEditing = waModulePanelMode === 'edit' || waModulePanelMode === 'create';
+    const isModuleEditing = requestedModuleEditing && canEditModules;
     const assignedLabels = isModuleEditing
         ? assignedModuleUsers.map((user) => toUserDisplayName(user))
         : (moduleInDetail?.assignedUserIds || []).map((userId) => {
@@ -125,6 +126,10 @@ export default function ModulesConfigModuleDetailPane({ context = {} }) {
                     formatDateTimeLabel={formatDateTimeLabel}
                 />
             )}
+
+            {requestedModuleEditing && !canEditModules ? (
+                <div className="saas-admin-empty-inline">No tienes permisos para modificar módulos.</div>
+            ) : null}
 
             {isModuleEditing && (
                 <ModulesConfigModuleEditForm
