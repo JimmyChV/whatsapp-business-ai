@@ -391,6 +391,22 @@
   transform: translateX(16px);
 }
 
+.saas-admin-permission-toggle.is-ignored {
+  border-color: color-mix(in srgb, var(--saas-accent-warning) 48%, var(--saas-border-color));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--saas-accent-warning) 10%, transparent), transparent 45%),
+    var(--saas-bg-surface);
+  box-shadow: inset 4px 0 0 color-mix(in srgb, var(--saas-accent-warning) 82%, var(--saas-border-color));
+}
+
+.saas-admin-permission-toggle.is-blocked {
+  border-color: color-mix(in srgb, var(--saas-accent-danger, #ef4444) 48%, var(--saas-border-color));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--saas-accent-danger, #ef4444) 10%, transparent), transparent 45%),
+    var(--saas-bg-surface);
+  box-shadow: inset 4px 0 0 color-mix(in srgb, var(--saas-accent-danger, #ef4444) 82%, var(--saas-border-color));
+}
+
 .saas-admin-permission-toggle.is-locked {
   opacity: 0.88;
 }
@@ -430,6 +446,18 @@
   border-color: color-mix(in srgb, var(--saas-accent-primary) 45%, var(--saas-border-color));
 }
 
+.saas-admin-permission-title-row em.is-role-included {
+  color: var(--saas-accent-success, var(--saas-accent-primary));
+  border-color: color-mix(in srgb, var(--saas-accent-success, var(--saas-accent-primary)) 45%, var(--saas-border-color));
+  background: color-mix(in srgb, var(--saas-accent-success, var(--saas-accent-primary)) 10%, var(--saas-bg-elevated));
+}
+
+.saas-admin-permission-title-row em.is-blocked {
+  color: var(--saas-accent-danger, #ef4444);
+  border-color: color-mix(in srgb, var(--saas-accent-danger, #ef4444) 45%, var(--saas-border-color));
+  background: color-mix(in srgb, var(--saas-accent-danger, #ef4444) 10%, var(--saas-bg-elevated));
+}
+
 .saas-admin-permission-title-row em.is-warning {
   color: var(--saas-accent-warning);
   border-color: color-mix(in srgb, var(--saas-accent-warning) 45%, var(--saas-border-color));
@@ -446,6 +474,47 @@
   color: var(--saas-text-tertiary);
   font-size: 0.66rem;
   word-break: break-word;
+}
+
+.saas-admin-permission-note {
+  color: var(--saas-accent-warning) !important;
+  font-weight: 700;
+}
+
+.saas-admin-permission-audit-summary {
+  border: 1px solid var(--saas-border-color);
+  border-radius: 12px;
+  background: var(--saas-bg-elevated);
+  margin-top: 10px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--saas-text-primary);
+}
+
+.saas-admin-permission-audit-summary strong {
+  font-size: 0.82rem;
+}
+
+.saas-admin-permission-audit-summary span {
+  color: var(--saas-text-secondary);
+  font-size: 0.76rem;
+}
+
+.saas-admin-permission-audit-summary span.is-warning {
+  color: var(--saas-accent-warning);
+  font-weight: 700;
+}
+
+.saas-admin-permission-audit-summary button {
+  margin-left: auto;
+}
+
+.saas-admin-permission-effective-list {
+  display: grid;
+  gap: 8px;
 }
 
 .saas-admin-preview-strip {

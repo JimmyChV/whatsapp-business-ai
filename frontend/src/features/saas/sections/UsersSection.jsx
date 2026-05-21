@@ -31,6 +31,7 @@ function UsersSection(props = {}) {
         loadingAccessCatalog,
         scopedUsers = [],
         selectedUserId,
+        currentUserId = '',
         userPanelMode,
         openUserView,
         selectedUser,
@@ -72,6 +73,10 @@ function UsersSection(props = {}) {
 
     const selectedEntityId = userPanelMode === 'create' ? '__create_user__' : selectedUserId;
     const isEditing = userPanelMode === 'create' || userPanelMode === 'edit';
+    const [permissionsAudit, setPermissionsAudit] = React.useState(null);
+    const [permissionsAuditLoading, setPermissionsAuditLoading] = React.useState(false);
+    const [permissionsAuditError, setPermissionsAuditError] = React.useState('');
+    const [showEffectivePermissions, setShowEffectivePermissions] = React.useState(false);
 
     const rows = React.useMemo(() => scopedUsers.map((user) => {
         const memberships = sanitizeMemberships(user?.memberships || []);
@@ -150,6 +155,67 @@ function UsersSection(props = {}) {
         });
     }, [accessPackOptions, canConfigureOptionalAccessInUserForm, setUserForm, userForm.permissionPacks]);
 
+    React.useEffect(() => {
+        let cancelled = false;
+        const cleanUserId = text(selectedUser?.id || '');
+        const tenantId = text(
+            userForm.tenantId
+            || selectedUser?.memberships?.find?.((entry) => entry?.active !== false)?.tenantId
+            || selectedUser?.memberships?.[0]?.tenantId
+            || settingsTenantId
+            || selectedTenantId
+            || activeTenantId
+        );
+
+        setShowEffectivePermissions(false);
+        if (!cleanUserId || userPanelMode !== 'edit' || !canConfigureOptionalAccessInUserForm || typeof requestJson !== 'function') {
+            setPermissionsAudit(null);
+            setPermissionsAuditError('');
+            setPermissionsAuditLoading(false);
+            return () => {
+                cancelled = true;
+            };
+        }
+        if (!tenantId) {
+            setPermissionsAudit(null);
+            setPermissionsAuditError('Selecciona una empresa para auditar permisos.');
+            setPermissionsAuditLoading(false);
+            return () => {
+                cancelled = true;
+            };
+        }
+
+        setPermissionsAuditLoading(true);
+        setPermissionsAuditError('');
+        requestJson(`/api/tenant/users/${encodeURIComponent(cleanUserId)}/permissions-audit?tenantId=${encodeURIComponent(tenantId)}`)
+            .then((payload) => {
+                if (cancelled) return;
+                setPermissionsAudit(payload?.audit && typeof payload.audit === 'object' ? payload.audit : null);
+            })
+            .catch((error) => {
+                if (cancelled) return;
+                setPermissionsAudit(null);
+                setPermissionsAuditError(String(error?.message || 'No se pudo auditar permisos.'));
+            })
+            .finally(() => {
+                if (!cancelled) setPermissionsAuditLoading(false);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        activeTenantId,
+        canConfigureOptionalAccessInUserForm,
+        requestJson,
+        selectedTenantId,
+        selectedUser?.id,
+        selectedUser?.memberships,
+        settingsTenantId,
+        userForm.tenantId,
+        userPanelMode
+    ]);
+
     const saveUser = React.useCallback(() => runAction?.(
         userPanelMode === 'create' ? 'Usuario creado' : 'Usuario actualizado',
         async () => {
@@ -187,6 +253,9 @@ function UsersSection(props = {}) {
             }
 
             await requestJson(`/api/admin/saas/users/${encodeURIComponent(selectedUser.id)}`, { method: 'PUT', body: payload });
+            if (text(selectedUser.id) && text(selectedUser.id) === text(currentUserId) && typeof window !== 'undefined') {
+                window.setTimeout(() => window.location.reload(), 250);
+            }
             setUserPanelMode?.('view');
         }
     ), [
@@ -198,6 +267,7 @@ function UsersSection(props = {}) {
         runAction,
         sanitizeMemberships,
         selectedUser,
+        currentUserId,
         setSelectedUserId,
         setUserPanelMode,
         userForm,
@@ -327,14 +397,21 @@ function UsersSection(props = {}) {
         const selectedRole = text(userForm.role || 'seller').toLowerCase() || 'seller';
         const selectedRoleLabel = roleLabelMap.get(selectedRole) || selectedRole;
         const roleProfile = getRoleProfile(selectedRole, roleProfiles);
-        const basePermissionSet = buildSet(roleProfile?.required || []);
-        const optionalPermissionSet = buildSet(allowedOptionalPermissionsForUserFormRole);
+        const auditApplies = permissionsAudit && text(permissionsAudit.userId) === text(selectedUser?.id || '');
+        const basePermissionSet = buildSet(auditApplies ? permissionsAudit.roleRequired : (roleProfile?.required || []));
+        const optionalPermissionSet = buildSet(auditApplies ? permissionsAudit.roleOptional : allowedOptionalPermissionsForUserFormRole);
+        const blockedPermissionSet = buildSet(auditApplies ? permissionsAudit.roleBlocked : (roleProfile?.blocked || []));
+        const effectivePermissionSet = buildSet(auditApplies ? permissionsAudit.effectivePermissions : (selectedUser?.permissions || []));
+        const ignoredGrantSet = buildSet(auditApplies ? permissionsAudit.grantsIgnored : []);
         const directGrantSet = buildSet(userForm.permissionGrants);
         const packedPermissionSet = getPackPermissionSet(userForm.permissionPacks, accessPackOptions);
+        const effectivePermissionList = Array.from(effectivePermissionSet)
+            .sort((left, right) => String(permissionLabelMap.get(left) || left).localeCompare(String(permissionLabelMap.get(right) || right), 'es', { sensitivity: 'base' }));
         const groupedPermissionKeys = new Set(PERMISSION_GROUPS.flatMap((group) => group.permissions));
         const fallbackPermissionKeys = Array.from(new Set([
             ...Array.from(basePermissionSet),
             ...Array.from(optionalPermissionSet),
+            ...Array.from(blockedPermissionSet),
             ...Array.from(directGrantSet),
             ...Array.from(packedPermissionSet)
         ])).filter((permissionKey) => !groupedPermissionKeys.has(permissionKey));
@@ -346,6 +423,7 @@ function UsersSection(props = {}) {
             permissions: group.permissions.filter((permissionKey) => (
                 basePermissionSet.has(permissionKey)
                 || optionalPermissionSet.has(permissionKey)
+                || blockedPermissionSet.has(permissionKey)
                 || directGrantSet.has(permissionKey)
                 || packedPermissionSet.has(permissionKey)
             ))
@@ -469,7 +547,7 @@ function UsersSection(props = {}) {
                                     {permissionGroups.map((group) => {
                                         const activeCount = group.permissions.filter((permissionKey) => (
                                             basePermissionSet.has(permissionKey)
-                                            || directGrantSet.has(permissionKey)
+                                            || (optionalPermissionSet.has(permissionKey) && !blockedPermissionSet.has(permissionKey) && directGrantSet.has(permissionKey))
                                             || packedPermissionSet.has(permissionKey)
                                         )).length;
                                         const defaultOpen = activeCount > 0 || group.id === 'customers' || group.id === 'labels-zones';
@@ -486,7 +564,7 @@ function UsersSection(props = {}) {
                                                         onClick={() => setUserForm?.((prev) => {
                                                             const nextSet = buildSet(prev.permissionGrants);
                                                             group.permissions.forEach((permissionKey) => {
-                                                                if (optionalPermissionSet.has(permissionKey) && !basePermissionSet.has(permissionKey)) nextSet.add(permissionKey);
+                                                                if (optionalPermissionSet.has(permissionKey) && !basePermissionSet.has(permissionKey) && !blockedPermissionSet.has(permissionKey)) nextSet.add(permissionKey);
                                                             });
                                                             return { ...prev, permissionGrants: Array.from(nextSet) };
                                                         })}
@@ -509,14 +587,25 @@ function UsersSection(props = {}) {
                                                 <div className="saas-admin-permission-list">
                                                     {group.permissions.map((permissionKey) => {
                                                         const includedInRole = basePermissionSet.has(permissionKey);
-                                                        const fromPack = !includedInRole && packedPermissionSet.has(permissionKey);
-                                                        const checked = includedInRole || fromPack || directGrantSet.has(permissionKey);
-                                                        const canToggle = optionalPermissionSet.has(permissionKey) && !includedInRole;
+                                                        const blockedByRole = blockedPermissionSet.has(permissionKey);
+                                                        const ignoredGrant = !includedInRole && directGrantSet.has(permissionKey) && ignoredGrantSet.has(permissionKey);
+                                                        const fromPack = !includedInRole && packedPermissionSet.has(permissionKey) && effectivePermissionSet.has(permissionKey);
+                                                        const appliedGrant = !includedInRole && directGrantSet.has(permissionKey) && optionalPermissionSet.has(permissionKey) && !blockedByRole;
+                                                        const checked = includedInRole || fromPack || appliedGrant;
+                                                        const canToggle = optionalPermissionSet.has(permissionKey) && !includedInRole && !blockedByRole && !ignoredGrant;
                                                         const permissionLabel = permissionLabelMap.get(permissionKey) || permissionKey;
                                                         const description = PERMISSION_DESCRIPTIONS[permissionKey] || 'Permiso granular del tenant.';
                                                         const sensitiveSeller = selectedRole === 'seller' && checked && SENSITIVE_SELLER_PERMISSIONS.has(permissionKey);
+                                                        const statusClass = blockedByRole ? ' is-blocked' : (ignoredGrant ? ' is-ignored' : '');
+                                                        const statusLabel = includedInRole
+                                                            ? `Incluido en el rol ${selectedRoleLabel}`
+                                                            : (blockedByRole
+                                                                ? `Bloqueado por el rol ${selectedRoleLabel}`
+                                                                : (ignoredGrant
+                                                                    ? `Bloqueado o no permitido por el rol ${selectedRoleLabel}. Edita el rol primero.`
+                                                                    : (checked ? 'Permiso adicional efectivo' : 'Disponible para asignar')));
                                                         return (
-                                                            <label key={`assignment_permission_${permissionKey}`} className={`saas-admin-permission-toggle${checked ? ' is-active' : ''}${!canToggle ? ' is-locked' : ''}`.trim()}>
+                                                            <label key={`assignment_permission_${permissionKey}`} className={`saas-admin-permission-toggle${checked ? ' is-active' : ''}${!canToggle ? ' is-locked' : ''}${statusClass}`.trim()} title={statusLabel}>
                                                                 <input
                                                                     type="checkbox"
                                                                     checked={checked}
@@ -527,12 +616,15 @@ function UsersSection(props = {}) {
                                                                 <span className="saas-admin-permission-body">
                                                                     <span className="saas-admin-permission-title-row">
                                                                         <strong>{permissionLabel}</strong>
-                                                                        {includedInRole ? <em>incluido en {selectedRoleLabel}</em> : null}
+                                                                        {includedInRole ? <em className="is-role-included">incluido en {selectedRoleLabel}</em> : null}
+                                                                        {blockedByRole ? <em className="is-blocked">bloqueado por {selectedRoleLabel}</em> : null}
+                                                                        {ignoredGrant ? <em className="is-warning">adicional ignorado</em> : null}
                                                                         {fromPack ? <em className="is-additional">adicional de paquete anterior</em> : null}
-                                                                        {!includedInRole && !fromPack && checked ? <em className="is-additional">permiso adicional</em> : null}
+                                                                        {!includedInRole && !fromPack && checked ? <em className="is-additional">permiso adicional efectivo</em> : null}
                                                                         {sensitiveSeller ? <em className="is-warning">Permiso avanzado</em> : null}
                                                                     </span>
                                                                     <small>{description}</small>
+                                                                    {ignoredGrant || blockedByRole ? <small className="saas-admin-permission-note">{statusLabel}</small> : null}
                                                                     <code>{permissionKey}</code>
                                                                 </span>
                                                             </label>
@@ -542,6 +634,41 @@ function UsersSection(props = {}) {
                                             </details>
                                         );
                                     })}
+                                </div>
+                                <div className="saas-admin-permission-audit-summary">
+                                    <strong>Este usuario tiene {effectivePermissionList.length} permisos efectivos activos.</strong>
+                                    {permissionsAuditLoading ? <span>Auditando permisos...</span> : null}
+                                    {permissionsAuditError ? <span className="is-warning">{permissionsAuditError}</span> : null}
+                                    {effectivePermissionList.length > 0 ? (
+                                        <button type="button" onClick={() => setShowEffectivePermissions(true)}>
+                                            Ver lista completa
+                                        </button>
+                                    ) : null}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                ) : null}
+                {showEffectivePermissions ? (
+                    <div className="saas-template-builder-modal-overlay" onClick={() => setShowEffectivePermissions(false)}>
+                        <div className="saas-template-builder-modal-shell" onClick={(event) => event.stopPropagation()}>
+                            <div className="saas-template-builder-modal-panel">
+                                <div className="saas-detail-panel__header">
+                                    <div>
+                                        <h3>Permisos efectivos</h3>
+                                        <p>{effectivePermissionList.length} permisos activos reales para este usuario.</p>
+                                    </div>
+                                    <button type="button" onClick={() => setShowEffectivePermissions(false)}>Cerrar</button>
+                                </div>
+                                <div className="saas-template-builder-modal-panel__body">
+                                    <div className="saas-admin-permission-effective-list">
+                                        {effectivePermissionList.map((permissionKey) => (
+                                            <div key={`effective_permission_${permissionKey}`} className="saas-admin-detail-field">
+                                                <span>{permissionLabelMap.get(permissionKey) || permissionKey}</span>
+                                                <strong>{permissionKey}</strong>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -577,12 +704,17 @@ function UsersSection(props = {}) {
         hasAccessCatalogData,
         loadingAccessCatalog,
         permissionLabelMap,
+        permissionsAudit,
+        permissionsAuditError,
+        permissionsAuditLoading,
         roleLabelMap,
         roleOptions,
         roleProfiles,
         saveUser,
         selectedTenantId,
+        selectedUser,
         setUserForm,
+        showEffectivePermissions,
         settingsTenantId,
         tenantOptions,
         toTenantDisplayName,

@@ -79,6 +79,7 @@ export default function SaasPanelEntitySections(props = {}) {
         loadingAccessCatalog: context.loadingAccessCatalog,
         scopedUsers: context.scopedUsers,
         selectedUserId: context.selectedUserId,
+        currentUserId: context.currentUserId,
         userPanelMode: context.userPanelMode,
         openUserView: context.openUserView,
         selectedUser: context.selectedUser,
