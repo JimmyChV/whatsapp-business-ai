@@ -8,7 +8,6 @@ export default function useSaasPanelLoadEffects({
     canViewTenantSettings = false,
     canViewModules = false,
     canViewCatalog = false,
-    canManageCatalog = false,
     canViewAi = false,
     canViewCustomers = false,
     canViewMetaTemplates = false,
@@ -281,11 +280,12 @@ export default function useSaasPanelLoadEffects({
             canViewCustomers,
             canViewModules,
             canViewOperations,
-            canManageCatalog,
+            canViewCatalog,
             canViewLabels,
             canViewZones,
             canViewQuickReplies,
             canViewMetaTemplates,
+            canViewCampaigns,
             canViewAi,
             canViewAutomations,
             canViewSchedules,
@@ -316,6 +316,7 @@ export default function useSaasPanelLoadEffects({
             loadTenantAiAssistants: loadTenantAiAssistantsFn,
             loadCustomers: loadCustomersFn,
             loadMetaTemplates: loadMetaTemplatesFn,
+            loadCampaigns: loadCampaignsFn,
             loadAutomations: loadAutomationsFn,
             loadSchedules: loadSchedulesFn,
             loadQuickReplyData: loadQuickReplyDataFn,
@@ -371,7 +372,7 @@ export default function useSaasPanelLoadEffects({
                     {
                         name: 'catalogs',
                         sectionId: 'catalogs',
-                        allowed: canManageCatalog,
+                        allowed: canViewCatalog,
                         deps: [tenantScopeId],
                         loader: () => loadTenantCatalogsFn?.(tenantScopeId)
                     },
@@ -402,6 +403,13 @@ export default function useSaasPanelLoadEffects({
                         allowed: canViewMetaTemplates,
                         deps: [tenantScopeId],
                         loader: () => loadMetaTemplatesFn?.()
+                    },
+                    {
+                        name: 'campaigns',
+                        sectionId: 'campaigns',
+                        allowed: canViewCampaigns,
+                        deps: [tenantScopeId],
+                        loader: () => loadCampaignsFn?.()
                     }
                 ]
             },
@@ -496,10 +504,11 @@ export default function useSaasPanelLoadEffects({
         };
     }, [
         canManageSaas,
-        canManageCatalog,
         canManageRoles,
         canViewAi,
         canViewAutomations,
+        canViewCampaigns,
+        canViewCatalog,
         canViewCommercialIntelligence,
         canViewCustomers,
         canViewLabels,

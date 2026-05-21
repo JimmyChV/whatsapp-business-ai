@@ -76,6 +76,7 @@ function AiAssistantsSection(props = {}) {
             {
                 canLoad: Boolean(settingsTenantId && canViewAi && typeof loadTenantAiAssistants === 'function'),
                 forceReload: sectionReloadToken > 0,
+                reloadToken: sectionReloadToken,
                 deps: [settingsTenantId]
             }
         );

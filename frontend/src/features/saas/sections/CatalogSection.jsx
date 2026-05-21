@@ -131,6 +131,7 @@ function CatalogSection(props = {}) {
             {
                 canLoad: Boolean(settingsTenantId && canViewCatalog && typeof loadTenantCatalogs === 'function'),
                 forceReload: sectionReloadToken > 0,
+                reloadToken: sectionReloadToken,
                 deps: [settingsTenantId]
             }
         );

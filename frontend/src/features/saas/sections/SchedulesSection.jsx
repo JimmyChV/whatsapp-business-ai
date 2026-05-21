@@ -193,6 +193,7 @@ function SchedulesSection(props = {}) {
             {
                 canLoad: Boolean(canViewSchedules && settingsTenantId && !tenantScopeLocked && typeof loadSchedules === 'function'),
                 forceReload: sectionReloadToken > 0,
+                reloadToken: sectionReloadToken,
                 deps: [settingsTenantId]
             }
         );

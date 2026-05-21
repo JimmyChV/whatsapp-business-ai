@@ -165,6 +165,7 @@ function AutomationSection(props = {}) {
             {
                 canLoad: Boolean(canViewAutomations && settingsTenantId && !tenantScopeLocked && typeof loadAutomations === 'function'),
                 forceReload: sectionReloadToken > 0,
+                reloadToken: sectionReloadToken,
                 deps: [settingsTenantId]
             }
         );

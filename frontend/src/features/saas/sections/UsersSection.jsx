@@ -150,6 +150,7 @@ function UsersSection(props = {}) {
             {
                 canLoad: Boolean(canViewUsers && typeof refreshOverview === 'function'),
                 forceReload: sectionReloadToken > 0,
+                reloadToken: sectionReloadToken,
                 deps: [settingsTenantId || selectedTenantId || activeTenantId]
             }
         );

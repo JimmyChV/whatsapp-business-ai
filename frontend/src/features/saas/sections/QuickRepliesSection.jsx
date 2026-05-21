@@ -238,6 +238,7 @@ export default function QuickRepliesSection(props = {}) {
             {
                 canLoad: Boolean(settingsTenantId && canViewQuickReplies && typeof loadQuickReplyData === 'function'),
                 forceReload: sectionReloadToken > 0,
+                reloadToken: sectionReloadToken,
                 deps: [settingsTenantId]
             }
         );

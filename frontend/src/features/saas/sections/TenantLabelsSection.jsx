@@ -309,6 +309,7 @@ function ZonePanel({ busy, requestJson, runAction, runSectionAction, setError, c
             {
                 canLoad: Boolean(canViewZones && settingsTenantId && !tenantScopeLocked),
                 forceReload: sectionReloadToken > 0,
+                reloadToken: sectionReloadToken,
                 deps: [settingsTenantId]
             }
         );
@@ -402,6 +403,7 @@ function OperationalPanelUnified({ context }) {
             {
                 canLoad: Boolean(canViewLabels && settingsTenantId && typeof loadTenantLabels === 'function'),
                 forceReload: sectionReloadToken > 0,
+                reloadToken: sectionReloadToken,
                 deps: [settingsTenantId]
             }
         );

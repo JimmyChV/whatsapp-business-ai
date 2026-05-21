@@ -345,6 +345,7 @@ function CommercialIntelligenceSection(props = {}) {
             {
                 canLoad: Boolean(canViewCommercialIntelligence && settingsTenantId && requestJson),
                 forceReload: sectionReloadToken > 0,
+                reloadToken: sectionReloadToken,
                 deps: [settingsTenantId]
             }
         );

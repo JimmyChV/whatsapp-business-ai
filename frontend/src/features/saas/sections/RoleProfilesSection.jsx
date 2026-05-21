@@ -163,6 +163,7 @@ function RoleProfilesSection(props = {}) {
             {
                 canLoad: Boolean(canManageRoles && typeof loadAccessCatalog === 'function'),
                 forceReload: sectionReloadToken > 0,
+                reloadToken: sectionReloadToken,
                 deps: ['access_catalog']
             }
         );

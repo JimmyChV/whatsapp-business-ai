@@ -67,6 +67,7 @@ function OperationsSection(props = {}) {
             {
                 canLoad: Boolean(canViewOperations && tenantScopeId && !tenantScopeLocked),
                 forceReload: sectionReloadToken > 0,
+                reloadToken: sectionReloadToken,
                 deps: [tenantScopeId]
             }
         );

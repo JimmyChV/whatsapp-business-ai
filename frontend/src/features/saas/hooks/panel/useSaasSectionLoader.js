@@ -39,6 +39,7 @@ export default function useSaasSectionLoader() {
     const loadingRef = useRef(new Map());
     const errorsRef = useRef(new Map());
     const reloadTokensRef = useRef(new Map());
+    const consumedReloadTokensRef = useRef(new Map());
     const depsRef = useRef(new Map());
 
     const [loadedSections, setLoadedSections] = useState(() => new Map());
@@ -94,13 +95,25 @@ export default function useSaasSectionLoader() {
             setMapValue(loadedRef, setLoadedSections, cleanSectionId, false);
             setMapValue(errorsRef, setSectionErrors, cleanSectionId, false);
         }
-        if (options.forceReload !== true && !depsChanged && loadedRef.current.get(cleanSectionId) === true) return undefined;
+        const currentReloadToken = Number(
+            options.reloadToken ?? reloadTokensRef.current.get(cleanSectionId) ?? 0
+        );
+        const consumedReloadToken = Number(consumedReloadTokensRef.current.get(cleanSectionId) || 0);
+        const hasPendingForceReload = options.forceReload === true
+            && currentReloadToken > 0
+            && currentReloadToken !== consumedReloadToken;
+        if (!hasPendingForceReload && !depsChanged && loadedRef.current.get(cleanSectionId) === true) return undefined;
 
         setMapValue(loadingRef, setLoadingSections, cleanSectionId, true);
         setMapValue(errorsRef, setSectionErrors, cleanSectionId, false);
         try {
             const result = await loadFn();
             setMapValue(loadedRef, setLoadedSections, cleanSectionId, true);
+            if (hasPendingForceReload) {
+                const nextConsumedTokens = new Map(consumedReloadTokensRef.current);
+                nextConsumedTokens.set(cleanSectionId, currentReloadToken);
+                consumedReloadTokensRef.current = nextConsumedTokens;
+            }
             return result;
         } catch (error) {
             setMapValue(errorsRef, setSectionErrors, cleanSectionId, toErrorMessage(error));

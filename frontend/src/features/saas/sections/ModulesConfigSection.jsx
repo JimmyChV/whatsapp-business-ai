@@ -125,16 +125,30 @@ function ModulesConfigSection(props = {}) {
     const reloadSection = React.useCallback(async () => {
         if (!settingsTenantId) return;
         if (isGeneralConfigSection) {
-            await loadTenantSettings?.(settingsTenantId);
+            if (canViewTenantSettings && typeof loadTenantSettings === 'function') {
+                await loadTenantSettings(settingsTenantId);
+            }
             return;
         }
         if (isModulesSection) {
-            await Promise.all([
-                loadTenantSettings?.(settingsTenantId),
-                loadWaModules?.(settingsTenantId)
-            ]);
+            const tasks = [];
+            if (canViewTenantSettings && typeof loadTenantSettings === 'function') {
+                tasks.push(loadTenantSettings(settingsTenantId));
+            }
+            if (canViewModules && typeof loadWaModules === 'function') {
+                tasks.push(loadWaModules(settingsTenantId));
+            }
+            if (tasks.length > 0) await Promise.all(tasks);
         }
-    }, [isGeneralConfigSection, isModulesSection, loadTenantSettings, loadWaModules, settingsTenantId]);
+    }, [
+        canViewModules,
+        canViewTenantSettings,
+        isGeneralConfigSection,
+        isModulesSection,
+        loadTenantSettings,
+        loadWaModules,
+        settingsTenantId
+    ]);
 
     React.useEffect(() => {
         if (!(isGeneralConfigSection || isModulesSection)) return;
@@ -148,6 +162,7 @@ function ModulesConfigSection(props = {}) {
             {
                 canLoad: Boolean(settingsTenantId && (isModulesSection ? canViewModules : canViewTenantSettings)),
                 forceReload: sectionReloadToken > 0,
+                reloadToken: sectionReloadToken,
                 deps: [settingsTenantId, lazySectionId]
             }
         );
