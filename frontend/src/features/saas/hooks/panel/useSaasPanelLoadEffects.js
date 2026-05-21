@@ -217,7 +217,7 @@ export default function useSaasPanelLoadEffects({
             return;
         }
 
-        const bootKey = `${isOpen ? '1' : '0'}:${canManageSaas ? '1' : '0'}:${canViewSuperAdminSections ? '1' : '0'}:${canViewAccessCatalog ? '1' : '0'}:${canViewLabels ? '1' : '0'}`;
+        const bootKey = `${isOpen ? '1' : '0'}:${canManageSaas ? '1' : '0'}:${canViewSuperAdminSections ? '1' : '0'}:${canViewAccessCatalog ? '1' : '0'}:${canManageRoles ? '1' : '0'}:${canViewLabels ? '1' : '0'}`;
         if (
             bootLoadKeyRef.current === bootKey
             || bootInFlightKeyRef.current === bootKey
@@ -247,7 +247,22 @@ export default function useSaasPanelLoadEffects({
         runActionFn('Carga inicial', async () => {
             const tasks = [];
             if (typeof refreshOverviewFn === 'function') tasks.push(refreshOverviewFn());
-            pushPermittedLoad(tasks, 'access-catalog', canViewAccessCatalog, loadAccessCatalogFn, undefined);
+            if (canManageRoles && typeof loadAccessCatalogFn === 'function') {
+                tasks.push(
+                    runPreloadTask({
+                        name: 'roles',
+                        sectionId: 'roles',
+                        allowed: true,
+                        deps: ['access_catalog'],
+                        loader: () => loadAccessCatalogFn()
+                    }).then((result) => {
+                        if (result?.failed) throw new Error('No se pudo cargar el catalogo de roles.');
+                        return result;
+                    })
+                );
+            } else {
+                pushPermittedLoad(tasks, 'access-catalog', canViewAccessCatalog, loadAccessCatalogFn, undefined);
+            }
             pushPermittedLoad(tasks, 'global-labels', canViewSuperAdminSections && canViewLabels, loadGlobalLabelsFn, undefined);
             if (canViewSuperAdminSections && typeof loadPlanMatrixFn === 'function') {
                 tasks.push(loadPlanMatrixFn());
@@ -270,7 +285,7 @@ export default function useSaasPanelLoadEffects({
                     bootInFlightKeyRef.current = '';
                 }
             });
-    }, [canManageSaas, canViewAccessCatalog, canViewLabels, canViewSuperAdminSections, isOpen]);
+    }, [canManageRoles, canManageSaas, canViewAccessCatalog, canViewLabels, canViewSuperAdminSections, isOpen]);
 
     useEffect(() => {
         if (!isOpen || !canManageSaas || !tenantScopeId) {
@@ -295,7 +310,6 @@ export default function useSaasPanelLoadEffects({
             canViewAutomations,
             canViewSchedules,
             canViewUsers,
-            canManageRoles,
             canViewTenantSettings,
             canViewCommercialIntelligence
         ].map((value) => (value ? '1' : '0')).join('');
@@ -315,7 +329,6 @@ export default function useSaasPanelLoadEffects({
         const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         const {
             refreshOverview: refreshOverviewFn,
-            loadAccessCatalog: loadAccessCatalogFn,
             loadTenantSettings: loadTenantSettingsFn,
             loadWaModules: loadWaModulesFn,
             loadTenantCatalogs: loadTenantCatalogsFn,
@@ -457,13 +470,6 @@ export default function useSaasPanelLoadEffects({
                         loader: () => refreshOverviewFn?.()
                     },
                     {
-                        name: 'roles',
-                        sectionId: 'roles',
-                        allowed: canManageRoles,
-                        deps: [tenantScopeId],
-                        loader: () => loadAccessCatalogFn?.()
-                    },
-                    {
                         name: 'settings',
                         sectionId: 'settings',
                         allowed: canViewTenantSettings,
@@ -523,7 +529,6 @@ export default function useSaasPanelLoadEffects({
         };
     }, [
         canManageSaas,
-        canManageRoles,
         canViewAi,
         canViewAutomations,
         canViewCampaigns,
