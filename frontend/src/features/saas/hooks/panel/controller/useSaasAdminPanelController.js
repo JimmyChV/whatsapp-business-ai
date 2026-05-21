@@ -106,6 +106,8 @@ import useSaasApiClient from '../../useSaasApiClient';
 import useSaasPanelCoreState from '../useSaasPanelCoreState';
 import useSaasPanelLoadingState from '../useSaasPanelLoadingState';
 import useSaasPanelSectionContexts from '../useSaasPanelSectionContexts';
+import useSaasSectionAction from '../useSaasSectionAction';
+import useSaasSectionLoader from '../useSaasSectionLoader';
 import buildPanelSectionExtras from '../contexts/buildPanelSectionExtras';
 import useSaasPanelActionContexts from './useSaasPanelActionContexts';
 import useSaasAiController from './useSaasAiController';
@@ -343,6 +345,8 @@ export default function useSaasAdminPanelController({
         apiBase: API_BASE,
         buildApiHeaders
     });
+    const sectionActionState = useSaasSectionAction();
+    const sectionLoaderState = useSaasSectionLoader();
     const metaTemplatesController = useSaasMetaTemplatesController({ requestJson, socket });
     const campaignsController = useSaasCampaignsController({
         requestJson,
@@ -1120,6 +1124,20 @@ export default function useSaasAdminPanelController({
 
     const sectionContextsInput = {
         busy: panelCoreState.busy,
+        runSectionAction: sectionActionState.runSectionAction,
+        isSaving: sectionActionState.isSaving,
+        isAnySaving: sectionActionState.isAnySaving,
+        savingActions: sectionActionState.savingActions,
+        ensureSectionData: sectionLoaderState.ensureSectionData,
+        isLoaded: sectionLoaderState.isLoaded,
+        isLoading: sectionLoaderState.isLoading,
+        getError: sectionLoaderState.getError,
+        getReloadToken: sectionLoaderState.getReloadToken,
+        forceReload: sectionLoaderState.forceReload,
+        loadedSections: sectionLoaderState.loadedSections,
+        loadingSections: sectionLoaderState.loadingSections,
+        sectionErrors: sectionLoaderState.sectionErrors,
+        reloadTokens: sectionLoaderState.reloadTokens,
         userRole,
         isSuperAdmin,
         currentUser,

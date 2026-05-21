@@ -8,6 +8,8 @@ export { default as useQuickReplyAdminActions } from './domains/quickReplies/use
 export { default as useSaasAccessControl } from './useSaasAccessControl';
 export { default as useSaasApiClient } from './useSaasApiClient';
 export { default as useSaasPanelActions } from './panel/useSaasPanelActions';
+export { default as useSaasSectionAction } from './panel/useSaasSectionAction';
+export { default as useSaasSectionLoader } from './panel/useSaasSectionLoader';
 export { default as useSaasPanelDerivedData } from './panel/useSaasPanelDerivedData';
 export { default as useSaasPanelFormSyncEffects } from './panel/useSaasPanelFormSyncEffects';
 export { default as useSaasPanelLoadEffects } from './panel/useSaasPanelLoadEffects';
