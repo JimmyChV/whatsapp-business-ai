@@ -286,19 +286,89 @@ function buildForbiddenList(commercialProfile = null) {
     ]));
 }
 
-function resolveNextBestActionBase({ stage, intent, normalizedProducts, currentSalesState }) {
-    const state = isPlainObject(currentSalesState) ? currentSalesState : {};
-    if (state.proposedOptions && !state.chosenOption) return 'ask_which_option';
-    if (stage === 'soft_pause') return 'soft_acknowledge';
-    if (stage === 'objection') return 'handle_price_objection';
+function parseMoney(value = null) {
+    if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.round(value * 100) / 100);
+    const clean = toText(value).replace(/[^\d.,-]+/g, '').replace(',', '.');
+    const parsed = Number(clean);
+    return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed * 100) / 100) : null;
+}
+
+function getPrimaryShippingOption(zoneRule = null) {
+    const options = ensureArray(zoneRule?.shippingOptions || zoneRule?.shipping_options);
+    return options.find((option) => option?.is_active !== false && option?.isActive !== false) || options[0] || null;
+}
+
+function getFreeShippingThreshold(zoneRule = null) {
+    const primary = getPrimaryShippingOption(zoneRule);
+    const value = primary?.free_from ?? primary?.freeFrom;
+    const parsed = parseMoney(value);
+    return parsed && parsed > 0 ? parsed : null;
+}
+
+function hasKnownZone(zoneRule = null) {
+    return Boolean(zoneRule && typeof zoneRule === 'object' && (zoneRule.ruleId || zoneRule.rule_id || zoneRule.name));
+}
+
+function hasQuantity(value = {}) {
+    const qty = value?.qty ?? value?.quantity ?? value?.cantidad;
+    return Number.isFinite(Number(qty)) && Number(qty) > 0;
+}
+
+function optionSubtotal(option = {}) {
+    if (!option || typeof option !== 'object') return 0;
+    if (Number.isFinite(Number(option.total))) return Number(option.total);
+    return ensureArray(option.products)
+        .reduce((sum, product) => sum + (Number(product.subtotal) || (Number(product.unitPrice) || 0) * (Number(product.qty) || 1)), 0);
+}
+
+function isNearFreeShipping(option = null, zoneRule = null) {
+    const threshold = getFreeShippingThreshold(zoneRule);
+    if (!threshold || !option) return false;
+    const shortfall = Number.isFinite(Number(option.shortfall))
+        ? Number(option.shortfall)
+        : threshold - optionSubtotal(option);
+    return shortfall > 0 && shortfall <= Math.max(25, threshold * 0.25);
+}
+
+function resolveNextBestAction(salesDecision = {}, salesState = {}, zoneRule = null) {
+    const decision = isPlainObject(salesDecision) ? salesDecision : {};
+    const state = isPlainObject(salesState) ? salesState : {};
+    const stage = toText(decision.stage || state.stage || 'exploration');
+    const intent = toText(decision.intent || state.intent || 'unknown');
+    const normalizedProducts = ensureArray(decision.normalizedProducts || state.normalizedProducts);
+    const understoodNeeds = ensureArray(decision.understoodNeeds || state.understoodNeeds);
+    const proposedOptions = ensureArray(decision.proposedOptions || state.proposedOptions);
+    const chosenOption = decision.chosenOption || state.chosenOption || null;
+
+    if (decision.shouldEscalate === true) return 'escalate_to_advisor';
+    if (chosenOption && !hasQuantity(chosenOption)) return 'ask_quantity';
+    if (chosenOption && isNearFreeShipping(chosenOption, zoneRule)) return 'upsell_to_free_shipping';
+    if (chosenOption && hasQuantity(chosenOption)) return 'offer_quote';
+    if (proposedOptions.length > 0 && !chosenOption) return 'ask_which_option';
+
+    const productRelatedIntent = ['buy_direct', 'ask_products', 'ask_price', 'ask_promotions', 'compare', 'confirm'].includes(intent);
+    if (!hasKnownZone(zoneRule) && productRelatedIntent && (normalizedProducts.length > 0 || understoodNeeds.length > 0 || intent === 'ask_products')) {
+        return 'ask_delivery_first';
+    }
+
+    if (stage === 'soft_pause' || intent === 'soft_pause') return 'soft_acknowledge';
+    if (stage === 'objection' || intent === 'objection_price') return 'handle_price_objection';
     if (intent === 'ask_delivery') return 'ask_delivery_first';
     if (intent === 'confirm') return 'confirm_closing';
-    if (['buy_direct', 'ask_price', 'ask_promotions', 'compare'].includes(intent) && normalizedProducts.length > 0) {
+    if (decision.shouldBuildOptions === true) return 'present_three_options';
+    if (['buy_direct', 'ask_price', 'ask_promotions', 'compare'].includes(intent) && (normalizedProducts.length > 0 || understoodNeeds.length > 0)) {
         return 'present_three_options';
     }
-    if (intent === 'ask_products') return 'present_categories';
-    if (normalizedProducts.length > 0) return 'present_three_options';
-    return 'ask_discovery_question';
+    if (stage === 'exploration') {
+        return understoodNeeds.length > 0 ? 'ask_discovery_question' : 'present_categories';
+    }
+    if (stage === 'recommendation' && (normalizedProducts.length > 0 || understoodNeeds.length > 0)) {
+        return 'present_three_options';
+    }
+    if (stage === 'closing') return 'confirm_closing';
+    return normalizedProducts.length > 0 || understoodNeeds.length > 0
+        ? 'ask_discovery_question'
+        : 'present_categories';
 }
 
 async function analyzeSalesContext({
@@ -330,12 +400,16 @@ async function analyzeSalesContext({
         || (currentSalesState?.chosenOption && !currentSalesState?.quantity)
     );
     const shouldEscalate = false;
-    const nextBestAction = resolveNextBestActionBase({
+    const preliminaryDecision = {
         stage,
         intent,
+        understoodNeeds,
         normalizedProducts,
-        currentSalesState
-    });
+        shouldBuildOptions,
+        shouldAskQuantity,
+        shouldEscalate
+    };
+    const nextBestAction = resolveNextBestAction(preliminaryDecision, currentSalesState, null);
 
     return {
         stage,
@@ -357,5 +431,6 @@ module.exports = {
     detectIntent,
     detectNeeds,
     determineSalesStage,
+    resolveNextBestAction,
     normalizeLookup
 };
