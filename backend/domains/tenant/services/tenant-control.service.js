@@ -507,6 +507,46 @@ function sanitizeUserPublic(user = {}) {
         updatedAt: user.updatedAt
     };
 }
+
+function resolveUserPermissionsAudit({ userId = '', tenantId = '' } = {}) {
+    const cleanUserId = String(userId || '').trim();
+    const cleanTenantId = normalizeTenantId(tenantId || '');
+    if (!cleanUserId) throw new Error('userId invalido.');
+
+    const user = findUserByIdSync(cleanUserId);
+    if (!user) throw new Error('Usuario no encontrado.');
+
+    const memberships = normalizeMemberships(user.memberships || [], user?.role || 'seller');
+    const membership = (cleanTenantId
+        ? memberships.find((entry) => entry.tenantId === cleanTenantId)
+        : null)
+        || memberships.find((entry) => entry.active !== false)
+        || memberships[0]
+        || { tenantId: cleanTenantId, role: user?.role || 'seller', active: true };
+
+    const audit = accessPolicyService.resolveUserPermissionsAudit({
+        role: membership.role,
+        isSuperAdmin: isSuperAdminUser(user),
+        permissionGrants: user.permissionGrants || user.permissions || user?.metadata?.access?.permissionGrants || [],
+        permissionPacks: user.permissionPacks || user?.metadata?.access?.permissionPacks || []
+    });
+
+    return {
+        userId: cleanUserId,
+        tenantId: membership.tenantId || cleanTenantId || '',
+        role: audit.role,
+        roleLabel: audit.roleLabel,
+        effectivePermissions: audit.effectivePermissions,
+        roleRequired: audit.roleRequired,
+        roleOptional: audit.roleOptional,
+        roleBlocked: audit.roleBlocked,
+        grantsApplied: audit.grantsApplied,
+        grantsIgnored: audit.grantsIgnored,
+        packsApplied: audit.packsApplied,
+        permissionPacksApplied: audit.permissionPacksApplied
+    };
+}
+
 function sanitizeTenantPublic(tenant = {}) {
     return {
         id: tenant.id,
@@ -961,6 +1001,7 @@ module.exports = {
     deleteUser,
     sanitizeTenantPublic,
     sanitizeUserPublic,
+    resolveUserPermissionsAudit,
     getAdminOverview,
     isSuperAdminUser,
     hashPassword,

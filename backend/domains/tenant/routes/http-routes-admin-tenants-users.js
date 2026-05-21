@@ -104,6 +104,25 @@
         }
     });
 
+    app.get('/api/tenant/users/:userId/permissions-audit', async (req, res) => {
+        try {
+            const userId = String(req.params?.userId || '').trim();
+            const tenantId = String(req.query?.tenantId || req?.authContext?.user?.tenantId || '').trim();
+            if (!userId) return res.status(400).json({ ok: false, error: 'userId invalido.' });
+            if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+            if (!hasTenantUsersReadAccess(req, tenantId)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+
+            const users = await saasControlService.listUsers({ includeInactive: true, tenantId });
+            const targetUser = (Array.isArray(users) ? users : []).find((item) => String(item?.id || '').trim() === userId) || null;
+            if (!targetUser) return res.status(404).json({ ok: false, error: 'Usuario no encontrado.' });
+
+            const audit = saasControlService.resolveUserPermissionsAudit({ userId, tenantId });
+            return res.json({ ok: true, audit });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo resolver auditoria de permisos.') });
+        }
+    });
+
     app.post('/api/admin/saas/users', async (req, res) => {
         try {
             if (!hasTenantAdminWriteAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado para crear usuarios.' });

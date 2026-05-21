@@ -634,6 +634,80 @@ function sanitizeUserAccessInput({
     };
 }
 
+function resolveUserPermissionsAudit({
+    role = 'seller',
+    isSuperAdmin = false,
+    permissionGrants = [],
+    permissionPacks = []
+} = {}) {
+    const resolved = resolveUserPermissions({
+        role,
+        isSuperAdmin,
+        permissionGrants,
+        permissionPacks
+    });
+
+    if (isSuperAdmin) {
+        return {
+            role: resolved.role,
+            roleLabel: resolved.label,
+            effectivePermissions: resolved.permissions,
+            roleRequired: resolved.required,
+            roleOptional: resolved.optional,
+            roleBlocked: resolved.blocked,
+            grantsApplied: [],
+            grantsIgnored: [],
+            packsApplied: [],
+            permissionPacksApplied: []
+        };
+    }
+
+    const template = getRoleTemplate(role);
+    const optionalSet = new Set(template.optional);
+    const blockedSet = new Set(template.blocked);
+    const effectiveSet = new Set(resolved.permissions);
+    const inputGrants = normalizePermissionList(permissionGrants);
+    const inputPacks = normalizePackList(permissionPacks);
+    const runtimePacks = getRuntimeCatalog().packs || {};
+
+    const grantsApplied = inputGrants.filter((permission) => (
+        optionalSet.has(permission)
+        && !blockedSet.has(permission)
+        && effectiveSet.has(permission)
+    ));
+    const grantsIgnored = inputGrants.filter((permission) => !grantsApplied.includes(permission));
+
+    const packPermissionPairs = [];
+    const permissionPacksApplied = [];
+    inputPacks.forEach((packId) => {
+        const pack = runtimePacks[packId];
+        if (!pack || pack.active === false) return;
+        const appliedPermissions = normalizePermissionList(pack.permissions || []).filter((permission) => (
+            optionalSet.has(permission)
+            && !blockedSet.has(permission)
+            && effectiveSet.has(permission)
+        ));
+        if (!appliedPermissions.length) return;
+        permissionPacksApplied.push(packId);
+        appliedPermissions.forEach((permission) => {
+            packPermissionPairs.push(permission);
+        });
+    });
+
+    return {
+        role: resolved.role,
+        roleLabel: resolved.label,
+        effectivePermissions: resolved.permissions,
+        roleRequired: template.required,
+        roleOptional: template.optional,
+        roleBlocked: template.blocked,
+        grantsApplied: normalizePermissionList(grantsApplied),
+        grantsIgnored: normalizePermissionList(grantsIgnored),
+        packsApplied: normalizePermissionList(packPermissionPairs),
+        permissionPacksApplied: normalizePackList(permissionPacksApplied)
+    };
+}
+
 function resolveUserPermissions({
     role = 'seller',
     isSuperAdmin = false,
@@ -847,6 +921,7 @@ module.exports = {
     expandPackPermissions,
     sanitizeUserAccessInput,
     resolveUserPermissions,
+    resolveUserPermissionsAudit,
     getAssignableRoles,
     canAssignRole,
     canEditOptionalAccess,
