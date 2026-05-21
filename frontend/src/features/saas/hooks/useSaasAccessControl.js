@@ -46,6 +46,8 @@ export default function useSaasAccessControl({
         PERMISSION_TENANT_CHAT_OPERATE,
         PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ,
         PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE,
+        PERMISSION_TENANT_ASSIGNMENT_RULES_READ,
+        PERMISSION_TENANT_ASSIGNMENT_RULES_MANAGE,
         PERMISSION_TENANT_KPIS_READ,
         PERMISSION_TENANT_INTEGRATIONS_READ,
         PERMISSION_TENANT_INTEGRATIONS_MANAGE
@@ -218,13 +220,23 @@ export default function useSaasAccessControl({
         ? hasAnyActorPermission([PERMISSION_TENANT_CUSTOMERS_MANAGE])
         : roleBasedCanManageCustomers;
     const canViewOperations = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_CHAT_OPERATE, PERMISSION_TENANT_KPIS_READ, PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ, PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE])
+        ? hasAnyActorPermission([
+            PERMISSION_TENANT_CHAT_OPERATE,
+            PERMISSION_TENANT_KPIS_READ,
+            PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ,
+            PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE,
+            PERMISSION_TENANT_ASSIGNMENT_RULES_READ,
+            PERMISSION_TENANT_ASSIGNMENT_RULES_MANAGE
+        ])
         : Boolean(roleBasedCanManageTenantSettings || roleBasedCanManageUsers);
     const canOperateChat = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_CHAT_OPERATE, PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ, PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE])
         : Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || normalizedRole === 'seller' || noRoleContext);
     const canManageAssignments = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE])
+        : Boolean(roleBasedCanManageTenantSettings || roleBasedCanManageUsers);
+    const canManageAssignmentRules = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_ASSIGNMENT_RULES_MANAGE])
         : Boolean(roleBasedCanManageTenantSettings || roleBasedCanManageUsers);
 
     const canEditCatalog = canManageCatalog;
@@ -383,6 +395,7 @@ export default function useSaasAccessControl({
         canViewOperations,
         canOperateChat,
         canManageAssignments,
+        canManageAssignmentRules,
         canEditCatalog,
         requiresTenantSelection,
         canActorManageRoleChanges,

@@ -20,6 +20,7 @@ function OperationsSection(props = {}) {
     loadingAssignmentRules = false,
     loadingOperationsKpis = false,
     canManageAssignments = false,
+    canManageAssignmentRules = false,
     canViewOperations = false,
     assignmentRules = {},
     assignmentRoleOptions = [],
@@ -33,6 +34,10 @@ function OperationsSection(props = {}) {
     triggerAutoAssignPreview,
     formatDateTimeLabel
     } = context;
+    const assignmentModeLabel = assignmentRules.mode === 'round_robin' ? 'Round robin' : 'Menor carga';
+    const allowedRolesLabel = Array.isArray(assignmentRules.allowedRoles) && assignmentRules.allowedRoles.length > 0
+        ? assignmentRules.allowedRoles.join(', ')
+        : 'Sin roles configurados';
     return (
         <SaasEntityPage
             id="saas_operacion"
@@ -56,81 +61,101 @@ function OperationsSection(props = {}) {
 
                     {!tenantScopeLocked && (
                         <>
-                            <div className="saas-admin-form-row saas-admin-form-row--single">
-                                <label className="saas-admin-checkbox-inline">
-                                    <input
-                                        type="checkbox"
-                                        checked={assignmentRules.enabled === true}
-                                        disabled={busy || loadingAssignmentRules || !canManageAssignments}
-                                        onChange={(event) => setAssignmentRules((prev) => ({ ...prev, enabled: event.target.checked }))}
-                                    />
-                                    <span>Auto-asignacion habilitada</span>
-                                </label>
-                            </div>
-                            <div className="saas-admin-form-row">
-                                <div>
-                                    <small>Modo de asignacion</small>
-                                    <select
-                                        value={assignmentRules.mode || 'least_load'}
-                                        disabled={busy || loadingAssignmentRules || !canManageAssignments}
-                                        onChange={(event) => setAssignmentRules((prev) => ({ ...prev, mode: event.target.value === 'round_robin' ? 'round_robin' : 'least_load' }))}
-                                    >
-                                        <option value="least_load">Menor carga</option>
-                                        <option value="round_robin">Round robin</option>
-                                    </select>
+                            {canManageAssignmentRules ? (
+                                <>
+                                    <div className="saas-admin-form-row saas-admin-form-row--single">
+                                        <label className="saas-admin-checkbox-inline">
+                                            <input
+                                                type="checkbox"
+                                                checked={assignmentRules.enabled === true}
+                                                disabled={busy || loadingAssignmentRules}
+                                                onChange={(event) => setAssignmentRules((prev) => ({ ...prev, enabled: event.target.checked }))}
+                                            />
+                                            <span>Auto-asignacion habilitada</span>
+                                        </label>
+                                    </div>
+                                    <div className="saas-admin-form-row">
+                                        <div>
+                                            <small>Modo de asignacion</small>
+                                            <select
+                                                value={assignmentRules.mode || 'least_load'}
+                                                disabled={busy || loadingAssignmentRules}
+                                                onChange={(event) => setAssignmentRules((prev) => ({ ...prev, mode: event.target.value === 'round_robin' ? 'round_robin' : 'least_load' }))}
+                                            >
+                                                <option value="least_load">Menor carga</option>
+                                                <option value="round_robin">Round robin</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <small>Max chats abiertos por usuaria (0 = sin limite)</small>
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                max={500}
+                                                value={String(assignmentRules.maxOpenChatsPerUser ?? 0)}
+                                                disabled={busy || loadingAssignmentRules}
+                                                onChange={(event) => setAssignmentRules((prev) => ({ ...prev, maxOpenChatsPerUser: Number(event.target.value || 0) }))}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="saas-admin-related-block">
+                                        <h4>Roles habilitados para recibir chats</h4>
+                                        <div className="saas-admin-modules">
+                                            {assignmentRoleOptions.map((role) => {
+                                                const checked = Array.isArray(assignmentRules.allowedRoles) && assignmentRules.allowedRoles.includes(role);
+                                                return (
+                                                    <label key={`assignment_role_${role}`} className="saas-admin-module-toggle">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={checked}
+                                                            disabled={busy || loadingAssignmentRules}
+                                                            onChange={(event) => setAssignmentRules((prev) => toggleRoleInRules(prev, role, event.target.checked))}
+                                                        />
+                                                        <span>{role}</span>
+                                                    </label>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="saas-admin-related-block">
+                                    <h4>Reglas de asignacion</h4>
+                                    <div className="saas-admin-detail-grid">
+                                        <div className="saas-admin-detail-field"><span>Auto-asignacion</span><strong>{assignmentRules.enabled === true ? 'Habilitada' : 'Deshabilitada'}</strong></div>
+                                        <div className="saas-admin-detail-field"><span>Modo</span><strong>{assignmentModeLabel}</strong></div>
+                                        <div className="saas-admin-detail-field"><span>Max chats abiertos</span><strong>{Number(assignmentRules.maxOpenChatsPerUser ?? 0)}</strong></div>
+                                        <div className="saas-admin-detail-field"><span>Roles habilitados</span><strong>{allowedRolesLabel}</strong></div>
+                                    </div>
                                 </div>
-                                <div>
-                                    <small>Max chats abiertos por usuaria (0 = sin limite)</small>
-                                    <input
-                                        type="number"
-                                        min={0}
-                                        max={500}
-                                        value={String(assignmentRules.maxOpenChatsPerUser ?? 0)}
-                                        disabled={busy || loadingAssignmentRules || !canManageAssignments}
-                                        onChange={(event) => setAssignmentRules((prev) => ({ ...prev, maxOpenChatsPerUser: Number(event.target.value || 0) }))}
-                                    />
+                            )}
+                            {(canManageAssignmentRules || canManageAssignments) ? (
+                                <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                    {canManageAssignmentRules ? (
+                                        <button
+                                            type="button"
+                                            disabled={busy || loadingAssignmentRules}
+                                            onClick={() => runAction('Reglas de asignacion actualizadas', async () => {
+                                                await saveAssignmentRules(tenantScopeId);
+                                                await loadTenantOperationsKpis(tenantScopeId);
+                                            })}
+                                        >
+                                            Guardar reglas
+                                        </button>
+                                    ) : null}
+                                    {canManageAssignments ? (
+                                        <button
+                                            type="button"
+                                            disabled={busy || loadingOperationsKpis || activeTenantChatCandidates.length === 0}
+                                            onClick={() => runAction('Auto-asignacion ejecutada', async () => {
+                                                await triggerAutoAssignPreview(tenantScopeId);
+                                            })}
+                                        >
+                                            Auto-asignar siguiente chat
+                                        </button>
+                                    ) : null}
                                 </div>
-                            </div>
-                            <div className="saas-admin-related-block">
-                                <h4>Roles habilitados para recibir chats</h4>
-                                <div className="saas-admin-modules">
-                                    {assignmentRoleOptions.map((role) => {
-                                        const checked = Array.isArray(assignmentRules.allowedRoles) && assignmentRules.allowedRoles.includes(role);
-                                        return (
-                                            <label key={`assignment_role_${role}`} className="saas-admin-module-toggle">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={checked}
-                                                    disabled={busy || loadingAssignmentRules || !canManageAssignments}
-                                                    onChange={(event) => setAssignmentRules((prev) => toggleRoleInRules(prev, role, event.target.checked))}
-                                                />
-                                                <span>{role}</span>
-                                            </label>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                            <div className="saas-admin-form-row saas-admin-form-row--actions">
-                                <button
-                                    type="button"
-                                    disabled={busy || loadingAssignmentRules || !canManageAssignments}
-                                    onClick={() => runAction('Reglas de asignacion actualizadas', async () => {
-                                        await saveAssignmentRules(tenantScopeId);
-                                        await loadTenantOperationsKpis(tenantScopeId);
-                                    })}
-                                >
-                                    Guardar reglas
-                                </button>
-                                <button
-                                    type="button"
-                                    disabled={busy || loadingOperationsKpis || !canManageAssignments || activeTenantChatCandidates.length === 0}
-                                    onClick={() => runAction('Auto-asignacion ejecutada', async () => {
-                                        await triggerAutoAssignPreview(tenantScopeId);
-                                    })}
-                                >
-                                    Auto-asignar siguiente chat
-                                </button>
-                            </div>
+                            ) : null}
                         </>
                     )}
                 </aside>}

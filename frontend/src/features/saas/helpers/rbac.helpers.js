@@ -95,6 +95,8 @@ export const PERMISSION_TENANT_SCHEDULES_MANAGE = 'tenant.schedules.manage';
 export const PERMISSION_TENANT_CHAT_OPERATE = 'tenant.chat.operate';
 export const PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ = 'tenant.chat_assignments.read';
 export const PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE = 'tenant.chat_assignments.manage';
+export const PERMISSION_TENANT_ASSIGNMENT_RULES_READ = 'tenant.assignment_rules.read';
+export const PERMISSION_TENANT_ASSIGNMENT_RULES_MANAGE = 'tenant.assignment_rules.manage';
 export const PERMISSION_TENANT_KPIS_READ = 'tenant.kpis.read';
 
 export function sanitizeMemberships(memberships = []) {

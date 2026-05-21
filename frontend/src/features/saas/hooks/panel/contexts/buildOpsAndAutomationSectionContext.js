@@ -27,6 +27,7 @@ export default function buildOpsAndAutomationSectionContext(c) {
         loadingAssignmentRules: c.loadingAssignmentRules,
         loadingOperationsKpis: c.loadingOperationsKpis,
         canManageAssignments: c.canManageAssignments,
+        canManageAssignmentRules: c.canManageAssignmentRules,
         canViewOperations: c.canViewOperations,
         assignmentRules: c.assignmentRules,
         assignmentRoleOptions: c.assignmentRoleOptions,

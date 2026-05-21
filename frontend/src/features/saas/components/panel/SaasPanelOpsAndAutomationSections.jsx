@@ -21,6 +21,7 @@ export default function SaasPanelOpsAndAutomationSections(props = {}) {
         loadingAssignmentRules: context.loadingAssignmentRules,
         loadingOperationsKpis: context.loadingOperationsKpis,
         canManageAssignments: context.canManageAssignments,
+        canManageAssignmentRules: context.canManageAssignmentRules,
         canViewOperations: context.canViewOperations,
         assignmentRules: context.assignmentRules,
         assignmentRoleOptions: context.assignmentRoleOptions,
