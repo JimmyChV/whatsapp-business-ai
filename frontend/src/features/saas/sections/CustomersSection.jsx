@@ -969,6 +969,8 @@ function CustomersSection(props = {}) {
         busy,
         tenantScopeLocked,
         canManageCustomers = false,
+        canManageCampaigns = false,
+        canOperateChat = false,
         openCustomerCreate,
         customerSearch,
         setCustomerSearch,
@@ -3931,7 +3933,7 @@ function CustomersSection(props = {}) {
             variant: 'primary',
             disabled: busy || tenantScopeLocked
         }] : []),
-        {
+        ...(canManageCampaigns ? [{
             key: 'toggle-selection',
             label: campaignSelectionMode ? 'Cancelar seleccion' : 'Seleccionar clientes',
             onClick: () => {
@@ -3943,15 +3945,15 @@ function CustomersSection(props = {}) {
             },
             variant: 'secondary',
             disabled: busy || tenantScopeLocked
-        },
-        campaignSelectionMode && selectedCustomerIdsForCampaign.length > 0 && outreachMode === 'eligible' ? {
+        }] : []),
+        canManageCampaigns && campaignSelectionMode && selectedCustomerIdsForCampaign.length > 0 && outreachMode === 'eligible' ? {
             key: 'send-template',
             label: `Enviar campaña${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`,
             onClick: () => { void handleOpenCampaignTemplateModal(); },
             variant: 'secondary',
             disabled: busy || tenantScopeLocked || !outreachModuleId
         } : null,
-        campaignSelectionMode && selectedCustomerIdsForCampaign.length > 0 && outreachMode === 'assign' ? {
+        canManageCampaigns && campaignSelectionMode && selectedCustomerIdsForCampaign.length > 0 && outreachMode === 'assign' ? {
             key: 'assign-module',
             label: `Asignar al modulo${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`,
             onClick: () => { void handleOpenCampaignTemplateModal(); },
@@ -4217,9 +4219,11 @@ function CustomersSection(props = {}) {
                     bodyClassName="saas-customers-detail-panel__body"
                     actions={(
                         <div className="saas-customers-detail-actions">
-                            <button type="button" disabled={busy || !selectedCustomerPhone} onClick={() => { void handleOpenDirectTemplateModal(); }}>
-                                Iniciar conversacion
-                            </button>
+                            {canOperateChat ? (
+                                <button type="button" disabled={busy || !selectedCustomerPhone} onClick={() => { void handleOpenDirectTemplateModal(); }}>
+                                    Iniciar conversacion
+                                </button>
+                            ) : null}
                             {canManageCustomers ? <button type="button" disabled={editClickBusy} onClick={handleOpenCustomerEdit}>Editar</button> : null}
                             {canManageCustomers ? <button type="button" disabled={busy} onClick={handleSoftDeleteCustomer}>Eliminar</button> : null}
                             <button type="button" className="saas-btn-close" disabled={busy} onClick={() => { void handleRequestCloseCustomersPanel(); }}>Volver</button>

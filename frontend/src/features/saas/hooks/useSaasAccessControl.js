@@ -139,7 +139,7 @@ export default function useSaasAccessControl({
         ? hasAnyActorPermission([PERMISSION_TENANT_MODULES_READ, PERMISSION_TENANT_MODULES_MANAGE])
         : roleBasedCanEditModules;
     const canManageQuickReplies = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_QUICK_REPLIES_MANAGE, PERMISSION_TENANT_MODULES_MANAGE])
+        ? hasAnyActorPermission([PERMISSION_TENANT_QUICK_REPLIES_MANAGE])
         : roleBasedCanManageQuickReplies;
     const canViewQuickReplies = hasPermissionContext
         ? hasAnyActorPermission([
@@ -150,7 +150,7 @@ export default function useSaasAccessControl({
         ])
         : roleBasedCanManageQuickReplies;
     const canManageLabels = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_LABELS_MANAGE, PERMISSION_TENANT_MODULES_MANAGE])
+        ? hasAnyActorPermission([PERMISSION_TENANT_LABELS_MANAGE])
         : roleBasedCanManageLabels;
     const canViewLabels = hasPermissionContext
         ? hasAnyActorPermission([

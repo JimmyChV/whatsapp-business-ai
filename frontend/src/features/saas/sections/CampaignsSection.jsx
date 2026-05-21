@@ -3098,10 +3098,14 @@ export default React.memo(function CampaignsSection(props = {}) {
                             </div>
                         </section>
                         <div className="saas-campaigns-summary-footer">
-                            <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(saveCampaignDraftAction, 'No se pudo guardar campaña.')}>Guardar borrador</button>
-                            <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(saveAndStartCampaignAction, 'No se pudo guardar e iniciar campaña.')}>
-                                {form.blocksEnabled ? 'Guardar y preparar bloques' : 'Guardar e iniciar'}
-                            </button>
+                            {canWrite ? (
+                                <>
+                                    <button type="button" disabled={loading} onClick={() => runSafe(saveCampaignDraftAction, 'No se pudo guardar campaña.')}>Guardar borrador</button>
+                                    <button type="button" disabled={loading} onClick={() => runSafe(saveAndStartCampaignAction, 'No se pudo guardar e iniciar campaña.')}>
+                                        {form.blocksEnabled ? 'Guardar y preparar bloques' : 'Guardar e iniciar'}
+                                    </button>
+                                </>
+                            ) : null}
                             <button type="button" className="saas-btn-cancel" disabled={loading} onClick={() => { void handleRequestCancelCampaignEdit(); }}>Cancelar</button>
                         </div>
                     </div>
@@ -3142,7 +3146,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                     onClick: () => loadCampaigns?.().catch(() => {}),
                     disabled: loadingList || loading || tenantScopeLocked
                 },
-                {
+                ...(canManageCampaigns ? [{
                     key: 'create',
                     label: 'Nueva',
                     onClick: async () => {
@@ -3154,7 +3158,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                         setForm({ ...EMPTY_FORM, moduleId: moduleOptions[0]?.moduleId || '' });
                     },
                     disabled: loading || tenantScopeLocked
-                }
+                }] : [])
             ]}
             actionsExtra={(
                 <div className="saas-entity-columns">
@@ -3221,7 +3225,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const rightPane = (
         <div className="saas-entity-slot-right saas-campaigns-right-shell">
             {tenantScopeLocked && <div className="saas-admin-empty-state saas-admin-empty-state--detail"><h4>Sin empresa activa</h4><p>Selecciona una empresa para continuar.</p></div>}
-            {!tenantScopeLocked && (panelMode === 'create' || panelMode === 'edit') && (
+            {!tenantScopeLocked && canWrite && (panelMode === 'create' || panelMode === 'edit') && (
                 <SaasDetailPanel
                     title={wizardTitle}
                     subtitle={`Paso ${wizardStep} de ${CAMPAIGN_WIZARD_STEPS.length} - ${currentWizardStep.label}`}
@@ -3260,11 +3264,11 @@ export default React.memo(function CampaignsSection(props = {}) {
                         bodyClassName="saas-campaigns-detail-panel__body"
                         actions={(
                             <>
-                                {toLower(selectedCampaign?.status) === 'draft' && <button type="button" disabled={loading || !canWrite} onClick={() => { setForm(mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions)); setPanelMode('edit'); setWizardStep(1); setLocalEstimate(null); setInclusionOnlyEstimate(null); }}>Editar</button>}
-                                {toLower(selectedCampaign?.status) === 'running' && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => pauseCampaign?.(selectedCampaignId), 'No se pudo pausar campaña.')}>Pausar</button>}
-                                {toLower(selectedCampaign?.status) === 'paused' && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => resumeCampaign?.(selectedCampaignId), 'No se pudo reanudar campaña.')}>Reanudar</button>}
-                                {['draft', 'scheduled'].includes(toLower(selectedCampaign?.status)) && !selectedBlocksConfig && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(() => startCampaign?.(selectedCampaignId), 'No se pudo iniciar campaña.')}>Iniciar</button>}
-                                {!['cancelled', 'completed'].includes(toLower(selectedCampaign?.status)) && <button type="button" disabled={loading || !canWrite} onClick={() => runSafe(async () => { const ok = await confirm({ title: 'Cancelar campaña', message: 'Esta acción detendrá el procesamiento pendiente.', confirmText: 'Cancelar campaña', cancelText: 'Volver', tone: 'danger' }); if (!ok) return; await cancelCampaign?.(selectedCampaignId, 'cancelled_by_user'); }, 'No se pudo cancelar campaña.')}>Cancelar</button>}
+                                {canWrite && toLower(selectedCampaign?.status) === 'draft' ? <button type="button" disabled={loading} onClick={() => { setForm(mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions)); setPanelMode('edit'); setWizardStep(1); setLocalEstimate(null); setInclusionOnlyEstimate(null); }}>Editar</button> : null}
+                                {canWrite && toLower(selectedCampaign?.status) === 'running' ? <button type="button" disabled={loading} onClick={() => runSafe(() => pauseCampaign?.(selectedCampaignId), 'No se pudo pausar campaña.')}>Pausar</button> : null}
+                                {canWrite && toLower(selectedCampaign?.status) === 'paused' ? <button type="button" disabled={loading} onClick={() => runSafe(() => resumeCampaign?.(selectedCampaignId), 'No se pudo reanudar campaña.')}>Reanudar</button> : null}
+                                {canWrite && ['draft', 'scheduled'].includes(toLower(selectedCampaign?.status)) && !selectedBlocksConfig ? <button type="button" disabled={loading} onClick={() => runSafe(() => startCampaign?.(selectedCampaignId), 'No se pudo iniciar campaña.')}>Iniciar</button> : null}
+                                {canWrite && !['cancelled', 'completed'].includes(toLower(selectedCampaign?.status)) ? <button type="button" disabled={loading} onClick={() => runSafe(async () => { const ok = await confirm({ title: 'Cancelar campaña', message: 'Esta acción detendrá el procesamiento pendiente.', confirmText: 'Cancelar campaña', cancelText: 'Volver', tone: 'danger' }); if (!ok) return; await cancelCampaign?.(selectedCampaignId, 'cancelled_by_user'); }, 'No se pudo cancelar campaña.')}>Cancelar</button> : null}
                                 <button type="button" disabled={loading} onClick={() => runSafe(async () => { await loadCampaigns?.(); await loadTracking(selectedCampaignId); }, 'No se pudo recargar tracking.')}>Recargar</button>
                                 <button type="button" className="saas-btn-close" disabled={loading} onClick={() => { void handleRequestCloseCampaignPanel(); }}>Volver</button>
                             </>

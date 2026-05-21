@@ -1393,7 +1393,7 @@ function MetaTemplatesSection(props = {}) {
                     }),
                     disabled: templatesBusy || !settingsTenantId
                 },
-                {
+                ...(canWrite ? [{
                     key: 'create',
                     label: 'Crear plantilla',
                     onClick: () => openCreateTemplatePanel().catch((error) => {
@@ -1401,8 +1401,8 @@ function MetaTemplatesSection(props = {}) {
                         notify({ type: 'error', message });
                         setError?.(message);
                     }),
-                    disabled: templatesBusy || !canWrite
-                }
+                    disabled: templatesBusy
+                }] : [])
             ]}
             actionsExtra={!tenantScopeLocked ? (
                 <div className="saas-entity-columns">
@@ -1472,27 +1472,31 @@ function MetaTemplatesSection(props = {}) {
                                 </option>
                             ))}
                     </select>
-                    <select
-                        value={syncModuleId}
-                        onChange={(event) => setSyncModuleId(toText(event.target.value))}
-                        disabled={templatesBusy || !canWrite}
-                    >
-                        <option value="">Modulo para sincronizar</option>
-                        {moduleOptions.map((moduleItem) => (
-                            <option key={`meta_template_sync_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
-                                {moduleItem.label}
-                            </option>
-                        ))}
-                    </select>
-                    <button
-                        type="button"
-                        disabled={templatesBusy || !canWrite || !syncModuleId}
-                        onClick={() => handleSyncTemplates().catch((error) => {
-                            setError?.(String(error?.message || error || 'No se pudo sincronizar templates.'));
-                        })}
-                    >
-                        Sincronizar
-                    </button>
+                    {canWrite ? (
+                        <>
+                            <select
+                                value={syncModuleId}
+                                onChange={(event) => setSyncModuleId(toText(event.target.value))}
+                                disabled={templatesBusy}
+                            >
+                                <option value="">Modulo para sincronizar</option>
+                                {moduleOptions.map((moduleItem) => (
+                                    <option key={`meta_template_sync_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
+                                        {moduleItem.label}
+                                    </option>
+                                ))}
+                            </select>
+                            <button
+                                type="button"
+                                disabled={templatesBusy || !syncModuleId}
+                                onClick={() => handleSyncTemplates().catch((error) => {
+                                    setError?.(String(error?.message || error || 'No se pudo sincronizar templates.'));
+                                })}
+                            >
+                                Sincronizar
+                            </button>
+                        </>
+                    ) : null}
                 </div>
             ) : null}
         />
@@ -1592,7 +1596,7 @@ function MetaTemplatesSection(props = {}) {
                         </div>
                     )}
 
-                    {!tenantScopeLocked && panelMode === 'create' && (
+                    {!tenantScopeLocked && panelMode === 'create' && canWrite && (
                         <div className="saas-template-builder-modal-overlay">
                         <div className="saas-template-builder-modal-shell" onClick={(event) => event.stopPropagation()}>
                         <SaasDetailPanel
@@ -2127,30 +2131,34 @@ function MetaTemplatesSection(props = {}) {
                                     >
                                         Volver
                                     </button>
-                                    <button
-                                        type="button"
-                                        className="saas-btn saas-btn--danger"
-                                        disabled={templatesBusy || !canWrite || Boolean(loadingDeleteById?.[selectedTemplate.templateId])}
-                                        onClick={() => handleDeleteTemplate(selectedTemplate).catch((error) => {
-                                            const message = String(error?.message || error || 'No se pudo eliminar la plantilla Meta.');
-                                            notify({ type: 'error', message });
-                                            setError?.(message);
-                                        })}
-                                    >
-                                        Eliminar
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className="saas-btn saas-btn--primary"
-                                        disabled={templatesBusy || !canWrite}
-                                        onClick={() => openCreateTemplatePanel().catch((error) => {
-                                            const message = String(error?.message || error || 'No se pudo abrir el formulario de plantillas.');
-                                            notify({ type: 'error', message });
-                                            setError?.(message);
-                                        })}
-                                    >
-                                        Crear plantilla
-                                    </button>
+                                    {canWrite ? (
+                                        <>
+                                            <button
+                                                type="button"
+                                                className="saas-btn saas-btn--danger"
+                                                disabled={templatesBusy || Boolean(loadingDeleteById?.[selectedTemplate.templateId])}
+                                                onClick={() => handleDeleteTemplate(selectedTemplate).catch((error) => {
+                                                    const message = String(error?.message || error || 'No se pudo eliminar la plantilla Meta.');
+                                                    notify({ type: 'error', message });
+                                                    setError?.(message);
+                                                })}
+                                            >
+                                                Eliminar
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="saas-btn saas-btn--primary"
+                                                disabled={templatesBusy}
+                                                onClick={() => openCreateTemplatePanel().catch((error) => {
+                                                    const message = String(error?.message || error || 'No se pudo abrir el formulario de plantillas.');
+                                                    notify({ type: 'error', message });
+                                                    setError?.(message);
+                                                })}
+                                            >
+                                                Crear plantilla
+                                            </button>
+                                        </>
+                                    ) : null}
                                 </div>
                             )}
                         >

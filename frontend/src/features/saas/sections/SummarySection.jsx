@@ -160,10 +160,14 @@ function SummarySection(props = {}) {
                         <span>Atajos a las secciones que mas se usan en el panel.</span>
                     </div>
                     <div className="saas-summary-actions">
-                        <button type="button" disabled={busy || !isSectionEnabled('saas_empresas')} onClick={() => handleSectionChange('saas_empresas')}>Gestionar empresas</button>
-                        <button type="button" disabled={busy || !isSectionEnabled('saas_usuarios')} onClick={() => handleSectionChange('saas_usuarios')}>Gestionar usuarios</button>
-                        <button type="button" disabled={busy || !isSectionEnabled('saas_modulos')} onClick={() => handleSectionChange('saas_modulos')}>Gestionar módulos</button>
-                        <button type="button" disabled={busy || !isSectionEnabled('saas_config')} onClick={() => handleSectionChange('saas_config')}>Configuración general</button>
+                        {[
+                            ['saas_empresas', 'Gestionar empresas'],
+                            ['saas_usuarios', 'Gestionar usuarios'],
+                            ['saas_modulos', 'Gestionar módulos'],
+                            ['saas_config', 'Configuración general']
+                        ].filter(([sectionId]) => isSectionEnabled(sectionId)).map(([sectionId, label]) => (
+                            <button key={sectionId} type="button" disabled={busy} onClick={() => handleSectionChange(sectionId)}>{label}</button>
+                        ))}
                     </div>
                 </section>
             </div>
