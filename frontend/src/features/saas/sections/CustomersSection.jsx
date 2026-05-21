@@ -19,6 +19,7 @@ import { normalizeSortState } from '../components/layout/sortUtils';
 import { createCampaign as createCampaignApi, startCampaign as startCampaignApi } from '../services/campaigns.service';
 import { fetchTenantCustomerLabels, fetchTenantZoneRules } from '../services/labels.service';
 import { listMetaTemplates } from '../services/metaTemplates.service';
+import CustomerImportWizard from './customers/CustomerImportWizard';
 
 const CUSTOMER_TABLE_COLUMNS = [
     { key: 'codigo', label: 'Codigo', width: '132px', minWidth: '120px', maxWidth: '152px', type: 'text' },
@@ -4500,254 +4501,37 @@ function CustomersSection(props = {}) {
         </div>
     );
     const importModal = showImportModal ? (
-        <div className="saas-template-builder-modal-overlay" onClick={() => { if (!importLoading) resetImportFlow(); }}>
-            <div className="saas-template-builder-modal-shell saas-customers-import-shell" onClick={(event) => event.stopPropagation()}>
-                <SaasDetailPanel
-                    title="Importar clientes desde AppSheet"
-                    subtitle="Carga la exportacion de AppSheet y, si lo tienes, TbDirecciones.csv para validar antes de escribir."
-                    className="saas-template-builder-modal-panel saas-customers-import-panel"
-                    bodyClassName="saas-template-builder-modal-panel__body saas-customers-import-panel__body"
-                    actions={(
-                        <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                            {importStep === 1 ? (
-                                <>
-                                    <button type="button" className="saas-btn saas-btn--secondary saas-btn-cancel" onClick={resetImportFlow} disabled={importLoading}>
-                                        Cancelar
-                                    </button>
-                                    <button type="button" className="saas-btn saas-btn--primary" onClick={() => { void handleAnalyzeImport(); }} disabled={importLoading || !importFileClientes}>
-                                        {importLoading ? 'Analizando...' : 'Analizar'}
-                                    </button>
-                                </>
-                            ) : null}
-                            {importStep === 2 ? (
-                                <>
-                                    <button type="button" className="saas-btn saas-btn--secondary" onClick={() => setImportStep(1)} disabled={importLoading}>
-                                        Volver
-                                    </button>
-                                    {importLoading ? (
-                                        <button
-                                            type="button"
-                                            className="saas-btn saas-btn--secondary saas-btn-cancel"
-                                            onClick={() => { void handleCancelImport(); }}
-                                            disabled={Boolean(importProgress?.cancelRequested)}
-                                        >
-                                            {importProgress?.cancelRequested ? 'Cancelando...' : 'Cancelar importacion'}
-                                        </button>
-                                    ) : null}
-                                    <button
-                                        type="button"
-                                        className="saas-btn saas-btn--primary"
-                                        onClick={() => { void handleConfirmImport(); }}
-                                        disabled={importLoading || Number(importPreview?.summary?.valid || 0) <= 0}
-                                    >
-                                        {importLoading ? 'Importando...' : 'Confirmar importacion'}
-                                    </button>
-                                </>
-                            ) : null}
-                            {importStep === 3 ? (
-                                <>
-                                    {(Array.isArray(importPreview?.errors) ? importPreview.errors.length : 0) > 0 ? (
-                                        <button type="button" className="saas-btn saas-btn--secondary" onClick={handleDownloadImportErrorsCsv}>
-                                            Descargar reporte de errores CSV
-                                        </button>
-                                    ) : null}
-                                    <button type="button" className="saas-btn saas-btn--primary" onClick={() => { void handleCloseImportModal(); }}>
-                                        Cerrar
-                                    </button>
-                                </>
-                            ) : null}
-                        </div>
-                    )}
-                >
-                    <div className="saas-campaigns-wizard-progress saas-customers-import-progress">
-                        {[1, 2, 3].map((step) => (
-                            <div
-                                key={`customers_import_step_${step}`}
-                                className={`saas-campaigns-wizard-progress__item${importStep === step ? ' is-current' : ''}${importStep > step ? ' is-complete' : ''}`}
-                            >
-                                <span>Paso {step}</span>
-                                <strong>{step === 1 ? 'Archivos' : step === 2 ? 'Vista previa' : 'Resultado'}</strong>
-                            </div>
-                        ))}
-                    </div>
-
-                    {importLoading ? (
-                        <div className="saas-customers-import-live-status">
-                            <div className="saas-admin-inline-feedback">
-                                {importStatusMessage}
-                                {importElapsedSeconds > 0 ? ` Tiempo transcurrido: ${importElapsedSeconds}s.` : ''}
-                            </div>
-                            {shouldShowCommitProgress ? (
-                                <div className="saas-customers-import-live-progress">
-                                    <div className="saas-customers-import-live-progress__bar">
-                                        <span
-                                            className="saas-customers-import-live-progress__fill"
-                                            style={{ width: `${importProgressPercent}%` }}
-                                        />
-                                    </div>
-                                    <div className="saas-customers-import-live-progress__meta">
-                                        <strong>{importProgressPercent}%</strong>
-                                        <span>
-                                            Clientes: {Number(importProgressCounts.customersProcessed || 0)} / {Number(importProgressCounts.validRows || importPreview?.summary?.valid || 0)}
-                                        </span>
-                                        <span>
-                                            Direcciones: {Number(importProgressCounts.addressesProcessed || 0)} / {Number(importProgressCounts.addressMatched || importPreview?.addressSummary?.matched || 0)}
-                                        </span>
-                                        <span>
-                                            Fase: {String(importProgress?.phase || 'parsing_clients')}
-                                        </span>
-                                    </div>
-                                </div>
-                            ) : null}
-                        </div>
-                    ) : null}
-                    {importErrorMessage ? (
-                        <div className="saas-admin-inline-feedback error">
-                            {importErrorMessage}
-                        </div>
-                    ) : null}
-
-                    {importStep === 1 ? (
-                        <div className="saas-campaigns-wizard-step saas-customers-import-step">
-                            <SaasDetailPanelSection title="Archivos" defaultOpen>
-                                <div className="saas-customers-import-grid">
-                                    <label className="saas-customers-import-upload">
-                                        <span>Exportacion de AppSheet (clientes)</span>
-                                        <input
-                                            type="file"
-                                            accept=".csv"
-                                            onChange={(event) => setImportFileClientes(event.target.files?.[0] || null)}
-                                            disabled={importLoading}
-                                        />
-                                        <small>{importFileClientes ? `✓ ${importFileClientes.name}` : 'Selecciona el CSV principal exportado desde AppSheet.'}</small>
-                                    </label>
-                                    <label className="saas-customers-import-upload">
-                                        <span>Archivo de direcciones ERP - opcional (TbDirecciones.csv)</span>
-                                        <input
-                                            type="file"
-                                            accept=".csv"
-                                            onChange={(event) => setImportFileDirecciones(event.target.files?.[0] || null)}
-                                            disabled={importLoading}
-                                        />
-                                        <small>{importFileDirecciones ? `✓ ${importFileDirecciones.name}` : 'Puedes omitirlo si solo quieres clientes.'}</small>
-                                    </label>
-                                </div>
-                                <div className="saas-admin-form-row">
-                                    <label className="saas-customers-outreach-toolbar__field">
-                                        <span>Modulo</span>
-                                        <select value={importModuleId} onChange={(event) => setImportModuleId(String(event.target.value || '').trim())} disabled={importLoading}>
-                                            <option value="">Sin modulo</option>
-                                            {outreachModuleOptions.map((moduleItem) => (
-                                                <option key={`customers_import_module_${moduleItem.moduleId}`} value={moduleItem.moduleId}>
-                                                    {moduleItem.label}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </label>
-                                </div>
-                            </SaasDetailPanelSection>
-                        </div>
-                    ) : null}
-
-                    {importStep === 2 ? (
-                        <div className="saas-campaigns-wizard-step saas-customers-import-step">
-                            <SaasDetailPanelSection title="Resumen" defaultOpen>
-                                <div className="saas-customers-import-chip-row">
-                                    <span className="saas-admin-profile-chip">{Number(importPreview?.summary?.valid || 0)} validos</span>
-                                    <span className="saas-admin-profile-chip">{Number(importPreview?.summary?.updates || 0)} actualizaciones</span>
-                                    <span className="saas-admin-profile-chip">{Number(importPreview?.summary?.inserts || 0)} inserciones</span>
-                                    <span className="saas-admin-profile-chip">{Number(importPreview?.summary?.errors || 0)} errores</span>
-                                    <span className="saas-admin-profile-chip">
-                                        {Number(importPreview?.addressSummary?.matched || 0)} direcciones con match / {Number(importPreview?.addressSummary?.unmatched || 0)} sin match
-                                    </span>
-                                </div>
-                            </SaasDetailPanelSection>
-
-                            {(Array.isArray(importPreview?.errors) ? importPreview.errors.length : 0) > 0 ? (
-                                <SaasDetailPanelSection title="Errores detectados" defaultOpen>
-                                    <div className="saas-customers-import-table-wrap">
-                                        <table className="saas-data-table">
-                                            <thead>
-                                                <tr>
-                                                    <th>Fila</th>
-                                                    <th>ERP ID</th>
-                                                    <th>Campo</th>
-                                                    <th>Motivo</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {importErrorsVisible.map((item, index) => (
-                                                    <tr key={`customers_import_error_${index}`}>
-                                                        <td>{item?.row || '-'}</td>
-                                                        <td>{item?.erp_id || '-'}</td>
-                                                        <td>{item?.field || '-'}</td>
-                                                        <td>{item?.message || '-'}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                    {(Array.isArray(importPreview?.errors) ? importPreview.errors.length : 0) > 10 ? (
-                                        <button type="button" className="saas-btn saas-btn--secondary" onClick={() => setShowAllImportErrors((prev) => !prev)}>
-                                            {showAllImportErrors
-                                                ? 'Mostrar menos errores'
-                                                : `Ver todos los errores (${importPreview.errors.length})`}
-                                        </button>
-                                    ) : null}
-                                </SaasDetailPanelSection>
-                            ) : null}
-
-                            <SaasDetailPanelSection title="Preview de clientes validos" defaultOpen>
-                                <div className="saas-customers-import-table-wrap">
-                                    <table className="saas-data-table">
-                                        <thead>
-                                            <tr>
-                                                <th>Nombre completo</th>
-                                                <th>Telefono</th>
-                                                <th>Tipo</th>
-                                                <th>Fuente</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {(Array.isArray(importPreview?.preview) ? importPreview.preview : []).map((item, index) => (
-                                                <tr key={`customers_import_preview_${index}`}>
-                                                    <td>{item?.nombre_completo || '-'}</td>
-                                                    <td>{item?.telefono || '-'}</td>
-                                                    <td>{item?.tipo_cliente || '-'}</td>
-                                                    <td>{item?.fuente || '-'}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </SaasDetailPanelSection>
-                        </div>
-                    ) : null}
-
-                    {importStep === 3 ? (
-                        <div className="saas-campaigns-wizard-step saas-customers-import-step saas-customers-import-step--result">
-                            <SaasDetailPanelSection title="Importacion completada" defaultOpen>
-                                <div className="saas-admin-empty-state saas-customers-import-success">
-                                    <div className="saas-customers-import-success__icon">✓</div>
-                                    <h4>Importacion completada</h4>
-                                    <p>Los clientes y sus direcciones ya fueron procesados.</p>
-                                </div>
-                                <div className="saas-customers-import-chip-row">
-                                    <span className="saas-admin-profile-chip">
-                                        Clientes: {Number(importResult?.customers?.inserted || 0)} insertados · {Number(importResult?.customers?.updated || 0)} actualizados · {Number(importResult?.customers?.errors || 0)} con error
-                                    </span>
-                                    <span className="saas-admin-profile-chip">
-                                        Direcciones: {Number(importResult?.addresses?.inserted || 0)} insertadas · {Number(importResult?.addresses?.updated || 0)} actualizadas · {Number(importResult?.addresses?.unmatched || 0)} sin match
-                                    </span>
-                                </div>
-                            </SaasDetailPanelSection>
-                        </div>
-                    ) : null}
-                </SaasDetailPanel>
-            </div>
-        </div>
+        <CustomerImportWizard
+            importElapsedSeconds={importElapsedSeconds}
+            importErrorMessage={importErrorMessage}
+            importErrorsVisible={importErrorsVisible}
+            importFileClientes={importFileClientes}
+            importFileDirecciones={importFileDirecciones}
+            importLoading={importLoading}
+            importModuleId={importModuleId}
+            importPreview={importPreview}
+            importProgress={importProgress}
+            importProgressCounts={importProgressCounts}
+            importProgressPercent={importProgressPercent}
+            importResult={importResult}
+            importStatusMessage={importStatusMessage}
+            importStep={importStep}
+            outreachModuleOptions={outreachModuleOptions}
+            shouldShowCommitProgress={shouldShowCommitProgress}
+            showAllImportErrors={showAllImportErrors}
+            onAnalyze={() => { void handleAnalyzeImport(); }}
+            onCancel={() => { void handleCancelImport(); }}
+            onClose={() => { void handleCloseImportModal(); }}
+            onConfirm={() => { void handleConfirmImport(); }}
+            onDownloadErrors={handleDownloadImportErrorsCsv}
+            onRequestClose={resetImportFlow}
+            onSetFileClientes={setImportFileClientes}
+            onSetFileDirecciones={setImportFileDirecciones}
+            onSetImportModuleId={setImportModuleId}
+            onSetImportStep={setImportStep}
+            onToggleAllErrors={() => setShowAllImportErrors((prev) => !prev)}
+        />
     ) : null;
-
     return (
         <div className="saas-admin-grid">
         <SaasEntityPage
