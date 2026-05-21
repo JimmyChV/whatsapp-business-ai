@@ -103,6 +103,8 @@ const ROLE_LABELS = Object.freeze({
     seller: 'Seller'
 });
 
+const loggedRoleProfileSourceKeys = new Set();
+
 
 const SYSTEM_PERMISSION_PACKS = Object.freeze({
     chat_operation: {
@@ -440,6 +442,50 @@ function mergePermissionSet(...lists) {
     return Array.from(bucket).sort((left, right) => left.localeCompare(right, 'es', { sensitivity: 'base' }));
 }
 
+function normalizeRolePermissionBuckets({
+    role = '',
+    required = [],
+    optional = [],
+    blocked = []
+} = {}) {
+    const requiredSet = new Set(normalizePermissionList(required));
+    if (String(role || '').trim().toLowerCase() === 'owner') {
+        requiredSet.add(PERMISSIONS.TENANT_CHAT_OPERATE);
+        requiredSet.add(PERMISSIONS.TENANT_USERS_MANAGE);
+    }
+
+    const normalizedRequired = normalizePermissionList(Array.from(requiredSet));
+    const normalizedBlocked = normalizePermissionList(blocked)
+        .filter((permission) => !normalizedRequired.includes(permission));
+    const normalizedOptional = normalizePermissionList(optional)
+        .filter((permission) => !normalizedRequired.includes(permission) && !normalizedBlocked.includes(permission));
+
+    return {
+        required: normalizedRequired,
+        optional: normalizedOptional,
+        blocked: normalizedBlocked
+    };
+}
+
+function logRoleProfileSource({ role = '', hasOverride = false, required = [], optional = [], blocked = [] } = {}) {
+    const cleanRole = String(role || '').trim().toLowerCase();
+    if (!cleanRole) return;
+
+    const logKey = [
+        cleanRole,
+        hasOverride ? 'override' : 'default',
+        Array.isArray(required) ? required.length : 0,
+        Array.isArray(optional) ? optional.length : 0,
+        Array.isArray(blocked) ? blocked.length : 0
+    ].join(':');
+    if (loggedRoleProfileSourceKeys.has(logKey)) return;
+    loggedRoleProfileSourceKeys.add(logKey);
+
+    console.log(hasOverride
+        ? `[RoleProfile] loaded override for role ${cleanRole}`
+        : `[RoleProfile] using defaults for role ${cleanRole}`);
+}
+
 function ensureSystemPermissionPacks(input = {}) {
     const source = input && typeof input === 'object' ? input : {};
     const merged = { ...source };
@@ -460,18 +506,27 @@ function ensureSystemRoleProfiles(input = {}) {
     const source = input && typeof input === 'object' ? input : {};
     const merged = { ...source };
     Object.entries(SYSTEM_ROLE_PROFILES).forEach(([role, base]) => {
+        const hasOverride = Object.prototype.hasOwnProperty.call(source, role);
         const current = source[role] && typeof source[role] === 'object' ? source[role] : {};
-        const required = mergePermissionSet(base.required || [], current.required || []);
-        const optional = mergePermissionSet(base.optional || [], current.optional || [])
-            .filter((permission) => !required.includes(permission));
-        const blocked = mergePermissionSet(base.blocked || [], current.blocked || [])
-            .filter((permission) => !required.includes(permission) && !optional.includes(permission));
+        const buckets = normalizeRolePermissionBuckets({
+            role,
+            required: hasOverride ? current.required : base.required,
+            optional: hasOverride ? current.optional : base.optional,
+            blocked: hasOverride ? current.blocked : base.blocked
+        });
+        logRoleProfileSource({
+            role,
+            hasOverride,
+            required: buckets.required,
+            optional: buckets.optional,
+            blocked: buckets.blocked
+        });
         merged[role] = {
             role,
             label: String(current.label || base.label || ROLE_LABELS[role] || role).trim() || role,
-            required,
-            optional,
-            blocked,
+            required: buckets.required,
+            optional: buckets.optional,
+            blocked: buckets.blocked,
             active: current.active === undefined ? base.active !== false : current.active !== false,
             isSystem: true
         };
@@ -729,18 +784,19 @@ async function persistRoleProfile(payload = {}) {
         throw new Error('Los roles obligatorios del sistema no se pueden desactivar.');
     }
 
-    const required = normalizePermissionList(payload.required || previous?.required || []);
-    const optional = normalizePermissionList(payload.optional || previous?.optional || [])
-        .filter((permission) => !required.includes(permission));
-    const blocked = normalizePermissionList(payload.blocked || previous?.blocked || [])
-        .filter((permission) => !required.includes(permission) && !optional.includes(permission));
+    const buckets = normalizeRolePermissionBuckets({
+        role,
+        required: Object.prototype.hasOwnProperty.call(payload, 'required') ? payload.required : previous?.required,
+        optional: Object.prototype.hasOwnProperty.call(payload, 'optional') ? payload.optional : previous?.optional,
+        blocked: Object.prototype.hasOwnProperty.call(payload, 'blocked') ? payload.blocked : previous?.blocked
+    });
 
     const nextRole = {
         role,
         label: String(payload.label || previous?.label || ROLE_LABELS[role] || role).trim() || role,
-        required,
-        optional,
-        blocked,
+        required: buckets.required,
+        optional: buckets.optional,
+        blocked: buckets.blocked,
         active: nextActive,
         isSystem
     };
@@ -754,6 +810,8 @@ async function persistRoleProfile(payload = {}) {
         safe.updatedAt = new Date().toISOString();
         return safe;
     });
+
+    console.log(`[RoleProfile] saved override for role ${role}: required=${nextRole.required.length}, optional=${nextRole.optional.length}, blocked=${nextRole.blocked.length}`);
 
     return getRoleTemplate(role);
 }
