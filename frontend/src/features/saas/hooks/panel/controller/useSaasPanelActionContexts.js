@@ -3,7 +3,7 @@ import useSaasOperationAccess from '../../useSaasOperationAccess';
 import useSaasPanelLifecycle from '../useSaasPanelLifecycle';
 import useSaasPanelNavigation from '../useSaasPanelNavigation';
 import useSaasPanelAdminDomainActions from './useSaasPanelAdminDomainActions';
-import { loadCachedGlobalLabels, loadCachedTenantZoneRules } from '../../../services';
+import { loadCachedGlobalLabels, loadCachedSaasUiPreference, loadCachedTenantZoneRules } from '../../../services';
 
 export default function useSaasPanelActionContexts(input = {}) {
     const c = input;
@@ -207,6 +207,7 @@ export default function useSaasPanelActionContexts(input = {}) {
                 loadSchedules: c.canViewSchedules ? c.loadSchedules : null,
                 loadQuickReplyData: quickReplyAdminActions.loadQuickReplyData,
                 loadTenantLabels: tenantLabelsAdminActions.loadTenantLabels,
+                loadColumnPrefsForSection: (sectionKey) => loadCachedSaasUiPreference(c.requestJson, sectionKey),
                 loadTenantZoneRules: () => loadCachedTenantZoneRules(c.requestJson, { includeInactive: true, tenantId: c.tenantScopeId }),
                 loadCommercialIntelligenceProfiles: () => c.requestJson('/api/tenant/commercial-intelligence/profiles', {
                     tenantIdOverride: c.tenantScopeId

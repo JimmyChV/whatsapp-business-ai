@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchSaasUiPreference, saveSaasUiPreference } from '../../services/uiPreferences.service';
+import {
+    getCachedSaasUiPreference,
+    hasCachedSaasUiPreference,
+    loadCachedSaasUiPreference,
+    saveSaasUiPreference
+} from '../../services/uiPreferences.service';
 import { normalizeSortState } from './sortUtils';
 
 const STORAGE_PREFIX = 'saas.viewPrefs';
@@ -97,7 +102,16 @@ export default function useSaasViewPreferences(sectionKey, defaultColumns = [], 
     );
     const storageKey = useMemo(() => `${STORAGE_PREFIX}.${String(sectionKey || 'default').trim()}`, [sectionKey]);
     const fallbackPrefs = useMemo(() => normalizePrefs({}, defaultKeys, availableKeys), [availableKeys, defaultKeys]);
-    const [preferences, setPreferences] = useState(() => readLocal(storageKey, fallbackPrefs, availableKeys));
+    const [preferences, setPreferences] = useState(() => {
+        if (hasCachedSaasUiPreference(sectionKey)) {
+            const cachedRemote = getCachedSaasUiPreference(sectionKey);
+            return normalizePrefs(cachedRemote?.preferencesJson || {}, defaultKeys, availableKeys);
+        }
+        return readLocal(storageKey, fallbackPrefs, availableKeys);
+    });
+    const [isHydrated, setIsHydrated] = useState(() => (
+        !requestJson || hasCachedSaasUiPreference(sectionKey)
+    ));
     const loadedRef = useRef(false);
     const userTouchedRef = useRef(false);
 
@@ -112,17 +126,29 @@ export default function useSaasViewPreferences(sectionKey, defaultColumns = [], 
         let cancelled = false;
         loadedRef.current = false;
         userTouchedRef.current = false;
+        setIsHydrated(!requestJsonRef.current || hasCachedSaasUiPreference(sectionKey));
         const load = async () => {
+            if (requestJsonRef.current && hasCachedSaasUiPreference(sectionKey)) {
+                const cachedRemote = getCachedSaasUiPreference(sectionKey);
+                const cachedPrefs = normalizePrefs(cachedRemote?.preferencesJson || {}, defaultKeys, availableKeys);
+                if (!cancelled && !userTouchedRef.current) {
+                    setPreferences((prev) => (samePrefs(prev, cachedPrefs) ? prev : cachedPrefs));
+                }
+                loadedRef.current = true;
+                if (!cancelled) setIsHydrated(true);
+                return;
+            }
             const localPrefs = readLocal(storageKey, fallbackPrefs, availableKeys);
             if (!cancelled) {
                 setPreferences((prev) => (samePrefs(prev, localPrefs) ? prev : localPrefs));
             }
             if (!requestJsonRef.current) {
                 loadedRef.current = true;
+                if (!cancelled) setIsHydrated(true);
                 return;
             }
             try {
-                const remote = await fetchSaasUiPreference(requestJsonRef.current, sectionKey);
+                const remote = await loadCachedSaasUiPreference(requestJsonRef.current, sectionKey);
                 const remotePrefs = normalizePrefs(remote?.preferencesJson || {}, defaultKeys, availableKeys);
                 if (!cancelled && !userTouchedRef.current) {
                     setPreferences((prev) => {
@@ -135,6 +161,7 @@ export default function useSaasViewPreferences(sectionKey, defaultColumns = [], 
                 // keep local fallback
             } finally {
                 loadedRef.current = true;
+                if (!cancelled) setIsHydrated(true);
             }
         };
         load();
@@ -203,6 +230,7 @@ export default function useSaasViewPreferences(sectionKey, defaultColumns = [], 
         setColumnOrder,
         reset,
         resetColumns: reset,
-        storageKey
+        storageKey,
+        isHydrated
     };
 }

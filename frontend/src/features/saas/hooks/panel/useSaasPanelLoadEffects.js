@@ -41,6 +41,7 @@ export default function useSaasPanelLoadEffects({
     loadSchedules,
     loadQuickReplyData,
     loadTenantLabels,
+    loadColumnPrefsForSection,
     loadTenantZoneRules,
     loadCommercialIntelligenceProfiles,
     loadTenantAssignmentRules,
@@ -65,6 +66,7 @@ export default function useSaasPanelLoadEffects({
         loadSchedules,
         loadQuickReplyData,
         loadTenantLabels,
+        loadColumnPrefsForSection,
         loadTenantZoneRules,
         loadCommercialIntelligenceProfiles,
         loadTenantAssignmentRules,
@@ -92,6 +94,7 @@ export default function useSaasPanelLoadEffects({
         loadSchedules,
         loadQuickReplyData,
         loadTenantLabels,
+        loadColumnPrefsForSection,
         loadTenantZoneRules,
         loadCommercialIntelligenceProfiles,
         loadTenantAssignmentRules,
@@ -293,6 +296,7 @@ export default function useSaasPanelLoadEffects({
             canViewSchedules,
             canViewUsers,
             canManageRoles,
+            canViewTenantSettings,
             canViewCommercialIntelligence
         ].map((value) => (value ? '1' : '0')).join('');
         const tenantKey = `${tenantScopeId}:${isOpen ? '1' : '0'}:${canManageSaas ? '1' : '0'}:${preloadPermissionKey}`;
@@ -323,6 +327,7 @@ export default function useSaasPanelLoadEffects({
             loadSchedules: loadSchedulesFn,
             loadQuickReplyData: loadQuickReplyDataFn,
             loadTenantLabels: loadTenantLabelsFn,
+            loadColumnPrefsForSection: loadColumnPrefsForSectionFn,
             loadTenantZoneRules: loadTenantZoneRulesFn,
             loadCommercialIntelligenceProfiles: loadCommercialIntelligenceProfilesFn,
             loadTenantAssignmentRules: loadTenantAssignmentRulesFn,
@@ -338,7 +343,12 @@ export default function useSaasPanelLoadEffects({
                         sectionId: 'customers',
                         allowed: canViewCustomers,
                         deps: [tenantScopeId],
-                        loader: () => loadCustomersFn?.(tenantScopeId)
+                        loader: async () => {
+                            if (typeof loadColumnPrefsForSectionFn === 'function') {
+                                await loadColumnPrefsForSectionFn('customers');
+                            }
+                            return loadCustomersFn?.(tenantScopeId);
+                        }
                     },
                     {
                         name: 'modules',
@@ -452,6 +462,13 @@ export default function useSaasPanelLoadEffects({
                         allowed: canManageRoles,
                         deps: [tenantScopeId],
                         loader: () => loadAccessCatalogFn?.()
+                    },
+                    {
+                        name: 'settings',
+                        sectionId: 'settings',
+                        allowed: canViewTenantSettings,
+                        deps: [tenantScopeId, 'settings'],
+                        loader: () => loadTenantSettingsFn?.(tenantScopeId)
                     },
                     {
                         name: 'commercial-intelligence',

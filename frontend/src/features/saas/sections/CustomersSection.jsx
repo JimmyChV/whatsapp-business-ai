@@ -159,6 +159,31 @@ const CUSTOMER_DEFAULT_SORT = {
     columnKey: 'actualizado',
     direction: 'desc'
 };
+
+function CustomerTableSkeleton({ rows = 8 }) {
+    const rowIndexes = Array.from({ length: rows }, (_, index) => index);
+    return (
+        <div className="saas-customers-pane">
+            <div className="saas-customers-table-skeleton" aria-label="Cargando preferencias de columnas">
+                <div className="saas-customers-table-skeleton__header">
+                    <span />
+                    <span />
+                    <span />
+                    <span />
+                </div>
+                {rowIndexes.map((index) => (
+                    <div key={`customer_table_skeleton_${index}`} className="saas-customers-table-skeleton__row">
+                        <span />
+                        <span />
+                        <span />
+                        <span />
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 const EMPTY_CUSTOMER_CATALOGS = {
     treatments: [],
     customerTypes: [],
@@ -1089,6 +1114,7 @@ function CustomersSection(props = {}) {
         requestJson,
         availableColumns: CUSTOMER_TABLE_COLUMNS
     });
+    const columnPrefsHydrated = columnPrefs.isHydrated !== false;
 
     useEffect(() => {
         setSelectedCustomerLive((prev) => {
@@ -4125,7 +4151,9 @@ function CustomersSection(props = {}) {
         />
     );
 
-    const leftPane = (
+    const leftPane = !columnPrefsHydrated ? (
+        <CustomerTableSkeleton rows={8} />
+    ) : (
         <div className="saas-customers-pane">
             <SaasDataTable
                 columns={tableColumns}

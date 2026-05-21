@@ -13,7 +13,8 @@ const useSaasColumnPrefs = (sectionKey, defaultColumns = [], options = {}) => {
         toggleColumn: prefs.toggleColumn,
         resetVisibleKeys: prefs.resetColumns,
         resetColumns: prefs.resetColumns,
-        storageKey: prefs.storageKey
+        storageKey: prefs.storageKey,
+        isHydrated: prefs.isHydrated
     };
 };
 
