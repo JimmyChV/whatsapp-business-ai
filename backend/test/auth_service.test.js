@@ -210,6 +210,48 @@ test('auth_service login accepts user id as identifier', async () => {
         fs.rmSync(tempDir, { recursive: true, force: true });
     }
 });
+
+test('auth_service preserves user permission grants in login, verify and refresh', async () => {
+    const prev = snapshotEnv();
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'auth-test-'));
+
+    try {
+        const passwordHash = crypto.createHash('sha256').update('123456', 'utf8').digest('hex');
+        process.env.SAAS_AUTH_ENABLED = 'true';
+        process.env.SAAS_AUTH_SECRET = 'unit-test-secret';
+        process.env.SAAS_TOKEN_TTL_SEC = '3600';
+        process.env.SAAS_REFRESH_TOKEN_TTL_SEC = '3600';
+        process.env.SAAS_STORAGE_DRIVER = 'file';
+        process.env.SAAS_TENANT_DATA_DIR = tempDir;
+        process.env.SAAS_USERS_JSON = JSON.stringify([
+            {
+                id: 'u_seller_grants',
+                email: 'seller-grants@acme.com',
+                tenantId: 'tenant_acme',
+                role: 'seller',
+                passwordHash,
+                permissionGrants: ['tenant.customers.manage', 'tenant.labels.manage']
+            }
+        ]);
+
+        const authService = loadAuthServiceFresh();
+        const session = await authService.login({ email: 'seller-grants@acme.com', password: '123456', tenantId: 'tenant_acme' });
+        assert.ok(session.user.permissions.includes('tenant.customers.manage'));
+        assert.ok(session.user.permissions.includes('tenant.labels.manage'));
+
+        const verified = authService.verifyAccessToken(session.accessToken);
+        assert.ok(verified.permissions.includes('tenant.customers.manage'));
+        assert.ok(verified.permissions.includes('tenant.labels.manage'));
+
+        const renewed = await authService.refreshSession({ refreshToken: session.refreshToken });
+        assert.ok(renewed.user.permissions.includes('tenant.customers.manage'));
+        assert.ok(renewed.user.permissions.includes('tenant.labels.manage'));
+    } finally {
+        restoreEnv(prev);
+        fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+});
+
 test('auth_service supports multi-tenant memberships and tenant switching', async () => {
     const prev = snapshotEnv();
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'auth-test-'));

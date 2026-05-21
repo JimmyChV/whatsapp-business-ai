@@ -142,12 +142,45 @@ function parseUsersFromEnv() {
                 const passwordHash = passwordHashService.normalizeStoredHash(entry.passwordHash || entry.sha256 || '');
                 if (!id || !email || !tenantId) return null;
                 if (!password && !passwordHash) return null;
-                return { id, email, tenantId, role, memberships, name, password, passwordHash };
+                return {
+                    id,
+                    email,
+                    tenantId,
+                    role,
+                    memberships,
+                    name,
+                    password,
+                    passwordHash,
+                    permissionGrants: Array.isArray(entry.permissionGrants)
+                        ? entry.permissionGrants
+                        : (Array.isArray(entry.permissions) ? entry.permissions : []),
+                    permissionPacks: Array.isArray(entry.permissionPacks)
+                        ? entry.permissionPacks
+                        : []
+                };
             })
             .filter(Boolean);
     } catch (error) {
         return [];
     }
+}
+
+function extractAccessOverrides(entry = {}) {
+    const metadataAccess = entry?.metadata?.access
+        && typeof entry.metadata.access === 'object'
+        && !Array.isArray(entry.metadata.access)
+        ? entry.metadata.access
+        : {};
+    return {
+        permissionGrants: Array.isArray(entry?.permissionGrants)
+            ? entry.permissionGrants
+            : (Array.isArray(entry?.permissions)
+                ? entry.permissions
+                : (Array.isArray(metadataAccess.permissionGrants) ? metadataAccess.permissionGrants : [])),
+        permissionPacks: Array.isArray(entry?.permissionPacks)
+            ? entry.permissionPacks
+            : (Array.isArray(metadataAccess.permissionPacks) ? metadataAccess.permissionPacks : [])
+    };
 }
 
 function normalizeAuthUserRecord(entry = {}) {
@@ -174,6 +207,8 @@ function normalizeAuthUserRecord(entry = {}) {
     if (!id || !email || !tenantId) return null;
     if (!password && !passwordHash) return null;
 
+    const accessOverrides = extractAccessOverrides(entry);
+
     return {
         id,
         email,
@@ -182,7 +217,9 @@ function normalizeAuthUserRecord(entry = {}) {
         memberships: resolvedMemberships,
         name: String(entry.name || entry.displayName || email || id).trim(),
         password,
-        passwordHash
+        passwordHash,
+        permissionGrants: accessOverrides.permissionGrants,
+        permissionPacks: accessOverrides.permissionPacks
     };
 }
 
@@ -389,6 +426,7 @@ function sanitizeUser(user = {}) {
         permissionGrants: scoped.permissionGrants || scoped.permissions || scoped?.metadata?.access?.permissionGrants || [],
         permissionPacks: scoped.permissionPacks || scoped?.metadata?.access?.permissionPacks || []
     });
+    console.log('[Auth] user', scoped.id || scoped.userId || scoped.email || 'unknown', 'resolved', resolvedAccess.permissions.length, 'effective permissions for tenant', scoped.tenantId || 'default');
 
     return {
         id: scoped.id,
