@@ -3738,13 +3738,15 @@ function CustomersSection(props = {}) {
         return (
             <div className="saas-customers-addresses-wrap">
                 <div className="saas-customers-address-toolbar">
-                    <button
-                        type="button"
-                        disabled={busy || addressBusy || !canManageCustomers || !selectedCustomerIdResolved}
-                        onClick={handleStartCreateAddress}
-                    >
-                        Agregar direccion
-                    </button>
+                    {canManageCustomers ? (
+                        <button
+                            type="button"
+                            disabled={busy || addressBusy || !selectedCustomerIdResolved}
+                            onClick={handleStartCreateAddress}
+                        >
+                            Agregar direccion
+                        </button>
+                    ) : null}
                 </div>
                 {addressesError ? (
                     <div className="saas-admin-inline-feedback error">{addressesError}</div>
@@ -3915,20 +3917,20 @@ function CustomersSection(props = {}) {
     };
 
     const headerActions = [
-        {
+        ...(canManageCustomers ? [{
             key: 'add-customer',
             label: 'Agregar',
             onClick: openCustomerCreate,
             variant: 'primary',
-            disabled: busy || tenantScopeLocked || !canManageCustomers
+            disabled: busy || tenantScopeLocked
         },
         {
             key: 'import-erp',
             label: 'Importar ERP',
             onClick: () => setShowImportModal(true),
             variant: 'primary',
-            disabled: busy || tenantScopeLocked || !canManageCustomers
-        },
+            disabled: busy || tenantScopeLocked
+        }] : []),
         {
             key: 'toggle-selection',
             label: campaignSelectionMode ? 'Cancelar seleccion' : 'Seleccionar clientes',
@@ -4172,9 +4174,9 @@ function CustomersSection(props = {}) {
                     bodyClassName="saas-customers-detail-panel__body"
                     actions={(
                         <div className="saas-customers-detail-actions">
-                            <button type="button" disabled={busy || addressBusy || !canManageCustomers || !selectedAddress} onClick={() => handleStartEditAddress(selectedAddress || {})}>Editar direccion</button>
-                            <button type="button" disabled={busy || addressBusy || !canManageCustomers || !selectedAddress || Boolean(selectedAddress?.isPrimary)} onClick={() => handleSetPrimaryAddress(selectedAddress?.addressId || '')}>Marcar principal</button>
-                            <button type="button" disabled={busy || addressBusy || !canManageCustomers || !selectedAddress} onClick={() => handleDeleteAddress(selectedAddress?.addressId || '')}>Eliminar direccion</button>
+                            {canManageCustomers ? <button type="button" disabled={busy || addressBusy || !selectedAddress} onClick={() => handleStartEditAddress(selectedAddress || {})}>Editar direccion</button> : null}
+                            {canManageCustomers ? <button type="button" disabled={busy || addressBusy || !selectedAddress || Boolean(selectedAddress?.isPrimary)} onClick={() => handleSetPrimaryAddress(selectedAddress?.addressId || '')}>Marcar principal</button> : null}
+                            {canManageCustomers ? <button type="button" disabled={busy || addressBusy || !selectedAddress} onClick={() => handleDeleteAddress(selectedAddress?.addressId || '')}>Eliminar direccion</button> : null}
                             <button type="button" disabled={busy || addressBusy} onClick={handleBackToCustomerDetail}>Volver al cliente</button>
                         </div>
                     )}
@@ -4218,8 +4220,8 @@ function CustomersSection(props = {}) {
                             <button type="button" disabled={busy || !selectedCustomerPhone} onClick={() => { void handleOpenDirectTemplateModal(); }}>
                                 Iniciar conversacion
                             </button>
-                            <button type="button" disabled={editClickBusy || !canManageCustomers} onClick={handleOpenCustomerEdit}>Editar</button>
-                            <button type="button" disabled={busy || !canManageCustomers} onClick={handleSoftDeleteCustomer}>Eliminar</button>
+                            {canManageCustomers ? <button type="button" disabled={editClickBusy} onClick={handleOpenCustomerEdit}>Editar</button> : null}
+                            {canManageCustomers ? <button type="button" disabled={busy} onClick={handleSoftDeleteCustomer}>Eliminar</button> : null}
                             <button type="button" className="saas-btn-close" disabled={busy} onClick={() => { void handleRequestCloseCustomersPanel(); }}>Volver</button>
                         </div>
                     )}

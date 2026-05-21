@@ -886,10 +886,12 @@ export default function QuickRepliesSection(props = {}) {
                 </div>
                 {selectedQuickReplyItem && quickReplyItemPanelMode === 'view' ? (
                     <div className="saas-admin-related-block">
+                        {canManageQuickReplies ? (
                         <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                            <button type="button" disabled={busy || !canManageQuickReplies} onClick={openQuickReplyItemEdit}>Editar</button>
+                            <button type="button" disabled={busy} onClick={openQuickReplyItemEdit}>Editar</button>
                             <button type="button" disabled={busy || !canManageQuickReplies} onClick={() => runAction?.('Respuesta rápida desactivada', async () => deactivateQuickReplyItem?.(selectedQuickReplyItem?.itemId))}>Desactivar</button>
                         </div>
+                        ) : null}
                         <div className="saas-admin-detail-grid">
                             <div className="saas-admin-detail-field"><span>Etiqueta</span><strong>{selectedQuickReplyItem.label || '-'}</strong></div>
                             <div className="saas-admin-detail-field"><span>Categoria</span><strong>{getQuickReplyCategoryLabel(selectedQuickReplyItem.category)}</strong></div>
@@ -954,12 +956,12 @@ export default function QuickRepliesSection(props = {}) {
     ]);
 
     const detailActions = React.useMemo(() => {
-        if (!selectedQuickReplyLibrary || isLibraryEditing || isItemEditing) return null;
+        if (!selectedQuickReplyLibrary || isLibraryEditing || isItemEditing || !canManageQuickReplies) return null;
         return (
             <>
-                <button type="button" disabled={busy || !canManageQuickReplies} onClick={openQuickReplyLibraryEdit}>Editar</button>
-                <button type="button" disabled={busy || !canManageQuickReplies} onClick={() => runAction?.('Biblioteca desactivada', async () => deactivateQuickReplyLibrary?.(selectedQuickReplyLibrary?.libraryId))}>Desactivar</button>
-                <button type="button" disabled={busy || !canManageQuickReplies} onClick={openQuickReplyItemCreate}>Nueva respuesta</button>
+                <button type="button" disabled={busy} onClick={openQuickReplyLibraryEdit}>Editar</button>
+                <button type="button" disabled={busy} onClick={() => runAction?.('Biblioteca desactivada', async () => deactivateQuickReplyLibrary?.(selectedQuickReplyLibrary?.libraryId))}>Desactivar</button>
+                <button type="button" disabled={busy} onClick={openQuickReplyItemCreate}>Nueva respuesta</button>
             </>
         );
     }, [
@@ -1019,11 +1021,11 @@ export default function QuickRepliesSection(props = {}) {
                     onClick: () => settingsTenantId && loadQuickReplyData?.(settingsTenantId).catch((err) => setError?.(String(err?.message || err || 'No se pudo recargar respuestas rápidas.'))),
                     disabled: busy || loadingQuickReplies || !settingsTenantId
                 },
-                {
+                ...(canManageQuickReplies ? [{
                     label: 'Nuevo',
                     onClick: openQuickReplyLibraryCreate,
-                    disabled: busy || !canManageQuickReplies || !settingsTenantId
-                }
+                    disabled: busy || !settingsTenantId
+                }] : [])
             ]}
             detailTitle={quickReplyLibraryPanelMode === 'create' ? 'Nueva biblioteca' : (selectedQuickReplyLibrary?.name || 'Biblioteca de respuestas')}
             detailSubtitle={quickReplyLibraryPanelMode === 'create' ? 'Define tipo, alcance y módulos asignados.' : (selectedQuickReplyLibrary?.libraryId || '')}

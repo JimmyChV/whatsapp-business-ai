@@ -603,10 +603,12 @@ function CommercialIntelligenceSection(props = {}) {
                     <Toggle checked={profileDraft.isDefault} disabled={!canEdit || busy} label="Perfil por defecto" onChange={(checked) => setProfileDraft((prev) => ({ ...prev, isDefault: checked }))} />
                     <Toggle checked={profileDraft.isActive !== false} disabled={!canEdit || busy} label="Activo" onChange={(checked) => setProfileDraft((prev) => ({ ...prev, isActive: checked }))} />
                 </div>
-                <div className="saas-admin-form-row saas-admin-form-row--actions">
-                    <button type="button" disabled={!canEdit || busy || !text(profileDraft.name) || !selectedProfileId} onClick={() => saveWholeProfile('Perfil comercial guardado.')}>Guardar</button>
-                    <button type="button" className="danger" disabled={!canEdit || busy || !selectedProfileId} onClick={deleteProfile}>Eliminar</button>
-                </div>
+                {canEdit ? (
+                    <div className="saas-admin-form-row saas-admin-form-row--actions">
+                        <button type="button" disabled={busy || !text(profileDraft.name) || !selectedProfileId} onClick={() => saveWholeProfile('Perfil comercial guardado.')}>Guardar</button>
+                        <button type="button" className="danger" disabled={busy || !selectedProfileId} onClick={deleteProfile}>Eliminar</button>
+                    </div>
+                ) : null}
             </div>
         );
     };
@@ -649,7 +651,7 @@ function CommercialIntelligenceSection(props = {}) {
                                 <strong>{category.name || 'Categoria sin nombre'}</strong>
                                 <small>{category.id || 'Sin ID'} - {benefits.length} beneficios - {discoveryQuestions.length} preguntas</small>
                             </span>
-                            <em>{expanded ? 'Ocultar' : 'Editar'}</em>
+                            <em>{expanded ? 'Ocultar' : canEdit ? 'Editar' : 'Ver'}</em>
                         </button>
                         {expanded ? (
                             <div className="saas-commercial-accordion-body">
@@ -664,19 +666,23 @@ function CommercialIntelligenceSection(props = {}) {
                                 <ChipsEditor values={benefits} disabled={!canEdit || busy} placeholder="Beneficio y Enter" onChange={(values) => updateConfigSection('categories', (items) => toArray(items).map((entry, itemIndex) => (itemIndex === index ? { ...entry, benefits: values } : entry)))} />
                                 <h4>Preguntas de descubrimiento</h4>
                                 <ChipsEditor values={discoveryQuestions} disabled={!canEdit || busy} placeholder="Pregunta y Enter" onChange={(values) => updateConfigSection('categories', (items) => toArray(items).map((entry, itemIndex) => (itemIndex === index ? { ...entry, discoveryQuestions: values } : entry)))} />
-                                <div className="saas-admin-form-row saas-admin-form-row--actions">
-                                    <button type="button" className="danger" disabled={!canEdit || busy} onClick={() => updateConfigSection('categories', (items) => toArray(items).filter((_, itemIndex) => itemIndex !== index))}>Eliminar categoria</button>
-                                </div>
+                                {canEdit ? (
+                                    <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                        <button type="button" className="danger" disabled={busy} onClick={() => updateConfigSection('categories', (items) => toArray(items).filter((_, itemIndex) => itemIndex !== index))}>Eliminar categoria</button>
+                                    </div>
+                                ) : null}
                             </div>
                         ) : null}
                     </div>
                 );
             })}
-            <div className="saas-admin-form-row saas-admin-form-row--actions">
-                <button type="button" disabled={!canEdit || busy} onClick={() => updateConfigSection('categories', (items) => [...toArray(items), { id: '', name: '', description: '', benefits: [], discoveryQuestions: [] }])}>+ Agregar categoria</button>
-                <button type="button" disabled={!canEdit || busy || wooCategorySuggestions.length === 0} onClick={() => updateConfigSection('categories', wooCategorySuggestions)}>Usar categorias Woo</button>
-                <button type="button" disabled={!canEdit || busy || !selectedProfileId} onClick={() => saveSection('categories', categories, 'Categorias guardadas.')}>Guardar</button>
-            </div>
+            {canEdit ? (
+                <div className="saas-admin-form-row saas-admin-form-row--actions">
+                    <button type="button" disabled={busy} onClick={() => updateConfigSection('categories', (items) => [...toArray(items), { id: '', name: '', description: '', benefits: [], discoveryQuestions: [] }])}>+ Agregar categoria</button>
+                    <button type="button" disabled={busy || wooCategorySuggestions.length === 0} onClick={() => updateConfigSection('categories', wooCategorySuggestions)}>Usar categorias Woo</button>
+                    <button type="button" disabled={busy || !selectedProfileId} onClick={() => saveSection('categories', categories, 'Categorias guardadas.')}>Guardar</button>
+                </div>
+            ) : null}
         </div>
     );
 
@@ -704,13 +710,15 @@ function CommercialIntelligenceSection(props = {}) {
                         <select className="saas-input" value={entry.mapsToType || 'category'} disabled={!canEdit || busy} onChange={(event) => updateConfigSection('synonyms', (items) => toArray(items).map((item, itemIndex) => (itemIndex === index ? { ...item, mapsToType: event.target.value } : item)))}>
                             {MAP_TO_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                         </select>
-                        <button type="button" className="danger" disabled={!canEdit || busy} onClick={() => updateConfigSection('synonyms', (items) => toArray(items).filter((_, itemIndex) => itemIndex !== index))}>Eliminar</button>
+                        {canEdit ? <button type="button" className="danger" disabled={busy} onClick={() => updateConfigSection('synonyms', (items) => toArray(items).filter((_, itemIndex) => itemIndex !== index))}>Eliminar</button> : null}
                     </div>
                 ))}
-                <div className="saas-admin-form-row saas-admin-form-row--actions">
-                    <button type="button" disabled={!canEdit || busy} onClick={() => updateConfigSection('synonyms', (items) => [...toArray(items), { term: '', mapsTo: '', mapsToType: 'category' }])}>+ Agregar sinonimo</button>
-                    <button type="button" disabled={!canEdit || busy || !selectedProfileId} onClick={() => saveSection('synonyms', synonyms, 'Sinonimos guardados.')}>Guardar</button>
-                </div>
+                {canEdit ? (
+                    <div className="saas-admin-form-row saas-admin-form-row--actions">
+                        <button type="button" disabled={busy} onClick={() => updateConfigSection('synonyms', (items) => [...toArray(items), { term: '', mapsTo: '', mapsToType: 'category' }])}>+ Agregar sinonimo</button>
+                        <button type="button" disabled={busy || !selectedProfileId} onClick={() => saveSection('synonyms', synonyms, 'Sinonimos guardados.')}>Guardar</button>
+                    </div>
+                ) : null}
             </div>
         );
     };
@@ -762,7 +770,7 @@ function CommercialIntelligenceSection(props = {}) {
                             <span>Prioridad {role.priority ?? 50}</span>
                             {Number(role.rotationRank || 0) === 1 ? <span>Alta rotacion</span> : null}
                         </div>
-                        <button type="button" disabled={busy} onClick={() => toggleCatalogExpanded(sku)}>{expanded ? 'Ocultar' : 'Editar'}</button>
+                        <button type="button" disabled={busy} onClick={() => toggleCatalogExpanded(sku)}>{expanded ? 'Ocultar' : canEdit ? 'Editar' : 'Ver'}</button>
                         </div>
                         {expanded ? (
                         <div className="saas-commercial-accordion-body">
@@ -789,7 +797,7 @@ function CommercialIntelligenceSection(props = {}) {
                                 <option value="">Agregar complemento</option>
                                 {catalogItems.filter((candidate) => candidate.itemId !== sku).map((candidate) => <option key={`${sku}_comp_${candidate.itemId}`} value={candidate.itemId}>{candidate.itemId} - {candidate.title}</option>)}
                             </select>
-                            {suggestions.length ? (
+                            {canEdit && suggestions.length ? (
                                 <button type="button" disabled={busy} onClick={() => setSuggestionSku((prev) => (prev === sku ? '' : sku))}>Sugerencias Woo</button>
                             ) : null}
                         </div>
@@ -805,13 +813,13 @@ function CommercialIntelligenceSection(props = {}) {
                     <h4>Sugerencias Woo para {suggestionItem.itemId}</h4>
                     <p>{uniqueList([...toArray(suggestionItem.relatedSkus), ...toArray(suggestionItem.upsellSkus), ...toArray(suggestionItem.crossSellSkus)]).join(', ') || 'Sin sugerencias disponibles.'}</p>
                     <div className="saas-admin-form-row saas-admin-form-row--actions">
-                        <button type="button" disabled={!canEdit || busy} onClick={() => {
+                        {canEdit ? <button type="button" disabled={busy} onClick={() => {
                             const sku = text(suggestionItem.itemId).toUpperCase();
                             const role = productRoles[sku] || {};
                             const suggestions = uniqueList([...toArray(suggestionItem.relatedSkus), ...toArray(suggestionItem.upsellSkus), ...toArray(suggestionItem.crossSellSkus)]);
                             setProductRole(sku, { complements: uniqueList([...(role.complements || []), ...suggestions]) });
                             setSuggestionSku('');
-                        }}>Aplicar</button>
+                        }}>Aplicar</button> : null}
                         <button type="button" className="saas-btn-cancel" onClick={() => setSuggestionSku('')}>Cerrar</button>
                     </div>
                 </div>
@@ -820,7 +828,7 @@ function CommercialIntelligenceSection(props = {}) {
                 <button type="button" disabled={catalogPage <= 1 || busy} onClick={() => setCatalogPage((prev) => Math.max(1, prev - 1))}>Anterior</button>
                 <span>Pagina {catalogPage} de {totalCatalogPages}</span>
                 <button type="button" disabled={catalogPage >= totalCatalogPages || busy} onClick={() => setCatalogPage((prev) => Math.min(totalCatalogPages, prev + 1))}>Siguiente</button>
-                <button type="button" disabled={!canEdit || busy || !selectedProfileId} onClick={() => saveSection('productRoles', productRoles, 'Catalogo comercial guardado.')}>Guardar cambios</button>
+                {canEdit ? <button type="button" disabled={busy || !selectedProfileId} onClick={() => saveSection('productRoles', productRoles, 'Catalogo comercial guardado.')}>Guardar cambios</button> : null}
             </div>
         </div>
     );
@@ -852,9 +860,11 @@ function CommercialIntelligenceSection(props = {}) {
                         <input className="saas-input" type="number" min="1" value={closing.defaultQuantity ?? 1} disabled={!canEdit || busy} placeholder="Cantidad por defecto" onChange={(event) => updateConfigSection('closingRules', { ...closing, defaultQuantity: numberValue(event.target.value, 1) })} />
                     </div>
                 </div>
-                <div className="saas-admin-form-row saas-admin-form-row--actions">
-                    <button type="button" disabled={!canEdit || busy || !selectedProfileId} onClick={saveRules}>Guardar reglas</button>
-                </div>
+                {canEdit ? (
+                    <div className="saas-admin-form-row saas-admin-form-row--actions">
+                        <button type="button" disabled={busy || !selectedProfileId} onClick={saveRules}>Guardar reglas</button>
+                    </div>
+                ) : null}
             </>
         );
     };
@@ -878,8 +888,8 @@ function CommercialIntelligenceSection(props = {}) {
                 </div>
                 <div className="saas-admin-form-row saas-admin-form-row--actions">
                     <button type="button" disabled={busy || loading || !settingsTenantId} onClick={loadProfiles}>Recargar</button>
-                    <button type="button" disabled={busy || !canEdit} onClick={createProfile}>Nuevo perfil</button>
-                    <button type="button" disabled={busy || !canEdit || !selectedProfile} onClick={duplicateProfile}>Duplicar perfil</button>
+                    {canEdit ? <button type="button" disabled={busy} onClick={createProfile}>Nuevo perfil</button> : null}
+                    {canEdit ? <button type="button" disabled={busy || !selectedProfile} onClick={duplicateProfile}>Duplicar perfil</button> : null}
                 </div>
             </div>
 

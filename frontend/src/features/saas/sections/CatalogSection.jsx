@@ -401,7 +401,7 @@ function CatalogSection(props = {}) {
                             </div>
                             <div className="saas-admin-list-actions saas-admin-list-actions--row">
                                 <button type="button" disabled={busy || loadingCatalogProducts} onClick={() => loadTenantCatalogProducts?.(settingsTenantId, selectedTenantCatalog.catalogId)}>Recargar</button>
-                                <button type="button" disabled={busy || !canEditCatalog} onClick={openCatalogProductCreate}>Nuevo producto</button>
+                                {canEditCatalog ? <button type="button" disabled={busy} onClick={openCatalogProductCreate}>Nuevo producto</button> : null}
                             </div>
                         </div>
                         {loadingCatalogProducts ? <div className="saas-admin-empty-inline">Cargando productos...</div> : null}
@@ -426,10 +426,12 @@ function CatalogSection(props = {}) {
                         </div>
                         {selectedCatalogProduct && catalogProductPanelMode === 'view' ? (
                             <div className="saas-admin-related-block">
-                                <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                                    <button type="button" disabled={busy || !canEditCatalog} onClick={openCatalogProductEdit}>Editar producto</button>
-                                    <button type="button" disabled={busy || !canEditCatalog} onClick={() => deactivateCatalogProduct?.(selectedCatalogProduct.productId)}>Desactivar</button>
-                                </div>
+                                {canEditCatalog ? (
+                                    <div className="saas-admin-list-actions saas-admin-list-actions--row">
+                                        <button type="button" disabled={busy} onClick={openCatalogProductEdit}>Editar producto</button>
+                                        <button type="button" disabled={busy} onClick={() => deactivateCatalogProduct?.(selectedCatalogProduct.productId)}>Desactivar</button>
+                                    </div>
+                                ) : null}
                                 <div className="saas-admin-detail-grid">
                                     <div className="saas-admin-detail-field"><span>Producto</span><strong>{selectedCatalogProduct.title || '-'}</strong></div>
                                     <div className="saas-admin-detail-field"><span>Precio</span><strong>{selectedCatalogProduct.price || '-'}</strong></div>
@@ -474,27 +476,31 @@ function CatalogSection(props = {}) {
                             </div>
                         </div>
                         {syncError ? <div className="saas-admin-alert error">{syncError}</div> : null}
-                        <div className="saas-admin-form-row">
-                            <div className="saas-admin-field">
-                                <label>Intervalo de sincronizacion automatica</label>
-                                <select
-                                    value={String(syncStatus?.intervalHours || 0)}
-                                    onChange={handleSyncIntervalChange}
-                                    disabled={busy || syncing || !canEditCatalog}
-                                >
-                                    <option value="1">Cada hora</option>
-                                    <option value="6">Cada 6h</option>
-                                    <option value="12">Cada 12h</option>
-                                    <option value="24">Una vez al dia</option>
-                                    <option value="0">Solo manual</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div className="saas-admin-form-row saas-admin-form-row--actions">
-                            <button type="button" disabled={busy || syncing || !canEditCatalog} onClick={handleSyncNow}>
-                                {syncing ? 'Sincronizando...' : 'Sincronizar ahora'}
-                            </button>
-                        </div>
+                        {canEditCatalog ? (
+                            <>
+                                <div className="saas-admin-form-row">
+                                    <div className="saas-admin-field">
+                                        <label>Intervalo de sincronizacion automatica</label>
+                                        <select
+                                            value={String(syncStatus?.intervalHours || 0)}
+                                            onChange={handleSyncIntervalChange}
+                                            disabled={busy || syncing}
+                                        >
+                                            <option value="1">Cada hora</option>
+                                            <option value="6">Cada 6h</option>
+                                            <option value="12">Cada 12h</option>
+                                            <option value="24">Una vez al dia</option>
+                                            <option value="0">Solo manual</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                    <button type="button" disabled={busy || syncing} onClick={handleSyncNow}>
+                                        {syncing ? 'Sincronizando...' : 'Sincronizar ahora'}
+                                    </button>
+                                </div>
+                            </>
+                        ) : null}
                         <div className="saas-admin-empty-inline">
                             La sync manual respeta el catalogo activo y actualiza precios en tiempo real para pedidos entrantes.
                         </div>
@@ -544,18 +550,18 @@ function CatalogSection(props = {}) {
     ]);
 
     const detailActions = React.useMemo(() => {
-        if (!selectedTenantCatalog || isCatalogEditing) return null;
+        if (!selectedTenantCatalog || isCatalogEditing || !canEditCatalog) return null;
         return (
             <>
-                <button type="button" disabled={busy || !canEditCatalog} onClick={openCatalogEdit}>Editar</button>
-                <button type="button" disabled={busy || !canEditCatalog || selectedTenantCatalog.isDefault === true} onClick={() => runAction?.('Catalogo marcado como principal', async () => {
+                <button type="button" disabled={busy} onClick={openCatalogEdit}>Editar</button>
+                <button type="button" disabled={busy || selectedTenantCatalog.isDefault === true} onClick={() => runAction?.('Catalogo marcado como principal', async () => {
                     await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/catalogs/${encodeURIComponent(selectedTenantCatalog.catalogId)}`, {
                         method: 'PUT',
                         body: { isDefault: true }
                     });
                     await loadTenantCatalogs(settingsTenantId);
                 })}>Marcar principal</button>
-                <button type="button" disabled={busy || !canEditCatalog || selectedTenantCatalog.isActive === false} onClick={() => runAction?.('Catálogo desactivado', async () => {
+                <button type="button" disabled={busy || selectedTenantCatalog.isActive === false} onClick={() => runAction?.('Catálogo desactivado', async () => {
                     await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/catalogs/${encodeURIComponent(selectedTenantCatalog.catalogId)}`, { method: 'DELETE' });
                     await loadTenantCatalogs(settingsTenantId);
                     close();
@@ -598,7 +604,7 @@ function CatalogSection(props = {}) {
             filters={filters}
             actions={[
                 { label: 'Recargar', onClick: () => settingsTenantId && loadTenantCatalogs?.(settingsTenantId), disabled: busy || !settingsTenantId || loadingTenantCatalogs },
-                { label: 'Nuevo', onClick: openCatalogCreate, disabled: busy || !settingsTenantId || !canEditCatalog }
+                ...(canEditCatalog ? [{ label: 'Nuevo', onClick: openCatalogCreate, disabled: busy || !settingsTenantId }] : [])
             ]}
             detailTitle={catalogPanelMode === 'create' ? 'Nuevo catálogo' : (selectedTenantCatalog?.name || 'Detalle de catálogo')}
             detailSubtitle={catalogPanelMode === 'create' ? 'Deja el ID vacío para generarlo automáticamente.' : (selectedTenantCatalog?.catalogId || '')}
