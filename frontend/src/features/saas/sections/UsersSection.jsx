@@ -41,6 +41,7 @@ function UsersSection(props = {}) {
         toUserDisplayName = (user) => user?.name || user?.email || user?.id || '-',
         openUserEdit,
         runAction,
+        runSectionAction,
         requestJson,
         refreshCurrentUserPermissions,
         canEditScopeInUserForm,
@@ -219,9 +220,9 @@ function UsersSection(props = {}) {
         userPanelMode
     ]);
 
-    const saveUser = React.useCallback(() => runAction?.(
-        userPanelMode === 'create' ? 'Usuario creado' : 'Usuario actualizado',
-        async () => {
+    const saveUser = React.useCallback(() => {
+        const label = userPanelMode === 'create' ? 'Usuario creado' : 'Usuario actualizado';
+        const action = async () => {
             const membershipsPayload = sanitizeMemberships([
                 { tenantId: userForm.tenantId, role: userForm.role, active: true }
             ]);
@@ -271,8 +272,11 @@ function UsersSection(props = {}) {
                 });
             }
             setUserPanelMode?.('view');
-        }
-    ), [
+        };
+        return typeof runSectionAction === 'function'
+            ? runSectionAction('save_user', action, { successMessage: userPanelMode === 'create' ? label : '' })
+            : runAction?.(label, action);
+    }, [
         canConfigureOptionalAccessInUserForm,
         canEditOptionalAccess,
         canEditScopeInUserForm,
@@ -280,6 +284,7 @@ function UsersSection(props = {}) {
         requestJson,
         refreshCurrentUserPermissions,
         runAction,
+        runSectionAction,
         sanitizeMemberships,
         selectedUser,
         currentUserId,
@@ -362,7 +367,6 @@ function UsersSection(props = {}) {
         openTenantFromUserMembership,
         openUserEdit,
         requestJson,
-        runAction,
         sanitizeMemberships,
         selectedUser,
         tenantOptions,
@@ -381,15 +385,20 @@ function UsersSection(props = {}) {
                 <button
                     type="button"
                     disabled={busy || !canToggleSelectedUserStatus}
-                    onClick={() => runAction?.('Estado de usuario actualizado', async () => {
-                        await requestJson(`/api/admin/saas/users/${encodeURIComponent(selectedUser.id)}`, {
+                    onClick={() => {
+                        const action = async () => {
+                            await requestJson(`/api/admin/saas/users/${encodeURIComponent(selectedUser.id)}`, {
                             method: 'PUT',
                             body: {
                                 active: selectedUser.active === false,
                                 avatarUrl: selectedUser.avatarUrl || null
                             }
                         });
-                    })}
+                        };
+                        return typeof runSectionAction === 'function'
+                            ? runSectionAction('save_user_status', action, { successMessage: 'Estado de usuario actualizado' })
+                            : runAction?.('Estado de usuario actualizado', action);
+                    }}
                 >
                     {selectedUser.active === false ? 'Activar' : 'Desactivar'}
                 </button>
@@ -403,6 +412,7 @@ function UsersSection(props = {}) {
         openUserEdit,
         requestJson,
         runAction,
+        runSectionAction,
         selectedUser,
         userPanelMode
     ]);

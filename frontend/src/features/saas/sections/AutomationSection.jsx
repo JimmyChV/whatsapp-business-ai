@@ -82,6 +82,7 @@ function AutomationSection(props = {}) {
         busy,
         requestJson,
         runAction,
+        runSectionAction,
         waModules = [],
         metaTemplatesController = null,
         automationRules = [],
@@ -258,9 +259,9 @@ function AutomationSection(props = {}) {
         setSelectedRuleId('');
     }, [panelMode]);
 
-    const saveRule = React.useCallback(() => runAction?.(
-        panelMode === 'create' ? 'Automatizacion creada' : 'Automatizacion actualizada',
-        async () => {
+    const saveRule = React.useCallback(() => {
+        const label = panelMode === 'create' ? 'Automatizacion creada' : 'Automatizacion actualizada';
+        const action = async () => {
             if (!canManageAutomations) throw new Error('No tienes permiso para modificar automatizaciones.');
             const payload = {
                 eventKey: form.eventKey,
@@ -280,17 +281,23 @@ function AutomationSection(props = {}) {
                 await updateAutomationRule(selectedRule.ruleId, payload);
             }
             setPanelMode('view');
-        }
-    ), [canManageAutomations, createAutomationRule, form, panelMode, runAction, selectedRule, updateAutomationRule]);
+        };
+        return typeof runSectionAction === 'function'
+            ? runSectionAction('save_auto', action, { successMessage: label })
+            : runAction?.(label, action);
+    }, [canManageAutomations, createAutomationRule, form, panelMode, runAction, runSectionAction, selectedRule, updateAutomationRule]);
 
     const removeRule = React.useCallback(() => {
         if (!selectedRule?.ruleId || !canManageAutomations) return;
-        runAction?.('Automatizacion eliminada', async () => {
+        const action = async () => {
             await deleteAutomationRule(selectedRule.ruleId);
             setSelectedRuleId('');
             setPanelMode('view');
-        });
-    }, [canManageAutomations, deleteAutomationRule, runAction, selectedRule]);
+        };
+        return typeof runSectionAction === 'function'
+            ? runSectionAction('delete_auto', action, { successMessage: 'Automatizacion eliminada' })
+            : runAction?.('Automatizacion eliminada', action);
+    }, [canManageAutomations, deleteAutomationRule, runAction, runSectionAction, selectedRule]);
 
     const selectedTemplate = React.useMemo(
         () => templateItems.find((item) => item.templateName === form.templateName) || null,

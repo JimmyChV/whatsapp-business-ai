@@ -179,6 +179,7 @@ export default function QuickRepliesSection(props = {}) {
         quickReplyLibraryPanelMode,
         openQuickReplyLibraryEdit,
         runAction,
+        runSectionAction,
         deactivateQuickReplyLibrary,
         quickReplyLibraryForm = {},
         setQuickReplyLibraryForm,
@@ -216,6 +217,12 @@ export default function QuickRepliesSection(props = {}) {
 
     const isLibraryEditing = quickReplyLibraryPanelMode === 'create' || quickReplyLibraryPanelMode === 'edit';
     const isItemEditing = quickReplyItemPanelMode === 'create' || quickReplyItemPanelMode === 'edit';
+    const runQuickReplyAction = React.useCallback((actionKey, label, action) => {
+        if (typeof runSectionAction === 'function') {
+            return runSectionAction(actionKey, action, { successMessage: label });
+        }
+        return runAction?.(label, action);
+    }, [runAction, runSectionAction]);
     const quickReplyTextRef = React.useRef(null);
     const [quickReplyVariableCategories, setQuickReplyVariableCategories] = React.useState(() => collectVariableCategories({}));
     const [quickReplyVariableLoading, setQuickReplyVariableLoading] = React.useState(false);
@@ -400,7 +407,7 @@ export default function QuickRepliesSection(props = {}) {
                 </div>
             ) : null}
             <div className="saas-admin-form-row saas-admin-form-row--actions">
-                <button type="button" disabled={busy || !canManageQuickReplies || !text(quickReplyLibraryForm.name)} onClick={() => runAction?.(quickReplyLibraryPanelMode === 'create' ? 'Biblioteca creada' : 'Biblioteca actualizada', async () => saveQuickReplyLibrary?.())}>
+                <button type="button" disabled={busy || !canManageQuickReplies || !text(quickReplyLibraryForm.name)} onClick={() => runQuickReplyAction('save_qr', quickReplyLibraryPanelMode === 'create' ? 'Biblioteca creada' : 'Biblioteca actualizada', async () => saveQuickReplyLibrary?.())}>
                     {quickReplyLibraryPanelMode === 'create' ? 'Guardar biblioteca' : 'Actualizar biblioteca'}
                 </button>
                 <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { void requestClose?.(); }}>Cancelar</button>
@@ -411,7 +418,7 @@ export default function QuickRepliesSection(props = {}) {
         canManageQuickReplies,
         quickReplyLibraryForm,
         quickReplyLibraryPanelMode,
-        runAction,
+        runQuickReplyAction,
         saveQuickReplyLibrary,
         setQuickReplyLibraryForm,
         toggleModuleInQuickReplyLibraryForm,
@@ -706,7 +713,7 @@ export default function QuickRepliesSection(props = {}) {
                                 <button
                                     type="button"
                                     disabled={saveDisabled}
-                                    onClick={() => runAction?.(quickReplyItemPanelMode === 'create' ? 'Respuesta rapida creada' : 'Respuesta rapida actualizada', async () => saveQuickReplyItem?.())}
+                                    onClick={() => runQuickReplyAction('save_qr', quickReplyItemPanelMode === 'create' ? 'Respuesta rapida creada' : 'Respuesta rapida actualizada', async () => saveQuickReplyItem?.())}
                                 >
                                     {quickReplyItemPanelMode === 'create' ? 'Guardar respuesta' : 'Actualizar respuesta'}
                                 </button>
@@ -828,7 +835,7 @@ export default function QuickRepliesSection(props = {}) {
         handleQuickReplyEmojiSkinToneChange,
         removeQuickReplyAssetAt,
         requestCloseQuickReplyItemBuilder,
-        runAction,
+        runQuickReplyAction,
         saveQuickReplyItem,
         setError,
         setQuickReplyItemForm,
@@ -889,7 +896,7 @@ export default function QuickRepliesSection(props = {}) {
                         {canManageQuickReplies ? (
                         <div className="saas-admin-list-actions saas-admin-list-actions--row">
                             <button type="button" disabled={busy} onClick={openQuickReplyItemEdit}>Editar</button>
-                            <button type="button" disabled={busy || !canManageQuickReplies} onClick={() => runAction?.('Respuesta rápida desactivada', async () => deactivateQuickReplyItem?.(selectedQuickReplyItem?.itemId))}>Desactivar</button>
+                            <button type="button" disabled={busy || !canManageQuickReplies} onClick={() => runQuickReplyAction('delete_qr_item', 'Respuesta rápida desactivada', async () => deactivateQuickReplyItem?.(selectedQuickReplyItem?.itemId))}>Desactivar</button>
                         </div>
                         ) : null}
                         <div className="saas-admin-detail-grid">
@@ -945,7 +952,7 @@ export default function QuickRepliesSection(props = {}) {
         renderItemForm,
         renderLibraryForm,
         resolveQuickReplyAssetPreviewUrl,
-        runAction,
+        runQuickReplyAction,
         selectedQuickReplyItem,
         selectedQuickReplyItemMediaAssets,
         selectedQuickReplyLibrary,
@@ -960,7 +967,7 @@ export default function QuickRepliesSection(props = {}) {
         return (
             <>
                 <button type="button" disabled={busy} onClick={openQuickReplyLibraryEdit}>Editar</button>
-                <button type="button" disabled={busy} onClick={() => runAction?.('Biblioteca desactivada', async () => deactivateQuickReplyLibrary?.(selectedQuickReplyLibrary?.libraryId))}>Desactivar</button>
+                <button type="button" disabled={busy} onClick={() => runQuickReplyAction('delete_qr_library', 'Biblioteca desactivada', async () => deactivateQuickReplyLibrary?.(selectedQuickReplyLibrary?.libraryId))}>Desactivar</button>
                 <button type="button" disabled={busy} onClick={openQuickReplyItemCreate}>Nueva respuesta</button>
             </>
         );
@@ -972,7 +979,7 @@ export default function QuickRepliesSection(props = {}) {
         isLibraryEditing,
         openQuickReplyItemCreate,
         openQuickReplyLibraryEdit,
-        runAction,
+        runQuickReplyAction,
         selectedQuickReplyLibrary
     ]);
 

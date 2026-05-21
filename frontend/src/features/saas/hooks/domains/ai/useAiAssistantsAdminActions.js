@@ -28,8 +28,16 @@ export default function useAiAssistantsAdminActions({
     setSelectedAiAssistantId,
     setAiAssistantForm,
     setAiAssistantPanelMode,
-    runAction
+    runAction,
+    runSectionAction
 } = {}) {
+    const runAiAction = (actionKey, label, action) => {
+        if (typeof runSectionAction === 'function') {
+            return runSectionAction(actionKey, action, { successMessage: label });
+        }
+        return runAction?.(label, action);
+    };
+
     const loadTenantAiAssistants = async (tenantId) => {
         const cleanTenantId = String(tenantId || '').trim();
         if (!cleanTenantId) {
@@ -106,7 +114,7 @@ export default function useAiAssistantsAdminActions({
     const saveAiAssistant = () => {
         if (!settingsTenantId || !canManageAi) return;
 
-        runAction(aiAssistantPanelMode === 'create' ? 'Asistente IA creado' : 'Asistente IA actualizado', async () => {
+        runAiAction('save_ai', aiAssistantPanelMode === 'create' ? 'Asistente IA creado' : 'Asistente IA actualizado', async () => {
             const payload = buildAiAssistantPayload(aiAssistantForm, { allowAssistantId: aiAssistantPanelMode === 'create' });
             if (!String(payload.name || '').trim()) {
                 throw new Error('El nombre del asistente IA es obligatorio.');
@@ -135,7 +143,7 @@ export default function useAiAssistantsAdminActions({
         const cleanAssistantId = sanitizeAiAssistantCode(assistantId || '');
         if (!settingsTenantId || !cleanAssistantId || !canManageAi) return;
 
-        runAction('Asistente IA principal actualizado', async () => {
+        runAiAction('save_ai_default', 'Asistente IA principal actualizado', async () => {
             await setTenantAiAssistantDefault(requestJson, settingsTenantId, cleanAssistantId);
             await loadTenantAiAssistants(settingsTenantId);
             setSelectedAiAssistantId(cleanAssistantId);
@@ -147,7 +155,7 @@ export default function useAiAssistantsAdminActions({
         if (!settingsTenantId || !cleanAssistantId || !canManageAi) return;
         const isActive = assistant?.isActive !== false;
 
-        runAction('Estado de asistente IA actualizado', async () => {
+        runAiAction('save_ai_status', 'Estado de asistente IA actualizado', async () => {
             await setTenantAiAssistantActive(requestJson, settingsTenantId, cleanAssistantId, !isActive);
             await loadTenantAiAssistants(settingsTenantId);
             setSelectedAiAssistantId(cleanAssistantId);

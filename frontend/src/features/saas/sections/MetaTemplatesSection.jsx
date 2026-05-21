@@ -624,6 +624,7 @@ function MetaTemplatesSection(props = {}) {
         busy = false,
         canManageMetaTemplates = false,
         runAction = null,
+        runSectionAction = null,
         setError = null,
         requestJson = null,
         metaTemplatesController = null
@@ -703,11 +704,12 @@ function MetaTemplatesSection(props = {}) {
         [templateVarCatalog]
     );
 
-    const runActionSafe = useCallback(async (label, action) => {
+    const runSectionActionSafe = useCallback(async (actionKey, label, action) => {
+        if (typeof runSectionAction === 'function') return runSectionAction(actionKey, action);
         if (typeof runAction === 'function') return runAction(label, action);
         if (typeof action === 'function') return action();
         return undefined;
-    }, [runAction]);
+    }, [runAction, runSectionAction]);
 
     const {
         filters = { scopeModuleId: '', status: '', search: '', limit: 50, offset: 0 },
@@ -895,10 +897,10 @@ function MetaTemplatesSection(props = {}) {
 
     const reloadTemplates = useCallback(async (overrideFilters = null) => {
         if (typeof loadTemplates !== 'function') return;
-        await runActionSafe('Plantillas Meta recargadas', async () => {
+        await runSectionActionSafe('reload_templates', 'Plantillas Meta recargadas', async () => {
             await loadTemplates(overrideFilters);
         });
-    }, [loadTemplates, runActionSafe]);
+    }, [loadTemplates, runSectionActionSafe]);
 
     const updateFilter = useCallback((patch = {}) => {
         setFilters?.((prev) => ({
@@ -924,7 +926,7 @@ function MetaTemplatesSection(props = {}) {
             body: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} },
             footer: { orderedTokens: [], originalToSequential: {}, sequentialToOriginal: {} }
         };
-        await runActionSafe('Plantilla Meta creada', async () => {
+        await runSectionActionSafe('save_template', 'Plantilla Meta creada', async () => {
             await createTemplate({
                 moduleId,
                 templatePayload,
@@ -940,7 +942,7 @@ function MetaTemplatesSection(props = {}) {
                 scopeModuleId: filters.scopeModuleId || moduleId
             });
         });
-    }, [canWrite, createTemplate, createForm, runActionSafe, notify, loadTemplates, filters, variableExamplesByToken, defaultVariableExamplesByToken]);
+    }, [canWrite, createTemplate, createForm, runSectionActionSafe, notify, loadTemplates, filters, variableExamplesByToken, defaultVariableExamplesByToken]);
 
     const handleDeleteTemplate = useCallback(async (template = null) => {
         const templateId = toText(template?.templateId);
@@ -955,7 +957,7 @@ function MetaTemplatesSection(props = {}) {
         });
         if (!ok) return;
 
-        await runActionSafe('Plantilla Meta eliminada', async () => {
+        await runSectionActionSafe('delete_template', 'Plantilla Meta eliminada', async () => {
             await removeTemplate({
                 templateId,
                 moduleId: toText(template?.moduleId),
@@ -967,14 +969,14 @@ function MetaTemplatesSection(props = {}) {
             }
             await loadTemplates?.(filters);
         });
-    }, [canWrite, confirm, filters, loadTemplates, notify, removeTemplate, runActionSafe, selectedTemplateId]);
+    }, [canWrite, confirm, filters, loadTemplates, notify, removeTemplate, runSectionActionSafe, selectedTemplateId]);
 
     const handleSyncTemplates = useCallback(async () => {
         if (!canWrite || typeof syncTemplates !== 'function') return;
         const moduleId = toText(syncModuleId);
         if (!moduleId) throw new Error('Selecciona un módulo para sincronizar.');
 
-        await runActionSafe('Plantillas Meta sincronizadas', async () => {
+        await runSectionActionSafe('sync_template', 'Plantillas Meta sincronizadas', async () => {
             const response = await syncTemplates({
                 moduleId,
                 reload: false
@@ -986,7 +988,7 @@ function MetaTemplatesSection(props = {}) {
                 scopeModuleId: filters.scopeModuleId || moduleId
             });
         });
-    }, [canWrite, filters, loadTemplates, notify, runActionSafe, syncModuleId, syncTemplates]);
+    }, [canWrite, filters, loadTemplates, notify, runSectionActionSafe, syncModuleId, syncTemplates]);
 
     const openCreateTemplatePanel = useCallback(async () => {
         setPanelMode('create');

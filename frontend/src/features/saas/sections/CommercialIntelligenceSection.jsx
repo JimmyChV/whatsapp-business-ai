@@ -210,6 +210,7 @@ function CommercialIntelligenceSection(props = {}) {
         busy,
         requestJson,
         runAction,
+        runSectionAction,
         canManageCommercialIntelligence = false,
         activeCatalogOptions = []
     } = context;
@@ -228,6 +229,12 @@ function CommercialIntelligenceSection(props = {}) {
     const [expandedCatalogItems, setExpandedCatalogItems] = React.useState(() => new Set());
     const seededCategoryProfileRef = React.useRef('');
     const canEdit = Boolean(settingsTenantId && requestJson && canManageCommercialIntelligence);
+    const runCommercialAction = React.useCallback((actionKey, message, action) => {
+        if (typeof runSectionAction === 'function') {
+            return runSectionAction(actionKey, action);
+        }
+        return runAction?.(message, action);
+    }, [runAction, runSectionAction]);
 
     const selectedProfile = React.useMemo(
         () => profiles.find((profile) => profile.profileId === selectedProfileId) || null,
@@ -392,7 +399,7 @@ function CommercialIntelligenceSection(props = {}) {
 
     const saveWholeProfile = React.useCallback((message = 'Perfil comercial guardado.') => {
         if (!canEdit) return undefined;
-        return runAction?.(message, async () => {
+        return runCommercialAction('save_ci', message, async () => {
             const payload = normalizeProfile(profileDraft);
             const result = await requestJson(`/api/tenant/commercial-intelligence/profiles/${encodeURIComponent(payload.profileId)}`, {
                 method: 'PUT',
@@ -408,11 +415,11 @@ function CommercialIntelligenceSection(props = {}) {
             await loadCatalog(saved.profileId);
             notify({ type: 'info', message });
         });
-    }, [canEdit, loadCatalog, notify, profileDraft, requestJson, runAction, settingsTenantId]);
+    }, [canEdit, loadCatalog, notify, profileDraft, requestJson, runCommercialAction, settingsTenantId]);
 
     const saveSection = React.useCallback((section, data, message = 'Cambios guardados.') => {
         if (!canEdit || !selectedProfileId) return undefined;
-        return runAction?.(message, async () => {
+        return runCommercialAction('save_ci', message, async () => {
             const result = await requestJson(`/api/tenant/commercial-intelligence/profiles/${encodeURIComponent(selectedProfileId)}/section`, {
                 method: 'PATCH',
                 body: { section, data },
@@ -424,13 +431,13 @@ function CommercialIntelligenceSection(props = {}) {
             if (section === 'productRoles' || section === 'catalogIds') await loadCatalog(saved.profileId);
             notify({ type: 'info', message });
         });
-    }, [canEdit, loadCatalog, notify, requestJson, runAction, selectedProfileId, settingsTenantId]);
+    }, [canEdit, loadCatalog, notify, requestJson, runCommercialAction, selectedProfileId, settingsTenantId]);
 
     const saveRules = React.useCallback(() => {
         if (!canEdit || !selectedProfileId) return undefined;
         const offerRules = profileDraft.config?.offerRules || DEFAULT_CONFIG.offerRules;
         const closingRules = profileDraft.config?.closingRules || DEFAULT_CONFIG.closingRules;
-        return runAction?.('Reglas comerciales guardadas.', async () => {
+        return runCommercialAction('save_ci_rules', 'Reglas comerciales guardadas.', async () => {
             const offerResult = await requestJson(`/api/tenant/commercial-intelligence/profiles/${encodeURIComponent(selectedProfileId)}/section`, {
                 method: 'PATCH',
                 body: { section: 'offerRules', data: offerRules },
@@ -446,11 +453,11 @@ function CommercialIntelligenceSection(props = {}) {
             setProfileDraft(saved);
             notify({ type: 'info', message: 'Reglas comerciales guardadas.' });
         });
-    }, [canEdit, notify, profileDraft, requestJson, runAction, selectedProfileId, settingsTenantId]);
+    }, [canEdit, notify, profileDraft, requestJson, runCommercialAction, selectedProfileId, settingsTenantId]);
 
     const createProfile = React.useCallback(() => {
         if (!canEdit) return undefined;
-        return runAction?.('Perfil comercial creado.', async () => {
+        return runCommercialAction('create_ci', 'Perfil comercial creado.', async () => {
             const result = await requestJson('/api/tenant/commercial-intelligence/profiles', {
                 method: 'POST',
                 tenantIdOverride: settingsTenantId,
@@ -473,11 +480,11 @@ function CommercialIntelligenceSection(props = {}) {
             setActiveTab('profile');
             notify({ type: 'info', message: 'Perfil comercial creado.' });
         });
-    }, [canEdit, commercialCatalogOptions, notify, profiles.length, requestJson, runAction, settingsTenantId]);
+    }, [canEdit, commercialCatalogOptions, notify, profiles.length, requestJson, runCommercialAction, settingsTenantId]);
 
     const duplicateProfile = React.useCallback(() => {
         if (!canEdit || !selectedProfile) return undefined;
-        return runAction?.('Perfil duplicado.', async () => {
+        return runCommercialAction('create_ci', 'Perfil duplicado.', async () => {
             const result = await requestJson('/api/tenant/commercial-intelligence/profiles', {
                 method: 'POST',
                 tenantIdOverride: settingsTenantId,
@@ -494,11 +501,11 @@ function CommercialIntelligenceSection(props = {}) {
             setSelectedProfileId(saved.profileId);
             notify({ type: 'info', message: 'Perfil duplicado.' });
         });
-    }, [canEdit, notify, requestJson, runAction, selectedProfile, settingsTenantId]);
+    }, [canEdit, notify, requestJson, runCommercialAction, selectedProfile, settingsTenantId]);
 
     const deleteProfile = React.useCallback(() => {
         if (!canEdit || !selectedProfileId) return undefined;
-        return runAction?.('Perfil eliminado.', async () => {
+        return runCommercialAction('delete_ci', 'Perfil eliminado.', async () => {
             await requestJson(`/api/tenant/commercial-intelligence/profiles/${encodeURIComponent(selectedProfileId)}`, {
                 method: 'DELETE',
                 tenantIdOverride: settingsTenantId
@@ -506,7 +513,7 @@ function CommercialIntelligenceSection(props = {}) {
             await loadProfiles();
             notify({ type: 'warn', message: 'Perfil comercial eliminado.' });
         });
-    }, [canEdit, loadProfiles, notify, requestJson, runAction, selectedProfileId, settingsTenantId]);
+    }, [canEdit, loadProfiles, notify, requestJson, runCommercialAction, selectedProfileId, settingsTenantId]);
 
     const setProductRole = React.useCallback((sku, patch = {}) => {
         const cleanSku = text(sku).toUpperCase();

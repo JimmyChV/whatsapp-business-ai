@@ -122,6 +122,7 @@ function SchedulesSection(props = {}) {
         tenantScopeLocked,
         busy,
         runAction,
+        runSectionAction,
         requestJson,
         schedules = [],
         loadingSchedules = false,
@@ -195,9 +196,9 @@ function SchedulesSection(props = {}) {
         setSelectedScheduleId('');
     }, [panelMode]);
 
-    const saveSchedule = React.useCallback(() => runAction?.(
-        panelMode === 'create' ? 'Horario creado' : 'Horario actualizado',
-        async () => {
+    const saveSchedule = React.useCallback(() => {
+        const label = panelMode === 'create' ? 'Horario creado' : 'Horario actualizado';
+        const action = async () => {
             if (!canManageSchedules) throw new Error('No tienes permiso para modificar horarios.');
             const payload = {
                 name: form.name,
@@ -215,17 +216,23 @@ function SchedulesSection(props = {}) {
                 await updateSchedule?.(selectedSchedule.scheduleId, payload);
             }
             setPanelMode('view');
-        }
-    ), [canManageSchedules, createSchedule, form, panelMode, runAction, selectedSchedule, updateSchedule]);
+        };
+        return typeof runSectionAction === 'function'
+            ? runSectionAction('save_schedule', action, { successMessage: label })
+            : runAction?.(label, action);
+    }, [canManageSchedules, createSchedule, form, panelMode, runAction, runSectionAction, selectedSchedule, updateSchedule]);
 
     const removeSchedule = React.useCallback(() => {
         if (!selectedSchedule?.scheduleId || !canManageSchedules) return;
-        runAction?.('Horario eliminado', async () => {
+        const action = async () => {
             await deleteSchedule?.(selectedSchedule.scheduleId);
             setSelectedScheduleId('');
             setPanelMode('view');
-        });
-    }, [canManageSchedules, deleteSchedule, runAction, selectedSchedule]);
+        };
+        return typeof runSectionAction === 'function'
+            ? runSectionAction('delete_schedule', action, { successMessage: 'Horario eliminado' })
+            : runAction?.('Horario eliminado', action);
+    }, [canManageSchedules, deleteSchedule, runAction, runSectionAction, selectedSchedule]);
 
     const updateDay = React.useCallback((dayKey, patch = {}) => {
         setForm((prev) => {

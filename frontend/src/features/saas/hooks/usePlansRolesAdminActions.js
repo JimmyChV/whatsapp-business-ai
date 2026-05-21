@@ -32,7 +32,8 @@ export default function usePlansRolesAdminActions({
     setAccessCatalog,
     setSelectedRoleKey,
     setRoleForm,
-    runAction
+    runAction,
+    runSectionAction
 } = {}) {
     const loadPlanMatrix = async () => {
         setLoadingPlans(true);
@@ -159,7 +160,11 @@ export default function usePlansRolesAdminActions({
     const saveRoleProfile = () => {
         if (!canManageRoles) return;
 
-        runAction(rolePanelMode === 'create' ? 'Rol creado' : 'Rol actualizado', async () => {
+        const runner = typeof runSectionAction === 'function'
+            ? (_label, action) => runSectionAction('save_role', action, { successMessage: _label })
+            : runAction;
+
+        runner?.(rolePanelMode === 'create' ? 'Rol creado' : 'Rol actualizado', async () => {
             const cleanRole = sanitizeRoleCode(roleForm?.role || selectedRoleKey);
             if (!cleanRole) {
                 throw new Error('El codigo del rol es obligatorio.');

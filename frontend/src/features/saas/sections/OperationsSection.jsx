@@ -29,6 +29,7 @@ function OperationsSection(props = {}) {
     tenantScopeId = '',
     setAssignmentRules,
     runAction,
+    runSectionAction,
     saveAssignmentRules,
     loadTenantOperationsKpis,
     triggerAutoAssignPreview,
@@ -135,10 +136,15 @@ function OperationsSection(props = {}) {
                                         <button
                                             type="button"
                                             disabled={busy || loadingAssignmentRules}
-                                            onClick={() => runAction('Reglas de asignacion actualizadas', async () => {
-                                                await saveAssignmentRules(tenantScopeId);
-                                                await loadTenantOperationsKpis(tenantScopeId);
-                                            })}
+                                            onClick={() => {
+                                                const action = async () => {
+                                                    await saveAssignmentRules(tenantScopeId);
+                                                    await loadTenantOperationsKpis(tenantScopeId);
+                                                };
+                                                return typeof runSectionAction === 'function'
+                                                    ? runSectionAction('save_ops', action, { successMessage: 'Reglas de asignacion actualizadas' })
+                                                    : runAction('Reglas de asignacion actualizadas', action);
+                                            }}
                                         >
                                             Guardar reglas
                                         </button>
@@ -147,9 +153,14 @@ function OperationsSection(props = {}) {
                                         <button
                                             type="button"
                                             disabled={busy || loadingOperationsKpis || activeTenantChatCandidates.length === 0}
-                                            onClick={() => runAction('Auto-asignacion ejecutada', async () => {
-                                                await triggerAutoAssignPreview(tenantScopeId);
-                                            })}
+                                            onClick={() => {
+                                                const action = async () => {
+                                                    await triggerAutoAssignPreview(tenantScopeId);
+                                                };
+                                                return typeof runSectionAction === 'function'
+                                                    ? runSectionAction('autoassign', action, { successMessage: 'Auto-asignacion ejecutada' })
+                                                    : runAction('Auto-asignacion ejecutada', action);
+                                            }}
                                         >
                                             Auto-asignar siguiente chat
                                         </button>
@@ -178,9 +189,14 @@ function OperationsSection(props = {}) {
                                 <button
                                     type="button"
                                     disabled={busy || loadingOperationsKpis || !canViewOperations}
-                                    onClick={() => runAction('KPI operativos actualizados', async () => {
-                                        await loadTenantOperationsKpis(tenantScopeId);
-                                    })}
+                                    onClick={() => {
+                                        const action = async () => {
+                                            await loadTenantOperationsKpis(tenantScopeId);
+                                        };
+                                        return typeof runSectionAction === 'function'
+                                            ? runSectionAction('refresh_ops_kpis', action, { successMessage: 'KPI operativos actualizados' })
+                                            : runAction('KPI operativos actualizados', action);
+                                    }}
                                 >
                                     Recargar KPI
                                 </button>

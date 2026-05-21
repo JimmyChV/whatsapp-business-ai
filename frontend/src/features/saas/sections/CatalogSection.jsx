@@ -27,6 +27,7 @@ function CatalogSection(props = {}) {
         openCatalogEdit,
         requestJson,
         runAction,
+        runSectionAction,
         buildTenantCatalogPayload,
         selectedCatalogProductId,
         setSelectedCatalogProductId,
@@ -137,9 +138,9 @@ function CatalogSection(props = {}) {
         setTenantCatalogForm
     ]);
 
-    const saveCatalog = React.useCallback(() => runAction?.(
-        catalogPanelMode === 'create' ? 'Catalogo creado' : 'Catalogo actualizado',
-        async () => {
+    const saveCatalog = React.useCallback(() => {
+        const label = catalogPanelMode === 'create' ? 'Catalogo creado' : 'Catalogo actualizado';
+        const action = async () => {
             const payload = buildTenantCatalogPayload(tenantCatalogForm);
             if (catalogPanelMode === 'create') {
                 const created = await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/catalogs`, {
@@ -157,14 +158,18 @@ function CatalogSection(props = {}) {
             });
             await loadTenantCatalogs(settingsTenantId);
             openCatalogView?.(selectedTenantCatalog.catalogId);
-        }
-    ), [
+        };
+        return typeof runSectionAction === 'function'
+            ? runSectionAction('save_catalog', action, { successMessage: label })
+            : runAction?.(label, action);
+    }, [
         buildTenantCatalogPayload,
         catalogPanelMode,
         loadTenantCatalogs,
         openCatalogView,
         requestJson,
         runAction,
+        runSectionAction,
         selectedTenantCatalog,
         settingsTenantId,
         tenantCatalogForm
@@ -191,13 +196,19 @@ function CatalogSection(props = {}) {
         return '-';
     }, [syncStatus?.status, syncing]);
 
-    const handleSyncNow = React.useCallback(() => runAction?.('Catalogo sincronizado', async () => {
+    const handleSyncNow = React.useCallback(() => {
+        const action = async () => {
         if (!settingsTenantId || !selectedSyncCatalogId) return;
         await triggerSync(settingsTenantId, selectedSyncCatalogId, syncStatus?.intervalHours || 0);
         await loadTenantCatalogProducts?.(settingsTenantId, selectedSyncCatalogId);
-    }), [
+        };
+        return typeof runSectionAction === 'function'
+            ? runSectionAction('sync_catalog', action, { successMessage: 'Catalogo sincronizado' })
+            : runAction?.('Catalogo sincronizado', action);
+    }, [
         loadTenantCatalogProducts,
         runAction,
+        runSectionAction,
         selectedSyncCatalogId,
         settingsTenantId,
         syncStatus?.intervalHours,
@@ -207,10 +218,13 @@ function CatalogSection(props = {}) {
     const handleSyncIntervalChange = React.useCallback((event) => {
         const nextHours = Number(event.target.value) || 0;
         if (!settingsTenantId || !selectedSyncCatalogId) return;
-        void runAction?.('Intervalo de sincronizacion actualizado', async () => {
+        const action = async () => {
             await setSyncInterval(settingsTenantId, selectedSyncCatalogId, nextHours);
-        });
-    }, [runAction, selectedSyncCatalogId, setSyncInterval, settingsTenantId]);
+        };
+        void (typeof runSectionAction === 'function'
+            ? runSectionAction('sync_catalog_interval', action, { successMessage: 'Intervalo de sincronizacion actualizado' })
+            : runAction?.('Intervalo de sincronizacion actualizado', action));
+    }, [runAction, runSectionAction, selectedSyncCatalogId, setSyncInterval, settingsTenantId]);
 
     const renderCatalogForm = React.useCallback(({ close: requestClose } = {}) => (
         <>
@@ -341,7 +355,13 @@ function CatalogSection(props = {}) {
             />
             {catalogProductImageError ? <div className="saas-admin-alert error">{catalogProductImageError}</div> : null}
             <div className="saas-admin-form-row saas-admin-form-row--actions">
-                <button type="button" disabled={busy || !canEditCatalog || !text(catalogProductForm.title) || !text(catalogProductForm.price)} onClick={() => runAction?.(catalogProductPanelMode === 'create' ? 'Producto creado' : 'Producto actualizado', async () => saveCatalogProduct?.())}>
+                <button type="button" disabled={busy || !canEditCatalog || !text(catalogProductForm.title) || !text(catalogProductForm.price)} onClick={() => {
+                    const label = catalogProductPanelMode === 'create' ? 'Producto creado' : 'Producto actualizado';
+                    const action = async () => saveCatalogProduct?.();
+                    return typeof runSectionAction === 'function'
+                        ? runSectionAction('save_catalog_product', action, { successMessage: label })
+                        : runAction?.(label, action);
+                }}>
                     {catalogProductPanelMode === 'create' ? 'Guardar producto' : 'Actualizar producto'}
                 </button>
                 <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { void requestClose?.(); }}>Cancelar</button>
@@ -356,6 +376,7 @@ function CatalogSection(props = {}) {
         catalogProductPanelMode,
         handleCatalogProductImageUpload,
         runAction,
+        runSectionAction,
         saveCatalogProduct,
         setCatalogProductForm
     ]);
@@ -529,6 +550,7 @@ function CatalogSection(props = {}) {
         renderProductForm,
         requestJson,
         runAction,
+        runSectionAction,
         selectedCatalogProduct,
         selectedCatalogProductId,
         selectedTenantCatalog,
@@ -554,18 +576,28 @@ function CatalogSection(props = {}) {
         return (
             <>
                 <button type="button" disabled={busy} onClick={openCatalogEdit}>Editar</button>
-                <button type="button" disabled={busy || selectedTenantCatalog.isDefault === true} onClick={() => runAction?.('Catalogo marcado como principal', async () => {
-                    await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/catalogs/${encodeURIComponent(selectedTenantCatalog.catalogId)}`, {
-                        method: 'PUT',
-                        body: { isDefault: true }
-                    });
-                    await loadTenantCatalogs(settingsTenantId);
-                })}>Marcar principal</button>
-                <button type="button" disabled={busy || selectedTenantCatalog.isActive === false} onClick={() => runAction?.('Catálogo desactivado', async () => {
-                    await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/catalogs/${encodeURIComponent(selectedTenantCatalog.catalogId)}`, { method: 'DELETE' });
-                    await loadTenantCatalogs(settingsTenantId);
-                    close();
-                })}>Desactivar</button>
+                <button type="button" disabled={busy || selectedTenantCatalog.isDefault === true} onClick={() => {
+                    const action = async () => {
+                        await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/catalogs/${encodeURIComponent(selectedTenantCatalog.catalogId)}`, {
+                            method: 'PUT',
+                            body: { isDefault: true }
+                        });
+                        await loadTenantCatalogs(settingsTenantId);
+                    };
+                    return typeof runSectionAction === 'function'
+                        ? runSectionAction('save_catalog_default', action, { successMessage: 'Catalogo marcado como principal' })
+                        : runAction?.('Catalogo marcado como principal', action);
+                }}>Marcar principal</button>
+                <button type="button" disabled={busy || selectedTenantCatalog.isActive === false} onClick={() => {
+                    const action = async () => {
+                        await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(settingsTenantId)}/catalogs/${encodeURIComponent(selectedTenantCatalog.catalogId)}`, { method: 'DELETE' });
+                        await loadTenantCatalogs(settingsTenantId);
+                        close();
+                    };
+                    return typeof runSectionAction === 'function'
+                        ? runSectionAction('delete_catalog', action, { successMessage: 'Catalogo desactivado' })
+                        : runAction?.('Catalogo desactivado', action);
+                }}>Desactivar</button>
             </>
         );
     }, [
@@ -577,6 +609,7 @@ function CatalogSection(props = {}) {
         openCatalogEdit,
         requestJson,
         runAction,
+        runSectionAction,
         selectedTenantCatalog,
         settingsTenantId
     ]);

@@ -21,6 +21,7 @@ function PlansSection(props = {}) {
         setPlanForm,
         chunkItems = (items) => [items],
         runAction,
+        runSectionAction,
         requestJson,
         setPlanPanelMode,
         cancelPlanEdit,
@@ -150,7 +151,8 @@ function PlansSection(props = {}) {
                 <button
                     type="button"
                     disabled={busy || !planForm?.id}
-                    onClick={() => runAction?.('Plan actualizado', async () => {
+                    onClick={() => {
+                        const action = async () => {
                         const payload = {};
                         PLAN_LIMIT_KEYS.forEach((entry) => {
                             const rawValue = Number(planForm?.[entry.key]);
@@ -173,7 +175,11 @@ function PlansSection(props = {}) {
                         await loadPlanMatrix?.();
                         openPlanView?.(planForm.id);
                         setPlanPanelMode?.('view');
-                    })}
+                        };
+                        return typeof runSectionAction === 'function'
+                            ? runSectionAction('save_plan', action, { successMessage: 'Plan actualizado' })
+                            : runAction?.('Plan actualizado', action);
+                    }}
                 >
                     Guardar cambios
                 </button>
@@ -190,6 +196,7 @@ function PlansSection(props = {}) {
         planForm,
         requestJson,
         runAction,
+        runSectionAction,
         setPlanForm,
         setPlanPanelMode
     ]);

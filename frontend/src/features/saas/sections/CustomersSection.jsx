@@ -979,6 +979,7 @@ function CustomersSection(props = {}) {
         openCustomerView,
         selectedCustomer: selectedCustomerContext,
         runAction,
+        runSectionAction,
         requestJson,
         socket,
         tenantScopeId,
@@ -2292,14 +2293,17 @@ function CustomersSection(props = {}) {
         if (!canManageCustomers) return;
         const customerId = resolveCustomerId(selectedCustomer);
         if (!customerId) return;
-        runAction('Cliente marcado como inactivo', async () => {
+        const action = async () => {
             await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers/' + encodeURIComponent(customerId), {
                 method: 'PUT',
                 body: { isActive: false }
             });
             await loadCustomers(tenantScopeId);
-        });
-    }, [canManageCustomers, loadCustomers, requestJson, runAction, selectedCustomer, tenantScopeId]);
+        };
+        return typeof runSectionAction === 'function'
+            ? runSectionAction('delete_customer', action, { successMessage: 'Cliente marcado como inactivo' })
+            : runAction('Cliente marcado como inactivo', action);
+    }, [canManageCustomers, loadCustomers, requestJson, runAction, runSectionAction, selectedCustomer, tenantScopeId]);
 
     const resetSendTemplateFlow = useCallback(() => {
         setSendTemplateOpen(false);

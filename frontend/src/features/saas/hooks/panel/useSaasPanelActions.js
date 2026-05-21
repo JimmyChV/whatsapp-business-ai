@@ -10,47 +10,19 @@ export default function useSaasPanelActions({
     selectedTenantId = '',
     setError,
     setBusy,
-    refreshOverview,
-    settingsTenantId = '',
-    loadTenantSettings,
-    loadWaModules,
-    loadTenantCatalogs,
-    loadTenantAiAssistants,
-    loadQuickReplyData,
-    loadTenantLabels
+    refreshOverview
 } = {}) {
     const loaderRef = useRef({
-        refreshOverview,
-        settingsTenantId,
-        loadTenantSettings,
-        loadWaModules,
-        loadTenantCatalogs,
-        loadTenantAiAssistants,
-        loadQuickReplyData,
-        loadTenantLabels
+        refreshOverview
     });
 
     loaderRef.current = {
-        refreshOverview,
-        settingsTenantId,
-        loadTenantSettings,
-        loadWaModules,
-        loadTenantCatalogs,
-        loadTenantAiAssistants,
-        loadQuickReplyData,
-        loadTenantLabels
+        refreshOverview
     };
 
     const runAction = useCallback(async (_label, action) => {
         const {
-            refreshOverview: refreshOverviewFn,
-            settingsTenantId: settingsTenantIdValue,
-            loadTenantSettings: loadTenantSettingsFn,
-            loadWaModules: loadWaModulesFn,
-            loadTenantCatalogs: loadTenantCatalogsFn,
-            loadTenantAiAssistants: loadTenantAiAssistantsFn,
-            loadQuickReplyData: loadQuickReplyDataFn,
-            loadTenantLabels: loadTenantLabelsFn
+            refreshOverview: refreshOverviewFn
         } = loaderRef.current;
 
         setError('');
@@ -59,14 +31,6 @@ export default function useSaasPanelActions({
             await action();
             if (typeof refreshOverviewFn === 'function') {
                 await refreshOverviewFn();
-            }
-            if (settingsTenantIdValue) {
-                if (typeof loadTenantSettingsFn === 'function') await loadTenantSettingsFn(settingsTenantIdValue);
-                if (typeof loadWaModulesFn === 'function') await loadWaModulesFn(settingsTenantIdValue);
-                if (typeof loadTenantCatalogsFn === 'function') await loadTenantCatalogsFn(settingsTenantIdValue);
-                if (typeof loadTenantAiAssistantsFn === 'function') await loadTenantAiAssistantsFn(settingsTenantIdValue);
-                if (typeof loadQuickReplyDataFn === 'function') await loadQuickReplyDataFn(settingsTenantIdValue);
-                if (typeof loadTenantLabelsFn === 'function') await loadTenantLabelsFn(settingsTenantIdValue);
             }
         } catch (err) {
             setError(String(err?.message || err || 'Error inesperado.'));

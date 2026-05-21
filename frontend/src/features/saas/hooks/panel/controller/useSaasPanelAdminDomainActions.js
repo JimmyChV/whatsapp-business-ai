@@ -105,7 +105,8 @@ export default function useSaasPanelAdminDomainActions(input = {}) {
         setSelectedAiAssistantId: c.setSelectedAiAssistantId,
         setAiAssistantForm: c.setAiAssistantForm,
         setAiAssistantPanelMode: c.setAiAssistantPanelMode,
-        runAction: runActionProxy
+        runAction: runActionProxy,
+        runSectionAction: c.runSectionAction
     });
 
     const plansRolesActions = usePlansRolesAdminActions({
@@ -129,7 +130,8 @@ export default function useSaasPanelAdminDomainActions(input = {}) {
         setAccessCatalog: c.setAccessCatalog,
         setSelectedRoleKey: c.setSelectedRoleKey,
         setRoleForm: c.setRoleForm,
-        runAction: runActionProxy
+        runAction: runActionProxy,
+        runSectionAction: c.runSectionAction
     });
 
     const tenantsUsersActions = useTenantsUsersAdminActions({

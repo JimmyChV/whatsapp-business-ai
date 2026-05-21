@@ -90,7 +90,11 @@ function normalizeQuickReplyLibraryDraft(libraryIds = []) {
     ));
 }
 
-async function runWithFallback(runAction, label, action) {
+async function runWithFallback(runAction, runSectionAction, actionKey, label, action) {
+    if (typeof runSectionAction === 'function') {
+        await runSectionAction(actionKey, action, { successMessage: label });
+        return;
+    }
     if (typeof runAction === 'function') {
         await runAction(label, action);
         return;
@@ -111,6 +115,7 @@ export default function useSaasModulesController({
     canEditTenantSettings = false,
     busy = false,
     runAction = null,
+    runSectionAction = null,
     requestJson = null,
     setError = null,
     handleFormImageUpload = null,
@@ -177,7 +182,7 @@ export default function useSaasModulesController({
         const label = mode === 'create' ? 'Modulo WA creado' : 'Modulo WA actualizado';
 
         try {
-            await runWithFallback(runAction, label, async () => {
+            await runWithFallback(runAction, runSectionAction, 'save_module', label, async () => {
                 if (mode === 'edit' && moduleInDetail?.moduleId) {
                     const updateUrl = `/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/wa-modules/${encodeURIComponent(moduleInDetail.moduleId)}`;
                     const updatePayload = await requestJson(updateUrl, {
@@ -220,7 +225,8 @@ export default function useSaasModulesController({
         modulesDerived.settingsTenantId,
         modulesState,
         requestJson,
-        runAction
+        runAction,
+        runSectionAction
     ]);
 
     const toggleWaModuleActive = useCallback(async (moduleItem = null) => {
@@ -231,7 +237,7 @@ export default function useSaasModulesController({
         const moduleId = String(targetModule?.moduleId || '').trim();
         if (!cleanTenantId || !moduleId || !canEditModules || typeof requestJson !== 'function') return;
 
-        await runWithFallback(runAction, 'Estado de modulo actualizado', async () => {
+        await runWithFallback(runAction, runSectionAction, 'save_module_status', 'Estado de modulo actualizado', async () => {
             await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(cleanTenantId)}/wa-modules/${encodeURIComponent(moduleId)}`, {
                 method: 'PUT',
                 body: {
@@ -247,7 +253,8 @@ export default function useSaasModulesController({
         modulesDerived.selectedConfigModule,
         modulesDerived.settingsTenantId,
         requestJson,
-        runAction
+        runAction,
+        runSectionAction
     ]);
 
     const modulesActions = {

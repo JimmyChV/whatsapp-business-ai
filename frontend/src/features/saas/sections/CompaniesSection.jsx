@@ -17,6 +17,7 @@ function CompaniesSection(props = {}) {
         tenantPanelMode,
         openTenantEdit,
         runAction,
+        runSectionAction,
         requestJson,
         activeTenantId,
         setSettingsTenantId,
@@ -221,7 +222,9 @@ function CompaniesSection(props = {}) {
                 <button
                     type="button"
                     disabled={busy || !String(tenantForm.name || '').trim()}
-                    onClick={() => runAction?.(tenantPanelMode === 'create' ? 'Empresa creada' : 'Empresa actualizada', async () => {
+                    onClick={() => {
+                        const label = tenantPanelMode === 'create' ? 'Empresa creada' : 'Empresa actualizada';
+                        const action = async () => {
                         const payload = {
                             slug: tenantForm.slug || undefined,
                             name: tenantForm.name,
@@ -250,7 +253,11 @@ function CompaniesSection(props = {}) {
                             body: payload
                         });
                         setTenantPanelMode?.('view');
-                    })}
+                        };
+                        return typeof runSectionAction === 'function'
+                            ? runSectionAction('save_company', action, { successMessage: label })
+                            : runAction?.(label, action);
+                    }}
                 >
                     {tenantPanelMode === 'create' ? 'Guardar empresa' : 'Actualizar empresa'}
                 </button>
@@ -264,6 +271,7 @@ function CompaniesSection(props = {}) {
         handleFormImageUpload,
         requestJson,
         runAction,
+        runSectionAction,
         selectedTenant,
         setSelectedTenantId,
         setSettingsTenantId,
@@ -282,8 +290,9 @@ function CompaniesSection(props = {}) {
                 <button
                     type="button"
                     disabled={busy}
-                    onClick={() => runAction?.('Estado de empresa actualizado', async () => {
-                        await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(selectedTenant.id)}`, {
+                    onClick={() => {
+                        const action = async () => {
+                            await requestJson(`/api/admin/saas/tenants/${encodeURIComponent(selectedTenant.id)}`, {
                             method: 'PUT',
                             body: {
                                 slug: selectedTenant.slug || undefined,
@@ -294,13 +303,17 @@ function CompaniesSection(props = {}) {
                                 coverImageUrl: selectedTenant.coverImageUrl || null
                             }
                         });
-                    })}
+                        };
+                        return typeof runSectionAction === 'function'
+                            ? runSectionAction('save_company_status', action, { successMessage: 'Estado de empresa actualizado' })
+                            : runAction?.('Estado de empresa actualizado', action);
+                    }}
                 >
                     {selectedTenant.active === false ? 'Activar' : 'Desactivar'}
                 </button>
             </>
         );
-    }, [busy, canManageTenants, openTenantEdit, requestJson, runAction, selectedTenant, tenantPanelMode]);
+    }, [busy, canManageTenants, openTenantEdit, requestJson, runAction, runSectionAction, selectedTenant, tenantPanelMode]);
 
     if (selectedSectionId !== 'saas_empresas') return null;
 
