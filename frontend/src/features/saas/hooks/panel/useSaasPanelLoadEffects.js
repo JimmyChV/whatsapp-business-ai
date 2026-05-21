@@ -4,6 +4,19 @@ export default function useSaasPanelLoadEffects({
     isOpen = false,
     canManageSaas = false,
     canViewSuperAdminSections = false,
+    canViewAccessCatalog = false,
+    canViewTenantSettings = false,
+    canViewModules = false,
+    canViewCatalog = false,
+    canViewAi = false,
+    canViewCustomers = false,
+    canViewMetaTemplates = false,
+    canViewCampaigns = false,
+    canViewAutomations = false,
+    canViewSchedules = false,
+    canViewQuickReplies = false,
+    canViewLabels = false,
+    canViewOperations = false,
     tenantScopeId = '',
     runAction,
     refreshOverview,
@@ -79,6 +92,41 @@ export default function useSaasPanelLoadEffects({
     const tenantInFlightKeyRef = useRef('');
     const tenantAttemptedKeyRef = useRef('');
 
+    const isAuthorizationError = (error) => {
+        const message = String(error?.message || error || '').trim().toLowerCase();
+        return message === 'no autorizado.'
+            || message.includes('no autorizado')
+            || message.includes('unauthorized')
+            || message.includes('forbidden')
+            || message.includes('http 401')
+            || message.includes('http 403');
+    };
+
+    const debugSkipLoad = (name) => {
+        if (typeof console !== 'undefined' && typeof console.debug === 'function') {
+            console.debug(`[Panel] skipping load for section ${name}: insufficient permissions`);
+        }
+    };
+
+    const pushPermittedLoad = (tasks, name, allowed, loader, tenantId) => {
+        if (typeof loader !== 'function') return;
+        if (!allowed) {
+            debugSkipLoad(name);
+            return;
+        }
+        tasks.push(
+            Promise.resolve()
+                .then(() => loader(tenantId))
+                .catch((error) => {
+                    if (isAuthorizationError(error)) {
+                        debugSkipLoad(name);
+                        return undefined;
+                    }
+                    throw error;
+                })
+        );
+    };
+
     useEffect(() => {
         if (!isOpen || !canManageSaas) {
             bootLoadKeyRef.current = '';
@@ -87,7 +135,7 @@ export default function useSaasPanelLoadEffects({
             return;
         }
 
-        const bootKey = `${isOpen ? '1' : '0'}:${canManageSaas ? '1' : '0'}:${canViewSuperAdminSections ? '1' : '0'}`;
+        const bootKey = `${isOpen ? '1' : '0'}:${canManageSaas ? '1' : '0'}:${canViewSuperAdminSections ? '1' : '0'}:${canViewAccessCatalog ? '1' : '0'}`;
         if (
             bootLoadKeyRef.current === bootKey
             || bootInFlightKeyRef.current === bootKey
@@ -117,7 +165,7 @@ export default function useSaasPanelLoadEffects({
         runActionFn('Carga inicial', async () => {
             const tasks = [];
             if (typeof refreshOverviewFn === 'function') tasks.push(refreshOverviewFn());
-            if (typeof loadAccessCatalogFn === 'function') tasks.push(loadAccessCatalogFn());
+            pushPermittedLoad(tasks, 'access-catalog', canViewAccessCatalog, loadAccessCatalogFn, undefined);
             if (canViewSuperAdminSections && typeof loadPlanMatrixFn === 'function') {
                 tasks.push(loadPlanMatrixFn());
             }
@@ -142,7 +190,7 @@ export default function useSaasPanelLoadEffects({
                     bootInFlightKeyRef.current = '';
                 }
             });
-    }, [canManageSaas, canViewSuperAdminSections, isOpen]);
+    }, [canManageSaas, canViewAccessCatalog, canViewSuperAdminSections, isOpen]);
 
     useEffect(() => {
         if (!isOpen || !canManageSaas || !tenantScopeId) {
@@ -152,7 +200,21 @@ export default function useSaasPanelLoadEffects({
             return;
         }
 
-        const tenantKey = `${tenantScopeId}:${isOpen ? '1' : '0'}:${canManageSaas ? '1' : '0'}`;
+        const permissionKey = [
+            canViewTenantSettings,
+            canViewModules,
+            canViewCatalog,
+            canViewAi,
+            canViewCustomers,
+            canViewMetaTemplates,
+            canViewCampaigns,
+            canViewAutomations,
+            canViewSchedules,
+            canViewQuickReplies,
+            canViewLabels,
+            canViewOperations
+        ].map((value) => (value ? '1' : '0')).join('');
+        const tenantKey = `${tenantScopeId}:${isOpen ? '1' : '0'}:${canManageSaas ? '1' : '0'}:${permissionKey}`;
         if (
             tenantLoadKeyRef.current === tenantKey
             || tenantInFlightKeyRef.current === tenantKey
@@ -183,20 +245,20 @@ export default function useSaasPanelLoadEffects({
         } = loadersRef.current;
 
         const tasks = [];
-        if (typeof loadTenantSettingsFn === 'function') tasks.push(loadTenantSettingsFn(tenantScopeId));
-        if (typeof loadWaModulesFn === 'function') tasks.push(loadWaModulesFn(tenantScopeId));
-        if (typeof loadTenantCatalogsFn === 'function') tasks.push(loadTenantCatalogsFn(tenantScopeId));
-        if (typeof loadTenantAiAssistantsFn === 'function') tasks.push(loadTenantAiAssistantsFn(tenantScopeId));
-        if (typeof loadTenantIntegrationsFn === 'function') tasks.push(loadTenantIntegrationsFn(tenantScopeId));
-        if (typeof loadCustomersFn === 'function') tasks.push(loadCustomersFn(tenantScopeId));
-        if (typeof loadMetaTemplatesFn === 'function') tasks.push(loadMetaTemplatesFn(tenantScopeId));
-        if (typeof loadCampaignsFn === 'function') tasks.push(loadCampaignsFn(tenantScopeId));
-        if (typeof loadAutomationsFn === 'function') tasks.push(loadAutomationsFn(tenantScopeId));
-        if (typeof loadSchedulesFn === 'function') tasks.push(loadSchedulesFn(tenantScopeId));
-        if (typeof loadQuickReplyDataFn === 'function') tasks.push(loadQuickReplyDataFn(tenantScopeId));
-        if (typeof loadTenantLabelsFn === 'function') tasks.push(loadTenantLabelsFn(tenantScopeId));
-        if (typeof loadTenantAssignmentRulesFn === 'function') tasks.push(loadTenantAssignmentRulesFn(tenantScopeId));
-        if (typeof loadTenantOperationsKpisFn === 'function') tasks.push(loadTenantOperationsKpisFn(tenantScopeId));
+        pushPermittedLoad(tasks, 'settings', canViewTenantSettings, loadTenantSettingsFn, tenantScopeId);
+        pushPermittedLoad(tasks, 'modules', canViewModules, loadWaModulesFn, tenantScopeId);
+        pushPermittedLoad(tasks, 'catalogs', canViewCatalog, loadTenantCatalogsFn, tenantScopeId);
+        pushPermittedLoad(tasks, 'ai-assistants', canViewAi, loadTenantAiAssistantsFn, tenantScopeId);
+        pushPermittedLoad(tasks, 'integrations', canViewAi, loadTenantIntegrationsFn, tenantScopeId);
+        pushPermittedLoad(tasks, 'customers', canViewCustomers, loadCustomersFn, tenantScopeId);
+        pushPermittedLoad(tasks, 'meta-templates', canViewMetaTemplates, loadMetaTemplatesFn, tenantScopeId);
+        pushPermittedLoad(tasks, 'campaigns', canViewCampaigns, loadCampaignsFn, tenantScopeId);
+        pushPermittedLoad(tasks, 'automations', canViewAutomations, loadAutomationsFn, tenantScopeId);
+        pushPermittedLoad(tasks, 'schedules', canViewSchedules, loadSchedulesFn, tenantScopeId);
+        pushPermittedLoad(tasks, 'quick-replies', canViewQuickReplies, loadQuickReplyDataFn, tenantScopeId);
+        pushPermittedLoad(tasks, 'labels', canViewLabels, loadTenantLabelsFn, tenantScopeId);
+        pushPermittedLoad(tasks, 'assignment-rules', canViewOperations, loadTenantAssignmentRulesFn, tenantScopeId);
+        pushPermittedLoad(tasks, 'operation-kpis', canViewOperations, loadTenantOperationsKpisFn, tenantScopeId);
 
         Promise.allSettled(tasks)
             .then((results) => {
@@ -211,5 +273,21 @@ export default function useSaasPanelLoadEffects({
                     tenantInFlightKeyRef.current = '';
                 }
             });
-    }, [canManageSaas, isOpen, tenantScopeId]);
+    }, [
+        canManageSaas,
+        canViewAi,
+        canViewAutomations,
+        canViewCampaigns,
+        canViewCatalog,
+        canViewCustomers,
+        canViewLabels,
+        canViewMetaTemplates,
+        canViewModules,
+        canViewOperations,
+        canViewQuickReplies,
+        canViewSchedules,
+        canViewTenantSettings,
+        isOpen,
+        tenantScopeId
+    ]);
 }
