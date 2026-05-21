@@ -24,8 +24,7 @@ export default function useSaasOperationAccess({
         typeof onOpenWhatsAppOperation === 'function'
         && canOperateChat
         && operationTenantId
-        && hasActiveModuleForOperation
-    ), [canOperateChat, hasActiveModuleForOperation, onOpenWhatsAppOperation, operationTenantId]);
+    ), [canOperateChat, onOpenWhatsAppOperation, operationTenantId]);
 
     return {
         operationTenantId,
