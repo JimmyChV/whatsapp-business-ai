@@ -19,6 +19,7 @@ export default function useSaasPanelLoadEffects({
     canViewLabels = false,
     canViewZones = false,
     canViewOperations = false,
+    canViewUsers = false,
     canViewCommercialIntelligence = false,
     canManageRoles = false,
     tenantScopeId = '',
