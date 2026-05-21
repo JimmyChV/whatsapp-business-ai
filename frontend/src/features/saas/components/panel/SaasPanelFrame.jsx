@@ -16,6 +16,8 @@ export default function SaasPanelFrame({
     closeLabel = 'Cerrar sesión',
     themeMode = 'dark',
     onThemeChange = null,
+    savingActions,
+    onRetryActivity,
     onClose,
     error = '',
     showPanelLoading = false,
@@ -50,6 +52,8 @@ export default function SaasPanelFrame({
                     closeLabel={closeLabel}
                     themeMode={themeMode}
                     onThemeChange={onThemeChange}
+                    savingActions={savingActions}
+                    onRetryActivity={onRetryActivity}
                     onClose={onClose}
                     tenantPicker={requiresTenantSelection ? {
                         visible: true,

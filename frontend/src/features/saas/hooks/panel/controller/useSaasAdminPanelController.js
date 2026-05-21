@@ -1087,6 +1087,8 @@ export default function useSaasAdminPanelController({
         closeLabel,
         themeMode,
         onThemeChange,
+        savingActions: sectionActionState.savingActions,
+        onRetryActivity: sectionActionState.retryAction,
         activeTenantLabel: tenantDerived.activeTenantLabel,
         error,
         showPanelLoading,

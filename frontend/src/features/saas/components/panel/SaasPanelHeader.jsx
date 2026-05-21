@@ -1,7 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MessageCircle, Moon, Sun, X } from 'lucide-react';
+import SaasPanelActivityIndicator from '../SaasPanelActivityIndicator';
+import SaasPanelExitBlockModal from '../SaasPanelExitBlockModal';
 
 const normalizeThemeMode = (value = '') => (String(value || '').trim().toLowerCase() === 'light' ? 'light' : 'dark');
+
+const normalizeActivityActions = (savingActions) => {
+    if (!(savingActions instanceof Map)) return [];
+    return Array.from(savingActions.entries())
+        .map(([actionKey, value]) => ({
+            actionKey,
+            label: String(value?.label || actionKey || 'cambio').trim() || 'cambio',
+            status: String(value?.status || 'saving').trim().toLowerCase() || 'saving'
+        }))
+        .filter((item) => item.actionKey);
+};
 
 export default function SaasPanelHeader({
     showHeader = true,
@@ -19,15 +32,37 @@ export default function SaasPanelHeader({
     themeMode = 'dark',
     onThemeChange = null,
     onClose,
-    tenantPicker = null
+    tenantPicker = null,
+    savingActions = new Map(),
+    onRetryActivity = null
 }) {
     if (!showHeader) return null;
 
     const [activeThemeMode, setActiveThemeMode] = useState(() => normalizeThemeMode(themeMode));
+    const [exitBlockOpen, setExitBlockOpen] = useState(false);
 
     useEffect(() => {
         setActiveThemeMode(normalizeThemeMode(themeMode));
     }, [themeMode]);
+
+    const activityActions = useMemo(() => normalizeActivityActions(savingActions), [savingActions]);
+    const pendingActions = useMemo(
+        () => activityActions.filter((item) => item.status === 'saving'),
+        [activityActions]
+    );
+    const hasPendingSaves = pendingActions.length > 0;
+
+    useEffect(() => {
+        if (!hasPendingSaves) setExitBlockOpen(false);
+    }, [hasPendingSaves]);
+
+    const handleCloseClick = () => {
+        if (hasPendingSaves) {
+            setExitBlockOpen(true);
+            return;
+        }
+        onClose?.();
+    };
 
     return (
         <div className="saas-admin-header">
@@ -123,15 +158,30 @@ export default function SaasPanelHeader({
                             <small>{currentUserRoleLabel}</small>
                         </div>
                     </div>
+                    <SaasPanelActivityIndicator
+                        savingActions={savingActions}
+                        onRetry={onRetryActivity}
+                    />
                     <button
                         type="button"
-                        className="saas-btn saas-header-btn saas-header-btn--danger saas-admin-header-close-danger"
-                        onClick={onClose}
+                        className={`saas-btn saas-header-btn saas-header-btn--danger saas-admin-header-close-danger${hasPendingSaves ? ' is-save-blocked' : ''}`}
+                        aria-disabled={hasPendingSaves}
+                        onClick={handleCloseClick}
                         title={closeLabel}
                     >
                         <X size={15} strokeWidth={2} />
                         <span className="saas-btn-text">{closeLabel}</span>
                     </button>
+                    {exitBlockOpen ? (
+                        <SaasPanelExitBlockModal
+                            pendingActions={pendingActions}
+                            onWait={() => setExitBlockOpen(false)}
+                            onForceExit={() => {
+                                setExitBlockOpen(false);
+                                onClose?.();
+                            }}
+                        />
+                    ) : null}
                 </div>
             )}
         </div>

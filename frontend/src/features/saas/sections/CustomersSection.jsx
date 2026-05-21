@@ -980,6 +980,8 @@ function CustomersSection(props = {}) {
         selectedCustomer: selectedCustomerContext,
         runAction,
         runSectionAction,
+        isSaving,
+        savingActions,
         requestJson,
         socket,
         tenantScopeId,
@@ -1027,10 +1029,8 @@ function CustomersSection(props = {}) {
     const [geoCatalog, setGeoCatalog] = useState(EMPTY_GEO_CATALOG);
     const [loadingGeoCatalog, setLoadingGeoCatalog] = useState(false);
     const [geoCatalogError, setGeoCatalogError] = useState('');
-    const [savingCustomer, setSavingCustomer] = useState(false);
     const [selectedCustomerLive, setSelectedCustomerLive] = useState(selectedCustomerContext || null);
     const [customerOverridesById, setCustomerOverridesById] = useState({});
-    const [showCustomerSynced, setShowCustomerSynced] = useState(false);
     const [campaignSelectionMode, setCampaignSelectionMode] = useState(false);
     const [selectedCustomerIdsForCampaign, setSelectedCustomerIdsForCampaign] = useState([]);
     const [outreachModuleId, setOutreachModuleId] = useState('');
@@ -1076,9 +1076,12 @@ function CustomersSection(props = {}) {
     const [showAllImportErrors, setShowAllImportErrors] = useState(false);
     const importProgressPollRef = useRef(null);
     const importProgressStateRef = useRef(null);
-    const syncedIndicatorTimeoutRef = useRef(null);
     const customersRealtimeSyncTimeoutRef = useRef(null);
     const customersRealtimeSyncInFlightRef = useRef(false);
+    const savingCustomer = Boolean(
+        savingActions?.get?.('save_customer')?.status === 'saving'
+        || (typeof isSaving === 'function' && isSaving('save_customer'))
+    );
 
     const defaultColumnKeys = useMemo(() => CUSTOMER_DEFAULT_COLUMN_KEYS, []);
     const columnPrefs = useSaasColumnPrefs('customers', defaultColumnKeys, {
@@ -1108,14 +1111,6 @@ function CustomersSection(props = {}) {
             return prev;
         });
     }, [selectedCustomerContext]);
-
-    useEffect(() => {
-        return () => {
-            if (syncedIndicatorTimeoutRef.current) {
-                clearTimeout(syncedIndicatorTimeoutRef.current);
-            }
-        };
-    }, []);
 
     const getCustomerOverride = useCallback((customerId = '') => {
         const normalizedId = normalizeCatalogLookupKey(customerId);
@@ -2987,17 +2982,6 @@ function CustomersSection(props = {}) {
         return true;
     }, [patchCustomerInCache, selectedCustomerId, selectedCustomerIdResolved, setCustomers, tenantScopeId]);
 
-    const showSyncedIndicator = useCallback(() => {
-        setShowCustomerSynced(true);
-        if (syncedIndicatorTimeoutRef.current) {
-            clearTimeout(syncedIndicatorTimeoutRef.current);
-        }
-        syncedIndicatorTimeoutRef.current = setTimeout(() => {
-            setShowCustomerSynced(false);
-            syncedIndicatorTimeoutRef.current = null;
-        }, 2000);
-    }, []);
-
     const buildCustomerSubmitPayload = useCallback(() => {
         const basePayload = buildCustomerPayloadFromForm(customerForm);
         const firstName = String(firstNameValue || '').trim() || null;
@@ -3045,41 +3029,44 @@ function CustomersSection(props = {}) {
     const handleSaveCustomer = useCallback(() => {
         if (!canManageCustomers) return;
         if (savingCustomer) return;
-        setShowCustomerSynced(false);
         const payload = buildCustomerSubmitPayload();
         const selectedCustomerIdForSave = resolveCustomerId(selectedCustomer);
         const isCreate = customerPanelMode === 'create' || !selectedCustomerIdForSave;
+        const runCustomerSave = (action) => {
+            if (typeof runSectionAction === 'function') {
+                return runSectionAction('save_customer', action, {
+                    label: 'cliente',
+                    errorMessage: 'No se pudo guardar el cliente.'
+                });
+            }
+            return action().catch((error) => {
+                notify({
+                    type: 'error',
+                    body: String(error?.message || 'No se pudo guardar el cliente.')
+                });
+                return undefined;
+            });
+        };
 
         if (isCreate) {
-            setSavingCustomer(true);
-            void (async () => {
-                try {
-                    const created = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers', {
-                        method: 'POST',
-                        body: payload
+            void runCustomerSave(async () => {
+                const created = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers', {
+                    method: 'POST',
+                    body: payload
+                });
+                const createdItem = created?.item && typeof created.item === 'object' ? created.item : null;
+                const createdId = String(createdItem?.customerId || created?.item?.customer_id || '').trim();
+                const preferredLanguage = String(payload?.preferredLanguage || 'es').trim().toLowerCase() || 'es';
+                if (createdItem) updateCustomersState(createdItem);
+                if (createdId) {
+                    await requestJson('/api/tenant/customers/' + encodeURIComponent(createdId) + '/language', {
+                        method: 'PATCH',
+                        body: { preferredLanguage }
                     });
-                    const createdItem = created?.item && typeof created.item === 'object' ? created.item : null;
-                    const createdId = String(createdItem?.customerId || created?.item?.customer_id || '').trim();
-                    const preferredLanguage = String(payload?.preferredLanguage || 'es').trim().toLowerCase() || 'es';
-                    if (createdItem) updateCustomersState(createdItem);
-                    if (createdId) {
-                        await requestJson('/api/tenant/customers/' + encodeURIComponent(createdId) + '/language', {
-                            method: 'PATCH',
-                            body: { preferredLanguage }
-                        });
-                    }
-                    if (createdId) setSelectedCustomerId(createdId);
-                    setCustomerPanelMode('view');
-                    showSyncedIndicator();
-                } catch (error) {
-                    notify({
-                        type: 'error',
-                        body: String(error?.message || 'No se pudo guardar el cliente.')
-                    });
-                } finally {
-                    setSavingCustomer(false);
                 }
-            })();
+                if (createdId) setSelectedCustomerId(createdId);
+                setCustomerPanelMode('view');
+            });
             return;
         }
 
@@ -3089,9 +3076,8 @@ function CustomersSection(props = {}) {
         const optimisticItem = buildOptimisticCustomerFromPayload(snapshot, payload);
         if (optimisticItem) updateCustomersState(optimisticItem);
         setCustomerPanelMode('view');
-        setSavingCustomer(true);
 
-        void (async () => {
+        void runCustomerSave(async () => {
             try {
                 const response = await requestJson('/api/admin/saas/tenants/' + encodeURIComponent(tenantScopeId) + '/customers/' + encodeURIComponent(customerId), {
                     method: 'PUT',
@@ -3109,20 +3095,14 @@ function CustomersSection(props = {}) {
                     await syncCustomersDelta(tenantScopeId, {
                         updatedSince: typeof maxCustomersUpdatedAt === 'function'
                             ? maxCustomersUpdatedAt(tenantScopeId)
-                            : ''
+                        : ''
                     });
                 }
-                showSyncedIndicator();
             } catch (error) {
                 if (snapshot) updateCustomersState(snapshot);
-                notify({
-                    type: 'error',
-                    body: 'No se pudo guardar el cliente. Se revirtieron los cambios locales.'
-                });
-            } finally {
-                setSavingCustomer(false);
+                throw new Error('No se pudo guardar el cliente. Se revirtieron los cambios locales.');
             }
-        })();
+        });
     }, [
         buildCustomerSubmitPayload,
         canManageCustomers,
@@ -3130,14 +3110,14 @@ function CustomersSection(props = {}) {
         maxCustomersUpdatedAt,
         notify,
         requestJson,
+        runSectionAction,
         savingCustomer,
         selectedCustomer,
         setCustomerPanelMode,
         setSelectedCustomerId,
         syncCustomersDelta,
         tenantScopeId,
-        updateCustomersState,
-        showSyncedIndicator
+        updateCustomersState
     ]);
 
     useEffect(() => {
@@ -4134,17 +4114,9 @@ function CustomersSection(props = {}) {
                     {campaignSelectionMode && outreachEligibilityError ? (
                         <div className="saas-admin-inline-feedback error">{outreachEligibilityError}</div>
                     ) : null}
-                    {(customersLoadingBatch || savingCustomer) ? (
+                    {customersLoadingBatch ? (
                         <div className="saas-admin-inline-feedback">
-                            {customersLoadingBatch ? `Cargando clientes... ${Math.max(0, Math.min(100, Number(customersLoadProgress) || 0))}%` : null}
-                            {customersLoadingBatch && savingCustomer ? ' | ' : null}
-                            {savingCustomer ? 'Guardando cliente...' : null}
-                        </div>
-                    ) : null}
-                    {(savingCustomer || showCustomerSynced) ? (
-                        <div className={`saas-customers-sync-indicator${savingCustomer ? ' is-saving' : ' is-synced'}`}>
-                            <span className="saas-customers-sync-indicator__dot" />
-                            <span>{savingCustomer ? 'Guardando...' : 'Sincronizado'}</span>
+                            {`Cargando clientes... ${Math.max(0, Math.min(100, Number(customersLoadProgress) || 0))}%`}
                         </div>
                     ) : null}
                 </div>
@@ -4520,17 +4492,9 @@ function CustomersSection(props = {}) {
             {campaignSelectionMode && outreachEligibilityError ? (
                 <div className="saas-admin-inline-feedback error">{outreachEligibilityError}</div>
             ) : null}
-            {(customersLoadingBatch || savingCustomer) ? (
+            {customersLoadingBatch ? (
                 <div className="saas-admin-inline-feedback">
-                    {customersLoadingBatch ? `Cargando clientes... ${Math.max(0, Math.min(100, Number(customersLoadProgress) || 0))}%` : null}
-                    {customersLoadingBatch && savingCustomer ? ' | ' : null}
-                    {savingCustomer ? 'Guardando cliente...' : null}
-                </div>
-            ) : null}
-            {(savingCustomer || showCustomerSynced) ? (
-                <div className={`saas-customers-sync-indicator${savingCustomer ? ' is-saving' : ' is-synced'}`}>
-                    <span className="saas-customers-sync-indicator__dot" />
-                    <span>{savingCustomer ? 'Guardando...' : 'Sincronizado'}</span>
+                    {`Cargando clientes... ${Math.max(0, Math.min(100, Number(customersLoadProgress) || 0))}%`}
                 </div>
             ) : null}
         </div>

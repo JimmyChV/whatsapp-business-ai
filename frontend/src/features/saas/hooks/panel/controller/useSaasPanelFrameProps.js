@@ -13,6 +13,8 @@ export default function useSaasPanelFrameProps(input = {}) {
         themeMode,
         onThemeChange,
         handlePanelClose,
+        savingActions,
+        onRetryActivity,
         activeTenantLabel,
         error,
         showPanelLoading,
@@ -42,7 +44,9 @@ export default function useSaasPanelFrameProps(input = {}) {
         closeLabel,
         themeMode,
         onThemeChange,
-        onClose: handlePanelClose
+        onClose: handlePanelClose,
+        savingActions,
+        onRetryActivity
     };
 
     const frameProps = {
