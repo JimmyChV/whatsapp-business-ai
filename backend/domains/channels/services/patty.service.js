@@ -17,6 +17,8 @@ const chatCommercialStatusService = require('../../operations/services/chat-comm
 const conversationOpsService = require('../../operations/services/conversation-ops.service');
 const { getChatSuggestion } = require('../../operations/services/ai.service');
 const waClient = require('./wa-provider.service');
+const commercialAdvisorService = require('./commercial-advisor.service');
+const commercialOptionsBuilderService = require('./commercial-options-builder.service');
 const fs = require('fs');
 const path = require('path');
 const { resolveAndValidatePublicHost } = require('../../security/helpers/security-utils');
@@ -986,7 +988,16 @@ function getModuleCatalogIdsFromConfig(moduleConfig = {}) {
 function getCommercialProfileIdFromModule(moduleConfig = {}) {
     const metadata = safeJsonObject(moduleConfig?.metadata);
     const aiConfig = safeJsonObject(moduleConfig?.aiConfig || metadata.aiConfig);
-    return text(aiConfig.commercialProfileId || aiConfig.commercial_profile_id || metadata.commercialProfileId || metadata.commercial_profile_id);
+    return text(
+        aiConfig.commercialIntelligenceProfileId
+        || aiConfig.commercial_intelligence_profile_id
+        || aiConfig.commercialProfileId
+        || aiConfig.commercial_profile_id
+        || metadata.commercialIntelligenceProfileId
+        || metadata.commercial_intelligence_profile_id
+        || metadata.commercialProfileId
+        || metadata.commercial_profile_id
+    );
 }
 
 async function resolvePattyCommercialScope(tenantId, moduleConfig = {}) {
@@ -1006,9 +1017,249 @@ async function resolvePattyCommercialScope(tenantId, moduleConfig = {}) {
     return {
         profileId: text(profile?.profileId || configuredProfileId),
         profileName: text(profile?.name) || (configuredProfileId ? configuredProfileId : 'Perfil comercial por defecto'),
+        profile: profile || null,
         catalogIds,
         source: profileCatalogIds.length ? 'commercial_profile' : (moduleCatalogIds.length ? 'module_catalogs' : 'tenant_all')
     };
+}
+
+function hasResolvedCommercialZone(zoneDecision = {}) {
+    const rule = zoneDecision?.zoneRule;
+    return Boolean(rule && typeof rule === 'object' && (rule.name || rule.ruleId || rule.rule_id));
+}
+
+function formatCommercialOptionProduct(product = {}) {
+    const title = text(product.title || product.name || product.sku || product.itemId);
+    const qty = Math.max(1, Number(product.qty || product.quantity || 1) || 1);
+    const unitPrice = money(product.unitPrice ?? product.unit_price ?? product.price);
+    const priceText = unitPrice === null ? '' : ` a S/ ${unitPrice.toFixed(2)}`;
+    return `${qty} x ${title}${priceText}`;
+}
+
+function formatCommercialSalesOption(option = {}, index = 0) {
+    const label = text(option.label) || `Opcion ${index + 1}`;
+    const products = (Array.isArray(option.products) ? option.products : [])
+        .map(formatCommercialOptionProduct)
+        .filter(Boolean)
+        .join(' + ');
+    const total = money(option.total);
+    const totalText = total === null ? 'total por confirmar' : `S/ ${total.toFixed(2)}`;
+    const freeShipping = option.freeShipping ? ' - llega al envio gratis' : '';
+    const shortfall = Number(option.shortfall || 0);
+    const shortfallText = !option.freeShipping && shortfall > 0 ? ` - faltan S/ ${shortfall.toFixed(2)} para envio gratis` : '';
+    return `${index + 1}. ${label}: ${products || 'productos reales del catalogo'} - ${totalText}${freeShipping}${shortfallText}`;
+}
+
+function getCommercialProfileConfig(profile = null) {
+    return profile && typeof profile === 'object' && profile.config && typeof profile.config === 'object'
+        ? profile.config
+        : {};
+}
+
+function findCommercialDiscoveryQuestion(decision = {}, profile = null) {
+    const config = getCommercialProfileConfig(profile);
+    const categories = Array.isArray(config.categories) ? config.categories : [];
+    const needs = (Array.isArray(decision.understoodNeeds) ? decision.understoodNeeds : [])
+        .map((entry) => normalizeProductLookupKey(entry))
+        .filter(Boolean);
+    const selected = categories.find((category) => {
+        const id = normalizeProductLookupKey(category?.id || category?.categoryId || '');
+        const name = normalizeProductLookupKey(category?.name || category?.label || '');
+        return needs.some((need) => need === id || need === name || id.includes(need) || name.includes(need));
+    }) || categories.find((category) => Array.isArray(category?.discoveryQuestions) && category.discoveryQuestions.length);
+    const questions = Array.isArray(selected?.discoveryQuestions)
+        ? selected.discoveryQuestions
+        : (Array.isArray(selected?.discovery_questions) ? selected.discovery_questions : []);
+    return text(questions[0] || '');
+}
+
+function getCommercialOptionSkus(option = {}) {
+    return new Set((Array.isArray(option.products) ? option.products : [])
+        .map((product) => text(product.sku || product.itemId || product.item_id).toUpperCase())
+        .filter(Boolean));
+}
+
+function getCommercialCatalogPrice(item = {}) {
+    const metadata = safeJsonObject(item.metadata);
+    return money(item.price ?? item.unitPrice ?? item.finalPrice ?? metadata.salePrice ?? metadata.sale_price);
+}
+
+function buildCommercialFreeShippingUpsellResponse({ salesDecision = {}, currentSalesState = {}, catalogItems = [] } = {}) {
+    const option = salesDecision.chosenOption || currentSalesState.chosenOption || null;
+    if (!option || typeof option !== 'object') return '';
+    const shortfall = money(option.shortfall);
+    if (!shortfall || shortfall <= 0) return '';
+    const usedSkus = getCommercialOptionSkus(option);
+    const addOn = (Array.isArray(catalogItems) ? catalogItems : [])
+        .map((item) => ({
+            sku: text(item.sku || item.itemId || item.item_id).toUpperCase(),
+            title: text(item.title || item.name),
+            price: getCommercialCatalogPrice(item)
+        }))
+        .filter((item) => item.sku && item.title && item.price !== null && item.price > 0 && !usedSkus.has(item.sku))
+        .sort((left, right) => left.price - right.price)
+        .find((item) => item.price <= shortfall + 10);
+    if (!addOn) return '';
+    return `Te faltan S/ ${shortfall.toFixed(2)} para llegar al envio gratis. Podrias agregar ${addOn.title} por S/ ${addOn.price.toFixed(2)} y aprovechar mejor tu pedido 😊`;
+}
+
+function buildCommercialDeterministicResponse({ salesDecision = {}, currentSalesState = {}, commercialProfile = null, catalogItems = [] } = {}) {
+    const nextBestAction = text(salesDecision.nextBestAction);
+    if (nextBestAction === 'ask_discovery_question') {
+        const question = findCommercialDiscoveryQuestion(salesDecision, commercialProfile);
+        return question ? `${question} 😊` : '';
+    }
+    if (nextBestAction === 'upsell_to_free_shipping') {
+        return buildCommercialFreeShippingUpsellResponse({ salesDecision, currentSalesState, catalogItems });
+    }
+    return '';
+}
+
+function buildCommercialSalesDecisionPrompt(decisionContext = {}) {
+    const decision = decisionContext.decision || null;
+    if (!decision) return '';
+    const lines = [
+        'DECISION COMERCIAL:',
+        `Perfil usado: ${decisionContext.profileName || 'perfil comercial'}`,
+        `Etapa: ${decision.stage || 'exploration'}`,
+        `Intencion: ${decision.intent || 'unknown'}`,
+        `Necesidades: ${(Array.isArray(decision.understoodNeeds) && decision.understoodNeeds.length) ? decision.understoodNeeds.join(', ') : 'sin necesidad clara aun'}`,
+        `Siguiente accion: ${decision.nextBestAction || 'present_categories'}`
+    ];
+    if (Array.isArray(decision.synonymsUsed) && decision.synonymsUsed.length) {
+        lines.push(`Sinonimos resueltos: ${decision.synonymsUsed.map((entry) => `${entry.original} -> ${entry.mapsTo}`).join('; ')}`);
+    }
+    if (Array.isArray(decision.normalizedProducts) && decision.normalizedProducts.length) {
+        lines.push('Productos/necesidades normalizadas:');
+        decision.normalizedProducts.slice(0, 8).forEach((entry) => {
+            lines.push(`- ${entry.inputText}: categoria=${entry.resolvedCategory || 'null'}, sku=${entry.resolvedSku || 'null'}, confianza=${entry.confidence || 'medium'}`);
+        });
+    }
+    if (decision.nextBestAction === 'ask_delivery_first' && decisionContext.hasKnownZone === false) {
+        lines.push('Regla: no construyas opciones ni cotices hasta confirmar la zona de entrega del cliente.');
+    }
+    if (Array.isArray(decision.proposedOptions) && decision.proposedOptions.length) {
+        lines.push('OPCIONES DISPONIBLES:');
+        decision.proposedOptions.slice(0, 3).forEach((option, index) => {
+            lines.push(formatCommercialSalesOption(option, index));
+        });
+    }
+    if (Array.isArray(decision.forbidden) && decision.forbidden.length) {
+        lines.push(`RESTRICCIONES: ${decision.forbidden.join(', ')}`);
+    }
+    lines.push('INSTRUCCION: sigue la accion recomendada. No inventes productos, precios, descuentos ni cobertura.');
+    return lineList(lines, '');
+}
+
+async function buildCommercialSalesDecisionContext({
+    tenantId,
+    moduleId,
+    chatId,
+    lastMessage,
+    conversationLines,
+    commercialScope,
+    zoneDecision
+} = {}) {
+    const profile = commercialScope?.profile || null;
+    if (!profile) {
+        if (commercialScope?.profileId) {
+            console.warn('[Patty] commercial engine skipped:', {
+                tenantId,
+                moduleId,
+                chatId,
+                reason: 'profile_not_found',
+                profileId: commercialScope.profileId
+            });
+        }
+        return { text: '', deterministicResponse: '', decision: null, profileUsed: false, optionsBuilt: false };
+    }
+    try {
+        const profileId = text(profile.profileId || commercialScope.profileId);
+        const [currentSalesState, commercialCatalogItems] = await Promise.all([
+            chatCommercialStatusService.getSalesState(tenantId, chatId, moduleId),
+            commercialIntelligenceService.getCatalogWithRoles(tenantId, profileId)
+        ]);
+        const baseDecision = await commercialAdvisorService.analyzeSalesContext({
+            tenantId,
+            lastMessage,
+            conversationHistory: Array.isArray(conversationLines) ? conversationLines : [],
+            catalogItems: commercialCatalogItems,
+            commercialProfile: profile,
+            currentSalesState
+        });
+        const zoneRule = hasResolvedCommercialZone(zoneDecision) ? zoneDecision.zoneRule : null;
+        const nextBestAction = commercialAdvisorService.resolveNextBestAction(baseDecision, currentSalesState, zoneRule);
+        const salesDecision = {
+            ...baseDecision,
+            nextBestAction,
+            shouldBuildOptions: nextBestAction === 'ask_delivery_first' && !zoneRule ? false : baseDecision.shouldBuildOptions
+        };
+        let optionsBuilt = false;
+        const existingOptions = Array.isArray(currentSalesState.proposedOptions) ? currentSalesState.proposedOptions : [];
+        const canBuildOptions = Boolean(salesDecision.shouldBuildOptions && zoneRule && nextBestAction !== 'ask_delivery_first');
+        if (canBuildOptions) {
+            const proposedOptions = await commercialOptionsBuilderService.buildThreeOptions({
+                tenantId,
+                understoodNeeds: salesDecision.understoodNeeds,
+                catalogItems: commercialCatalogItems,
+                commercialProfile: profile,
+                zoneRule
+            });
+            if (proposedOptions.length) {
+                salesDecision.proposedOptions = proposedOptions;
+                optionsBuilt = true;
+            }
+        } else if (nextBestAction === 'ask_which_option' && existingOptions.length) {
+            salesDecision.proposedOptions = existingOptions;
+        }
+        const deterministicResponse = buildCommercialDeterministicResponse({
+            salesDecision,
+            currentSalesState,
+            commercialProfile: profile,
+            catalogItems: commercialCatalogItems
+        });
+        const stateUpdates = {
+            stage: salesDecision.stage,
+            intent: salesDecision.intent,
+            understoodNeeds: salesDecision.understoodNeeds,
+            normalizedProducts: salesDecision.normalizedProducts,
+            pendingAction: salesDecision.nextBestAction
+        };
+        if (optionsBuilt) {
+            stateUpdates.proposedOptions = salesDecision.proposedOptions;
+        }
+        await chatCommercialStatusService.updateSalesState(tenantId, chatId, moduleId, stateUpdates);
+        console.log('[Patty] sales decision', {
+            tenantId,
+            moduleId,
+            chatId,
+            stage: salesDecision.stage,
+            intent: salesDecision.intent,
+            nextBestAction: salesDecision.nextBestAction,
+            optionsBuilt,
+            profileUsed: profileId || null
+        });
+        const decisionContext = {
+            decision: salesDecision,
+            profileName: text(profile.name || commercialScope.profileName),
+            hasKnownZone: Boolean(zoneRule),
+            profileUsed: true,
+            optionsBuilt
+        };
+        return {
+            ...decisionContext,
+            deterministicResponse,
+            text: buildCommercialSalesDecisionPrompt(decisionContext)
+        };
+    } catch (error) {
+        console.warn('[Patty] commercial engine failed:', {
+            tenantId,
+            moduleId,
+            chatId,
+            error: error?.message || error
+        });
+        return { text: '', deterministicResponse: '', decision: null, profileUsed: false, optionsBuilt: false, error };
+    }
 }
 
 async function resolveScheduleState(tenantId, moduleConfig) {
@@ -4514,8 +4765,22 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         }),
         getGreetingInstructionContext(cleanTenantId, cleanModuleId, cleanChatId, latestCustomerMessage || effectiveCustomerMessage || '')
     ]);
-    const zones = await getZonesContext(cleanTenantId, recentConversationText, zoneDecision, latestCustomerMessage || effectiveCustomerMessage || '');
-    const labels = await getCustomerLabelsContext(cleanTenantId, customer.customerId);
+    const [zones, labels, salesDecisionContext] = await Promise.all([
+        getZonesContext(cleanTenantId, recentConversationText, zoneDecision, latestCustomerMessage || effectiveCustomerMessage || ''),
+        getCustomerLabelsContext(cleanTenantId, customer.customerId),
+        buildCommercialSalesDecisionContext({
+            tenantId: cleanTenantId,
+            moduleId: cleanModuleId,
+            chatId: cleanChatId,
+            lastMessage: effectiveCustomerMessage || latestCustomerMessage || '',
+            conversationLines: [
+                ...(Array.isArray(conversation.lines) ? conversation.lines : []),
+                ...(Array.isArray(pendingInbound.lines) ? pendingInbound.lines : [])
+            ],
+            commercialScope,
+            zoneDecision
+        })
+    ]);
     const recentOrder = formatOrderContext(conversation.recentOrder);
     const moduleName = text(moduleConfig?.name || moduleConfig?.moduleName || moduleConfig?.module_name || cleanModuleId);
     const isKnownCustomer = Boolean(customer.customerId);
@@ -4538,11 +4803,15 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         conversationLines: conversation.lines,
         zoneDecision
     });
+    const rawSoftPauseResponse = buildSoftPauseResponse(latestCustomerMessage || effectiveCustomerMessage || '');
+    const rawDeliveryPaymentResponse = buildDeterministicDeliveryPaymentResponse(zoneDecision, latestCustomerMessage || effectiveCustomerMessage || '', {
+        conversationLines: conversation.lines
+    });
+    const rawSalesDeterministicResponse = text(salesDecisionContext?.deterministicResponse || '');
     const rawDeterministicResponse = antiHallucinationGuard?.response
-        || buildSoftPauseResponse(latestCustomerMessage || effectiveCustomerMessage || '')
-        || buildDeterministicDeliveryPaymentResponse(zoneDecision, latestCustomerMessage || effectiveCustomerMessage || '', {
-            conversationLines: conversation.lines
-        });
+        || rawSoftPauseResponse
+        || rawDeliveryPaymentResponse
+        || rawSalesDeterministicResponse;
     const deterministicNeedsAdvisorReason = antiHallucinationGuard?.needsAdvisorReason
         || (shouldUseKnownLocationNoZoneResponse(latestCustomerMessage || effectiveCustomerMessage || '', zoneDecision)
         ? 'sin_cobertura_zona'
@@ -4552,7 +4821,9 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
             ? 'patty.no_zone'
             : (isSoftPauseIntent(latestCustomerMessage || effectiveCustomerMessage || '')
                 ? 'patty.soft_pause'
-                : (rawDeterministicResponse ? 'patty.deterministic_delivery_payment' : '')));
+                : (rawDeliveryPaymentResponse
+                    ? 'patty.deterministic_delivery_payment'
+                    : (rawSalesDeterministicResponse ? 'patty.sales_decision' : ''))));
     const deterministicResponse = applyGreetingToResponse(
         rawDeterministicResponse,
         pattyGreetingInstruction,
@@ -4579,6 +4850,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         'CONTEXTO CRITICO DE ESTA RESPUESTA:',
         hasDetectedZone ? 'ZONA PRIORITARIA DETECTADA PARA RESPONDER ENVIO/PAGO:' : '',
         hasDetectedZone ? zonesText : '',
+        hasDetectedZone && salesDecisionContext?.text ? `\n${salesDecisionContext.text}` : '',
         quote ? '\nCOTIZACION / PEDIDO ACTUAL:' : '',
         quote || '',
         `ULTIMO MENSAJE DEL CLIENTE: ${latestCustomerMessage || 'Sin ultimo mensaje registrado.'}`,
@@ -4622,6 +4894,7 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         '',
         hasDetectedZone ? '' : 'ZONAS DE COBERTURA Y ENVIO:',
         hasDetectedZone ? '' : zonesText,
+        !hasDetectedZone && salesDecisionContext?.text ? `\n${salesDecisionContext.text}` : '',
         '',
         'DATOS DEL CLIENTE:',
         customer.summary,
@@ -4690,6 +4963,9 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         commercialProfileName: commercialScope.profileName || null,
         commercialCatalogIds: commercialScope.catalogIds,
         commercialCatalogScopeSource: commercialScope.source,
+        salesDecision: salesDecisionContext?.decision || null,
+        salesDecisionContext: salesDecisionContext?.text || '',
+        salesDecisionOptionsBuilt: Boolean(salesDecisionContext?.optionsBuilt),
         assistantName,
         zoneDecision,
         greetingInstruction: pattyGreetingInstruction,
