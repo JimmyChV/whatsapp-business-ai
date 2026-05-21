@@ -89,10 +89,36 @@ export default function useSaasApiSessionHelpers({
     return nextSession;
   }, [apiUrl, buildApiHeaders, normalizeSaasSessionPayload, saasSessionRef, setSaasSession]);
 
+  const refreshCurrentUserPermissions = useCallback(async () => {
+    const current = saasSessionRef.current;
+    const accessToken = String(current?.accessToken || '').trim();
+    if (!accessToken) throw new Error('No hay sesion activa para refrescar permisos.');
+
+    const response = await fetch(`${apiUrl}/api/auth/me`, {
+      method: 'GET',
+      headers: buildApiHeaders({ tokenOverride: accessToken })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false || !payload?.user || typeof payload.user !== 'object') {
+      throw new Error(String(payload?.error || 'No se pudieron refrescar los permisos de la sesion.'));
+    }
+
+    const nextSession = {
+      ...current,
+      user: {
+        ...(current?.user && typeof current.user === 'object' ? current.user : {}),
+        ...payload.user
+      }
+    };
+    setSaasSession(nextSession);
+    return nextSession.user;
+  }, [apiUrl, buildApiHeaders, saasSessionRef, setSaasSession]);
+
   return {
     buildApiHeaders,
     resolveSessionSenderIdentity,
     normalizeSaasSessionPayload,
-    refreshSaasSession
+    refreshSaasSession,
+    refreshCurrentUserPermissions
   };
 }

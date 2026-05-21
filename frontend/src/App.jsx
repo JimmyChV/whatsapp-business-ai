@@ -591,6 +591,7 @@ function App() {
     saasUserRole,
     canManageSaas,
     buildApiHeaders: apiSessionExports.buildApiHeaders,
+    refreshCurrentUserPermissions: apiSessionExports.refreshCurrentUserPermissions,
     handleSaasLogin: sessionActionExports.handleSaasLogin,
     handleSaasLogout: sessionActionExports.handleSaasLogout,
     handleSwitchTenant: sessionActionExports.handleSwitchTenant,
@@ -734,5 +735,4 @@ function App() {
 }
 
 export default App;
-
 

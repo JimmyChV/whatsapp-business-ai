@@ -1,4 +1,5 @@
 import React from 'react';
+import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import ImageDropInput from '../components/panel/ImageDropInput';
 import { SaasEntityPage } from '../components/layout';
 import {
@@ -41,6 +42,7 @@ function UsersSection(props = {}) {
         openUserEdit,
         runAction,
         requestJson,
+        refreshCurrentUserPermissions,
         canEditScopeInUserForm,
         settingsTenantId,
         openTenantFromUserMembership,
@@ -73,6 +75,7 @@ function UsersSection(props = {}) {
 
     const selectedEntityId = userPanelMode === 'create' ? '__create_user__' : selectedUserId;
     const isEditing = userPanelMode === 'create' || userPanelMode === 'edit';
+    const { notify } = useUiFeedback();
     const [permissionsAudit, setPermissionsAudit] = React.useState(null);
     const [permissionsAuditLoading, setPermissionsAuditLoading] = React.useState(false);
     const [permissionsAuditError, setPermissionsAuditError] = React.useState('');
@@ -253,8 +256,19 @@ function UsersSection(props = {}) {
             }
 
             await requestJson(`/api/admin/saas/users/${encodeURIComponent(selectedUser.id)}`, { method: 'PUT', body: payload });
-            if (text(selectedUser.id) && text(selectedUser.id) === text(currentUserId) && typeof window !== 'undefined') {
-                window.setTimeout(() => window.location.reload(), 250);
+            const editedCurrentUser = text(selectedUser.id) && text(selectedUser.id) === text(currentUserId);
+            if (editedCurrentUser) {
+                if (typeof refreshCurrentUserPermissions === 'function') {
+                    await refreshCurrentUserPermissions();
+                    notify({ type: 'info', message: 'Tu sesion se actualizo con los permisos nuevos.' });
+                } else {
+                    notify({ type: 'warn', message: 'Usuario actualizado. Vuelve a iniciar sesion para ver tus permisos nuevos.' });
+                }
+            } else {
+                notify({
+                    type: 'info',
+                    message: `Los cambios aplican cuando ${toUserDisplayName(selectedUser || {})} inicie sesion nuevamente.`
+                });
             }
             setUserPanelMode?.('view');
         }
@@ -264,12 +278,15 @@ function UsersSection(props = {}) {
         canEditScopeInUserForm,
         accessPackOptions,
         requestJson,
+        refreshCurrentUserPermissions,
         runAction,
         sanitizeMemberships,
         selectedUser,
         currentUserId,
         setSelectedUserId,
         setUserPanelMode,
+        notify,
+        toUserDisplayName,
         userForm,
         userPanelMode
     ]);

@@ -89,6 +89,7 @@ export default function SaasPanelEntitySections(props = {}) {
         openUserEdit: context.openUserEdit,
         runAction: context.runAction,
         requestJson: context.requestJson,
+        refreshCurrentUserPermissions: context.refreshCurrentUserPermissions,
         refreshOverview: context.refreshOverview,
         canEditScopeInUserForm: context.canEditScopeInUserForm,
         settingsTenantId: context.settingsTenantId,

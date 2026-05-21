@@ -132,6 +132,7 @@ export default function useSaasAdminPanelController({
     socket = null,
     onOpenWhatsAppOperation,
     buildApiHeaders,
+    refreshCurrentUserPermissions,
     activeTenantId = '',
     preferredTenantId = '',
     launchSource = '',
@@ -1347,6 +1348,7 @@ export default function useSaasAdminPanelController({
         extras: buildPanelSectionExtras({
             selectedSectionId,
             requestJson,
+            refreshCurrentUserPermissions,
             runAction,
             activeTenantId,
             assignmentRoleOptions: operationsController.assignmentRoleOptions,

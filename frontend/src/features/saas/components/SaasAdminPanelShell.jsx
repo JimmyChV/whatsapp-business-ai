@@ -39,6 +39,7 @@ export default function SaasAdminPanelShell({
   socket,
   onOpenWhatsAppOperation,
   buildApiHeaders,
+  refreshCurrentUserPermissions,
   activeTenantId,
   canManageSaas,
   userRole,
@@ -115,6 +116,7 @@ export default function SaasAdminPanelShell({
             closeLabel='Cerrar sesión'
             onOpenWhatsAppOperation={onOpenWhatsAppOperation}
             buildApiHeaders={buildApiHeaders}
+            refreshCurrentUserPermissions={refreshCurrentUserPermissions}
             activeTenantId={activeTenantId}
             canManageSaas={canManageSaas}
             userRole={userRole}

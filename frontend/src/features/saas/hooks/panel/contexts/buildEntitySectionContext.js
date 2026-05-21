@@ -28,6 +28,7 @@ export default function buildEntitySectionContext(c) {
         openTenantEdit: c.openTenantEdit,
         runAction: c.runAction,
         requestJson: c.requestJson,
+        refreshCurrentUserPermissions: c.refreshCurrentUserPermissions,
         activeTenantId: c.activeTenantId,
         setSettingsTenantId: c.setSettingsTenantId,
         setSelectedTenantId: c.setSelectedTenantId,

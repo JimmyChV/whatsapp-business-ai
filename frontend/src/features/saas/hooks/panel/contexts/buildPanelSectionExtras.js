@@ -2,6 +2,7 @@ export default function buildPanelSectionExtras(input = {}) {
     const p = input;
     return {
         requestJson: p.requestJson,
+        refreshCurrentUserPermissions: p.refreshCurrentUserPermissions,
         activeTenantId: p.activeTenantId,
         assignmentRoleOptions: p.assignmentRoleOptions,
         buildInitials: p.buildInitials,
