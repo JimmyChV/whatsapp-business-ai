@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
     ADMIN_NAV_ITEMS,
     AI_MODEL_OPTIONS,
@@ -347,6 +347,7 @@ export default function useSaasAdminPanelController({
     });
     const sectionActionState = useSaasSectionAction();
     const sectionLoaderState = useSaasSectionLoader();
+    const [panelActivity, setPanelActivity] = useState(null);
     const metaTemplatesController = useSaasMetaTemplatesController({ requestJson, socket });
     const campaignsController = useSaasCampaignsController({
         requestJson,
@@ -934,6 +935,7 @@ export default function useSaasAdminPanelController({
         canViewModules,
         canViewCatalog,
         canManageCatalog,
+        canManageRoles: plansRolesController.plansRolesDerived.canManageRoles,
         canViewSuperAdminSections,
         canViewTenantSettings,
         requiresTenantSelection,
@@ -963,6 +965,8 @@ export default function useSaasAdminPanelController({
         setCustomerImportModuleId,
         setSelectedAiAssistantId: aiController.aiState.setSelectedAiAssistantId,
         setCurrentSection,
+        ensureSectionData: sectionLoaderState.ensureSectionData,
+        setPanelActivity,
         isOpen,
         canManageSaas,
         setError,
@@ -1088,6 +1092,7 @@ export default function useSaasAdminPanelController({
         themeMode,
         onThemeChange,
         savingActions: sectionActionState.savingActions,
+        panelActivity,
         onRetryActivity: sectionActionState.retryAction,
         activeTenantLabel: tenantDerived.activeTenantLabel,
         error,

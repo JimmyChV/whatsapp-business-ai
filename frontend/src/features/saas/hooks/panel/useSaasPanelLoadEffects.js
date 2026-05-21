@@ -8,6 +8,7 @@ export default function useSaasPanelLoadEffects({
     canViewTenantSettings = false,
     canViewModules = false,
     canViewCatalog = false,
+    canManageCatalog = false,
     canViewAi = false,
     canViewCustomers = false,
     canViewMetaTemplates = false,
@@ -16,9 +17,14 @@ export default function useSaasPanelLoadEffects({
     canViewSchedules = false,
     canViewQuickReplies = false,
     canViewLabels = false,
+    canViewZones = false,
     canViewOperations = false,
+    canViewCommercialIntelligence = false,
+    canManageRoles = false,
     tenantScopeId = '',
     runAction,
+    ensureSectionData,
+    setPanelActivity,
     refreshOverview,
     loadAccessCatalog,
     loadPlanMatrix,
@@ -35,6 +41,8 @@ export default function useSaasPanelLoadEffects({
     loadSchedules,
     loadQuickReplyData,
     loadTenantLabels,
+    loadTenantZoneRules,
+    loadCommercialIntelligenceProfiles,
     loadTenantAssignmentRules,
     loadTenantOperationsKpis,
     setError
@@ -57,8 +65,12 @@ export default function useSaasPanelLoadEffects({
         loadSchedules,
         loadQuickReplyData,
         loadTenantLabels,
+        loadTenantZoneRules,
+        loadCommercialIntelligenceProfiles,
         loadTenantAssignmentRules,
         loadTenantOperationsKpis,
+        ensureSectionData,
+        setPanelActivity,
         setError
     });
 
@@ -80,8 +92,12 @@ export default function useSaasPanelLoadEffects({
         loadSchedules,
         loadQuickReplyData,
         loadTenantLabels,
+        loadTenantZoneRules,
+        loadCommercialIntelligenceProfiles,
         loadTenantAssignmentRules,
         loadTenantOperationsKpis,
+        ensureSectionData,
+        setPanelActivity,
         setError
     };
 
@@ -91,6 +107,7 @@ export default function useSaasPanelLoadEffects({
     const tenantLoadKeyRef = useRef('');
     const tenantInFlightKeyRef = useRef('');
     const tenantAttemptedKeyRef = useRef('');
+    const tenantPreloadClearTimerRef = useRef(null);
 
     const isAuthorizationError = (error) => {
         const message = String(error?.message || error || '').trim().toLowerCase();
@@ -125,6 +142,68 @@ export default function useSaasPanelLoadEffects({
                     throw error;
                 })
         );
+    };
+
+    const clearPanelActivityLater = () => {
+        if (tenantPreloadClearTimerRef.current) {
+            clearTimeout(tenantPreloadClearTimerRef.current);
+            tenantPreloadClearTimerRef.current = null;
+        }
+        const setPanelActivityFn = loadersRef.current.setPanelActivity;
+        if (typeof setPanelActivityFn === 'function') {
+            tenantPreloadClearTimerRef.current = setTimeout(() => {
+                tenantPreloadClearTimerRef.current = null;
+                setPanelActivityFn(null);
+            }, 3000);
+        }
+    };
+
+    const setPanelSyncActivity = (status, label) => {
+        const setPanelActivityFn = loadersRef.current.setPanelActivity;
+        if (typeof setPanelActivityFn !== 'function') return;
+        if (tenantPreloadClearTimerRef.current) {
+            clearTimeout(tenantPreloadClearTimerRef.current);
+            tenantPreloadClearTimerRef.current = null;
+        }
+        if (!status || status === 'idle') {
+            setPanelActivityFn(null);
+            return;
+        }
+        setPanelActivityFn({
+            status,
+            label,
+            updatedAt: Date.now()
+        });
+    };
+
+    const runPreloadTask = async (task) => {
+        if (!task || typeof task.loader !== 'function') return { skipped: true };
+        if (!task.allowed) {
+            debugSkipLoad(task.name);
+            return { skipped: true };
+        }
+        try {
+            const ensureSectionDataFn = loadersRef.current.ensureSectionData;
+            if (task.sectionId && typeof ensureSectionDataFn === 'function') {
+                await ensureSectionDataFn(task.sectionId, task.loader, {
+                    canLoad: true,
+                    deps: task.deps || [],
+                    throwOnError: true
+                });
+            } else {
+                await task.loader();
+            }
+            return { ok: true };
+        } catch (error) {
+            if (isAuthorizationError(error)) {
+                debugSkipLoad(task.name);
+                return { skipped: true };
+            }
+            if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+                console.warn(`[Panel] background preload failed for ${task.name}`, error);
+            }
+            return { failed: true };
+        }
     };
 
     useEffect(() => {
@@ -193,10 +272,26 @@ export default function useSaasPanelLoadEffects({
             tenantLoadKeyRef.current = '';
             tenantInFlightKeyRef.current = '';
             tenantAttemptedKeyRef.current = '';
+            setPanelSyncActivity('idle');
             return;
         }
 
-        const tenantKey = `${tenantScopeId}:${isOpen ? '1' : '0'}:${canManageSaas ? '1' : '0'}`;
+        const preloadPermissionKey = [
+            canViewCustomers,
+            canViewModules,
+            canViewOperations,
+            canManageCatalog,
+            canViewLabels,
+            canViewZones,
+            canViewQuickReplies,
+            canViewAi,
+            canViewAutomations,
+            canViewSchedules,
+            canViewUsers,
+            canManageRoles,
+            canViewCommercialIntelligence
+        ].map((value) => (value ? '1' : '0')).join('');
+        const tenantKey = `${tenantScopeId}:${isOpen ? '1' : '0'}:${canManageSaas ? '1' : '0'}:${preloadPermissionKey}`;
         if (
             tenantLoadKeyRef.current === tenantKey
             || tenantInFlightKeyRef.current === tenantKey
@@ -206,11 +301,206 @@ export default function useSaasPanelLoadEffects({
         }
 
         tenantAttemptedKeyRef.current = tenantKey;
-        tenantLoadKeyRef.current = tenantKey;
-        tenantInFlightKeyRef.current = '';
+        tenantInFlightKeyRef.current = tenantKey;
+
+        let cancelled = false;
+        const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+        const {
+            refreshOverview: refreshOverviewFn,
+            loadAccessCatalog: loadAccessCatalogFn,
+            loadTenantSettings: loadTenantSettingsFn,
+            loadWaModules: loadWaModulesFn,
+            loadTenantCatalogs: loadTenantCatalogsFn,
+            loadTenantAiAssistants: loadTenantAiAssistantsFn,
+            loadCustomers: loadCustomersFn,
+            loadAutomations: loadAutomationsFn,
+            loadSchedules: loadSchedulesFn,
+            loadQuickReplyData: loadQuickReplyDataFn,
+            loadTenantLabels: loadTenantLabelsFn,
+            loadTenantZoneRules: loadTenantZoneRulesFn,
+            loadCommercialIntelligenceProfiles: loadCommercialIntelligenceProfilesFn,
+            loadTenantAssignmentRules: loadTenantAssignmentRulesFn,
+            loadTenantOperationsKpis: loadTenantOperationsKpisFn
+        } = loadersRef.current;
+
+        const groups = [
+            {
+                delay: 0,
+                tasks: [
+                    {
+                        name: 'customers',
+                        sectionId: 'customers',
+                        allowed: canViewCustomers,
+                        deps: [tenantScopeId],
+                        loader: () => loadCustomersFn?.(tenantScopeId)
+                    },
+                    {
+                        name: 'modules',
+                        sectionId: 'modules',
+                        allowed: canViewModules,
+                        deps: [tenantScopeId, 'modules'],
+                        loader: () => Promise.all([
+                            loadTenantSettingsFn?.(tenantScopeId),
+                            loadWaModulesFn?.(tenantScopeId)
+                        ])
+                    },
+                    {
+                        name: 'operations',
+                        sectionId: 'operations',
+                        allowed: canViewOperations,
+                        deps: [tenantScopeId],
+                        loader: () => Promise.all([
+                            loadTenantAssignmentRulesFn?.(tenantScopeId),
+                            loadTenantOperationsKpisFn?.(tenantScopeId)
+                        ])
+                    }
+                ]
+            },
+            {
+                delay: 100,
+                tasks: [
+                    {
+                        name: 'catalogs',
+                        sectionId: 'catalogs',
+                        allowed: canManageCatalog,
+                        deps: [tenantScopeId],
+                        loader: () => loadTenantCatalogsFn?.(tenantScopeId)
+                    },
+                    {
+                        name: 'labels',
+                        sectionId: 'labels',
+                        allowed: canViewLabels,
+                        deps: [tenantScopeId],
+                        loader: () => loadTenantLabelsFn?.(tenantScopeId)
+                    },
+                    {
+                        name: 'zones',
+                        sectionId: '',
+                        allowed: canViewZones,
+                        deps: [tenantScopeId],
+                        loader: () => loadTenantZoneRulesFn?.()
+                    },
+                    {
+                        name: 'quick-replies',
+                        sectionId: 'quick_replies',
+                        allowed: canViewQuickReplies,
+                        deps: [tenantScopeId],
+                        loader: () => loadQuickReplyDataFn?.(tenantScopeId)
+                    }
+                ]
+            },
+            {
+                delay: 300,
+                tasks: [
+                    {
+                        name: 'ai-assistants',
+                        sectionId: 'ai_assistants',
+                        allowed: canViewAi,
+                        deps: [tenantScopeId],
+                        loader: () => loadTenantAiAssistantsFn?.(tenantScopeId)
+                    },
+                    {
+                        name: 'automations',
+                        sectionId: 'automations',
+                        allowed: canViewAutomations,
+                        deps: [tenantScopeId],
+                        loader: () => loadAutomationsFn?.()
+                    },
+                    {
+                        name: 'schedules',
+                        sectionId: 'schedules',
+                        allowed: canViewSchedules,
+                        deps: [tenantScopeId],
+                        loader: () => loadSchedulesFn?.()
+                    },
+                    {
+                        name: 'users',
+                        sectionId: 'users',
+                        allowed: canViewUsers,
+                        deps: [tenantScopeId],
+                        loader: () => refreshOverviewFn?.()
+                    },
+                    {
+                        name: 'roles',
+                        sectionId: 'roles',
+                        allowed: canManageRoles,
+                        deps: [tenantScopeId],
+                        loader: () => loadAccessCatalogFn?.()
+                    },
+                    {
+                        name: 'commercial-intelligence',
+                        sectionId: '',
+                        allowed: canViewCommercialIntelligence,
+                        deps: [tenantScopeId],
+                        loader: () => loadCommercialIntelligenceProfilesFn?.()
+                    }
+                ]
+            }
+        ];
+
+        const runnableCount = groups
+            .flatMap((group) => group.tasks)
+            .filter((task) => task.allowed && typeof task.loader === 'function')
+            .length;
+
+        if (runnableCount === 0) {
+            tenantLoadKeyRef.current = tenantKey;
+            tenantInFlightKeyRef.current = '';
+            setPanelSyncActivity('idle');
+            return undefined;
+        }
+
+        setPanelSyncActivity('syncing', 'Actualizando panel...');
+
+        (async () => {
+            let hasFailures = false;
+            for (const group of groups) {
+                if (cancelled) return;
+                if (group.delay > 0) await wait(group.delay);
+                if (cancelled) return;
+                const results = await Promise.all(group.tasks.map((task) => runPreloadTask(task)));
+                if (results.some((result) => result?.failed)) hasFailures = true;
+            }
+            if (cancelled) return;
+            tenantLoadKeyRef.current = tenantKey;
+            tenantInFlightKeyRef.current = '';
+            if (hasFailures) {
+                setPanelSyncActivity('idle');
+                return;
+            }
+            setPanelSyncActivity('synced', 'Todo actualizado');
+            clearPanelActivityLater();
+        })();
+
+        return () => {
+            cancelled = true;
+            if (tenantInFlightKeyRef.current === tenantKey) {
+                tenantInFlightKeyRef.current = '';
+            }
+        };
     }, [
         canManageSaas,
+        canManageCatalog,
+        canManageRoles,
+        canViewAi,
+        canViewAutomations,
+        canViewCommercialIntelligence,
+        canViewCustomers,
+        canViewLabels,
+        canViewModules,
+        canViewOperations,
+        canViewQuickReplies,
+        canViewSchedules,
+        canViewUsers,
+        canViewZones,
         isOpen,
         tenantScopeId
     ]);
+
+    useEffect(() => () => {
+        if (tenantPreloadClearTimerRef.current) {
+            clearTimeout(tenantPreloadClearTimerRef.current);
+            tenantPreloadClearTimerRef.current = null;
+        }
+    }, []);
 }

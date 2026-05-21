@@ -17,6 +17,7 @@ export default function SaasPanelFrame({
     themeMode = 'dark',
     onThemeChange = null,
     savingActions,
+    panelActivity,
     onRetryActivity,
     onClose,
     error = '',
@@ -53,6 +54,7 @@ export default function SaasPanelFrame({
                     themeMode={themeMode}
                     onThemeChange={onThemeChange}
                     savingActions={savingActions}
+                    panelActivity={panelActivity}
                     onRetryActivity={onRetryActivity}
                     onClose={onClose}
                     tenantPicker={requiresTenantSelection ? {

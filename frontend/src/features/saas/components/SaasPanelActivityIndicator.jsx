@@ -19,12 +19,14 @@ function pickLatest(items) {
 
 export default function SaasPanelActivityIndicator({
     savingActions,
+    panelActivity,
     onRetry
 }) {
     const items = normalizeSavingActions(savingActions);
     const savingItems = items.filter((item) => item.status === 'saving');
     const errorItem = pickLatest(items.filter((item) => item.status === 'error'));
     const successItem = pickLatest(items.filter((item) => item.status === 'success'));
+    const panelStatus = String(panelActivity?.status || '').trim().toLowerCase();
 
     if (savingItems.length > 0) {
         const label = savingItems.length > 1
@@ -57,6 +59,23 @@ export default function SaasPanelActivityIndicator({
             <div className="saas-activity-pill saas-activity-pill--success" role="status" aria-live="polite">
                 <span className="saas-activity-dot saas-activity-dot--static" />
                 <span>{successItem.label} actualizado</span>
+            </div>
+        );
+    }
+
+    if (panelStatus === 'syncing') {
+        return (
+            <div className="saas-activity-pill saas-activity-pill--syncing" role="status" aria-live="polite">
+                <span>{String(panelActivity?.label || 'Actualizando panel...')}</span>
+            </div>
+        );
+    }
+
+    if (panelStatus === 'synced') {
+        return (
+            <div className="saas-activity-pill saas-activity-pill--success" role="status" aria-live="polite">
+                <span className="saas-activity-dot saas-activity-dot--static" />
+                <span>{String(panelActivity?.label || 'Todo actualizado')}</span>
             </div>
         );
     }

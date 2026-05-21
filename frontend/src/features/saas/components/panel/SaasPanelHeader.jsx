@@ -34,6 +34,7 @@ export default function SaasPanelHeader({
     onClose,
     tenantPicker = null,
     savingActions = new Map(),
+    panelActivity = null,
     onRetryActivity = null
 }) {
     if (!showHeader) return null;
@@ -113,6 +114,13 @@ export default function SaasPanelHeader({
             </div>
             {!embedded && (
                 <div className="saas-admin-header-actions">
+                    <div className="saas-activity-slot" aria-live="polite">
+                        <SaasPanelActivityIndicator
+                            savingActions={savingActions}
+                            panelActivity={panelActivity}
+                            onRetry={onRetryActivity}
+                        />
+                    </div>
                     {typeof onOpenOperation === 'function' && (
                         <button
                             type="button"
@@ -158,10 +166,6 @@ export default function SaasPanelHeader({
                             <small>{currentUserRoleLabel}</small>
                         </div>
                     </div>
-                    <SaasPanelActivityIndicator
-                        savingActions={savingActions}
-                        onRetry={onRetryActivity}
-                    />
                     <button
                         type="button"
                         className={`saas-btn saas-header-btn saas-header-btn--danger saas-admin-header-close-danger${hasPendingSaves ? ' is-save-blocked' : ''}`}

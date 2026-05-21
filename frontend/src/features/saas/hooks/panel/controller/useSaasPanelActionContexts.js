@@ -3,7 +3,7 @@ import useSaasOperationAccess from '../../useSaasOperationAccess';
 import useSaasPanelLifecycle from '../useSaasPanelLifecycle';
 import useSaasPanelNavigation from '../useSaasPanelNavigation';
 import useSaasPanelAdminDomainActions from './useSaasPanelAdminDomainActions';
-import { loadCachedGlobalLabels } from '../../../services';
+import { fetchTenantZoneRules, loadCachedGlobalLabels } from '../../../services';
 
 export default function useSaasPanelActionContexts(input = {}) {
     const c = input;
@@ -182,8 +182,14 @@ export default function useSaasPanelActionContexts(input = {}) {
                 canViewSchedules: c.canViewSchedules,
                 canViewQuickReplies: c.canViewQuickReplies,
                 canViewLabels: c.canViewLabels,
+                canViewZones: c.canViewZones,
+                canManageCatalog: c.canManageCatalog,
+                canManageRoles: c.canManageRoles,
+                canViewCommercialIntelligence: c.canViewCommercialIntelligence,
                 canViewOperations: c.canViewOperations,
                 tenantScopeId: c.tenantScopeId,
+                ensureSectionData: c.ensureSectionData,
+                setPanelActivity: c.setPanelActivity,
                 refreshOverview: c.refreshOverview,
                 loadAccessCatalog: plansRolesActions.loadAccessCatalog,
                 loadPlanMatrix: plansRolesActions.loadPlanMatrix,
@@ -200,6 +206,10 @@ export default function useSaasPanelActionContexts(input = {}) {
                 loadSchedules: c.canViewSchedules ? c.loadSchedules : null,
                 loadQuickReplyData: quickReplyAdminActions.loadQuickReplyData,
                 loadTenantLabels: tenantLabelsAdminActions.loadTenantLabels,
+                loadTenantZoneRules: () => fetchTenantZoneRules(c.requestJson, { includeInactive: true, tenantId: c.tenantScopeId }),
+                loadCommercialIntelligenceProfiles: () => c.requestJson('/api/tenant/commercial-intelligence/profiles', {
+                    tenantIdOverride: c.tenantScopeId
+                }),
                 loadTenantAssignmentRules: c.loadTenantAssignmentRules,
                 loadTenantOperationsKpis: c.loadTenantOperationsKpis,
                 setError: c.setError
