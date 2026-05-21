@@ -152,7 +152,6 @@ export default function useSaasPanelLoadEffects({
             refreshOverview: refreshOverviewFn,
             loadAccessCatalog: loadAccessCatalogFn,
             loadPlanMatrix: loadPlanMatrixFn,
-            loadGlobalLabels: loadGlobalLabelsFn,
             setError: setErrorFn
         } = loadersRef.current;
 
@@ -168,9 +167,6 @@ export default function useSaasPanelLoadEffects({
             pushPermittedLoad(tasks, 'access-catalog', canViewAccessCatalog, loadAccessCatalogFn, undefined);
             if (canViewSuperAdminSections && typeof loadPlanMatrixFn === 'function') {
                 tasks.push(loadPlanMatrixFn());
-            }
-            if (canViewSuperAdminSections && typeof loadGlobalLabelsFn === 'function') {
-                tasks.push(loadGlobalLabelsFn());
             }
             if (tasks.length === 0) return;
             const results = await Promise.allSettled(tasks);
@@ -200,21 +196,7 @@ export default function useSaasPanelLoadEffects({
             return;
         }
 
-        const permissionKey = [
-            canViewTenantSettings,
-            canViewModules,
-            canViewCatalog,
-            canViewAi,
-            canViewCustomers,
-            canViewMetaTemplates,
-            canViewCampaigns,
-            canViewAutomations,
-            canViewSchedules,
-            canViewQuickReplies,
-            canViewLabels,
-            canViewOperations
-        ].map((value) => (value ? '1' : '0')).join('');
-        const tenantKey = `${tenantScopeId}:${isOpen ? '1' : '0'}:${canManageSaas ? '1' : '0'}:${permissionKey}`;
+        const tenantKey = `${tenantScopeId}:${isOpen ? '1' : '0'}:${canManageSaas ? '1' : '0'}`;
         if (
             tenantLoadKeyRef.current === tenantKey
             || tenantInFlightKeyRef.current === tenantKey
@@ -224,69 +206,10 @@ export default function useSaasPanelLoadEffects({
         }
 
         tenantAttemptedKeyRef.current = tenantKey;
-        tenantInFlightKeyRef.current = tenantKey;
-
-        const {
-            loadTenantSettings: loadTenantSettingsFn,
-            loadWaModules: loadWaModulesFn,
-            loadTenantCatalogs: loadTenantCatalogsFn,
-            loadTenantAiAssistants: loadTenantAiAssistantsFn,
-            loadTenantIntegrations: loadTenantIntegrationsFn,
-            loadCustomers: loadCustomersFn,
-            loadMetaTemplates: loadMetaTemplatesFn,
-            loadCampaigns: loadCampaignsFn,
-            loadAutomations: loadAutomationsFn,
-            loadSchedules: loadSchedulesFn,
-            loadQuickReplyData: loadQuickReplyDataFn,
-            loadTenantLabels: loadTenantLabelsFn,
-            loadTenantAssignmentRules: loadTenantAssignmentRulesFn,
-            loadTenantOperationsKpis: loadTenantOperationsKpisFn,
-            setError: setErrorFn
-        } = loadersRef.current;
-
-        const tasks = [];
-        pushPermittedLoad(tasks, 'settings', canViewTenantSettings, loadTenantSettingsFn, tenantScopeId);
-        pushPermittedLoad(tasks, 'modules', canViewModules, loadWaModulesFn, tenantScopeId);
-        pushPermittedLoad(tasks, 'catalogs', canViewCatalog, loadTenantCatalogsFn, tenantScopeId);
-        pushPermittedLoad(tasks, 'ai-assistants', canViewAi, loadTenantAiAssistantsFn, tenantScopeId);
-        pushPermittedLoad(tasks, 'integrations', canViewAi, loadTenantIntegrationsFn, tenantScopeId);
-        pushPermittedLoad(tasks, 'customers', canViewCustomers, loadCustomersFn, tenantScopeId);
-        pushPermittedLoad(tasks, 'meta-templates', canViewMetaTemplates, loadMetaTemplatesFn, tenantScopeId);
-        pushPermittedLoad(tasks, 'campaigns', canViewCampaigns, loadCampaignsFn, tenantScopeId);
-        pushPermittedLoad(tasks, 'automations', canViewAutomations, loadAutomationsFn, tenantScopeId);
-        pushPermittedLoad(tasks, 'schedules', canViewSchedules, loadSchedulesFn, tenantScopeId);
-        pushPermittedLoad(tasks, 'quick-replies', canViewQuickReplies, loadQuickReplyDataFn, tenantScopeId);
-        pushPermittedLoad(tasks, 'labels', canViewLabels, loadTenantLabelsFn, tenantScopeId);
-        pushPermittedLoad(tasks, 'assignment-rules', canViewOperations, loadTenantAssignmentRulesFn, tenantScopeId);
-        pushPermittedLoad(tasks, 'operation-kpis', canViewOperations, loadTenantOperationsKpisFn, tenantScopeId);
-
-        Promise.allSettled(tasks)
-            .then((results) => {
-                const firstError = results.find((entry) => entry.status === 'rejected');
-                if (firstError?.status === 'rejected' && typeof setErrorFn === 'function') {
-                    setErrorFn(String(firstError.reason?.message || firstError.reason || 'No se pudo cargar configuracion del tenant.'));
-                }
-            })
-            .finally(() => {
-                tenantLoadKeyRef.current = tenantKey;
-                if (tenantInFlightKeyRef.current === tenantKey) {
-                    tenantInFlightKeyRef.current = '';
-                }
-            });
+        tenantLoadKeyRef.current = tenantKey;
+        tenantInFlightKeyRef.current = '';
     }, [
         canManageSaas,
-        canViewAi,
-        canViewAutomations,
-        canViewCampaigns,
-        canViewCatalog,
-        canViewCustomers,
-        canViewLabels,
-        canViewMetaTemplates,
-        canViewModules,
-        canViewOperations,
-        canViewQuickReplies,
-        canViewSchedules,
-        canViewTenantSettings,
         isOpen,
         tenantScopeId
     ]);

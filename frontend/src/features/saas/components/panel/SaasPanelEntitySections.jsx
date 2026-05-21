@@ -8,6 +8,14 @@ import {
 export default function SaasPanelEntitySections(props = {}) {
     const context = props.context && typeof props.context === 'object' ? props.context : props;
     const selectedSectionId = context?.selectedSectionId || 'saas_resumen';
+    const sectionLoaderContext = {
+        ensureSectionData: context.ensureSectionData,
+        isLoaded: context.isLoaded,
+        isLoading: context.isLoading,
+        getError: context.getError,
+        getReloadToken: context.getReloadToken,
+        forceReload: context.forceReload
+    };
     const summaryContext = {
         selectedSectionId: context.selectedSectionId,
         currentUserAvatarUrl: context.currentUserAvatarUrl,
@@ -69,9 +77,11 @@ export default function SaasPanelEntitySections(props = {}) {
     };
 
     const usersContext = {
+        ...sectionLoaderContext,
         selectedSectionId: context.selectedSectionId,
         tenantScopeLocked: context.tenantScopeLocked,
         busy: context.busy,
+        canViewUsers: context.canViewUsers,
         canManageUsers: context.canManageUsers,
         openUserCreate: context.openUserCreate,
         selectedTenantId: context.selectedTenantId,
@@ -123,10 +133,12 @@ export default function SaasPanelEntitySections(props = {}) {
 
     // TODO: packId no existe en el contexto actual — UsersSection lo desestructura con default vacío. Resolver en Fase 6 cuando se revise el dominio users.
     const customersContext = {
+        ...sectionLoaderContext,
         isCustomersSection: context.isCustomersSection,
         filteredCustomers: context.filteredCustomers,
         busy: context.busy,
         tenantScopeLocked: context.tenantScopeLocked,
+        canViewCustomers: context.canViewCustomers,
         canManageCustomers: context.canManageCustomers,
         canManageCampaigns: context.canManageCampaigns,
         canOperateChat: context.canOperateChat,

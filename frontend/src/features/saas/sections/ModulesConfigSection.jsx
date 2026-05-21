@@ -16,6 +16,13 @@ function ModulesConfigSection(props = {}) {
     tenantOptions,
     busy,
     canEditModules,
+    canViewModules = canEditModules,
+    canViewTenantSettings = true,
+    ensureSectionData = null,
+    isLoading = null,
+    getError = null,
+    getReloadToken = null,
+    forceReload = null,
     openConfigModuleCreate,
     openConfigSettingsView,
     clearConfigSelection,
@@ -56,6 +63,11 @@ function ModulesConfigSection(props = {}) {
     saveWaModule,
     handleFormImageUpload
     } = context;
+
+    const lazySectionId = isModulesSection ? 'modules' : 'settings';
+    const sectionReloadToken = typeof getReloadToken === 'function' ? getReloadToken(lazySectionId) : 0;
+    const sectionLoading = typeof isLoading === 'function' && isLoading(lazySectionId);
+    const sectionError = typeof getError === 'function' ? getError(lazySectionId) : '';
 
     const rows = React.useMemo(() => {
         if (isGeneralConfigSection) {
@@ -123,6 +135,33 @@ function ModulesConfigSection(props = {}) {
             ]);
         }
     }, [isGeneralConfigSection, isModulesSection, loadTenantSettings, loadWaModules, settingsTenantId]);
+
+    React.useEffect(() => {
+        if (!(isGeneralConfigSection || isModulesSection)) return;
+        if (typeof ensureSectionData !== 'function') {
+            reloadSection().catch(() => {});
+            return;
+        }
+        void ensureSectionData(
+            lazySectionId,
+            () => reloadSection(),
+            {
+                canLoad: Boolean(settingsTenantId && (isModulesSection ? canViewModules : canViewTenantSettings)),
+                forceReload: sectionReloadToken > 0,
+                deps: [settingsTenantId, lazySectionId]
+            }
+        );
+    }, [
+        canViewModules,
+        canViewTenantSettings,
+        ensureSectionData,
+        isGeneralConfigSection,
+        isModulesSection,
+        lazySectionId,
+        reloadSection,
+        sectionReloadToken,
+        settingsTenantId
+    ]);
 
     const renderDetail = React.useCallback(() => (
         <>
@@ -281,12 +320,12 @@ function ModulesConfigSection(props = {}) {
             mode={isModulesSection && waModulePanelMode !== 'view' ? 'form' : 'detail'}
             dirty={isModulesSection && waModulePanelMode !== 'view'}
             requestJson={context.requestJson}
-            loading={busy && rows.length === 0}
+            loading={sectionLoading || (busy && rows.length === 0)}
             searchPlaceholder={isModulesSection ? 'Buscar módulo por nombre, código o teléfono...' : 'Buscar configuración...'}
             filters={filters}
-            emptyText={isModulesSection ? 'No hay modulos registrados.' : 'No hay configuracion disponible.'}
+            emptyText={sectionError || (isModulesSection ? 'No hay modulos registrados.' : 'No hay configuracion disponible.')}
             actions={[
-                { label: 'Recargar', onClick: () => { void reloadSection(); }, disabled: busy || !settingsTenantId },
+                { label: sectionError ? 'Reintentar' : 'Recargar', onClick: () => { if (typeof forceReload === 'function') forceReload(lazySectionId); else void reloadSection(); }, disabled: busy || sectionLoading || !settingsTenantId },
                 isModulesSection && canEditModules
                     ? { label: 'Nuevo', onClick: openConfigModuleCreate, disabled: busy || !settingsTenantId }
                     : null,

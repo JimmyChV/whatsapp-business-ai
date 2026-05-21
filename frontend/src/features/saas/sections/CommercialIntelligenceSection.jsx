@@ -212,6 +212,12 @@ function CommercialIntelligenceSection(props = {}) {
         runAction,
         runSectionAction,
         canManageCommercialIntelligence = false,
+        canViewCommercialIntelligence = canManageCommercialIntelligence,
+        ensureSectionData = null,
+        isLoading = null,
+        getError = null,
+        getReloadToken = null,
+        forceReload = null,
         activeCatalogOptions = []
     } = context;
     const { notify } = useUiFeedback();
@@ -228,6 +234,10 @@ function CommercialIntelligenceSection(props = {}) {
     const [expandedCategories, setExpandedCategories] = React.useState(() => new Set());
     const [expandedCatalogItems, setExpandedCatalogItems] = React.useState(() => new Set());
     const seededCategoryProfileRef = React.useRef('');
+    const lazySectionId = 'commercial_intelligence';
+    const sectionReloadToken = typeof getReloadToken === 'function' ? getReloadToken(lazySectionId) : 0;
+    const sectionLoading = (typeof isLoading === 'function' && isLoading(lazySectionId)) || loading;
+    const sectionError = typeof getError === 'function' ? getError(lazySectionId) : '';
     const canEdit = Boolean(settingsTenantId && requestJson && canManageCommercialIntelligence);
     const runCommercialAction = React.useCallback((actionKey, message, action) => {
         if (typeof runSectionAction === 'function') {
@@ -325,8 +335,28 @@ function CommercialIntelligenceSection(props = {}) {
 
     React.useEffect(() => {
         if (!isCommercialIntelligenceSection) return;
-        void loadProfiles();
-    }, [isCommercialIntelligenceSection, loadProfiles]);
+        if (typeof ensureSectionData !== 'function') {
+            void loadProfiles();
+            return;
+        }
+        void ensureSectionData(
+            lazySectionId,
+            () => loadProfiles(),
+            {
+                canLoad: Boolean(canViewCommercialIntelligence && settingsTenantId && requestJson),
+                forceReload: sectionReloadToken > 0,
+                deps: [settingsTenantId]
+            }
+        );
+    }, [
+        canViewCommercialIntelligence,
+        ensureSectionData,
+        isCommercialIntelligenceSection,
+        loadProfiles,
+        requestJson,
+        sectionReloadToken,
+        settingsTenantId
+    ]);
 
     React.useEffect(() => {
         setProfileDraft(selectedProfile ? clone(selectedProfile) : clone(EMPTY_PROFILE));
@@ -894,7 +924,13 @@ function CommercialIntelligenceSection(props = {}) {
                     <p>Define categorias, sinonimos, roles de producto y reglas comerciales por marca.</p>
                 </div>
                 <div className="saas-admin-form-row saas-admin-form-row--actions">
-                    <button type="button" disabled={busy || loading || !settingsTenantId} onClick={loadProfiles}>Recargar</button>
+                    <button
+                        type="button"
+                        disabled={busy || sectionLoading || !settingsTenantId}
+                        onClick={() => (typeof forceReload === 'function' ? forceReload(lazySectionId) : loadProfiles())}
+                    >
+                        {sectionError ? 'Reintentar' : 'Recargar'}
+                    </button>
                     {canEdit ? <button type="button" disabled={busy} onClick={createProfile}>Nuevo perfil</button> : null}
                     {canEdit ? <button type="button" disabled={busy || !selectedProfile} onClick={duplicateProfile}>Duplicar perfil</button> : null}
                 </div>
@@ -910,8 +946,9 @@ function CommercialIntelligenceSection(props = {}) {
 
                 {settingsTenantId ? (
                     <>
+                    {sectionError ? <div className="saas-admin-empty-inline">{sectionError}</div> : null}
                     <div className="saas-admin-form-row">
-                        <select className="saas-input" value={selectedProfileId} disabled={busy || loading} onChange={(event) => setSelectedProfileId(event.target.value)}>
+                        <select className="saas-input" value={selectedProfileId} disabled={busy || sectionLoading} onChange={(event) => setSelectedProfileId(event.target.value)}>
                             {profiles.length === 0 ? <option value="">Sin perfiles comerciales</option> : null}
                             {profiles.map((profile) => (
                                 <option key={profile.profileId} value={profile.profileId}>

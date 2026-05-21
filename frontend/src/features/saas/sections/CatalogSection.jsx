@@ -13,7 +13,13 @@ function CatalogSection(props = {}) {
         settingsTenantId,
         loadingTenantCatalogs,
         loadTenantCatalogs,
+        canViewCatalog = true,
         canEditCatalog,
+        ensureSectionData = null,
+        isLoading = null,
+        getError = null,
+        getReloadToken = null,
+        forceReload = null,
         openCatalogCreate,
         tenantCatalogItems = [],
         selectedTenantCatalog,
@@ -53,6 +59,10 @@ function CatalogSection(props = {}) {
         tenantCatalogForm = {}
     } = context;
 
+    const lazySectionId = 'catalogs';
+    const sectionReloadToken = typeof getReloadToken === 'function' ? getReloadToken(lazySectionId) : 0;
+    const sectionLoading = (typeof isLoading === 'function' && isLoading(lazySectionId)) || loadingTenantCatalogs;
+    const sectionError = typeof getError === 'function' ? getError(lazySectionId) : '';
     const isCatalogEditing = catalogPanelMode === 'create' || catalogPanelMode === 'edit';
     const isProductEditing = catalogProductPanelMode === 'create' || catalogProductPanelMode === 'edit';
     const selectedId = catalogPanelMode === 'create'
@@ -106,6 +116,25 @@ function CatalogSection(props = {}) {
             ]
         }
     ], []);
+
+    React.useEffect(() => {
+        if (!isCatalogSection) return;
+        if (typeof ensureSectionData !== 'function') {
+            if (typeof loadTenantCatalogs === 'function' && settingsTenantId && canViewCatalog) {
+                loadTenantCatalogs(settingsTenantId).catch(() => {});
+            }
+            return;
+        }
+        void ensureSectionData(
+            lazySectionId,
+            () => loadTenantCatalogs?.(settingsTenantId),
+            {
+                canLoad: Boolean(settingsTenantId && canViewCatalog && typeof loadTenantCatalogs === 'function'),
+                forceReload: sectionReloadToken > 0,
+                deps: [settingsTenantId]
+            }
+        );
+    }, [canViewCatalog, ensureSectionData, isCatalogSection, loadTenantCatalogs, sectionReloadToken, settingsTenantId]);
 
     const close = React.useCallback(() => {
         if (isProductEditing) {
@@ -631,12 +660,12 @@ function CatalogSection(props = {}) {
             mode={isCatalogEditing ? 'form' : 'detail'}
             dirty={isCatalogEditing || isProductEditing}
             requestJson={requestJson}
-            loading={loadingTenantCatalogs}
+            loading={sectionLoading}
             emptyText={settingsTenantId ? 'Sin catálogos configurados.' : 'Selecciona una empresa para gestionar catálogos.'}
             searchPlaceholder="Buscar catálogo por nombre, código, origen o estado..."
             filters={filters}
             actions={[
-                { label: 'Recargar', onClick: () => settingsTenantId && loadTenantCatalogs?.(settingsTenantId), disabled: busy || !settingsTenantId || loadingTenantCatalogs },
+                { label: sectionError ? 'Reintentar' : 'Recargar', onClick: () => (typeof forceReload === 'function' ? forceReload(lazySectionId) : settingsTenantId && loadTenantCatalogs?.(settingsTenantId)), disabled: busy || !settingsTenantId || sectionLoading },
                 ...(canEditCatalog ? [{ label: 'Nuevo', onClick: openCatalogCreate, disabled: busy || !settingsTenantId }] : [])
             ]}
             detailTitle={catalogPanelMode === 'create' ? 'Nuevo catálogo' : (selectedTenantCatalog?.name || 'Detalle de catálogo')}

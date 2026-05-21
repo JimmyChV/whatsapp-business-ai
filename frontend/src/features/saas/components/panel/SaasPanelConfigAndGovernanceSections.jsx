@@ -10,7 +10,16 @@ import {
 
 export default function SaasPanelConfigAndGovernanceSections(props = {}) {
     const context = props.context && typeof props.context === 'object' ? props.context : props;
+    const sectionLoaderContext = {
+        ensureSectionData: context.ensureSectionData,
+        isLoaded: context.isLoaded,
+        isLoading: context.isLoading,
+        getError: context.getError,
+        getReloadToken: context.getReloadToken,
+        forceReload: context.forceReload
+    };
     const modulesConfigContext = {
+        ...sectionLoaderContext,
         isGeneralConfigSection: context.isGeneralConfigSection,
         isModulesSection: context.isModulesSection,
         settingsTenantId: context.settingsTenantId,
@@ -19,6 +28,8 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
         toTenantDisplayName: context.toTenantDisplayName,
         tenantOptions: context.tenantOptions,
         busy: context.busy,
+        canViewModules: context.canViewModules,
+        canViewTenantSettings: context.canViewTenantSettings,
         canEditModules: context.canEditModules,
         openConfigModuleCreate: context.openConfigModuleCreate,
         openConfigSettingsView: context.openConfigSettingsView,
@@ -69,6 +80,7 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
     };
 
     const catalogContext = {
+        ...sectionLoaderContext,
         isCatalogSection: context.isCatalogSection,
         busy: context.busy,
         settingsTenantId: context.settingsTenantId,
@@ -116,6 +128,7 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
     };
 
     const automationContext = {
+        ...sectionLoaderContext,
         selectedSectionId: context.selectedSectionId,
         isAutomationSection: context.isAutomationSection,
         settingsTenantId: context.settingsTenantId,
@@ -135,11 +148,13 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
         quickReplyItems: context.quickReplyItems,
         quickReplyLibraries: context.quickReplyLibraries,
         loadingQuickReplies: context.loadingQuickReplies,
+        canViewAutomations: context.canViewAutomations,
         canManageAutomations: context.canManageAutomations,
         formatDateTimeLabel: context.formatDateTimeLabel
     };
 
     const commercialIntelligenceContext = {
+        ...sectionLoaderContext,
         isCommercialIntelligenceSection: context.isCommercialIntelligenceSection,
         settingsTenantId: context.settingsTenantId,
         tenantScopeLocked: context.tenantScopeLocked,
@@ -147,11 +162,13 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
         requestJson: context.requestJson,
         runAction: context.runAction,
         runSectionAction: context.runSectionAction,
+        canViewCommercialIntelligence: context.canViewCommercialIntelligence,
         canManageCommercialIntelligence: context.canManageCommercialIntelligence,
         activeCatalogOptions: context.activeCatalogOptions
     };
 
     const schedulesContext = {
+        ...sectionLoaderContext,
         selectedSectionId: context.selectedSectionId,
         isSchedulesSection: context.isSchedulesSection,
         settingsTenantId: context.settingsTenantId,
@@ -166,10 +183,12 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
         createSchedule: context.createSchedule,
         updateSchedule: context.updateSchedule,
         deleteSchedule: context.deleteSchedule,
+        canViewSchedules: context.canViewSchedules,
         canManageSchedules: context.canManageSchedules
     };
 
     const rolesContext = {
+        ...sectionLoaderContext,
         isRolesSection: context.isRolesSection,
         loadAccessCatalog: context.loadAccessCatalog,
         busy: context.busy,

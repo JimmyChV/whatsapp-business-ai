@@ -31,14 +31,46 @@ function OperationsSection(props = {}) {
     runAction,
     runSectionAction,
     saveAssignmentRules,
+    loadTenantAssignmentRules,
     loadTenantOperationsKpis,
+    ensureSectionData,
+    isLoading,
+    getError,
+    getReloadToken,
+    forceReload,
     triggerAutoAssignPreview,
     formatDateTimeLabel
     } = context;
+    const lazySectionId = 'operations';
+    const sectionReloadToken = typeof getReloadToken === 'function' ? getReloadToken(lazySectionId) : 0;
+    const sectionLoading = typeof isLoading === 'function' && isLoading(lazySectionId);
+    const sectionError = typeof getError === 'function' ? getError(lazySectionId) : '';
     const assignmentModeLabel = assignmentRules.mode === 'round_robin' ? 'Round robin' : 'Menor carga';
     const allowedRolesLabel = Array.isArray(assignmentRules.allowedRoles) && assignmentRules.allowedRoles.length > 0
         ? assignmentRules.allowedRoles.join(', ')
         : 'Sin roles configurados';
+    React.useEffect(() => {
+        if (tenantScopeLocked || !tenantScopeId) return;
+        if (typeof ensureSectionData !== 'function') {
+            Promise.all([
+                loadTenantAssignmentRules?.(tenantScopeId),
+                loadTenantOperationsKpis?.(tenantScopeId)
+            ]).catch(() => {});
+            return;
+        }
+        void ensureSectionData(
+            lazySectionId,
+            () => Promise.all([
+                loadTenantAssignmentRules?.(tenantScopeId),
+                loadTenantOperationsKpis?.(tenantScopeId)
+            ]),
+            {
+                canLoad: Boolean(canViewOperations && tenantScopeId && !tenantScopeLocked),
+                forceReload: sectionReloadToken > 0,
+                deps: [tenantScopeId]
+            }
+        );
+    }, [canViewOperations, ensureSectionData, loadTenantAssignmentRules, loadTenantOperationsKpis, sectionReloadToken, tenantScopeId, tenantScopeLocked]);
     return (
         <SaasEntityPage
             id="saas_operacion"
@@ -62,6 +94,8 @@ function OperationsSection(props = {}) {
 
                     {!tenantScopeLocked && (
                         <>
+                            {sectionError ? <div className="saas-admin-empty-inline">{sectionError}</div> : null}
+                            {sectionLoading ? <div className="saas-admin-empty-inline">Cargando operacion...</div> : null}
                             {canManageAssignmentRules ? (
                                 <>
                                     <div className="saas-admin-form-row saas-admin-form-row--single">
@@ -190,6 +224,10 @@ function OperationsSection(props = {}) {
                                     type="button"
                                     disabled={busy || loadingOperationsKpis || !canViewOperations}
                                     onClick={() => {
+                                        if (typeof forceReload === 'function') {
+                                            forceReload(lazySectionId);
+                                            return undefined;
+                                        }
                                         const action = async () => {
                                             await loadTenantOperationsKpis(tenantScopeId);
                                         };
@@ -198,7 +236,7 @@ function OperationsSection(props = {}) {
                                             : runAction('KPI operativos actualizados', action);
                                     }}
                                 >
-                                    Recargar KPI
+                                    {sectionError ? 'Reintentar' : 'Recargar KPI'}
                                 </button>
                             </div>
                             <div className="saas-admin-detail-grid">

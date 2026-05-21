@@ -24,7 +24,13 @@ function UsersSection(props = {}) {
         tenantScopeLocked,
         refreshOverview,
         busy,
+        canViewUsers = true,
         canManageUsers,
+        ensureSectionData = null,
+        isLoading = null,
+        getError = null,
+        getReloadToken = null,
+        forceReload = null,
         openUserCreate,
         selectedTenantId,
         tenantOptions = [],
@@ -76,6 +82,10 @@ function UsersSection(props = {}) {
 
     const selectedEntityId = userPanelMode === 'create' ? '__create_user__' : selectedUserId;
     const isEditing = userPanelMode === 'create' || userPanelMode === 'edit';
+    const lazySectionId = 'users';
+    const sectionReloadToken = typeof getReloadToken === 'function' ? getReloadToken(lazySectionId) : 0;
+    const sectionLoading = typeof isLoading === 'function' && isLoading(lazySectionId);
+    const sectionError = typeof getError === 'function' ? getError(lazySectionId) : '';
     const { notify } = useUiFeedback();
     const [permissionsAudit, setPermissionsAudit] = React.useState(null);
     const [permissionsAuditLoading, setPermissionsAuditLoading] = React.useState(false);
@@ -127,6 +137,23 @@ function UsersSection(props = {}) {
             }))
         }
     ], [roleLabelMap, roleOptions]);
+
+    React.useEffect(() => {
+        if (selectedSectionId !== 'saas_usuarios') return;
+        if (typeof ensureSectionData !== 'function') {
+            refreshOverview?.().catch?.(() => {});
+            return;
+        }
+        void ensureSectionData(
+            lazySectionId,
+            () => refreshOverview?.(),
+            {
+                canLoad: Boolean(canViewUsers && typeof refreshOverview === 'function'),
+                forceReload: sectionReloadToken > 0,
+                deps: [settingsTenantId || selectedTenantId || activeTenantId]
+            }
+        );
+    }, [activeTenantId, canViewUsers, ensureSectionData, refreshOverview, sectionReloadToken, selectedSectionId, selectedTenantId, settingsTenantId]);
 
     const close = React.useCallback(() => {
         if (isEditing) {
@@ -768,12 +795,12 @@ function UsersSection(props = {}) {
                 dirty={isEditing}
                 className="saas-entity-page--users"
                 requestJson={requestJson}
-                loading={busy && rows.length === 0}
-                emptyText={tenantScopeLocked ? 'Selecciona una empresa para habilitar usuarios.' : 'No hay usuarios registrados.'}
+                loading={sectionLoading || (busy && rows.length === 0)}
+                emptyText={sectionError || (tenantScopeLocked ? 'Selecciona una empresa para habilitar usuarios.' : 'No hay usuarios registrados.')}
                 searchPlaceholder="Buscar usuario por nombre, correo, rol o estado..."
                 filters={filters}
                 actions={[
-                    { label: 'Recargar', onClick: () => refreshOverview?.(), disabled: busy || typeof refreshOverview !== 'function' },
+                    { label: sectionError ? 'Reintentar' : 'Recargar', onClick: () => (typeof forceReload === 'function' ? forceReload(lazySectionId) : refreshOverview?.()), disabled: busy || sectionLoading || typeof refreshOverview !== 'function' },
                     canManageUsers
                         ? { label: 'Agregar', onClick: openUserCreate, disabled: busy || tenantScopeLocked }
                         : null

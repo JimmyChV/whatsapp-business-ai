@@ -95,10 +95,20 @@ function AutomationSection(props = {}) {
         quickReplyLibraries: contextQuickReplyLibraries = null,
         loadingQuickReplies: contextLoadingQuickReplies = false,
         canManageAutomations = false,
+        canViewAutomations = canManageAutomations,
+        ensureSectionData = null,
+        isLoading = null,
+        getError = null,
+        getReloadToken = null,
+        forceReload = null,
         formatDateTimeLabel = (value) => value || '-'
     } = context;
 
     const isSection = selectedSectionId === 'saas_automations';
+    const lazySectionId = 'automations';
+    const sectionReloadToken = typeof getReloadToken === 'function' ? getReloadToken(lazySectionId) : 0;
+    const sectionLoading = (typeof isLoading === 'function' && isLoading(lazySectionId)) || loadingAutomations;
+    const sectionError = typeof getError === 'function' ? getError(lazySectionId) : '';
 
     const [selectedRuleId, setSelectedRuleId] = React.useState('');
     const [panelMode, setPanelMode] = React.useState('view');
@@ -140,6 +150,25 @@ function AutomationSection(props = {}) {
             .filter((item) => item.templateName)
             .sort((a, b) => a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }));
     }, [metaTemplatesController?.items]);
+
+    React.useEffect(() => {
+        if (!isSection) return;
+        if (typeof ensureSectionData !== 'function') {
+            if (typeof loadAutomations === 'function' && canViewAutomations && settingsTenantId && !tenantScopeLocked) {
+                loadAutomations().catch(() => {});
+            }
+            return;
+        }
+        void ensureSectionData(
+            lazySectionId,
+            () => loadAutomations?.(),
+            {
+                canLoad: Boolean(canViewAutomations && settingsTenantId && !tenantScopeLocked && typeof loadAutomations === 'function'),
+                forceReload: sectionReloadToken > 0,
+                deps: [settingsTenantId]
+            }
+        );
+    }, [canViewAutomations, ensureSectionData, isSection, loadAutomations, sectionReloadToken, settingsTenantId, tenantScopeLocked]);
 
     React.useEffect(() => {
         if (!isSection || !settingsTenantId || typeof metaTemplatesController?.loadTemplates !== 'function') return;
@@ -508,12 +537,12 @@ function AutomationSection(props = {}) {
             mode={panelMode === 'create' || panelMode === 'edit' ? 'form' : 'detail'}
             dirty={panelMode === 'create' || panelMode === 'edit'}
             requestJson={requestJson}
-            loading={loadingAutomations}
-            emptyText={tenantScopeLocked ? 'Selecciona una empresa para configurar automatizaciones.' : 'No hay reglas automaticas configuradas.'}
+            loading={sectionLoading}
+            emptyText={sectionError || (tenantScopeLocked ? 'Selecciona una empresa para configurar automatizaciones.' : 'No hay reglas automaticas configuradas.')}
             searchPlaceholder="Buscar por evento, modulo, template o estado..."
             filters={filters}
             actions={[
-                { label: 'Recargar', onClick: () => loadAutomations().catch(() => {}), disabled: busy || loadingAutomations || !settingsTenantId },
+                { label: sectionError ? 'Reintentar' : 'Recargar', onClick: () => (typeof forceReload === 'function' ? forceReload(lazySectionId) : loadAutomations?.().catch(() => {})), disabled: busy || sectionLoading || !settingsTenantId },
                 ...(canManageAutomations ? [{ label: 'Nuevo', onClick: openCreate, disabled: busy || !settingsTenantId }] : [])
             ]}
             detailTitle={panelMode === 'create' ? 'Nueva automatizacion' : (selectedRule ? eventLabel(selectedRule.eventKey) : 'Automatizacion')}

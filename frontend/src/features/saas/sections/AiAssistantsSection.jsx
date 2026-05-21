@@ -11,6 +11,13 @@ function AiAssistantsSection(props = {}) {
         loadingAiAssistants,
         settingsTenantId,
         loadTenantAiAssistants,
+        canManageAi,
+        canViewAi = canManageAi,
+        ensureSectionData = null,
+        isLoading = null,
+        getError = null,
+        getReloadToken = null,
+        forceReload = null,
         openAiAssistantCreate,
         tenantAiAssistantItems = [],
         selectedAiAssistantId,
@@ -18,7 +25,6 @@ function AiAssistantsSection(props = {}) {
         openAiAssistantView,
         selectedAiAssistant,
         formatDateTimeLabel = (value) => value || '-',
-        canManageAi,
         openAiAssistantEdit,
         markAiAssistantAsDefault,
         toggleAiAssistantActive,
@@ -33,6 +39,10 @@ function AiAssistantsSection(props = {}) {
         EMPTY_AI_ASSISTANT_FORM
     } = context;
 
+    const lazySectionId = 'ai_assistants';
+    const sectionReloadToken = typeof getReloadToken === 'function' ? getReloadToken(lazySectionId) : 0;
+    const sectionLoading = (typeof isLoading === 'function' && isLoading(lazySectionId)) || loadingAiAssistants;
+    const sectionError = typeof getError === 'function' ? getError(lazySectionId) : '';
     const isEditing = aiAssistantPanelMode === 'create' || aiAssistantPanelMode === 'edit';
     const selectedId = aiAssistantPanelMode === 'create' ? '__create_ai_assistant__' : selectedAiAssistantId;
 
@@ -53,6 +63,23 @@ function AiAssistantsSection(props = {}) {
         { key: 'defaultLabel', label: 'Principal', width: '16%', sortable: true },
         { key: 'status', label: 'Estado', width: '14%', sortable: true }
     ], []);
+
+    React.useEffect(() => {
+        if (!isAiSection) return;
+        if (typeof ensureSectionData !== 'function') {
+            if (settingsTenantId && canViewAi) loadTenantAiAssistants?.(settingsTenantId);
+            return;
+        }
+        void ensureSectionData(
+            lazySectionId,
+            () => loadTenantAiAssistants?.(settingsTenantId),
+            {
+                canLoad: Boolean(settingsTenantId && canViewAi && typeof loadTenantAiAssistants === 'function'),
+                forceReload: sectionReloadToken > 0,
+                deps: [settingsTenantId]
+            }
+        );
+    }, [canViewAi, ensureSectionData, isAiSection, loadTenantAiAssistants, sectionReloadToken, settingsTenantId]);
 
     const filters = React.useMemo(() => [
         {
@@ -258,12 +285,12 @@ function AiAssistantsSection(props = {}) {
             mode={isEditing ? 'form' : 'detail'}
             dirty={isEditing}
             requestJson={context.requestJson}
-            loading={loadingAiAssistants}
-            emptyText={settingsTenantId ? 'Sin asistentes IA registrados.' : 'Selecciona una empresa para administrar asistentes IA.'}
+            loading={sectionLoading}
+            emptyText={sectionError || (settingsTenantId ? 'Sin asistentes IA registrados.' : 'Selecciona una empresa para administrar asistentes IA.')}
             searchPlaceholder="Buscar asistente por nombre, código, modelo o estado..."
             filters={filters}
             actions={[
-                { label: 'Recargar', onClick: () => settingsTenantId && loadTenantAiAssistants?.(settingsTenantId), disabled: busy || !settingsTenantId || loadingAiAssistants },
+                { label: sectionError ? 'Reintentar' : 'Recargar', onClick: () => (typeof forceReload === 'function' ? forceReload(lazySectionId) : settingsTenantId && loadTenantAiAssistants?.(settingsTenantId)), disabled: busy || !settingsTenantId || sectionLoading },
                 ...(canManageAi ? [{ label: 'Nuevo', onClick: openAiAssistantCreate, disabled: busy || !settingsTenantId }] : [])
             ]}
             detailTitle={aiAssistantPanelMode === 'create' ? 'Nuevo asistente IA' : (selectedAiAssistant?.name || 'Detalle IA')}

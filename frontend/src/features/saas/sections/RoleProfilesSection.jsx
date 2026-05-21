@@ -76,6 +76,11 @@ function RoleProfilesSection(props = {}) {
         loadAccessCatalog,
         busy,
         canManageRoles,
+        ensureSectionData = null,
+        isLoading = null,
+        getError = null,
+        getReloadToken = null,
+        forceReload = null,
         openRoleCreate,
         roleProfiles = [],
         selectedRoleKey,
@@ -95,6 +100,10 @@ function RoleProfilesSection(props = {}) {
         setRolePanelMode
     } = context;
 
+    const lazySectionId = 'roles';
+    const sectionReloadToken = typeof getReloadToken === 'function' ? getReloadToken(lazySectionId) : 0;
+    const sectionLoading = typeof isLoading === 'function' && isLoading(lazySectionId);
+    const sectionError = typeof getError === 'function' ? getError(lazySectionId) : '';
     const isEditing = rolePanelMode === 'create' || rolePanelMode === 'edit';
     const selectedId = rolePanelMode === 'create' ? '__create_role' : selectedRoleKey || '';
     const rolePermissionGroups = React.useMemo(
@@ -139,6 +148,25 @@ function RoleProfilesSection(props = {}) {
         { key: 'status', label: 'Estado', type: 'option', options: [{ value: 'Activo', label: 'Activo' }, { value: 'Inactivo', label: 'Inactivo' }] },
         { key: 'scope', label: 'Scope', type: 'option', options: [{ value: 'Global', label: 'Global' }] }
     ], []);
+
+    React.useEffect(() => {
+        if (!isRolesSection) return;
+        if (typeof ensureSectionData !== 'function') {
+            if (typeof loadAccessCatalog === 'function' && canManageRoles) {
+                loadAccessCatalog().catch(() => {});
+            }
+            return;
+        }
+        void ensureSectionData(
+            lazySectionId,
+            () => loadAccessCatalog?.(),
+            {
+                canLoad: Boolean(canManageRoles && typeof loadAccessCatalog === 'function'),
+                forceReload: sectionReloadToken > 0,
+                deps: ['access_catalog']
+            }
+        );
+    }, [canManageRoles, ensureSectionData, isRolesSection, loadAccessCatalog, sectionReloadToken]);
 
     const close = React.useCallback(() => {
         if (isEditing) {
@@ -318,10 +346,11 @@ function RoleProfilesSection(props = {}) {
             renderForm={renderForm}
             mode={isEditing ? 'form' : 'detail'}
             dirty={isEditing}
-            emptyText="No hay perfiles de rol cargados."
+            loading={sectionLoading}
+            emptyText={sectionError || 'No hay perfiles de rol cargados.'}
             searchPlaceholder="Buscar rol por nombre, código o estado..."
             actions={[
-                { key: 'reload', label: 'Recargar', onClick: () => loadAccessCatalog?.(), disabled: busy || typeof loadAccessCatalog !== 'function' },
+                { key: 'reload', label: sectionError ? 'Reintentar' : 'Recargar', onClick: () => (typeof forceReload === 'function' ? forceReload(lazySectionId) : loadAccessCatalog?.()), disabled: busy || sectionLoading || typeof loadAccessCatalog !== 'function' },
                 ...(canManageRoles ? [{ key: 'create', label: 'Nuevo rol', onClick: openRoleCreate, disabled: busy }] : [])
             ]}
             filters={filters}

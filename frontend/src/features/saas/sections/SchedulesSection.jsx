@@ -130,10 +130,20 @@ function SchedulesSection(props = {}) {
         createSchedule = null,
         updateSchedule = null,
         deleteSchedule = null,
-        canManageSchedules = false
+        ensureSectionData = null,
+        isLoading = null,
+        getError = null,
+        getReloadToken = null,
+        forceReload = null,
+        canManageSchedules = false,
+        canViewSchedules = canManageSchedules
     } = context;
 
     const isSection = selectedSectionId === 'saas_schedules';
+    const lazySectionId = 'schedules';
+    const sectionReloadToken = typeof getReloadToken === 'function' ? getReloadToken(lazySectionId) : 0;
+    const sectionLoading = (typeof isLoading === 'function' && isLoading(lazySectionId)) || loadingSchedules;
+    const sectionError = typeof getError === 'function' ? getError(lazySectionId) : '';
     const [selectedScheduleId, setSelectedScheduleId] = React.useState('');
     const [panelMode, setPanelMode] = React.useState('view');
     const [form, setForm] = React.useState(() => normalizeForm(null));
@@ -168,6 +178,25 @@ function SchedulesSection(props = {}) {
             ]
         }
     ], []);
+
+    React.useEffect(() => {
+        if (!isSection) return;
+        if (typeof ensureSectionData !== 'function') {
+            if (typeof loadSchedules === 'function' && canViewSchedules && settingsTenantId && !tenantScopeLocked) {
+                loadSchedules().catch(() => {});
+            }
+            return;
+        }
+        void ensureSectionData(
+            lazySectionId,
+            () => loadSchedules?.(),
+            {
+                canLoad: Boolean(canViewSchedules && settingsTenantId && !tenantScopeLocked && typeof loadSchedules === 'function'),
+                forceReload: sectionReloadToken > 0,
+                deps: [settingsTenantId]
+            }
+        );
+    }, [canViewSchedules, ensureSectionData, isSection, loadSchedules, sectionReloadToken, settingsTenantId, tenantScopeLocked]);
 
     const openCreate = React.useCallback(() => {
         if (!canManageSchedules) return;
@@ -484,12 +513,12 @@ function SchedulesSection(props = {}) {
             mode={panelMode === 'create' || panelMode === 'edit' ? 'form' : 'detail'}
             dirty={panelMode === 'create' || panelMode === 'edit'}
             requestJson={requestJson}
-            loading={loadingSchedules}
-            emptyText={tenantScopeLocked ? 'Selecciona una empresa para configurar horarios.' : 'No hay horarios configurados.'}
+            loading={sectionLoading}
+            emptyText={sectionError || (tenantScopeLocked ? 'Selecciona una empresa para configurar horarios.' : 'No hay horarios configurados.')}
             searchPlaceholder="Buscar horario por nombre, zona horaria o estado..."
             filters={filters}
             actions={[
-                { label: 'Recargar', onClick: () => loadSchedules?.().catch(() => {}), disabled: busy || loadingSchedules || !settingsTenantId },
+                { label: sectionError ? 'Reintentar' : 'Recargar', onClick: () => (typeof forceReload === 'function' ? forceReload(lazySectionId) : loadSchedules?.().catch(() => {})), disabled: busy || sectionLoading || !settingsTenantId },
                 ...(canManageSchedules ? [{ label: 'Nuevo', onClick: openCreate, disabled: busy || !settingsTenantId }] : [])
             ]}
             detailTitle={panelMode === 'create' ? 'Nuevo horario' : (selectedSchedule ? selectedSchedule.name : 'Horario')}

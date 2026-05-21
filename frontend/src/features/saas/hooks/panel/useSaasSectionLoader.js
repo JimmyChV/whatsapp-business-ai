@@ -19,11 +19,27 @@ function setMapValue(mapRef, setState, key, value) {
     setState(next);
 }
 
+function serializeDeps(deps) {
+    if (!Array.isArray(deps) || deps.length === 0) return '';
+    try {
+        return JSON.stringify(deps.map((entry) => (
+            entry === null || entry === undefined
+                ? null
+                : typeof entry === 'object'
+                    ? String(entry?.id || entry?.key || entry?.value || JSON.stringify(entry))
+                    : String(entry)
+        )));
+    } catch {
+        return deps.map((entry) => String(entry ?? '')).join('|');
+    }
+}
+
 export default function useSaasSectionLoader() {
     const loadedRef = useRef(new Map());
     const loadingRef = useRef(new Map());
     const errorsRef = useRef(new Map());
     const reloadTokensRef = useRef(new Map());
+    const depsRef = useRef(new Map());
 
     const [loadedSections, setLoadedSections] = useState(() => new Map());
     const [loadingSections, setLoadingSections] = useState(() => new Map());
@@ -69,7 +85,16 @@ export default function useSaasSectionLoader() {
         if (options.canLoad === false) return undefined;
         if (typeof loadFn !== 'function') return undefined;
         if (loadingRef.current.get(cleanSectionId) === true) return undefined;
-        if (options.forceReload !== true && loadedRef.current.get(cleanSectionId) === true) return undefined;
+
+        const depsKey = serializeDeps(options.deps);
+        const previousDepsKey = depsRef.current.get(cleanSectionId) || '';
+        const depsChanged = Boolean(depsKey && depsKey !== previousDepsKey);
+        if (depsKey && depsChanged) {
+            depsRef.current.set(cleanSectionId, depsKey);
+            setMapValue(loadedRef, setLoadedSections, cleanSectionId, false);
+            setMapValue(errorsRef, setSectionErrors, cleanSectionId, false);
+        }
+        if (options.forceReload !== true && !depsChanged && loadedRef.current.get(cleanSectionId) === true) return undefined;
 
         setMapValue(loadingRef, setLoadingSections, cleanSectionId, true);
         setMapValue(errorsRef, setSectionErrors, cleanSectionId, false);

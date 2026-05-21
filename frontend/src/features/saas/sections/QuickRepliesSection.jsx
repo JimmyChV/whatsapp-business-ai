@@ -166,6 +166,12 @@ export default function QuickRepliesSection(props = {}) {
         loadQuickReplyData,
         setError,
         canManageQuickReplies,
+        canViewQuickReplies = canManageQuickReplies,
+        ensureSectionData = null,
+        isLoading = null,
+        getError = null,
+        getReloadToken = null,
+        forceReload = null,
         openQuickReplyLibraryCreate,
         quickReplyModuleFilterId,
         setQuickReplyModuleFilterId,
@@ -214,6 +220,28 @@ export default function QuickRepliesSection(props = {}) {
         openQuickReplyItemCreate,
         requestJson
     } = context;
+    const lazySectionId = 'quick_replies';
+    const sectionReloadToken = typeof getReloadToken === 'function' ? getReloadToken(lazySectionId) : 0;
+    const sectionLoading = (typeof isLoading === 'function' && isLoading(lazySectionId)) || loadingQuickReplies;
+    const sectionError = typeof getError === 'function' ? getError(lazySectionId) : '';
+
+    React.useEffect(() => {
+        if (typeof ensureSectionData !== 'function') {
+            if (settingsTenantId && canViewQuickReplies) {
+                loadQuickReplyData?.(settingsTenantId).catch((err) => setError?.(String(err?.message || err || 'No se pudo cargar respuestas rápidas.')));
+            }
+            return;
+        }
+        void ensureSectionData(
+            lazySectionId,
+            () => loadQuickReplyData?.(settingsTenantId),
+            {
+                canLoad: Boolean(settingsTenantId && canViewQuickReplies && typeof loadQuickReplyData === 'function'),
+                forceReload: sectionReloadToken > 0,
+                deps: [settingsTenantId]
+            }
+        );
+    }, [canViewQuickReplies, ensureSectionData, loadQuickReplyData, sectionReloadToken, setError, settingsTenantId]);
 
     const isLibraryEditing = quickReplyLibraryPanelMode === 'create' || quickReplyLibraryPanelMode === 'edit';
     const isItemEditing = quickReplyItemPanelMode === 'create' || quickReplyItemPanelMode === 'edit';
@@ -998,8 +1026,8 @@ export default function QuickRepliesSection(props = {}) {
             mode={isLibraryEditing || isItemEditing ? 'form' : 'detail'}
             dirty={isLibraryEditing || isItemEditing}
             requestJson={context.requestJson}
-            loading={loadingQuickReplies}
-            emptyText={settingsTenantId ? 'Sin bibliotecas registradas.' : 'Selecciona una empresa para gestionar respuestas rápidas.'}
+            loading={sectionLoading}
+            emptyText={sectionError || (settingsTenantId ? 'Sin bibliotecas registradas.' : 'Selecciona una empresa para gestionar respuestas rápidas.')}
             searchPlaceholder="Buscar biblioteca por nombre, código, alcance o estado..."
             filters={filters}
             extra={settingsTenantId ? (
@@ -1024,9 +1052,9 @@ export default function QuickRepliesSection(props = {}) {
             ) : null}
             actions={[
                 {
-                    label: 'Recargar',
-                    onClick: () => settingsTenantId && loadQuickReplyData?.(settingsTenantId).catch((err) => setError?.(String(err?.message || err || 'No se pudo recargar respuestas rápidas.'))),
-                    disabled: busy || loadingQuickReplies || !settingsTenantId
+                    label: sectionError ? 'Reintentar' : 'Recargar',
+                    onClick: () => (typeof forceReload === 'function' ? forceReload(lazySectionId) : settingsTenantId && loadQuickReplyData?.(settingsTenantId).catch((err) => setError?.(String(err?.message || err || 'No se pudo recargar respuestas rápidas.')))),
+                    disabled: busy || sectionLoading || !settingsTenantId
                 },
                 ...(canManageQuickReplies ? [{
                     label: 'Nuevo',

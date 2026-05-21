@@ -249,7 +249,7 @@ function GlobalPanel({ busy, requestJson, runAction, runSectionAction, setError,
     return <SaasEntityPage title="Globales comerciales" sectionKey="global_labels_inner" rows={buildLabelRows(visible, 'id', 'global')} columns={globalColumns} selectedId={mode === 'list' ? '' : selectedId} onSelect={(row) => openDetail(row)} onClose={close} renderDetail={renderDetail} renderForm={renderForm} mode={mode === 'create' || mode === 'edit' ? 'form' : 'detail'} dirty={mode === 'create' || mode === 'edit'} requestJson={requestJson} loading={loading} emptyText="No hay etiquetas globales para mostrar." searchPlaceholder="Buscar etiqueta global" actions={[{ key: 'reload', label: 'Recargar', onClick: () => load({ force: true }).catch((e) => setError?.(String(e?.message || e))), disabled: busy || loading }, { key: 'create', label: 'Nuevo', onClick: openCreate, disabled: busy }]} filters={GLOBAL_LABEL_FILTERS} layoutClassName="saas-labels-layout" detailTitle={mode === 'create' ? 'Nueva global' : mode === 'edit' ? 'Editar global' : selected?.name || 'Etiqueta global'} detailSubtitle={mode === 'detail' ? 'Etiqueta comercial global.' : 'Define nombre, color, orden y estado comercial asociado.'} detailActions={mode === 'detail' && selected ? <button type="button" disabled={busy} onClick={openEdit}>Editar</button> : null} />;
 }
 
-function ZonePanel({ busy, requestJson, runAction, runSectionAction, setError, canManageZones, tenantScopeLocked, settingsTenantId }) {
+function ZonePanel({ busy, requestJson, runAction, runSectionAction, setError, canManageZones, canViewZones = true, tenantScopeLocked, settingsTenantId, ensureSectionData, isLoading, getError, getReloadToken, forceReload }) {
     const zoneCacheKey = text(settingsTenantId || 'default');
     const [items, setItems] = useState(() => zoneRulesCache.get(zoneCacheKey) || []);
     const [loading, setLoading] = useState(false);
@@ -260,6 +260,10 @@ function ZonePanel({ busy, requestJson, runAction, runSectionAction, setError, c
     const [geo, setGeo] = useState({ departments: [], provinces: [], districts: [] });
     const [geoLoading, setGeoLoading] = useState(false);
     const [recalc, setRecalc] = useState(null);
+    const lazySectionId = 'zones';
+    const sectionReloadToken = typeof getReloadToken === 'function' ? getReloadToken(lazySectionId) : 0;
+    const sectionLoading = (typeof isLoading === 'function' && isLoading(lazySectionId)) || loading;
+    const sectionError = typeof getError === 'function' ? getError(lazySectionId) : '';
     const departments = useMemo(() => (Array.isArray(geo.departments) ? geo.departments : []).map((x) => normGeo(x, 'department')).filter((x) => x.id && x.name), [geo.departments]);
     const provinces = useMemo(() => (Array.isArray(geo.provinces) ? geo.provinces : []).map((x) => normGeo(x, 'province')).filter((x) => x.id && x.name), [geo.provinces]);
     const districts = useMemo(() => (Array.isArray(geo.districts) ? geo.districts : []).map((x) => normGeo(x, 'district')).filter((x) => x.id && x.name), [geo.districts]);
@@ -294,7 +298,21 @@ function ZonePanel({ busy, requestJson, runAction, runSectionAction, setError, c
             setItems([]);
         }
     }, [settingsTenantId, tenantScopeLocked, zoneCacheKey]);
-    useEffect(() => { load().catch((e) => setError?.(String(e?.message || e || 'No se pudieron cargar zonas.'))); }, [load, setError]);
+    useEffect(() => {
+        if (typeof ensureSectionData !== 'function') {
+            load().catch((e) => setError?.(String(e?.message || e || 'No se pudieron cargar zonas.')));
+            return;
+        }
+        void ensureSectionData(
+            lazySectionId,
+            () => load({ force: sectionReloadToken > 0 }),
+            {
+                canLoad: Boolean(canViewZones && settingsTenantId && !tenantScopeLocked),
+                forceReload: sectionReloadToken > 0,
+                deps: [settingsTenantId]
+            }
+        );
+    }, [canViewZones, ensureSectionData, load, sectionReloadToken, setError, settingsTenantId, tenantScopeLocked]);
     useEffect(() => {
         if (!requestJson || tenantScopeLocked || !settingsTenantId || !needsGeoCatalog) return;
         const cachedGeo = zoneGeoCache.get(zoneCacheKey);
@@ -347,7 +365,7 @@ function ZonePanel({ busy, requestJson, runAction, runSectionAction, setError, c
             <SaasDetailPanelSection title="Acciones"><div className="saas-admin-form-row saas-admin-form-row--actions"><button type="button" disabled={busy || !canManageZones || !text(form.name)} onClick={() => runLabelsAction(runSectionAction, runAction, 'save_zone', 'Zona guardada', async () => { const payload = { ruleId: form.ruleId || undefined, name: form.name, color: form.color, isActive: form.isActive !== false, rulesJson: { districts: uniq(form.districts), districtNames: uniq(form.districts), provinces: uniq(form.provinces), provinceNames: uniq(form.provinces), departments: uniq(form.departments), departmentNames: uniq(form.departments) }, shippingOptions: normalizeShippingOptions(form.shippingOptions), paymentMethods: normalizePaymentMethods(form.paymentMethods), paymentModality: normalizePaymentModality(form.paymentModality) }; const saved = await saveTenantZoneRule(requestJson, payload); const savedRule = normZone(saved?.item || saved?.rule || saved?.zoneRule || { ...payload, ruleId: form.ruleId }); const next = upper(savedRule.ruleId || form.ruleId || ''); if (next) { const optimisticRule = zoneFormToRule(form, next); const mergedRule = normZone({ ...optimisticRule, ...savedRule, ruleId: next }); setCachedItems(upsertById(items, mergedRule, 'ruleId')); setSelectedId(next); setForm(zoneForm(mergedRule)); setMode('detail'); } else close(); })}>Guardar zona</button>{form.ruleId ? <button type="button" className="danger" disabled={busy || !canManageZones} onClick={() => runLabelsAction(runSectionAction, runAction, 'delete_zone', 'Zona eliminada', async () => { await deleteTenantZoneRule(requestJson, form.ruleId); const nextItems = items.filter((item) => upper(item.ruleId) !== upper(form.ruleId)); setCachedItems(nextItems); close(); })}>Eliminar</button> : null}<button type="button" className="saas-btn-cancel" disabled={busy} onClick={close}>Cancelar</button></div></SaasDetailPanelSection>
         </>}
     </SaasDetailPanel>;
-    return <SaasEntityPage title="Zonas" sectionKey="tenant_zone_rules_inner" rows={buildLabelRows(visible, 'ruleId', 'zone')} columns={LABEL_TABLE_COLUMNS} selectedId={mode === 'list' ? '' : selectedId} onSelect={(row) => openDetail(row)} onClose={close} renderDetail={() => right} renderForm={() => right} mode={mode === 'create' || mode === 'edit' ? 'form' : 'detail'} dirty={mode === 'create' || mode === 'edit'} requestJson={requestJson} loading={loading} emptyText="No hay zonas para mostrar." searchPlaceholder="Buscar zona" actions={[...(canManageZones ? [{ key: 'recalculate', label: recalc ? `Recalc: ${recalc.assigned || 0}` : 'Recalcular zonas', onClick: () => runLabelsAction(runSectionAction, runAction, 'recalculate_zones', 'Zonas recalculadas', async () => setRecalc(await recalculateTenantZones(requestJson))), disabled: busy }, { key: 'create', label: 'Nuevo', onClick: openCreate, disabled: busy }] : []), { key: 'reload', label: 'Recargar', onClick: () => load({ force: true }).catch((e) => setError?.(String(e?.message || e))), disabled: busy || loading }]} filters={ZONE_FILTERS} layoutClassName="saas-labels-layout" detailShell={false} hideCloseButton />;
+    return <SaasEntityPage title="Zonas" sectionKey="tenant_zone_rules_inner" rows={buildLabelRows(visible, 'ruleId', 'zone')} columns={LABEL_TABLE_COLUMNS} selectedId={mode === 'list' ? '' : selectedId} onSelect={(row) => openDetail(row)} onClose={close} renderDetail={() => right} renderForm={() => right} mode={mode === 'create' || mode === 'edit' ? 'form' : 'detail'} dirty={mode === 'create' || mode === 'edit'} requestJson={requestJson} loading={sectionLoading} emptyText={sectionError || 'No hay zonas para mostrar.'} searchPlaceholder="Buscar zona" actions={[...(canManageZones ? [{ key: 'recalculate', label: recalc ? `Recalc: ${recalc.assigned || 0}` : 'Recalcular zonas', onClick: () => runLabelsAction(runSectionAction, runAction, 'recalculate_zones', 'Zonas recalculadas', async () => setRecalc(await recalculateTenantZones(requestJson))), disabled: busy }, { key: 'create', label: 'Nuevo', onClick: openCreate, disabled: busy }] : []), { key: 'reload', label: sectionError ? 'Reintentar' : 'Recargar', onClick: () => (typeof forceReload === 'function' ? forceReload(lazySectionId) : load({ force: true }).catch((e) => setError?.(String(e?.message || e)))), disabled: busy || sectionLoading }]} filters={ZONE_FILTERS} layoutClassName="saas-labels-layout" detailShell={false} hideCloseButton />;
 }
 
 function OperationalPanel({ context }) {
@@ -361,13 +379,33 @@ function OperationalPanel({ context }) {
 }
 
 function OperationalPanelUnified({ context }) {
-    const { busy, loadingLabels, settingsTenantId, loadTenantLabels, setError, canManageLabels, openTenantLabelCreate, labelSearch, setLabelSearch, visibleTenantLabels, selectedTenantLabel, labelPanelMode, setSelectedLabelId, setLabelPanelMode, openTenantLabelEdit, runAction, runSectionAction, deactivateTenantLabel, waModules, labelForm, setLabelForm, normalizeTenantLabelColor, DEFAULT_LABEL_COLORS, toggleModuleInLabelForm, saveTenantLabel, cancelTenantLabelEdit } = context;
+    const { busy, loadingLabels, settingsTenantId, loadTenantLabels, setError, canManageLabels, canViewLabels = true, ensureSectionData, isLoading, getError, getReloadToken, forceReload, openTenantLabelCreate, labelSearch, setLabelSearch, visibleTenantLabels, selectedTenantLabel, labelPanelMode, setSelectedLabelId, setLabelPanelMode, openTenantLabelEdit, runAction, runSectionAction, deactivateTenantLabel, waModules, labelForm, setLabelForm, normalizeTenantLabelColor, DEFAULT_LABEL_COLORS, toggleModuleInLabelForm, saveTenantLabel, cancelTenantLabelEdit } = context;
     const selectedId = labelPanelMode === 'create' ? '__create_operational' : selectedTenantLabel?.labelId || '';
+    const lazySectionId = 'labels';
+    const sectionReloadToken = typeof getReloadToken === 'function' ? getReloadToken(lazySectionId) : 0;
+    const sectionLoading = (typeof isLoading === 'function' && isLoading(lazySectionId)) || loadingLabels;
+    const sectionError = typeof getError === 'function' ? getError(lazySectionId) : '';
     const close = useCallback(() => {
         if (labelPanelMode === 'create' || labelPanelMode === 'edit') cancelTenantLabelEdit?.();
         else { setSelectedLabelId?.(''); setLabelPanelMode?.('list'); }
     }, [cancelTenantLabelEdit, labelPanelMode, setLabelPanelMode, setSelectedLabelId]);
     useEscape(labelPanelMode === 'create' || labelPanelMode === 'edit' || Boolean(selectedTenantLabel), close);
+    useEffect(() => {
+        if (!settingsTenantId) return;
+        if (typeof ensureSectionData !== 'function') {
+            loadTenantLabels?.(settingsTenantId).catch((e) => setError?.(String(e?.message || e || 'No se pudieron cargar etiquetas.')));
+            return;
+        }
+        void ensureSectionData(
+            lazySectionId,
+            () => loadTenantLabels?.(settingsTenantId),
+            {
+                canLoad: Boolean(canViewLabels && settingsTenantId && typeof loadTenantLabels === 'function'),
+                forceReload: sectionReloadToken > 0,
+                deps: [settingsTenantId]
+            }
+        );
+    }, [canViewLabels, ensureSectionData, loadTenantLabels, sectionReloadToken, setError, settingsTenantId]);
 
     if (!settingsTenantId) return <Empty title="Selecciona una empresa" body="Primero elige una empresa para administrar etiquetas operativas." />;
 
@@ -381,7 +419,7 @@ function OperationalPanelUnified({ context }) {
         {labelPanelMode === 'view' && selectedTenantLabel ? <SaasDetailPanelSection title="Detalle"><div className="saas-admin-detail-grid"><div className="saas-admin-detail-field"><span>Codigo</span><strong>{selectedTenantLabel.labelId || '-'}</strong></div><div className="saas-admin-detail-field"><span>Nombre</span><strong>{selectedTenantLabel.name || '-'}</strong></div><div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedTenantLabel.isActive === false ? 'Inactiva' : 'Activa'}</strong></div><div className="saas-admin-detail-field"><span>Color</span><strong><Dot color={selectedTenantLabel.color || '#00A884'} />{selectedTenantLabel.color || '#00A884'}</strong></div><div className="saas-admin-detail-field"><span>Modulos</span><strong>{selectedTenantLabel.moduleIds?.length ? selectedTenantLabel.moduleIds.length : 'Compartida'}</strong></div></div>{selectedTenantLabel.description ? <p className="saas-labels-detail-description">{selectedTenantLabel.description}</p> : null}</SaasDetailPanelSection> : null}
         {isEditing ? <><SaasDetailPanelSection title="Datos base"><div className="saas-admin-form-row"><input value={labelForm.name} onChange={(e) => setLabelForm((p) => ({ ...p, name: e.target.value }))} placeholder="Nombre de etiqueta" disabled={busy} /><input value={labelForm.labelId} onChange={(e) => setLabelForm((p) => ({ ...p, labelId: String(e.target.value || '').trim().toUpperCase() }))} placeholder="Codigo" disabled={busy || labelPanelMode === 'edit'} /></div><div className="saas-admin-form-row"><input value={labelForm.description} onChange={(e) => setLabelForm((p) => ({ ...p, description: e.target.value }))} placeholder="Descripcion" disabled={busy} /><input type="number" min="1" value={labelForm.sortOrder} onChange={(e) => setLabelForm((p) => ({ ...p, sortOrder: e.target.value }))} placeholder="Orden" disabled={busy} /></div><div className="saas-admin-form-row"><ColorPicker value={normalizeTenantLabelColor(labelForm.color || '', DEFAULT_LABEL_COLORS[0])} disabled={busy} onChange={(color) => setLabelForm((p) => ({ ...p, color }))} /><label className="saas-admin-module-toggle"><input type="checkbox" checked={labelForm.isActive !== false} onChange={(e) => setLabelForm((p) => ({ ...p, isActive: e.target.checked }))} disabled={busy} /><span>Activa</span></label></div></SaasDetailPanelSection><SaasDetailPanelSection title="Asignacion por modulo"><div className="saas-admin-modules">{waModules.map((m) => { const moduleId = String(m?.moduleId || '').trim().toLowerCase(); const checked = Array.isArray(labelForm.moduleIds) && labelForm.moduleIds.includes(moduleId); return <label key={`assignment_module_${moduleId}`} className="saas-admin-module-toggle"><input type="checkbox" checked={checked} onChange={() => toggleModuleInLabelForm(moduleId)} disabled={busy} /><span>{m?.name || moduleId}</span></label>; })}</div></SaasDetailPanelSection><SaasDetailPanelSection title="Acciones"><div className="saas-admin-form-row saas-admin-form-row--actions"><button type="button" disabled={busy || !canManageLabels || !String(labelForm.name || '').trim()} onClick={() => runLabelsAction(runSectionAction, runAction, 'save_label', labelPanelMode === 'create' ? 'Etiqueta creada' : 'Etiqueta actualizada', async () => saveTenantLabel())}>{labelPanelMode === 'create' ? 'Guardar etiqueta' : 'Actualizar etiqueta'}</button><button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelTenantLabelEdit}>Cancelar</button></div></SaasDetailPanelSection></> : null}
     </SaasDetailPanel>;
-    return <SaasEntityPage title="Operativas" sectionKey="tenant_operational_labels_inner" rows={buildLabelRows(visibleTenantLabels, 'labelId', 'operational')} columns={LABEL_TABLE_COLUMNS} selectedId={selectedId} onSelect={(row) => openDetail(row)} onClose={close} renderDetail={() => right} renderForm={() => right} mode={isEditing ? 'form' : 'detail'} dirty={isEditing} loading={loadingLabels} emptyText="No hay etiquetas operativas para mostrar." searchPlaceholder="Buscar etiqueta operativa" actions={[{ key: 'reload', label: 'Recargar', onClick: () => settingsTenantId && loadTenantLabels(settingsTenantId).catch((e) => setError?.(String(e?.message || e || 'No se pudieron recargar etiquetas.'))), disabled: busy || loadingLabels || !settingsTenantId }, ...(canManageLabels ? [{ key: 'create', label: 'Nuevo', onClick: openTenantLabelCreate, disabled: busy || !settingsTenantId }] : [])]} filters={OPERATIONAL_LABEL_FILTERS} layoutClassName="saas-labels-layout" detailShell={false} hideCloseButton />;
+    return <SaasEntityPage title="Operativas" sectionKey="tenant_operational_labels_inner" rows={buildLabelRows(visibleTenantLabels, 'labelId', 'operational')} columns={LABEL_TABLE_COLUMNS} selectedId={selectedId} onSelect={(row) => openDetail(row)} onClose={close} renderDetail={() => right} renderForm={() => right} mode={isEditing ? 'form' : 'detail'} dirty={isEditing} loading={sectionLoading} emptyText={sectionError || 'No hay etiquetas operativas para mostrar.'} searchPlaceholder="Buscar etiqueta operativa" actions={[{ key: 'reload', label: sectionError ? 'Reintentar' : 'Recargar', onClick: () => (typeof forceReload === 'function' ? forceReload(lazySectionId) : settingsTenantId && loadTenantLabels(settingsTenantId).catch((e) => setError?.(String(e?.message || e || 'No se pudieron recargar etiquetas.')))), disabled: busy || sectionLoading || !settingsTenantId }, ...(canManageLabels ? [{ key: 'create', label: 'Nuevo', onClick: openTenantLabelCreate, disabled: busy || !settingsTenantId }] : [])]} filters={OPERATIONAL_LABEL_FILTERS} layoutClassName="saas-labels-layout" detailShell={false} hideCloseButton />;
 }
 
 export default function TenantLabelsSection(props = {}) {

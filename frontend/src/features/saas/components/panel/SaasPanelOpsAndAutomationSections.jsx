@@ -15,7 +15,16 @@ export default function SaasPanelOpsAndAutomationSections(props = {}) {
     const isLabelsSection = context?.isLabelsSection === true;
     const isGlobalLabelsSection = context?.isGlobalLabelsSection === true;
     const isQuickRepliesSection = context?.isQuickRepliesSection === true;
+    const sectionLoaderContext = {
+        ensureSectionData: context.ensureSectionData,
+        isLoaded: context.isLoaded,
+        isLoading: context.isLoading,
+        getError: context.getError,
+        getReloadToken: context.getReloadToken,
+        forceReload: context.forceReload
+    };
     const operationsContext = {
+        ...sectionLoaderContext,
         tenantScopeLocked: context.tenantScopeLocked,
         busy: context.busy,
         loadingAssignmentRules: context.loadingAssignmentRules,
@@ -32,16 +41,19 @@ export default function SaasPanelOpsAndAutomationSections(props = {}) {
         runAction: context.runAction,
         runSectionAction: context.runSectionAction,
         saveAssignmentRules: context.saveAssignmentRules,
+        loadTenantAssignmentRules: context.loadTenantAssignmentRules,
         loadTenantOperationsKpis: context.loadTenantOperationsKpis,
         triggerAutoAssignPreview: context.triggerAutoAssignPreview,
         formatDateTimeLabel: context.formatDateTimeLabel
     };
     const aiAssistantsContext = {
+        ...sectionLoaderContext,
         isAiSection: context.isAiSection,
         busy: context.busy,
         loadingAiAssistants: context.loadingAiAssistants,
         settingsTenantId: context.settingsTenantId,
         loadTenantAiAssistants: context.loadTenantAiAssistants,
+        canViewAi: context.canViewAi,
         openAiAssistantCreate: context.openAiAssistantCreate,
         tenantAiAssistantItems: context.tenantAiAssistantItems,
         selectedAiAssistantId: context.selectedAiAssistantId,
@@ -64,12 +76,14 @@ export default function SaasPanelOpsAndAutomationSections(props = {}) {
         EMPTY_AI_ASSISTANT_FORM: context.EMPTY_AI_ASSISTANT_FORM
     };
     const metaTemplatesContext = {
+        ...sectionLoaderContext,
         isMetaTemplatesSection,
         settingsTenantId: context.settingsTenantId,
         tenantScopeLocked: context.tenantScopeLocked,
         waModules: context.waModules,
         busy: context.busy,
         canEditModules: context.canEditModules,
+        canViewMetaTemplates: context.canViewMetaTemplates,
         canManageMetaTemplates: context.canManageMetaTemplates,
         runAction: context.runAction,
         runSectionAction: context.runSectionAction,
@@ -78,11 +92,13 @@ export default function SaasPanelOpsAndAutomationSections(props = {}) {
         metaTemplatesController: context.metaTemplatesController
     };
     const campaignsContext = {
+        ...sectionLoaderContext,
         isCampaignsSection,
         settingsTenantId: context.settingsTenantId,
         tenantScopeLocked: context.tenantScopeLocked,
         waModules: context.waModules,
         busy: context.busy,
+        canViewCampaigns: context.canViewCampaigns,
         canManageCampaigns: context.canManageCampaigns,
         setError: context.setError,
         availableLabels: context.availableLabels,
@@ -93,6 +109,7 @@ export default function SaasPanelOpsAndAutomationSections(props = {}) {
         metaTemplatesController: context.metaTemplatesController
     };
     const tenantLabelsContext = {
+        ...sectionLoaderContext,
         busy: context.busy,
         loadingLabels: context.loadingLabels,
         settingsTenantId: context.settingsTenantId,
@@ -132,11 +149,13 @@ export default function SaasPanelOpsAndAutomationSections(props = {}) {
         cancelTenantLabelEdit: context.cancelTenantLabelEdit
     };
     const quickRepliesContext = {
+        ...sectionLoaderContext,
         busy: context.busy,
         loadingQuickReplies: context.loadingQuickReplies,
         settingsTenantId: context.settingsTenantId,
         loadQuickReplyData: context.loadQuickReplyData,
         setError: context.setError,
+        canViewQuickReplies: context.canViewQuickReplies,
         canManageQuickReplies: context.canManageQuickReplies,
         openQuickReplyLibraryCreate: context.openQuickReplyLibraryCreate,
         quickReplyModuleFilterId: context.quickReplyModuleFilterId,
