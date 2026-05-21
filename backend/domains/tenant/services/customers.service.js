@@ -1203,12 +1203,24 @@ function parseAppSheetDate(value = '') {
     const clean = raw.split(' ')[0];
     const parts = clean.split('/');
     if (parts.length !== 3) return null;
-    const [dayRaw, monthRaw, yearRaw] = parts;
-    if (!dayRaw || !monthRaw || !yearRaw || yearRaw.length !== 4) return null;
-    const iso = `${yearRaw}-${String(monthRaw).padStart(2, '0')}-${String(dayRaw).padStart(2, '0')}`;
-    const parsed = new Date(`${iso}T00:00:00Z`);
+    const [dayRaw, monthRaw, yearRaw] = parts.map((part) => String(part || '').trim());
+    if (!/^\d{1,2}$/.test(dayRaw) || !/^\d{1,2}$/.test(monthRaw) || !/^\d{4}$/.test(yearRaw)) return null;
+    const day = Number(dayRaw);
+    const month = Number(monthRaw);
+    const year = Number(yearRaw);
+    if (!Number.isInteger(day) || !Number.isInteger(month) || !Number.isInteger(year)) return null;
+    if (month < 1 || month > 12) return null;
+    if (day < 1 || day > 31) return null;
+    const parsed = new Date(Date.UTC(year, month - 1, day));
     if (Number.isNaN(parsed.getTime())) return null;
-    return iso;
+    if (
+        parsed.getUTCFullYear() !== year
+        || parsed.getUTCMonth() !== month - 1
+        || parsed.getUTCDate() !== day
+    ) {
+        return null;
+    }
+    return `${yearRaw}-${String(monthRaw).padStart(2, '0')}-${String(dayRaw).padStart(2, '0')}`;
 }
 
 function parseOptionalInteger(value = '') {
@@ -1446,18 +1458,65 @@ function buildAppSheetCustomerMetadata(candidate = {}) {
     };
 }
 
+function toPgSavepointName(value = 'sp') {
+    const clean = String(value || 'sp')
+        .replace(/[^a-zA-Z0-9_]/g, '_')
+        .replace(/^([^a-zA-Z_])/, '_$1')
+        .slice(0, 48);
+    return clean || 'sp';
+}
+
+function getCustomerImportRowContext(entry = {}, fallbackField = 'commit') {
+    const candidate = entry?.candidate || entry?.address || entry || {};
+    return {
+        row: Number(candidate?.rowNumber || entry?.rowNumber || 0) || 0,
+        erpId: String(candidate?.erpId || entry?.erpId || entry?.customerId || entry?.address?.erpId || '').trim() || null,
+        field: fallbackField
+    };
+}
+
+function logCustomerImportRowError(entry, field, error) {
+    const context = getCustomerImportRowContext(entry, field);
+    const originalError = String(error?.message || error || 'Error desconocido');
+    console.error('[CustomerImport] row error:', {
+        erpId: context.erpId,
+        row: context.row,
+        field: context.field,
+        originalError
+    });
+    if (error && typeof error === 'object') {
+        error.__customerImportRowLogged = true;
+    }
+}
+
+async function rollbackAndReleaseSavepoint(client, savepointName) {
+    await client.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+    await client.query(`RELEASE SAVEPOINT ${savepointName}`);
+}
+
 async function runChunkWithSavepoint(client, savepointName, entries, runner, fallbackRunner) {
     if (!entries.length) return;
-    await client.query(`SAVEPOINT ${savepointName}`);
+    const chunkSavepointName = toPgSavepointName(savepointName);
+    await client.query(`SAVEPOINT ${chunkSavepointName}`);
     try {
         await runner(entries);
-        await client.query(`RELEASE SAVEPOINT ${savepointName}`);
+        await client.query(`RELEASE SAVEPOINT ${chunkSavepointName}`);
     } catch (error) {
-        await client.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
-        for (const entry of entries) {
-            await fallbackRunner(entry, error);
+        await rollbackAndReleaseSavepoint(client, chunkSavepointName);
+        for (let index = 0; index < entries.length; index += 1) {
+            const entry = entries[index];
+            const rowSavepointName = toPgSavepointName(`${chunkSavepointName}_row_${index + 1}`);
+            await client.query(`SAVEPOINT ${rowSavepointName}`);
+            try {
+                await fallbackRunner(entry, error);
+                await client.query(`RELEASE SAVEPOINT ${rowSavepointName}`);
+            } catch (rowError) {
+                if (!rowError?.__customerImportRowLogged) {
+                    logCustomerImportRowError(entry, 'fallback', rowError);
+                }
+                await rollbackAndReleaseSavepoint(client, rowSavepointName);
+            }
         }
-        await client.query(`RELEASE SAVEPOINT ${savepointName}`);
     }
 }
 
@@ -1822,8 +1881,10 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                         );
                         customerCounts.inserted += 1;
                     } catch (error) {
+                        logCustomerImportRowError(entry, 'commit', error);
                         errors.push({ row: candidate.rowNumber, erp_id: candidate.erpId, field: 'commit', message: String(error?.message || error) });
                         customerCounts.errors += 1;
+                        throw error;
                     }
                     updateCommitProgress('customers', `Procesando clientes ${customerCounts.inserted + customerCounts.updated} de ${validCandidates.length}.`);
                 }
@@ -1876,8 +1937,10 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                             [cleanTenantId, entry.customerId, entry.moduleId, entry.marketingOptInStatus]
                         );
                     } catch (error) {
+                        logCustomerImportRowError(entry, 'module_context', error);
                         errors.push({ row: 0, erp_id: entry.customerId, field: 'module_context', message: String(error?.message || error) });
                         customerCounts.errors += 1;
+                        throw error;
                     }
                 }
             );
@@ -2062,8 +2125,10 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                         importedCustomerMap.set(candidate.erpId, { ...candidate, customerId: existing.customer_id });
                         customerCounts.updated += 1;
                     } catch (error) {
+                        logCustomerImportRowError({ candidate, existing }, 'commit', error);
                         errors.push({ row: candidate.rowNumber, erp_id: candidate.erpId, field: 'commit', message: String(error?.message || error) });
                         customerCounts.errors += 1;
+                        throw error;
                     }
                     updateCommitProgress('customers', `Procesando clientes ${customerCounts.inserted + customerCounts.updated} de ${validCandidates.length}.`);
                 }
@@ -2248,8 +2313,10 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                             );
                             addressCounts.inserted += 1;
                         } catch (error) {
+                            logCustomerImportRowError(entry, 'address_insert', error);
                             errors.push({ row: 0, erp_id: entry.customerId, field: 'address_insert', message: String(error?.message || error) });
                             addressCounts.errors += 1;
+                            throw error;
                         }
                         updateCommitProgress('addresses', `Procesando direcciones ${addressCounts.inserted + addressCounts.updated} de ${matchedAddressCandidates.length}.`);
                     }
@@ -2344,8 +2411,10 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                             );
                             addressCounts.updated += 1;
                         } catch (error) {
+                            logCustomerImportRowError(entry, 'address_update', error);
                             errors.push({ row: entry.address.rowNumber || 0, erp_id: entry.address.erpId, field: 'address_update', message: String(error?.message || error) });
                             addressCounts.errors += 1;
+                            throw error;
                         }
                         updateCommitProgress('addresses', `Procesando direcciones ${addressCounts.inserted + addressCounts.updated} de ${matchedAddressCandidates.length}.`);
                     }
