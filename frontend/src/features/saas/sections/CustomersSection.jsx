@@ -195,6 +195,23 @@ const EMPTY_GEO_CATALOG = {
     provinces: [],
     districts: []
 };
+const CUSTOMER_SECTION_CACHE_TTL_MS = 5 * 60 * 1000;
+const CUSTOMER_AUX_CATALOG_CACHE = new Map();
+const CUSTOMER_ZONE_CONTEXT_CACHE = new Map();
+
+function resolveCustomerSectionCacheKey(tenantScopeId = '') {
+    return String(tenantScopeId || '').trim() || '__default__';
+}
+
+function readFreshCustomerSectionCache(cache, tenantScopeId = '') {
+    const entry = cache.get(resolveCustomerSectionCacheKey(tenantScopeId));
+    if (!entry || typeof entry !== 'object') return null;
+    const loadedAt = Number(entry.loadedAt || 0);
+    if (!Number.isFinite(loadedAt) || loadedAt <= 0) return null;
+    if ((Date.now() - loadedAt) > CUSTOMER_SECTION_CACHE_TTL_MS) return null;
+    return entry;
+}
+
 const EMPTY_ADDRESS_FORM = {
     addressId: '',
     addressType: 'other',
@@ -1049,10 +1066,12 @@ function CustomersSection(props = {}) {
     const [addressEditorOpen, setAddressEditorOpen] = useState(false);
     const [addressBusy, setAddressBusy] = useState(false);
     const [addressForm, setAddressForm] = useState(EMPTY_ADDRESS_FORM);
-    const [customerCatalogs, setCustomerCatalogs] = useState(EMPTY_CUSTOMER_CATALOGS);
+    const initialAuxCatalogCache = readFreshCustomerSectionCache(CUSTOMER_AUX_CATALOG_CACHE, tenantScopeId);
+    const initialZoneContextCache = readFreshCustomerSectionCache(CUSTOMER_ZONE_CONTEXT_CACHE, tenantScopeId);
+    const [customerCatalogs, setCustomerCatalogs] = useState(initialAuxCatalogCache?.customerCatalogs || EMPTY_CUSTOMER_CATALOGS);
     const [loadingCustomerCatalogs, setLoadingCustomerCatalogs] = useState(false);
     const [customerCatalogsError, setCustomerCatalogsError] = useState('');
-    const [geoCatalog, setGeoCatalog] = useState(EMPTY_GEO_CATALOG);
+    const [geoCatalog, setGeoCatalog] = useState(initialAuxCatalogCache?.geoCatalog || EMPTY_GEO_CATALOG);
     const [loadingGeoCatalog, setLoadingGeoCatalog] = useState(false);
     const [geoCatalogError, setGeoCatalogError] = useState('');
     const [selectedCustomerLive, setSelectedCustomerLive] = useState(selectedCustomerContext || null);
@@ -1083,8 +1102,8 @@ function CustomersSection(props = {}) {
     const [selectedCampaignTemplatePreviewLoading, setSelectedCampaignTemplatePreviewLoading] = useState(false);
     const [selectedCampaignTemplatePreviewError, setSelectedCampaignTemplatePreviewError] = useState('');
     const [campaignTemplateSubmitting, setCampaignTemplateSubmitting] = useState(false);
-    const [zoneRules, setZoneRules] = useState([]);
-    const [customerZoneLabels, setCustomerZoneLabels] = useState([]);
+    const [zoneRules, setZoneRules] = useState(initialZoneContextCache?.zoneRules || []);
+    const [customerZoneLabels, setCustomerZoneLabels] = useState(initialZoneContextCache?.customerZoneLabels || []);
     const [showImportModal, setShowImportModal] = useState(false);
     const [importStep, setImportStep] = useState(1);
     const [importFileClientes, setImportFileClientes] = useState(null);
@@ -1877,12 +1896,12 @@ function CustomersSection(props = {}) {
         () => (Array.isArray(outreachFilteredCustomers) ? outreachFilteredCustomers : []).map((customer, index) => buildCustomerTableRow(customer, index)),
         [buildCustomerTableRow, outreachFilteredCustomers]
     );
-    const campaignSelectableVisibleCustomerIds = useMemo(
-        () => applyCustomerHeaderFilters(tableRows)
+    const campaignSelectableVisibleCustomerIds = useMemo(() => {
+        if (!campaignSelectionMode) return [];
+        return applyCustomerHeaderFilters(tableRows)
             .map((row) => String(row?._raw?.customerId || row?.id || '').trim())
-            .filter(Boolean),
-        [applyCustomerHeaderFilters, tableRows]
-    );
+            .filter(Boolean);
+    }, [applyCustomerHeaderFilters, campaignSelectionMode, tableRows]);
     const allCampaignSelectableCustomersSelected = useMemo(
         () => campaignSelectableVisibleCustomerIds.length > 0 && campaignSelectableVisibleCustomerIds.every((customerId) => selectedCustomerIdsForCampaignSet.has(customerId)),
         [campaignSelectableVisibleCustomerIds, selectedCustomerIdsForCampaignSet]
@@ -1962,11 +1981,18 @@ function CustomersSection(props = {}) {
     );
 
     const sortedAndFilteredRows = useMemo(() => {
-        const sourceRows = Array.isArray(tableRows) ? [...tableRows] : [];
+        const sourceRows = Array.isArray(tableRows) ? tableRows : [];
         const filteredRows = applyCustomerHeaderFilters(sourceRows);
 
         const activeSortItems = normalizeSortState(sortConfig).activeItems;
         if (activeSortItems.length === 0) return filteredRows;
+        if (
+            activeSortItems.length === 1
+            && activeSortItems[0]?.columnKey === CUSTOMER_DEFAULT_SORT.columnKey
+            && String(activeSortItems[0]?.direction || '').trim().toLowerCase() === CUSTOMER_DEFAULT_SORT.direction
+        ) {
+            return filteredRows;
+        }
 
         const resolveSortValue = (row, sortColumnKey) => {
             if (sortColumnKey === 'actualizado') {
@@ -2002,12 +2028,12 @@ function CustomersSection(props = {}) {
         });
     }, [applyCustomerHeaderFilters, sortConfig, tableRows]);
 
-    const visibleCustomerIdsForCampaign = useMemo(
-        () => sortedAndFilteredRows
+    const visibleCustomerIdsForCampaign = useMemo(() => {
+        if (!campaignSelectionMode) return [];
+        return sortedAndFilteredRows
             .map((row) => String(row?._raw?.customerId || row?.id || '').trim())
-            .filter(Boolean),
-        [sortedAndFilteredRows]
-    );
+            .filter(Boolean);
+    }, [campaignSelectionMode, sortedAndFilteredRows]);
     const allVisibleCustomersSelectedForCampaign = useMemo(
         () => visibleCustomerIdsForCampaign.length > 0 && visibleCustomerIdsForCampaign.every((customerId) => selectedCustomerIdsForCampaignSet.has(customerId)),
         [selectedCustomerIdsForCampaignSet, visibleCustomerIdsForCampaign]
@@ -2122,6 +2148,16 @@ function CustomersSection(props = {}) {
 
     const loadCustomerCatalogs = useCallback(async () => {
         if (typeof requestJson !== 'function' || !isCustomersSection) return;
+        const cached = readFreshCustomerSectionCache(CUSTOMER_AUX_CATALOG_CACHE, tenantScopeId);
+        if (cached) {
+            setCustomerCatalogs(cached.customerCatalogs || EMPTY_CUSTOMER_CATALOGS);
+            setGeoCatalog(cached.geoCatalog || EMPTY_GEO_CATALOG);
+            setCustomerCatalogsError('');
+            setGeoCatalogError('');
+            setLoadingCustomerCatalogs(false);
+            setLoadingGeoCatalog(false);
+            return;
+        }
         setLoadingCustomerCatalogs(true);
         setLoadingGeoCatalog(true);
         setCustomerCatalogsError('');
@@ -2134,17 +2170,24 @@ function CustomersSection(props = {}) {
                 requestJson('/api/tenant/customer-catalogs/document-types', { method: 'GET' }),
                 requestJson('/api/tenant/customer-catalogs/geo', { method: 'GET' })
             ]);
-            setCustomerCatalogs({
+            const nextCustomerCatalogs = {
                 treatments: normalizeCatalogItems(treatmentsPayload?.items || []),
                 customerTypes: normalizeCatalogItems(typesPayload?.items || []),
                 acquisitionSources: normalizeCatalogItems(sourcesPayload?.items || []),
                 documentTypes: normalizeCatalogItems(documentsPayload?.items || [])
-            });
-            setGeoCatalog({
+            };
+            const nextGeoCatalog = {
                 departments: Array.isArray(geoPayload?.departments) ? geoPayload.departments : [],
                 provinces: Array.isArray(geoPayload?.provinces) ? geoPayload.provinces : [],
                 districts: Array.isArray(geoPayload?.districts) ? geoPayload.districts : []
+            };
+            CUSTOMER_AUX_CATALOG_CACHE.set(resolveCustomerSectionCacheKey(tenantScopeId), {
+                customerCatalogs: nextCustomerCatalogs,
+                geoCatalog: nextGeoCatalog,
+                loadedAt: Date.now()
             });
+            setCustomerCatalogs(nextCustomerCatalogs);
+            setGeoCatalog(nextGeoCatalog);
         } catch (error) {
             setCustomerCatalogs(EMPTY_CUSTOMER_CATALOGS);
             setCustomerCatalogsError(String(error?.message || 'No se pudieron cargar catalogos de clientes.'));
@@ -2154,7 +2197,7 @@ function CustomersSection(props = {}) {
             setLoadingCustomerCatalogs(false);
             setLoadingGeoCatalog(false);
         }
-    }, [isCustomersSection, requestJson]);
+    }, [isCustomersSection, requestJson, tenantScopeId]);
 
     const handleModuleConsentChange = useCallback(async (moduleIdRaw = '', nextStatusRaw = '') => {
         if (!canManageCustomers) return;
@@ -3154,6 +3197,12 @@ function CustomersSection(props = {}) {
 
     useEffect(() => {
         if (!isCustomersSection || tenantScopeLocked || !tenantScopeId || typeof requestJson !== 'function') return;
+        const cached = readFreshCustomerSectionCache(CUSTOMER_ZONE_CONTEXT_CACHE, tenantScopeId);
+        if (cached) {
+            setZoneRules(cached.zoneRules || []);
+            setCustomerZoneLabels(cached.customerZoneLabels || []);
+            return;
+        }
         let cancelled = false;
         void (async () => {
             try {
@@ -3162,8 +3211,15 @@ function CustomersSection(props = {}) {
                     fetchTenantCustomerLabels(requestJson, { source: 'zone' })
                 ]);
                 if (cancelled) return;
-                setZoneRules(Array.isArray(rulesPayload?.items) ? rulesPayload.items : []);
-                setCustomerZoneLabels(Array.isArray(labelsPayload?.items) ? labelsPayload.items : []);
+                const nextZoneRules = Array.isArray(rulesPayload?.items) ? rulesPayload.items : [];
+                const nextCustomerZoneLabels = Array.isArray(labelsPayload?.items) ? labelsPayload.items : [];
+                CUSTOMER_ZONE_CONTEXT_CACHE.set(resolveCustomerSectionCacheKey(tenantScopeId), {
+                    zoneRules: nextZoneRules,
+                    customerZoneLabels: nextCustomerZoneLabels,
+                    loadedAt: Date.now()
+                });
+                setZoneRules(nextZoneRules);
+                setCustomerZoneLabels(nextCustomerZoneLabels);
             } catch {
                 if (!cancelled) {
                     setZoneRules([]);
