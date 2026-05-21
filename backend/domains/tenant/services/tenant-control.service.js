@@ -250,14 +250,19 @@ async function persistToPostgres(snapshot = {}) {
 
     await queryPostgres('BEGIN');
     try {
-        await queryPostgres('DELETE FROM memberships');
-        await queryPostgres('DELETE FROM users');
-        await queryPostgres('DELETE FROM tenants');
-
         for (const tenant of safe.tenants) {
             await queryPostgres(
                 `INSERT INTO tenants (tenant_id, slug, name, plan, is_active, logo_url, cover_image_url, metadata, created_at, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, NOW(), NOW())`,
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, COALESCE($9::timestamptz, NOW()), NOW())
+                 ON CONFLICT (tenant_id) DO UPDATE SET
+                    slug = EXCLUDED.slug,
+                    name = EXCLUDED.name,
+                    plan = EXCLUDED.plan,
+                    is_active = EXCLUDED.is_active,
+                    logo_url = EXCLUDED.logo_url,
+                    cover_image_url = EXCLUDED.cover_image_url,
+                    metadata = EXCLUDED.metadata,
+                    updated_at = NOW()`,
                 [
                     tenant.id,
                     tenant.slug,
@@ -266,7 +271,8 @@ async function persistToPostgres(snapshot = {}) {
                     tenant.active !== false,
                     tenant.logoUrl || null,
                     tenant.coverImageUrl || null,
-                    JSON.stringify(tenant.metadata || {})
+                    JSON.stringify(tenant.metadata || {}),
+                    tenant.createdAt || null
                 ]
             );
         }
@@ -274,7 +280,15 @@ async function persistToPostgres(snapshot = {}) {
         for (const user of safe.users) {
             await queryPostgres(
                 `INSERT INTO users (user_id, email, password_hash, display_name, is_active, avatar_url, metadata, created_at, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, NOW(), NOW())`,
+                 VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, COALESCE($8::timestamptz, NOW()), NOW())
+                 ON CONFLICT (user_id) DO UPDATE SET
+                    email = EXCLUDED.email,
+                    password_hash = EXCLUDED.password_hash,
+                    display_name = EXCLUDED.display_name,
+                    is_active = EXCLUDED.is_active,
+                    avatar_url = EXCLUDED.avatar_url,
+                    metadata = EXCLUDED.metadata,
+                    updated_at = NOW()`,
                 [
                     user.id,
                     user.email,
@@ -282,15 +296,41 @@ async function persistToPostgres(snapshot = {}) {
                     user.name || null,
                     user.active !== false,
                     user.avatarUrl || null,
-                    JSON.stringify(user.metadata || {})
+                    JSON.stringify(user.metadata || {}),
+                    user.createdAt || null
                 ]
             );
 
+            const membershipTenantIds = [];
             for (const membership of user.memberships || []) {
+                membershipTenantIds.push(membership.tenantId);
                 await queryPostgres(
                     `INSERT INTO memberships (tenant_id, user_id, role, is_active, created_at, updated_at)
-                     VALUES ($1, $2, $3, $4, NOW(), NOW())`,
+                     VALUES ($1, $2, $3, $4, NOW(), NOW())
+                     ON CONFLICT (tenant_id, user_id) DO UPDATE SET
+                        role = EXCLUDED.role,
+                        is_active = EXCLUDED.is_active,
+                        updated_at = NOW()`,
                     [membership.tenantId, user.id, membership.role, membership.active !== false]
+                );
+            }
+
+            if (membershipTenantIds.length > 0) {
+                await queryPostgres(
+                    `UPDATE memberships
+                        SET is_active = FALSE,
+                            updated_at = NOW()
+                      WHERE user_id = $1
+                        AND NOT (tenant_id = ANY($2::text[]))`,
+                    [user.id, membershipTenantIds]
+                );
+            } else {
+                await queryPostgres(
+                    `UPDATE memberships
+                        SET is_active = FALSE,
+                            updated_at = NOW()
+                      WHERE user_id = $1`,
+                    [user.id]
                 );
             }
         }
