@@ -37,6 +37,8 @@ function NavSectionIcon({ sectionId }) {
     case 'saas_etiquetas':
     case 'saas_global_labels':
         return <svg {...commonProps}><path d="m20 13-7 7-9-9V4h7zM7.5 7.5h.01" /></svg>;
+    case 'saas_zonas':
+        return <svg {...commonProps}><path d="M12 21s7-4.6 7-11a7 7 0 1 0-14 0c0 6.4 7 11 7 11z" /><circle cx="12" cy="10" r="2.5" /></svg>;
     case 'saas_quick_replies':
         return <svg {...commonProps}><path d="M7 8h10M7 12h7M4 4h16v12H7l-3 3z" /></svg>;
     case 'saas_modulos':

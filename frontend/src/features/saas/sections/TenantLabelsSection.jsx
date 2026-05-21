@@ -432,26 +432,18 @@ export default function TenantLabelsSection(props = {}) {
     const labelsScope = String(context?.labelsScope || 'tenant').trim().toLowerCase();
     const isGlobalScope = labelsScope === 'global';
     const tenantAvailable = Boolean(context?.settingsTenantId) && !context?.tenantScopeLocked;
-    const canViewZones = context?.canViewZones !== false;
     const canViewLabels = context?.canViewLabels !== false;
-    const [tenantTab, setTenantTab] = useState('zones');
-    useEffect(() => {
-        if (isGlobalScope) return;
-        if (tenantTab === 'zones' && !canViewZones && canViewLabels) setTenantTab('operational');
-        if (tenantTab === 'operational' && !canViewLabels && canViewZones) setTenantTab('zones');
-    }, [canViewLabels, canViewZones, isGlobalScope, tenantTab]);
     useEffect(() => {
         context?.setSelectedLabelId?.('');
         context?.setLabelPanelMode?.('view');
-    }, [context?.setLabelPanelMode, context?.setSelectedLabelId, labelsScope, tenantTab]);
-    const tabLabel = isGlobalScope ? 'Globales' : tenantTab === 'zones' ? 'Zonas' : 'Operativas';
-    const noTenantAccess = !isGlobalScope && !canViewZones && !canViewLabels;
+    }, [context?.setLabelPanelMode, context?.setSelectedLabelId, labelsScope]);
+    const noTenantAccess = !isGlobalScope && !canViewLabels;
     return <SaasEntityPage
         id="saas_etiquetas"
-        sectionKey={isGlobalScope ? 'global_labels' : `tenant_labels_${tenantTab}`}
+        sectionKey={isGlobalScope ? 'global_labels' : 'tenant_labels'}
         selectedId=""
         className="saas-entity-page--labels saas-labels-section"
     >
-        <div className="saas-admin-pane-header saas-labels-header"><div><h3>{isGlobalScope ? 'Etiquetas globales' : 'Etiquetas del tenant'}</h3><small>{isGlobalScope ? 'Catalogo comercial global administrado por superadmin.' : 'Zonas y etiquetas operativas propias de la empresa seleccionada.'}</small></div><span className="saas-labels-current-pill">{tabLabel}</span></div>{isGlobalScope ? <GlobalPanel {...context} isSuperAdmin={isSuperAdmin} /> : noTenantAccess ? <Empty title="Sin permisos" body="No tienes acceso a zonas ni etiquetas operativas de este tenant." /> : <>{!tenantAvailable ? <div className="saas-labels-tenant-hint">Selecciona una empresa para administrar zonas y etiquetas operativas.</div> : null}<div className="saas-admin-tabs saas-admin-tabs--secondary">{canViewZones ? <button type="button" className={tenantTab === 'zones' ? 'active' : ''} onClick={() => setTenantTab('zones')}>Zonas</button> : null}{canViewLabels ? <button type="button" className={tenantTab === 'operational' ? 'active' : ''} onClick={() => setTenantTab('operational')}>Operativas</button> : null}</div>{tenantTab === 'zones' && canViewZones ? <ZonePanel {...context} /> : <OperationalPanelUnified context={context} />}</>}
+        <div className="saas-admin-pane-header saas-labels-header"><div><h3>{isGlobalScope ? 'Etiquetas globales' : 'Etiquetas'}</h3><small>{isGlobalScope ? 'Catalogo comercial global administrado por superadmin.' : 'Etiquetas para clasificar y organizar chats del equipo.'}</small></div>{isGlobalScope ? <span className="saas-labels-current-pill">Globales</span> : null}</div>{isGlobalScope ? <GlobalPanel {...context} isSuperAdmin={isSuperAdmin} /> : noTenantAccess ? <Empty title="Sin permisos" body="No tienes acceso a etiquetas operativas de este tenant." /> : <>{!tenantAvailable ? <div className="saas-labels-tenant-hint">Selecciona una empresa para administrar etiquetas operativas.</div> : null}<OperationalPanelUnified context={context} /></>}
     </SaasEntityPage>;
 }

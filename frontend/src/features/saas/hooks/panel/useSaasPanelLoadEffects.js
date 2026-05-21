@@ -385,7 +385,7 @@ export default function useSaasPanelLoadEffects({
                     },
                     {
                         name: 'zones',
-                        sectionId: '',
+                        sectionId: 'zones',
                         allowed: canViewZones,
                         deps: [tenantScopeId],
                         loader: () => loadTenantZoneRulesFn?.()

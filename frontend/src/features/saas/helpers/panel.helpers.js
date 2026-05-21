@@ -173,6 +173,7 @@ export const ADMIN_NAV_ITEMS = [
     { id: 'saas_catalogos', label: 'Catálogos' },
     { id: 'saas_commercial_intelligence', label: 'Inteligencia Comercial' },
     { id: 'saas_etiquetas', label: 'Etiquetas' },
+    { id: 'saas_zonas', label: 'Zonas' },
     { id: 'saas_quick_replies', label: 'Respuestas Rápidas' },
     { id: 'saas_ia', label: 'Asistentes IA' },
     { id: 'saas_automations', label: 'Mensajes automáticos' },

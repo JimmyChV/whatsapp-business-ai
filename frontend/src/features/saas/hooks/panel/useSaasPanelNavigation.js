@@ -47,7 +47,8 @@ export default function useSaasPanelNavigation({
         if (cleanId === 'saas_ia') return canViewAi;
         if (cleanId === 'saas_commercial_intelligence') return canViewCommercialIntelligence;
         if (cleanId === 'saas_automations') return canViewAutomations;
-        if (cleanId === 'saas_etiquetas') return canViewLabels || canViewZones;
+        if (cleanId === 'saas_etiquetas') return canViewLabels;
+        if (cleanId === 'saas_zonas') return canViewZones;
         if (cleanId === 'saas_global_labels') return canViewLabels;
         if (cleanId === 'saas_quick_replies') return canViewQuickReplies;
         if (cleanId === 'saas_modulos') return canViewModules;
@@ -136,6 +137,7 @@ export default function useSaasPanelNavigation({
         isAutomationSection: selectedSectionId === 'saas_automations',
         isSchedulesSection: selectedSectionId === 'saas_schedules',
         isLabelsSection: selectedSectionId === 'saas_etiquetas',
+        isZonesSection: selectedSectionId === 'saas_zonas',
         isGlobalLabelsSection: selectedSectionId === 'saas_global_labels',
         isQuickRepliesSection: selectedSectionId === 'saas_quick_replies',
         isGeneralConfigSection: selectedSectionId === 'saas_config'

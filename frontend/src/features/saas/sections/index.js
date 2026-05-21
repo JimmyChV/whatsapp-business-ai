@@ -14,4 +14,5 @@ export { default as RoleProfilesSection } from './RoleProfilesSection';
 export { default as SchedulesSection } from './SchedulesSection';
 export { default as SummarySection } from './SummarySection';
 export { default as TenantLabelsSection } from './TenantLabelsSection';
+export { default as TenantZonesSection } from './TenantZonesSection';
 export { default as UsersSection } from './UsersSection';

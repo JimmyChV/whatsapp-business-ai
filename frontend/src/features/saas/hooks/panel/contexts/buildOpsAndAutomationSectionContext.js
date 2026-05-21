@@ -80,6 +80,7 @@ export default function buildOpsAndAutomationSectionContext(c) {
         setAiAssistantPanelMode: c.setAiAssistantPanelMode,
         EMPTY_AI_ASSISTANT_FORM: c.EMPTY_AI_ASSISTANT_FORM,
         isLabelsSection: c.isLabelsSection,
+        isZonesSection: c.isZonesSection,
         isGlobalLabelsSection: c.isGlobalLabelsSection,
         loadingLabels: c.loadingLabels,
         loadTenantLabels: c.loadTenantLabels,

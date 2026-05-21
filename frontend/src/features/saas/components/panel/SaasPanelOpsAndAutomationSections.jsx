@@ -4,7 +4,8 @@ import {
     MetaTemplatesSection,
     OperationsSection,
     QuickRepliesSection,
-    TenantLabelsSection
+    TenantLabelsSection,
+    TenantZonesSection
 } from '../../sections';
 
 export default function SaasPanelOpsAndAutomationSections(props = {}) {
@@ -13,6 +14,7 @@ export default function SaasPanelOpsAndAutomationSections(props = {}) {
     const isCampaignsSection = context?.isCampaignsSection === true;
     const isMetaTemplatesSection = context?.isMetaTemplatesSection === true;
     const isLabelsSection = context?.isLabelsSection === true;
+    const isZonesSection = context?.isZonesSection === true;
     const isGlobalLabelsSection = context?.isGlobalLabelsSection === true;
     const isQuickRepliesSection = context?.isQuickRepliesSection === true;
     const sectionLoaderContext = {
@@ -21,7 +23,8 @@ export default function SaasPanelOpsAndAutomationSections(props = {}) {
         isLoading: context.isLoading,
         getError: context.getError,
         getReloadToken: context.getReloadToken,
-        forceReload: context.forceReload
+        forceReload: context.forceReload,
+        loadedSections: context.loadedSections
     };
     const operationsContext = {
         ...sectionLoaderContext,
@@ -148,6 +151,18 @@ export default function SaasPanelOpsAndAutomationSections(props = {}) {
         saveTenantLabel: context.saveTenantLabel,
         cancelTenantLabelEdit: context.cancelTenantLabelEdit
     };
+    const tenantZonesContext = {
+        ...sectionLoaderContext,
+        busy: context.busy,
+        settingsTenantId: context.settingsTenantId,
+        tenantScopeLocked: context.tenantScopeLocked,
+        setError: context.setError,
+        canManageZones: context.canManageZones,
+        canViewZones: context.canViewZones,
+        requestJson: context.requestJson,
+        runAction: context.runAction,
+        runSectionAction: context.runSectionAction
+    };
     const quickRepliesContext = {
         ...sectionLoaderContext,
         busy: context.busy,
@@ -226,6 +241,10 @@ export default function SaasPanelOpsAndAutomationSections(props = {}) {
 
             {isLabelsSection && (
                 <TenantLabelsSection context={{ ...tenantLabelsContext, labelsScope: 'tenant' }} />
+            )}
+
+            {isZonesSection && (
+                <TenantZonesSection context={tenantZonesContext} />
             )}
 
             {isGlobalLabelsSection && (

@@ -107,6 +107,103 @@ export async function deleteGlobalLabel(requestJson, id = '') {
     });
 }
 
+const TENANT_ZONE_RULES_DEFAULT_CACHE_KEY = 'default';
+const tenantZoneRulesCache = new Map();
+
+const normalizeMoneyInput = (value) => {
+    if (value === null || value === undefined || value === '') return null;
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) ? Math.round(numberValue * 100) / 100 : null;
+};
+
+function getTenantZoneRulesCacheKey(tenantId = '') {
+    return normalizeText(tenantId) || TENANT_ZONE_RULES_DEFAULT_CACHE_KEY;
+}
+
+export function normalizeTenantZoneShippingOptions(value = []) {
+    return (Array.isArray(value) ? value : []).map((item) => ({
+        type: normalizeText(item?.type).toLowerCase() === 'courier' ? 'courier' : 'delivery',
+        label: normalizeText(item?.label || item?.name || (normalizeText(item?.type).toLowerCase() === 'courier' ? 'Courier' : 'Delivery propio')),
+        cost: normalizeMoneyInput(item?.cost) ?? 0,
+        free_from: normalizeMoneyInput(item?.free_from ?? item?.freeFrom),
+        estimated_time: normalizeText(item?.estimated_time || item?.estimatedTime),
+        is_active: item?.is_active !== false && item?.isActive !== false
+    }));
+}
+
+export function normalizeTenantZonePaymentMethods(value = {}) {
+    return {
+        yape: value?.yape === true,
+        plin: value?.plin === true,
+        bank_transfer: value?.bank_transfer === true || value?.bankTransfer === true,
+        credit_card: value?.credit_card === true || value?.creditCard === true,
+        cash: value?.cash === true
+    };
+}
+
+export function normalizeTenantZonePaymentModality(value = {}) {
+    return {
+        advance: Object.prototype.hasOwnProperty.call(value || {}, 'advance') ? value?.advance === true : true,
+        cash_on_delivery: value?.cash_on_delivery === true || value?.cashOnDelivery === true
+    };
+}
+
+export function normalizeTenantZoneRule(item = {}) {
+    const rules = item.rulesJson || item.rules_json || {};
+    return {
+        ruleId: normalizeUpper(item.ruleId || item.rule_id || ''),
+        name: normalizeText(item.name),
+        color: normalizeText(item.color || '#00A884') || '#00A884',
+        rulesJson: rules && typeof rules === 'object' && !Array.isArray(rules) ? rules : {},
+        shippingOptions: normalizeTenantZoneShippingOptions(item.shippingOptions || item.shipping_options),
+        paymentMethods: normalizeTenantZonePaymentMethods(item.paymentMethods || item.payment_methods),
+        paymentModality: normalizeTenantZonePaymentModality(item.paymentModality || item.payment_modality),
+        isActive: item.isActive !== false && item.is_active !== false
+    };
+}
+
+export function hasCachedTenantZoneRules(tenantId = '') {
+    return tenantZoneRulesCache.has(getTenantZoneRulesCacheKey(tenantId));
+}
+
+export function getCachedTenantZoneRules(tenantId = '') {
+    return tenantZoneRulesCache.get(getTenantZoneRulesCacheKey(tenantId)) || [];
+}
+
+export function setCachedTenantZoneRules(tenantId = '', items = []) {
+    const normalized = (Array.isArray(items) ? items : [])
+        .map(normalizeTenantZoneRule)
+        .filter((item) => item.ruleId);
+    tenantZoneRulesCache.set(getTenantZoneRulesCacheKey(tenantId), normalized);
+    return normalized;
+}
+
+export async function loadCachedTenantZoneRules(requestJson, { includeInactive = true, tenantId = '', force = false } = {}) {
+    if (!requestJson) return getCachedTenantZoneRules(tenantId);
+    if (!force && hasCachedTenantZoneRules(tenantId)) return getCachedTenantZoneRules(tenantId);
+    const payload = await fetchTenantZoneRules(requestJson, { includeInactive, tenantId });
+    return setCachedTenantZoneRules(tenantId, payload?.items || []);
+}
+
+export function upsertCachedTenantZoneRule(tenantId = '', item = {}) {
+    const normalized = normalizeTenantZoneRule(item);
+    if (!normalized.ruleId) return getCachedTenantZoneRules(tenantId);
+    const current = getCachedTenantZoneRules(tenantId);
+    const exists = current.some((entry) => entry.ruleId === normalized.ruleId);
+    const next = exists
+        ? current.map((entry) => (entry.ruleId === normalized.ruleId ? normalized : entry))
+        : [normalized, ...current];
+    return setCachedTenantZoneRules(tenantId, next);
+}
+
+export function removeCachedTenantZoneRule(tenantId = '', ruleId = '') {
+    const cleanRuleId = normalizeUpper(ruleId);
+    return setCachedTenantZoneRules(
+        tenantId,
+        getCachedTenantZoneRules(tenantId).filter((item) => item.ruleId !== cleanRuleId)
+    );
+}
+
 export async function fetchTenantZoneRules(requestJson, { includeInactive = true, tenantId = '' } = {}) {
     const query = includeInactive ? '?includeInactive=true' : '';
     const cleanTenantId = String(tenantId || '').trim();
