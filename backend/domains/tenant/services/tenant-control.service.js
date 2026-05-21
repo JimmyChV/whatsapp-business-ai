@@ -10,6 +10,7 @@ const accessPolicyService = require('../../security/services/access-policy.servi
 const passwordHashService = require('../../security/services/password-hash.service');
 const {
     nowIso,
+    normalizeDateTimeValue,
     normalizeTenantId,
     normalizeSlug,
     normalizeUrlValue,
@@ -272,7 +273,7 @@ async function persistToPostgres(snapshot = {}) {
                     tenant.logoUrl || null,
                     tenant.coverImageUrl || null,
                     JSON.stringify(tenant.metadata || {}),
-                    tenant.createdAt || null
+                    normalizeDateTimeValue(tenant.createdAt) || null
                 ]
             );
         }
@@ -297,7 +298,7 @@ async function persistToPostgres(snapshot = {}) {
                     user.active !== false,
                     user.avatarUrl || null,
                     JSON.stringify(user.metadata || {}),
-                    user.createdAt || null
+                    normalizeDateTimeValue(user.createdAt) || null
                 ]
             );
 

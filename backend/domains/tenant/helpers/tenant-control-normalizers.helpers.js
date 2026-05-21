@@ -7,6 +7,19 @@ function nowIso() {
     return new Date().toISOString();
 }
 
+function normalizeDateTimeValue(value = null) {
+    if (value === null || value === undefined) return null;
+    if (value instanceof Date) {
+        return Number.isFinite(value.getTime()) ? value.toISOString() : null;
+    }
+
+    const text = String(value || '').trim();
+    if (!text) return null;
+
+    const parsed = Date.parse(text);
+    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
 function normalizeTenantId(value = '') {
     const raw = String(value || '').trim();
     if (!raw) return '';
@@ -197,8 +210,8 @@ function normalizeTenant(input = {}, fallbackIndex = 0) {
     const name = String(input.name || input.displayName || slug || id).trim() || id;
     const active = input.active !== false;
     const plan = String(input.plan || 'starter').trim().toLowerCase() || 'starter';
-    const createdAt = String(input.createdAt || '').trim() || nowIso();
-    const updatedAt = String(input.updatedAt || '').trim() || nowIso();
+    const createdAt = normalizeDateTimeValue(input.createdAt || input.created_at) || nowIso();
+    const updatedAt = normalizeDateTimeValue(input.updatedAt || input.updated_at) || nowIso();
     const logoUrl = normalizeUrlValue(input.logoUrl || input.logo_url || input.imageUrl || input.image_url);
     const coverImageUrl = normalizeUrlValue(input.coverImageUrl || input.cover_image_url || input.bannerUrl || input.banner_url);
 
@@ -241,8 +254,8 @@ function normalizeUser(input = {}, fallbackIndex = 0) {
 
     if (!passwordHash) return null;
 
-    const createdAt = String(input.createdAt || '').trim() || nowIso();
-    const updatedAt = String(input.updatedAt || '').trim() || nowIso();
+    const createdAt = normalizeDateTimeValue(input.createdAt || input.created_at) || nowIso();
+    const updatedAt = normalizeDateTimeValue(input.updatedAt || input.updated_at) || nowIso();
     const avatarUrl = normalizeUrlValue(input.avatarUrl || input.avatar_url || input.photoUrl || input.photo_url || input.imageUrl || input.image_url);
     const metadata = normalizeMetadata(input.metadata);
     const metadataAccess = metadata?.access && typeof metadata.access === 'object' && !Array.isArray(metadata.access)
@@ -282,6 +295,7 @@ function normalizeUser(input = {}, fallbackIndex = 0) {
 
 module.exports = {
     nowIso,
+    normalizeDateTimeValue,
     normalizeTenantId,
     normalizeSlug,
     sanitizeCodeToken,
