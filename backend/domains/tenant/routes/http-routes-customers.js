@@ -9,6 +9,7 @@
 const multer = require('multer');
 const { TextDecoder } = require('util');
 const { parseCsvRows } = require('../helpers/customers-normalizers.helpers');
+const geoLocationService = require('../services/geo-location.service');
 const wooZonesSyncService = require('../services/woo-zones-sync.service');
 
 const erpImportUpload = multer({ storage: multer.memoryStorage() });
@@ -478,6 +479,20 @@ function registerTenantCustomerHttpRoutes({
             return res.json({ ok: true, tenantId, ...result });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron importar zonas desde WooCommerce.') });
+        }
+    });
+
+    app.get('/api/tenant/geo/search', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasZonesReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            const query = String(req.query?.q || req.query?.query || '').trim();
+            const type = String(req.query?.type || 'all').trim().toLowerCase();
+            const limit = Number(req.query?.limit || 20);
+            const items = await geoLocationService.searchLocations(query, { type, limit });
+            return res.json({ ok: true, items });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron buscar ubicaciones.') });
         }
     });
 

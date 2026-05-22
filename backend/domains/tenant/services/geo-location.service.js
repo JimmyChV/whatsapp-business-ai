@@ -39,6 +39,14 @@ function ensureArray(value = []) {
     return Array.isArray(value) ? value : [];
 }
 
+function normalizeStringArray(value = []) {
+    return Array.from(new Set(
+        ensureArray(value)
+            .map((item) => text(item))
+            .filter(Boolean)
+    ));
+}
+
 function missingRelation(error) {
     return text(error?.code) === '42P01';
 }
@@ -87,6 +95,11 @@ function extractLocationCandidates(value = '') {
 
     return Array.from(candidates)
         .sort((left, right) => right.length - left.length || left.localeCompare(right, 'es'));
+}
+
+function extractPostalCode(value = '') {
+    const match = text(value).match(/\b\d{5}\b/);
+    return match?.[0] || '';
 }
 
 function stripLocationPrefix(value = '') {
@@ -297,6 +310,21 @@ function resolveExactMatchSet(matches = [], byId = new Map(), candidate = '') {
     return hydrateLocation(sorted[0].row, byId, sorted[0].confidence, candidate);
 }
 
+function withPostalCode(result = {}, postalCode = '') {
+    const cleanPostalCode = text(postalCode);
+    if (!cleanPostalCode) return result;
+    if (result?.confidence && result.confidence !== 'none') {
+        return { ...result, postalCode: cleanPostalCode };
+    }
+    return {
+        ...hydrateLocation(null),
+        confidence: 'postal_code',
+        matchedType: 'postal_code',
+        matchedText: cleanPostalCode,
+        postalCode: cleanPostalCode
+    };
+}
+
 function resolveAgainstLoadedLocations(value = '', locations = [], byId = new Map()) {
     const candidates = extractLocationCandidates(value);
     if (!candidates.length) return hydrateLocation(null);
@@ -429,10 +457,11 @@ function chooseBestCompoundResult(segmentResults = [], byId = new Map()) {
 }
 
 async function resolveLocationFromText(value = '', options = {}) {
+    const postalCode = extractPostalCode(value);
     if (shouldAskForDistrictInsteadOfAssuming(value)) return hydrateLocation(null);
 
     const locations = await loadGeoLocations();
-    if (!locations.length) return hydrateLocation(null);
+    if (!locations.length) return withPostalCode(hydrateLocation(null), postalCode);
 
     const byId = new Map(locations.map((row) => [row.id, row]));
     const zoneRules = ensureArray(options?.zoneRules);
@@ -452,16 +481,57 @@ async function resolveLocationFromText(value = '', options = {}) {
             }))
             .filter((entry) => entry.result?.confidence && entry.result.confidence !== 'none');
         const compoundResult = chooseBestCompoundResult(segmentResults, byId);
-        if (compoundResult) return compoundResult;
+        if (compoundResult) return withPostalCode(compoundResult, postalCode);
     }
 
-    return expandAmbiguousLocationWithPartialCandidates(
+    return withPostalCode(expandAmbiguousLocationWithPartialCandidates(
         resolveAgainstLoadedLocations(value, locations, byId),
         value,
         locations,
         byId,
         zoneRules
-    );
+    ), postalCode);
+}
+
+async function searchLocations(query = '', options = {}) {
+    const normalizedQuery = normalizeLocationName(query);
+    if (!normalizedQuery || normalizedQuery.length < 2) return [];
+    const requestedType = text(options?.type || 'all').toLowerCase();
+    const limit = Math.min(50, Math.max(1, Number(options?.limit || 20)));
+    const allowedTypes = requestedType && requestedType !== 'all' && GEO_TYPES.includes(requestedType)
+        ? [requestedType]
+        : GEO_TYPES;
+    const locations = await loadGeoLocations();
+    const byId = new Map(locations.map((row) => [row.id, row]));
+    return locations
+        .filter((row) => allowedTypes.includes(row.type))
+        .map((row) => {
+            const exact = row.normalizedName === normalizedQuery;
+            const starts = row.normalizedName.startsWith(normalizedQuery);
+            const contains = row.normalizedName.includes(normalizedQuery);
+            if (!exact && !starts && !contains) return null;
+            const hydrated = hydrateLocation(row, byId, exact ? 'exact' : 'partial', query);
+            const parts = [
+                hydrated.district,
+                hydrated.province,
+                hydrated.department
+            ].filter(Boolean);
+            return {
+                id: row.id,
+                type: row.type,
+                name: row.name,
+                label: parts.join(', ') || row.name,
+                district: hydrated.district,
+                province: hydrated.province,
+                department: hydrated.department,
+                ubigeo: hydrated.ubigeo || null,
+                score: (exact ? 100 : (starts ? 80 : 40)) + (TYPE_PRIORITY[row.type] || 0)
+            };
+        })
+        .filter(Boolean)
+        .sort((left, right) => right.score - left.score || (TYPE_PRIORITY[right.type] || 0) - (TYPE_PRIORITY[left.type] || 0) || left.label.localeCompare(right.label, 'es'))
+        .slice(0, limit)
+        .map(({ score, ...item }) => item);
 }
 
 function collectRuleValues(rulesJson = {}, keys = []) {
@@ -498,6 +568,54 @@ function resolveZoneFromLocation(location = {}, zoneRules = []) {
     if (!location || confidence === 'none' || confidence === 'ambiguous') return null;
 
     const activeRules = ensureArray(zoneRules).filter((rule) => rule && rule.isActive !== false && rule.is_active !== false);
+    const postalCode = text(location.postalCode || location.postal_code || location.postcode || '');
+    if (postalCode) {
+        const matches = activeRules.filter((rule) => normalizeStringArray(rule.postalCodes || rule.postal_codes).includes(postalCode));
+        if (matches.length === 1) {
+            return {
+                rule: matches[0],
+                matchedLevel: 'postal_code',
+                location
+            };
+        }
+        if (matches.length > 1) {
+            return {
+                rule: null,
+                matchedLevel: 'postal_code',
+                location,
+                ambiguous: true,
+                needsGps: true,
+                matches
+            };
+        }
+    }
+
+    const ubigeoCandidates = normalizeStringArray([location.locationId || location.location_id, location.ubigeo]);
+    if (ubigeoCandidates.length) {
+        const matches = activeRules.filter((rule) => {
+            const codes = normalizeStringArray(rule.ubigeoCodes || rule.ubigeo_codes);
+            return ubigeoCandidates.some((candidate) => codes.includes(candidate));
+        });
+        if (matches.length === 1) {
+            return {
+                rule: matches[0],
+                matchedLevel: 'ubigeo',
+                location
+            };
+        }
+        if (matches.length > 1) {
+            return {
+                rule: null,
+                matchedLevel: 'ubigeo',
+                location,
+                ambiguous: true,
+                needsGps: true,
+                matches
+            };
+        }
+    }
+
+    if (confidence === 'postal_code') return null;
     const checks = [
         {
             level: 'district',
@@ -535,6 +653,8 @@ function resolveZoneFromLocation(location = {}, zoneRules = []) {
 module.exports = {
     normalizeLocationName,
     extractLocationCandidates,
+    extractPostalCode,
+    searchLocations,
     resolveLocationFromText,
     resolveZoneFromLocation
 };

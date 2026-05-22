@@ -206,7 +206,7 @@ async function findExistingWooZoneRule(tenantId = DEFAULT_TENANT_ID, wooZoneId =
     if (!cleanWooZoneId) return null;
     await tenantZoneRulesService.listZoneRules(cleanTenantId, { includeInactive: true });
     const { rows } = await queryPostgres(
-        `SELECT rule_id, color, payment_methods, payment_modality, ubigeo_codes
+        `SELECT rule_id, color, rules_json, payment_methods, payment_modality, ubigeo_codes
            FROM tenant_zone_rules
           WHERE tenant_id = $1
             AND woo_zone_id = $2
@@ -226,6 +226,9 @@ function buildRulePayload({
     const segmentKey = detectSegmentKey(wooZone, locations);
     const ruleId = existing?.rule_id || `WOO-ZONE-${wooZoneId}`;
     const normalizedLocations = ensureArray(locations).map(normalizeWooLocation);
+    const previousRules = existing?.rules_json && typeof existing.rules_json === 'object' ? existing.rules_json : {};
+    const manualPostalCodes = ensureArray(previousRules.manualPostalCodes);
+    const wooPostalCodes = extractPostalCodes(normalizedLocations);
     const normalizedMethods = ensureArray(methods).map((method) => ({
         id: method?.id ?? null,
         methodId: text(method?.method_id || method?.methodId || ''),
@@ -243,7 +246,11 @@ function buildRulePayload({
                 zoneName: text(wooZone?.name || ''),
                 methods: normalizedMethods,
                 locations: normalizedLocations
-            }
+            },
+            manualPostalCodes,
+            ubigeoLabels: previousRules.ubigeoLabels && typeof previousRules.ubigeoLabels === 'object'
+                ? previousRules.ubigeoLabels
+                : {}
         },
         shippingOptions: shippingOptionsFromSegment(segmentKey),
         paymentMethods: existing?.payment_methods && typeof existing.payment_methods === 'object'
@@ -253,7 +260,7 @@ function buildRulePayload({
             ? existing.payment_modality
             : DEFAULT_PAYMENT_MODALITY,
         wooZoneId,
-        postalCodes: extractPostalCodes(normalizedLocations),
+        postalCodes: Array.from(new Set([...wooPostalCodes, ...manualPostalCodes].map(text).filter(Boolean))),
         ubigeoCodes: ensureArray(existing?.ubigeo_codes),
         segmentKey,
         agenciesConfig: agenciesConfigFromSegment(segmentKey),

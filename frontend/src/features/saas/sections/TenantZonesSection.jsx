@@ -33,7 +33,12 @@ const EMPTY_ZONE = {
     paymentModality: { ...EMPTY_PAYMENT_MODALITY },
     wooZoneId: null,
     postalCodes: [],
+    wooPostalCodes: [],
+    manualPostalCodes: [],
+    postalCodeInput: '',
     ubigeoCodes: [],
+    ubigeoLabels: {},
+    wooRules: null,
     segmentKey: '',
     agenciesConfig: {},
     isActive: true
@@ -158,6 +163,9 @@ function zoneForm(item = null) {
     if (!item) return { ...EMPTY_ZONE };
     const zone = normalizeTenantZoneRule(item);
     const rules = zone.rulesJson || {};
+    const manualPostalCodes = uniq(rules.manualPostalCodes || []);
+    const postalCodes = uniq(zone.postalCodes || []);
+    const wooPostalCodes = postalCodes.filter((code) => !manualPostalCodes.includes(code));
     return {
         ...EMPTY_ZONE,
         ruleId: zone.ruleId,
@@ -170,8 +178,12 @@ function zoneForm(item = null) {
         paymentMethods: normalizeTenantZonePaymentMethods(zone.paymentMethods),
         paymentModality: normalizeTenantZonePaymentModality(zone.paymentModality),
         wooZoneId: zone.wooZoneId || null,
-        postalCodes: uniq(zone.postalCodes || []),
+        postalCodes,
+        wooPostalCodes,
+        manualPostalCodes,
         ubigeoCodes: uniq(zone.ubigeoCodes || []),
+        ubigeoLabels: rules.ubigeoLabels && typeof rules.ubigeoLabels === 'object' ? rules.ubigeoLabels : {},
+        wooRules: rules.woo && typeof rules.woo === 'object' ? rules.woo : null,
         segmentKey: text(zone.segmentKey || ''),
         agenciesConfig: zone.agenciesConfig && typeof zone.agenciesConfig === 'object' ? zone.agenciesConfig : {},
         isActive: zone.isActive !== false
@@ -190,13 +202,16 @@ function zoneFormToRule(form = {}, fallbackRuleId = '') {
             provinces: uniq(form.provinces),
             provinceNames: uniq(form.provinces),
             departments: uniq(form.departments),
-            departmentNames: uniq(form.departments)
+            departmentNames: uniq(form.departments),
+            manualPostalCodes: uniq(form.manualPostalCodes),
+            ubigeoLabels: form.ubigeoLabels && typeof form.ubigeoLabels === 'object' ? form.ubigeoLabels : {},
+            ...(form.wooRules ? { woo: form.wooRules } : {})
         },
         shippingOptions: normalizeTenantZoneShippingOptions(form.shippingOptions),
         paymentMethods: normalizeTenantZonePaymentMethods(form.paymentMethods),
         paymentModality: normalizeTenantZonePaymentModality(form.paymentModality),
         wooZoneId: form.wooZoneId || null,
-        postalCodes: uniq(form.postalCodes),
+        postalCodes: uniq([...(form.wooPostalCodes || []), ...(form.manualPostalCodes || [])]),
         ubigeoCodes: uniq(form.ubigeoCodes),
         segmentKey: text(form.segmentKey || ''),
         agenciesConfig: form.agenciesConfig && typeof form.agenciesConfig === 'object' ? form.agenciesConfig : {}
@@ -263,6 +278,9 @@ export default function TenantZonesSection(props = {}) {
     const [form, setForm] = useState({ ...EMPTY_ZONE });
     const [geo, setGeo] = useState({ departments: [], provinces: [], districts: [] });
     const [geoLoading, setGeoLoading] = useState(false);
+    const [geoSearch, setGeoSearch] = useState('');
+    const [geoSearchResults, setGeoSearchResults] = useState([]);
+    const [geoSearchLoading, setGeoSearchLoading] = useState(false);
     const [recalc, setRecalc] = useState(null);
     const lazySectionId = 'zones';
     const sectionReloadToken = typeof getReloadToken === 'function' ? getReloadToken(lazySectionId) : 0;
@@ -359,6 +377,35 @@ export default function TenantZonesSection(props = {}) {
         return () => { cancelled = true; };
     }, [needsGeoCatalog, requestJson, settingsTenantId, tenantScopeLocked, zoneCacheKey]);
 
+    useEffect(() => {
+        if (!requestJson || tenantScopeLocked || !settingsTenantId || !needsGeoCatalog) return undefined;
+        const cleanQuery = text(geoSearch);
+        if (cleanQuery.length < 2) {
+            setGeoSearchResults([]);
+            setGeoSearchLoading(false);
+            return undefined;
+        }
+        let cancelled = false;
+        const timer = window.setTimeout(() => {
+            setGeoSearchLoading(true);
+            requestJson(`/api/tenant/geo/search?q=${encodeURIComponent(cleanQuery)}&type=all&limit=20`, { method: 'GET' })
+                .then((payload) => {
+                    if (cancelled) return;
+                    setGeoSearchResults(Array.isArray(payload?.items) ? payload.items : []);
+                })
+                .catch(() => {
+                    if (!cancelled) setGeoSearchResults([]);
+                })
+                .finally(() => {
+                    if (!cancelled) setGeoSearchLoading(false);
+                });
+        }, 250);
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timer);
+        };
+    }, [geoSearch, needsGeoCatalog, requestJson, settingsTenantId, tenantScopeLocked]);
+
     if (tenantScopeLocked || !settingsTenantId) {
         return <Empty title="Selecciona una empresa" body="Las reglas de zona pertenecen a un tenant." />;
     }
@@ -385,6 +432,43 @@ export default function TenantZonesSection(props = {}) {
         if (clean) setForm((previous) => ({ ...previous, [field]: uniq([...(previous[field] || []), clean]) }));
     };
     const removeValue = (field, value) => setForm((previous) => ({ ...previous, [field]: (previous[field] || []).filter((item) => item !== value) }));
+    const addManualPostalCode = () => {
+        const clean = text(form.postalCodeInput);
+        if (!clean) return;
+        setForm((previous) => ({
+            ...previous,
+            postalCodeInput: '',
+            manualPostalCodes: uniq([...(previous.manualPostalCodes || []), clean])
+        }));
+    };
+    const removeManualPostalCode = (value) => setForm((previous) => ({
+        ...previous,
+        manualPostalCodes: (previous.manualPostalCodes || []).filter((item) => item !== value)
+    }));
+    const addUbigeoCode = (item = {}) => {
+        const id = text(item.id || item.locationId || item.code || '');
+        if (!id) return;
+        const label = text(item.label || [item.district, item.province, item.department].filter(Boolean).join(', ') || item.name || id);
+        setForm((previous) => ({
+            ...previous,
+            ubigeoCodes: uniq([...(previous.ubigeoCodes || []), id]),
+            ubigeoLabels: {
+                ...(previous.ubigeoLabels || {}),
+                [id]: label
+            }
+        }));
+        setGeoSearch('');
+        setGeoSearchResults([]);
+    };
+    const removeUbigeoCode = (value) => setForm((previous) => {
+        const nextLabels = { ...(previous.ubigeoLabels || {}) };
+        delete nextLabels[value];
+        return {
+            ...previous,
+            ubigeoCodes: (previous.ubigeoCodes || []).filter((item) => item !== value),
+            ubigeoLabels: nextLabels
+        };
+    });
     const addShippingOption = () => setForm((previous) => ({
         ...previous,
         shippingOptions: [...normalizeTenantZoneShippingOptions(previous.shippingOptions), { type: 'delivery', label: 'Delivery propio', cost: 0, free_from: null, estimated_time: '', is_active: true }]
@@ -415,6 +499,9 @@ export default function TenantZonesSection(props = {}) {
     const shippingOptions = normalizeTenantZoneShippingOptions(form.shippingOptions);
     const paymentMethods = normalizeTenantZonePaymentMethods(form.paymentMethods);
     const paymentModality = normalizeTenantZonePaymentModality(form.paymentModality);
+    const wooPostalCodes = uniq(form.wooPostalCodes || []);
+    const manualPostalCodes = uniq(form.manualPostalCodes || []);
+    const ubigeoCodes = uniq(form.ubigeoCodes || []);
     const detail = mode === 'detail' && selected;
     const right = (
         <SaasDetailPanel
@@ -436,6 +523,13 @@ export default function TenantZonesSection(props = {}) {
                             <Chips title="Departamentos" items={form.departments} readonly />
                             <Chips title="Provincias" items={form.provinces} readonly />
                             <Chips title="Distritos" items={form.districts} readonly />
+                        </div>
+                    </SaasDetailPanelSection>
+                    <SaasDetailPanelSection title="Cobertura geografica">
+                        <div className="saas-labels-zone-readonly">
+                            <Chips title="Codigos postales Woo" items={wooPostalCodes} readonly />
+                            <Chips title="Codigos postales manuales" items={manualPostalCodes} readonly />
+                            <Chips title="Ubigeos" items={ubigeoCodes.map((code) => form.ubigeoLabels?.[code] || code)} readonly />
                         </div>
                     </SaasDetailPanelSection>
                     <SaasDetailPanelSection title="Opciones de envio">
@@ -466,6 +560,43 @@ export default function TenantZonesSection(props = {}) {
                             <input type="checkbox" checked={form.isActive !== false} onChange={(event) => setForm((previous) => ({ ...previous, isActive: event.target.checked }))} disabled={busy} />
                             <span>Zona activa</span>
                         </label>
+                    </SaasDetailPanelSection>
+                    <SaasDetailPanelSection title="Cobertura geografica">
+                        <div className="saas-admin-related-list">
+                            <div className="saas-admin-related-block">
+                                <strong>Codigos postales</strong>
+                                <Chips title="WooCommerce" items={wooPostalCodes} readonly />
+                                <div className="saas-admin-form-row">
+                                    <input value={form.postalCodeInput || ''} onChange={(event) => setForm((previous) => ({ ...previous, postalCodeInput: event.target.value }))} placeholder="Agregar codigo postal manual" disabled={busy} />
+                                    <button type="button" className="saas-btn-cancel" disabled={busy || !text(form.postalCodeInput)} onClick={addManualPostalCode}>Agregar CP</button>
+                                </div>
+                                <Chips title="Manuales" items={manualPostalCodes} remove={removeManualPostalCode} />
+                            </div>
+                            <div className="saas-admin-related-block">
+                                <strong>Ubigeos / mapeo manual</strong>
+                                <div className="saas-admin-form-row">
+                                    <input value={geoSearch} onChange={(event) => setGeoSearch(event.target.value)} placeholder="Buscar distrito, provincia o departamento" disabled={busy} />
+                                    <span>{geoSearchLoading ? 'Buscando...' : 'Selecciona un resultado para agregarlo'}</span>
+                                </div>
+                                {geoSearchResults.length ? (
+                                    <div className="saas-admin-related-list">
+                                        {geoSearchResults.map((item) => (
+                                            <button key={item.id} type="button" className="saas-btn-cancel" disabled={busy} onClick={() => addUbigeoCode(item)}>
+                                                {item.label || item.name} - {item.type}
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : null}
+                                <div className="saas-labels-zone-chips">
+                                    {ubigeoCodes.length ? ubigeoCodes.map((code) => (
+                                        <button key={`ubigeo_${code}`} type="button" disabled={busy} onClick={() => removeUbigeoCode(code)}>
+                                            {form.ubigeoLabels?.[code] || code}
+                                            <strong>x</strong>
+                                        </button>
+                                    )) : <small>Sin ubigeos manuales.</small>}
+                                </div>
+                            </div>
+                        </div>
                     </SaasDetailPanelSection>
                     <SaasDetailPanelSection title="Reglas geograficas">
                         <div className="saas-labels-zone-picker"><label><span>Departamento</span><select value={form.departmentId} disabled={busy || geoLoading} onChange={(event) => setForm((previous) => ({ ...previous, departmentId: event.target.value, provinceId: '', districtId: '' }))}><option value="">{geoLoading ? 'Cargando...' : 'Selecciona departamento'}</option>{departments.map((item) => <option key={`dep_${item.id}`} value={item.id}>{item.name}</option>)}</select></label><button type="button" disabled={!form.departmentId} onClick={() => addValue('departments', departments.find((item) => item.id === form.departmentId)?.name || '')}>Agregar departamento</button></div>
@@ -518,13 +649,16 @@ export default function TenantZonesSection(props = {}) {
                                         provinces: uniq(form.provinces),
                                         provinceNames: uniq(form.provinces),
                                         departments: uniq(form.departments),
-                                        departmentNames: uniq(form.departments)
+                                        departmentNames: uniq(form.departments),
+                                        manualPostalCodes: uniq(form.manualPostalCodes),
+                                        ubigeoLabels: form.ubigeoLabels && typeof form.ubigeoLabels === 'object' ? form.ubigeoLabels : {},
+                                        ...(form.wooRules ? { woo: form.wooRules } : {})
                                     },
                                     shippingOptions: normalizeTenantZoneShippingOptions(form.shippingOptions),
                                     paymentMethods: normalizeTenantZonePaymentMethods(form.paymentMethods),
                                     paymentModality: normalizeTenantZonePaymentModality(form.paymentModality),
                                     wooZoneId: form.wooZoneId || null,
-                                    postalCodes: uniq(form.postalCodes),
+                                    postalCodes: uniq([...(form.wooPostalCodes || []), ...(form.manualPostalCodes || [])]),
                                     ubigeoCodes: uniq(form.ubigeoCodes),
                                     segmentKey: text(form.segmentKey || ''),
                                     agenciesConfig: form.agenciesConfig && typeof form.agenciesConfig === 'object' ? form.agenciesConfig : {}

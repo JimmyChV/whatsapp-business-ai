@@ -2301,9 +2301,11 @@ function resolvePendingLocationCandidate(answer = '', candidates = []) {
 
 function normalizePendingLocationDisambiguation(value = {}) {
     const source = safeJsonObject(value);
+    const type = text(source.type || '');
     const candidates = normalizeLocationCandidates(source.candidates);
-    if (!candidates.length) return null;
+    if (!candidates.length && type !== 'gps_needed') return null;
     return {
+        type,
         matchedText: text(source.matchedText || source.matched_text || ''),
         sourceMessageId: text(source.sourceMessageId || source.source_message_id || ''),
         createdAt: text(source.createdAt || source.created_at || ''),
@@ -2353,10 +2355,12 @@ async function setPendingLocationDisambiguation(tenantId, chatId, scopeModuleId,
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
     const cleanChatId = normalizeChatId(chatId);
     const cleanScopeModuleId = lower(scopeModuleId);
+    const type = text(data.type || '');
     const candidates = normalizeLocationCandidates(data.candidates);
-    if (!cleanChatId || !candidates.length) return null;
+    if (!cleanChatId || (!candidates.length && type !== 'gps_needed')) return null;
     const now = new Date();
     const payload = {
+        type,
         matchedText: text(data.matchedText || ''),
         sourceMessageId: text(data.sourceMessageId || ''),
         createdAt: text(data.createdAt || '') || now.toISOString(),
@@ -2373,6 +2377,15 @@ async function setPendingLocationDisambiguation(tenantId, chatId, scopeModuleId,
         }
     });
     return payload;
+}
+
+function buildGpsNeededLocationResponse(location = {}) {
+    const formatted = formatResolvedLocation(location);
+    const label = formatted && formatted !== 'Ubicacion no reconocida'
+        ? formatted
+        : text(location?.matchedText || '');
+    const target = label ? ` en ${label}` : '';
+    return `Para darte el envio exacto${target}, ¿puedes enviarme tu ubicacion? 📍\nToca el clip, elige *Ubicacion* y enviamela por aqui 😊`;
 }
 
 async function clearPendingLocationDisambiguation(tenantId, chatId, scopeModuleId = '', reason = '') {
@@ -2554,11 +2567,53 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
             });
             await clearPendingLocationDisambiguation(cleanTenantId, cleanChatId, cleanScopeModuleId, 'topic_change');
         } else {
+            if (pending.type === 'gps_needed') {
+                return {
+                    rules: sourceRules,
+                    location: {
+                        district: null,
+                        province: null,
+                        department: null,
+                        confidence: 'ambiguous',
+                        matchedType: 'gps_needed',
+                        matchedText: pending.matchedText,
+                        candidates: []
+                    },
+                    locationSource: 'pending_gps_needed',
+                    locationLookupText: text(lastCustomerMessage),
+                    zoneRule: null,
+                    matchedLevel: null,
+                    locationMentioned: true,
+                    locationRecognized: false,
+                    locationAmbiguous: true,
+                    deterministicResponseOverride: buildGpsNeededLocationResponse({ matchedText: pending.matchedText })
+                };
+            }
             const resolution = resolvePendingLocationCandidate(lastCustomerMessage, pending.candidates);
             if (resolution.status === 'resolved') {
                 const location = buildLocationFromCandidate(resolution.candidate, pending.matchedText);
                 const zoneMatch = geoLocationService.resolveZoneFromLocation(location, sourceRules);
                 await clearPendingLocationDisambiguation(cleanTenantId, cleanChatId, cleanScopeModuleId, 'resolved');
+                if (zoneMatch?.needsGps) {
+                    await setPendingLocationDisambiguation(cleanTenantId, cleanChatId, cleanScopeModuleId, {
+                        type: 'gps_needed',
+                        matchedText: formatResolvedLocation(location),
+                        sourceMessageId: text(options.sourceMessageId || ''),
+                        intent: getDeliveryPaymentIntent(lastCustomerMessage)
+                    });
+                    return {
+                        rules: sourceRules,
+                        location,
+                        locationSource: 'pending_disambiguation',
+                        locationLookupText: text(lastCustomerMessage),
+                        zoneRule: null,
+                        matchedLevel: zoneMatch?.matchedLevel || null,
+                        locationMentioned: true,
+                        locationRecognized: true,
+                        locationAmbiguous: true,
+                        deterministicResponseOverride: buildGpsNeededLocationResponse(location)
+                    };
+                }
                 console.log('[Patty] location disambiguation resolved:', formatResolvedLocation(location), {
                     tenantId: cleanTenantId,
                     chatId: cleanChatId,
@@ -2678,6 +2733,22 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
             });
         }
     }
+    if (!deterministicResponseOverride && cleanChatId && zoneMatch?.needsGps) {
+        await setPendingLocationDisambiguation(cleanTenantId, cleanChatId, cleanScopeModuleId, {
+            type: 'gps_needed',
+            matchedText: formatResolvedLocation(location),
+            sourceMessageId: text(options.sourceMessageId || ''),
+            intent: getDeliveryPaymentIntent(lastCustomerMessage)
+        });
+        deterministicResponseOverride = buildGpsNeededLocationResponse(location);
+        console.log('[Patty] location needs GPS to resolve zone', {
+            tenantId: cleanTenantId,
+            chatId: cleanChatId,
+            scopeModuleId: cleanScopeModuleId,
+            matchedLevel: zoneMatch?.matchedLevel || null,
+            zones: Array.isArray(zoneMatch?.matches) ? zoneMatch.matches.map((rule) => rule?.name).filter(Boolean) : []
+        });
+    }
     if (!deterministicResponseOverride
         && !locationAmbiguous
         && !['exact', 'partial'].includes(confidence)
@@ -2693,8 +2764,8 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
         zoneRule: zoneMatch?.rule || null,
         matchedLevel: zoneMatch?.matchedLevel || null,
         locationMentioned,
-        locationRecognized: ['exact', 'partial'].includes(confidence),
-        locationAmbiguous,
+        locationRecognized: ['exact', 'partial', 'postal_code'].includes(confidence),
+        locationAmbiguous: locationAmbiguous || Boolean(zoneMatch?.needsGps),
         deterministicResponseOverride
     };
 }
