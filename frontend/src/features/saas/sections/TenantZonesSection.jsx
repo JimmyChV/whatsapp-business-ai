@@ -13,6 +13,7 @@ import {
     removeCachedTenantZoneRule,
     saveTenantZoneRule,
     setCachedTenantZoneRules,
+    syncTenantLogisticsAgencies,
     syncTenantZonesFromWooCommerce,
     upsertCachedTenantZoneRule
 } from '../services';
@@ -282,6 +283,7 @@ export default function TenantZonesSection(props = {}) {
     const [geoSearchResults, setGeoSearchResults] = useState([]);
     const [geoSearchLoading, setGeoSearchLoading] = useState(false);
     const [recalc, setRecalc] = useState(null);
+    const [agencySync, setAgencySync] = useState(null);
     const lazySectionId = 'zones';
     const sectionReloadToken = typeof getReloadToken === 'function' ? getReloadToken(lazySectionId) : 0;
     const sectionLoading = (typeof isLoading === 'function' && isLoading(lazySectionId)) || loading;
@@ -713,6 +715,10 @@ export default function TenantZonesSection(props = {}) {
                 ...(canManageZones ? [
                     { key: 'sync_woo_zones', label: 'Importar desde WooCommerce', onClick: () => runZoneAction(runSectionAction, runAction, 'sync_woo_zones', 'Zonas importadas desde WooCommerce', async () => {
                         const result = await syncTenantZonesFromWooCommerce(requestJson, { tenantId: zoneCacheKey });
+                        if (Array.isArray(result?.zones) && result.zones.length) {
+                            const synced = setCachedTenantZoneRules(zoneCacheKey, result.zones);
+                            setItems(synced);
+                        }
                         const cached = await loadCachedTenantZoneRules(requestJson, {
                             includeInactive: true,
                             tenantId: zoneCacheKey,
@@ -724,6 +730,11 @@ export default function TenantZonesSection(props = {}) {
                             const refreshed = cached.find((item) => item.ruleId === selectedId);
                             if (refreshed) setForm(zoneForm(refreshed));
                         }
+                        return result;
+                    }), disabled: busy || sectionLoading },
+                    { key: 'sync_agencies', label: agencySync ? `Agencias: ${agencySync.synced || 0}` : 'Sincronizar agencias', onClick: () => runZoneAction(runSectionAction, runAction, 'sync_agencies', 'Agencias sincronizadas', async () => {
+                        const result = await syncTenantLogisticsAgencies(requestJson, { tenantId: zoneCacheKey });
+                        setAgencySync(result);
                         return result;
                     }), disabled: busy || sectionLoading },
                     { key: 'recalculate', label: recalc ? `Recalc: ${recalc.assigned || 0}` : 'Recalcular zonas', onClick: () => runZoneAction(runSectionAction, runAction, 'recalculate_zones', 'Zonas recalculadas', async () => setRecalc(await recalculateTenantZones(requestJson, { tenantId: zoneCacheKey }))), disabled: busy },

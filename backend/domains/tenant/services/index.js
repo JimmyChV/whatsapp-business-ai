@@ -21,6 +21,8 @@
   quotesService: require('./quotes.service'),
   woocommerceService: require('./woocommerce.service'),
   wooZonesSyncService: require('./woo-zones-sync.service'),
+  logisticsAgenciesSyncService: require('./logistics-agencies-sync.service'),
+  zoneCoverageResolverService: require('./zone-coverage-resolver.service'),
   commercialIntelligenceService: require('./commercial-intelligence.service')
 };
 

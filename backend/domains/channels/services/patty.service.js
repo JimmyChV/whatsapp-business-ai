@@ -10,15 +10,18 @@ const tenantAutomationService = require('../../tenant/services/tenant-automation
 const quickRepliesManagerService = require('../../tenant/services/quick-replies-manager.service');
 const tenantZoneRulesService = require('../../tenant/services/tenant-zone-rules.service');
 const geoLocationService = require('../../tenant/services/geo-location.service');
+const zoneCoverageResolverService = require('../../tenant/services/zone-coverage-resolver.service');
 const waModulesService = require('../../tenant/services/wa-modules.service');
 const commercialIntelligenceService = require('../../tenant/services/commercial-intelligence.service');
 const quotesService = require('../../tenant/services/quotes.service');
 const chatCommercialStatusService = require('../../operations/services/chat-commercial-status.service');
 const conversationOpsService = require('../../operations/services/conversation-ops.service');
+const messageHistoryService = require('../../operations/services/message-history.service');
 const { getChatSuggestion } = require('../../operations/services/ai.service');
 const waClient = require('./wa-provider.service');
 const commercialAdvisorService = require('./commercial-advisor.service');
 const commercialOptionsBuilderService = require('./commercial-options-builder.service');
+const { extractLocationInfo } = require('../helpers/message-location.helpers');
 const fs = require('fs');
 const path = require('path');
 const { resolveAndValidatePublicHost } = require('../../security/helpers/security-utils');
@@ -1946,6 +1949,208 @@ function resolveZoneDelivery(rule = null, subtotal = 0) {
         zoneName: summary.zoneName,
         shippingLabel: summary.shippingLabel
     };
+}
+
+function normalizeCoordinatePayload(value = {}) {
+    const source = value && typeof value === 'object' ? value : {};
+    const latitude = Number.parseFloat(String(source.latitude ?? source.lat ?? source.degreesLatitude ?? '').replace(',', '.'));
+    const longitude = Number.parseFloat(String(source.longitude ?? source.lng ?? source.lon ?? source.degreesLongitude ?? '').replace(',', '.'));
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+    return {
+        latitude,
+        longitude,
+        label: text(source.label || source.name || source.description || ''),
+        mapUrl: text(source.mapUrl || source.url || '')
+    };
+}
+
+function extractInboundLocationPayload(rawMessage = null) {
+    const direct = normalizeCoordinatePayload(rawMessage?.locationPayload || rawMessage?.location || rawMessage?._data?.location);
+    if (direct) return direct;
+    const extracted = extractLocationInfo(rawMessage);
+    return normalizeCoordinatePayload(extracted);
+}
+
+async function getLatestInboundLocationPayload(tenantId, moduleId, chatId, messageId = '', rawMessage = null) {
+    const fromRaw = extractInboundLocationPayload(rawMessage);
+    if (fromRaw) return fromRaw;
+    try {
+        const rows = await messageHistoryService.listMessages(tenantId, { chatId, limit: 8 });
+        const cleanMessageId = text(messageId);
+        const cleanModuleId = lower(moduleId);
+        const candidates = rows.filter((row) => {
+            if (!row || row.fromMe === true) return false;
+            if (cleanMessageId && text(row.messageId) !== cleanMessageId) return false;
+            const rowModuleId = lower(row.waModuleId || row.metadata?.sentViaModuleId || '');
+            if (cleanModuleId && rowModuleId && rowModuleId !== cleanModuleId) return false;
+            return lower(row.messageType) === 'location' || Boolean(row.locationPayload);
+        });
+        for (const row of candidates) {
+            const payload = normalizeCoordinatePayload(row.locationPayload);
+            if (payload) return payload;
+        }
+    } catch (error) {
+        console.warn('[Patty] GPS location lookup skipped:', error?.message || error);
+    }
+    return null;
+}
+
+function formatGpsLocationLabel(location = {}, fallback = '') {
+    const district = text(location?.district);
+    const province = text(location?.province);
+    const department = text(location?.department);
+    if (district) return formatLocationOptionPart(district);
+    if (province) return formatLocationOptionPart(province);
+    if (department) return formatLocationOptionPart(department);
+    return formatLocationOptionPart(fallback || 'tu zona');
+}
+
+function formatGpsTimeLabel(option = null, fallback = '') {
+    const raw = text(option?.estimated_time || option?.estimatedTime || option?.time || fallback);
+    if (!raw) return 'por confirmar';
+    const normalized = normalizeLocationLookup(raw);
+    if (/\bhora|horas\b/.test(normalized)) return raw;
+    if (/\bdia|dias|habil|habiles\b/.test(normalized)) return raw;
+    if (/^\d+(?:\.\d+)?$/.test(raw)) return `${raw} horas`;
+    return raw;
+}
+
+function formatGpsFreeFrom(summary = {}) {
+    return summary.freeFrom !== null ? `, gratis desde *${summary.freeFromText}*` : '';
+}
+
+function formatAgencyHours(agency = {}) {
+    return text(agency.hoursWeek || agency.hours_week || agency.hoursDelivery || agency.hours_delivery || agency.hoursSunday || agency.hours_sunday || '');
+}
+
+function buildGpsCoverageResponse(coverage = {}) {
+    const zone = coverage?.zone || null;
+    if (!zone) return '';
+    const summary = buildZoneShippingSummary(zone);
+    const primaryShipping = getPrimaryShippingOption(zone);
+    const locationLabel = formatGpsLocationLabel(coverage.resolvedLocation || {}, summary.zoneName);
+    const timeLabel = formatGpsTimeLabel(primaryShipping, summary.estimatedTime);
+    const paymentPhrase = buildZonePaymentPhrase(summary);
+    const freeFrom = formatGpsFreeFrom(summary);
+    if (summary.shippingType === 'courier') {
+        const agencies = Array.isArray(coverage.agencies) ? coverage.agencies : [];
+        const agency = agencies[0] || null;
+        const carrierLabel = formatLocationOptionPart(summary.shippingDisplayName || agency?.carrier || 'agencia');
+        const lines = [
+            `📍 Te ubiqué en ${locationLabel} 😊`,
+            `📦 Para tu zona enviamos con *${carrierLabel}*.`
+        ];
+        if (agency) {
+            const agencyName = text(agency.fullName || agency.name);
+            const agencyAddress = [agency.address, agency.district || agency.city].map(text).filter(Boolean).join(', ');
+            const phone = text(agency.phonePrimary || agency.phone_primary);
+            const hours = formatAgencyHours(agency);
+            lines.push(
+                'La agencia más cercana es:',
+                agencyName ? `*${agencyName}*` : '',
+                agencyAddress || '',
+                phone ? `📞 ${phone}` : '',
+                hours ? `🕐 ${hours}` : ''
+            );
+        }
+        lines.push(
+            `Costo: *${summary.costText}*${freeFrom}`,
+            `⏱ ~${timeLabel}`,
+            '¿Coordino el envío? 😊'
+        );
+        return lines.filter(Boolean).join('\n');
+    }
+    return [
+        `📍 Te ubiqué en ${locationLabel} 😊`,
+        '🚚 Hacemos *reparto a domicilio* en tu zona.',
+        `Costo: *${summary.costText}*${freeFrom}`,
+        `⏱ ~${timeLabel} hábiles`,
+        paymentPhrase
+    ].filter(Boolean).join('\n');
+}
+
+async function handlePattyGpsLocationMessage({
+    tenantId,
+    moduleId,
+    chatId,
+    rawMessage,
+    inboundMessageId,
+    shouldAbortRun,
+    assistantName = DEFAULT_ASSISTANT_NAME,
+    moduleName = '',
+    emitCommercialStatusUpdated,
+    socketEmitter
+} = {}) {
+    const locationPayload = await getLatestInboundLocationPayload(tenantId, moduleId, chatId, inboundMessageId, rawMessage);
+    if (!locationPayload) return false;
+    const lat = locationPayload.latitude;
+    const lng = locationPayload.longitude;
+    try {
+        const coverage = await zoneCoverageResolverService.resolveZoneCoverage(tenantId, { lat, lng });
+        if (coverage?.zone) {
+            await clearPendingLocationDisambiguation(tenantId, chatId, moduleId, 'gps_resolved');
+            await chatCommercialStatusService.updateSalesState(tenantId, chatId, moduleId, {
+                location: {
+                    lat,
+                    lng,
+                    postcode: coverage.resolvedLocation?.postcode || null,
+                    segment_key: coverage.zone.segmentKey || null,
+                    zoneRuleId: coverage.zone.ruleId || null,
+                    resolvedBy: coverage.resolvedBy || 'gps',
+                    resolvedAt: new Date().toISOString()
+                }
+            });
+            const response = buildGpsCoverageResponse(coverage);
+            if (await shouldAbortRun?.('before_gps_location_send')) return true;
+            await waClient.sendMessage(chatId, response, {
+                metadata: {
+                    agentMeta: {
+                        sentByUserId: 'patty',
+                        sentByName: formatAssistantDisplayName(assistantName),
+                        sentByRole: 'assistant',
+                        sentViaModuleId: lower(moduleId),
+                        sentViaModuleName: text(moduleName) || null
+                    },
+                    patty: true,
+                    automationSource: 'patty_gps_coverage'
+                }
+            });
+            console.log('[Patty] GPS location resolved:', coverage.zone.segmentKey || coverage.zone.ruleId || 'zone', {
+                tenantId,
+                moduleId,
+                chatId,
+                lat,
+                lng,
+                resolvedBy: coverage.resolvedBy,
+                agencyCount: Array.isArray(coverage.agencies) ? coverage.agencies.length : 0
+            });
+            return true;
+        }
+        if (await shouldAbortRun?.('before_gps_no_coverage_escalation')) return true;
+        await escalateToAdvisor(
+            tenantId,
+            chatId,
+            moduleId,
+            'sin_cobertura_gps',
+            'No encontré cobertura directa en tu zona 😊\nDéjame consultarlo con el equipo para ver si podemos coordinar el envío.',
+            emitCommercialStatusUpdated,
+            socketEmitter,
+            assistantName,
+            moduleName
+        );
+        console.log('[Patty] GPS location without coverage', {
+            tenantId,
+            moduleId,
+            chatId,
+            lat,
+            lng
+        });
+        return true;
+    } catch (error) {
+        console.warn('[Patty] GPS location flow skipped:', error?.message || error);
+        return false;
+    }
 }
 
 function formatResolvedLocation(location = {}) {
@@ -5563,6 +5768,20 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 return;
             }
             if (await shouldAbortRun('before_context')) return;
+            const earlyModuleName = getModuleDisplayNameFromConfig(moduleConfig || {});
+            const gpsHandled = await handlePattyGpsLocationMessage({
+                tenantId: cleanTenantId,
+                moduleId: cleanModuleId,
+                chatId: cleanChatId,
+                rawMessage,
+                inboundMessageId,
+                shouldAbortRun,
+                assistantName: aiConfig.assistantName || DEFAULT_ASSISTANT_NAME,
+                moduleName: earlyModuleName,
+                emitCommercialStatusUpdated: options.emitCommercialStatusUpdated,
+                socketEmitter
+            });
+            if (gpsHandled) return;
             const prebuiltContext = await buildPattyContext(cleanTenantId, cleanModuleId, cleanChatId);
             if (await shouldAbortRun('after_context')) return;
             const prebuiltModuleName = getModuleDisplayNameFromConfig(prebuiltContext.moduleConfig || moduleConfig || {});

@@ -286,6 +286,8 @@ function normalizeIntegrationsForStorage(input = {}, existing = {}) {
 
     const sourceAppearance = isPlainObject(source.appearance) ? source.appearance : {};
     const currentAppearance = isPlainObject(current.appearance) ? current.appearance : {};
+    const sourceGeo = isPlainObject(source.geo) ? source.geo : {};
+    const currentGeo = isPlainObject(current.geo) ? current.geo : {};
 
     const catalogMode = normalizeCatalogMode(
         sourceCatalog.mode ?? source.catalogMode,
@@ -361,6 +363,11 @@ function normalizeIntegrationsForStorage(input = {}, existing = {}) {
         surfaceColor: normalizeColor(sourceAppearance.surfaceColor ?? currentAppearance.surfaceColor, defaults.appearance.surfaceColor),
         backgroundColor: normalizeColor(sourceAppearance.backgroundColor ?? currentAppearance.backgroundColor, defaults.appearance.backgroundColor)
     };
+    const hasSourceGoogleMapsApiKey = Object.prototype.hasOwnProperty.call(sourceGeo, 'googleMapsApiKey');
+    const googleMapsApiKey = normalizeSecretForStorage(
+        hasSourceGoogleMapsApiKey ? sourceGeo.googleMapsApiKey : undefined,
+        normalizeText(currentGeo.googleMapsApiKey)
+    );
 
     return {
         catalog: {
@@ -387,6 +394,9 @@ function normalizeIntegrationsForStorage(input = {}, existing = {}) {
             assistants: assistantStorage.assistants
         },
         appearance,
+        geo: {
+            googleMapsApiKey
+        },
         updatedAt: normalizeText(source.updatedAt ?? current.updatedAt)
     };
 }
@@ -395,10 +405,12 @@ function toPublicConfig(stored = {}) {
     const config = normalizeIntegrationsForStorage(stored, stored);
     const woo = config.catalog.providers.woocommerce;
     const ai = config.ai;
+    const geo = config.geo || {};
 
     const wooKeyPlain = resolveSecretPlain(woo.consumerKey);
     const wooSecretPlain = resolveSecretPlain(woo.consumerSecret);
     const aiKeyPlain = resolveSecretPlain(ai.openaiApiKey);
+    const googleMapsKeyPlain = resolveSecretPlain(geo.googleMapsApiKey);
 
     const assistantItems = (Array.isArray(ai.assistants) ? ai.assistants : [])
         .map((entry) => toPublicAssistantRecord(entry))
@@ -433,6 +445,10 @@ function toPublicConfig(stored = {}) {
             assistants: assistantItems
         },
         appearance: config.appearance,
+        geo: {
+            hasGoogleMapsApiKey: Boolean(geo.googleMapsApiKey),
+            googleMapsApiKeyMasked: googleMapsKeyPlain ? maskSecret(googleMapsKeyPlain) : null
+        },
         updatedAt: config.updatedAt || null
     };
 }
@@ -441,6 +457,7 @@ function toRuntimeConfig(stored = {}) {
     const config = normalizeIntegrationsForStorage(stored, stored);
     const woo = config.catalog.providers.woocommerce;
     const ai = config.ai;
+    const geo = config.geo || {};
 
     const assistants = (Array.isArray(ai.assistants) ? ai.assistants : [])
         .map((entry) => toRuntimeAssistantRecord(entry))
@@ -472,6 +489,9 @@ function toRuntimeConfig(stored = {}) {
             assistants
         },
         appearance: config.appearance,
+        geo: {
+            googleMapsApiKey: resolveSecretPlain(geo.googleMapsApiKey)
+        },
         updatedAt: config.updatedAt || null
     };
 }
@@ -520,7 +540,8 @@ async function saveToPostgres(tenantId = DEFAULT_TENANT_ID, stored = {}) {
     const payload = {
         catalog: clean.catalog,
         ai: clean.ai,
-        appearance: clean.appearance
+        appearance: clean.appearance,
+        geo: clean.geo
     };
     await ensurePostgresSchema();
     await queryPostgres(

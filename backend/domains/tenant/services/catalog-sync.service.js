@@ -7,6 +7,7 @@ const catalogManagerService = require('./catalog-manager.service');
 const tenantCatalogService = require('./tenant-catalog.service');
 const { getWooCatalog } = require('./woocommerce.service');
 const wooZonesSyncService = require('./woo-zones-sync.service');
+const logisticsAgenciesSyncService = require('./logistics-agencies-sync.service');
 
 const syncIntervals = new Map();
 const syncStatus = new Map();
@@ -260,6 +261,7 @@ async function syncCatalogFromWoocommerce(tenantId = DEFAULT_TENANT_ID, catalogI
         const relatedSkuResolution = await resolveWooRelatedSkusForCatalog(cleanTenantId, cleanCatalogId);
 
         const zoneSync = await syncWooZonesBestEffort(cleanTenantId, cleanCatalogId);
+        const agencySync = await syncAgenciesBestEffort(cleanTenantId);
         const nowIso = new Date().toISOString();
         const productCount = await countCatalogProducts(cleanTenantId, cleanCatalogId);
         const duration = Date.now() - startedAt;
@@ -272,7 +274,8 @@ async function syncCatalogFromWoocommerce(tenantId = DEFAULT_TENANT_ID, catalogI
             source: wooResult?.source || 'woocommerce',
             reason: wooResult?.reason || null,
             relatedSkuResolution,
-            zoneSync
+            zoneSync,
+            agencySync
         };
         setStoredStatus(cleanTenantId, cleanCatalogId, {
             lastSync: nowIso,
@@ -300,6 +303,21 @@ async function syncWooZonesBestEffort(tenantId = DEFAULT_TENANT_ID, catalogId = 
         console.warn('[WooZones] sync skipped after catalog sync:', {
             tenantId,
             catalogId,
+            error: String(error?.message || error)
+        });
+        return {
+            synced: 0,
+            error: String(error?.message || error)
+        };
+    }
+}
+
+async function syncAgenciesBestEffort(tenantId = DEFAULT_TENANT_ID) {
+    try {
+        return await logisticsAgenciesSyncService.syncAgenciesFromWordPress(tenantId);
+    } catch (error) {
+        console.warn('[Agencies] sync skipped after catalog sync:', {
+            tenantId,
             error: String(error?.message || error)
         });
         return {

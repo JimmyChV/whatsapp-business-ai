@@ -258,3 +258,11 @@ export async function syncTenantZonesFromWooCommerce(requestJson, { tenantId = '
         ...(cleanTenantId ? { tenantIdOverride: cleanTenantId } : {})
     });
 }
+
+export async function syncTenantLogisticsAgencies(requestJson, { tenantId = '' } = {}) {
+    const cleanTenantId = String(tenantId || '').trim();
+    return requestJson('/api/tenant/agencies/sync', {
+        method: 'POST',
+        ...(cleanTenantId ? { tenantIdOverride: cleanTenantId } : {})
+    });
+}

@@ -11,6 +11,8 @@ const { TextDecoder } = require('util');
 const { parseCsvRows } = require('../helpers/customers-normalizers.helpers');
 const geoLocationService = require('../services/geo-location.service');
 const wooZonesSyncService = require('../services/woo-zones-sync.service');
+const logisticsAgenciesSyncService = require('../services/logistics-agencies-sync.service');
+const zoneCoverageResolverService = require('../services/zone-coverage-resolver.service');
 
 const erpImportUpload = multer({ storage: multer.memoryStorage() });
 
@@ -72,6 +74,11 @@ function registerTenantCustomerHttpRoutes({
 
     function hasZonesManageAccess(req) {
         return hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_ZONES_MANAGE);
+    }
+
+    function hasCoverageResolveAccess(req) {
+        return hasZonesReadAccess(req)
+            || hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CHAT_OPERATE);
     }
 
     app.get('/api/admin/saas/tenants/:tenantId/customers', async (req, res) => {
@@ -479,6 +486,36 @@ function registerTenantCustomerHttpRoutes({
             return res.json({ ok: true, tenantId, ...result });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron importar zonas desde WooCommerce.') });
+        }
+    });
+
+    app.post('/api/tenant/agencies/sync', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasZonesManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const result = await logisticsAgenciesSyncService.syncAgenciesFromWordPress(tenantId);
+            return res.json({ ok: true, tenantId, synced: Number(result?.synced || 0), source: result?.source || null });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron sincronizar agencias.') });
+        }
+    });
+
+    app.post('/api/tenant/zones/resolve-location', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasCoverageResolveAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const payload = req.body && typeof req.body === 'object' ? req.body : {};
+            const result = await zoneCoverageResolverService.resolveZoneCoverage(tenantId, {
+                text: payload.text || payload.query || '',
+                lat: payload.lat ?? payload.latitude,
+                lng: payload.lng ?? payload.longitude,
+                postcode: payload.postcode || payload.postalCode || payload.postal_code || ''
+            });
+            return res.json({ ok: true, tenantId, ...result });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo resolver la cobertura.') });
         }
     });
 

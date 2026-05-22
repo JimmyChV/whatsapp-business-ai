@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Bot, ShoppingCart, Clock, Package } from 'lucide-react';
+import { Bot, ShoppingCart, Clock, Package, MapPin } from 'lucide-react';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 import {
     addItemToCartState,
@@ -39,6 +39,7 @@ import {
     BusinessAiTabSection,
     BusinessCartTabSection,
     BusinessCatalogTab,
+    BusinessCoverageTabSection,
     BusinessQuickRepliesTabSection,
     ClientProfilePanel,
     CompanyProfilePanel
@@ -837,6 +838,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const tabs = [
         ...(aiPanelAvailable ? [{ id: 'ai', icon: <Bot size={15} />, label: 'IA Pro' }] : []),
         { id: 'catalog', icon: <Package size={15} />, label: `Catalogo${catalog.length > 0 ? ` (${catalog.length})` : ''}` },
+        { id: 'coverage', icon: <MapPin size={15} />, label: 'Cobertura' },
         ...(cart.length > 0 ? [{ id: 'cart', icon: <ShoppingCart size={15} />, label: `Carrito (${cart.length})` }] : []),
         ...(quickRepliesEnabled ? [{ id: 'quick', icon: <Clock size={15} />, label: 'Rapidas' }] : []),
     ];
@@ -930,6 +932,14 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             {/* CATALOG TAB */}
             {activeTab === 'catalog' && (
                 <BusinessCatalogTab catalog={catalog} socket={socket} addToCart={addToCart} onCatalogQtyDelta={updateCatalogQty} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} activeChatPhone={activeChatPhone} cartItems={cart} waModules={waModules} selectedCatalogModuleId={selectedCatalogModuleId} selectedCatalogId={selectedCatalogId} onSelectCatalogModule={onSelectCatalogModule} onSelectCatalog={onSelectCatalog} onUploadCatalogImage={onUploadCatalogImage} onSendCatalogProduct={onSendCatalogProduct} canWriteByAssignment={canUseMessageTools} />
+            )}
+
+            {activeTab === 'coverage' && (
+                <BusinessCoverageTabSection
+                    activeTenantId={normalizedTenantScopeKey}
+                    buildApiHeaders={buildApiHeaders}
+                    notify={notify}
+                />
             )}
 
             {/* CART TAB */}

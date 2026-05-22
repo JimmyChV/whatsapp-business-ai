@@ -41,6 +41,9 @@ const DEFAULT_INTEGRATIONS = Object.freeze({
         surfaceColor: '#102433',
         backgroundColor: '#061520'
     },
+    geo: {
+        googleMapsApiKey: null
+    },
     updatedAt: null
 });
 
