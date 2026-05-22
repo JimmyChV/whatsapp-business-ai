@@ -157,6 +157,7 @@ function buildWooApiUrl(config = {}, endpoint = '') {
     const url = new URL(`${cleanConfig.baseUrl}${path}`);
     url.searchParams.set('consumer_key', cleanConfig.consumerKey);
     url.searchParams.set('consumer_secret', cleanConfig.consumerSecret);
+    url.searchParams.set('_lavitat_sync', String(Date.now()));
     return url;
 }
 
@@ -164,7 +165,11 @@ async function fetchWooJson(config = {}, endpoint = '') {
     const url = buildWooApiUrl(config, endpoint);
     const response = await fetch(url, {
         method: 'GET',
-        headers: { accept: 'application/json' }
+        headers: {
+            accept: 'application/json',
+            'cache-control': 'no-cache',
+            pragma: 'no-cache'
+        }
     });
     const bodyText = await response.text();
     let payload = null;
@@ -206,7 +211,7 @@ async function findExistingWooZoneRule(tenantId = DEFAULT_TENANT_ID, wooZoneId =
     if (!cleanWooZoneId) return null;
     await tenantZoneRulesService.listZoneRules(cleanTenantId, { includeInactive: true });
     const { rows } = await queryPostgres(
-        `SELECT rule_id, color, rules_json, payment_methods, payment_modality, ubigeo_codes
+        `SELECT rule_id, name, color, rules_json, payment_methods, payment_modality, ubigeo_codes
            FROM tenant_zone_rules
           WHERE tenant_id = $1
             AND woo_zone_id = $2
@@ -241,6 +246,7 @@ function buildRulePayload({
         name: text(wooZone?.name || '') || `Zona Woo ${wooZoneId}`,
         color: text(existing?.color || '') || '#00A884',
         rulesJson: {
+            ...previousRules,
             woo: {
                 zoneId: wooZoneId,
                 zoneName: text(wooZone?.name || ''),
@@ -296,6 +302,14 @@ async function syncZonesFromWooCommerce(tenantId = DEFAULT_TENANT_ID, catalogId 
             locations,
             existing
         });
+        if (existing?.name && text(existing.name) !== payload.name) {
+            console.log('[WooZones] zone name updated from WooCommerce', {
+                tenantId: cleanTenantId,
+                wooZoneId,
+                from: text(existing.name),
+                to: payload.name
+            });
+        }
         const saved = await tenantZoneRulesService.saveZoneRule(cleanTenantId, payload);
         syncedZones.push(saved || payload);
     }

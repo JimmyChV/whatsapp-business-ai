@@ -5459,6 +5459,73 @@
     background: var(--saas-scrollbar-thumb-hover);
 }
 
+.saas-admin-shell #saas_zonas .saas-zones-detail-panel {
+    flex: 1 1 auto !important;
+    width: 100%;
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    overflow: hidden !important;
+}
+
+.saas-admin-shell #saas_zonas .saas-zones-detail-panel .saas-detail-panel__header {
+    flex: 0 0 auto !important;
+}
+
+.saas-admin-shell #saas_zonas .saas-zones-detail-panel .saas-detail-panel__body,
+.saas-admin-shell #saas_zonas .saas-zones-detail-panel__body {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: 100% !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior: contain;
+    padding-bottom: 56px !important;
+    scrollbar-gutter: stable both-edges;
+}
+
+.saas-admin-shell #saas_zonas .saas-zones-detail-panel .saas-detail-panel__section {
+    flex: 0 0 auto;
+}
+
+.saas-admin-shell #saas_zonas .saas-zones-detail-panel .saas-detail-panel__section-content {
+    min-height: 0;
+}
+
+.saas-admin-shell #saas_zonas .saas-zones-detail-panel,
+.saas-admin-shell #saas_zonas .saas-zones-detail-panel .saas-detail-panel__body,
+.saas-admin-shell #saas_zonas .saas-zones-detail-panel__body {
+    scrollbar-width: thin;
+    scrollbar-color: var(--saas-scrollbar-thumb) var(--saas-scrollbar-track);
+}
+
+.saas-admin-shell #saas_zonas .saas-zones-detail-panel .saas-detail-panel__body::-webkit-scrollbar,
+.saas-admin-shell #saas_zonas .saas-zones-detail-panel__body::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.saas-admin-shell #saas_zonas .saas-zones-detail-panel .saas-detail-panel__body::-webkit-scrollbar-track,
+.saas-admin-shell #saas_zonas .saas-zones-detail-panel__body::-webkit-scrollbar-track {
+    background: var(--saas-scrollbar-track);
+    border-radius: 999px;
+}
+
+.saas-admin-shell #saas_zonas .saas-zones-detail-panel .saas-detail-panel__body::-webkit-scrollbar-thumb,
+.saas-admin-shell #saas_zonas .saas-zones-detail-panel__body::-webkit-scrollbar-thumb {
+    background: var(--saas-scrollbar-thumb);
+    border-radius: 999px;
+    border: 2px solid var(--saas-scrollbar-track);
+}
+
+.saas-admin-shell #saas_zonas .saas-zones-detail-panel .saas-detail-panel__body::-webkit-scrollbar-thumb:hover,
+.saas-admin-shell #saas_zonas .saas-zones-detail-panel__body::-webkit-scrollbar-thumb:hover {
+    background: var(--saas-scrollbar-thumb-hover);
+}
+
 #saas_etiquetas .saas-admin-form-row {
     min-width: 0;
 }

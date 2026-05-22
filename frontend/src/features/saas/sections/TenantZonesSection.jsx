@@ -507,7 +507,8 @@ export default function TenantZonesSection(props = {}) {
         <SaasDetailPanel
             title={detail ? selected.name || 'Zona' : mode === 'create' ? 'Nueva zona' : 'Editar zona'}
             subtitle={detail ? 'Regla geografica del tenant.' : 'Agrega departamentos, provincias y distritos con selectores jerarquicos.'}
-            className="saas-labels-detail-panel"
+            className="saas-labels-detail-panel saas-zones-detail-panel"
+            bodyClassName="saas-zones-detail-panel__body"
             actions={<>{detail && canManageZones ? <button type="button" disabled={busy} onClick={openEdit}>Editar</button> : null}<button type="button" className="saas-btn-cancel" disabled={busy} onClick={close}>Volver</button></>}
         >
             {detail ? (
@@ -719,6 +720,10 @@ export default function TenantZonesSection(props = {}) {
                         });
                         setItems(cached);
                         setCachedTenantZoneRules(zoneCacheKey, cached);
+                        if (selectedId) {
+                            const refreshed = cached.find((item) => item.ruleId === selectedId);
+                            if (refreshed) setForm(zoneForm(refreshed));
+                        }
                         return result;
                     }), disabled: busy || sectionLoading },
                     { key: 'recalculate', label: recalc ? `Recalc: ${recalc.assigned || 0}` : 'Recalcular zonas', onClick: () => runZoneAction(runSectionAction, runAction, 'recalculate_zones', 'Zonas recalculadas', async () => setRecalc(await recalculateTenantZones(requestJson, { tenantId: zoneCacheKey }))), disabled: busy },
