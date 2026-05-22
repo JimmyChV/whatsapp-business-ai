@@ -20,6 +20,7 @@
   tenantScheduleService: require('./tenant-schedule.service'),
   quotesService: require('./quotes.service'),
   woocommerceService: require('./woocommerce.service'),
+  wooZonesSyncService: require('./woo-zones-sync.service'),
   commercialIntelligenceService: require('./commercial-intelligence.service')
 };
 

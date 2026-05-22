@@ -21,6 +21,7 @@ module.exports = {
     tenantAutomationService: tenantDomainServices.tenantAutomationService,
     tenantScheduleService: tenantDomainServices.tenantScheduleService,
     aiUsageService: tenantDomainServices.aiUsageService,
+    wooZonesSyncService: tenantDomainServices.wooZonesSyncService,
     commercialIntelligenceService: tenantDomainServices.commercialIntelligenceService,
     ...tenantRoutes
 };

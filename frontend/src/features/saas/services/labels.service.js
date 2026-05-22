@@ -158,6 +158,11 @@ export function normalizeTenantZoneRule(item = {}) {
         shippingOptions: normalizeTenantZoneShippingOptions(item.shippingOptions || item.shipping_options),
         paymentMethods: normalizeTenantZonePaymentMethods(item.paymentMethods || item.payment_methods),
         paymentModality: normalizeTenantZonePaymentModality(item.paymentModality || item.payment_modality),
+        wooZoneId: item.wooZoneId ?? item.woo_zone_id ?? null,
+        postalCodes: Array.isArray(item.postalCodes || item.postal_codes) ? (item.postalCodes || item.postal_codes).map(normalizeText).filter(Boolean) : [],
+        ubigeoCodes: Array.isArray(item.ubigeoCodes || item.ubigeo_codes) ? (item.ubigeoCodes || item.ubigeo_codes).map(normalizeText).filter(Boolean) : [],
+        segmentKey: normalizeText(item.segmentKey || item.segment_key || ''),
+        agenciesConfig: item.agenciesConfig || item.agencies_config || {},
         isActive: item.isActive !== false && item.is_active !== false
     };
 }
@@ -240,6 +245,16 @@ export async function recalculateTenantZones(requestJson, { tenantId = '' } = {}
     const cleanTenantId = String(tenantId || '').trim();
     return requestJson('/api/tenant/zone-rules/recalculate', {
         method: 'POST',
+        ...(cleanTenantId ? { tenantIdOverride: cleanTenantId } : {})
+    });
+}
+
+export async function syncTenantZonesFromWooCommerce(requestJson, { tenantId = '', catalogId = '' } = {}) {
+    const cleanTenantId = String(tenantId || '').trim();
+    const cleanCatalogId = String(catalogId || '').trim();
+    return requestJson('/api/tenant/zones/sync-from-woocommerce', {
+        method: 'POST',
+        body: cleanCatalogId ? { catalogId: cleanCatalogId } : {},
         ...(cleanTenantId ? { tenantIdOverride: cleanTenantId } : {})
     });
 }

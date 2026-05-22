@@ -6,6 +6,7 @@ const {
 const catalogManagerService = require('./catalog-manager.service');
 const tenantCatalogService = require('./tenant-catalog.service');
 const { getWooCatalog } = require('./woocommerce.service');
+const wooZonesSyncService = require('./woo-zones-sync.service');
 
 const syncIntervals = new Map();
 const syncStatus = new Map();
@@ -258,6 +259,7 @@ async function syncCatalogFromWoocommerce(tenantId = DEFAULT_TENANT_ID, catalogI
         }
         const relatedSkuResolution = await resolveWooRelatedSkusForCatalog(cleanTenantId, cleanCatalogId);
 
+        const zoneSync = await syncWooZonesBestEffort(cleanTenantId, cleanCatalogId);
         const nowIso = new Date().toISOString();
         const productCount = await countCatalogProducts(cleanTenantId, cleanCatalogId);
         const duration = Date.now() - startedAt;
@@ -269,7 +271,8 @@ async function syncCatalogFromWoocommerce(tenantId = DEFAULT_TENANT_ID, catalogI
             timestamp: nowIso,
             source: wooResult?.source || 'woocommerce',
             reason: wooResult?.reason || null,
-            relatedSkuResolution
+            relatedSkuResolution,
+            zoneSync
         };
         setStoredStatus(cleanTenantId, cleanCatalogId, {
             lastSync: nowIso,
@@ -287,6 +290,22 @@ async function syncCatalogFromWoocommerce(tenantId = DEFAULT_TENANT_ID, catalogI
             nextSync: getStoredStatus(cleanTenantId, cleanCatalogId).nextSync || null
         });
         throw error;
+    }
+}
+
+async function syncWooZonesBestEffort(tenantId = DEFAULT_TENANT_ID, catalogId = '') {
+    try {
+        return await wooZonesSyncService.syncZonesFromWooCommerce(tenantId, catalogId);
+    } catch (error) {
+        console.warn('[WooZones] sync skipped after catalog sync:', {
+            tenantId,
+            catalogId,
+            error: String(error?.message || error)
+        });
+        return {
+            synced: 0,
+            error: String(error?.message || error)
+        };
     }
 }
 

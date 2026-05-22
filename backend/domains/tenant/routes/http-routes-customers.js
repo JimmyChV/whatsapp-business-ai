@@ -9,6 +9,7 @@
 const multer = require('multer');
 const { TextDecoder } = require('util');
 const { parseCsvRows } = require('../helpers/customers-normalizers.helpers');
+const wooZonesSyncService = require('../services/woo-zones-sync.service');
 
 const erpImportUpload = multer({ storage: multer.memoryStorage() });
 
@@ -463,6 +464,20 @@ function registerTenantCustomerHttpRoutes({
             return res.json({ ok: true, tenantId, ...result });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo recalcular zonas.') });
+        }
+    });
+
+    app.post('/api/tenant/zones/sync-from-woocommerce', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasZonesManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const payload = req.body && typeof req.body === 'object' ? req.body : {};
+            const catalogId = String(payload.catalogId || req.query?.catalogId || '').trim();
+            const result = await wooZonesSyncService.syncZonesFromWooCommerce(tenantId, catalogId);
+            return res.json({ ok: true, tenantId, ...result });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron importar zonas desde WooCommerce.') });
         }
     });
 

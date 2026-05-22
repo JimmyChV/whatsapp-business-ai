@@ -13,6 +13,7 @@ import {
     removeCachedTenantZoneRule,
     saveTenantZoneRule,
     setCachedTenantZoneRules,
+    syncTenantZonesFromWooCommerce,
     upsertCachedTenantZoneRule
 } from '../services';
 
@@ -30,6 +31,11 @@ const EMPTY_ZONE = {
     shippingOptions: [],
     paymentMethods: { yape: false, plin: false, bank_transfer: false, credit_card: false, cash: false },
     paymentModality: { ...EMPTY_PAYMENT_MODALITY },
+    wooZoneId: null,
+    postalCodes: [],
+    ubigeoCodes: [],
+    segmentKey: '',
+    agenciesConfig: {},
     isActive: true
 };
 const LABEL_COLORS = ['#00A884', '#14B8A6', '#38BDF8', '#6366F1', '#8B5CF6', '#F59E0B', '#F97316', '#EF4444', '#EC4899', '#84CC16'];
@@ -163,6 +169,11 @@ function zoneForm(item = null) {
         shippingOptions: normalizeTenantZoneShippingOptions(zone.shippingOptions),
         paymentMethods: normalizeTenantZonePaymentMethods(zone.paymentMethods),
         paymentModality: normalizeTenantZonePaymentModality(zone.paymentModality),
+        wooZoneId: zone.wooZoneId || null,
+        postalCodes: uniq(zone.postalCodes || []),
+        ubigeoCodes: uniq(zone.ubigeoCodes || []),
+        segmentKey: text(zone.segmentKey || ''),
+        agenciesConfig: zone.agenciesConfig && typeof zone.agenciesConfig === 'object' ? zone.agenciesConfig : {},
         isActive: zone.isActive !== false
     };
 }
@@ -183,7 +194,12 @@ function zoneFormToRule(form = {}, fallbackRuleId = '') {
         },
         shippingOptions: normalizeTenantZoneShippingOptions(form.shippingOptions),
         paymentMethods: normalizeTenantZonePaymentMethods(form.paymentMethods),
-        paymentModality: normalizeTenantZonePaymentModality(form.paymentModality)
+        paymentModality: normalizeTenantZonePaymentModality(form.paymentModality),
+        wooZoneId: form.wooZoneId || null,
+        postalCodes: uniq(form.postalCodes),
+        ubigeoCodes: uniq(form.ubigeoCodes),
+        segmentKey: text(form.segmentKey || ''),
+        agenciesConfig: form.agenciesConfig && typeof form.agenciesConfig === 'object' ? form.agenciesConfig : {}
     });
 }
 
@@ -506,7 +522,12 @@ export default function TenantZonesSection(props = {}) {
                                     },
                                     shippingOptions: normalizeTenantZoneShippingOptions(form.shippingOptions),
                                     paymentMethods: normalizeTenantZonePaymentMethods(form.paymentMethods),
-                                    paymentModality: normalizeTenantZonePaymentModality(form.paymentModality)
+                                    paymentModality: normalizeTenantZonePaymentModality(form.paymentModality),
+                                    wooZoneId: form.wooZoneId || null,
+                                    postalCodes: uniq(form.postalCodes),
+                                    ubigeoCodes: uniq(form.ubigeoCodes),
+                                    segmentKey: text(form.segmentKey || ''),
+                                    agenciesConfig: form.agenciesConfig && typeof form.agenciesConfig === 'object' ? form.agenciesConfig : {}
                                 };
                                 const saved = await saveTenantZoneRule(requestJson, payload, { tenantId: zoneCacheKey });
                                 const savedRule = normalizeTenantZoneRule(saved?.item || saved?.rule || saved?.zoneRule || { ...payload, ruleId: form.ruleId });
@@ -555,6 +576,17 @@ export default function TenantZonesSection(props = {}) {
             searchPlaceholder="Buscar zona"
             actions={[
                 ...(canManageZones ? [
+                    { key: 'sync_woo_zones', label: 'Importar desde WooCommerce', onClick: () => runZoneAction(runSectionAction, runAction, 'sync_woo_zones', 'Zonas importadas desde WooCommerce', async () => {
+                        const result = await syncTenantZonesFromWooCommerce(requestJson, { tenantId: zoneCacheKey });
+                        const cached = await loadCachedTenantZoneRules(requestJson, {
+                            includeInactive: true,
+                            tenantId: zoneCacheKey,
+                            force: true
+                        });
+                        setItems(cached);
+                        setCachedTenantZoneRules(zoneCacheKey, cached);
+                        return result;
+                    }), disabled: busy || sectionLoading },
                     { key: 'recalculate', label: recalc ? `Recalc: ${recalc.assigned || 0}` : 'Recalcular zonas', onClick: () => runZoneAction(runSectionAction, runAction, 'recalculate_zones', 'Zonas recalculadas', async () => setRecalc(await recalculateTenantZones(requestJson, { tenantId: zoneCacheKey }))), disabled: busy },
                     { key: 'create', label: 'Nuevo', onClick: openCreate, disabled: busy }
                 ] : []),
