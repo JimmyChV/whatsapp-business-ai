@@ -251,7 +251,7 @@ async function fetchAgenciesFromWordPress(baseUrl = '') {
     try {
         const form = new URLSearchParams();
         form.set('action', 'lavitat_get_agencies');
-        form.set('limit', '500');
+        form.set('limit', '2000');
         const payload = await fetchJsonWithTimeout(ajaxUrl, {
             method: 'POST',
             headers: {
