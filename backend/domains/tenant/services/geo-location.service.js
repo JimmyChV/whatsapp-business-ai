@@ -563,6 +563,45 @@ function getRuleJson(rule = {}) {
     return safeObject(rule.rulesJson || rule.rules_json || rule.rules || rule.metadata);
 }
 
+function getRuleUbigeoCodes(rule = {}) {
+    return normalizeStringArray(rule.ubigeoCodes || rule.ubigeo_codes);
+}
+
+function uniqueSegmentKeys(rules = []) {
+    return Array.from(new Set(
+        ensureArray(rules)
+            .map((rule) => text(rule.segmentKey || rule.segment_key || ''))
+            .filter(Boolean)
+    ));
+}
+
+function resolveMatchesBySegment(matches = []) {
+    const safeMatches = ensureArray(matches).filter(Boolean);
+    if (safeMatches.length <= 1) {
+        return {
+            rule: safeMatches[0] || null,
+            ambiguous: false,
+            needsGps: false,
+            matches: safeMatches
+        };
+    }
+    const segments = uniqueSegmentKeys(safeMatches);
+    if (segments.length <= 1) {
+        return {
+            rule: safeMatches[0],
+            ambiguous: false,
+            needsGps: false,
+            matches: safeMatches
+        };
+    }
+    return {
+        rule: null,
+        ambiguous: true,
+        needsGps: true,
+        matches: safeMatches
+    };
+}
+
 function resolveZoneFromLocation(location = {}, zoneRules = []) {
     const confidence = text(location?.confidence);
     if (!location || confidence === 'none' || confidence === 'ambiguous') return null;
@@ -571,21 +610,23 @@ function resolveZoneFromLocation(location = {}, zoneRules = []) {
     const postalCode = text(location.postalCode || location.postal_code || location.postcode || '');
     if (postalCode) {
         const matches = activeRules.filter((rule) => normalizeStringArray(rule.postalCodes || rule.postal_codes).includes(postalCode));
-        if (matches.length === 1) {
+        const segmentResolution = resolveMatchesBySegment(matches);
+        if (segmentResolution.rule) {
             return {
-                rule: matches[0],
+                rule: segmentResolution.rule,
                 matchedLevel: 'postal_code',
-                location
+                location,
+                matches: segmentResolution.matches
             };
         }
-        if (matches.length > 1) {
+        if (segmentResolution.ambiguous) {
             return {
                 rule: null,
                 matchedLevel: 'postal_code',
                 location,
                 ambiguous: true,
                 needsGps: true,
-                matches
+                matches: segmentResolution.matches
             };
         }
     }
@@ -593,24 +634,26 @@ function resolveZoneFromLocation(location = {}, zoneRules = []) {
     const ubigeoCandidates = normalizeStringArray([location.locationId || location.location_id, location.ubigeo]);
     if (ubigeoCandidates.length) {
         const matches = activeRules.filter((rule) => {
-            const codes = normalizeStringArray(rule.ubigeoCodes || rule.ubigeo_codes);
+            const codes = getRuleUbigeoCodes(rule);
             return ubigeoCandidates.some((candidate) => codes.includes(candidate));
         });
-        if (matches.length === 1) {
+        const segmentResolution = resolveMatchesBySegment(matches);
+        if (segmentResolution.rule) {
             return {
-                rule: matches[0],
+                rule: segmentResolution.rule,
                 matchedLevel: 'ubigeo',
-                location
+                location,
+                matches: segmentResolution.matches
             };
         }
-        if (matches.length > 1) {
+        if (segmentResolution.ambiguous) {
             return {
                 rule: null,
                 matchedLevel: 'ubigeo',
                 location,
                 ambiguous: true,
                 needsGps: true,
-                matches
+                matches: segmentResolution.matches
             };
         }
     }
@@ -637,12 +680,26 @@ function resolveZoneFromLocation(location = {}, zoneRules = []) {
     for (const check of checks) {
         const normalizedValue = normalizeLocationName(check.value);
         if (!normalizedValue) continue;
-        const rule = activeRules.find((candidate) => collectRuleValues(getRuleJson(candidate), check.keys).includes(normalizedValue));
-        if (rule) {
+        const matches = activeRules
+            .filter((candidate) => getRuleUbigeoCodes(candidate).length === 0)
+            .filter((candidate) => collectRuleValues(getRuleJson(candidate), check.keys).includes(normalizedValue));
+        const segmentResolution = resolveMatchesBySegment(matches);
+        if (segmentResolution.rule) {
             return {
-                rule,
+                rule: segmentResolution.rule,
                 matchedLevel: check.level,
-                location
+                location,
+                matches: segmentResolution.matches
+            };
+        }
+        if (segmentResolution.ambiguous) {
+            return {
+                rule: null,
+                matchedLevel: check.level,
+                location,
+                ambiguous: true,
+                needsGps: true,
+                matches: segmentResolution.matches
             };
         }
     }

@@ -92,6 +92,26 @@ function findZonesByPostalCode(zoneRules = [], postcode = '') {
         .filter((rule) => normalizeStringArray(rule.postalCodes || rule.postal_codes).includes(cleanPostcode));
 }
 
+function uniqueSegmentKeys(rules = []) {
+    return Array.from(new Set(
+        ensureArray(rules)
+            .map((rule) => text(rule.segmentKey || rule.segment_key || ''))
+            .filter(Boolean)
+    ));
+}
+
+function resolveMatchesBySegment(matches = []) {
+    const safeMatches = ensureArray(matches).filter(Boolean);
+    if (safeMatches.length <= 1) {
+        return { zone: safeMatches[0] || null, ambiguous: false, needsGps: false, matches: safeMatches };
+    }
+    const segments = uniqueSegmentKeys(safeMatches);
+    if (segments.length <= 1) {
+        return { zone: safeMatches[0], ambiguous: false, needsGps: false, matches: safeMatches };
+    }
+    return { zone: null, ambiguous: true, needsGps: true, matches: safeMatches };
+}
+
 function extractCarrierFilters(zoneRule = null) {
     const normalized = normalizeZoneRule(zoneRule);
     if (!normalized) return null;
@@ -134,13 +154,7 @@ function resultFromZone({
 
 async function resolveByPostalCode(zoneRules = [], postcode = '') {
     const matches = findZonesByPostalCode(zoneRules, postcode);
-    if (matches.length === 1) {
-        return { zone: matches[0], ambiguous: false, needsGps: false };
-    }
-    if (matches.length > 1) {
-        return { zone: null, ambiguous: true, needsGps: true, matches };
-    }
-    return { zone: null, ambiguous: false, needsGps: false };
+    return resolveMatchesBySegment(matches);
 }
 
 async function resolveByText(zoneRules = [], value = '') {

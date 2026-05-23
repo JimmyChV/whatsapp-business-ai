@@ -1798,13 +1798,20 @@ function getShippingDisplayName(option = null) {
     return getShippingType(option) === 'courier' ? 'Courier' : 'Delivery propio';
 }
 
-function formatDeliveryTimeLabel(value = '') {
+function formatEstimatedTime(value = '') {
     const clean = text(value);
-    if (!clean) return 'Por confirmar';
+    if (!clean) return null;
     const normalized = normalizeLocationLookup(clean);
-    if (/\b(dia|dias|habil|habiles|hora|horas)\b/.test(normalized)) return clean;
-    if (/\d/.test(clean)) return `${clean} días hábiles`;
-    return clean;
+    if (/\b(dia|dias|habil|habiles|hora|horas)\b/.test(normalized) && !/^\d+$/.test(clean)) return clean;
+    const hours = parseInt(clean, 10) || 0;
+    if (hours === 0) return null;
+    if (hours >= 48) return `${Math.round(hours / 24)} dias habiles`;
+    if (hours === 24) return '1 dia habil';
+    return `${hours} horas`;
+}
+
+function formatDeliveryTimeLabel(value = '') {
+    return formatEstimatedTime(value) || 'Por confirmar';
 }
 
 function getZonePaymentLabels(rule = {}) {
@@ -1928,7 +1935,7 @@ function buildZoneShippingSummary(rule = {}, subtotal = 0) {
         costText: cost !== null ? `S/ ${cost.toFixed(2)}` : 'Por confirmar',
         freeFrom,
         freeFromText: freeFrom !== null ? `S/ ${freeFrom.toFixed(2)}` : 'No aplica',
-        estimatedTime: formatDeliveryTimeLabel(primaryShipping?.estimated_time || primaryShipping?.estimatedTime || ''),
+        estimatedTime: formatEstimatedTime(primaryShipping?.estimated_time || primaryShipping?.estimatedTime || ''),
         paymentLabels: getZonePaymentLabels(rule),
         paymentMethods: getZonePaymentMethodFlags(rule),
         paymentModality: getZonePaymentModalityFlags(rule),
@@ -2008,12 +2015,7 @@ function formatGpsLocationLabel(location = {}, fallback = '') {
 
 function formatGpsTimeLabel(option = null, fallback = '') {
     const raw = text(option?.estimated_time || option?.estimatedTime || option?.time || fallback);
-    if (!raw) return 'por confirmar';
-    const normalized = normalizeLocationLookup(raw);
-    if (/\bhora|horas\b/.test(normalized)) return raw;
-    if (/\bdia|dias|habil|habiles\b/.test(normalized)) return raw;
-    if (/^\d+(?:\.\d+)?$/.test(raw)) return `${raw} horas`;
-    return raw;
+    return formatEstimatedTime(raw);
 }
 
 function formatGpsFreeFrom(summary = {}) {
@@ -2056,7 +2058,7 @@ function buildGpsCoverageResponse(coverage = {}) {
         }
         lines.push(
             `Costo: *${summary.costText}*${freeFrom}`,
-            `⏱ ~${timeLabel}`,
+            timeLabel ? `⏱ ~${timeLabel}` : '',
             '¿Coordino el envío? 😊'
         );
         return lines.filter(Boolean).join('\n');
@@ -2065,7 +2067,7 @@ function buildGpsCoverageResponse(coverage = {}) {
         `📍 Te ubiqué en ${locationLabel} 😊`,
         '🚚 Hacemos *reparto a domicilio* en tu zona.',
         `Costo: *${summary.costText}*${freeFrom}`,
-        `⏱ ~${timeLabel} hábiles`,
+        timeLabel ? `⏱ ~${timeLabel}` : '',
         paymentPhrase
     ].filter(Boolean).join('\n');
 }
@@ -3017,7 +3019,7 @@ function buildZoneContextFromDecision(decision = {}) {
             `  Envio: ${summary.shippingLabel}`,
             `  Costo: ${summary.costText}`,
             `  Gratis desde: ${summary.freeFromText}`,
-            `  Tiempo: ${summary.estimatedTime} exactos`,
+            `  Tiempo: ${summary.estimatedTime || 'Por confirmar'} exactos`,
             `  Metodos de pago: ${summary.paymentLabels.length ? summary.paymentLabels.join(', ') : 'No configurados'}`,
             `  Modalidad de pago: ${summary.paymentModalityText}`,
             `  Cobertura: ${summary.coverage}`,
@@ -3139,11 +3141,11 @@ async function getZonesContext(tenantId, recentConversationText = '', zoneDecisi
                         const label = lower(item.type) === 'courier' ? `Courier ${text(item.label) || 'Courier'}` : (text(item.label) || 'Delivery propio');
                         const cost = money(item.cost);
                         const freeFrom = money(item.free_from ?? item.freeFrom);
-                        const estimatedTime = text(item.estimated_time || item.estimatedTime);
+                        const estimatedTime = formatEstimatedTime(item.estimated_time || item.estimatedTime);
                         return [
                             `    - ${label}: ${cost !== null ? `S/ ${cost.toFixed(2)}` : 'Costo por confirmar'}`,
                             freeFrom !== null ? `      Gratis desde S/ ${freeFrom.toFixed(2)}` : '      Gratis desde: No aplica',
-                            estimatedTime ? `      Tiempo de entrega: ${estimatedTime} dias habiles exactos` : '      Tiempo de entrega: Por confirmar'
+                            estimatedTime ? `      Tiempo de entrega: ${estimatedTime} exactos` : '      Tiempo de entrega: Por confirmar'
                         ].filter(Boolean).join('\n');
                     });
                 const primaryShipping = activeShippingOptions[0] || null;
@@ -3154,7 +3156,7 @@ async function getZonesContext(tenantId, recentConversationText = '', zoneDecisi
                     : 'Sin envio configurado';
                 const primaryCost = primaryShipping ? money(primaryShipping.cost) : null;
                 const primaryFreeFrom = primaryShipping ? money(primaryShipping.free_from ?? primaryShipping.freeFrom) : null;
-                const primaryEstimatedTime = primaryShipping ? text(primaryShipping.estimated_time || primaryShipping.estimatedTime) : '';
+                const primaryEstimatedTime = primaryShipping ? formatEstimatedTime(primaryShipping.estimated_time || primaryShipping.estimatedTime) : '';
                 if (primaryShipping) {
                     console.log('[Patty] zone matched:', zoneName, 'shipping:', primaryShippingLabel, 'cost:', primaryCost);
                 } else {
@@ -3173,9 +3175,9 @@ async function getZonesContext(tenantId, recentConversationText = '', zoneDecisi
                     `  Envio: ${primaryShippingLabel}`,
                     `  Costo: ${primaryCost !== null ? `S/ ${primaryCost.toFixed(2)}` : 'Por confirmar'}`,
                     `  Gratis desde: ${primaryFreeFrom !== null ? `S/ ${primaryFreeFrom.toFixed(2)}` : 'No aplica'}`,
-                    `  Tiempo de entrega: ${primaryEstimatedTime ? `${primaryEstimatedTime} dias habiles exactos` : 'Por confirmar'}`,
+                    `  Tiempo de entrega: ${primaryEstimatedTime ? `${primaryEstimatedTime} exactos` : 'Por confirmar'}`,
                     primaryEstimatedTime
-                        ? `  INSTRUCCION: cuando el cliente pregunte cuanto demora, di exactamente "${primaryEstimatedTime} dias habiles", no inventes rangos como "3 a 5 dias".`
+                        ? `  INSTRUCCION: cuando el cliente pregunte cuanto demora, di exactamente "${primaryEstimatedTime}", no inventes rangos como "3 a 5 dias".`
                         : '  INSTRUCCION: si el tiempo no esta configurado, indica que el tiempo esta por confirmar.',
                     `  Metodos de pago: ${paymentLabels.length ? paymentLabels.join(', ') : 'No configurados'}`,
                     `  Cobertura: ${coverage}`,
@@ -3661,9 +3663,10 @@ function buildDeterministicDeliveryPaymentResponse(zoneDecision = {}, lastCustom
             const freeFromText = summary.freeFrom !== null
                 ? `, gratis en pedidos desde S/ ${summary.freeFrom.toFixed(2)}`
                 : '';
+            const estimatedTimeText = summary.estimatedTime ? `, y llega en ${summary.estimatedTime}` : '';
             responseLines.push([
                 deliveryLead,
-                `El costo es *${summary.costText}*${freeFromText}, y llega en ${summary.estimatedTime}. ${buildZonePaymentPhrase(summary)}`
+                `El costo es *${summary.costText}*${freeFromText}${estimatedTimeText}. ${buildZonePaymentPhrase(summary)}`
             ].join('\n'));
         } else if (wantsPayment) {
             responseLines.push(`Para ${locationLabel}, ${buildZonePaymentPhrase(summary, { sentenceStart: false })}`);

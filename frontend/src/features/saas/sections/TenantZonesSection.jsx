@@ -160,6 +160,26 @@ function normGeo(item = {}, type = '') {
     };
 }
 
+function geoFieldForType(type = '') {
+    const cleanType = text(type).toLowerCase();
+    if (cleanType === 'department') return 'departments';
+    if (cleanType === 'province') return 'provinces';
+    if (cleanType === 'district') return 'districts';
+    return '';
+}
+
+function geoNameForItem(item = {}) {
+    const type = text(item.type).toLowerCase();
+    if (type === 'department') return text(item.department || item.name || item.label);
+    if (type === 'province') return text(item.province || item.name || item.label);
+    if (type === 'district') return text(item.district || item.name || item.label);
+    return text(item.name || item.label);
+}
+
+function geoLabelForItem(item = {}) {
+    return text(item.label || [item.district, item.province, item.department].filter(Boolean).join(', ') || item.name || item.id);
+}
+
 function zoneForm(item = null) {
     if (!item) return { ...EMPTY_ZONE };
     const zone = normalizeTenantZoneRule(item);
@@ -429,11 +449,46 @@ export default function TenantZonesSection(props = {}) {
             setForm(zoneForm(selected));
         }
     };
-    const addValue = (field, value) => {
-        const clean = text(value);
-        if (clean) setForm((previous) => ({ ...previous, [field]: uniq([...(previous[field] || []), clean]) }));
+    const addGeoRuleValue = (field, item = {}) => {
+        const cleanName = geoNameForItem({ ...item, type: field === 'departments' ? 'department' : field === 'provinces' ? 'province' : 'district' });
+        const id = text(item.id || item.locationId || item.code || '');
+        const expectedPrefix = field === 'departments' ? 'DEP_' : field === 'provinces' ? 'PROV_' : field === 'districts' ? 'DIST_' : '';
+        const shouldPersistId = Boolean(id && expectedPrefix && id.startsWith(expectedPrefix));
+        if (!cleanName) return;
+        setForm((previous) => ({
+            ...previous,
+            [field]: uniq([...(previous[field] || []), cleanName]),
+            ubigeoCodes: shouldPersistId ? uniq([...(previous.ubigeoCodes || []), id]) : previous.ubigeoCodes,
+            ubigeoLabels: shouldPersistId ? {
+                ...(previous.ubigeoLabels || {}),
+                [id]: geoLabelForItem({ ...item, name: cleanName })
+            } : previous.ubigeoLabels
+        }));
     };
-    const removeValue = (field, value) => setForm((previous) => ({ ...previous, [field]: (previous[field] || []).filter((item) => item !== value) }));
+    const removeValue = (field, value) => setForm((previous) => {
+        const normalizedValue = key(value);
+        const prefix = field === 'departments' ? 'DEP_' : field === 'provinces' ? 'PROV_' : field === 'districts' ? 'DIST_' : '';
+        const sourceCatalog = field === 'departments' ? departments : field === 'provinces' ? provinces : field === 'districts' ? districts : [];
+        const matchingIds = new Set(sourceCatalog
+            .filter((item) => key(item.name) === normalizedValue)
+            .map((item) => text(item.id))
+            .filter(Boolean));
+        const nextLabels = { ...(previous.ubigeoLabels || {}) };
+        const nextCodes = (previous.ubigeoCodes || []).filter((code) => {
+            const label = nextLabels[code] || '';
+            const labelHead = key(label.split(',')[0] || label);
+            const codeMatchesField = !prefix || text(code).startsWith(prefix);
+            const shouldRemove = normalizedValue && codeMatchesField && (labelHead === normalizedValue || matchingIds.has(text(code)));
+            if (shouldRemove) delete nextLabels[code];
+            return !shouldRemove;
+        });
+        return {
+            ...previous,
+            [field]: (previous[field] || []).filter((item) => item !== value),
+            ubigeoCodes: nextCodes,
+            ubigeoLabels: nextLabels
+        };
+    });
     const addManualPostalCode = () => {
         const clean = text(form.postalCodeInput);
         if (!clean) return;
@@ -450,9 +505,12 @@ export default function TenantZonesSection(props = {}) {
     const addUbigeoCode = (item = {}) => {
         const id = text(item.id || item.locationId || item.code || '');
         if (!id) return;
-        const label = text(item.label || [item.district, item.province, item.department].filter(Boolean).join(', ') || item.name || id);
+        const label = geoLabelForItem(item);
+        const field = geoFieldForType(item.type);
+        const name = geoNameForItem(item);
         setForm((previous) => ({
             ...previous,
+            ...(field && name ? { [field]: uniq([...(previous[field] || []), name]) } : {}),
             ubigeoCodes: uniq([...(previous.ubigeoCodes || []), id]),
             ubigeoLabels: {
                 ...(previous.ubigeoLabels || {}),
@@ -602,9 +660,9 @@ export default function TenantZonesSection(props = {}) {
                         </div>
                     </SaasDetailPanelSection>
                     <SaasDetailPanelSection title="Reglas geograficas">
-                        <div className="saas-labels-zone-picker"><label><span>Departamento</span><select value={form.departmentId} disabled={busy || geoLoading} onChange={(event) => setForm((previous) => ({ ...previous, departmentId: event.target.value, provinceId: '', districtId: '' }))}><option value="">{geoLoading ? 'Cargando...' : 'Selecciona departamento'}</option>{departments.map((item) => <option key={`dep_${item.id}`} value={item.id}>{item.name}</option>)}</select></label><button type="button" disabled={!form.departmentId} onClick={() => addValue('departments', departments.find((item) => item.id === form.departmentId)?.name || '')}>Agregar departamento</button></div>
-                        <div className="saas-labels-zone-picker"><label><span>Provincia</span><select value={form.provinceId} disabled={busy || geoLoading} onChange={(event) => setForm((previous) => ({ ...previous, provinceId: event.target.value, districtId: '' }))}><option value="">Selecciona provincia</option>{provinceOptions.map((item) => <option key={`prov_${item.id}`} value={item.id}>{item.name}</option>)}</select></label><button type="button" disabled={!form.provinceId} onClick={() => addValue('provinces', provinces.find((item) => item.id === form.provinceId)?.name || '')}>Agregar provincia</button></div>
-                        <div className="saas-labels-zone-picker"><label><span>Distrito</span><select value={form.districtId} disabled={busy || geoLoading} onChange={(event) => setForm((previous) => ({ ...previous, districtId: event.target.value }))}><option value="">Selecciona distrito</option>{districtOptions.map((item) => <option key={`dist_${item.id}`} value={item.id}>{item.name}</option>)}</select></label><button type="button" disabled={!form.districtId} onClick={() => addValue('districts', districts.find((item) => item.id === form.districtId)?.name || '')}>Agregar distrito</button></div>
+                        <div className="saas-labels-zone-picker"><label><span>Departamento</span><select value={form.departmentId} disabled={busy || geoLoading} onChange={(event) => setForm((previous) => ({ ...previous, departmentId: event.target.value, provinceId: '', districtId: '' }))}><option value="">{geoLoading ? 'Cargando...' : 'Selecciona departamento'}</option>{departments.map((item) => <option key={`dep_${item.id}`} value={item.id}>{item.name}</option>)}</select></label><button type="button" disabled={!form.departmentId} onClick={() => addGeoRuleValue('departments', { ...departments.find((item) => item.id === form.departmentId), type: 'department' })}>Agregar departamento</button></div>
+                        <div className="saas-labels-zone-picker"><label><span>Provincia</span><select value={form.provinceId} disabled={busy || geoLoading} onChange={(event) => setForm((previous) => ({ ...previous, provinceId: event.target.value, districtId: '' }))}><option value="">Selecciona provincia</option>{provinceOptions.map((item) => <option key={`prov_${item.id}`} value={item.id}>{item.name}</option>)}</select></label><button type="button" disabled={!form.provinceId} onClick={() => addGeoRuleValue('provinces', { ...provinces.find((item) => item.id === form.provinceId), type: 'province' })}>Agregar provincia</button></div>
+                        <div className="saas-labels-zone-picker"><label><span>Distrito</span><select value={form.districtId} disabled={busy || geoLoading} onChange={(event) => setForm((previous) => ({ ...previous, districtId: event.target.value }))}><option value="">Selecciona distrito</option>{districtOptions.map((item) => <option key={`dist_${item.id}`} value={item.id}>{item.name}</option>)}</select></label><button type="button" disabled={!form.districtId} onClick={() => addGeoRuleValue('districts', { ...districts.find((item) => item.id === form.districtId), type: 'district' })}>Agregar distrito</button></div>
                         <Chips title="Departamentos" items={form.departments} remove={(value) => removeValue('departments', value)} />
                         <Chips title="Provincias" items={form.provinces} remove={(value) => removeValue('provinces', value)} />
                         <Chips title="Distritos" items={form.districts} remove={(value) => removeValue('districts', value)} />
