@@ -1,3 +1,5 @@
+const { queryPostgres } = require('../../../config/persistence-runtime');
+
 function text(value = '') {
     return String(value || '').trim();
 }
@@ -19,16 +21,65 @@ function componentName(components = [], types = []) {
     return null;
 }
 
+function normalizeName(value = '') {
+    return text(value)
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+async function resolveOfficialDistrict(placeNames = []) {
+    const candidates = Array.from(new Set(safeArray(placeNames).map(text).filter(Boolean)));
+    for (const placeName of candidates) {
+        const normalized = normalizeName(placeName);
+        if (!normalized) continue;
+        try {
+            const { rows } = await queryPostgres(
+                `SELECT id, name
+                   FROM geo_locations
+                  WHERE normalized_name = $1
+                    AND type = 'district'
+                    AND COALESCE(is_active, TRUE) = TRUE
+                  ORDER BY id ASC
+                  LIMIT 1`,
+                [normalized]
+            );
+            const row = rows?.[0];
+            if (row?.id && row?.name) {
+                return {
+                    district: text(row.name),
+                    districtGeoId: text(row.id)
+                };
+            }
+        } catch (error) {
+            console.warn('[Geocoding] official district lookup skipped:', {
+                placeName,
+                message: String(error?.message || error)
+            });
+            break;
+        }
+    }
+    return {
+        district: candidates[0] || null,
+        districtGeoId: null
+    };
+}
+
 function normalizeGeocodeResult(result = {}) {
     const components = safeArray(result.address_components);
+    const districtCandidates = [
+        componentName(components, ['administrative_area_level_3']),
+        componentName(components, ['sublocality_level_1']),
+        componentName(components, ['locality'])
+    ].filter(Boolean);
     return {
         postcode: componentName(components, ['postal_code']),
-        district: componentName(components, [
-            'sublocality_level_1',
-            'sublocality',
-            'locality',
-            'administrative_area_level_3'
-        ]),
+        district: districtCandidates[0] || null,
+        districtCandidates,
+        districtGeoId: null,
         province: componentName(components, ['administrative_area_level_2']),
         department: componentName(components, ['administrative_area_level_1']),
         formattedAddress: text(result.formatted_address) || null
@@ -66,25 +117,26 @@ async function getLocationFromCoords(lat, lng, apiKey = '') {
     const empty = {
         postcode: null,
         district: null,
+        districtGeoId: null,
         province: null,
         department: null,
-        formattedAddress: null
+        formattedAddress: null,
+        lat: Number.isFinite(cleanLat) ? cleanLat : null,
+        lng: Number.isFinite(cleanLng) ? cleanLng : null
     };
     if (!Number.isFinite(cleanLat) || !Number.isFinite(cleanLng) || !cleanApiKey) return empty;
 
-    const startedAt = Date.now();
     try {
-        try {
-            const postalResult = normalizeGeocodeResult(await fetchGeocodeResult(cleanLat, cleanLng, cleanApiKey, 'postal_code', 3000));
-            if (postalResult.postcode) return postalResult;
-        } catch (postalError) {
-            console.warn('[Geocoding] postal_code lookup skipped; trying full reverse geocoding:', {
-                message: String(postalError?.message || postalError)
-            });
-        }
-        const remainingMs = Math.max(1000, 5000 - (Date.now() - startedAt));
-        const fallbackResult = normalizeGeocodeResult(await fetchGeocodeResult(cleanLat, cleanLng, cleanApiKey, '', remainingMs));
-        return { ...fallbackResult, postcode: fallbackResult.postcode || null };
+        const result = normalizeGeocodeResult(await fetchGeocodeResult(cleanLat, cleanLng, cleanApiKey, '', 5000));
+        const officialDistrict = await resolveOfficialDistrict(result.districtCandidates);
+        return {
+            ...result,
+            district: officialDistrict.district || result.district || null,
+            districtGeoId: officialDistrict.districtGeoId || null,
+            postcode: result.postcode || null,
+            lat: cleanLat,
+            lng: cleanLng
+        };
     } catch (error) {
         console.warn('[Geocoding] reverse geocoding skipped:', {
             message: String(error?.message || error)

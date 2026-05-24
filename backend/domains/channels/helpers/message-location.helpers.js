@@ -55,6 +55,7 @@ function extractCoordsFromText(text = '') {
 
     const patterns = [
         /geo:\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/i,
+        /@(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/i,
         /[?&](?:q|query|ll)=(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/i,
         /\b(-?\d{1,2}\.\d{4,})\s*,\s*(-?\d{1,3}\.\d{4,})\b/
     ];
@@ -70,6 +71,29 @@ function extractCoordsFromText(text = '') {
     }
 
     return null;
+}
+
+async function expandMapsLink(url = '', timeoutMs = 5000) {
+    const candidate = String(url || '').trim().replace(/[),.;!?]+$/g, '');
+    if (!candidate || !isLikelyMapUrl(candidate)) return null;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || 5000));
+    try {
+        const response = await fetch(candidate, {
+            method: 'GET',
+            redirect: 'follow',
+            signal: controller.signal,
+            headers: {
+                accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'user-agent': 'Mozilla/5.0 WhatsApp-SaaS map resolver'
+            }
+        });
+        return String(response?.url || candidate);
+    } catch (error) {
+        return candidate;
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 function truncateDisplayValue(value = '', maxLen = 260) {
@@ -168,6 +192,28 @@ function extractLocationInfo(msg) {
     }
 }
 
+async function extractLocationInfoAsync(msg, { timeoutMs = 5000 } = {}) {
+    const direct = extractLocationInfo(msg);
+    if (direct && direct.latitude !== null && direct.longitude !== null) return direct;
+
+    const data = msg?._data || {};
+    const body = String(msg?.body || data?.body || msg?.text || msg?.message || '').trim();
+    const mapUrl = direct?.mapUrl || extractMapUrlFromText(body);
+    if (!mapUrl) return direct;
+
+    const expanded = await expandMapsLink(mapUrl, timeoutMs);
+    const coords = extractCoordsFromText(expanded || mapUrl);
+    if (!coords) return direct;
+    return {
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        label: direct?.label || null,
+        mapUrl: expanded || mapUrl,
+        text: `${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)}`,
+        source: 'maps_link'
+    };
+}
+
 function getMessageTypePreviewLabel(type = '') {
     const value = String(type || '').toLowerCase();
     if (!value) return 'Mensaje';
@@ -193,6 +239,8 @@ module.exports = {
     extractMapUrlFromText,
     isLikelyMapUrl,
     extractCoordsFromText,
+    expandMapsLink,
     extractLocationInfo,
+    extractLocationInfoAsync,
     getMessageTypePreviewLabel
 };

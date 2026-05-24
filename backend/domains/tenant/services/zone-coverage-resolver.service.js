@@ -78,9 +78,12 @@ function buildResolvedLocation(input = {}) {
     return {
         postcode: text(input.postcode || input.postalCode || input.postal_code || '') || null,
         district: text(input.district || '') || null,
+        districtGeoId: text(input.districtGeoId || input.district_geo_id || '') || null,
         province: text(input.province || '') || null,
         department: text(input.department || '') || null,
-        formattedAddress: text(input.formattedAddress || input.formatted_address || '') || null
+        formattedAddress: text(input.formattedAddress || input.formatted_address || '') || null,
+        lat: normalizeNumberOrNull(input.lat ?? input.latitude),
+        lng: normalizeNumberOrNull(input.lng ?? input.longitude)
     };
 }
 

@@ -21,7 +21,7 @@ const { getChatSuggestion } = require('../../operations/services/ai.service');
 const waClient = require('./wa-provider.service');
 const commercialAdvisorService = require('./commercial-advisor.service');
 const commercialOptionsBuilderService = require('./commercial-options-builder.service');
-const { extractLocationInfo } = require('../helpers/message-location.helpers');
+const { extractLocationInfo, extractLocationInfoAsync } = require('../helpers/message-location.helpers');
 const fs = require('fs');
 const path = require('path');
 const { resolveAndValidatePublicHost } = require('../../security/helpers/security-utils');
@@ -1983,6 +1983,12 @@ async function getLatestInboundLocationPayload(tenantId, moduleId, chatId, messa
     const fromRaw = extractInboundLocationPayload(rawMessage);
     if (fromRaw) return fromRaw;
     try {
+        const fromRawAsync = normalizeCoordinatePayload(await extractLocationInfoAsync(rawMessage, { timeoutMs: 5000 }));
+        if (fromRawAsync) return fromRawAsync;
+    } catch (error) {
+        console.warn('[Patty] maps link expansion skipped:', error?.message || error);
+    }
+    try {
         const rows = await messageHistoryService.listMessages(tenantId, { chatId, limit: 8 });
         const cleanMessageId = text(messageId);
         const cleanModuleId = lower(moduleId);
@@ -1996,6 +2002,15 @@ async function getLatestInboundLocationPayload(tenantId, moduleId, chatId, messa
         for (const row of candidates) {
             const payload = normalizeCoordinatePayload(row.locationPayload);
             if (payload) return payload;
+            try {
+                const fromRowAsync = normalizeCoordinatePayload(await extractLocationInfoAsync({
+                    body: row.body,
+                    type: row.messageType,
+                    locationPayload: row.locationPayload
+                }, { timeoutMs: 5000 }));
+                if (fromRowAsync) return fromRowAsync;
+            } catch (_) {
+            }
         }
     } catch (error) {
         console.warn('[Patty] GPS location lookup skipped:', error?.message || error);
