@@ -32,20 +32,33 @@ function parseCoordsFromText(value = '') {
     const patterns = [
         /@(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/i,
         /[?&](?:q|query|ll)=(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/i,
+        /!3d(-?\d{1,2}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)/i,
+        /!2d(-?\d{1,3}(?:\.\d+)?)!3d(-?\d{1,2}(?:\.\d+)?)/i,
         /\b(-?\d{1,2}\.\d{4,})\s*,\s*(-?\d{1,3}\.\d{4,})\b/
     ];
-    let decoded = raw;
-    try {
-        decoded = decodeURIComponent(raw);
-    } catch (_) {
+    const values = [];
+    const addValue = (next = '') => {
+        const clean = String(next || '');
+        if (clean && !values.includes(clean)) values.push(clean);
+    };
+    addValue(raw);
+    addValue(raw.replace(/\\\//g, '/').replace(/\\u003d/gi, '=').replace(/\\u0026/gi, '&').replace(/\\u002f/gi, '/').replace(/&amp;/gi, '&'));
+    for (const item of [...values]) {
+        try {
+            addValue(decodeURIComponent(item));
+        } catch (_) {
+        }
     }
-    for (const pattern of patterns) {
-        const match = decoded.match(pattern);
-        if (!match) continue;
-        const lat = numberOrNull(match[1]);
-        const lng = numberOrNull(match[2]);
-        if (lat !== null && lng !== null && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-            return { lat, lng };
+    for (const decoded of values) {
+        for (const pattern of patterns) {
+            const match = decoded.match(pattern);
+            if (!match) continue;
+            const isLngLatPattern = String(pattern).includes('!2d');
+            const lat = numberOrNull(isLngLatPattern ? match[2] : match[1]);
+            const lng = numberOrNull(isLngLatPattern ? match[1] : match[2]);
+            if (lat !== null && lng !== null && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                return { lat, lng };
+            }
         }
     }
     return null;
@@ -137,7 +150,7 @@ function carrierLabel(value = '') {
 
 function carrierMarkerIcon(google, carrier = '') {
     const key = carrierKey(carrier);
-    const fill = key === 'shalom' ? '#16A34A' : (key === 'marvisur' ? '#D21F2B' : '#185FA5');
+    const fill = key === 'shalom' ? '#2563EB' : (key === 'marvisur' ? '#F97316' : '#185FA5');
     const letter = key === 'shalom' ? 'S' : (key === 'marvisur' ? 'M' : 'A');
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="42" height="48" viewBox="0 0 42 48">
         <path d="M21 46s16-14.2 16-27A16 16 0 1 0 5 19c0 12.8 16 27 16 27Z" fill="${fill}" stroke="white" stroke-width="3"/>
@@ -148,6 +161,19 @@ function carrierMarkerIcon(google, carrier = '') {
         url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
         scaledSize: new google.maps.Size(34, 39),
         anchor: new google.maps.Point(17, 39)
+    };
+}
+
+function clientMarkerIcon(google) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="54" viewBox="0 0 48 54">
+        <path d="M24 52S43 35.2 43 21A19 19 0 1 0 5 21c0 14.2 19 31 19 31Z" fill="#E11D48" stroke="white" stroke-width="4"/>
+        <circle cx="24" cy="21" r="10" fill="white"/>
+        <circle cx="24" cy="21" r="5" fill="#E11D48"/>
+    </svg>`;
+    return {
+        url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+        scaledSize: new google.maps.Size(38, 43),
+        anchor: new google.maps.Point(19, 43)
     };
 }
 
@@ -192,8 +218,10 @@ function extractNativeCoords(message = {}) {
     return null;
 }
 
-function latestCustomerLocationSource(messagesRef = null) {
-    const messages = Array.isArray(messagesRef?.current) ? messagesRef.current : [];
+function latestCustomerLocationSource(messagesRef = null, fallbackMessages = []) {
+    const messages = Array.isArray(messagesRef?.current)
+        ? messagesRef.current
+        : (Array.isArray(fallbackMessages) ? fallbackMessages : []);
     for (const message of [...messages].reverse()) {
         if (message?.fromMe) continue;
         const nativeCoords = extractNativeCoords(message);
@@ -214,6 +242,7 @@ export default function BusinessCoverageTabSection({
     activeChatId = '',
     activeChatPhone = '',
     buildApiHeaders = null,
+    messages = [],
     messagesRef = null,
     notify = null,
     socket = null
@@ -233,6 +262,7 @@ export default function BusinessCoverageTabSection({
     const [staticMapPreview, setStaticMapPreview] = useState('');
     const [staticMapMediaData, setStaticMapMediaData] = useState('');
     const [staticMapMime, setStaticMapMime] = useState('image/png');
+    const [staticMapProvider, setStaticMapProvider] = useState('');
 
     const headers = useMemo(() => {
         const base = typeof buildApiHeaders === 'function'
@@ -248,6 +278,7 @@ export default function BusinessCoverageTabSection({
         setError('');
         setStaticMapPreview('');
         setStaticMapMediaData('');
+        setStaticMapProvider('');
         try {
             const response = await fetch(`${API_URL}/api/tenant/zones/resolve-location`, {
                 method: 'POST',
@@ -348,8 +379,14 @@ export default function BusinessCoverageTabSection({
                 return;
             }
         }
-        await resolveCoverage({ text: clean });
-    }, [query, resolveCoverage]);
+        const resolved = await resolveCoverage({ text: clean });
+        if (firstUrl && isLikelyMapUrl(firstUrl) && !resolved?.zone && !resolved?.ambiguous) {
+            const latest = latestCustomerLocationSource(messagesRef, messages);
+            if (numberOrNull(latest?.lat) !== null && numberOrNull(latest?.lng) !== null) {
+                await resolveCoverage({ lat: latest.lat, lng: latest.lng }, latest);
+            }
+        }
+    }, [messages, messagesRef, query, resolveCoverage]);
 
     const selectSuggestion = useCallback(async (suggestion = {}) => {
         const placeId = text(suggestion.place_id || suggestion.placeId || '');
@@ -380,7 +417,7 @@ export default function BusinessCoverageTabSection({
     }, [apiKey, resolveCoverage]);
 
     const useCustomerLocation = useCallback(() => {
-        const latest = latestCustomerLocationSource(messagesRef);
+        const latest = latestCustomerLocationSource(messagesRef, messages);
         if (!latest) {
             setError('Este chat no tiene una ubicacion o link de Maps reciente del cliente.');
             return;
@@ -394,7 +431,7 @@ export default function BusinessCoverageTabSection({
             return;
         }
         setError('No pude leer la ubicacion compartida del cliente.');
-    }, [messagesRef, resolveCoverage]);
+    }, [messages, messagesRef, resolveCoverage]);
 
     const zone = result?.zone || null;
     const shipping = firstActiveShippingOption(zone || {});
@@ -402,7 +439,7 @@ export default function BusinessCoverageTabSection({
     const cost = money(shipping?.cost);
     const freeFrom = money(shipping?.free_from ?? shipping?.freeFrom);
     const agencies = Array.isArray(result?.agencies) ? result.agencies.slice(0, 3) : [];
-    const latestSharedLocation = useMemo(() => latestCustomerLocationSource(messagesRef), [messagesRef, result, query]);
+    const latestSharedLocation = useMemo(() => latestCustomerLocationSource(messagesRef, messages), [messages, messagesRef, result, query]);
 
     useEffect(() => {
         if (!apiKey || !coords?.lat || !coords?.lng || !mapRef.current) return;
@@ -425,7 +462,8 @@ export default function BusinessCoverageTabSection({
                     map,
                     position: clientPosition,
                     title: 'Ubicacion del cliente',
-                    icon: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png'
+                    icon: clientMarkerIcon(google),
+                    zIndex: 1000
                 });
                 agencies.forEach((agency) => {
                     const lat = numberOrNull(agency.latitude);
@@ -486,6 +524,7 @@ export default function BusinessCoverageTabSection({
             setStaticMapMediaData(text(body.mediaData));
             setStaticMapMime(text(body.mimetype || 'image/png') || 'image/png');
             setStaticMapPreview(text(body.dataUrl || `data:${body.mimetype || 'image/png'};base64,${body.mediaData}`));
+            setStaticMapProvider(text(body.provider || 'google'));
         } catch (err) {
             const message = text(err?.message) || 'No se pudo generar la imagen del mapa.';
             setError(message);
@@ -627,7 +666,7 @@ export default function BusinessCoverageTabSection({
                 <div className="business-coverage-card business-coverage-static-card">
                     <div className="business-coverage-result-head">
                         <span>Imagen para enviar</span>
-                        <strong>Google Static Maps</strong>
+                        <strong>{staticMapProvider === 'osm' ? 'Mapa alternativo' : 'Mapa para WhatsApp'}</strong>
                     </div>
                     <div className="business-coverage-static-actions">
                         <button type="button" onClick={generateStaticMap} disabled={!coords?.lat || !coords?.lng || mapLoading}>

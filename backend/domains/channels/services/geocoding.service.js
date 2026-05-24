@@ -31,6 +31,14 @@ function normalizeName(value = '') {
         .trim();
 }
 
+function formattedAddressDistrictCandidates(value = '') {
+    return text(value)
+        .split(',')
+        .map((part) => text(part).replace(/\b\d{5}\b/g, '').trim())
+        .filter(Boolean)
+        .filter((part) => !['peru', 'perú'].includes(normalizeName(part)));
+}
+
 async function resolveOfficialDistrict(placeNames = []) {
     const candidates = Array.from(new Set(safeArray(placeNames).map(text).filter(Boolean)));
     for (const placeName of candidates) {
@@ -72,13 +80,17 @@ function normalizeGeocodeResult(result = {}) {
     const components = safeArray(result.address_components);
     const districtCandidates = [
         componentName(components, ['administrative_area_level_3']),
+        componentName(components, ['sublocality']),
         componentName(components, ['sublocality_level_1']),
+        componentName(components, ['sublocality_level_2']),
+        componentName(components, ['neighborhood']),
         componentName(components, ['locality'])
     ].filter(Boolean);
+    const addressCandidates = formattedAddressDistrictCandidates(result.formatted_address);
     return {
         postcode: componentName(components, ['postal_code']),
         district: districtCandidates[0] || null,
-        districtCandidates,
+        districtCandidates: [...districtCandidates, ...addressCandidates],
         districtGeoId: null,
         province: componentName(components, ['administrative_area_level_2']),
         department: componentName(components, ['administrative_area_level_1']),
@@ -86,7 +98,7 @@ function normalizeGeocodeResult(result = {}) {
     };
 }
 
-async function fetchGeocodeResult(lat, lng, apiKey = '', resultType = '', timeoutMs = 5000) {
+async function fetchGeocodeResults(lat, lng, apiKey = '', resultType = '', timeoutMs = 5000) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
     try {
@@ -104,10 +116,14 @@ async function fetchGeocodeResult(lat, lng, apiKey = '', resultType = '', timeou
         if (!response.ok || !safeArray(payload?.results).length) {
             throw new Error(payload?.error_message || payload?.status || `Google Geocoding ${response.status}`);
         }
-        return payload.results[0] || {};
+        return payload.results || [];
     } finally {
         clearTimeout(timeout);
     }
+}
+
+function pickFallbackGeocodeResult(results = []) {
+    return safeArray(results)[0] || {};
 }
 
 async function getLocationFromCoords(lat, lng, apiKey = '') {
@@ -127,8 +143,20 @@ async function getLocationFromCoords(lat, lng, apiKey = '') {
     if (!Number.isFinite(cleanLat) || !Number.isFinite(cleanLng) || !cleanApiKey) return empty;
 
     try {
-        const result = normalizeGeocodeResult(await fetchGeocodeResult(cleanLat, cleanLng, cleanApiKey, '', 5000));
-        const officialDistrict = await resolveOfficialDistrict(result.districtCandidates);
+        const rawResults = await fetchGeocodeResults(cleanLat, cleanLng, cleanApiKey, '', 5000);
+        let result = normalizeGeocodeResult(pickFallbackGeocodeResult(rawResults));
+        let officialDistrict = await resolveOfficialDistrict(result.districtCandidates);
+        if (!officialDistrict.districtGeoId) {
+            for (const rawResult of rawResults.slice(1, 8)) {
+                const candidate = normalizeGeocodeResult(rawResult);
+                const resolved = await resolveOfficialDistrict(candidate.districtCandidates);
+                if (resolved.districtGeoId) {
+                    result = candidate;
+                    officialDistrict = resolved;
+                    break;
+                }
+            }
+        }
         return {
             ...result,
             district: officialDistrict.district || result.district || null,

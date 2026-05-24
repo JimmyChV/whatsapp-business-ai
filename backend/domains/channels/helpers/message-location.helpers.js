@@ -85,25 +85,47 @@ function extractMessageBodyText(msg = {}) {
 function extractCoordsFromText(text = '') {
     const raw = String(text || '');
     if (!raw) return null;
-    let value = raw;
-    try {
-        value = decodeURIComponent(raw);
-    } catch (e) {}
+    const values = [];
+    const addValue = (value = '') => {
+        const clean = String(value || '');
+        if (clean && !values.includes(clean)) values.push(clean);
+    };
+    addValue(raw);
+    addValue(raw.replace(/\\\//g, '/')
+        .replace(/\\u003d/gi, '=')
+        .replace(/\\u0026/gi, '&')
+        .replace(/\\u002f/gi, '/')
+        .replace(/&amp;/gi, '&'));
+    for (const value of [...values]) {
+        try {
+            addValue(decodeURIComponent(value));
+        } catch (e) {}
+    }
+    for (const value of [...values]) {
+        try {
+            addValue(decodeURIComponent(value.replace(/\\x3d/gi, '=').replace(/\\x26/gi, '&')));
+        } catch (e) {}
+    }
 
     const patterns = [
         /geo:\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/i,
         /@(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/i,
         /[?&](?:q|query|ll)=(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/i,
+        /!3d(-?\d{1,2}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)/i,
+        /!2d(-?\d{1,3}(?:\.\d+)?)!3d(-?\d{1,2}(?:\.\d+)?)/i,
         /\b(-?\d{1,2}\.\d{4,})\s*,\s*(-?\d{1,3}\.\d{4,})\b/
     ];
 
-    for (const pattern of patterns) {
-        const match = value.match(pattern);
-        if (!match) continue;
-        const lat = parseLocationNumber(match[1]);
-        const lng = parseLocationNumber(match[2]);
-        if (isValidLatitude(lat) && isValidLongitude(lng)) {
-            return { latitude: lat, longitude: lng };
+    for (const value of values) {
+        for (const pattern of patterns) {
+            const match = value.match(pattern);
+            if (!match) continue;
+            const isLngLatPattern = String(pattern).includes('!2d');
+            const lat = parseLocationNumber(isLngLatPattern ? match[2] : match[1]);
+            const lng = parseLocationNumber(isLngLatPattern ? match[1] : match[2]);
+            if (isValidLatitude(lat) && isValidLongitude(lng)) {
+                return { latitude: lat, longitude: lng };
+            }
         }
     }
 
@@ -125,7 +147,16 @@ async function expandMapsLink(url = '', timeoutMs = 5000) {
                 'user-agent': 'Mozilla/5.0 WhatsApp-SaaS map resolver'
             }
         });
-        return String(response?.url || candidate);
+        const finalUrl = String(response?.url || candidate);
+        const finalCoords = extractCoordsFromText(finalUrl);
+        if (finalCoords) return finalUrl;
+        const body = await response.text().catch(() => '');
+        const bodyText = String(body || '').slice(0, 500000);
+        const bodyCoords = extractCoordsFromText(bodyText);
+        if (bodyCoords) {
+            return `${finalUrl}\n@${bodyCoords.latitude},${bodyCoords.longitude}`;
+        }
+        return finalUrl;
     } catch (error) {
         return candidate;
     } finally {

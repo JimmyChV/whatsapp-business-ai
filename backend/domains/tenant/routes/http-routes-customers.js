@@ -63,9 +63,44 @@ function isValidStaticMapCoordinate(lat, lng) {
 
 function staticMapMarkerForCarrier(carrier = '') {
     const value = String(carrier || '').trim().toLowerCase();
-    if (value.includes('shalom')) return 'color:0x16A34A|label:S';
-    if (value.includes('marvisur')) return 'color:0xD21F2B|label:M';
+    if (value.includes('shalom')) return 'color:0x2563EB|label:S';
+    if (value.includes('marvisur')) return 'color:0xF97316|label:M';
     return 'color:blue|label:A';
+}
+
+async function fetchImageWithTimeout(url, timeoutMs = 5000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || 5000));
+    try {
+        const response = await fetch(url, { method: 'GET', signal: controller.signal });
+        const arrayBuffer = response?.ok ? await response.arrayBuffer() : null;
+        const textBody = response?.ok ? '' : await response.text().catch(() => '');
+        return {
+            ok: Boolean(response?.ok),
+            status: response?.status || 0,
+            contentType: String(response?.headers?.get('content-type') || 'image/png').split(';')[0] || 'image/png',
+            buffer: arrayBuffer ? Buffer.from(arrayBuffer) : null,
+            error: textBody
+        };
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+function buildOsmStaticMapUrl({ lat, lng, agencies = [] } = {}) {
+    const params = new URLSearchParams();
+    params.set('center', `${lat},${lng}`);
+    params.set('zoom', '14');
+    params.set('size', '600x400');
+    const markers = [`${lat},${lng},red-pushpin`];
+    agencies.slice(0, 3).forEach((agency) => {
+        const agencyLat = parseCoordinateValue(agency?.latitude ?? agency?.lat);
+        const agencyLng = parseCoordinateValue(agency?.longitude ?? agency?.lng);
+        if (!isValidStaticMapCoordinate(agencyLat, agencyLng)) return;
+        markers.push(`${agencyLat},${agencyLng},blue-pushpin`);
+    });
+    params.set('markers', markers.join('|'));
+    return `https://staticmap.openstreetmap.de/staticmap.php?${params.toString()}`;
 }
 
 function registerTenantCustomerHttpRoutes({
@@ -614,29 +649,27 @@ function registerTenantCustomerHttpRoutes({
             });
             params.set('key', apiKey);
 
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 5000);
-            let response;
-            try {
-                response = await fetch(`https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`, {
-                    method: 'GET',
-                    signal: controller.signal
-                });
-            } finally {
-                clearTimeout(timer);
+            const googleUrl = `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
+            let imageResult = await fetchImageWithTimeout(googleUrl, 5000);
+            let provider = 'google';
+            if (!imageResult.ok || !imageResult.buffer) {
+                const googleError = String(imageResult.error || '').slice(0, 220);
+                console.warn('[Coverage] Google Static Maps fallback:', googleError || imageResult.status || 'unknown_error');
+                const osmUrl = buildOsmStaticMapUrl({ lat, lng, agencies });
+                imageResult = await fetchImageWithTimeout(osmUrl, 5000);
+                provider = 'osm';
             }
-            if (!response?.ok) {
-                const detail = await response.text().catch(() => '');
+            if (!imageResult.ok || !imageResult.buffer) {
                 return res.status(502).json({
                     ok: false,
-                    error: String(detail || `Google Static Maps respondio ${response?.status || 'sin estado'}`).slice(0, 260)
+                    error: 'No se pudo generar la imagen del mapa. Revisa que Google Static Maps este habilitado o intenta nuevamente.'
                 });
             }
-            const arrayBuffer = await response.arrayBuffer();
-            const mediaData = Buffer.from(arrayBuffer).toString('base64');
-            const mimetype = String(response.headers.get('content-type') || 'image/png').split(';')[0] || 'image/png';
+            const mediaData = imageResult.buffer.toString('base64');
+            const mimetype = imageResult.contentType || 'image/png';
             return res.json({
                 ok: true,
+                provider,
                 mimetype,
                 filename: 'mapa-cobertura.png',
                 mediaData,

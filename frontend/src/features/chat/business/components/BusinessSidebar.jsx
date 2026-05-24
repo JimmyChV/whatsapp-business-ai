@@ -52,18 +52,22 @@ export { ClientProfilePanel };
 
 // =========================================================
 
-const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messagesRef = null, activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, onSendCatalogProduct = null, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null, cartDraftsByChat: externalCartDraftsByChat = {}, setCartDraftsByChat: externalSetCartDraftsByChat = null, chatAssignmentState = null, chatCommercialStatusState = null, buildApiHeaders = null }) => {
+const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], messagesRef = null, activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, onSendCatalogProduct = null, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null, cartDraftsByChat: externalCartDraftsByChat = {}, setCartDraftsByChat: externalSetCartDraftsByChat = null, chatAssignmentState = null, chatCommercialStatusState = null, buildApiHeaders = null }) => {
     const { notify } = useUiFeedback();
     const [activeTab, setActiveTab] = useState('ai');
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
     const [pattySuggestion, setPattySuggestion] = useState(null);
     const companyProfileRef = useRef(null);
+    const liveMessagesRef = useRef([]);
 
     // AI Chat State
     const [aiInput, setAiInput] = useState('');
     const aiEndRef = useRef(null);
 
     const normalizedTenantScopeKey = useMemo(() => String(tenantScopeKey || 'default').trim() || 'default', [tenantScopeKey]);
+    useEffect(() => {
+        liveMessagesRef.current = Array.isArray(messages) ? messages : [];
+    }, [messages]);
     const {
         activeAiScope,
         activeTenantScopeId,
@@ -312,7 +316,10 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     });
 
     const getLiveMessages = useCallback(
-        () => (Array.isArray(messagesRef?.current) ? messagesRef.current : []),
+        () => {
+            if (Array.isArray(messagesRef?.current)) return messagesRef.current;
+            return Array.isArray(liveMessagesRef.current) ? liveMessagesRef.current : [];
+        },
         [messagesRef]
     );
 
@@ -940,6 +947,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     activeChatId={activeChatId}
                     activeChatPhone={activeChatPhone}
                     buildApiHeaders={buildApiHeaders}
+                    messages={messages}
                     messagesRef={messagesRef}
                     notify={notify}
                     socket={socket}

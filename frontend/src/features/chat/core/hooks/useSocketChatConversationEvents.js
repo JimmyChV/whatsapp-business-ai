@@ -754,6 +754,12 @@ export default function useSocketChatConversationEvents({
                         order: (message?.order && typeof message.order === 'object')
                             ? message.order
                             : ((existing?.order && typeof existing.order === 'object') ? existing.order : null),
+                        location: (message?.location && typeof message.location === 'object')
+                            ? message.location
+                            : ((existing?.location && typeof existing.location === 'object') ? existing.location : null),
+                        locationPayload: (message?.locationPayload && typeof message.locationPayload === 'object')
+                            ? message.locationPayload
+                            : ((existing?.locationPayload && typeof existing.locationPayload === 'object') ? existing.locationPayload : null),
                         metadata: (message?.metadata && typeof message.metadata === 'object')
                             ? message.metadata
                             : ((existing?.metadata && typeof existing.metadata === 'object') ? existing.metadata : null),

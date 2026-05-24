@@ -9136,15 +9136,15 @@ body {
 }
 
 .business-coverage-carrier--marvisur {
-  border-color: rgba(210, 31, 43, 0.32) !important;
-  background: rgba(210, 31, 43, 0.09) !important;
-  color: #b91c1c !important;
+  border-color: rgba(249, 115, 22, 0.4) !important;
+  background: rgba(249, 115, 22, 0.12) !important;
+  color: #c2410c !important;
 }
 
 .business-coverage-carrier--shalom {
-  border-color: rgba(22, 163, 74, 0.32) !important;
-  background: rgba(22, 163, 74, 0.1) !important;
-  color: #15803d !important;
+  border-color: rgba(37, 99, 235, 0.38) !important;
+  background: rgba(37, 99, 235, 0.1) !important;
+  color: #1d4ed8 !important;
 }
 
 .business-coverage-carrier--agency {
