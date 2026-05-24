@@ -30,6 +30,13 @@ function resolveCompactAssigneeLabel(assigneeName = '') {
 
 function resolveAssignmentVisual(assignment = null, isAssignedToMe = false, compact = false) {
   if (assignment?.needsAdvisor) {
+    const reason = String(assignment?.needsAdvisorReason || assignment?.reason || '').trim().toLowerCase();
+    if (reason === 'venta_mayorista') {
+      return {
+        tone: 'wholesale',
+        label: compact ? 'Mayorista' : 'Venta Mayorista'
+      };
+    }
     return {
       tone: 'needs-advisor',
       label: compact ? 'Solicita asistencia' : 'Solicita asistencia'
@@ -87,10 +94,11 @@ export default function AssignmentBadge({
   isAssignedToMe = false,
   compact = false,
   needsAdvisor = false,
+  needsAdvisorReason = '',
   virtualAssigneeLabel = '',
   className = ''
 }) {
-  const { tone, label } = resolveAssignmentVisual({ ...(assignment || {}), needsAdvisor, virtualAssigneeLabel }, isAssignedToMe, compact);
+  const { tone, label } = resolveAssignmentVisual({ ...(assignment || {}), needsAdvisor, needsAdvisorReason, virtualAssigneeLabel }, isAssignedToMe, compact);
   return (
     <span
       className={`assignment-badge assignment-badge--${tone}${compact ? ' assignment-badge--compact' : ''}${className ? ` ${className}` : ''}`}

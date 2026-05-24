@@ -235,6 +235,7 @@ const ChatWindow = ({
                                     assignment={activeChatAssignment}
                                     isAssignedToMe={isAssignedToMe}
                                     needsAdvisor={Boolean(activeChatCommercialStatus?.needsAdvisor)}
+                                    needsAdvisorReason={activeChatCommercialStatus?.needsAdvisorReason || ''}
                                     virtualAssigneeLabel={showPattyAssignee ? 'Patty IA' : ''}
                                     compact
                                 />
@@ -610,6 +611,7 @@ const ChatWindow = ({
                             assignment={activeChatAssignment}
                             isAssignedToMe={isAssignedToMe}
                             needsAdvisor={Boolean(activeChatCommercialStatus?.needsAdvisor)}
+                            needsAdvisorReason={activeChatCommercialStatus?.needsAdvisorReason || ''}
                             virtualAssigneeLabel={showPattyAssignee ? 'Patty IA' : ''}
                         />
                         <span className="chat-assignment-lock-text">

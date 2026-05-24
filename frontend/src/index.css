@@ -5623,6 +5623,12 @@ body {
   color: var(--color-on-warning, #ffffff);
 }
 
+.assignment-badge--wholesale {
+  background: #6d28d9;
+  border-color: #7c3aed;
+  color: #ffffff;
+}
+
 .assignment-badge--assistant {
   background: var(--color-primary, var(--saas-accent-primary, #16a34a));
   border-color: var(--color-primary, var(--saas-accent-primary, #16a34a));

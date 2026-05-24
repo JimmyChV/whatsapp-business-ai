@@ -814,6 +814,7 @@ const Sidebar = ({
                                                 assignment={chatAssignment}
                                                 isAssignedToMe={isAssignedToMe}
                                                 needsAdvisor={Boolean(chatCommercialStatus?.needsAdvisor)}
+                                                needsAdvisorReason={chatCommercialStatus?.needsAdvisorReason || ''}
                                                 virtualAssigneeLabel={showPattyAssignee ? 'Patty IA' : ''}
                                                 compact
                                             />
