@@ -116,12 +116,12 @@ function truncateSvgText(value = '', maxLength = 42) {
 function staticMapCarrierStyle(carrier = '') {
     const value = String(carrier || '').trim().toLowerCase();
     if (value.includes('marvisur')) {
-        return { fill: '#F97316', stroke: '#9A3412', label: 'M', name: 'Marvisur' };
+        return { fill: '#F97316', stroke: '#9A3412', label: 'M', name: 'Marvisur', route: '0xF97316FF' };
     }
     if (value.includes('shalom')) {
-        return { fill: '#2563EB', stroke: '#1E3A8A', label: 'S', name: 'Shalom' };
+        return { fill: '#2563EB', stroke: '#1E3A8A', label: 'S', name: 'Shalom', route: '0x2563EBFF' };
     }
-    return { fill: '#475569', stroke: '#0F172A', label: 'A', name: 'Agencia' };
+    return { fill: '#475569', stroke: '#0F172A', label: 'A', name: 'Agencia', route: '0x475569FF' };
 }
 
 function normalizeStaticMapAgency(agency = {}) {
@@ -144,10 +144,131 @@ function formatStaticMapDistance(value) {
     return Number.isFinite(parsed) ? `${parsed.toFixed(1)} km` : '';
 }
 
-function buildLocalCoverageSvg({ lat, lng, agencies = [], zoneName = '' } = {}) {
-    const width = 600;
-    const height = 400;
-    const normalizedAgencies = agencies.map(normalizeStaticMapAgency).filter(Boolean).slice(0, 3);
+function haversineStaticMapKm(latA, lngA, latB, lngB) {
+    const toRad = (value) => (Number(value) * Math.PI) / 180;
+    const dLat = toRad(latB - latA);
+    const dLng = toRad(lngB - lngA);
+    const a = Math.sin(dLat / 2) ** 2
+        + Math.cos(toRad(latA)) * Math.cos(toRad(latB)) * Math.sin(dLng / 2) ** 2;
+    return 6371 * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+function estimateStaticMapDuration(distanceKm) {
+    const parsed = Number(distanceKm);
+    if (!Number.isFinite(parsed) || parsed <= 0) return '';
+    const minutes = Math.max(6, Math.round((parsed / 20) * 60));
+    if (minutes >= 60) {
+        const hours = Math.floor(minutes / 60);
+        const rest = minutes % 60;
+        return rest ? `${hours} h ${rest} min aprox.` : `${hours} h aprox.`;
+    }
+    return `${minutes} min aprox.`;
+}
+
+function agencyIdentity(agency = {}) {
+    return [
+        String(agency.carrier || '').toLowerCase(),
+        String(agency.name || '').toLowerCase(),
+        String(agency.address || '').toLowerCase()
+    ].join('|');
+}
+
+function enrichStaticMapAgencies({ lat, lng, agencies = [], routes = [] } = {}) {
+    const routeByIdentity = new Map(routes.map((route) => [agencyIdentity(route.agency || route), route]));
+    return agencies
+        .map(normalizeStaticMapAgency)
+        .filter(Boolean)
+        .map((agency) => {
+            const distanceKm = Number.isFinite(Number(agency.distanceKm))
+                ? Number(agency.distanceKm)
+                : haversineStaticMapKm(lat, lng, agency.lat, agency.lng);
+            const route = routeByIdentity.get(agencyIdentity(agency)) || null;
+            return {
+                ...agency,
+                distanceKm,
+                distanceText: route?.distanceText || formatStaticMapDistance(distanceKm),
+                durationText: route?.durationText || estimateStaticMapDuration(distanceKm),
+                routePolyline: route?.polyline || ''
+            };
+        });
+}
+
+function selectStaticMapAgencies({ lat, lng, agencies = [], routes = [], max = 4 } = {}) {
+    const enriched = enrichStaticMapAgencies({ lat, lng, agencies, routes })
+        .sort((left, right) => Number(left.distanceKm || 9999) - Number(right.distanceKm || 9999));
+    const selected = [];
+    const add = (agency) => {
+        if (!agency) return;
+        if (selected.some((item) => agencyIdentity(item) === agencyIdentity(agency))) return;
+        selected.push(agency);
+    };
+    add(enriched.find((agency) => String(agency.carrier || '').toLowerCase().includes('marvisur')));
+    add(enriched.find((agency) => String(agency.carrier || '').toLowerCase().includes('shalom')));
+    enriched.forEach(add);
+    return selected
+        .slice(0, Math.max(2, Number(max) || 4))
+        .sort((left, right) => Number(left.distanceKm || 9999) - Number(right.distanceKm || 9999));
+}
+
+async function fetchJsonWithTimeout(url, timeoutMs = 5000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || 5000));
+    try {
+        const response = await fetch(url, { method: 'GET', signal: controller.signal });
+        const body = await response.json().catch(() => null);
+        return { ok: Boolean(response?.ok), status: response?.status || 0, body };
+    } catch (error) {
+        return { ok: false, status: 0, body: null, error: String(error?.message || error || 'fetch_failed') };
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+async function fetchGoogleRoute({ apiKey = '', lat, lng, agency = {} } = {}) {
+    if (!apiKey || !agency?.lat || !agency?.lng) return null;
+    const params = new URLSearchParams();
+    params.set('origin', `${lat},${lng}`);
+    params.set('destination', `${agency.lat},${agency.lng}`);
+    params.set('mode', 'driving');
+    params.set('language', 'es');
+    params.set('region', 'pe');
+    params.set('key', apiKey);
+    const result = await fetchJsonWithTimeout(`https://maps.googleapis.com/maps/api/directions/json?${params.toString()}`, 5000);
+    if (!result.ok || result.body?.status !== 'OK') return null;
+    const route = Array.isArray(result.body?.routes) ? result.body.routes[0] : null;
+    const leg = Array.isArray(route?.legs) ? route.legs[0] : null;
+    if (!leg) return null;
+    return {
+        agency,
+        distanceText: String(leg.distance?.text || '').trim(),
+        durationText: String(leg.duration?.text || '').trim(),
+        polyline: String(route?.overview_polyline?.points || '').trim()
+    };
+}
+
+function buildGoogleCoverageStaticMapUrl({ apiKey = '', lat, lng, agencies = [] } = {}) {
+    const params = new URLSearchParams();
+    params.set('size', '640x640');
+    params.set('scale', '2');
+    params.set('maptype', 'roadmap');
+    params.append('markers', `color:red|label:C|${lat},${lng}`);
+    params.append('visible', `${lat},${lng}`);
+    agencies.forEach((agency) => {
+        const style = staticMapCarrierStyle(agency.carrier);
+        params.append('markers', `color:${style.fill.replace('#', '0x')}|label:${style.label}|${agency.lat},${agency.lng}`);
+        params.append('visible', `${agency.lat},${agency.lng}`);
+        if (agency.routePolyline) {
+            params.append('path', `color:${style.route}|weight:5|enc:${agency.routePolyline}`);
+        }
+    });
+    params.set('key', apiKey);
+    return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
+}
+
+function buildLocalCoverageSvg({ lat, lng, agencies = [], zoneName = '', routes = [] } = {}) {
+    const width = 720;
+    const height = 1280;
+    const normalizedAgencies = selectStaticMapAgencies({ lat, lng, agencies, routes, max: 4 });
     const points = [{ lat, lng, type: 'client' }, ...normalizedAgencies.map((agency) => ({ ...agency, type: 'agency' }))];
     const lats = points.map((point) => point.lat);
     const lngs = points.map((point) => point.lng);
@@ -164,36 +285,36 @@ function buildLocalCoverageSvg({ lat, lng, agencies = [], zoneName = '' } = {}) 
         maxLng += 0.004;
     }
     const plot = (point) => {
-        const x = 48 + ((point.lng - minLng) / (maxLng - minLng)) * 312;
-        const y = 58 + ((maxLat - point.lat) / (maxLat - minLat)) * 206;
+        const x = 58 + ((point.lng - minLng) / (maxLng - minLng)) * 604;
+        const y = 164 + ((maxLat - point.lat) / (maxLat - minLat)) * 492;
         return {
-            x: Math.max(38, Math.min(372, x)),
-            y: Math.max(48, Math.min(278, y))
+            x: Math.max(48, Math.min(672, x)),
+            y: Math.max(148, Math.min(682, y))
         };
     };
     const agencyMarkers = normalizedAgencies.map((agency, index) => {
         const position = plot(agency);
         const style = staticMapCarrierStyle(agency.carrier);
-        const offset = index % 2 === 0 ? 18 : -18;
+        const offset = index % 2 === 0 ? 20 : -20;
         return `
             <g>
-                <circle cx="${position.x}" cy="${position.y}" r="13" fill="${style.fill}" stroke="#FFFFFF" stroke-width="4"/>
-                <text x="${position.x}" y="${position.y + 5}" text-anchor="middle" font-family="Arial" font-size="12" font-weight="700" fill="#FFFFFF">${style.label}</text>
-                <text x="${Math.max(44, Math.min(356, position.x + offset))}" y="${Math.max(44, position.y - 22)}" font-family="Arial" font-size="10" font-weight="700" fill="${style.stroke}">${escapeSvgText(truncateSvgText(agency.name, 22))}</text>
+                <circle cx="${position.x}" cy="${position.y}" r="18" fill="${style.fill}" stroke="#FFFFFF" stroke-width="5"/>
+                <text x="${position.x}" y="${position.y + 6}" text-anchor="middle" font-family="Arial" font-size="15" font-weight="800" fill="#FFFFFF">${style.label}</text>
+                <text x="${Math.max(44, Math.min(582, position.x + offset))}" y="${Math.max(150, position.y - 28)}" font-family="Arial" font-size="14" font-weight="800" fill="${style.stroke}">${escapeSvgText(truncateSvgText(agency.name, 25))}</text>
             </g>`;
     }).join('');
     const client = plot({ lat, lng });
     const agencyRows = normalizedAgencies.map((agency, index) => {
         const style = staticMapCarrierStyle(agency.carrier);
-        const y = 174 + (index * 58);
-        const distance = formatStaticMapDistance(agency.distanceKm);
+        const y = 810 + (index * 100);
         return `
             <g>
-                <circle cx="405" cy="${y - 5}" r="12" fill="${style.fill}"/>
-                <text x="405" y="${y}" text-anchor="middle" font-family="Arial" font-size="11" font-weight="700" fill="#FFFFFF">${style.label}</text>
-                <text x="424" y="${y - 7}" font-family="Arial" font-size="14" font-weight="800" fill="#111827">${escapeSvgText(truncateSvgText(agency.name, 24))}</text>
-                <text x="424" y="${y + 12}" font-family="Arial" font-size="11" fill="#475569">${escapeSvgText(truncateSvgText([agency.district, distance].filter(Boolean).join(' - '), 28))}</text>
-                <text x="424" y="${y + 29}" font-family="Arial" font-size="10" fill="#64748B">${escapeSvgText(truncateSvgText(agency.address, 31))}</text>
+                <rect x="34" y="${y - 44}" width="652" height="86" rx="22" fill="#FFFFFF" opacity="0.96"/>
+                <circle cx="68" cy="${y - 12}" r="18" fill="${style.fill}"/>
+                <text x="68" y="${y - 5}" text-anchor="middle" font-family="Arial" font-size="15" font-weight="800" fill="#FFFFFF">${style.label}</text>
+                <text x="96" y="${y - 23}" font-family="Arial" font-size="19" font-weight="900" fill="#111827">${escapeSvgText(truncateSvgText(agency.name, 36))}</text>
+                <text x="96" y="${y + 2}" font-family="Arial" font-size="14" font-weight="700" fill="${style.stroke}">${escapeSvgText(style.name)} - ${escapeSvgText(agency.distanceText || formatStaticMapDistance(agency.distanceKm))} - ${escapeSvgText(agency.durationText || estimateStaticMapDuration(agency.distanceKm))}</text>
+                <text x="96" y="${y + 26}" font-family="Arial" font-size="13" fill="#64748B">${escapeSvgText(truncateSvgText([agency.address, agency.district].filter(Boolean).join(', '), 65))}</text>
             </g>`;
     }).join('');
     const title = zoneName ? `Cobertura: ${zoneName}` : 'Mapa de cobertura';
@@ -202,39 +323,40 @@ function buildLocalCoverageSvg({ lat, lng, agencies = [], zoneName = '' } = {}) 
             <defs>
                 <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
                     <stop offset="0%" stop-color="#F8FAFC"/>
-                    <stop offset="100%" stop-color="#EAF3DE"/>
+                    <stop offset="100%" stop-color="#EEF7E6"/>
                 </linearGradient>
                 <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
                     <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#0F172A" flood-opacity="0.16"/>
                 </filter>
             </defs>
             <rect width="${width}" height="${height}" rx="28" fill="url(#bg)"/>
-            <rect x="24" y="24" width="344" height="286" rx="24" fill="#DFF3EE" stroke="#B8D9CD"/>
-            <path d="M34 104 C94 76, 154 126, 218 94 S314 82, 360 118" stroke="#FFFFFF" stroke-width="15" fill="none" opacity="0.95"/>
-            <path d="M44 232 C120 186, 170 252, 246 210 S318 176, 360 208" stroke="#FFFFFF" stroke-width="13" fill="none" opacity="0.95"/>
-            <path d="M88 34 C110 110, 92 210, 130 302" stroke="#B7E3D4" stroke-width="9" fill="none"/>
-            <path d="M256 34 C232 102, 288 194, 268 302" stroke="#B7E3D4" stroke-width="9" fill="none"/>
-            <path d="M32 162 L368 162" stroke="#C8EADB" stroke-width="4" opacity="0.8"/>
-            <path d="M190 30 L190 310" stroke="#C8EADB" stroke-width="4" opacity="0.8"/>
+            <text x="34" y="58" font-family="Arial" font-size="29" font-weight="900" fill="#111827">${escapeSvgText(truncateSvgText(title, 34))}</text>
+            <text x="34" y="91" font-family="Arial" font-size="15" fill="#64748B">Ubicacion del cliente: ${lat.toFixed(6)}, ${lng.toFixed(6)}</text>
+            <rect x="24" y="116" width="672" height="596" rx="28" fill="#DFF3EE" stroke="#B8D9CD"/>
+            <path d="M46 270 C152 210, 284 322, 410 250 S594 218, 684 292" stroke="#FFFFFF" stroke-width="28" fill="none" opacity="0.95"/>
+            <path d="M42 540 C190 440, 284 584, 440 500 S608 430, 690 494" stroke="#FFFFFF" stroke-width="25" fill="none" opacity="0.95"/>
+            <path d="M150 128 C188 274, 146 468, 210 698" stroke="#B7E3D4" stroke-width="18" fill="none"/>
+            <path d="M510 128 C458 282, 560 468, 526 698" stroke="#B7E3D4" stroke-width="18" fill="none"/>
+            <path d="M24 400 L696 400" stroke="#C8EADB" stroke-width="8" opacity="0.8"/>
+            <path d="M360 116 L360 712" stroke="#C8EADB" stroke-width="8" opacity="0.8"/>
             ${agencyMarkers}
             <g filter="url(#shadow)">
-                <path d="M${client.x} ${client.y + 25} C${client.x - 24} ${client.y - 4}, ${client.x - 17} ${client.y - 36}, ${client.x} ${client.y - 36} C${client.x + 17} ${client.y - 36}, ${client.x + 24} ${client.y - 4}, ${client.x} ${client.y + 25} Z" fill="#E11D48"/>
-                <circle cx="${client.x}" cy="${client.y - 13}" r="9" fill="#FFFFFF"/>
+                <path d="M${client.x} ${client.y + 42} C${client.x - 39} ${client.y - 6}, ${client.x - 28} ${client.y - 58}, ${client.x} ${client.y - 58} C${client.x + 28} ${client.y - 58}, ${client.x + 39} ${client.y - 6}, ${client.x} ${client.y + 42} Z" fill="#E11D48"/>
+                <circle cx="${client.x}" cy="${client.y - 21}" r="15" fill="#FFFFFF"/>
             </g>
-            <rect x="388" y="24" width="188" height="92" rx="20" fill="#FFFFFF" opacity="0.94"/>
-            <text x="406" y="55" font-family="Arial" font-size="16" font-weight="800" fill="#111827">${escapeSvgText(truncateSvgText(title, 24))}</text>
-            <text x="406" y="80" font-family="Arial" font-size="12" fill="#475569">Ubicacion del cliente</text>
-            <text x="406" y="99" font-family="Arial" font-size="11" fill="#64748B">${lat.toFixed(6)}, ${lng.toFixed(6)}</text>
-            <rect x="388" y="134" width="188" height="238" rx="20" fill="#FFFFFF" opacity="0.94"/>
-            <text x="406" y="156" font-family="Arial" font-size="13" font-weight="800" fill="#111827">Agencias cercanas</text>
-            ${agencyRows || '<text x="406" y="184" font-family="Arial" font-size="12" fill="#64748B">Sin agencias cercanas registradas</text>'}
-            <text x="34" y="348" font-family="Arial" font-size="12" font-weight="700" fill="#475569">Rojo: cliente - Naranja: Marvisur - Azul: Shalom</text>
-            <text x="34" y="370" font-family="Arial" font-size="11" fill="#64748B">Imagen generada por Lavitat para referencia de cobertura.</text>
+            <rect x="34" y="728" width="652" height="34" rx="17" fill="#FFFFFF" opacity="0.92"/>
+            <text x="58" y="751" font-family="Arial" font-size="14" font-weight="800" fill="#475569">Rojo: cliente</text>
+            <text x="210" y="751" font-family="Arial" font-size="14" font-weight="800" fill="#9A3412">Naranja: Marvisur</text>
+            <text x="430" y="751" font-family="Arial" font-size="14" font-weight="800" fill="#1E3A8A">Azul: Shalom</text>
+            <text x="34" y="794" font-family="Arial" font-size="24" font-weight="900" fill="#111827">Agencias cercanas</text>
+            ${agencyRows || '<text x="34" y="850" font-family="Arial" font-size="16" fill="#64748B">Sin agencias cercanas registradas</text>'}
+            <text x="34" y="1228" font-family="Arial" font-size="14" fill="#64748B">Imagen generada por Lavitat para referencia de cobertura.</text>
+            <text x="34" y="1254" font-family="Arial" font-size="12" fill="#94A3B8">Si no ves calles reales, Google Static Maps no esta disponible y usamos el respaldo local.</text>
         </svg>`;
 }
 
-async function generateLocalCoverageMapPng({ lat, lng, agencies = [], zoneName = '' } = {}) {
-    const svg = buildLocalCoverageSvg({ lat, lng, agencies, zoneName });
+async function generateLocalCoverageMapPng({ lat, lng, agencies = [], zoneName = '', routes = [] } = {}) {
+    const svg = buildLocalCoverageSvg({ lat, lng, agencies, zoneName, routes });
     const buffer = await sharp(Buffer.from(svg)).png().toBuffer();
     return {
         ok: true,
@@ -243,6 +365,61 @@ async function generateLocalCoverageMapPng({ lat, lng, agencies = [], zoneName =
         buffer,
         error: ''
     };
+}
+
+async function composeCoverageSharePng({ mapBuffer, lat, lng, agencies = [], zoneName = '', provider = 'google' } = {}) {
+    const selected = selectStaticMapAgencies({ lat, lng, agencies, max: 4 });
+    const width = 720;
+    const height = 1280;
+    const mapMask = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="668" height="592"><rect x="0" y="0" width="668" height="592" rx="24" ry="24" fill="#fff"/></svg>');
+    const mapImage = await sharp(mapBuffer)
+        .resize(668, 592, { fit: 'cover' })
+        .composite([{ input: mapMask, blend: 'dest-in' }])
+        .png()
+        .toBuffer();
+    const agencyRows = selected.map((agency, index) => {
+        const style = staticMapCarrierStyle(agency.carrier);
+        const y = 810 + (index * 100);
+        return `
+            <g>
+                <rect x="34" y="${y - 44}" width="652" height="86" rx="22" fill="#FFFFFF" opacity="0.97"/>
+                <circle cx="68" cy="${y - 12}" r="18" fill="${style.fill}"/>
+                <text x="68" y="${y - 5}" text-anchor="middle" font-family="Arial" font-size="15" font-weight="800" fill="#FFFFFF">${style.label}</text>
+                <text x="96" y="${y - 23}" font-family="Arial" font-size="19" font-weight="900" fill="#111827">${escapeSvgText(truncateSvgText(agency.name, 36))}</text>
+                <text x="96" y="${y + 2}" font-family="Arial" font-size="14" font-weight="700" fill="${style.stroke}">${escapeSvgText(style.name)} - ${escapeSvgText(agency.distanceText || formatStaticMapDistance(agency.distanceKm))} - ${escapeSvgText(agency.durationText || estimateStaticMapDuration(agency.distanceKm))}</text>
+                <text x="96" y="${y + 26}" font-family="Arial" font-size="13" fill="#64748B">${escapeSvgText(truncateSvgText([agency.address, agency.district].filter(Boolean).join(', '), 65))}</text>
+            </g>`;
+    }).join('');
+    const title = zoneName ? `Cobertura: ${zoneName}` : 'Mapa de cobertura';
+    const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+            <defs>
+                <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+                    <stop offset="0%" stop-color="#F8FAFC"/>
+                    <stop offset="100%" stop-color="#EEF7E6"/>
+                </linearGradient>
+                <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#0F172A" flood-opacity="0.16"/>
+                </filter>
+            </defs>
+            <rect width="${width}" height="${height}" rx="28" fill="url(#bg)"/>
+            <text x="34" y="58" font-family="Arial" font-size="29" font-weight="900" fill="#111827">${escapeSvgText(truncateSvgText(title, 34))}</text>
+            <text x="34" y="91" font-family="Arial" font-size="15" fill="#64748B">Rutas desde la ubicacion del cliente</text>
+            <rect x="24" y="116" width="672" height="596" rx="28" fill="#FFFFFF" filter="url(#shadow)"/>
+            <rect x="24" y="116" width="672" height="596" rx="28" fill="none" stroke="#D8D0C4" stroke-width="2"/>
+            <rect x="34" y="728" width="652" height="34" rx="17" fill="#FFFFFF" opacity="0.92"/>
+            <text x="58" y="751" font-family="Arial" font-size="14" font-weight="800" fill="#475569">Rojo: cliente</text>
+            <text x="210" y="751" font-family="Arial" font-size="14" font-weight="800" fill="#9A3412">Naranja: Marvisur</text>
+            <text x="430" y="751" font-family="Arial" font-size="14" font-weight="800" fill="#1E3A8A">Azul: Shalom</text>
+            <text x="34" y="794" font-family="Arial" font-size="24" font-weight="900" fill="#111827">Agencias cercanas</text>
+            ${agencyRows}
+            <text x="34" y="1228" font-family="Arial" font-size="14" fill="#64748B">Mapa real con calles y rutas generado para WhatsApp.</text>
+            <text x="34" y="1254" font-family="Arial" font-size="12" fill="#94A3B8">Proveedor: ${escapeSvgText(provider)} - Distancias sujetas a trafico y disponibilidad de ruta.</text>
+        </svg>`;
+    return sharp(Buffer.from(svg))
+        .composite([{ input: mapImage, top: 118, left: 26 }])
+        .png()
+        .toBuffer();
 }
 
 function buildOsmStaticMapUrl({ lat, lng, agencies = [] } = {}) {
@@ -787,30 +964,34 @@ function registerTenantCustomerHttpRoutes({
                 || process.env.GOOGLE_MAPS_FRONTEND_API_KEY
                 || ''
             ).trim();
-            const agencies = Array.isArray(payload.agencies) ? payload.agencies.slice(0, 3) : [];
+            const requestedAgencies = Array.isArray(payload.agencies) ? payload.agencies : [];
             const zoneName = String(payload.zoneName || payload.zone?.name || '').trim();
-
-            const params = new URLSearchParams();
-            params.set('center', `${lat},${lng}`);
-            params.set('zoom', '14');
-            params.set('size', '600x400');
-            params.set('scale', '2');
-            params.set('maptype', 'roadmap');
-            params.append('markers', `color:red|label:C|${lat},${lng}`);
-            agencies.forEach((agency) => {
-                const agencyLat = parseCoordinateValue(agency?.latitude ?? agency?.lat);
-                const agencyLng = parseCoordinateValue(agency?.longitude ?? agency?.lng);
-                if (!isValidStaticMapCoordinate(agencyLat, agencyLng)) return;
-                params.append('markers', `${staticMapMarkerForCarrier(agency?.carrier)}|${agencyLat},${agencyLng}`);
-            });
+            const candidateAgencies = selectStaticMapAgencies({ lat, lng, agencies: requestedAgencies, max: 4 });
+            const routeResults = apiKey
+                ? (await Promise.all(candidateAgencies.map((agency) => fetchGoogleRoute({ apiKey, lat, lng, agency })))).filter(Boolean)
+                : [];
+            const agencies = selectStaticMapAgencies({ lat, lng, agencies: candidateAgencies, routes: routeResults, max: 4 });
 
             let imageResult = null;
             let provider = 'local';
             if (apiKey) {
-                params.set('key', apiKey);
-                const googleUrl = `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
+                const googleUrl = buildGoogleCoverageStaticMapUrl({ apiKey, lat, lng, agencies });
                 imageResult = await fetchImageWithTimeout(googleUrl, 5000);
                 provider = 'google';
+                if (imageResult?.ok && imageResult?.buffer) {
+                    imageResult = {
+                        ...imageResult,
+                        contentType: 'image/png',
+                        buffer: await composeCoverageSharePng({
+                            mapBuffer: imageResult.buffer,
+                            lat,
+                            lng,
+                            agencies,
+                            zoneName,
+                            provider: 'Google Maps'
+                        })
+                    };
+                }
             }
             if (!imageResult?.ok || !imageResult?.buffer) {
                 const googleError = String(imageResult?.error || '').slice(0, 220);
@@ -820,11 +1001,25 @@ function registerTenantCustomerHttpRoutes({
                 const osmUrl = buildOsmStaticMapUrl({ lat, lng, agencies });
                 imageResult = await fetchImageWithTimeout(osmUrl, 5000);
                 provider = 'osm';
+                if (imageResult?.ok && imageResult?.buffer) {
+                    imageResult = {
+                        ...imageResult,
+                        contentType: 'image/png',
+                        buffer: await composeCoverageSharePng({
+                            mapBuffer: imageResult.buffer,
+                            lat,
+                            lng,
+                            agencies,
+                            zoneName,
+                            provider: 'OpenStreetMap'
+                        })
+                    };
+                }
             }
             if (!imageResult?.ok || !imageResult?.buffer) {
                 const osmError = String(imageResult?.error || '').slice(0, 220);
                 console.warn('[Coverage] External static map fallback:', osmError || imageResult?.status || 'unknown_error');
-                imageResult = await generateLocalCoverageMapPng({ lat, lng, agencies, zoneName });
+                imageResult = await generateLocalCoverageMapPng({ lat, lng, agencies, zoneName, routes: routeResults });
                 provider = 'local';
             }
             const mediaData = imageResult.buffer.toString('base64');

@@ -438,7 +438,8 @@ export default function BusinessCoverageTabSection({
     const shippingType = text(shipping?.type).toLowerCase() === 'courier' ? 'courier' : 'delivery';
     const cost = money(shipping?.cost);
     const freeFrom = money(shipping?.free_from ?? shipping?.freeFrom);
-    const agencies = Array.isArray(result?.agencies) ? result.agencies.slice(0, 3) : [];
+    const allAgencies = Array.isArray(result?.agencies) ? result.agencies : [];
+    const agencies = allAgencies.slice(0, 3);
     const latestSharedLocation = useMemo(() => latestCustomerLocationSource(messagesRef, messages), [messages, messagesRef, result, query]);
 
     useEffect(() => {
@@ -511,7 +512,7 @@ export default function BusinessCoverageTabSection({
                     lat: coords.lat,
                     lng: coords.lng,
                     zoneName: zone?.name || '',
-                    agencies: agencies.map((agency) => ({
+                    agencies: allAgencies.slice(0, 8).map((agency) => ({
                         id: agency.id,
                         carrier: agency.carrier,
                         name: agency.name || agency.fullName || agency.full_name || '',
@@ -538,7 +539,7 @@ export default function BusinessCoverageTabSection({
         } finally {
             setMapLoading(false);
         }
-    }, [agencies, coords, headers, notify, zone?.name]);
+    }, [allAgencies, coords, headers, notify, zone?.name]);
 
     const sendStaticMap = useCallback(() => {
         if (!socket || typeof socket.emit !== 'function' || !activeChatId || !staticMapMediaData) return;
