@@ -121,38 +121,92 @@ function formatEstimatedTime(value) {
     return `${hours} horas`;
 }
 
-function latestCustomerLocation(messagesRef = null) {
-    const messages = Array.isArray(messagesRef?.current) ? messagesRef.current : [];
-    for (const message of [...messages].reverse()) {
-        if (message?.fromMe) continue;
-        const payload = message?.locationPayload || message?.location || null;
-        const lat = numberOrNull(payload?.latitude ?? payload?.lat);
-        const lng = numberOrNull(payload?.longitude ?? payload?.lng);
-        if (lat !== null && lng !== null) return { lat, lng, source: 'last_customer_location' };
-        const body = text(message?.body || message?.text || '');
-        const coords = parseCoordsFromText(body);
-        if (coords) return { ...coords, source: 'last_customer_maps_link' };
+function carrierKey(value = '') {
+    const normalized = text(value).toLowerCase();
+    if (normalized.includes('shalom')) return 'shalom';
+    if (normalized.includes('marvisur')) return 'marvisur';
+    return 'agency';
+}
+
+function carrierLabel(value = '') {
+    const key = carrierKey(value);
+    if (key === 'shalom') return 'Shalom';
+    if (key === 'marvisur') return 'Marvisur';
+    return text(value).toUpperCase() || 'Agencia';
+}
+
+function carrierMarkerIcon(google, carrier = '') {
+    const key = carrierKey(carrier);
+    const fill = key === 'shalom' ? '#16A34A' : (key === 'marvisur' ? '#D21F2B' : '#185FA5');
+    const letter = key === 'shalom' ? 'S' : (key === 'marvisur' ? 'M' : 'A');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="42" height="48" viewBox="0 0 42 48">
+        <path d="M21 46s16-14.2 16-27A16 16 0 1 0 5 19c0 12.8 16 27 16 27Z" fill="${fill}" stroke="white" stroke-width="3"/>
+        <circle cx="21" cy="19" r="10" fill="white" opacity=".96"/>
+        <text x="21" y="23" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" font-weight="800" fill="${fill}">${letter}</text>
+    </svg>`;
+    return {
+        url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+        scaledSize: new google.maps.Size(34, 39),
+        anchor: new google.maps.Point(17, 39)
+    };
+}
+
+function extractMessageBody(message = {}) {
+    return text(
+        message?.body
+        || message?.text?.body
+        || message?.text
+        || message?.message?.text?.body
+        || message?.message?.body
+        || message?.message
+        || message?.metadata?.body
+        || ''
+    );
+}
+
+function extractNativeCoords(message = {}) {
+    const candidates = [
+        message?.locationPayload,
+        message?.location,
+        message?.metadata?.locationPayload,
+        message?.metadata?.location,
+        message?.raw?.location,
+        message?._data?.location
+    ];
+    for (const rawPayload of candidates) {
+        let payload = rawPayload;
+        if (typeof payload === 'string') {
+            try {
+                payload = JSON.parse(payload);
+            } catch (_) {
+                payload = null;
+            }
+        }
+        if (!payload || typeof payload !== 'object') continue;
+        const lat = numberOrNull(payload.latitude ?? payload.lat ?? payload.degreesLatitude);
+        const lng = numberOrNull(payload.longitude ?? payload.lng ?? payload.lon ?? payload.degreesLongitude);
+        if (lat !== null && lng !== null && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+            return { lat, lng };
+        }
     }
     return null;
 }
 
-function buildStaticMapUrl({ apiKey, coords, agencies }) {
-    if (!apiKey || !coords?.lat || !coords?.lng) return '';
-    const params = new URLSearchParams();
-    params.set('center', `${coords.lat},${coords.lng}`);
-    params.set('zoom', '14');
-    params.set('size', '600x400');
-    params.set('scale', '2');
-    params.append('markers', `color:red|label:C|${coords.lat},${coords.lng}`);
-    (Array.isArray(agencies) ? agencies.slice(0, 3) : []).forEach((agency, index) => {
-        const lat = numberOrNull(agency.latitude);
-        const lng = numberOrNull(agency.longitude);
-        if (lat !== null && lng !== null) {
-            params.append('markers', `color:blue|label:${index + 1}|${lat},${lng}`);
+function latestCustomerLocationSource(messagesRef = null) {
+    const messages = Array.isArray(messagesRef?.current) ? messagesRef.current : [];
+    for (const message of [...messages].reverse()) {
+        if (message?.fromMe) continue;
+        const nativeCoords = extractNativeCoords(message);
+        if (nativeCoords) return { ...nativeCoords, source: 'last_customer_location' };
+        const body = extractMessageBody(message);
+        const coords = parseCoordsFromText(body);
+        if (coords) return { ...coords, source: 'last_customer_maps_link' };
+        const firstUrl = extractFirstUrl(body);
+        if (firstUrl && isLikelyMapUrl(firstUrl)) {
+            return { text: body, mapUrl: firstUrl, source: 'last_customer_maps_link' };
         }
-    });
-    params.set('key', apiKey);
-    return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
+    }
+    return null;
 }
 
 export default function BusinessCoverageTabSection({
@@ -176,7 +230,9 @@ export default function BusinessCoverageTabSection({
     const [error, setError] = useState('');
     const [result, setResult] = useState(null);
     const [coords, setCoords] = useState(null);
-    const [staticMapUrl, setStaticMapUrl] = useState('');
+    const [staticMapPreview, setStaticMapPreview] = useState('');
+    const [staticMapMediaData, setStaticMapMediaData] = useState('');
+    const [staticMapMime, setStaticMapMime] = useState('image/png');
 
     const headers = useMemo(() => {
         const base = typeof buildApiHeaders === 'function'
@@ -190,7 +246,8 @@ export default function BusinessCoverageTabSection({
     const resolveCoverage = useCallback(async (payload = {}, sourceCoords = null) => {
         setLoading(true);
         setError('');
-        setStaticMapUrl('');
+        setStaticMapPreview('');
+        setStaticMapMediaData('');
         try {
             const response = await fetch(`${API_URL}/api/tenant/zones/resolve-location`, {
                 method: 'POST',
@@ -323,12 +380,20 @@ export default function BusinessCoverageTabSection({
     }, [apiKey, resolveCoverage]);
 
     const useCustomerLocation = useCallback(() => {
-        const latest = latestCustomerLocation(messagesRef);
+        const latest = latestCustomerLocationSource(messagesRef);
         if (!latest) {
-            setError('Este chat no tiene una ubicacion reciente del cliente.');
+            setError('Este chat no tiene una ubicacion o link de Maps reciente del cliente.');
             return;
         }
-        resolveCoverage({ lat: latest.lat, lng: latest.lng }, latest);
+        if (numberOrNull(latest.lat) !== null && numberOrNull(latest.lng) !== null) {
+            resolveCoverage({ lat: latest.lat, lng: latest.lng }, latest);
+            return;
+        }
+        if (latest.text || latest.mapUrl) {
+            resolveCoverage({ text: latest.text || latest.mapUrl });
+            return;
+        }
+        setError('No pude leer la ubicacion compartida del cliente.');
     }, [messagesRef, resolveCoverage]);
 
     const zone = result?.zone || null;
@@ -337,7 +402,7 @@ export default function BusinessCoverageTabSection({
     const cost = money(shipping?.cost);
     const freeFrom = money(shipping?.free_from ?? shipping?.freeFrom);
     const agencies = Array.isArray(result?.agencies) ? result.agencies.slice(0, 3) : [];
-    const mapUrl = useMemo(() => buildStaticMapUrl({ apiKey, coords, agencies }), [apiKey, coords, agencies]);
+    const latestSharedLocation = useMemo(() => latestCustomerLocationSource(messagesRef), [messagesRef, result, query]);
 
     useEffect(() => {
         if (!apiKey || !coords?.lat || !coords?.lng || !mapRef.current) return;
@@ -372,7 +437,7 @@ export default function BusinessCoverageTabSection({
                         map,
                         position,
                         title: agency.name || agency.fullName || 'Agencia',
-                        icon: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png'
+                        icon: carrierMarkerIcon(google, agency.carrier)
                     });
                     const info = new google.maps.InfoWindow({
                         content: `<strong>${agency.name || agency.fullName || 'Agencia'}</strong><br>${agency.address || ''}<br>${agency.hoursWeek || agency.hoursDelivery || ''}<br>${formatDistance(agency.distanceKm)}`
@@ -393,16 +458,45 @@ export default function BusinessCoverageTabSection({
         };
     }, [apiKey, coords, agencies]);
 
-    const generateStaticMap = useCallback(() => {
-        if (!mapUrl) {
+    const generateStaticMap = useCallback(async () => {
+        if (!coords?.lat || !coords?.lng) {
             setError('Primero resuelve una ubicacion con coordenadas.');
             return;
         }
-        setStaticMapUrl(mapUrl);
-    }, [mapUrl]);
+        setMapLoading(true);
+        setError('');
+        try {
+            const response = await fetch(`${API_URL}/api/tenant/coverage/static-map`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    lat: coords.lat,
+                    lng: coords.lng,
+                    agencies: agencies.map((agency) => ({
+                        carrier: agency.carrier,
+                        latitude: agency.latitude,
+                        longitude: agency.longitude
+                    }))
+                })
+            });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok || body?.ok === false || !body?.mediaData) {
+                throw new Error(text(body?.error) || 'No se pudo generar la imagen del mapa.');
+            }
+            setStaticMapMediaData(text(body.mediaData));
+            setStaticMapMime(text(body.mimetype || 'image/png') || 'image/png');
+            setStaticMapPreview(text(body.dataUrl || `data:${body.mimetype || 'image/png'};base64,${body.mediaData}`));
+        } catch (err) {
+            const message = text(err?.message) || 'No se pudo generar la imagen del mapa.';
+            setError(message);
+            if (typeof notify === 'function') notify({ type: 'error', message });
+        } finally {
+            setMapLoading(false);
+        }
+    }, [agencies, coords, headers, notify]);
 
     const sendStaticMap = useCallback(() => {
-        if (!socket || typeof socket.emit !== 'function' || !activeChatId || !staticMapUrl) return;
+        if (!socket || typeof socket.emit !== 'function' || !activeChatId || !staticMapMediaData) return;
         setSendingMap(true);
         const caption = zone?.name
             ? `Mapa de cobertura para ${zone.name}`
@@ -411,13 +505,13 @@ export default function BusinessCoverageTabSection({
             to: activeChatId,
             toPhone: activeChatPhone || null,
             body: caption,
-            mediaUrl: staticMapUrl,
-            mimetype: 'image/png',
+            mediaData: staticMapMediaData,
+            mimetype: staticMapMime || 'image/png',
             filename: 'mapa-cobertura.png'
         });
         window.setTimeout(() => setSendingMap(false), 900);
         if (typeof notify === 'function') notify({ type: 'success', message: 'Mapa enviado al cliente.' });
-    }, [activeChatId, activeChatPhone, notify, socket, staticMapUrl, zone?.name]);
+    }, [activeChatId, activeChatPhone, notify, socket, staticMapMediaData, staticMapMime, zone?.name]);
 
     return (
         <div className="business-coverage-shell business-coverage-shell--maps">
@@ -451,13 +545,20 @@ export default function BusinessCoverageTabSection({
                             </div>
                         ) : null}
                     </div>
-                    <button type="button" onClick={resolveFromTextOrLink} disabled={loading}>
-                        Buscar
-                    </button>
-                    <button type="button" className="business-coverage-ghost-btn" onClick={useCustomerLocation} disabled={loading}>
-                        Usar ubicacion del cliente
-                    </button>
+                    <div className="business-coverage-actions">
+                        <button type="button" onClick={resolveFromTextOrLink} disabled={loading}>
+                            Buscar cobertura
+                        </button>
+                        <button type="button" className="business-coverage-ghost-btn" onClick={useCustomerLocation} disabled={loading}>
+                            Usar ubicacion compartida
+                        </button>
+                    </div>
                 </div>
+                {latestSharedLocation ? (
+                    <div className="business-coverage-hint">
+                        Detecte {latestSharedLocation.lat ? 'una ubicacion compartida' : 'un link de Google Maps'} reciente del cliente.
+                    </div>
+                ) : null}
                 {loading ? <div className="business-coverage-status">Verificando cobertura...</div> : null}
                 {error ? <div className="business-coverage-error">{error}</div> : null}
                 {!apiKey ? <div className="business-coverage-status">Google Maps no tiene API key configurada; aun puedes buscar por texto.</div> : null}
@@ -507,7 +608,10 @@ export default function BusinessCoverageTabSection({
                             <div key={`${agency.carrier}_${agency.id || index}`} className="business-coverage-agency">
                                 <div className="business-coverage-agency-head">
                                     <strong>{agency.name || agency.fullName}</strong>
-                                    <span>{text(agency.carrier).toUpperCase()}</span>
+                                    <span className={`business-coverage-carrier business-coverage-carrier--${carrierKey(agency.carrier)}`}>
+                                        <i>{carrierLabel(agency.carrier).slice(0, 1)}</i>
+                                        {carrierLabel(agency.carrier)}
+                                    </span>
                                 </div>
                                 <p>{agency.address || 'Direccion no registrada'}</p>
                                 <small>{[agency.district, formatDistance(agency.distanceKm)].filter(Boolean).join(' - ')}</small>
@@ -526,15 +630,15 @@ export default function BusinessCoverageTabSection({
                         <strong>Google Static Maps</strong>
                     </div>
                     <div className="business-coverage-static-actions">
-                        <button type="button" onClick={generateStaticMap} disabled={!mapUrl}>
-                            Generar imagen del mapa
+                        <button type="button" onClick={generateStaticMap} disabled={!coords?.lat || !coords?.lng || mapLoading}>
+                            {mapLoading ? 'Generando...' : 'Generar imagen del mapa'}
                         </button>
-                        <button type="button" className="business-coverage-ghost-btn" onClick={sendStaticMap} disabled={!staticMapUrl || !activeChatId || sendingMap}>
+                        <button type="button" className="business-coverage-ghost-btn" onClick={sendStaticMap} disabled={!staticMapMediaData || !activeChatId || sendingMap}>
                             {sendingMap ? 'Enviando...' : 'Enviar al cliente'}
                         </button>
                     </div>
-                    {staticMapUrl ? (
-                        <img className="business-coverage-static-preview" src={staticMapUrl} alt="Mapa de cobertura" />
+                    {staticMapPreview ? (
+                        <img className="business-coverage-static-preview" src={staticMapPreview} alt="Mapa de cobertura" />
                     ) : null}
                 </div>
             ) : null}

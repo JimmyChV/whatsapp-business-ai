@@ -45,6 +45,43 @@ function extractMapUrlFromText(text = '') {
     return null;
 }
 
+function firstText(...values) {
+    for (const value of values) {
+        if (value === null || value === undefined) continue;
+        if (typeof value === 'string' || typeof value === 'number') {
+            const clean = String(value || '').trim();
+            if (clean) return clean;
+        }
+    }
+    return '';
+}
+
+function extractMessageBodyText(msg = {}) {
+    const data = msg?._data || {};
+    const firstMessage = Array.isArray(msg?.messages) ? msg.messages[0] : null;
+    const firstMessageData = firstMessage?._data || {};
+    return firstText(
+        msg?.body,
+        msg?.text?.body,
+        msg?.text,
+        msg?.message?.text?.body,
+        msg?.message?.body,
+        msg?.message,
+        data?.body,
+        data?.text?.body,
+        data?.text,
+        data?.message?.text?.body,
+        data?.message?.body,
+        data?.message,
+        firstMessage?.body,
+        firstMessage?.text?.body,
+        firstMessage?.text,
+        firstMessageData?.body,
+        firstMessageData?.text?.body,
+        firstMessageData?.text
+    );
+}
+
 function extractCoordsFromText(text = '') {
     const raw = String(text || '');
     if (!raw) return null;
@@ -106,8 +143,18 @@ function extractLocationInfo(msg) {
     try {
         const data = msg?._data || {};
         const type = String(msg?.type || data?.type || '').toLowerCase();
-        const body = String(msg?.body || data?.body || '').trim();
-        const rawLocation = msg?.location || data?.location || data?.loc || {};
+        const body = extractMessageBodyText(msg);
+        const firstMessage = Array.isArray(msg?.messages) ? msg.messages[0] : null;
+        const firstMessageData = firstMessage?._data || {};
+        const rawLocation = msg?.locationPayload
+            || msg?.location
+            || data?.locationPayload
+            || data?.location
+            || data?.loc
+            || firstMessage?.locationPayload
+            || firstMessage?.location
+            || firstMessageData?.location
+            || {};
         const locationObj = rawLocation && typeof rawLocation === 'object' ? rawLocation : {};
 
         const directLat = parseLocationNumber(
@@ -196,8 +243,7 @@ async function extractLocationInfoAsync(msg, { timeoutMs = 5000 } = {}) {
     const direct = extractLocationInfo(msg);
     if (direct && direct.latitude !== null && direct.longitude !== null) return direct;
 
-    const data = msg?._data || {};
-    const body = String(msg?.body || data?.body || msg?.text || msg?.message || '').trim();
+    const body = extractMessageBodyText(msg);
     const mapUrl = direct?.mapUrl || extractMapUrlFromText(body);
     if (!mapUrl) return direct;
 
@@ -236,6 +282,7 @@ module.exports = {
     isValidLatitude,
     isValidLongitude,
     extractFirstUrlFromText,
+    extractMessageBodyText,
     extractMapUrlFromText,
     isLikelyMapUrl,
     extractCoordsFromText,

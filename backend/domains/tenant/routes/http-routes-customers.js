@@ -47,6 +47,27 @@ function parseUploadedCsv(file, delimiter = ',') {
     }).filter((item) => Object.keys(item).some((key) => key !== '__rowNumber' && String(item[key] || '').trim()));
 }
 
+function parseCoordinateValue(value) {
+    const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isValidStaticMapCoordinate(lat, lng) {
+    return Number.isFinite(lat)
+        && Number.isFinite(lng)
+        && lat >= -90
+        && lat <= 90
+        && lng >= -180
+        && lng <= 180;
+}
+
+function staticMapMarkerForCarrier(carrier = '') {
+    const value = String(carrier || '').trim().toLowerCase();
+    if (value.includes('shalom')) return 'color:0x16A34A|label:S';
+    if (value.includes('marvisur')) return 'color:0xD21F2B|label:M';
+    return 'color:blue|label:A';
+}
+
 function registerTenantCustomerHttpRoutes({
     app,
     authService,
@@ -549,6 +570,80 @@ function registerTenantCustomerHttpRoutes({
             return res.json({ ok: true, apiKey });
         } catch (error) {
             return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar la configuracion de mapas.') });
+        }
+    });
+
+    app.post('/api/tenant/coverage/static-map', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasCoverageResolveAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const payload = req.body && typeof req.body === 'object' ? req.body : {};
+            const lat = parseCoordinateValue(payload.lat ?? payload.latitude);
+            const lng = parseCoordinateValue(payload.lng ?? payload.longitude);
+            if (!isValidStaticMapCoordinate(lat, lng)) {
+                return res.status(400).json({ ok: false, error: 'Coordenadas invalidas.' });
+            }
+
+            const runtimeConfig = await tenantIntegrationsService.getTenantIntegrations(tenantId, { runtime: true });
+            const geo = runtimeConfig?.geo && typeof runtimeConfig.geo === 'object' ? runtimeConfig.geo : {};
+            const apiKey = String(
+                geo.googleMapsApiKey
+                || process.env.GOOGLE_MAPS_API_KEY
+                || geo.googleMapsFrontendApiKey
+                || process.env.GOOGLE_MAPS_FRONTEND_API_KEY
+                || ''
+            ).trim();
+            if (!apiKey) {
+                return res.status(400).json({ ok: false, error: 'Falta configurar Google Maps para generar imagenes.' });
+            }
+
+            const params = new URLSearchParams();
+            params.set('center', `${lat},${lng}`);
+            params.set('zoom', '14');
+            params.set('size', '600x400');
+            params.set('scale', '2');
+            params.set('maptype', 'roadmap');
+            params.append('markers', `color:red|label:C|${lat},${lng}`);
+            const agencies = Array.isArray(payload.agencies) ? payload.agencies.slice(0, 3) : [];
+            agencies.forEach((agency) => {
+                const agencyLat = parseCoordinateValue(agency?.latitude ?? agency?.lat);
+                const agencyLng = parseCoordinateValue(agency?.longitude ?? agency?.lng);
+                if (!isValidStaticMapCoordinate(agencyLat, agencyLng)) return;
+                params.append('markers', `${staticMapMarkerForCarrier(agency?.carrier)}|${agencyLat},${agencyLng}`);
+            });
+            params.set('key', apiKey);
+
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 5000);
+            let response;
+            try {
+                response = await fetch(`https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`, {
+                    method: 'GET',
+                    signal: controller.signal
+                });
+            } finally {
+                clearTimeout(timer);
+            }
+            if (!response?.ok) {
+                const detail = await response.text().catch(() => '');
+                return res.status(502).json({
+                    ok: false,
+                    error: String(detail || `Google Static Maps respondio ${response?.status || 'sin estado'}`).slice(0, 260)
+                });
+            }
+            const arrayBuffer = await response.arrayBuffer();
+            const mediaData = Buffer.from(arrayBuffer).toString('base64');
+            const mimetype = String(response.headers.get('content-type') || 'image/png').split(';')[0] || 'image/png';
+            return res.json({
+                ok: true,
+                mimetype,
+                filename: 'mapa-cobertura.png',
+                mediaData,
+                dataUrl: `data:${mimetype};base64,${mediaData}`
+            });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo generar la imagen del mapa.') });
         }
     });
 

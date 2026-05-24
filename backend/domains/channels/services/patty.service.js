@@ -22,7 +22,7 @@ const { getChatSuggestion } = require('../../operations/services/ai.service');
 const waClient = require('./wa-provider.service');
 const commercialAdvisorService = require('./commercial-advisor.service');
 const commercialOptionsBuilderService = require('./commercial-options-builder.service');
-const { extractLocationInfo, extractLocationInfoAsync } = require('../helpers/message-location.helpers');
+const { extractLocationInfo, extractLocationInfoAsync, extractMapUrlFromText } = require('../helpers/message-location.helpers');
 const fs = require('fs');
 const path = require('path');
 const { resolveAndValidatePublicHost } = require('../../security/helpers/security-utils');
@@ -1998,7 +1998,10 @@ async function getLatestInboundLocationPayload(tenantId, moduleId, chatId, messa
             if (cleanMessageId && text(row.messageId) !== cleanMessageId) return false;
             const rowModuleId = lower(row.waModuleId || row.metadata?.sentViaModuleId || '');
             if (cleanModuleId && rowModuleId && rowModuleId !== cleanModuleId) return false;
-            return lower(row.messageType) === 'location' || Boolean(row.locationPayload);
+            const body = text(row.body || row.text || row.message || '');
+            return lower(row.messageType) === 'location'
+                || Boolean(row.locationPayload)
+                || Boolean(extractMapUrlFromText(body));
         });
         for (const row of candidates) {
             const payload = normalizeCoordinatePayload(row.locationPayload);
