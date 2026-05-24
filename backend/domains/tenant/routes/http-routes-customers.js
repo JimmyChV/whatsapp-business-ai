@@ -13,6 +13,8 @@ const geoLocationService = require('../services/geo-location.service');
 const wooZonesSyncService = require('../services/woo-zones-sync.service');
 const logisticsAgenciesSyncService = require('../services/logistics-agencies-sync.service');
 const zoneCoverageResolverService = require('../services/zone-coverage-resolver.service');
+const tenantIntegrationsService = require('../services/integrations.service');
+const { extractLocationInfoAsync } = require('../../channels/helpers/message-location.helpers');
 
 const erpImportUpload = multer({ storage: multer.memoryStorage() });
 
@@ -507,15 +509,46 @@ function registerTenantCustomerHttpRoutes({
             if (!hasCoverageResolveAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
             const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
             const payload = req.body && typeof req.body === 'object' ? req.body : {};
+            const textValue = String(payload.text || payload.query || '').trim();
+            let lat = payload.lat ?? payload.latitude;
+            let lng = payload.lng ?? payload.longitude;
+            if ((lat === undefined || lat === null || lng === undefined || lng === null) && textValue) {
+                const locationFromText = await extractLocationInfoAsync({ body: textValue }, { timeoutMs: 5000 });
+                if (locationFromText && locationFromText.latitude !== null && locationFromText.longitude !== null) {
+                    lat = locationFromText.latitude;
+                    lng = locationFromText.longitude;
+                }
+            }
             const result = await zoneCoverageResolverService.resolveZoneCoverage(tenantId, {
-                text: payload.text || payload.query || '',
-                lat: payload.lat ?? payload.latitude,
-                lng: payload.lng ?? payload.longitude,
+                text: textValue,
+                lat,
+                lng,
                 postcode: payload.postcode || payload.postalCode || payload.postal_code || ''
             });
             return res.json({ ok: true, tenantId, ...result });
         } catch (error) {
             return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo resolver la cobertura.') });
+        }
+    });
+
+    app.get('/api/tenant/config/maps-api-key', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CHAT_OPERATE)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const runtimeConfig = await tenantIntegrationsService.getTenantIntegrations(tenantId, { runtime: true });
+            const geo = runtimeConfig?.geo && typeof runtimeConfig.geo === 'object' ? runtimeConfig.geo : {};
+            const apiKey = String(
+                geo.googleMapsFrontendApiKey
+                || process.env.GOOGLE_MAPS_FRONTEND_API_KEY
+                || geo.googleMapsApiKey
+                || ''
+            ).trim();
+            return res.json({ ok: true, apiKey });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar la configuracion de mapas.') });
         }
     });
 

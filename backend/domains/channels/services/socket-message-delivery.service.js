@@ -14,7 +14,8 @@ function createSocketMessageDeliveryService({
     buildSocketAgentMeta,
     sanitizeAgentMeta,
     rememberOutgoingAgentMeta,
-    buildModuleAttributionMeta
+    buildModuleAttributionMeta,
+    fetchQuickReplyMedia
 } = {}) {
     const registerMessageDeliveryHandlers = ({
         socket,
@@ -440,14 +441,29 @@ function createSocketMessageDeliveryService({
              if (!guardRateLimit(socket, 'send_media_message')) return;
              if (!transportOrchestrator.ensureTransportReady(socket, { action: 'enviar adjuntos', errorEvent: 'error' })) return;
              try {
-                 const { to, toPhone, body, mediaData, mimetype, filename, isPtt, quotedMessageId, quotedMessage } = data || {};
+                 const { to, toPhone, body, mediaData, mediaUrl, mimetype, filename, isPtt, quotedMessageId, quotedMessage } = data || {};
                  if (isPtt) {
                      socket.emit('error', 'El envio de notas de voz esta deshabilitado temporalmente.');
                      return;
                  }
                    const caption = String(body || '');
                  const quoted = String(quotedMessageId || '').trim();
-                 if (!String(mediaData || '').trim()) {
+                 let effectiveMediaData = String(mediaData || '').trim();
+                 let effectiveMimetype = String(mimetype || '').trim() || null;
+                 let effectiveFilename = String(filename || '').trim() || null;
+                 let effectiveMediaUrl = String(mediaUrl || '').trim() || null;
+                 if (!effectiveMediaData && effectiveMediaUrl && typeof fetchQuickReplyMedia === 'function') {
+                     const fetchedMedia = await fetchQuickReplyMedia(effectiveMediaUrl, {
+                         tenantId,
+                         mimeHint: effectiveMimetype || 'image/png',
+                         fileNameHint: effectiveFilename || 'mapa-cobertura.png'
+                     });
+                     effectiveMediaData = String(fetchedMedia?.mediaData || '').trim();
+                     effectiveMimetype = String(fetchedMedia?.mimetype || effectiveMimetype || 'image/png').trim();
+                     effectiveFilename = String(fetchedMedia?.filename || effectiveFilename || 'mapa-cobertura.png').trim();
+                     effectiveMediaUrl = String(fetchedMedia?.publicUrl || fetchedMedia?.sourceUrl || effectiveMediaUrl).trim();
+                 }
+                 if (!effectiveMediaData) {
                      socket.emit('error', 'Datos invalidos para enviar adjunto.');
                      return;
                  }
@@ -461,7 +477,7 @@ function createSocketMessageDeliveryService({
                   const moduleContext = target.moduleContext || socket?.data?.waModule || null;
                  const enrichedAuthContext = await enrichAuthContextWithUserName(authContext);
                  const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(enrichedAuthContext, moduleContext));
-                 const sentMessage = await waClient.sendMedia(target.targetChatId, mediaData, mimetype, filename, caption, isPtt, quoted || null);
+                 const sentMessage = await waClient.sendMedia(target.targetChatId, effectiveMediaData, effectiveMimetype, effectiveFilename, caption, isPtt, quoted || null);
                  const sentMessageId = getSerializedMessageId(sentMessage);
                  if (sentMessageId && agentMeta) {
                      rememberOutgoingAgentMeta(sentMessageId, agentMeta);
@@ -475,10 +491,11 @@ function createSocketMessageDeliveryService({
                     moduleContext,
                     agentMeta,
                     mediaPayload: {
-                         data: String(mediaData || ''),
-                         mimetype: String(mimetype || '').trim() || null,
-                         filename: String(filename || '').trim() || null,
-                         fileSizeBytes: null
+                         data: effectiveMediaData,
+                         mimetype: effectiveMimetype || null,
+                         filename: effectiveFilename || null,
+                         fileSizeBytes: null,
+                         mediaUrl: effectiveMediaUrl || null
                      }
                  });
                  await recordConversationEvent({
@@ -489,8 +506,8 @@ function createSocketMessageDeliveryService({
                      payload: {
                          messageId: sentMessageId || null,
                          quotedMessageId: quoted || null,
-                         mimetype: String(mimetype || '').trim() || null,
-                         filename: String(filename || '').trim() || null,
+                         mimetype: effectiveMimetype || null,
+                         filename: effectiveFilename || null,
                          hasCaption: Boolean(caption.trim())
                      }
                  });

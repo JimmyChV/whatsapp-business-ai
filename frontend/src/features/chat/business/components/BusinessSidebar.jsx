@@ -937,8 +937,12 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             {activeTab === 'coverage' && (
                 <BusinessCoverageTabSection
                     activeTenantId={normalizedTenantScopeKey}
+                    activeChatId={activeChatId}
+                    activeChatPhone={activeChatPhone}
                     buildApiHeaders={buildApiHeaders}
+                    messagesRef={messagesRef}
                     notify={notify}
+                    socket={socket}
                 />
             )}
 

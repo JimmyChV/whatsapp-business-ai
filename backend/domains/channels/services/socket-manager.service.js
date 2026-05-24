@@ -377,7 +377,8 @@ class SocketManager {
             buildSocketAgentMeta,
             sanitizeAgentMeta,
             rememberOutgoingAgentMeta,
-            buildModuleAttributionMeta
+            buildModuleAttributionMeta,
+            fetchQuickReplyMedia: resolveQuickReplyMediaForSend
         });
         this.templateMessagesService = createSocketTemplateMessagesService({
             waClient,
