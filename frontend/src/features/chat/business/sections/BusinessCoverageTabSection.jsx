@@ -510,8 +510,14 @@ export default function BusinessCoverageTabSection({
                 body: JSON.stringify({
                     lat: coords.lat,
                     lng: coords.lng,
+                    zoneName: zone?.name || '',
                     agencies: agencies.map((agency) => ({
+                        id: agency.id,
                         carrier: agency.carrier,
+                        name: agency.name || agency.fullName || agency.full_name || '',
+                        address: agency.address || '',
+                        district: agency.district || agency.city || '',
+                        distanceKm: agency.distanceKm ?? agency.distance_km ?? null,
                         latitude: agency.latitude,
                         longitude: agency.longitude
                     }))
@@ -532,7 +538,7 @@ export default function BusinessCoverageTabSection({
         } finally {
             setMapLoading(false);
         }
-    }, [agencies, coords, headers, notify]);
+    }, [agencies, coords, headers, notify, zone?.name]);
 
     const sendStaticMap = useCallback(() => {
         if (!socket || typeof socket.emit !== 'function' || !activeChatId || !staticMapMediaData) return;
@@ -666,7 +672,7 @@ export default function BusinessCoverageTabSection({
                 <div className="business-coverage-card business-coverage-static-card">
                     <div className="business-coverage-result-head">
                         <span>Imagen para enviar</span>
-                        <strong>{staticMapProvider === 'osm' ? 'Mapa alternativo' : 'Mapa para WhatsApp'}</strong>
+                        <strong>{staticMapProvider === 'osm' ? 'Mapa alternativo' : staticMapProvider === 'local' ? 'Imagen generada' : 'Mapa para WhatsApp'}</strong>
                     </div>
                     <div className="business-coverage-static-actions">
                         <button type="button" onClick={generateStaticMap} disabled={!coords?.lat || !coords?.lng || mapLoading}>

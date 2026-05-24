@@ -15,6 +15,7 @@ const logisticsAgenciesSyncService = require('../services/logistics-agencies-syn
 const zoneCoverageResolverService = require('../services/zone-coverage-resolver.service');
 const tenantIntegrationsService = require('../services/integrations.service');
 const { extractLocationInfoAsync } = require('../../channels/helpers/message-location.helpers');
+const sharp = require('sharp');
 
 const erpImportUpload = multer({ storage: multer.memoryStorage() });
 
@@ -73,18 +74,175 @@ async function fetchImageWithTimeout(url, timeoutMs = 5000) {
     const timer = setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || 5000));
     try {
         const response = await fetch(url, { method: 'GET', signal: controller.signal });
-        const arrayBuffer = response?.ok ? await response.arrayBuffer() : null;
-        const textBody = response?.ok ? '' : await response.text().catch(() => '');
+        const contentType = String(response?.headers?.get('content-type') || 'image/png').split(';')[0] || 'image/png';
+        const isImage = contentType.toLowerCase().startsWith('image/');
+        const arrayBuffer = response?.ok && isImage ? await response.arrayBuffer() : null;
+        const textBody = response?.ok && isImage ? '' : await response.text().catch(() => '');
         return {
-            ok: Boolean(response?.ok),
+            ok: Boolean(response?.ok && isImage),
             status: response?.status || 0,
-            contentType: String(response?.headers?.get('content-type') || 'image/png').split(';')[0] || 'image/png',
+            contentType,
             buffer: arrayBuffer ? Buffer.from(arrayBuffer) : null,
             error: textBody
+        };
+    } catch (error) {
+        return {
+            ok: false,
+            status: 0,
+            contentType: 'image/png',
+            buffer: null,
+            error: String(error?.message || error || 'fetch_failed')
         };
     } finally {
         clearTimeout(timer);
     }
+}
+
+function escapeSvgText(value = '') {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function truncateSvgText(value = '', maxLength = 42) {
+    const clean = String(value || '').replace(/\s+/g, ' ').trim();
+    if (clean.length <= maxLength) return clean;
+    return `${clean.slice(0, Math.max(1, maxLength - 3)).trim()}...`;
+}
+
+function staticMapCarrierStyle(carrier = '') {
+    const value = String(carrier || '').trim().toLowerCase();
+    if (value.includes('marvisur')) {
+        return { fill: '#F97316', stroke: '#9A3412', label: 'M', name: 'Marvisur' };
+    }
+    if (value.includes('shalom')) {
+        return { fill: '#2563EB', stroke: '#1E3A8A', label: 'S', name: 'Shalom' };
+    }
+    return { fill: '#475569', stroke: '#0F172A', label: 'A', name: 'Agencia' };
+}
+
+function normalizeStaticMapAgency(agency = {}) {
+    const lat = parseCoordinateValue(agency?.latitude ?? agency?.lat);
+    const lng = parseCoordinateValue(agency?.longitude ?? agency?.lng);
+    if (!isValidStaticMapCoordinate(lat, lng)) return null;
+    return {
+        lat,
+        lng,
+        carrier: String(agency?.carrier || '').trim(),
+        name: String(agency?.name || agency?.fullName || agency?.full_name || 'Agencia').trim(),
+        address: String(agency?.address || '').trim(),
+        district: String(agency?.district || agency?.city || '').trim(),
+        distanceKm: agency?.distanceKm ?? agency?.distance_km ?? null
+    };
+}
+
+function formatStaticMapDistance(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? `${parsed.toFixed(1)} km` : '';
+}
+
+function buildLocalCoverageSvg({ lat, lng, agencies = [], zoneName = '' } = {}) {
+    const width = 600;
+    const height = 400;
+    const normalizedAgencies = agencies.map(normalizeStaticMapAgency).filter(Boolean).slice(0, 3);
+    const points = [{ lat, lng, type: 'client' }, ...normalizedAgencies.map((agency) => ({ ...agency, type: 'agency' }))];
+    const lats = points.map((point) => point.lat);
+    const lngs = points.map((point) => point.lng);
+    let minLat = Math.min(...lats);
+    let maxLat = Math.max(...lats);
+    let minLng = Math.min(...lngs);
+    let maxLng = Math.max(...lngs);
+    if (Math.abs(maxLat - minLat) < 0.002) {
+        minLat -= 0.004;
+        maxLat += 0.004;
+    }
+    if (Math.abs(maxLng - minLng) < 0.002) {
+        minLng -= 0.004;
+        maxLng += 0.004;
+    }
+    const plot = (point) => {
+        const x = 48 + ((point.lng - minLng) / (maxLng - minLng)) * 312;
+        const y = 58 + ((maxLat - point.lat) / (maxLat - minLat)) * 206;
+        return {
+            x: Math.max(38, Math.min(372, x)),
+            y: Math.max(48, Math.min(278, y))
+        };
+    };
+    const agencyMarkers = normalizedAgencies.map((agency, index) => {
+        const position = plot(agency);
+        const style = staticMapCarrierStyle(agency.carrier);
+        const offset = index % 2 === 0 ? 18 : -18;
+        return `
+            <g>
+                <circle cx="${position.x}" cy="${position.y}" r="13" fill="${style.fill}" stroke="#FFFFFF" stroke-width="4"/>
+                <text x="${position.x}" y="${position.y + 5}" text-anchor="middle" font-family="Arial" font-size="12" font-weight="700" fill="#FFFFFF">${style.label}</text>
+                <text x="${Math.max(44, Math.min(356, position.x + offset))}" y="${Math.max(44, position.y - 22)}" font-family="Arial" font-size="10" font-weight="700" fill="${style.stroke}">${escapeSvgText(truncateSvgText(agency.name, 22))}</text>
+            </g>`;
+    }).join('');
+    const client = plot({ lat, lng });
+    const agencyRows = normalizedAgencies.map((agency, index) => {
+        const style = staticMapCarrierStyle(agency.carrier);
+        const y = 174 + (index * 58);
+        const distance = formatStaticMapDistance(agency.distanceKm);
+        return `
+            <g>
+                <circle cx="405" cy="${y - 5}" r="12" fill="${style.fill}"/>
+                <text x="405" y="${y}" text-anchor="middle" font-family="Arial" font-size="11" font-weight="700" fill="#FFFFFF">${style.label}</text>
+                <text x="424" y="${y - 7}" font-family="Arial" font-size="14" font-weight="800" fill="#111827">${escapeSvgText(truncateSvgText(agency.name, 24))}</text>
+                <text x="424" y="${y + 12}" font-family="Arial" font-size="11" fill="#475569">${escapeSvgText(truncateSvgText([agency.district, distance].filter(Boolean).join(' - '), 28))}</text>
+                <text x="424" y="${y + 29}" font-family="Arial" font-size="10" fill="#64748B">${escapeSvgText(truncateSvgText(agency.address, 31))}</text>
+            </g>`;
+    }).join('');
+    const title = zoneName ? `Cobertura: ${zoneName}` : 'Mapa de cobertura';
+    return `
+        <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+            <defs>
+                <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+                    <stop offset="0%" stop-color="#F8FAFC"/>
+                    <stop offset="100%" stop-color="#EAF3DE"/>
+                </linearGradient>
+                <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#0F172A" flood-opacity="0.16"/>
+                </filter>
+            </defs>
+            <rect width="${width}" height="${height}" rx="28" fill="url(#bg)"/>
+            <rect x="24" y="24" width="344" height="286" rx="24" fill="#DFF3EE" stroke="#B8D9CD"/>
+            <path d="M34 104 C94 76, 154 126, 218 94 S314 82, 360 118" stroke="#FFFFFF" stroke-width="15" fill="none" opacity="0.95"/>
+            <path d="M44 232 C120 186, 170 252, 246 210 S318 176, 360 208" stroke="#FFFFFF" stroke-width="13" fill="none" opacity="0.95"/>
+            <path d="M88 34 C110 110, 92 210, 130 302" stroke="#B7E3D4" stroke-width="9" fill="none"/>
+            <path d="M256 34 C232 102, 288 194, 268 302" stroke="#B7E3D4" stroke-width="9" fill="none"/>
+            <path d="M32 162 L368 162" stroke="#C8EADB" stroke-width="4" opacity="0.8"/>
+            <path d="M190 30 L190 310" stroke="#C8EADB" stroke-width="4" opacity="0.8"/>
+            ${agencyMarkers}
+            <g filter="url(#shadow)">
+                <path d="M${client.x} ${client.y + 25} C${client.x - 24} ${client.y - 4}, ${client.x - 17} ${client.y - 36}, ${client.x} ${client.y - 36} C${client.x + 17} ${client.y - 36}, ${client.x + 24} ${client.y - 4}, ${client.x} ${client.y + 25} Z" fill="#E11D48"/>
+                <circle cx="${client.x}" cy="${client.y - 13}" r="9" fill="#FFFFFF"/>
+            </g>
+            <rect x="388" y="24" width="188" height="92" rx="20" fill="#FFFFFF" opacity="0.94"/>
+            <text x="406" y="55" font-family="Arial" font-size="16" font-weight="800" fill="#111827">${escapeSvgText(truncateSvgText(title, 24))}</text>
+            <text x="406" y="80" font-family="Arial" font-size="12" fill="#475569">Ubicacion del cliente</text>
+            <text x="406" y="99" font-family="Arial" font-size="11" fill="#64748B">${lat.toFixed(6)}, ${lng.toFixed(6)}</text>
+            <rect x="388" y="134" width="188" height="238" rx="20" fill="#FFFFFF" opacity="0.94"/>
+            <text x="406" y="156" font-family="Arial" font-size="13" font-weight="800" fill="#111827">Agencias cercanas</text>
+            ${agencyRows || '<text x="406" y="184" font-family="Arial" font-size="12" fill="#64748B">Sin agencias cercanas registradas</text>'}
+            <text x="34" y="348" font-family="Arial" font-size="12" font-weight="700" fill="#475569">Rojo: cliente - Naranja: Marvisur - Azul: Shalom</text>
+            <text x="34" y="370" font-family="Arial" font-size="11" fill="#64748B">Imagen generada por Lavitat para referencia de cobertura.</text>
+        </svg>`;
+}
+
+async function generateLocalCoverageMapPng({ lat, lng, agencies = [], zoneName = '' } = {}) {
+    const svg = buildLocalCoverageSvg({ lat, lng, agencies, zoneName });
+    const buffer = await sharp(Buffer.from(svg)).png().toBuffer();
+    return {
+        ok: true,
+        status: 200,
+        contentType: 'image/png',
+        buffer,
+        error: ''
+    };
 }
 
 function buildOsmStaticMapUrl({ lat, lng, agencies = [] } = {}) {
@@ -629,9 +787,8 @@ function registerTenantCustomerHttpRoutes({
                 || process.env.GOOGLE_MAPS_FRONTEND_API_KEY
                 || ''
             ).trim();
-            if (!apiKey) {
-                return res.status(400).json({ ok: false, error: 'Falta configurar Google Maps para generar imagenes.' });
-            }
+            const agencies = Array.isArray(payload.agencies) ? payload.agencies.slice(0, 3) : [];
+            const zoneName = String(payload.zoneName || payload.zone?.name || '').trim();
 
             const params = new URLSearchParams();
             params.set('center', `${lat},${lng}`);
@@ -640,30 +797,35 @@ function registerTenantCustomerHttpRoutes({
             params.set('scale', '2');
             params.set('maptype', 'roadmap');
             params.append('markers', `color:red|label:C|${lat},${lng}`);
-            const agencies = Array.isArray(payload.agencies) ? payload.agencies.slice(0, 3) : [];
             agencies.forEach((agency) => {
                 const agencyLat = parseCoordinateValue(agency?.latitude ?? agency?.lat);
                 const agencyLng = parseCoordinateValue(agency?.longitude ?? agency?.lng);
                 if (!isValidStaticMapCoordinate(agencyLat, agencyLng)) return;
                 params.append('markers', `${staticMapMarkerForCarrier(agency?.carrier)}|${agencyLat},${agencyLng}`);
             });
-            params.set('key', apiKey);
 
-            const googleUrl = `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
-            let imageResult = await fetchImageWithTimeout(googleUrl, 5000);
-            let provider = 'google';
-            if (!imageResult.ok || !imageResult.buffer) {
-                const googleError = String(imageResult.error || '').slice(0, 220);
-                console.warn('[Coverage] Google Static Maps fallback:', googleError || imageResult.status || 'unknown_error');
+            let imageResult = null;
+            let provider = 'local';
+            if (apiKey) {
+                params.set('key', apiKey);
+                const googleUrl = `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
+                imageResult = await fetchImageWithTimeout(googleUrl, 5000);
+                provider = 'google';
+            }
+            if (!imageResult?.ok || !imageResult?.buffer) {
+                const googleError = String(imageResult?.error || '').slice(0, 220);
+                if (apiKey) {
+                    console.warn('[Coverage] Google Static Maps fallback:', googleError || imageResult?.status || 'unknown_error');
+                }
                 const osmUrl = buildOsmStaticMapUrl({ lat, lng, agencies });
                 imageResult = await fetchImageWithTimeout(osmUrl, 5000);
                 provider = 'osm';
             }
-            if (!imageResult.ok || !imageResult.buffer) {
-                return res.status(502).json({
-                    ok: false,
-                    error: 'No se pudo generar la imagen del mapa. Revisa que Google Static Maps este habilitado o intenta nuevamente.'
-                });
+            if (!imageResult?.ok || !imageResult?.buffer) {
+                const osmError = String(imageResult?.error || '').slice(0, 220);
+                console.warn('[Coverage] External static map fallback:', osmError || imageResult?.status || 'unknown_error');
+                imageResult = await generateLocalCoverageMapPng({ lat, lng, agencies, zoneName });
+                provider = 'local';
             }
             const mediaData = imageResult.buffer.toString('base64');
             const mimetype = imageResult.contentType || 'image/png';
