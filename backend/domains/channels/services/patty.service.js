@@ -10,8 +10,7 @@ const tenantAutomationService = require('../../tenant/services/tenant-automation
 const quickRepliesManagerService = require('../../tenant/services/quick-replies-manager.service');
 const tenantZoneRulesService = require('../../tenant/services/tenant-zone-rules.service');
 const geoLocationService = require('../../tenant/services/geo-location.service');
-const zoneCoverageResolverService = require('../../tenant/services/zone-coverage-resolver.service');
-const logisticsAgenciesSyncService = require('../../tenant/services/logistics-agencies-sync.service');
+const logisticsAdvisorService = require('../../tenant/services/logistics-advisor.service');
 const waModulesService = require('../../tenant/services/wa-modules.service');
 const commercialIntelligenceService = require('../../tenant/services/commercial-intelligence.service');
 const quotesService = require('../../tenant/services/quotes.service');
@@ -2022,208 +2021,6 @@ async function getLatestInboundLocationPayload(tenantId, moduleId, chatId, messa
     return null;
 }
 
-function formatGpsLocationLabel(location = {}, fallback = '') {
-    const district = text(location?.district);
-    const province = text(location?.province);
-    const department = text(location?.department);
-    if (district) return formatLocationOptionPart(district);
-    if (province) return formatLocationOptionPart(province);
-    if (department) return formatLocationOptionPart(department);
-    return formatLocationOptionPart(fallback || 'tu zona');
-}
-
-function formatGpsTimeLabel(option = null, fallback = '') {
-    const raw = text(option?.estimated_time || option?.estimatedTime || option?.time || fallback);
-    return formatEstimatedTime(raw);
-}
-
-function formatGpsFreeFrom(summary = {}) {
-    return summary.freeFrom !== null ? `, gratis desde *${summary.freeFromText}*` : '';
-}
-
-function formatAgencyHours(agency = {}) {
-    return text(agency.hoursWeek || agency.hours_week || agency.hoursDelivery || agency.hours_delivery || agency.hoursSunday || agency.hours_sunday || '');
-}
-
-function buildGpsCoverageResponse(coverage = {}) {
-    const zone = coverage?.zone || null;
-    if (!zone) return '';
-    const summary = buildZoneShippingSummary(zone);
-    const primaryShipping = getPrimaryShippingOption(zone);
-    const locationLabel = formatGpsLocationLabel(coverage.resolvedLocation || {}, summary.zoneName);
-    const timeLabel = formatGpsTimeLabel(primaryShipping, summary.estimatedTime);
-    const paymentPhrase = buildZonePaymentPhrase(summary);
-    const freeFrom = formatGpsFreeFrom(summary);
-    if (summary.shippingType === 'courier') {
-        const agencies = Array.isArray(coverage.agencies) ? coverage.agencies : [];
-        const agency = agencies[0] || null;
-        const carrierLabel = formatLocationOptionPart(summary.shippingDisplayName || agency?.carrier || 'agencia');
-        const lines = [
-            `📍 Te ubiqué en ${locationLabel} 😊`,
-            `📦 Para tu zona enviamos con *${carrierLabel}*.`
-        ];
-        if (agency) {
-            const agencyName = text(agency.fullName || agency.name);
-            const agencyAddress = [agency.address, agency.district || agency.city].map(text).filter(Boolean).join(', ');
-            const phone = text(agency.phonePrimary || agency.phone_primary);
-            const hours = formatAgencyHours(agency);
-            lines.push(
-                'La agencia más cercana es:',
-                agencyName ? `*${agencyName}*` : '',
-                agencyAddress || '',
-                phone ? `📞 ${phone}` : '',
-                hours ? `🕐 ${hours}` : ''
-            );
-        }
-        lines.push(
-            `Costo: *${summary.costText}*${freeFrom}`,
-            timeLabel ? `⏱ ~${timeLabel}` : '',
-            '¿Coordino el envío? 😊'
-        );
-        return lines.filter(Boolean).join('\n');
-    }
-    return [
-        `📍 Te ubiqué en ${locationLabel} 😊`,
-        '🚚 Hacemos *reparto a domicilio* en tu zona.',
-        `Costo: *${summary.costText}*${freeFrom}`,
-        timeLabel ? `⏱ ~${timeLabel}` : '',
-        paymentPhrase
-    ].filter(Boolean).join('\n');
-}
-
-async function handlePattyGpsLocationMessage({
-    tenantId,
-    moduleId,
-    chatId,
-    rawMessage,
-    inboundMessageId,
-    shouldAbortRun,
-    assistantName = DEFAULT_ASSISTANT_NAME,
-    moduleName = '',
-    emitCommercialStatusUpdated,
-    socketEmitter
-} = {}) {
-    const locationPayload = await getLatestInboundLocationPayload(tenantId, moduleId, chatId, inboundMessageId, rawMessage);
-    if (!locationPayload) return false;
-    const lat = locationPayload.latitude;
-    const lng = locationPayload.longitude;
-    try {
-        const pending = await getPendingLocationDisambiguation(tenantId, chatId, moduleId);
-        if (pending?.type === 'gps_for_agencies' && pending.zoneRuleId) {
-            const zoneRule = await findZoneRuleById(tenantId, pending.zoneRuleId);
-            if (zoneRule) {
-                const carriers = getCourierCarriersFromZoneRule(zoneRule);
-                const agencies = await logisticsAgenciesSyncService.findNearestAgencies(
-                    tenantId,
-                    lat,
-                    lng,
-                    3,
-                    carriers.length ? carriers : null
-                );
-                await clearPendingLocationDisambiguation(tenantId, chatId, moduleId, 'gps_agencies_resolved');
-                await chatCommercialStatusService.updateSalesState(tenantId, chatId, moduleId, {
-                    location: {
-                        lat,
-                        lng,
-                        postcode: null,
-                        segment_key: text(zoneRule.segmentKey || zoneRule.segment_key || ''),
-                        zoneRuleId: text(zoneRule.ruleId || zoneRule.rule_id || pending.zoneRuleId),
-                        resolvedBy: 'gps_for_agencies',
-                        resolvedAt: new Date().toISOString()
-                    }
-                });
-                const response = buildNearestAgenciesResponse(zoneRule, agencies);
-                if (await shouldAbortRun?.('before_gps_agencies_send')) return true;
-                await waClient.sendMessage(chatId, response, {
-                    metadata: {
-                        agentMeta: {
-                            sentByUserId: 'patty',
-                            sentByName: formatAssistantDisplayName(assistantName),
-                            sentByRole: 'assistant',
-                            sentViaModuleId: lower(moduleId),
-                            sentViaModuleName: text(moduleName) || null
-                        },
-                        patty: true,
-                        automationSource: 'patty_gps_agencies'
-                    }
-                });
-                console.log('[Patty] GPS agencies resolved:', {
-                    tenantId,
-                    moduleId,
-                    chatId,
-                    zoneRuleId: pending.zoneRuleId,
-                    carriers,
-                    agencyCount: agencies.length
-                });
-                return true;
-            }
-        }
-        const coverage = await zoneCoverageResolverService.resolveZoneCoverage(tenantId, { lat, lng });
-        if (coverage?.zone) {
-            await clearPendingLocationDisambiguation(tenantId, chatId, moduleId, 'gps_resolved');
-            await chatCommercialStatusService.updateSalesState(tenantId, chatId, moduleId, {
-                location: {
-                    lat,
-                    lng,
-                    postcode: coverage.resolvedLocation?.postcode || null,
-                    segment_key: coverage.zone.segmentKey || null,
-                    zoneRuleId: coverage.zone.ruleId || null,
-                    resolvedBy: coverage.resolvedBy || 'gps',
-                    resolvedAt: new Date().toISOString()
-                }
-            });
-            const response = buildGpsCoverageResponse(coverage);
-            if (await shouldAbortRun?.('before_gps_location_send')) return true;
-            await waClient.sendMessage(chatId, response, {
-                metadata: {
-                    agentMeta: {
-                        sentByUserId: 'patty',
-                        sentByName: formatAssistantDisplayName(assistantName),
-                        sentByRole: 'assistant',
-                        sentViaModuleId: lower(moduleId),
-                        sentViaModuleName: text(moduleName) || null
-                    },
-                    patty: true,
-                    automationSource: 'patty_gps_coverage'
-                }
-            });
-            console.log('[Patty] GPS location resolved:', coverage.zone.segmentKey || coverage.zone.ruleId || 'zone', {
-                tenantId,
-                moduleId,
-                chatId,
-                lat,
-                lng,
-                resolvedBy: coverage.resolvedBy,
-                agencyCount: Array.isArray(coverage.agencies) ? coverage.agencies.length : 0
-            });
-            return true;
-        }
-        if (await shouldAbortRun?.('before_gps_no_coverage_escalation')) return true;
-        await escalateToAdvisor(
-            tenantId,
-            chatId,
-            moduleId,
-            'sin_cobertura_gps',
-            'No encontré cobertura directa en tu zona 😊\nDéjame consultarlo con el equipo para ver si podemos coordinar el envío.',
-            emitCommercialStatusUpdated,
-            socketEmitter,
-            assistantName,
-            moduleName
-        );
-        console.log('[Patty] GPS location without coverage', {
-            tenantId,
-            moduleId,
-            chatId,
-            lat,
-            lng
-        });
-        return true;
-    } catch (error) {
-        console.warn('[Patty] GPS location flow skipped:', error?.message || error);
-        return false;
-    }
-}
-
 function formatResolvedLocation(location = {}) {
     const parts = [
         location?.district,
@@ -2657,7 +2454,7 @@ async function setPendingLocationDisambiguation(tenantId, chatId, scopeModuleId,
     return payload;
 }
 
-function buildGpsNeededLocationResponse(location = {}) {
+function buildLocationPinRequestResponse(location = {}) {
     const formatted = formatResolvedLocation(location);
     const label = formatted && formatted !== 'Ubicacion no reconocida'
         ? formatted
@@ -2864,7 +2661,7 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
                     locationMentioned: true,
                     locationRecognized: false,
                     locationAmbiguous: true,
-                    deterministicResponseOverride: buildGpsNeededLocationResponse({ matchedText: pending.matchedText })
+                    deterministicResponseOverride: buildLocationPinRequestResponse({ matchedText: pending.matchedText })
                 };
             }
             const resolution = resolvePendingLocationCandidate(lastCustomerMessage, pending.candidates);
@@ -2889,7 +2686,7 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
                         locationMentioned: true,
                         locationRecognized: true,
                         locationAmbiguous: true,
-                        deterministicResponseOverride: buildGpsNeededLocationResponse(location)
+                        deterministicResponseOverride: buildLocationPinRequestResponse(location)
                     };
                 }
                 console.log('[Patty] location disambiguation resolved:', formatResolvedLocation(location), {
@@ -3018,7 +2815,7 @@ async function buildZoneDecision(tenantId, recentConversationText = '', lastCust
             sourceMessageId: text(options.sourceMessageId || ''),
             intent: getDeliveryPaymentIntent(lastCustomerMessage)
         });
-        deterministicResponseOverride = buildGpsNeededLocationResponse(location);
+        deterministicResponseOverride = buildLocationPinRequestResponse(location);
         console.log('[Patty] location needs GPS to resolve zone', {
             tenantId: cleanTenantId,
             chatId: cleanChatId,
@@ -3401,55 +3198,6 @@ function requestedCourierMatchesSummary(requestedAgency = '', summary = {}) {
     return configuredValues.some((value) => value.includes(requested) || requested.includes(value));
 }
 
-function getDeterministicResponseDecision(lastMessage = '', zoneDecision = {}, context = {}) {
-    if (zoneDecision?.deterministicResponseOverride) return { activated: true, reason: 'override' };
-    if (isPureDeliveryOrPaymentQuestion(lastMessage)) return { activated: true, reason: 'pure_delivery_or_payment' };
-    if (detectRequestedExternalCourier(lastMessage)) return { activated: true, reason: 'external_courier' };
-    const hasResolvedZone = Boolean(zoneDecision?.zoneRule);
-    if (!hasResolvedZone) return { activated: Boolean(context?.forceDeterministicDeliveryPayment), reason: context?.forceDeterministicDeliveryPayment ? 'forced_without_zone' : 'no_resolved_zone' };
-    if (hasLocationMentionIntent(lastMessage) && !mentionsProductIntent(lastMessage)) return { activated: true, reason: 'location_mention' };
-    if (hasCoverageQuestionIntent(lastMessage)) return { activated: true, reason: 'coverage_question' };
-    if (context?.forceDeterministicDeliveryPayment) return { activated: true, reason: 'forced' };
-    return { activated: false, reason: 'not_delivery_payment_or_coverage' };
-}
-
-function shouldUseDeterministicResponse(lastMessage = '', zoneDecision = {}, context = {}) {
-    return getDeterministicResponseDecision(lastMessage, zoneDecision, context).activated;
-}
-
-function shouldUseKnownLocationNoZoneResponse(lastMessage = '', zoneDecision = {}) {
-    if (zoneDecision?.forceKnownLocationNoZone === true) return true;
-    if (zoneDecision?.zoneRule) return false;
-    if (zoneDecision?.locationRecognized !== true) return false;
-    if (zoneDecision?.locationAmbiguous === true) return false;
-    return isPureDeliveryOrPaymentQuestion(lastMessage)
-        || detectRequestedExternalCourier(lastMessage)
-        || (hasLocationMentionIntent(lastMessage) && !mentionsProductIntent(lastMessage))
-        || hasCoverageQuestionIntent(lastMessage);
-}
-
-function buildKnownLocationNoZoneResponse(zoneDecision = {}) {
-    const locationLabel = formatCustomerLocationLabel(zoneDecision?.location || {}, 'tu zona');
-    return [
-        `Por el momento no tenemos cobertura directa en ${locationLabel} 😊`,
-        'Déjame consultar con el equipo si podemos hacer llegar tu pedido.',
-        'En breve te confirmamos.'
-    ].join('\n');
-}
-
-function buildUnconfiguredCourierResponse(zoneDecision = {}, summary = {}, requestedAgency = '') {
-    const locationLabel = formatCustomerLocationLabel(zoneDecision?.location || {}, summary.zoneName);
-    const requestedLabel = text(requestedAgency) || 'esa agencia';
-    const configuredLabel = summary.shippingType === 'courier'
-        ? summary.shippingDisplayName
-        : summary.shippingLabel;
-    return [
-        `Para ${locationLabel} trabajamos con *${configuredLabel}* 📦`,
-        `Si prefieres ${requestedLabel}, el costo del flete lo asumes directamente con esa agencia 😊`,
-        `¿Te gustaría coordinar con ${configuredLabel} o prefieres la otra opción?`
-    ].join('\n');
-}
-
 function lineLooksInboundCustomer(line = '') {
     const clean = text(line);
     if (!clean) return false;
@@ -3475,66 +3223,15 @@ function countTopicMentions(chatHistory = [], keywords = []) {
     }, 0);
 }
 
-function getZonePaymentMethodsForMessage(zoneDecision = {}) {
+function getZonePaymentMethodsForGuard(zoneDecision = {}) {
     const zoneRule = zoneDecision?.zoneRule || null;
     if (!zoneRule) return '';
     const summary = buildZoneShippingSummary(zoneRule);
     return formatSpanishList(summary.paymentLabels || [], 'o');
 }
 
-function detectUnavailablePaymentRequest(value = '', summary = {}) {
-    const normalized = normalizeProductLookupKey(value);
-    if (!normalized) return null;
-    const requestedCashOnDelivery = /\b(contraentrega|contra\s+entrega|pago\s+contra\s+entrega|pagar\s+al\s+recibir|pago\s+al\s+recibir|al\s+recibir)\b/.test(normalized);
-    const requestedCash = /\b(efectivo|cash)\b/.test(normalized);
-    if (!requestedCashOnDelivery && !requestedCash) return null;
-
-    const modality = safeJsonObject(summary.paymentModality);
-    const methods = safeJsonObject(summary.paymentMethods);
-    const unavailable = [];
-    if (requestedCashOnDelivery && modality.cashOnDelivery !== true) unavailable.push('contraentrega');
-    if (requestedCash && methods.cash !== true) unavailable.push('efectivo');
-    if (!unavailable.length) return null;
-    return {
-        requestedCashOnDelivery,
-        requestedCash,
-        unavailable
-    };
-}
-
-function buildUnavailablePaymentResponse(zoneDecision = {}, summary = {}, issue = {}, mentionCount = 1) {
-    const locationLabel = formatCustomerLocationLabel(zoneDecision?.location || {}, summary.zoneName);
-    const paymentText = formatSpanishList(summary.paymentLabels || [], 'o') || 'los metodos configurados';
-    const unavailableText = issue.unavailable.includes('contraentrega') && issue.unavailable.includes('efectivo')
-        ? 'contraentrega ni efectivo al recibir'
-        : (issue.unavailable.includes('contraentrega') ? 'contraentrega' : 'efectivo');
-    const modalityText = text(summary.paymentModalityText) || 'pago anticipado';
-    if (mentionCount > 1) {
-        return [
-            `Te entiendo. Para ${locationLabel} todavia no tenemos ${unavailableText}.`,
-            `Lo manejamos con ${modalityText}; puedes pagar con ${paymentText}.`,
-            'Si te parece, dime que productos necesitas y te ayudo a armar tu pedido.'
-        ].join('\n');
-    }
-    return [
-        `Por ahora para ${locationLabel} trabajamos con ${modalityText}.`,
-        `No tenemos ${unavailableText} en esa zona; puedes pagar con ${paymentText}.`,
-        'Si deseas, seguimos con tu pedido y te ayudo a elegir lo que necesitas.'
-    ].join('\n');
-}
-
-function getUnavailablePaymentMentionCount(conversationLines = [], issue = {}) {
-    const keywords = [
-        issue.requestedCashOnDelivery ? 'contraentrega' : '',
-        issue.requestedCashOnDelivery ? 'contra entrega' : '',
-        issue.requestedCashOnDelivery ? 'al recibir' : '',
-        issue.requestedCash ? 'efectivo' : ''
-    ].filter(Boolean);
-    return Math.max(1, countTopicMentions(conversationLines, keywords));
-}
-
 function buildCreditGuardResponse(level = 1, zoneDecision = {}) {
-    const paymentMethods = getZonePaymentMethodsForMessage(zoneDecision);
+    const paymentMethods = getZonePaymentMethodsForGuard(zoneDecision);
     if (level >= 3) {
         return 'Déjame consultar eso con mi supervisor para ver si hay alguna excepción que podamos hacer por ti 🙌\nEn breve te confirmamos.';
     }
@@ -3690,166 +3387,97 @@ function buildMayoristaEscalationResponse() {
     return '¡Qué bueno que preguntes! 😊 Para pedidos al por mayor tenemos condiciones especiales.\nDéjame conectarte con nuestro equipo de *Venta Mayorista* que te dará toda la información personalizada 🙌';
 }
 
-function hasGpsLocationInSalesState(salesState = {}) {
-    const location = safeJsonObject(salesState.location);
-    const lat = Number.parseFloat(String(location.lat ?? location.latitude ?? '').replace(',', '.'));
-    const lng = Number.parseFloat(String(location.lng ?? location.longitude ?? '').replace(',', '.'));
-    return Number.isFinite(lat) && Number.isFinite(lng);
-}
-
-function getCourierCarriersFromZoneRule(rule = {}) {
-    const summary = buildZoneShippingSummary(rule);
-    const primary = getPrimaryShippingOption(rule) || {};
-    const agenciesConfig = safeJsonObject(rule.agenciesConfig || rule.agencies_config);
-    const candidates = [
-        ...(Array.isArray(primary.carriers) ? primary.carriers : []),
-        ...(Array.isArray(agenciesConfig.carriers) ? agenciesConfig.carriers : []),
-        summary.shippingDisplayName
-    ];
-    return Array.from(new Set(candidates.map((item) => lower(item)).filter(Boolean)));
-}
-
-function shouldRequestCourierAgencyGps(zoneDecision = {}, salesState = {}) {
-    const zoneRule = zoneDecision?.zoneRule || null;
-    if (!zoneRule) return false;
-    const summary = buildZoneShippingSummary(zoneRule);
-    return summary.shippingType === 'courier' && !hasGpsLocationInSalesState(salesState);
-}
-
-function buildCourierAgencyGpsPrompt() {
-    return 'Para indicarte la agencia más cercana a tu domicilio, ¿puedes compartirme tu ubicación? 😊\nToca el clip, elige *Ubicación* y envíamela 📍';
-}
-
-async function findZoneRuleById(tenantId, ruleId = '') {
-    const cleanRuleId = text(ruleId);
-    if (!cleanRuleId) return null;
-    const rules = await tenantZoneRulesService.listZoneRules(tenantId, { includeInactive: false });
-    return (Array.isArray(rules) ? rules : []).find((rule) => text(rule.ruleId || rule.rule_id) === cleanRuleId) || null;
-}
-
-function buildNearestAgenciesResponse(rule = {}, agencies = []) {
-    const summary = buildZoneShippingSummary(rule);
-    const carrierLabel = formatLocationOptionPart(summary.shippingDisplayName || 'agencia');
-    const cleanAgencies = (Array.isArray(agencies) ? agencies : []).slice(0, 3);
-    if (!cleanAgencies.length) {
-        return [
-            '📍 Perfecto, ya tengo tu ubicación 😊',
-            `Para tu zona enviamos con *${carrierLabel}* 📦`,
-            'No tengo una agencia cercana cargada ahora mismo, pero coordino el envío con la agencia disponible.',
-            '¿Avanzamos con tu pedido? 😊'
-        ].join('\n');
-    }
-    const lines = [
-        '📍 Perfecto 😊 Las agencias más cercanas a ti:'
-    ];
-    cleanAgencies.forEach((agency) => {
-        const agencyName = text(agency.fullName || agency.name) || 'Agencia';
-        const carrier = formatLocationOptionPart(agency.carrier || carrierLabel);
-        const address = [agency.address, agency.district || agency.city].map(text).filter(Boolean).join(', ');
-        const phone = text(agency.phonePrimary || agency.phone_primary);
-        const hours = formatAgencyHours(agency);
-        lines.push(
-            '',
-            `📦 *${carrier}* — ${agencyName}`,
-            address || '',
-            phone ? `📞 ${phone}` : '',
-            hours ? `🕐 ${hours}` : ''
-        );
+async function maybeHandlePattyLogisticsDecision({
+    tenantId,
+    moduleId,
+    chatId,
+    rawMessage,
+    inboundMessageId,
+    lastMessage,
+    shouldAbortRun,
+    assistantName = DEFAULT_ASSISTANT_NAME,
+    moduleName = ''
+} = {}) {
+    const locationPayload = await getLatestInboundLocationPayload(tenantId, moduleId, chatId, inboundMessageId, rawMessage);
+    const salesState = await chatCommercialStatusService
+        .getSalesState(tenantId, chatId, moduleId)
+        .catch(() => ({}));
+    const resolvedLocation = locationPayload
+        ? {
+            lat: locationPayload.latitude,
+            lng: locationPayload.longitude,
+            text: locationPayload.text || lastMessage || ''
+        }
+        : { text: lastMessage || '' };
+    const decision = await logisticsAdvisorService.resolveLogisticsDecision({
+        tenantId,
+        moduleId,
+        lastMessage,
+        chatHistory: [],
+        resolvedLocation,
+        salesStateLocation: safeJsonObject(salesState.location)
     });
-    lines.push('', '¿Coordino el envío por alguna? 😊');
-    return lines.filter((line) => line !== '').join('\n');
-}
-
-function buildDeterministicDeliveryPaymentResponse(zoneDecision = {}, lastCustomerMessage = '', options = {}) {
-    if (zoneDecision?.deterministicResponseOverride) return zoneDecision.deterministicResponseOverride;
-    const forceResponse = zoneDecision?.forceDeterministicDeliveryPayment === true;
-    const deterministicDecision = getDeterministicResponseDecision(lastCustomerMessage, zoneDecision, { forceDeterministicDeliveryPayment: forceResponse });
-    const useDeterministic = deterministicDecision.activated;
-    console.log('[Patty] deterministic check', {
-        lastMessage: text(lastCustomerMessage).slice(0, 160),
-        zoneResolved: Boolean(zoneDecision?.zoneRule),
-        deterministicActivated: Boolean(useDeterministic || forceResponse),
-        reason: forceResponse ? 'forced' : deterministicDecision.reason
+    console.log(`[Patty] logistics decision: ${decision.intent || 'none'}`, {
+        tenantId,
+        moduleId,
+        chatId,
+        hasLogisticsDecision: Boolean(decision.hasLogisticsDecision),
+        needsGps: Boolean(decision.needsGps)
     });
-    if (!forceResponse && !useDeterministic) return null;
-    const zoneRule = zoneDecision?.zoneRule || null;
-    if (!zoneRule) {
-        if (shouldUseKnownLocationNoZoneResponse(lastCustomerMessage, zoneDecision)) {
-            console.log('[Patty] no zone for known location:', formatResolvedLocation(zoneDecision?.location || {}));
-            return buildKnownLocationNoZoneResponse(zoneDecision);
-        }
-        return null;
+    if (!decision?.hasLogisticsDecision || !decision.responseText) {
+        console.log('[Patty] no logistics intent, proceeding to AI', { tenantId, moduleId, chatId });
+        return false;
     }
-    if (zoneRule) {
-        const summary = buildZoneShippingSummary(zoneRule);
-        const locationLabel = formatCustomerLocationLabel(zoneDecision?.location || {}, summary.zoneName);
-        const storedIntent = safeJsonObject(zoneDecision?.deliveryPaymentIntent);
-        const fallbackIntent = getDeliveryPaymentIntent(lastCustomerMessage);
-        const wantsPayment = storedIntent.wantsPayment === true || fallbackIntent.wantsPayment === true;
-        const wantsDelivery = forceResponse
-            ? (storedIntent.wantsDelivery !== false || !wantsPayment)
-            : fallbackIntent.wantsDelivery === true;
-        const unavailablePayment = detectUnavailablePaymentRequest(lastCustomerMessage, summary);
-        if (unavailablePayment && wantsPayment) {
-            return buildUnavailablePaymentResponse(
-                zoneDecision,
-                summary,
-                unavailablePayment,
-                getUnavailablePaymentMentionCount(options.conversationLines, unavailablePayment)
-            );
-        }
-        const responseLines = [];
-        if (wantsDelivery || !wantsPayment) {
-            const requestedAgency = detectRequestedExternalCourier(lastCustomerMessage);
-            if (requestedAgency && !requestedCourierMatchesSummary(requestedAgency, summary)) {
-                console.log('[Patty] external courier requested:', requestedAgency, {
-                    zoneName: summary.zoneName,
-                    configuredShipping: summary.shippingLabel
-                });
-                return buildUnconfiguredCourierResponse(zoneDecision, summary, requestedAgency);
-            }
-            const deliveryLead = summary.shippingType === 'courier'
-                ? `Para ${locationLabel} enviamos por *agencia ${summary.shippingDisplayName}* 📦`
-                : `Para ${locationLabel} hacemos *reparto a domicilio* 🚚`;
-            const freeFromText = summary.freeFrom !== null
-                ? `, gratis en pedidos desde S/ ${summary.freeFrom.toFixed(2)}`
-                : '';
-            const estimatedTimeText = summary.estimatedTime ? `, y llega en ${summary.estimatedTime}` : '';
-            responseLines.push([
-                deliveryLead,
-                `El costo es *${summary.costText}*${freeFromText}${estimatedTimeText}. ${buildZonePaymentPhrase(summary)}`
-            ].join('\n'));
-            if (summary.shippingType === 'courier' && options.appendCourierAgencyGpsRequest === true) {
-                responseLines.push(buildCourierAgencyGpsPrompt());
-            }
-        } else if (wantsPayment) {
-            responseLines.push(`Para ${locationLabel}, ${buildZonePaymentPhrase(summary, { sentenceStart: false })}`);
-        }
-        console.log('[Patty] deterministic delivery details', {
-            zoneName: summary.zoneName,
-            shippingType: summary.shippingType,
-            shippingLabel: summary.shippingLabel,
-            paymentLabels: summary.paymentLabels,
-            paymentModalityText: summary.paymentModalityText
+    if (decision.shouldClearLocation) {
+        await chatCommercialStatusService.updateSalesState(tenantId, chatId, moduleId, { location: null }).catch(() => {});
+    }
+    if (decision.needsGps) {
+        await setPendingLocationDisambiguation(tenantId, chatId, moduleId, {
+            type: decision.gpsReason === 'for_agencies' ? 'gps_for_agencies' : 'gps_needed',
+            zoneRuleId: text(decision.zone?.ruleId || decision.zone?.rule_id || ''),
+            matchedText: lastMessage || '',
+            sourceMessageId: inboundMessageId || '',
+            intent: { logisticsIntent: decision.intent || '' }
         });
-        return responseLines.filter(Boolean).join('\n');
+    } else {
+        await clearPendingLocationDisambiguation(tenantId, chatId, moduleId, 'logistics_resolved').catch(() => {});
     }
-    return null;
-    const zone = parseFirstDetectedZoneContext(zones);
-    if (!zone) return null;
-    const lines = [
-        `El envio a ${zone.zoneName || 'tu zona'} es con ${zone.shipping || 'el courier configurado'} a ${zone.cost || 'costo por confirmar'}.`
-    ];
-    if (zone.freeFrom && !/^no aplica$/i.test(zone.freeFrom)) {
-        lines.push(`Gratis en pedidos desde ${zone.freeFrom}.`);
+    if (decision.zone) {
+        const nextLocation = {
+            ...(safeJsonObject(decision.resolvedLocation)),
+            lat: locationPayload?.latitude ?? decision.resolvedLocation?.lat ?? salesState.location?.lat ?? null,
+            lng: locationPayload?.longitude ?? decision.resolvedLocation?.lng ?? salesState.location?.lng ?? null,
+            segment_key: text(decision.zone.segmentKey || decision.zone.segment_key || ''),
+            zoneRuleId: text(decision.zone.ruleId || decision.zone.rule_id || ''),
+            resolvedBy: decision.resolvedBy || (locationPayload ? 'gps' : 'text'),
+            resolvedAt: new Date().toISOString()
+        };
+        await chatCommercialStatusService.updateSalesState(tenantId, chatId, moduleId, {
+            location: nextLocation
+        }).catch((error) => console.warn('[Patty] logistics salesState update skipped:', error?.message || error));
     }
-    if (zone.deliveryTime) {
-        lines.push(`Tiempo de entrega: ${zone.deliveryTime}.`);
-    }
-    if (zone.payments && !/^no configurados$/i.test(zone.payments)) {
-        lines.push(`Metodos de pago: ${zone.payments} 🙌`);
-    }
-    return lines.join('\n');
+    if (await shouldAbortRun?.('before_logistics_send')) return true;
+    await waClient.sendMessage(chatId, decision.responseText, {
+        metadata: {
+            agentMeta: {
+                sentByUserId: 'patty',
+                sentByName: formatAssistantDisplayName(assistantName),
+                sentByRole: 'assistant',
+                sentViaModuleId: lower(moduleId),
+                sentViaModuleName: text(moduleName) || null
+            },
+            patty: true,
+            automationSource: 'patty_logistics'
+        }
+    });
+    console.log('[Patty] logistics response sent deterministically', {
+        tenantId,
+        moduleId,
+        chatId,
+        intent: decision.intent,
+        zoneRuleId: decision.zone?.ruleId || null
+    });
+    return true;
 }
 
 function ensureTextArray(value = []) {
@@ -5237,31 +4865,13 @@ async function buildPattyContext(tenantId, moduleId, chatId) {
         zoneDecision
     });
     const rawSoftPauseResponse = buildSoftPauseResponse(latestCustomerMessage || effectiveCustomerMessage || '');
-    const currentSalesStateForDelivery = await chatCommercialStatusService
-        .getSalesState(cleanTenantId, cleanChatId, cleanModuleId)
-        .catch(() => ({}));
-    const shouldAskCourierAgencyGps = shouldRequestCourierAgencyGps(zoneDecision, currentSalesStateForDelivery);
-    const rawDeliveryPaymentResponse = buildDeterministicDeliveryPaymentResponse(zoneDecision, latestCustomerMessage || effectiveCustomerMessage || '', {
-        conversationLines: conversation.lines,
-        appendCourierAgencyGpsRequest: shouldAskCourierAgencyGps
-    });
-    if (rawDeliveryPaymentResponse && shouldAskCourierAgencyGps && zoneDecision?.zoneRule?.ruleId) {
-        await setPendingLocationDisambiguation(cleanTenantId, cleanChatId, cleanModuleId, {
-            type: 'gps_for_agencies',
-            zoneRuleId: zoneDecision.zoneRule.ruleId,
-            matchedText: latestCustomerMessage || effectiveCustomerMessage || '',
-            sourceMessageId: latestCustomerMessageId || ''
-        });
-    }
+    const rawDeliveryPaymentResponse = null;
     const rawSalesDeterministicResponse = text(salesDecisionContext?.deterministicResponse || '');
     const rawDeterministicResponse = antiHallucinationGuard?.response
         || rawSoftPauseResponse
         || rawDeliveryPaymentResponse
         || rawSalesDeterministicResponse;
-    const deterministicNeedsAdvisorReason = antiHallucinationGuard?.needsAdvisorReason
-        || (shouldUseKnownLocationNoZoneResponse(latestCustomerMessage || effectiveCustomerMessage || '', zoneDecision)
-        ? 'sin_cobertura_zona'
-        : '');
+    const deterministicNeedsAdvisorReason = antiHallucinationGuard?.needsAdvisorReason || '';
     const deterministicSource = antiHallucinationGuard?.source
         || (deterministicNeedsAdvisorReason === 'sin_cobertura_zona'
             ? 'patty.no_zone'
@@ -5960,19 +5570,18 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 });
                 return;
             }
-            const gpsHandled = await handlePattyGpsLocationMessage({
+            const logisticsHandled = await maybeHandlePattyLogisticsDecision({
                 tenantId: cleanTenantId,
                 moduleId: cleanModuleId,
                 chatId: cleanChatId,
                 rawMessage,
                 inboundMessageId,
+                lastMessage: rawInboundText,
                 shouldAbortRun,
                 assistantName: aiConfig.assistantName || DEFAULT_ASSISTANT_NAME,
-                moduleName: earlyModuleName,
-                emitCommercialStatusUpdated: options.emitCommercialStatusUpdated,
-                socketEmitter
+                moduleName: earlyModuleName
             });
-            if (gpsHandled) return;
+            if (logisticsHandled) return;
             const prebuiltContext = await buildPattyContext(cleanTenantId, cleanModuleId, cleanChatId);
             if (await shouldAbortRun('after_context')) return;
             const prebuiltModuleName = getModuleDisplayNameFromConfig(prebuiltContext.moduleConfig || moduleConfig || {});

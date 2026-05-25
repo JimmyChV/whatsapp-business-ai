@@ -291,6 +291,16 @@ async function extractLocationInfoAsync(msg, { timeoutMs = 5000 } = {}) {
     };
 }
 
+async function extractCoordsFromMapsLink(text = '', { timeoutMs = 5000 } = {}) {
+    const mapUrl = extractMapUrlFromText(text);
+    if (!mapUrl) return null;
+    const expanded = await expandMapsLink(mapUrl, timeoutMs);
+    const coords = extractCoordsFromText(expanded || mapUrl);
+    return coords
+        ? { latitude: coords.latitude, longitude: coords.longitude }
+        : null;
+}
+
 function getMessageTypePreviewLabel(type = '') {
     const value = String(type || '').toLowerCase();
     if (!value) return 'Mensaje';
@@ -318,6 +328,7 @@ module.exports = {
     isLikelyMapUrl,
     extractCoordsFromText,
     expandMapsLink,
+    extractCoordsFromMapsLink,
     extractLocationInfo,
     extractLocationInfoAsync,
     getMessageTypePreviewLabel

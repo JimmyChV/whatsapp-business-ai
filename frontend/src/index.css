@@ -8915,6 +8915,12 @@ body {
   outline: none;
 }
 
+.business-coverage-link-hint {
+  margin-top: 5px;
+  color: var(--chat-control-text-soft);
+  font-size: 0.7rem;
+}
+
 .business-coverage-search button {
   min-height: 38px;
   border: 1px solid var(--chat-success-border);
@@ -9090,17 +9096,6 @@ body {
   background: var(--chat-control-surface);
 }
 
-.business-coverage-map {
-  width: 100%;
-  min-height: 260px;
-  border: 1px solid var(--chat-card-border);
-  border-radius: 16px;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 20% 20%, rgba(24, 95, 165, 0.16), transparent 30%),
-    var(--chat-control-surface);
-}
-
 .business-coverage-hint {
   display: inline-flex;
   align-items: center;
@@ -9153,39 +9148,37 @@ body {
   color: #185fa5 !important;
 }
 
-.business-coverage-static-actions {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.business-coverage-detail-preview {
+  width: 100%;
+  margin-top: 12px;
+  border: 1px solid var(--chat-card-border);
+  border-radius: 16px;
+  background: var(--chat-control-surface);
+  color: var(--saas-text-primary);
+  display: block;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 0.78rem;
+  line-height: 1.42;
 }
 
-.business-coverage-static-actions button {
-  min-height: 38px;
+.business-coverage-send-detail {
+  width: 100%;
+  min-height: 40px;
+  margin-top: 10px;
   border: 1px solid var(--chat-success-border);
   border-radius: 12px;
   background: var(--chat-success-surface);
   color: var(--chat-success-text);
-  font-weight: 800;
+  font-weight: 900;
   cursor: pointer;
 }
 
-.business-coverage-static-actions .business-coverage-ghost-btn {
-  background: var(--chat-control-surface);
-  border-color: var(--chat-control-border);
-  color: var(--saas-text-primary);
-}
-
-.business-coverage-static-actions button:disabled {
+.business-coverage-send-detail:disabled {
   opacity: 0.55;
   cursor: wait;
-}
-
-.business-coverage-static-preview {
-  width: 100%;
-  display: block;
-  margin-top: 12px;
-  border: 1px solid var(--chat-card-border);
-  border-radius: 16px;
 }
 
 @media (min-width: 760px) {
@@ -9195,8 +9188,7 @@ body {
 }
 
 @media (max-width: 560px) {
-  .business-coverage-actions,
-  .business-coverage-static-actions {
+  .business-coverage-actions {
     grid-template-columns: minmax(0, 1fr);
   }
 }

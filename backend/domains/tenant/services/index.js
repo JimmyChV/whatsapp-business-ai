@@ -23,6 +23,7 @@
   wooZonesSyncService: require('./woo-zones-sync.service'),
   logisticsAgenciesSyncService: require('./logistics-agencies-sync.service'),
   zoneCoverageResolverService: require('./zone-coverage-resolver.service'),
+  logisticsAdvisorService: require('./logistics-advisor.service'),
   commercialIntelligenceService: require('./commercial-intelligence.service')
 };
 
