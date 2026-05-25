@@ -950,7 +950,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     messages={messages}
                     messagesRef={messagesRef}
                     notify={notify}
-                    socket={socket}
+                    onPrepareMessage={(text) => setInputText(String(text || ''))}
                 />
             )}
 

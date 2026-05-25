@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { API_URL } from '../../../../config/runtime';
 
+let googleMapsLoaderPromise = null;
+let googleMapsLoaderKey = '';
+
 function text(value = '') {
     return String(value || '').trim();
 }
@@ -14,6 +17,18 @@ function numberOrNull(value) {
 function money(value) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed.toFixed(2) : null;
+}
+
+function isValidCoords(lat, lng) {
+    return Number.isFinite(lat) && Number.isFinite(lng)
+        && lat >= -90 && lat <= 90
+        && lng >= -180 && lng <= 180;
+}
+
+function coordPair(value = {}) {
+    const lat = numberOrNull(value.lat ?? value.latitude);
+    const lng = numberOrNull(value.lng ?? value.longitude);
+    return isValidCoords(lat, lng) ? { lat, lng } : null;
 }
 
 function isLikelyMapUrl(value = '') {
@@ -53,12 +68,23 @@ function parseCoordsFromText(value = '') {
             const isLngLatPattern = String(pattern).includes('!2d');
             const lat = numberOrNull(isLngLatPattern ? match[2] : match[1]);
             const lng = numberOrNull(isLngLatPattern ? match[1] : match[2]);
-            if (lat !== null && lng !== null && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-                return { lat, lng };
-            }
+            if (isValidCoords(lat, lng)) return { lat, lng };
         }
     }
     return null;
+}
+
+function haversineKm(origin = {}, destination = {}) {
+    const start = coordPair(origin);
+    const end = coordPair(destination);
+    if (!start || !end) return null;
+    const toRad = (degrees) => degrees * Math.PI / 180;
+    const earthKm = 6371;
+    const dLat = toRad(end.lat - start.lat);
+    const dLng = toRad(end.lng - start.lng);
+    const a = Math.sin(dLat / 2) ** 2
+        + Math.cos(toRad(start.lat)) * Math.cos(toRad(end.lat)) * Math.sin(dLng / 2) ** 2;
+    return earthKm * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
 function firstActiveShippingOption(zone = {}) {
@@ -81,11 +107,12 @@ function paymentLabels(zone = {}) {
 
 function paymentModalityLabel(zone = {}) {
     const modality = zone.paymentModality || zone.payment_modality || {};
-    const values = [
-        modality.prepaid !== false ? 'anticipado' : '',
-        modality.cash_on_delivery || modality.cashOnDelivery ? 'contraentrega' : ''
-    ].filter(Boolean);
-    return values.length ? values.join(' o ') : 'segun coordinacion';
+    const advance = modality.advance === true || modality.prepaid === true;
+    const cashOnDelivery = modality.cash_on_delivery === true || modality.cashOnDelivery === true;
+    if (advance && cashOnDelivery) return 'anticipado o contraentrega';
+    if (advance) return 'pago anticipado';
+    if (cashOnDelivery) return 'contraentrega';
+    return '';
 }
 
 function formatDistance(value) {
@@ -116,15 +143,25 @@ function carrierLabel(value = '') {
     return text(value).toUpperCase() || 'Agencia';
 }
 
+function carrierColor(value = '') {
+    const key = carrierKey(value);
+    if (key === 'marvisur') return '#FF6B00';
+    if (key === 'shalom') return '#0066CC';
+    return '#185FA5';
+}
+
 function extractMessageBody(message = {}) {
     return text(
         message?.body
+        || message?.caption
         || message?.text?.body
         || message?.text
         || message?.message?.text?.body
         || message?.message?.body
+        || message?.message?.caption
         || message?.message
         || message?.metadata?.body
+        || message?.metadata?.caption
         || ''
     );
 }
@@ -132,10 +169,14 @@ function extractMessageBody(message = {}) {
 function extractNativeCoords(message = {}) {
     const candidates = [
         message?.locationPayload,
+        message?.location_payload,
         message?.location,
         message?.metadata?.locationPayload,
+        message?.metadata?.location_payload,
         message?.metadata?.location,
         message?.raw?.location,
+        message?.rawMessage?.location,
+        message?.message?.location,
         message?._data?.location
     ];
     for (const rawPayload of candidates) {
@@ -147,12 +188,11 @@ function extractNativeCoords(message = {}) {
                 payload = null;
             }
         }
-        if (!payload || typeof payload !== 'object') continue;
-        const lat = numberOrNull(payload.latitude ?? payload.lat ?? payload.degreesLatitude);
-        const lng = numberOrNull(payload.longitude ?? payload.lng ?? payload.lon ?? payload.degreesLongitude);
-        if (lat !== null && lng !== null && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-            return { lat, lng };
-        }
+        const coords = coordPair({
+            lat: payload?.latitude ?? payload?.lat ?? payload?.degreesLatitude,
+            lng: payload?.longitude ?? payload?.lng ?? payload?.lon ?? payload?.degreesLongitude
+        });
+        if (coords) return coords;
     }
     return null;
 }
@@ -167,7 +207,7 @@ function latestCustomerLocationSource(messagesRef = null, fallbackMessages = [])
         if (nativeCoords) return { ...nativeCoords, source: 'last_customer_location' };
         const body = extractMessageBody(message);
         const coords = parseCoordsFromText(body);
-        if (coords) return { ...coords, source: 'last_customer_maps_link' };
+        if (coords) return { ...coords, source: 'last_customer_maps_link', text: body };
         const firstUrl = extractFirstUrl(body);
         if (firstUrl && isLikelyMapUrl(firstUrl)) {
             return { text: body || firstUrl, mapUrl: firstUrl, source: 'last_customer_maps_link' };
@@ -178,30 +218,270 @@ function latestCustomerLocationSource(messagesRef = null, fallbackMessages = [])
 
 function agencyListFromDecision(agencies) {
     if (!agencies) return [];
-    if (Array.isArray(agencies)) return agencies;
+    const source = Array.isArray(agencies)
+        ? agencies
+        : ['marvisur', 'shalom'].map((carrier) => (
+            agencies[carrier] ? ({ ...agencies[carrier], carrier: agencies[carrier].carrier || carrier }) : null
+        )).filter(Boolean);
+    const byCarrier = new Map();
+    source.forEach((agency) => {
+        const key = carrierKey(agency?.carrier);
+        if (!byCarrier.has(key)) byCarrier.set(key, { ...agency, carrier: agency?.carrier || key });
+    });
     return ['marvisur', 'shalom']
-        .map((carrier) => agencies[carrier] ? ({ ...agencies[carrier], carrier: agencies[carrier].carrier || carrier }) : null)
+        .map((carrier) => byCarrier.get(carrier))
         .filter(Boolean);
+}
+
+function agencyCoords(agency = {}) {
+    return coordPair({
+        lat: agency.latitude ?? agency.lat,
+        lng: agency.longitude ?? agency.lng
+    });
+}
+
+function agencyMapUrl(agency = {}) {
+    const coords = agencyCoords(agency);
+    if (!coords) return '';
+    return `https://maps.google.com/?daddr=${coords.lat},${coords.lng}`;
+}
+
+function buildGoogleMapsScriptUrl(apiKey = '') {
+    const params = new URLSearchParams();
+    params.set('key', apiKey);
+    params.set('libraries', 'places');
+    params.set('language', 'es');
+    params.set('region', 'PE');
+    params.set('v', 'weekly');
+    return `https://maps.googleapis.com/maps/api/js?${params.toString()}`;
+}
+
+function useGoogleMapsLoader(apiKey = '') {
+    const [state, setState] = useState({
+        loaded: Boolean(window.google?.maps?.places),
+        error: ''
+    });
+
+    useEffect(() => {
+        const cleanKey = text(apiKey);
+        if (window.google?.maps?.places) {
+            setState({ loaded: true, error: '' });
+            return;
+        }
+        if (!cleanKey) {
+            setState({ loaded: false, error: '' });
+            return;
+        }
+        if (!googleMapsLoaderPromise || googleMapsLoaderKey !== cleanKey) {
+            googleMapsLoaderKey = cleanKey;
+            googleMapsLoaderPromise = new Promise((resolve, reject) => {
+                const existing = document.querySelector('script[data-lavitat-google-maps="true"]');
+                if (existing) existing.remove();
+                const script = document.createElement('script');
+                script.src = buildGoogleMapsScriptUrl(cleanKey);
+                script.async = true;
+                script.defer = true;
+                script.dataset.lavitatGoogleMaps = 'true';
+                script.onload = () => resolve(window.google);
+                script.onerror = () => reject(new Error('No se pudo cargar Google Maps.'));
+                document.head.appendChild(script);
+            });
+        }
+        let cancelled = false;
+        setState({ loaded: false, error: '' });
+        googleMapsLoaderPromise
+            .then(() => {
+                if (!cancelled) setState({ loaded: Boolean(window.google?.maps?.places), error: '' });
+            })
+            .catch((error) => {
+                if (!cancelled) setState({ loaded: false, error: text(error?.message) || 'No se pudo cargar Google Maps.' });
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [apiKey]);
+
+    return state;
+}
+
+function CoverageMap({
+    google,
+    coords,
+    agencies = [],
+    onCoordsChange,
+    className = '',
+    maximized = false
+}) {
+    const mapElementRef = useRef(null);
+    const mapRef = useRef(null);
+    const overlaysRef = useRef({ markers: [], renderers: [] });
+
+    useEffect(() => {
+        if (!google?.maps || !mapElementRef.current || !coords) return;
+        mapRef.current = new google.maps.Map(mapElementRef.current, {
+            center: coords,
+            zoom: maximized ? 14 : 15,
+            mapTypeControl: false,
+            streetViewControl: false,
+            fullscreenControl: false,
+            clickableIcons: true
+        });
+    }, [google, maximized, coords?.lat, coords?.lng]);
+
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!google?.maps || !map || !coords) return undefined;
+        overlaysRef.current.markers.forEach((marker) => marker.setMap(null));
+        overlaysRef.current.renderers.forEach((renderer) => renderer.setMap(null));
+        overlaysRef.current = { markers: [], renderers: [] };
+
+        const bounds = new google.maps.LatLngBounds();
+        const clientPosition = new google.maps.LatLng(coords.lat, coords.lng);
+        const clientMarker = new google.maps.Marker({
+            position: clientPosition,
+            map,
+            draggable: true,
+            title: 'Ubicacion del cliente'
+        });
+        clientMarker.addListener('dragend', (event) => {
+            const nextLat = event.latLng.lat();
+            const nextLng = event.latLng.lng();
+            if (typeof onCoordsChange === 'function') onCoordsChange({ lat: nextLat, lng: nextLng });
+        });
+        overlaysRef.current.markers.push(clientMarker);
+        bounds.extend(clientPosition);
+
+        const infoWindow = new google.maps.InfoWindow();
+        const directionsService = new google.maps.DirectionsService();
+        agencies.forEach((agency) => {
+            const agencyPosition = agencyCoords(agency);
+            if (!agencyPosition) return;
+            const carrier = carrierKey(agency.carrier);
+            const color = carrierColor(carrier);
+            const marker = new google.maps.Marker({
+                position: agencyPosition,
+                map,
+                title: agency.name || carrierLabel(carrier),
+                label: {
+                    text: carrier === 'marvisur' ? 'M' : (carrier === 'shalom' ? 'S' : 'A'),
+                    color: '#ffffff',
+                    fontWeight: '800'
+                },
+                icon: {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    fillColor: color,
+                    fillOpacity: 1,
+                    strokeColor: '#ffffff',
+                    strokeWeight: 3,
+                    scale: 12
+                }
+            });
+            marker.addListener('click', () => {
+                infoWindow.setContent(`
+                    <strong>${agency.name || carrierLabel(carrier)}</strong><br/>
+                    ${agency.address || ''}<br/>
+                    ${agency.phonePrimary || ''}<br/>
+                    ${agency.hoursWeek || agency.hoursDelivery || ''}
+                `);
+                infoWindow.open({ anchor: marker, map });
+            });
+            overlaysRef.current.markers.push(marker);
+            bounds.extend(agencyPosition);
+
+            const renderer = new google.maps.DirectionsRenderer({
+                map,
+                suppressMarkers: true,
+                preserveViewport: true,
+                polylineOptions: {
+                    strokeColor: color,
+                    strokeOpacity: 0.82,
+                    strokeWeight: 5
+                }
+            });
+            overlaysRef.current.renderers.push(renderer);
+            directionsService.route({
+                origin: coords,
+                destination: agencyPosition,
+                travelMode: google.maps.TravelMode.DRIVING
+            }, (response, status) => {
+                if (status === google.maps.DirectionsStatus.OK && response) renderer.setDirections(response);
+            });
+        });
+
+        if (agencies.some((agency) => agencyCoords(agency))) map.fitBounds(bounds, 56);
+        else map.setCenter(clientPosition);
+
+        return () => {
+            overlaysRef.current.markers.forEach((marker) => marker.setMap(null));
+            overlaysRef.current.renderers.forEach((renderer) => renderer.setMap(null));
+            overlaysRef.current = { markers: [], renderers: [] };
+        };
+    }, [google, coords?.lat, coords?.lng, agencies, onCoordsChange]);
+
+    return <div ref={mapElementRef} className={className || 'business-coverage-map'} />;
+}
+
+function buildPreparedCoverageMessage({ result, zone, shipping, agencies, routeMetrics }) {
+    const responseText = text(result?.responseText || '');
+    if (!zone || !agencies.length) return responseText;
+    const shippingType = text(shipping?.type).toLowerCase() === 'courier' ? 'courier' : 'delivery';
+    if (shippingType !== 'courier') return responseText;
+    const location = result?.resolvedLocation || {};
+    const locationName = text(location.district || location.province || location.department || 'tu zona');
+    const cost = money(shipping?.cost);
+    const freeFrom = money(shipping?.free_from ?? shipping?.freeFrom);
+    const time = formatEstimatedTime(shipping?.estimated_time || shipping?.estimatedTime);
+    const agencyLines = agencies.map((agency) => {
+        const carrier = carrierLabel(agency.carrier);
+        const metric = routeMetrics[carrierKey(agency.carrier)] || {};
+        const distance = text(metric.distanceText) || formatDistance(agency.distanceKm);
+        const duration = text(metric.durationText);
+        const meta = [distance, duration ? `${duration} en auto` : ''].filter(Boolean).join(' · ');
+        return [
+            `${carrier === 'Marvisur' ? '🟠' : '🔵'} *${carrier}* — ${agency.name || agency.fullName || 'Agencia'}`,
+            text(agency.address || ''),
+            agency.phonePrimary ? `📞 ${agency.phonePrimary}` : '',
+            agency.hoursWeek || agency.hoursDelivery ? `🕐 ${agency.hoursWeek || agency.hoursDelivery}` : '',
+            meta ? `📏 ${meta}` : ''
+        ].filter(Boolean).join('\n');
+    });
+    return [
+        `📍 Te ubiqué en ${locationName} 😊`,
+        '',
+        'Agencias más cercanas a ti:',
+        '',
+        agencyLines.join('\n\n'),
+        '',
+        `Costo de envío: *S/ ${cost || 'por confirmar'}*${freeFrom ? `, gratis desde S/ ${freeFrom}` : ''}`,
+        `⏱ ${time}`,
+        '',
+        '¿Coordino el envío por Marvisur o Shalom? 😊'
+    ].join('\n');
 }
 
 export default function BusinessCoverageTabSection({
     activeTenantId = '',
     activeChatId = '',
-    activeChatPhone = '',
     buildApiHeaders = null,
     messages = [],
     messagesRef = null,
     notify = null,
-    socket = null
+    onPrepareMessage = null
 }) {
     const searchTimerRef = useRef(null);
+    const inputRef = useRef(null);
+    const placesAutocompleteRef = useRef(null);
+    const [apiKey, setApiKey] = useState('');
     const [query, setQuery] = useState('');
     const [suggestions, setSuggestions] = useState([]);
     const [loadingSuggestions, setLoadingSuggestions] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [sendingDetail, setSendingDetail] = useState(false);
+    const [preparing, setPreparing] = useState(false);
     const [error, setError] = useState('');
     const [result, setResult] = useState(null);
+    const [clientCoords, setClientCoords] = useState(null);
+    const [routeMetrics, setRouteMetrics] = useState({});
+    const [mapMaximized, setMapMaximized] = useState(false);
 
     const headers = useMemo(() => {
         const base = typeof buildApiHeaders === 'function'
@@ -211,6 +491,27 @@ export default function BusinessCoverageTabSection({
         if (activeTenantId) next['x-tenant-id'] = String(activeTenantId).trim();
         return next;
     }, [activeTenantId, buildApiHeaders]);
+
+    const mapsState = useGoogleMapsLoader(apiKey);
+    const google = mapsState.loaded ? window.google : null;
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadKey = async () => {
+            try {
+                const response = await fetch(`${API_URL}/api/tenant/config/maps-api-key`, { headers });
+                const body = await response.json().catch(() => ({}));
+                if (!response.ok || body?.ok === false) throw new Error(text(body?.error) || 'No se pudo cargar Google Maps.');
+                if (!cancelled) setApiKey(text(body?.apiKey || ''));
+            } catch (err) {
+                if (!cancelled) setError(text(err?.message) || 'No se pudo cargar Google Maps.');
+            }
+        };
+        loadKey();
+        return () => {
+            cancelled = true;
+        };
+    }, [headers]);
 
     const resolveCoverage = useCallback(async (payload = {}) => {
         setLoading(true);
@@ -228,6 +529,8 @@ export default function BusinessCoverageTabSection({
             if (!response.ok || body?.ok === false) {
                 throw new Error(text(body?.error) || 'No se pudo verificar cobertura.');
             }
+            const coords = coordPair(payload) || coordPair(body?.resolvedLocation || {});
+            if (coords) setClientCoords(coords);
             setResult(body);
             return body;
         } catch (err) {
@@ -240,11 +543,18 @@ export default function BusinessCoverageTabSection({
         }
     }, [activeChatId, headers, notify]);
 
+    const resolveFromCoords = useCallback(async (coords, label = 'Ubicacion seleccionada') => {
+        const cleanCoords = coordPair(coords);
+        if (!cleanCoords) return null;
+        setClientCoords(cleanCoords);
+        return resolveCoverage({ lat: cleanCoords.lat, lng: cleanCoords.lng, lastMessage: label });
+    }, [resolveCoverage]);
+
     const loadGeoSuggestions = useCallback((value = '') => {
         const clean = text(value);
         window.clearTimeout(searchTimerRef.current);
         setSuggestions([]);
-        if (clean.length < 2 || isLikelyMapUrl(clean) || parseCoordsFromText(clean)) return;
+        if (mapsState.loaded || clean.length < 2 || isLikelyMapUrl(clean) || parseCoordsFromText(clean)) return;
         searchTimerRef.current = window.setTimeout(async () => {
             setLoadingSuggestions(true);
             try {
@@ -261,7 +571,7 @@ export default function BusinessCoverageTabSection({
                 setLoadingSuggestions(false);
             }
         }, 280);
-    }, [headers]);
+    }, [headers, mapsState.loaded]);
 
     const handleQueryChange = useCallback((event) => {
         const value = event.target.value;
@@ -269,20 +579,39 @@ export default function BusinessCoverageTabSection({
         loadGeoSuggestions(value);
     }, [loadGeoSuggestions]);
 
+    useEffect(() => {
+        if (!google?.maps?.places || !inputRef.current || placesAutocompleteRef.current) return;
+        placesAutocompleteRef.current = new google.maps.places.Autocomplete(inputRef.current, {
+            componentRestrictions: { country: 'pe' },
+            fields: ['geometry', 'formatted_address', 'address_components', 'name'],
+            types: ['geocode', 'establishment']
+        });
+        placesAutocompleteRef.current.addListener('place_changed', () => {
+            const place = placesAutocompleteRef.current.getPlace();
+            const location = place?.geometry?.location;
+            if (!location) return;
+            const lat = location.lat();
+            const lng = location.lng();
+            const label = text(place.formatted_address || place.name || query);
+            setQuery(label);
+            resolveFromCoords({ lat, lng }, label);
+        });
+    }, [google, query, resolveFromCoords]);
+
     const resolveFromTextOrLink = useCallback(async () => {
         const clean = text(query);
         if (!clean) {
-            setError('Escribe una direccion, distrito o pega un link de Google Maps.');
+            setError('Busca una direccion, distrito o pega un link de Google Maps.');
             return;
         }
         setSuggestions([]);
         const directCoords = parseCoordsFromText(clean);
         if (directCoords) {
-            await resolveCoverage({ lat: directCoords.lat, lng: directCoords.lng, lastMessage: clean });
+            await resolveFromCoords(directCoords, clean);
             return;
         }
         await resolveCoverage({ text: clean, lastMessage: clean });
-    }, [query, resolveCoverage]);
+    }, [query, resolveCoverage, resolveFromCoords]);
 
     const selectSuggestion = useCallback(async (suggestion = {}) => {
         const label = text(suggestion.label || suggestion.name || '');
@@ -295,41 +624,126 @@ export default function BusinessCoverageTabSection({
     const useCustomerLocation = useCallback(() => {
         const latest = latestCustomerLocationSource(messagesRef, messages);
         if (!latest) {
-            setError('El cliente aun no ha compartido su ubicacion en este chat.');
+            setError('El cliente no ha compartido su ubicacion en este chat.');
             return;
         }
-        if (numberOrNull(latest.lat) !== null && numberOrNull(latest.lng) !== null) {
-            resolveCoverage({ lat: latest.lat, lng: latest.lng, lastMessage: 'Ubicacion compartida' });
+        if (coordPair(latest)) {
+            resolveFromCoords(latest, 'Ubicacion compartida por el cliente');
             return;
         }
         if (latest.text || latest.mapUrl) {
+            setQuery(latest.text || latest.mapUrl);
             resolveCoverage({ text: latest.text || latest.mapUrl, lastMessage: latest.text || latest.mapUrl });
             return;
         }
         setError('No pude leer la ubicacion compartida del cliente.');
-    }, [messages, messagesRef, resolveCoverage]);
+    }, [messages, messagesRef, resolveCoverage, resolveFromCoords]);
 
-    const sendCoverageDetail = useCallback(() => {
-        const responseText = text(result?.responseText || '');
-        if (!socket || typeof socket.emit !== 'function' || !activeChatId || !responseText) return;
-        setSendingDetail(true);
-        socket.emit('send_message', {
-            to: activeChatId,
-            toPhone: activeChatPhone || null,
-            body: responseText
-        });
-        window.setTimeout(() => setSendingDetail(false), 700);
-        if (typeof notify === 'function') notify({ type: 'success', message: 'Detalle enviado al cliente.' });
-    }, [activeChatId, activeChatPhone, notify, result?.responseText, socket]);
-
-    const latestSharedLocation = useMemo(() => latestCustomerLocationSource(messagesRef, messages), [messages, messagesRef, result]);
     const zone = result?.zone || null;
     const shipping = firstActiveShippingOption(zone || {});
     const shippingType = text(shipping?.type).toLowerCase() === 'courier' ? 'courier' : 'delivery';
     const cost = money(shipping?.cost);
     const freeFrom = money(shipping?.free_from ?? shipping?.freeFrom);
-    const agencies = agencyListFromDecision(result?.agencies);
+    const agencies = useMemo(() => agencyListFromDecision(result?.agencies), [result?.agencies]);
     const responseText = text(result?.responseText || '');
+    const latestSharedLocation = useMemo(() => latestCustomerLocationSource(messagesRef, messages), [messages, messagesRef, result]);
+
+    useEffect(() => {
+        if (!google?.maps || !clientCoords || !agencies.length) {
+            setRouteMetrics({});
+            return undefined;
+        }
+        let cancelled = false;
+        const destinations = agencies.map(agencyCoords).filter(Boolean);
+        if (!destinations.length) {
+            setRouteMetrics({});
+            return undefined;
+        }
+        const service = new google.maps.DistanceMatrixService();
+        const fallbackTimer = window.setTimeout(() => {
+            if (cancelled) return;
+            const fallback = {};
+            agencies.forEach((agency) => {
+                const key = carrierKey(agency.carrier);
+                const km = haversineKm(clientCoords, agencyCoords(agency));
+                fallback[key] = {
+                    distanceText: formatDistance(km ?? agency.distanceKm),
+                    durationText: ''
+                };
+            });
+            setRouteMetrics(fallback);
+        }, 5000);
+        service.getDistanceMatrix({
+            origins: [clientCoords],
+            destinations,
+            travelMode: google.maps.TravelMode.DRIVING,
+            language: 'es'
+        }, (response, status) => {
+            if (cancelled) return;
+            window.clearTimeout(fallbackTimer);
+            const next = {};
+            if (status === 'OK') {
+                const elements = response?.rows?.[0]?.elements || [];
+                agencies.forEach((agency, index) => {
+                    const key = carrierKey(agency.carrier);
+                    const element = elements[index] || {};
+                    const km = haversineKm(clientCoords, agencyCoords(agency));
+                    next[key] = {
+                        distanceText: text(element.distance?.text) || formatDistance(km ?? agency.distanceKm),
+                        durationText: text(element.duration?.text)
+                    };
+                });
+            } else {
+                agencies.forEach((agency) => {
+                    const key = carrierKey(agency.carrier);
+                    const km = haversineKm(clientCoords, agencyCoords(agency));
+                    next[key] = {
+                        distanceText: formatDistance(km ?? agency.distanceKm),
+                        durationText: ''
+                    };
+                });
+            }
+            setRouteMetrics(next);
+        });
+        return () => {
+            cancelled = true;
+            window.clearTimeout(fallbackTimer);
+        };
+    }, [google, clientCoords, agencies]);
+
+    const prepareMessage = useCallback(async () => {
+        if (!result) return;
+        setPreparing(true);
+        try {
+            let latestResult = result;
+            if (clientCoords) {
+                latestResult = await resolveCoverage({ lat: clientCoords.lat, lng: clientCoords.lng, lastMessage: query || 'Ubicacion seleccionada' }) || result;
+            }
+            const latestZone = latestResult?.zone || zone;
+            const latestShipping = firstActiveShippingOption(latestZone || {});
+            const latestAgencies = agencyListFromDecision(latestResult?.agencies);
+            const preparedText = buildPreparedCoverageMessage({
+                result: latestResult,
+                zone: latestZone,
+                shipping: latestShipping,
+                agencies: latestAgencies.length ? latestAgencies : agencies,
+                routeMetrics
+            });
+            if (!preparedText) throw new Error('No hay detalle logistico para preparar.');
+            if (typeof onPrepareMessage === 'function') {
+                onPrepareMessage(preparedText);
+                if (typeof notify === 'function') notify({ type: 'success', message: 'Detalle cargado en el input del chat.' });
+            } else {
+                throw new Error('No se encontro el input del chat para preparar el mensaje.');
+            }
+        } catch (err) {
+            const message = text(err?.message) || 'No se pudo preparar el mensaje.';
+            setError(message);
+            if (typeof notify === 'function') notify({ type: 'error', message });
+        } finally {
+            setPreparing(false);
+        }
+    }, [agencies, clientCoords, notify, onPrepareMessage, query, resolveCoverage, result, routeMetrics, zone]);
 
     useEffect(() => () => window.clearTimeout(searchTimerRef.current), []);
 
@@ -338,19 +752,22 @@ export default function BusinessCoverageTabSection({
             <div className="business-coverage-card business-coverage-hero">
                 <div>
                     <div className="business-coverage-title">Verificar cobertura</div>
-                    <div className="business-coverage-subtitle">Busca la ubicacion del cliente.</div>
+                    <div className="business-coverage-subtitle">Busca una direccion real, usa el pin del cliente o pega un link de Google Maps.</div>
                 </div>
                 <div className="business-coverage-search business-coverage-search--maps">
                     <div className="business-coverage-autocomplete">
                         <input
+                            ref={inputRef}
                             value={query}
                             onChange={handleQueryChange}
                             onKeyDown={(event) => {
                                 if (event.key === 'Enter') resolveFromTextOrLink();
                             }}
-                            placeholder="Escribe una direccion o distrito..."
+                            placeholder="Busca una direccion o distrito..."
                         />
-                        <div className="business-coverage-link-hint">O pega un link de Google Maps.</div>
+                        <div className="business-coverage-link-hint">
+                            {mapsState.loaded ? 'Sugerencias de Google Places activas.' : 'O pega un link de Google Maps.'}
+                        </div>
                         {suggestions.length || loadingSuggestions ? (
                             <div className="business-coverage-suggestions">
                                 {loadingSuggestions ? <button type="button" disabled>Buscando ubicaciones...</button> : null}
@@ -377,24 +794,50 @@ export default function BusinessCoverageTabSection({
                 </div>
                 {latestSharedLocation ? (
                     <div className="business-coverage-hint">
-                        Detecte {latestSharedLocation.lat ? 'una ubicacion compartida' : 'un link de Google Maps'} reciente del cliente.
+                        Detecte {coordPair(latestSharedLocation) ? 'una ubicacion compartida' : 'un link de Google Maps'} reciente del cliente.
                     </div>
                 ) : null}
+                {mapsState.error ? <div className="business-coverage-error">{mapsState.error}</div> : null}
                 {loading ? <div className="business-coverage-status">Verificando cobertura...</div> : null}
                 {error ? <div className="business-coverage-error">{error}</div> : null}
             </div>
+
+            {clientCoords ? (
+                <div className="business-coverage-card business-coverage-map-card">
+                    <div className="business-coverage-map-container">
+                        {mapsState.loaded ? (
+                            <>
+                                <CoverageMap
+                                    google={google}
+                                    coords={clientCoords}
+                                    agencies={agencies}
+                                    onCoordsChange={resolveFromCoords}
+                                />
+                                <button type="button" className="business-coverage-map-maximize-btn" onClick={() => setMapMaximized(true)}>
+                                    Maximizar
+                                </button>
+                            </>
+                        ) : (
+                            <div className="business-coverage-map-placeholder">
+                                {apiKey ? 'Cargando mapa...' : 'Configura la API key de Google Maps para ver el mapa.'}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            ) : null}
 
             {result && zone ? (
                 <div className="business-coverage-card business-coverage-result">
                     <div className="business-coverage-result-head">
                         <span>{zone.name || 'Zona resuelta'}</span>
-                        <strong>{shippingType === 'courier' ? 'Agencia Marvisur + Shalom' : 'Delivery'}</strong>
+                        <strong>{zone.segmentKey || zone.segment_key || (shippingType === 'courier' ? 'courier' : 'delivery')}</strong>
                     </div>
                     <div className="business-coverage-grid">
+                        <div><span>Tipo</span><strong>{shippingType === 'courier' ? 'Courier' : 'Delivery'}</strong></div>
                         <div><span>Costo</span><strong>{cost ? `S/ ${cost}` : 'Por confirmar'}</strong></div>
                         <div><span>Gratis desde</span><strong>{freeFrom ? `S/ ${freeFrom}` : 'No aplica'}</strong></div>
                         <div><span>Tiempo</span><strong>{formatEstimatedTime(shipping?.estimated_time || shipping?.estimatedTime)}</strong></div>
-                        <div><span>Modalidad</span><strong>{paymentModalityLabel(zone)}</strong></div>
+                        <div><span>Modalidad</span><strong>{paymentModalityLabel(zone) || 'Segun coordinacion'}</strong></div>
                     </div>
                     <div className="business-coverage-chip-row">
                         {paymentLabels(zone).map((label) => <span key={label}>{label}</span>)}
@@ -415,21 +858,31 @@ export default function BusinessCoverageTabSection({
                     <div className="business-coverage-title">Agencias cercanas</div>
                     {agencies.length ? (
                         <div className="business-coverage-agencies">
-                            {agencies.map((agency, index) => (
-                                <div key={`${agency.carrier}_${agency.id || index}`} className="business-coverage-agency">
-                                    <div className="business-coverage-agency-head">
-                                        <strong>{agency.name || agency.fullName}</strong>
-                                        <span className={`business-coverage-carrier business-coverage-carrier--${carrierKey(agency.carrier)}`}>
-                                            <i>{carrierLabel(agency.carrier).slice(0, 1)}</i>
-                                            {carrierLabel(agency.carrier)}
-                                        </span>
+                            {agencies.map((agency, index) => {
+                                const key = carrierKey(agency.carrier);
+                                const metric = routeMetrics[key] || {};
+                                const fallbackDistance = formatDistance(agency.distanceKm);
+                                return (
+                                    <div key={`${agency.carrier}_${agency.id || index}`} className={`business-coverage-agency business-coverage-agency--${key}`}>
+                                        <div className="business-coverage-agency-head">
+                                            <strong>{agency.name || agency.fullName}</strong>
+                                            <span className={`business-coverage-carrier business-coverage-carrier--${key}`}>
+                                                <i>{carrierLabel(agency.carrier).slice(0, 1)}</i>
+                                                {carrierLabel(agency.carrier)}
+                                            </span>
+                                        </div>
+                                        <p>{agency.address || 'Direccion no registrada'}</p>
+                                        {agency.phonePrimary ? <small>📞 {agency.phonePrimary}</small> : null}
+                                        {agency.hoursWeek || agency.hoursDelivery ? <small>🕐 {agency.hoursWeek || agency.hoursDelivery}</small> : null}
+                                        <small>📏 {[metric.distanceText || fallbackDistance, metric.durationText ? `${metric.durationText} en auto` : ''].filter(Boolean).join(' · ') || 'Distancia por confirmar'}</small>
+                                        {agencyMapUrl(agency) ? (
+                                            <a className="business-coverage-map-link" href={agencyMapUrl(agency)} target="_blank" rel="noreferrer">
+                                                Abrir en Google Maps
+                                            </a>
+                                        ) : null}
                                     </div>
-                                    <p>{agency.address || 'Direccion no registrada'}</p>
-                                    <small>{[agency.district, formatDistance(agency.distanceKm)].filter(Boolean).join(' - ')}</small>
-                                    {agency.phonePrimary ? <small>Tel: {agency.phonePrimary}</small> : null}
-                                    {agency.hoursWeek || agency.hoursDelivery ? <small>{agency.hoursWeek || agency.hoursDelivery}</small> : null}
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     ) : (
                         <div className="business-coverage-status">
@@ -442,18 +895,39 @@ export default function BusinessCoverageTabSection({
             {responseText ? (
                 <div className="business-coverage-card business-coverage-detail-card">
                     <div className="business-coverage-result-head">
-                        <span>Detalle para enviar</span>
-                        <strong>Texto deterministico</strong>
+                        <span>Detalle para el chat</span>
+                        <strong>Revisable</strong>
                     </div>
-                    <pre className="business-coverage-detail-preview">{responseText}</pre>
+                    <pre className="business-coverage-detail-preview">
+                        {buildPreparedCoverageMessage({ result, zone, shipping, agencies, routeMetrics })}
+                    </pre>
                     <button
                         type="button"
                         className="business-coverage-send-detail"
-                        onClick={sendCoverageDetail}
-                        disabled={!activeChatId || sendingDetail}
+                        onClick={prepareMessage}
+                        disabled={!responseText || preparing}
                     >
-                        {sendingDetail ? 'Enviando...' : 'Enviar detalle al cliente'}
+                        {preparing ? 'Preparando...' : 'Preparar mensaje'}
                     </button>
+                </div>
+            ) : null}
+
+            {mapMaximized && clientCoords ? (
+                <div className="business-coverage-map-modal" role="dialog" aria-modal="true">
+                    <div className="business-coverage-map-modal-head">
+                        <strong>Mapa de cobertura</strong>
+                        <button type="button" onClick={() => setMapMaximized(false)}>Cerrar</button>
+                    </div>
+                    <div className="business-coverage-map-modal-inner">
+                        <CoverageMap
+                            google={google}
+                            coords={clientCoords}
+                            agencies={agencies}
+                            onCoordsChange={resolveFromCoords}
+                            maximized
+                            className="business-coverage-map business-coverage-map--modal"
+                        />
+                    </div>
                 </div>
             ) : null}
         </div>

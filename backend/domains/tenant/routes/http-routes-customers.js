@@ -535,16 +535,16 @@ function registerTenantCustomerHttpRoutes({
     app.get('/api/tenant/config/maps-api-key', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
-            if (!hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CHAT_OPERATE)) {
+            if (!hasCoverageResolveAccess(req)) {
                 return res.status(403).json({ ok: false, error: 'No autorizado.' });
             }
             const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
             const runtimeConfig = await tenantIntegrationsService.getTenantIntegrations(tenantId, { runtime: true });
             const geo = runtimeConfig?.geo && typeof runtimeConfig.geo === 'object' ? runtimeConfig.geo : {};
             const apiKey = String(
-                geo.googleMapsFrontendApiKey
+                geo.googleMapsApiKey
+                || geo.googleMapsFrontendApiKey
                 || process.env.GOOGLE_MAPS_FRONTEND_API_KEY
-                || geo.googleMapsApiKey
                 || ''
             ).trim();
             return res.json({ ok: true, apiKey });
