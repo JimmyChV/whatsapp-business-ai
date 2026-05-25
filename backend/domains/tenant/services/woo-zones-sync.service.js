@@ -101,24 +101,73 @@ function extractPostalCodes(locations = []) {
         .filter((code) => code.length > 0);
 }
 
-function detectSegmentKey(wooZone = {}, locations = []) {
+function normalizeWooMethod(method = {}) {
+    const source = method && typeof method === 'object' ? method : {};
+    return {
+        methodId: normalize(source.method_id || source.methodId || ''),
+        title: normalize(source.title || ''),
+        enabled: source.enabled !== false
+    };
+}
+
+function hasWooMethod(methods = [], matcher) {
+    return ensureArray(methods)
+        .map(normalizeWooMethod)
+        .some((method) => method.enabled && matcher(method));
+}
+
+function hasWooFreeShipping(methods = []) {
+    return hasWooMethod(methods, (method) => method.methodId === 'free_shipping'
+        || method.title.includes('free shipping')
+        || method.title.includes('envio gratis'));
+}
+
+function hasWooFlatRate(methods = []) {
+    return hasWooMethod(methods, (method) => method.methodId === 'flat_rate'
+        || method.title.includes('tarifa plana')
+        || method.title.includes('flat rate'));
+}
+
+function resolveLimaSegmentFromMethods(methods = []) {
+    const hasFreeShipping = hasWooFreeShipping(methods);
+    const hasFlatRate = hasWooFlatRate(methods);
+    if (hasFlatRate && !hasFreeShipping) return 'lima_marvisur';
+    if (hasFreeShipping) return 'lima_delivery';
+    return null;
+}
+
+function resolveTrujilloSegmentFromMethods(methods = []) {
+    if (hasWooFreeShipping(methods)) return 'trujillo_delivery';
+    return null;
+}
+
+function detectSegmentKey(wooZone = {}, locations = [], methods = []) {
     const normalizedLocations = ensureArray(locations).map(normalizeWooLocation);
     const states = normalizedLocations
         .filter((location) => location.type === 'state')
         .map((location) => location.code);
     const hasPostcodes = normalizedLocations.some((location) => location.type === 'postcode');
     const name = normalize(wooZone?.name || '');
-    const nameHasAgency = name.includes('agencia') || name.includes('marvisur');
+    const nameHasCourier = name.includes('agencia')
+        || name.includes('envio')
+        || name.includes('marvisur')
+        || name.includes('courier');
+    const nameHasDelivery = name.includes('reparto')
+        || name.includes('delivery')
+        || name.includes('domicilio');
 
     if (states.includes('PE:LMA') || states.includes('PE:CAL')) {
-        if (name.includes('delivery') || name.includes('domicilio')) return 'lima_delivery';
-        if (nameHasAgency) return 'lima_marvisur';
-        if (hasPostcodes && !nameHasAgency) return 'lima_delivery';
-        if (hasPostcodes && nameHasAgency) return 'lima_marvisur';
+        if (nameHasCourier && !nameHasDelivery) return 'lima_marvisur';
+        if (nameHasDelivery && !nameHasCourier) return 'lima_delivery';
+        const methodSegment = resolveLimaSegmentFromMethods(methods);
+        if (methodSegment) return methodSegment;
+        if (hasPostcodes) return nameHasCourier ? 'lima_marvisur' : 'lima_delivery';
     }
 
     if (states.includes('PE:LAL')) {
-        if (name.includes('siempre') || name.includes('costo')) return 'trujillo_costo';
+        if (name.includes('siempre') || name.includes('costo') || name.includes('sin delivery')) return 'trujillo_costo';
+        const methodSegment = resolveTrujilloSegmentFromMethods(methods);
+        if (methodSegment) return methodSegment;
         if (hasPostcodes) return 'trujillo_delivery';
     }
 
@@ -228,7 +277,7 @@ function buildRulePayload({
     existing = null
 } = {}) {
     const wooZoneId = normalizeWooZoneId(wooZone?.id);
-    const segmentKey = detectSegmentKey(wooZone, locations);
+    const segmentKey = detectSegmentKey(wooZone, locations, methods);
     const ruleId = existing?.rule_id || `WOO-ZONE-${wooZoneId}`;
     const normalizedLocations = ensureArray(locations).map(normalizeWooLocation);
     const previousRules = existing?.rules_json && typeof existing.rules_json === 'object' ? existing.rules_json : {};
