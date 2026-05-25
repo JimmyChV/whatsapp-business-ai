@@ -119,10 +119,14 @@ function buildShippingSummary(zone = {}) {
         paymentMethods.credit_card || paymentMethods.creditCard ? 'Tarjeta de credito' : '',
         paymentMethods.cash ? 'Efectivo' : ''
     ].filter(Boolean);
-    const modalities = [
-        paymentModality.prepaid !== false ? 'anticipado' : '',
-        paymentModality.cash_on_delivery || paymentModality.cashOnDelivery ? 'contraentrega' : ''
-    ].filter(Boolean);
+    const advanceEnabled = paymentModality.advance === true || paymentModality.advance === 'true';
+    const cashOnDeliveryEnabled = paymentModality.cash_on_delivery === true
+        || paymentModality.cashOnDelivery === true
+        || paymentModality.cash_on_delivery === 'true'
+        || paymentModality.cashOnDelivery === 'true';
+    const modalityPhrase = advanceEnabled && cashOnDeliveryEnabled
+        ? 'anticipado o contraentrega'
+        : (advanceEnabled ? 'pago anticipado' : (cashOnDeliveryEnabled ? 'contraentrega' : ''));
     return {
         zoneName: normalizedZone?.name || 'tu zona',
         segmentKey: normalizedZone?.segmentKey || '',
@@ -133,7 +137,7 @@ function buildShippingSummary(zone = {}) {
         estimatedTime: formatEstimatedTime(shipping.estimated_time || shipping.estimatedTime || shipping.time),
         paymentLabels,
         paymentPhrase: paymentLabels.length ? paymentLabels.join(', ') : 'los metodos configurados',
-        modalityPhrase: modalities.length ? modalities.join(' o ') : 'segun coordinacion'
+        modalityPhrase
     };
 }
 
@@ -203,7 +207,8 @@ function freeFromLine(summary = {}) {
 }
 
 function buildPaymentSentence(summary = {}) {
-    return `Puedes pagar con ${summary.paymentPhrase}, ${summary.modalityPhrase} 😊`;
+    const modality = text(summary.modalityPhrase);
+    return `Puedes pagar con ${summary.paymentPhrase}${modality ? `, ${modality}` : ''} 😊`;
 }
 
 function agencyHours(agency = {}) {
