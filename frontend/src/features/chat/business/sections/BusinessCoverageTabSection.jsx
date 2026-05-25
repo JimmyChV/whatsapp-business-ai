@@ -150,6 +150,53 @@ function carrierColor(value = '') {
     return '#185FA5';
 }
 
+function svgMarkerDataUrl(svg = '') {
+    return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function buildCustomerMarkerIcon(google) {
+    const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="58" height="72" viewBox="0 0 58 72">
+            <defs>
+                <filter id="shadow" x="-40%" y="-25%" width="180%" height="180%">
+                    <feDropShadow dx="0" dy="7" stdDeviation="5" flood-color="#111827" flood-opacity="0.28"/>
+                </filter>
+            </defs>
+            <path filter="url(#shadow)" d="M29 4C16.3 4 6 14.2 6 26.8c0 17.5 23 41.2 23 41.2s23-23.7 23-41.2C52 14.2 41.7 4 29 4z" fill="#E11D48"/>
+            <circle cx="29" cy="27" r="11" fill="#FFFFFF"/>
+            <circle cx="29" cy="27" r="5" fill="#E11D48"/>
+        </svg>
+    `;
+    return {
+        url: svgMarkerDataUrl(svg),
+        scaledSize: new google.maps.Size(58, 72),
+        anchor: new google.maps.Point(29, 68)
+    };
+}
+
+function buildAgencyMarkerIcon(google, carrier = '') {
+    const key = carrierKey(carrier);
+    const color = carrierColor(key);
+    const letter = key === 'marvisur' ? 'M' : (key === 'shalom' ? 'S' : 'A');
+    const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="54" height="54" viewBox="0 0 54 54">
+            <defs>
+                <filter id="shadow" x="-35%" y="-35%" width="170%" height="170%">
+                    <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#111827" flood-opacity="0.24"/>
+                </filter>
+            </defs>
+            <circle filter="url(#shadow)" cx="27" cy="27" r="24" fill="#FFFFFF"/>
+            <circle cx="27" cy="27" r="19" fill="${color}"/>
+            <text x="27" y="34" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="900" fill="#FFFFFF">${letter}</text>
+        </svg>
+    `;
+    return {
+        url: svgMarkerDataUrl(svg),
+        scaledSize: new google.maps.Size(54, 54),
+        anchor: new google.maps.Point(27, 27)
+    };
+}
+
 function extractMessageBody(message = {}) {
     return text(
         message?.body
@@ -314,7 +361,7 @@ function CoverageMap({
 }) {
     const mapElementRef = useRef(null);
     const mapRef = useRef(null);
-    const overlaysRef = useRef({ markers: [], renderers: [] });
+    const overlaysRef = useRef({ markers: [], renderers: [], polylines: [] });
 
     useEffect(() => {
         if (!google?.maps || !mapElementRef.current || !coords) return;
@@ -324,7 +371,7 @@ function CoverageMap({
             mapTypeControl: false,
             streetViewControl: false,
             fullscreenControl: false,
-            clickableIcons: true
+            clickableIcons: false
         });
     }, [google, maximized, coords?.lat, coords?.lng]);
 
@@ -333,7 +380,8 @@ function CoverageMap({
         if (!google?.maps || !map || !coords) return undefined;
         overlaysRef.current.markers.forEach((marker) => marker.setMap(null));
         overlaysRef.current.renderers.forEach((renderer) => renderer.setMap(null));
-        overlaysRef.current = { markers: [], renderers: [] };
+        overlaysRef.current.polylines.forEach((polyline) => polyline.setMap(null));
+        overlaysRef.current = { markers: [], renderers: [], polylines: [] };
 
         const bounds = new google.maps.LatLngBounds();
         const clientPosition = new google.maps.LatLng(coords.lat, coords.lng);
@@ -341,7 +389,9 @@ function CoverageMap({
             position: clientPosition,
             map,
             draggable: true,
-            title: 'Ubicacion del cliente'
+            title: 'Ubicacion del cliente',
+            icon: buildCustomerMarkerIcon(google),
+            zIndex: 1000
         });
         clientMarker.addListener('dragend', (event) => {
             const nextLat = event.latLng.lat();
@@ -362,19 +412,8 @@ function CoverageMap({
                 position: agencyPosition,
                 map,
                 title: agency.name || carrierLabel(carrier),
-                label: {
-                    text: carrier === 'marvisur' ? 'M' : (carrier === 'shalom' ? 'S' : 'A'),
-                    color: '#ffffff',
-                    fontWeight: '800'
-                },
-                icon: {
-                    path: google.maps.SymbolPath.CIRCLE,
-                    fillColor: color,
-                    fillOpacity: 1,
-                    strokeColor: '#ffffff',
-                    strokeWeight: 3,
-                    scale: 12
-                }
+                icon: buildAgencyMarkerIcon(google, carrier),
+                zIndex: carrier === 'marvisur' ? 910 : 920
             });
             marker.addListener('click', () => {
                 infoWindow.setContent(`
@@ -388,14 +427,26 @@ function CoverageMap({
             overlaysRef.current.markers.push(marker);
             bounds.extend(agencyPosition);
 
+            const fallbackLine = new google.maps.Polyline({
+                path: [clientPosition, new google.maps.LatLng(agencyPosition.lat, agencyPosition.lng)],
+                geodesic: true,
+                map,
+                strokeColor: color,
+                strokeOpacity: 0.62,
+                strokeWeight: 7,
+                zIndex: carrier === 'marvisur' ? 40 : 41
+            });
+            overlaysRef.current.polylines.push(fallbackLine);
+
             const renderer = new google.maps.DirectionsRenderer({
                 map,
                 suppressMarkers: true,
                 preserveViewport: true,
                 polylineOptions: {
                     strokeColor: color,
-                    strokeOpacity: 0.82,
-                    strokeWeight: 5
+                    strokeOpacity: 0.95,
+                    strokeWeight: 7,
+                    zIndex: carrier === 'marvisur' ? 80 : 81
                 }
             });
             overlaysRef.current.renderers.push(renderer);
@@ -404,7 +455,10 @@ function CoverageMap({
                 destination: agencyPosition,
                 travelMode: google.maps.TravelMode.DRIVING
             }, (response, status) => {
-                if (status === google.maps.DirectionsStatus.OK && response) renderer.setDirections(response);
+                if (status === google.maps.DirectionsStatus.OK && response) {
+                    fallbackLine.setMap(null);
+                    renderer.setDirections(response);
+                }
             });
         });
 
@@ -414,14 +468,15 @@ function CoverageMap({
         return () => {
             overlaysRef.current.markers.forEach((marker) => marker.setMap(null));
             overlaysRef.current.renderers.forEach((renderer) => renderer.setMap(null));
-            overlaysRef.current = { markers: [], renderers: [] };
+            overlaysRef.current.polylines.forEach((polyline) => polyline.setMap(null));
+            overlaysRef.current = { markers: [], renderers: [], polylines: [] };
         };
     }, [google, coords?.lat, coords?.lng, agencies, onCoordsChange]);
 
     return <div ref={mapElementRef} className={className || 'business-coverage-map'} />;
 }
 
-function buildPreparedCoverageMessage({ result, zone, shipping, agencies, routeMetrics }) {
+function buildPreparedCoverageMessageLegacy({ result, zone, shipping, agencies, routeMetrics }) {
     const responseText = text(result?.responseText || '');
     if (!zone || !agencies.length) return responseText;
     const shippingType = text(shipping?.type).toLowerCase() === 'courier' ? 'courier' : 'delivery';
@@ -431,6 +486,24 @@ function buildPreparedCoverageMessage({ result, zone, shipping, agencies, routeM
     const cost = money(shipping?.cost);
     const freeFrom = money(shipping?.free_from ?? shipping?.freeFrom);
     const time = formatEstimatedTime(shipping?.estimated_time || shipping?.estimatedTime);
+    const freeText = freeFrom ? `, gratis desde S/ ${freeFrom}` : '';
+
+    if (shippingType !== 'courier') {
+        const methods = paymentLabels(zone).join(', ');
+        const modality = paymentModalityLabel(zone);
+        return [
+            `Te confirmo la cobertura para ${locationName}.`,
+            '',
+            'Tenemos reparto a domicilio en esa zona.',
+            `El costo de envio es *S/ ${cost || 'por confirmar'}*${freeText}.`,
+            time ? `El tiempo estimado es ${time}.` : '',
+            methods ? `Puedes pagar con ${methods}.` : '',
+            modality ? `La modalidad disponible es ${modality}.` : '',
+            '',
+            'Si te parece bien, seguimos con la coordinacion de tu pedido.'
+        ].filter(Boolean).join('\n');
+    }
+
     const agencyLines = agencies.map((agency) => {
         const carrier = carrierLabel(agency.carrier);
         const metric = routeMetrics[carrierKey(agency.carrier)] || {};
@@ -456,6 +529,62 @@ function buildPreparedCoverageMessage({ result, zone, shipping, agencies, routeM
         `⏱ ${time}`,
         '',
         '¿Coordino el envío por Marvisur o Shalom? 😊'
+    ].join('\n');
+}
+
+function buildPreparedCoverageMessage({ result, zone, shipping, agencies, routeMetrics }) {
+    const responseText = text(result?.responseText || '');
+    if (!zone || !agencies.length) return responseText;
+    const shippingType = text(shipping?.type).toLowerCase() === 'courier' ? 'courier' : 'delivery';
+    const location = result?.resolvedLocation || {};
+    const locationName = text(location.district || location.province || location.department || 'tu zona');
+    const cost = money(shipping?.cost);
+    const freeFrom = money(shipping?.free_from ?? shipping?.freeFrom);
+    const time = formatEstimatedTime(shipping?.estimated_time || shipping?.estimatedTime);
+    const freeText = freeFrom ? `, gratis desde S/ ${freeFrom}` : '';
+
+    if (shippingType !== 'courier') {
+        const methods = paymentLabels(zone).join(', ');
+        const modality = paymentModalityLabel(zone);
+        return [
+            `Te confirmo la cobertura para ${locationName}.`,
+            '',
+            'Tenemos reparto a domicilio en esa zona.',
+            `El costo de envio es *S/ ${cost || 'por confirmar'}*${freeText}.`,
+            time ? `El tiempo estimado es ${time}.` : '',
+            methods ? `Puedes pagar con ${methods}.` : '',
+            modality ? `La modalidad disponible es ${modality}.` : '',
+            '',
+            'Si te parece bien, seguimos con la coordinacion de tu pedido.'
+        ].filter(Boolean).join('\n');
+    }
+
+    const agencyLines = agencies.map((agency) => {
+        const carrier = carrierLabel(agency.carrier);
+        const metric = routeMetrics[carrierKey(agency.carrier)] || {};
+        const distance = text(metric.distanceText) || formatDistance(agency.distanceKm);
+        const duration = text(metric.durationText);
+        const meta = [distance, duration ? `${duration} en auto` : ''].filter(Boolean).join(' - ');
+        return [
+            `*${carrier}: ${agency.name || agency.fullName || 'Agencia'}*`,
+            text(agency.address || ''),
+            agency.phonePrimary ? `Tel: ${agency.phonePrimary}` : '',
+            agency.hoursWeek || agency.hoursDelivery ? `Horario: ${agency.hoursWeek || agency.hoursDelivery}` : '',
+            meta ? `Referencia: ${meta}` : ''
+        ].filter(Boolean).join('\n');
+    });
+
+    return [
+        `Te confirmo la cobertura para ${locationName}.`,
+        '',
+        'Para tu zona podemos enviarlo por agencia. Estas son las opciones mas cercanas:',
+        '',
+        agencyLines.join('\n\n'),
+        '',
+        `El costo de envio es *S/ ${cost || 'por confirmar'}*${freeText}.`,
+        `El tiempo estimado es ${time}.`,
+        '',
+        'Si te parece bien, dime cual agencia te queda mejor y seguimos con la coordinacion de tu pedido.'
     ].join('\n');
 }
 
