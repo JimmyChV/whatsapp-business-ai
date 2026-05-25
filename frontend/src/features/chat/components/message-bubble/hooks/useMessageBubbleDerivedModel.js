@@ -21,6 +21,87 @@ const isQuoteButtonProductName = (value = '') => {
     return ['confirmar', 'cambios', 'ver en carrito', 'confirm', 'changes'].includes(normalized);
 };
 
+const isPlainObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
+
+const normalizeOrderPayloadForDisplay = (payload = null) => {
+    if (!isPlainObject(payload)) return null;
+    const rawPreview = isPlainObject(payload.rawPreview) ? payload.rawPreview : {};
+    const metadata = isPlainObject(payload.metadata) ? payload.metadata : {};
+    const explicitType = String(
+        rawPreview.type
+        || payload.type
+        || rawPreview.sourceType
+        || rawPreview.source_type
+        || payload.sourceType
+        || payload.source_type
+        || metadata.sourceType
+        || metadata.source_type
+        || ''
+    ).trim().toLowerCase();
+    const recognizedType = ['quote', 'order', 'product'].find((type) => explicitType.includes(type)) || '';
+
+    if (recognizedType) {
+        return {
+            ...payload,
+            rawPreview: {
+                ...rawPreview,
+                type: recognizedType,
+                sourceType: rawPreview.sourceType || payload.sourceType || metadata.sourceType || recognizedType
+            }
+        };
+    }
+
+    if (explicitType) {
+        return {
+            ...payload,
+            rawPreview: {
+                ...rawPreview,
+                type: 'unrecognized'
+            }
+        };
+    }
+
+    const quoteId = String(payload.quoteId || rawPreview.quoteId || '').trim();
+    const metadataSourceType = String(metadata.sourceType || metadata.source_type || '').trim().toLowerCase();
+    const hasQuoteShape = Boolean(
+        quoteId
+        || rawPreview.quoteSummary
+        || metadataSourceType === 'quote'
+    );
+    if (hasQuoteShape) {
+        return {
+            ...payload,
+            quoteId: quoteId || payload.quoteId || null,
+            rawPreview: {
+                ...rawPreview,
+                type: 'quote',
+                sourceType: 'quote',
+                quoteId: quoteId || rawPreview.quoteId || null,
+                products: Array.isArray(rawPreview.products) ? rawPreview.products : (Array.isArray(payload.products) ? payload.products : [])
+            }
+        };
+    }
+
+    const hasOrderShape = Boolean(payload.orderId || rawPreview.orderId || rawPreview.token);
+    if (hasOrderShape) {
+        return {
+            ...payload,
+            rawPreview: {
+                ...rawPreview,
+                type: 'order'
+            }
+        };
+    }
+
+    return {
+        ...payload,
+        rawPreview: {
+            ...rawPreview,
+            type: 'unrecognized'
+        }
+    };
+};
+
 export default function useMessageBubbleDerivedModel({
     msg,
     senderDisplayName,
@@ -38,25 +119,12 @@ export default function useMessageBubbleDerivedModel({
         // Bloque 2: orden/cotizacion (depende solo de msg)
         const quoteItemsFromBody = parseQuoteItemsFromBody(messageBodyText);
         const quotePaymentFromBody = parseQuotePaymentFromBody(messageBodyText);
-        const quoteOrderPayload = quoteItemsFromBody.length > 0
-            ? {
-                orderId: null,
-                currency: 'PEN',
-                subtotal: Number.isFinite(quotePaymentFromBody?.subtotal)
-                    ? quotePaymentFromBody.subtotal
-                    : (Number.isFinite(quotePaymentFromBody?.totalAfterDiscount) ? quotePaymentFromBody.totalAfterDiscount : null),
-                products: quoteItemsFromBody,
-                rawPreview: {
-                    type: 'quote',
-                    itemCount: quoteItemsFromBody.length,
-                    title: 'Cotizacion',
-                    quoteSummary: quotePaymentFromBody || null
-                }
-            }
-            : null;
         const hasOrder = Boolean(safeMsg.order);
-        const rawActionOrder = hasOrder ? safeMsg.order : quoteOrderPayload;
-        const rawOrderItems = Array.isArray(rawActionOrder?.products) ? rawActionOrder.products : [];
+        const quoteOrderPayload = null;
+        const rawActionOrder = hasOrder ? normalizeOrderPayloadForDisplay(safeMsg.order) : quoteOrderPayload;
+        const rawOrderItems = Array.isArray(rawActionOrder?.products)
+            ? rawActionOrder.products
+            : (Array.isArray(rawActionOrder?.rawPreview?.products) ? rawActionOrder.rawPreview.products : []);
         const orderItems = rawOrderItems.filter((item) => !isQuoteButtonProductName(item?.title || item?.name || item?.productName || ''));
         const actionOrder = rawActionOrder && rawOrderItems.length !== orderItems.length
             ? {
@@ -71,9 +139,9 @@ export default function useMessageBubbleDerivedModel({
         const rawItemCount = parseOrderMoneyValue(actionOrder?.rawPreview?.itemCount);
         const reportedItemCount = Number.isFinite(rawItemCount) ? Math.max(0, Math.round(rawItemCount)) : orderItems.length;
         const isProductPayload = orderRawType.includes('product');
-        const isOrderPayload = orderRawType.includes('order') || Boolean(actionOrder?.orderId);
-        const bodyNormalized = normalizeSearchText(messageBodyText);
-        const isQuotePayload = orderRawType.includes('quote') || (bodyNormalized.includes('cotizacion') && orderItems.length > 0);
+        const isOrderPayload = orderRawType.includes('order');
+        const isUnrecognizedOrderPayload = Boolean(hasOrder && actionOrder && orderRawType.includes('unrecognized'));
+        const isQuotePayload = orderRawType.includes('quote');
         const isOrderActionable = Boolean(actionOrder) && (isOrderPayload || isQuotePayload || isProductPayload);
         const orderActionLabel = isProductPayload ? 'Anadir al carrito' : 'Ver en carrito';
         const rawOrderNote = String(actionOrder?.rawPreview?.body || '').trim();
@@ -186,6 +254,7 @@ export default function useMessageBubbleDerivedModel({
             isProductPayload,
             isOrderPayload,
             isQuotePayload,
+            isUnrecognizedOrderPayload,
             rawOrderNote,
             safeOrderNote,
             orderSubtotalLabel,

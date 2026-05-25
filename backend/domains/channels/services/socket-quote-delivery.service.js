@@ -337,37 +337,45 @@ function buildOutgoingOrderPayload(quote = {}) {
     const items = Array.isArray(quote?.items) ? quote.items : [];
     const summary = isPlainObject(quote?.summary) ? quote.summary : {};
     const currency = toText(quote?.currency || summary?.currency || 'PEN') || 'PEN';
+    const quoteId = toNullableText(quote?.quoteId);
+    const metadata = isPlainObject(quote?.metadata) ? quote.metadata : {};
+    const sourceType = toText(metadata?.sourceType || metadata?.source_type || quote?.sourceType || 'quote').toLowerCase() || 'quote';
+    const quoteSummary = {
+        itemCount: Number.isInteger(Number(summary?.itemCount)) ? Number(summary.itemCount) : items.length,
+        subtotal: toFiniteNumberOrNull(summary?.subtotal),
+        discount: toFiniteNumberOrNull(summary?.discount),
+        totalAfterDiscount: toFiniteNumberOrNull(summary?.totalAfterDiscount),
+        deliveryAmount: toFiniteNumberOrNull(summary?.deliveryAmount),
+        deliveryFree: Boolean(summary?.deliveryFree),
+        totalPayable: toFiniteNumberOrNull(summary?.totalPayable),
+        globalDiscount: summary?.globalDiscount && typeof summary.globalDiscount === 'object'
+            ? {
+                type: String(summary.globalDiscount.type || 'none').trim().toLowerCase() || 'none',
+                value: toFiniteNumberOrNull(summary.globalDiscount.value) ?? 0,
+                applied: toFiniteNumberOrNull(summary.globalDiscount.applied) ?? 0
+            }
+            : { type: 'none', value: 0, applied: 0 },
+        currency
+    };
 
     return {
         type: 'quote',
-        quoteId: toNullableText(quote?.quoteId),
+        sourceType,
+        quoteId,
         currency,
         subtotal: toFiniteNumberOrNull(summary?.subtotal),
         products: items,
         rawPreview: {
             type: 'quote',
-            itemCount: Number.isInteger(Number(summary?.itemCount)) ? Number(summary.itemCount) : items.length,
+            sourceType,
+            quoteId,
+            products: items,
+            itemCount: quoteSummary.itemCount,
             currency,
-            quoteSummary: {
-                itemCount: Number.isInteger(Number(summary?.itemCount)) ? Number(summary.itemCount) : items.length,
-                subtotal: toFiniteNumberOrNull(summary?.subtotal),
-                discount: toFiniteNumberOrNull(summary?.discount),
-                totalAfterDiscount: toFiniteNumberOrNull(summary?.totalAfterDiscount),
-                deliveryAmount: toFiniteNumberOrNull(summary?.deliveryAmount),
-                deliveryFree: Boolean(summary?.deliveryFree),
-                totalPayable: toFiniteNumberOrNull(summary?.totalPayable),
-                globalDiscount: summary?.globalDiscount && typeof summary.globalDiscount === 'object'
-                    ? {
-                        type: String(summary.globalDiscount.type || 'none').trim().toLowerCase() || 'none',
-                        value: toFiniteNumberOrNull(summary.globalDiscount.value) ?? 0,
-                        applied: toFiniteNumberOrNull(summary.globalDiscount.applied) ?? 0
-                    }
-                    : { type: 'none', value: 0, applied: 0 },
-                currency
-            }
+            quoteSummary
         },
         notes: toNullableText(quote?.notes),
-        metadata: isPlainObject(quote?.metadata) ? quote.metadata : {}
+        metadata
     };
 }
 

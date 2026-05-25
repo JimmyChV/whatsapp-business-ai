@@ -78,6 +78,7 @@ const MessageBubble = ({
         isProductPayload,
         isOrderPayload,
         isQuotePayload,
+        isUnrecognizedOrderPayload,
         rawOrderNote,
         safeOrderNote,
         orderSubtotalLabel,
@@ -679,6 +680,12 @@ const MessageBubble = ({
                             {orderActionLabel}
                         </button>
                     </div>
+                </div>
+            )}
+
+            {isUnrecognizedOrderPayload && (
+                <div className="message-order-card__hint">
+                    Formato de pedido no reconocido. Se muestra el contenido original.
                 </div>
             )}
 
