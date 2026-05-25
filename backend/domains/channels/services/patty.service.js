@@ -3395,6 +3395,8 @@ async function maybeHandlePattyLogisticsDecision({
     inboundMessageId,
     lastMessage,
     shouldAbortRun,
+    mode = 'off',
+    reviewContext = null,
     assistantName = DEFAULT_ASSISTANT_NAME,
     moduleName = ''
 } = {}) {
@@ -3457,6 +3459,21 @@ async function maybeHandlePattyLogisticsDecision({
         }).catch((error) => console.warn('[Patty] logistics salesState update skipped:', error?.message || error));
     }
     if (await shouldAbortRun?.('before_logistics_send')) return true;
+    if (mode === 'review') {
+        if (reviewContext && typeof reviewContext === 'object') {
+            reviewContext.deterministicResponse = decision.responseText;
+            reviewContext.deterministicSource = 'patty_logistics';
+        }
+        console.log('[Patty] logistics response prepared as review suggestion', {
+            tenantId,
+            moduleId,
+            chatId,
+            intent: decision.intent,
+            zoneRuleId: decision.zone?.ruleId || null
+        });
+        return false;
+    }
+    if (mode !== 'autonomous') return false;
     await waClient.sendMessage(chatId, decision.responseText, {
         metadata: {
             agentMeta: {
@@ -5570,6 +5587,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 });
                 return;
             }
+            const logisticsReviewContext = {};
             const logisticsHandled = await maybeHandlePattyLogisticsDecision({
                 tenantId: cleanTenantId,
                 moduleId: cleanModuleId,
@@ -5578,15 +5596,36 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 inboundMessageId,
                 lastMessage: rawInboundText,
                 shouldAbortRun,
+                mode,
+                reviewContext: logisticsReviewContext,
                 assistantName: aiConfig.assistantName || DEFAULT_ASSISTANT_NAME,
                 moduleName: earlyModuleName
             });
             if (logisticsHandled) return;
             const prebuiltContext = await buildPattyContext(cleanTenantId, cleanModuleId, cleanChatId);
+            if (logisticsReviewContext.deterministicResponse) {
+                prebuiltContext.deterministicResponse = logisticsReviewContext.deterministicResponse;
+                prebuiltContext.deterministicSource = logisticsReviewContext.deterministicSource || 'patty_logistics';
+            }
             if (await shouldAbortRun('after_context')) return;
             const prebuiltModuleName = getModuleDisplayNameFromConfig(prebuiltContext.moduleConfig || moduleConfig || {});
             if (prebuiltContext.deterministicResponse) {
                 const assistantName = formatAssistantDisplayName(prebuiltContext.assistantName || DEFAULT_ASSISTANT_NAME);
+                if (mode === 'review') {
+                    if (await shouldAbortRun('before_review_deterministic_emit')) return;
+                    const messages = normalizePattyMessages(prebuiltContext.deterministicResponse);
+                    emitSuggestion(socketEmitter, cleanTenantId, {
+                        chatId: cleanChatId,
+                        moduleId: cleanModuleId,
+                        suggestion: prebuiltContext.deterministicResponse,
+                        messages,
+                        quoteRequest: null,
+                        catalogProducts: [],
+                        assistantName,
+                        timestamp: Date.now()
+                    });
+                    return;
+                }
                 if (prebuiltContext.deterministicNeedsAdvisorReason) {
                     if (await shouldAbortRun('before_deterministic_escalation')) return;
                     await escalateToAdvisor(

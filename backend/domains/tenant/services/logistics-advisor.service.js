@@ -7,6 +7,14 @@ const logisticsAgenciesSyncService = require('./logistics-agencies-sync.service'
 const tenantZoneRulesService = require('./tenant-zone-rules.service');
 
 const COURIER_SEGMENTS = new Set(['lima_marvisur', 'resto_marvisur']);
+const LOGISTICS_INTENTS = new Set([
+    'ask_coverage',
+    'ask_agencies',
+    'ask_general_coverage',
+    'ask_payment',
+    'doubt_coverage',
+    'location_change'
+]);
 
 function text(value = '') {
     return String(value || '').trim();
@@ -455,11 +463,13 @@ async function resolveLogisticsDecision({
     const normalized = normalizeLookup(cleanMessage);
     const explicitInput = buildLocationInput(resolvedLocation || {}, '');
     const hasExplicitInput = Boolean(explicitInput.text || explicitInput.postcode || isValidCoords(numberOrNull(explicitInput.lat), numberOrNull(explicitInput.lng)));
-    const intent = hasExplicitInput && !normalized
+    const hasGpsInput = isValidCoords(numberOrNull(explicitInput.lat), numberOrNull(explicitInput.lng));
+    let intent = hasExplicitInput && !normalized
         ? 'ask_coverage'
         : detectLogisticsIntent(cleanMessage, chatHistory);
+    if (intent === 'none' && hasGpsInput) intent = 'ask_coverage';
 
-    if (intent === 'none' && !hasExplicitInput) {
+    if (!LOGISTICS_INTENTS.has(intent)) {
         return {
             intent,
             hasLogisticsDecision: false,
