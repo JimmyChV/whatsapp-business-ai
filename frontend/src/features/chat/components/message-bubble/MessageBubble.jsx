@@ -651,10 +651,25 @@ const MessageBubble = ({
                             onClick={() => {
                                 if (typeof onLoadOrderToCart !== 'function') return;
                                 const orderForCart = actionOrder && typeof actionOrder === 'object'
-                                    ? {
-                                        ...actionOrder,
-                                        sourceMessageId: String(msg?.id || '').trim() || actionOrder?.sourceMessageId || null
-                                    }
+                                    ? (isQuotePayload
+                                        ? {
+                                            ...actionOrder,
+                                            sourceType: 'quote',
+                                            quoteId: String(actionOrder?.quoteId || actionOrder?.rawPreview?.quoteId || '').trim() || null,
+                                            sourceQuoteMessageId: String(msg?.id || '').trim() || actionOrder?.sourceQuoteMessageId || null,
+                                            rawPreview: actionOrder?.rawPreview && typeof actionOrder.rawPreview === 'object'
+                                                ? {
+                                                    ...actionOrder.rawPreview,
+                                                    type: 'quote',
+                                                    sourceType: 'quote',
+                                                    quoteId: String(actionOrder?.quoteId || actionOrder.rawPreview.quoteId || '').trim() || null
+                                                }
+                                                : { type: 'quote', sourceType: 'quote' }
+                                        }
+                                        : {
+                                            ...actionOrder,
+                                            sourceMessageId: String(msg?.id || '').trim() || actionOrder?.sourceMessageId || null
+                                        })
                                     : null;
                                 onLoadOrderToCart(orderForCart);
                             }}

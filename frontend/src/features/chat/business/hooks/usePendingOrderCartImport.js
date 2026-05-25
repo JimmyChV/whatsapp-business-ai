@@ -61,6 +61,15 @@ export const usePendingOrderCartImport = ({
         const order = pendingOrderCartLoad.order && typeof pendingOrderCartLoad.order === 'object'
             ? pendingOrderCartLoad.order
             : {};
+        const orderType = String(
+            order?.sourceType
+            || order?.source_type
+            || order?.rawPreview?.sourceType
+            || order?.rawPreview?.source_type
+            || order?.rawPreview?.type
+            || ''
+        ).toLowerCase();
+        const isQuoteImport = orderType.includes('quote');
         const sourceOrderId = String(
             order?.rawPreview?.token
             || order?.rawPreview?.orderId
@@ -80,12 +89,25 @@ export const usePendingOrderCartImport = ({
                 messageId: sourceOrderMessageId || null
             }
             : null;
-        if (sourceOrder) {
+        if (isQuoteImport) {
+            applyDraftPatch({
+                sourceOrder: null,
+                sourceQuote: {
+                    quoteId: String(order?.quoteId || order?.rawPreview?.quoteId || '').trim() || null,
+                    messageId: String(
+                        order?.sourceQuoteMessageId
+                        || order?.source_quote_message_id
+                        || order?.rawPreview?.sourceQuoteMessageId
+                        || pendingOrderCartLoad?.messageId
+                        || ''
+                    ).trim() || null
+                },
+                sourceType: 'quote'
+            });
+        } else if (sourceOrder) {
             applyDraftPatch({ sourceOrder });
         }
-        const orderType = String(order?.rawPreview?.type || '').toLowerCase();
         const isProductImport = orderType.includes('product') && !String(order?.orderId || '').trim();
-        const isQuoteImport = orderType.includes('quote');
         const quoteSummary = order?.rawPreview?.quoteSummary && typeof order.rawPreview.quoteSummary === 'object'
             ? order.rawPreview.quoteSummary
             : null;

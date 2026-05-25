@@ -111,6 +111,9 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const sourceOrder = activeDraft.sourceOrder && typeof activeDraft.sourceOrder === 'object'
         ? activeDraft.sourceOrder
         : null;
+    const sourceQuote = activeDraft.sourceQuote && typeof activeDraft.sourceQuote === 'object'
+        ? activeDraft.sourceQuote
+        : null;
     const [quickSearch, setQuickSearch] = useState('');
     const [orderImportStatus, setOrderImportStatus] = useState(null);
     const lastImportedOrderRef = useRef('');
@@ -615,7 +618,9 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             metadata: {
                 tenantScopeKey: normalizedTenantScopeKey,
                 scopeModuleId: String(activeModuleId || selectedCatalogModuleId || '').trim().toLowerCase() || null,
-                sourceOrder: sourceOrder || undefined
+                sourceType: sourceQuote ? 'quote' : (sourceOrder ? 'order' : 'quote'),
+                sourceQuote: sourceQuote || undefined,
+                sourceOrder: sourceQuote ? undefined : (sourceOrder || undefined)
             }
         });
         if (!payload) return;
@@ -627,7 +632,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
 
         socket.emit('send_structured_quote', payload);
         setCart([]);
-        updateDraft({ sourceOrder: null });
+        updateDraft({ sourceOrder: null, sourceQuote: null, sourceType: null });
     };
 
     const handleUsePattySuggestionMessage = useCallback((index) => {

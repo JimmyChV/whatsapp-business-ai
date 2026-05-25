@@ -134,6 +134,10 @@ function normalizeStructuredQuote(payload = {}) {
 }
 
 function resolveQuoteSourceType(metadata = {}, payload = {}) {
+    const rawType = toText(metadata?.sourceType || metadata?.source_type || metadata?.source || payload?.sourceType || payload?.source_type).toLowerCase();
+    if (rawType.includes('quote')) return 'quote';
+    if (rawType.includes('order')) return 'order';
+
     const sourceMessageId = toText(
         metadata?.sourceMessageId
         || metadata?.source_message_id
@@ -150,11 +154,13 @@ function resolveQuoteSourceType(metadata = {}, payload = {}) {
     );
     if (sourceMessageId) return 'order';
 
-    const rawType = toText(metadata?.sourceType || metadata?.source_type || metadata?.source || payload?.sourceType || payload?.source_type).toLowerCase();
-    return rawType.includes('order') ? 'order' : 'quote';
+    return 'quote';
 }
 
 function resolveSourceOrder(metadata = {}, payload = {}) {
+    const sourceType = resolveQuoteSourceType(metadata, payload);
+    if (sourceType === 'quote') return null;
+
     const sourceOrder = isPlainObject(metadata?.sourceOrder)
         ? metadata.sourceOrder
         : (isPlainObject(payload?.sourceOrder) ? payload.sourceOrder : {});
