@@ -4,6 +4,7 @@ const {
 } = require('../../../config/persistence-runtime');
 const zoneCoverageResolverService = require('./zone-coverage-resolver.service');
 const logisticsAgenciesSyncService = require('./logistics-agencies-sync.service');
+const tenantZoneRulesService = require('./tenant-zone-rules.service');
 
 const COURIER_SEGMENTS = new Set(['lima_marvisur', 'resto_marvisur']);
 
@@ -143,13 +144,13 @@ function hasLogisticsLocationHint(normalized = '') {
 function detectLogisticsIntent(value = '', history = []) {
     const normalized = normalizeLookup(value);
     if (!normalized) return 'none';
-    if (/\b(a que lugares|donde tienen cobertura|donde hay cobertura|donde llegan|a donde llegan|que zonas cubren|zonas de cobertura|lugares tienen cobertura)\b/.test(normalized)) {
+    if (/\b(a que lugares|a que lugares llegan|a donde envian|donde tienen cobertura|donde hay cobertura|donde llegan|a donde llegan|que zonas|a que zonas|que zonas cubren|zonas de cobertura|lugares tienen cobertura)\b/.test(normalized)) {
         return 'ask_general_coverage';
     }
-    if (/\b(estas seguro|esta seguro|seguro|cobertura completa|llegan realmente|si llegan|confirmame cobertura|confirmar cobertura)\b/.test(normalized)) {
+    if (/\b(estas seguro|estan seguros|esta seguro|seguro tienen|seguro|cobertura completa|toda la zona|todo lima|llegan realmente|si llegan|confirmame cobertura|confirmar cobertura)\b/.test(normalized)) {
         return 'doubt_coverage';
     }
-    if (/\b(agencia|agencias|shalom|marvisur|courier|donde recojo|recojo|por que agencia|por cual agencia|dime una agencia|con que agencia|trabajan con)\b/.test(normalized)) {
+    if (/\b(por que agencia|que agencia|agencia|agencias|shalom|marvisur|courier|donde recojo|recojo|punto de recojo|por cual agencia|dime una agencia|con que agencia|trabajan con)\b/.test(normalized)) {
         return 'ask_agencies';
     }
     if (/\b(contraentrega|contra entrega|pago|pagar|yape|plin|transferencia|tarjeta|efectivo|metodos de pago|formas de pago)\b/.test(normalized)) {
@@ -297,6 +298,7 @@ function buildCourierWithoutGpsResponse({ coverage = {}, summary = {} } = {}) {
     const freeFrom = freeFromLine(summary);
     return [
         `Para ${district} enviamos por agencia 📦`,
+        'Trabajamos con *Marvisur* y *Shalom*.',
         `Costo: *${formatMoney(summary.cost)}*${freeFrom ? `, ${freeFrom}` : ''}`,
         summary.estimatedTime ? `⏱ ${summary.estimatedTime}` : '',
         'Para indicarte la agencia más cercana a ti,',
@@ -339,9 +341,27 @@ function buildNoCoverageResponse(coverage = {}) {
     const district = locationLabel(coverage, '');
     const label = district && district !== 'Tu Zona' ? ` en ${district}` : '';
     return [
-        `No encontré cobertura directa${label} 😊`,
-        'Déjame consultarlo con el equipo para ver si podemos coordinar el envío.'
+        `No tengo una zona de envío configurada${label} 😊`,
+        'Déjame derivarte con el equipo para revisarlo con precisión.'
     ].join('\n');
+}
+
+function hasRecognizedLocation(coverage = {}) {
+    const location = safeObject(coverage.resolvedLocation);
+    return Boolean(
+        text(location.postcode)
+        || text(location.district)
+        || text(location.province)
+        || text(location.department)
+        || text(location.formattedAddress)
+        || numberOrNull(location.lat) !== null
+        || numberOrNull(location.lng) !== null
+    );
+}
+
+async function findFallbackCourierZone(tenantId = DEFAULT_TENANT_ID) {
+    const rules = await tenantZoneRulesService.listZoneRules(tenantId, { includeInactive: false });
+    return ensureArray(rules).find((rule) => text(rule.segmentKey || rule.segment_key) === 'resto_marvisur') || null;
 }
 
 function isCourierZone(zone = null) {
@@ -464,9 +484,26 @@ async function resolveLogisticsDecision({
         || intent === 'ask_coverage'
         || intent === 'location_change'
         || intent === 'doubt_coverage';
+    const stateLocationInput = salesStateLocationInput(salesStateLocation || {});
     const input = shouldUseMessageLocation
         ? (hasExplicitInput ? explicitInput : buildLocationInput({ text: cleanMessage }, cleanMessage))
-        : salesStateLocationInput(salesStateLocation || {});
+        : stateLocationInput;
+
+    if (intent === 'ask_agencies'
+        && !stateLocationInput.postcode
+        && !isValidCoords(numberOrNull(stateLocationInput.lat), numberOrNull(stateLocationInput.lng))
+        && !hasLogisticsLocationHint(normalized)) {
+        return {
+            intent,
+            hasLogisticsDecision: true,
+            responseText: buildAgenciesWithoutZoneResponse(),
+            zone: null,
+            agencies: null,
+            needsGps: false,
+            gpsReason: null,
+            shouldClearLocation: false
+        };
+    }
 
     if (!input.text && !input.postcode && !isValidCoords(numberOrNull(input.lat), numberOrNull(input.lng))) {
         if (intent === 'ask_agencies') {
@@ -505,8 +542,20 @@ async function resolveLogisticsDecision({
         };
     }
 
-    const coverage = await resolveCoverageForInput(cleanTenantId, input);
-    const zone = normalizeZone(coverage?.zone);
+    let coverage = await resolveCoverageForInput(cleanTenantId, input);
+    let zone = normalizeZone(coverage?.zone);
+    let fallbackApplied = false;
+    if (!zone && coverage && !coverage.ambiguous && !coverage.needsGps && hasRecognizedLocation(coverage)) {
+        const fallbackZone = await findFallbackCourierZone(cleanTenantId);
+        if (fallbackZone) {
+            coverage = {
+                ...coverage,
+                zone: fallbackZone
+            };
+            zone = normalizeZone(fallbackZone);
+            fallbackApplied = true;
+        }
+    }
     const gpsLat = numberOrNull(input.lat ?? coverage?.resolvedLocation?.lat);
     const gpsLng = numberOrNull(input.lng ?? coverage?.resolvedLocation?.lng);
     const agencies = zone && isCourierZone(zone) && isValidCoords(gpsLat, gpsLng)
@@ -530,7 +579,12 @@ async function resolveLogisticsDecision({
         ambiguous: Boolean(coverage?.ambiguous),
         needsGps: Boolean(decision.needsGps),
         gpsReason: decision.gpsReason || null,
-        shouldClearLocation: intent === 'location_change'
+        shouldClearLocation: intent === 'location_change',
+        fallbackApplied,
+        shouldEscalate: !zone && !fallbackApplied && coverage && !coverage.ambiguous && !coverage.needsGps && hasRecognizedLocation(coverage),
+        advisorReason: !zone && !fallbackApplied && coverage && !coverage.ambiguous && !coverage.needsGps && hasRecognizedLocation(coverage)
+            ? 'zona_sin_fallback_logistico'
+            : null
     };
 }
 
