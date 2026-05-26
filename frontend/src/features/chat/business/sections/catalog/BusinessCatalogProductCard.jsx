@@ -12,7 +12,9 @@ export default function BusinessCatalogProductCard({
     isExternalCatalog = false,
     handleEditClick,
     handleDelete,
-    formatMoney
+    formatMoney,
+    quoteOptionMode = false,
+    optionLabel = ''
 }) {
     const finalPrice = Number.parseFloat(item.price || '0') || 0;
     const regularPrice = Number.parseFloat(item.regularPrice || item.price || '0') || finalPrice;
@@ -78,14 +80,16 @@ export default function BusinessCatalogProductCard({
                     </div>
                 )}
 
-                <div style={{ marginTop: '4px', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '7px', alignItems: 'stretch' }}>
-                    <button
-                        onClick={() => sendCatalogProduct(item, index)}
-                        disabled={!canWriteByAssignment}
-                        style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '7px 9px', background: canWriteByAssignment ? tone.infoSurface : 'var(--chat-control-disabled)', border: `1px solid ${tone.infoBorder}`, borderRadius: '9px', color: canWriteByAssignment ? tone.infoText : 'var(--saas-text-inverse)', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontSize: '0.73rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: canWriteByAssignment ? 1 : 0.75 }}
-                    >
-                        <Send size={12} /> Enviar
-                    </button>
+                <div style={{ marginTop: '4px', display: 'grid', gridTemplateColumns: quoteOptionMode ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))', gap: '7px', alignItems: 'stretch' }}>
+                    {!quoteOptionMode && (
+                        <button
+                            onClick={() => sendCatalogProduct(item, index)}
+                            disabled={!canWriteByAssignment}
+                            style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '7px 9px', background: canWriteByAssignment ? tone.infoSurface : 'var(--chat-control-disabled)', border: `1px solid ${tone.infoBorder}`, borderRadius: '9px', color: canWriteByAssignment ? tone.infoText : 'var(--saas-text-inverse)', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontSize: '0.73rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: canWriteByAssignment ? 1 : 0.75 }}
+                        >
+                            <Send size={12} /> Enviar
+                        </button>
+                    )}
                     {inCart ? (
                         <div style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', background: tone.successSurface, border: `1px solid ${tone.successBorder}`, borderRadius: '9px', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
                             <button
@@ -110,7 +114,7 @@ export default function BusinessCatalogProductCard({
                             disabled={!canWriteByAssignment}
                             style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '7px 9px', background: canWriteByAssignment ? 'var(--saas-accent-primary)' : 'var(--chat-control-disabled)', border: '1px solid color-mix(in srgb, var(--saas-accent-primary) 68%, transparent)', borderRadius: '9px', color: 'var(--saas-accent-primary-text)', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontSize: '0.73rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: canWriteByAssignment ? 1 : 0.75 }}
                         >
-                            <ShoppingCart size={12} /> Carrito
+                            <ShoppingCart size={12} /> {quoteOptionMode ? `Agregar a ${optionLabel || 'opción'}` : 'Carrito'}
                         </button>
                     )}
                 </div>

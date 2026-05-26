@@ -2,13 +2,24 @@ import React, { useState } from 'react';
 import { Package, PlusCircle, Search, SlidersHorizontal } from 'lucide-react';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 import {
+    addItemToCartState,
     buildCatalogFormDataFromProduct,
     buildCatalogProductPayloadFromForm,
+    calculateCartPricing,
+    clampNumber,
     createCatalogProductEmptyForm,
     extractCatalogCategoryLabels,
     formatMoney,
+    getCartLineBreakdown,
     normalizeCatalogCategoryKey,
-    normalizeTextKey
+    normalizeTextKey,
+    parseMoney,
+    removeItemFromCartState,
+    roundMoney,
+    setCartItemDiscountEnabledState,
+    setCartItemDiscountTypeState,
+    setCartItemDiscountValueState,
+    updateCartItemQtyState
 } from '../helpers';
 import { BusinessCatalogProductCard, BusinessCatalogProductForm } from './catalog';
 
@@ -259,18 +270,48 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
     const safePasoActual = Math.max(1, Number(wizardState.pasoActual || 1) || 1);
     const wizardOptions = Array.isArray(wizardState.opciones) ? wizardState.opciones : [];
     const wizardConfigured = wizardOptions.length > 0;
-    const wizardSteps = wizardConfigured
-        ? [
-            { step: 1, label: 'Configurar', complete: true },
-            ...wizardOptions.map((option, index) => ({
-                step: index + 2,
-                label: option?.label || `Opcion ${index + 1}`,
-                complete: Boolean(option?.confirmada)
-            })),
-            { step: wizardOptions.length + 2, label: 'Revisar', complete: false },
-            { step: wizardOptions.length + 3, label: 'Confirmar envio', complete: false }
-        ]
-        : [{ step: 1, label: 'Configurar', complete: false }];
+    const safePhase = ['config', 'catalog', 'cart', 'review'].includes(String(wizardState.phase || ''))
+        ? String(wizardState.phase || '')
+        : (wizardConfigured ? 'catalog' : 'config');
+    const activeOptionNumber = Math.min(
+        safeTotalOpciones,
+        Math.max(1, Number(wizardState.currentOption || Math.max(1, safePasoActual - 1)) || 1)
+    );
+    const currentOptionIndex = wizardConfigured && safePhase !== 'config'
+        ? activeOptionNumber - 1
+        : -1;
+    const currentOption = currentOptionIndex >= 0 ? (wizardOptions[currentOptionIndex] || null) : null;
+    const currentOptionProducts = Array.isArray(currentOption?.productos) ? currentOption.productos : [];
+    const currentOptionDelivery = currentOption?.delivery && typeof currentOption.delivery === 'object'
+        ? currentOption.delivery
+        : { type: 'free', amount: 0 };
+    const currentOptionPricing = calculateCartPricing({
+        cart: currentOptionProducts,
+        globalDiscountEnabled: Number(currentOption?.descuentoGlobal || 0) > 0,
+        globalDiscountType: 'amount',
+        globalDiscountValue: Number(currentOption?.descuentoGlobal || 0) || 0,
+        deliveryType: currentOptionDelivery.type === 'amount' ? 'amount' : 'free',
+        deliveryAmount: Number(currentOptionDelivery.amount || 0) || 0,
+        parseMoney,
+        roundMoney,
+        clampNumber
+    });
+    const getOptionLineBreakdown = (item = {}) => getCartLineBreakdown(item, { parseMoney, roundMoney, clampNumber });
+    const wizardSteps = [
+        { type: 'config', step: 1, label: 'Config', complete: wizardConfigured, active: safePhase === 'config' },
+        ...Array.from({ length: safeTotalOpciones }, (_, index) => {
+            const optionNumber = index + 1;
+            const option = wizardOptions[index] || {};
+            return {
+                type: 'option',
+                step: optionNumber + 1,
+                optionNumber,
+                label: `Opción ${optionNumber}`,
+                complete: Boolean(option?.confirmada),
+                active: safePhase !== 'config' && safePhase !== 'review' && activeOptionNumber === optionNumber
+            };
+        })
+    ];
     const setWizardPatch = (patch) => {
         if (typeof onQuoteOptionsWizardChange !== 'function') return;
         onQuoteOptionsWizardChange(patch);
@@ -284,13 +325,15 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
             if (typeof onResetQuoteOptionsWizard === 'function') {
                 onResetQuoteOptionsWizard();
             } else {
-                setWizardPatch({ modoOpciones: false, pasoActual: 1, opciones: [], mensajeFinal: '' });
+                setWizardPatch({ modoOpciones: false, phase: 'config', currentOption: 1, pasoActual: 1, opciones: [], mensajeFinal: '' });
             }
             return;
         }
         setWizardPatch({
             modoOpciones: true,
             totalOpciones: safeTotalOpciones,
+            phase: 'config',
+            currentOption: 1,
             pasoActual: 1,
             opciones: [],
             mensajeFinal: ''
@@ -299,7 +342,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
     const handleStartWizard = () => {
         const opciones = Array.from({ length: safeTotalOpciones }, (_, index) => ({
             numero: index + 1,
-            label: `Opcion ${index + 1}`,
+            label: `Opción ${index + 1}`,
             productos: [],
             descuentoGlobal: 0,
             delivery: null,
@@ -309,9 +352,111 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
         setWizardPatch({
             modoOpciones: true,
             totalOpciones: safeTotalOpciones,
+            phase: 'catalog',
+            currentOption: 1,
             pasoActual: 2,
             opciones,
             mensajeFinal: ''
+        });
+    };
+    const patchCurrentOption = (updater) => {
+        if (currentOptionIndex < 0) return;
+        const nextOptions = wizardOptions.map((option, index) => {
+            if (index !== currentOptionIndex) return option;
+            const resolved = typeof updater === 'function' ? updater(option || {}) : updater;
+            return {
+                ...(option || {}),
+                ...(resolved && typeof resolved === 'object' ? resolved : {})
+            };
+        });
+        setWizardPatch({ opciones: nextOptions });
+    };
+    const updateCurrentOptionProducts = (updater) => {
+        patchCurrentOption((option) => {
+            const previousProducts = Array.isArray(option?.productos) ? option.productos : [];
+            const nextProducts = typeof updater === 'function' ? updater(previousProducts) : updater;
+            const safeProducts = Array.isArray(nextProducts) ? nextProducts : [];
+            const pricing = calculateCartPricing({
+                cart: safeProducts,
+                globalDiscountEnabled: Number(option?.descuentoGlobal || 0) > 0,
+                globalDiscountType: 'amount',
+                globalDiscountValue: Number(option?.descuentoGlobal || 0) || 0,
+                deliveryType: option?.delivery?.type === 'amount' ? 'amount' : 'free',
+                deliveryAmount: Number(option?.delivery?.amount || 0) || 0,
+                parseMoney,
+                roundMoney,
+                clampNumber
+            });
+            return {
+                productos: safeProducts,
+                total: pricing.cartTotal,
+                confirmada: false
+            };
+        });
+    };
+    const updateCurrentOptionPricing = (patch) => {
+        patchCurrentOption((option) => {
+            const nextOption = {
+                ...(option || {}),
+                ...(patch && typeof patch === 'object' ? patch : {}),
+                confirmada: false
+            };
+            const safeProducts = Array.isArray(nextOption.productos) ? nextOption.productos : [];
+            const delivery = nextOption.delivery && typeof nextOption.delivery === 'object'
+                ? nextOption.delivery
+                : { type: 'free', amount: 0 };
+            const pricing = calculateCartPricing({
+                cart: safeProducts,
+                globalDiscountEnabled: Number(nextOption.descuentoGlobal || 0) > 0,
+                globalDiscountType: 'amount',
+                globalDiscountValue: Number(nextOption.descuentoGlobal || 0) || 0,
+                deliveryType: delivery.type === 'amount' ? 'amount' : 'free',
+                deliveryAmount: Number(delivery.amount || 0) || 0,
+                parseMoney,
+                roundMoney,
+                clampNumber
+            });
+            return {
+                ...nextOption,
+                total: pricing.cartTotal
+            };
+        });
+    };
+    const handleAddProductToCurrentOption = (item, qty = 1) => {
+        if (!currentOption) return;
+        updateCurrentOptionProducts((previous) => addItemToCartState(previous, item, qty));
+    };
+    const handleCurrentOptionQtyDelta = (id, delta) => {
+        updateCurrentOptionProducts((previous) => updateCartItemQtyState(previous, id, delta));
+    };
+    const handleCurrentOptionRemove = (id) => {
+        updateCurrentOptionProducts((previous) => removeItemFromCartState(previous, id));
+    };
+    const handleCurrentOptionDiscountEnabled = (id, enabled) => {
+        updateCurrentOptionProducts((previous) => setCartItemDiscountEnabledState(previous, id, enabled, parseMoney));
+    };
+    const handleCurrentOptionDiscountType = (id, type) => {
+        updateCurrentOptionProducts((previous) => setCartItemDiscountTypeState(previous, id, type));
+    };
+    const handleCurrentOptionDiscountValue = (id, value) => {
+        updateCurrentOptionProducts((previous) => setCartItemDiscountValueState(previous, id, value, parseMoney));
+    };
+    const confirmCurrentOptionAndContinue = () => {
+        if (!currentOption) return;
+        if (currentOptionProducts.length === 0) {
+            notify({ type: 'warn', message: 'Agrega al menos un producto a esta opción.' });
+            return;
+        }
+        const nextOptions = wizardOptions.map((option, index) => (
+            index === currentOptionIndex
+                ? { ...option, total: currentOptionPricing.cartTotal, confirmada: true }
+                : option
+        ));
+        setWizardPatch({
+            opciones: nextOptions,
+            phase: activeOptionNumber < safeTotalOpciones ? 'catalog' : 'review',
+            currentOption: activeOptionNumber < safeTotalOpciones ? activeOptionNumber + 1 : activeOptionNumber,
+            pasoActual: activeOptionNumber < safeTotalOpciones ? activeOptionNumber + 2 : safeTotalOpciones + 2
         });
     };
     const primaryActionStyle = {
@@ -394,7 +539,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                 {chatCatalogReadOnly && (
                     <div className="catalog-quote-mode-card" style={{ background: infoSurface, border: `1px solid ${infoBorder}`, color: infoText, borderRadius: '10px', padding: '9px 10px', fontSize: '0.74rem', lineHeight: 1.45, display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 800 }}>
-                            Modo de cotizacion:
+                            Modo de cotización:
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                             <label style={{ display: 'flex', alignItems: 'center', gap: '7px', background: !modoOpciones ? controlStrongSurface : controlSurface, border: `1px solid ${!modoOpciones ? successBorder : cardBorder}`, borderRadius: '10px', padding: '8px 9px', color: !modoOpciones ? successText : primaryText, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontWeight: 800 }}>
@@ -405,7 +550,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                     disabled={!canWriteByAssignment}
                                     onChange={() => handleQuoteModeChange(false)}
                                 />
-                                Cotizacion unica
+                                Cotización única
                             </label>
                             <label style={{ display: 'flex', alignItems: 'center', gap: '7px', background: modoOpciones ? controlStrongSurface : controlSurface, border: `1px solid ${modoOpciones ? successBorder : cardBorder}`, borderRadius: '10px', padding: '8px 9px', color: modoOpciones ? successText : primaryText, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontWeight: 800 }}>
                                 <input
@@ -420,7 +565,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                         </div>
                     </div>
                 )}
-                {!modoOpciones && (
+                {(!modoOpciones || safePhase === 'catalog') && (
                 <div className="catalog-toolbar-card" style={{ background: cardAltSurface, border: `1px solid ${cardBorder}`, borderRadius: '11px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '7px' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: controlStrongSurface, border: `1px solid ${controlBorder}`, borderRadius: '10px', padding: '0 10px', minWidth: 0 }}>
@@ -546,7 +691,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                         <div style={{ background: cardSurface, border: `1px solid ${cardBorder}`, borderRadius: '12px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '9px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
                                 <div>
-                                    <div style={{ color: primaryText, fontSize: '0.9rem', fontWeight: 900 }}>Wizard por opciones</div>
+                                    <div style={{ color: primaryText, fontSize: '0.9rem', fontWeight: 900 }}>Cotización por opciones</div>
                                     <div style={{ color: secondaryText, fontSize: '0.73rem', lineHeight: 1.35 }}>Arma varias cotizaciones para que el cliente elija una alternativa.</div>
                                 </div>
                                 <button
@@ -554,23 +699,31 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                     onClick={() => handleQuoteModeChange(false)}
                                     style={neutralActionStyle}
                                 >
-                                    Volver a unica
+                                    Volver a única
                                 </button>
                             </div>
 
                             <div style={{ display: 'flex', gap: '7px', overflowX: 'auto', paddingBottom: '2px' }}>
                                 {wizardSteps.map((step) => {
-                                    const isCurrent = Number(step.step) === safePasoActual;
+                                    const isCurrent = Boolean(step.active);
                                     const isComplete = Boolean(step.complete);
+                                    const canOpenStep = step.type === 'config' || isComplete || isCurrent;
                                     return (
                                         <button
                                             key={`quote_option_step_${step.step}`}
                                             type="button"
-                                            disabled={!isComplete && !isCurrent && step.step !== 1}
+                                            disabled={!canOpenStep}
                                             onClick={() => {
-                                                if (step.step === 1 || isComplete || isCurrent) {
-                                                    setWizardPatch({ pasoActual: step.step });
+                                                if (!canOpenStep) return;
+                                                if (step.type === 'config') {
+                                                    setWizardPatch({ phase: 'config', pasoActual: 1, currentOption: 1 });
+                                                    return;
                                                 }
+                                                setWizardPatch({
+                                                    phase: isCurrent ? safePhase : (isComplete ? 'cart' : 'catalog'),
+                                                    currentOption: step.optionNumber,
+                                                    pasoActual: step.step
+                                                });
                                             }}
                                             style={{
                                                 flex: '0 0 auto',
@@ -581,26 +734,26 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                                 padding: '6px 10px',
                                                 fontSize: '0.7rem',
                                                 fontWeight: 800,
-                                                cursor: isComplete || isCurrent || step.step === 1 ? 'pointer' : 'not-allowed',
-                                                opacity: isComplete || isCurrent || step.step === 1 ? 1 : 0.65,
+                                                cursor: canOpenStep ? 'pointer' : 'not-allowed',
+                                                opacity: canOpenStep ? 1 : 0.65,
                                                 whiteSpace: 'nowrap'
                                             }}
                                         >
-                                            {isComplete ? 'OK ' : ''}{step.step}. {step.label}
+                                            {isComplete ? 'OK ' : ''}{step.label}{isCurrent ? ' *' : ''}
                                         </button>
                                     );
                                 })}
                             </div>
                         </div>
 
-                        {safePasoActual === 1 && (
+                        {safePhase === 'config' && (
                             <div style={{ background: cardSurface, border: `1px solid ${cardBorder}`, borderRadius: '12px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                 <div>
-                                    <div style={{ color: primaryText, fontSize: '0.95rem', fontWeight: 900 }}>Configurar envio por opciones</div>
-                                    <div style={{ color: secondaryText, fontSize: '0.75rem', lineHeight: 1.45 }}>Define cuantas alternativas quieres preparar antes de empezar.</div>
+                                    <div style={{ color: primaryText, fontSize: '0.95rem', fontWeight: 900 }}>Configurar envío por opciones</div>
+                                    <div style={{ color: secondaryText, fontSize: '0.75rem', lineHeight: 1.45 }}>Define cuántas alternativas quieres preparar antes de empezar.</div>
                                 </div>
                                 <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', color: secondaryText, fontSize: '0.74rem', fontWeight: 700 }}>
-                                    Cuantas opciones quieres enviar?
+                                    ¿Cuántas alternativas vas a preparar?
                                     <select
                                         value={safeTotalOpciones}
                                         disabled={!canWriteByAssignment}
@@ -630,28 +783,249 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                             </div>
                         )}
 
-                        {safePasoActual > 1 && (
-                            <div style={{ background: cardSurface, border: `1px solid ${cardBorder}`, borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', minHeight: '180px' }}>
-                                <div style={{ color: primaryText, fontSize: '0.95rem', fontWeight: 900 }}>
-                                    {wizardSteps.find((step) => step.step === safePasoActual)?.label || 'Paso del wizard'}
+                        {safePhase === 'catalog' && currentOption && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                <div style={{ background: cardSurface, border: `1px solid ${cardBorder}`, borderRadius: '12px', padding: '11px', display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <div>
+                                        <div style={{ color: primaryText, fontSize: '0.95rem', fontWeight: 900 }}>Opción {activeOptionNumber} de {safeTotalOpciones}</div>
+                                        <div style={{ color: secondaryText, fontSize: '0.74rem', lineHeight: 1.4 }}>Selecciona productos para esta alternativa.</div>
+                                    </div>
+                                    <div style={{ color: currentOptionProducts.length > 0 ? successText : secondaryText, fontSize: '0.72rem', fontWeight: 800 }}>
+                                        {currentOptionProducts.length} producto{currentOptionProducts.length === 1 ? '' : 's'} agregados
+                                    </div>
                                 </div>
-                                <div style={{ color: secondaryText, fontSize: '0.78rem', lineHeight: 1.55 }}>
-                                    La estructura del wizard ya esta activa. En el siguiente bloque este paso usara el catalogo para armar productos, descuentos, delivery y totales por opcion.
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    {visibleCatalog.length === 0 ? (
+                                        <div style={{ textAlign: 'center', padding: '30px 15px', color: secondaryText, background: cardSurface, border: `1px solid ${cardBorder}`, borderRadius: '12px' }}>
+                                            <Package size={36} style={{ marginBottom: '12px', opacity: 0.25, marginLeft: 'auto', marginRight: 'auto', color: secondaryText }} />
+                                            <div style={{ fontSize: '0.875rem', marginBottom: '6px' }}>Catalogo vacio</div>
+                                            <div style={{ fontSize: '0.78rem', opacity: 0.7, lineHeight: '1.5' }}>
+                                                Ajusta la busqueda o filtros para agregar productos.
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        visibleCatalog.map((item, i) => (
+                                            <BusinessCatalogProductCard
+                                                key={item.id || i}
+                                                item={item}
+                                                index={i}
+                                                cartItems={currentOptionProducts}
+                                                onCatalogQtyDelta={handleCurrentOptionQtyDelta}
+                                                addToCart={handleAddProductToCurrentOption}
+                                                sendCatalogProduct={sendCatalogProduct}
+                                                canWriteByAssignment={canWriteByAssignment}
+                                                chatCatalogReadOnly={chatCatalogReadOnly}
+                                                isExternalCatalog={isExternalCatalog}
+                                                handleEditClick={handleEditClick}
+                                                handleDelete={handleDelete}
+                                                formatMoney={formatMoney}
+                                                quoteOptionMode
+                                                optionLabel={currentOption.label || `Opción ${currentOption.numero || currentOptionIndex + 1}`}
+                                            />
+                                        ))
+                                    )}
                                 </div>
-                                <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+
+                                <div style={{ position: 'sticky', bottom: 0, zIndex: 5, background: cardSurface, border: `1px solid ${cardBorder}`, borderRadius: '14px', padding: '10px', boxShadow: '0 -8px 22px rgba(15, 23, 42, 0.08)', display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <div style={{ color: secondaryText, fontSize: '0.74rem', lineHeight: 1.35 }}>
+                                        Revisa cantidades y descuentos antes de confirmar esta opción.
+                                    </div>
                                     <button
                                         type="button"
-                                        onClick={() => setWizardPatch({ pasoActual: Math.max(1, safePasoActual - 1) })}
-                                        style={neutralActionStyle}
+                                        disabled={currentOptionProducts.length === 0}
+                                        onClick={() => setWizardPatch({ phase: 'cart', pasoActual: activeOptionNumber + 1 })}
+                                        style={{
+                                            ...primaryActionStyle,
+                                            justifyContent: 'center',
+                                            padding: '9px 13px',
+                                            borderRadius: '12px',
+                                            opacity: currentOptionProducts.length > 0 ? 1 : 0.55,
+                                            cursor: currentOptionProducts.length > 0 ? 'pointer' : 'not-allowed'
+                                        }}
                                     >
-                                        Volver
+                                        Ver carrito de Opción {activeOptionNumber}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {safePhase === 'cart' && currentOption && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                <div style={{ background: cardSurface, border: `1px solid ${cardBorder}`, borderRadius: '12px', padding: '11px', display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <div>
+                                        <div style={{ color: primaryText, fontSize: '0.95rem', fontWeight: 900 }}>{currentOption.label || `Opción ${currentOption.numero || currentOptionIndex + 1}`}</div>
+                                        <div style={{ color: secondaryText, fontSize: '0.72rem', lineHeight: 1.4 }}>Ajusta cantidades, descuentos y delivery.</div>
+                                    </div>
+                                    <button type="button" onClick={() => setWizardPatch({ phase: 'catalog', pasoActual: activeOptionNumber + 1 })} style={neutralActionStyle}>
+                                        Volver al catálogo
+                                    </button>
+                                </div>
+
+                                <div style={{ background: cardSurface, border: `1px solid ${cardBorder}`, borderRadius: '12px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+
+                                    {currentOptionProducts.length === 0 ? (
+                                        <div style={{ color: secondaryText, background: cardAltSurface, border: `1px dashed ${cardBorder}`, borderRadius: '10px', padding: '14px', fontSize: '0.76rem', lineHeight: 1.45, textAlign: 'center' }}>
+                                            Esta opción aún no tiene productos.
+                                        </div>
+                                    ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                            {currentOptionProducts.map((item, index) => {
+                                                const line = getOptionLineBreakdown(item);
+                                                const discountMode = line.lineDiscountEnabled ? line.lineDiscountType : 'none';
+                                                return (
+                                                    <div key={item.id || index} style={{ background: cardAltSurface, border: `1px solid ${cardBorder}`, borderRadius: '10px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'start' }}>
+                                                            <div style={{ minWidth: 0 }}>
+                                                                <div style={{ color: primaryText, fontSize: '0.78rem', fontWeight: 800, lineHeight: 1.25 }}>{item.title || item.sku || `Producto ${index + 1}`}</div>
+                                                                <div style={{ color: secondaryText, fontSize: '0.68rem', marginTop: '2px' }}>{item.sku || 'Sin SKU'} - S/ {formatMoney(line.unitPrice || 0)}</div>
+                                                            </div>
+                                                            <button type="button" onClick={() => handleCurrentOptionRemove(item.id)} style={{ ...neutralActionStyle, padding: '3px 7px', color: 'var(--chat-danger-text)' }}>
+                                                                Quitar
+                                                            </button>
+                                                        </div>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '7px', alignItems: 'center' }}>
+                                                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                                                <button type="button" onClick={() => handleCurrentOptionQtyDelta(item.id, -1)} style={{ ...neutralActionStyle, padding: '2px 7px' }}>-</button>
+                                                                <span style={{ color: primaryText, fontWeight: 900, minWidth: '20px', textAlign: 'center' }}>{line.qty}</span>
+                                                                <button type="button" onClick={() => handleCurrentOptionQtyDelta(item.id, 1)} style={{ ...primaryActionStyle, padding: '2px 7px' }}>+</button>
+                                                            </div>
+                                                            <div style={{ textAlign: 'right', color: primaryText, fontSize: '0.76rem', fontWeight: 800 }}>Subtotal: S/ {formatMoney(line.lineFinal || 0)}</div>
+                                                        </div>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 72px', gap: '6px' }}>
+                                                            <select
+                                                                value={discountMode}
+                                                                onChange={(event) => {
+                                                                    const mode = event.target.value;
+                                                                    if (mode === 'none') {
+                                                                        handleCurrentOptionDiscountEnabled(item.id, false);
+                                                                        return;
+                                                                    }
+                                                                    handleCurrentOptionDiscountEnabled(item.id, true);
+                                                                    handleCurrentOptionDiscountType(item.id, mode);
+                                                                }}
+                                                                style={{ background: controlSurface, border: `1px solid ${controlBorder}`, color: primaryText, borderRadius: '8px', padding: '6px 7px', fontSize: '0.72rem' }}
+                                                            >
+                                                                <option value="none">Sin desc.</option>
+                                                                <option value="percent">Desc. %</option>
+                                                                <option value="amount">Desc. S/</option>
+                                                            </select>
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                max={discountMode === 'percent' ? 100 : undefined}
+                                                                step={discountMode === 'percent' ? '1' : '0.01'}
+                                                                value={discountMode === 'none' ? 0 : line.lineDiscountValue}
+                                                                disabled={discountMode === 'none'}
+                                                                onChange={(event) => handleCurrentOptionDiscountValue(item.id, event.target.value)}
+                                                                style={{ background: controlSurface, border: `1px solid ${controlBorder}`, color: primaryText, borderRadius: '8px', padding: '6px 7px', fontSize: '0.72rem', opacity: discountMode === 'none' ? 0.6 : 1 }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
+                                    <div style={{ background: cardAltSurface, border: `1px solid ${cardBorder}`, borderRadius: '10px', padding: '9px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', color: secondaryText, fontSize: '0.75rem' }}>
+                                            <span>Subtotal</span>
+                                            <strong style={{ color: primaryText }}>S/ {formatMoney(currentOptionPricing.regularSubtotalTotal || 0)}</strong>
+                                        </div>
+                                        <label style={{ display: 'grid', gridTemplateColumns: '1fr 86px', gap: '7px', alignItems: 'center', color: secondaryText, fontSize: '0.74rem' }}>
+                                            Descuento total (S/)
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                step="0.01"
+                                                value={Number(currentOption?.descuentoGlobal || 0) || 0}
+                                                onChange={(event) => updateCurrentOptionPricing({ descuentoGlobal: Math.max(0, parseMoney(event.target.value, 0)) })}
+                                                style={{ background: controlSurface, border: `1px solid ${controlBorder}`, color: primaryText, borderRadius: '8px', padding: '6px 7px', fontSize: '0.72rem' }}
+                                            />
+                                        </label>
+                                        <label style={{ display: 'grid', gridTemplateColumns: '1fr 96px', gap: '7px', alignItems: 'center', color: secondaryText, fontSize: '0.74rem' }}>
+                                            Delivery
+                                            <select
+                                                value={currentOptionDelivery.type === 'amount' ? String(currentOptionDelivery.amount || 0) : 'free'}
+                                                onChange={(event) => {
+                                                    const value = event.target.value;
+                                                    updateCurrentOptionPricing({
+                                                        delivery: value === 'free'
+                                                            ? { type: 'free', amount: 0 }
+                                                            : { type: 'amount', amount: value === 'other' ? Number(currentOptionDelivery.amount || 0) || 0 : Number(value || 0) }
+                                                    });
+                                                }}
+                                                style={{ background: controlSurface, border: `1px solid ${controlBorder}`, color: primaryText, borderRadius: '8px', padding: '6px 7px', fontSize: '0.72rem' }}
+                                            >
+                                                <option value="free">Gratuito</option>
+                                                <option value="8.5">S/ 8.50</option>
+                                                <option value="10">S/ 10.00</option>
+                                                <option value="15">S/ 15.00</option>
+                                                <option value="other">Otro</option>
+                                            </select>
+                                        </label>
+                                        {currentOptionDelivery.type === 'amount' && ![8.5, 10, 15].includes(Number(currentOptionDelivery.amount || 0)) && (
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                step="0.01"
+                                                value={Number(currentOptionDelivery.amount || 0) || 0}
+                                                onChange={(event) => updateCurrentOptionPricing({ delivery: { type: 'amount', amount: Math.max(0, parseMoney(event.target.value, 0)) } })}
+                                                placeholder="Monto delivery"
+                                                style={{ background: controlSurface, border: `1px solid ${controlBorder}`, color: primaryText, borderRadius: '8px', padding: '7px 8px', fontSize: '0.74rem' }}
+                                            />
+                                        )}
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', color: secondaryText, fontSize: '0.75rem' }}>
+                                            <span>Descuento</span>
+                                            <strong style={{ color: successText }}>- S/ {formatMoney(currentOptionPricing.totalDiscountForQuote || 0)}</strong>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', color: secondaryText, fontSize: '0.75rem' }}>
+                                            <span>Delivery</span>
+                                            <strong style={{ color: primaryText }}>{currentOptionPricing.deliveryFee > 0 ? `S/ ${formatMoney(currentOptionPricing.deliveryFee)}` : 'Gratuito'}</strong>
+                                        </div>
+                                        <div style={{ borderTop: `1px solid ${cardBorder}`, paddingTop: '8px', display: 'flex', justifyContent: 'space-between', color: primaryText, fontSize: '0.92rem', fontWeight: 900 }}>
+                                            <span>Total</span>
+                                            <span>S/ {formatMoney(currentOptionPricing.cartTotal || 0)}</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div style={{ position: 'sticky', bottom: 0, zIndex: 5, background: cardSurface, border: `1px solid ${cardBorder}`, borderRadius: '14px', padding: '10px', boxShadow: '0 -8px 22px rgba(15, 23, 42, 0.08)', display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <button type="button" onClick={() => setWizardPatch({ phase: 'catalog', pasoActual: activeOptionNumber + 1 })} style={neutralActionStyle}>
+                                        Volver al catálogo
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={() => setWizardPatch({ pasoActual: Math.min(wizardSteps.length, safePasoActual + 1) })}
-                                        style={primaryActionStyle}
+                                        disabled={currentOptionProducts.length === 0}
+                                        onClick={confirmCurrentOptionAndContinue}
+                                        style={{
+                                            ...primaryActionStyle,
+                                            justifyContent: 'center',
+                                            padding: '9px 13px',
+                                            borderRadius: '12px',
+                                            opacity: currentOptionProducts.length > 0 ? 1 : 0.55,
+                                            cursor: currentOptionProducts.length > 0 ? 'pointer' : 'not-allowed'
+                                        }}
                                     >
-                                        Continuar -&gt;
+                                        {activeOptionNumber < safeTotalOpciones
+                                            ? `Confirmar - pasar a Opción ${activeOptionNumber + 1}`
+                                            : 'Confirmar - revisar todo'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {safePhase === 'review' && (
+                            <div style={{ background: cardSurface, border: `1px solid ${cardBorder}`, borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', minHeight: '180px' }}>
+                                <div style={{ color: primaryText, fontSize: '0.95rem', fontWeight: 900 }}>
+                                    Revisar opciones
+                                </div>
+                                <div style={{ color: secondaryText, fontSize: '0.78rem', lineHeight: 1.55 }}>
+                                    Las opciones ya estan confirmadas. La revision y confirmacion final se completan en el siguiente bloque.
+                                </div>
+                                <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                    <button type="button" onClick={() => setWizardPatch({ phase: 'cart', currentOption: safeTotalOpciones, pasoActual: safeTotalOpciones + 1 })} style={neutralActionStyle}>
+                                        Editar última opción
                                     </button>
                                 </div>
                             </div>

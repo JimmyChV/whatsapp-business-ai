@@ -119,6 +119,8 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const buildInitialQuoteOptionsWizardState = useCallback(() => ({
         modoOpciones: false,
         totalOpciones: 3,
+        phase: 'config',
+        currentOption: 1,
         pasoActual: 1,
         opciones: [],
         mensajeFinal: ''
