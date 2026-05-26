@@ -1021,6 +1021,48 @@ class WhatsAppCloudClient extends EventEmitter {
         return String(payload?.id || '').trim() || null;
     }
 
+    async uploadTemplateHeaderHandle(mediaData, mimetype, filename = 'adjunto') {
+        const safeMime = String(mimetype || 'application/octet-stream').trim() || 'application/octet-stream';
+        const safeName = String(filename || 'adjunto').trim() || 'adjunto';
+        const safeAppId = String(this.appId || '').trim();
+        const buffer = Buffer.from(String(mediaData || ''), 'base64');
+        if (!safeAppId) {
+            throw new Error('Cloud appId is missing for template media upload.');
+        }
+        if (!buffer.length) {
+            throw new Error('Template media payload is empty.');
+        }
+
+        const session = await this.graphJsonWithToken(`/${encodeURIComponent(safeAppId)}/uploads`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                file_length: buffer.length,
+                file_name: safeName,
+                file_type: safeMime
+            })
+        });
+
+        const uploadSessionId = String(session?.id || '').trim();
+        if (!uploadSessionId) {
+            throw new Error('No se pudo crear la sesion de upload para el header del template.');
+        }
+
+        const uploaded = await this.graphJsonWithToken(`/${encodeURIComponent(uploadSessionId)}`, {
+            method: 'POST',
+            headers: {
+                Authorization: `OAuth ${this.accessToken}`,
+                file_offset: '0',
+                'Content-Type': 'application/octet-stream'
+            },
+            body: buffer
+        });
+
+        return String(uploaded?.h || '').trim() || null;
+    }
+
     buildMediaIdCacheKey(contentHash = '') {
         const safeHash = String(contentHash || '').trim().toLowerCase();
         if (!safeHash) return '';

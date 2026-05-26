@@ -162,10 +162,10 @@ async function prepareTemplatePayloadForMeta(runtime = {}, templatePayload = {})
         if (!parsed?.mediaData) continue;
 
         const client = waCloudClient.withTenant(runtime.tenantId, {
-            token: runtime.systemUserToken,
+            systemUserToken: runtime.systemUserToken,
             phoneNumberId: runtime.phoneNumberId
         });
-        const uploadedHandle = await client.uploadMedia(
+        const uploadedHandle = await client.uploadTemplateHeaderHandle(
             parsed.mediaData,
             parsed.mimetype,
             buildHeaderExampleFilename(format, parsed.mimetype)

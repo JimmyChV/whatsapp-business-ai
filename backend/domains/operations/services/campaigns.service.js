@@ -361,7 +361,7 @@ async function uploadCampaignHeaderMedia(tenantId = DEFAULT_TENANT_ID, moduleId 
     if (!parsed?.mediaData) return null;
     const runtime = await resolveCloudModuleRuntime(tenantId, moduleId);
     const client = waCloudClient.withTenant(runtime.tenantId, {
-        token: runtime.systemUserToken,
+        systemUserToken: runtime.systemUserToken,
         phoneNumberId: runtime.phoneNumberId
     });
     return client.uploadMedia(
