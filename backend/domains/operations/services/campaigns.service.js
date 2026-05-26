@@ -10,6 +10,7 @@ const {
 const campaignQueueService = require('./campaign-queue.service');
 const metaTemplatesService = require('./meta-templates.service');
 const templateVariablesService = require('./template-variables.service');
+const customerCatalogsService = require('../../tenant/services/customer-catalogs.service');
 const customerAddressesService = require('../../tenant/services/customer-addresses.service');
 
 const STORE_FILE = 'campaigns.json';
@@ -263,9 +264,19 @@ function parsePlaceholderIndexesFromText(text = '') {
 
 function resolveTemplateVariableValue(variableKey = '', customer = {}) {
     const source = normalizeObject(customer);
+    const contactName = toText(source.contactName || '');
+    const firstName = toText(source.firstName || '');
+    const treatmentLabel = toText(source.treatmentLabel || '');
+    const shortName = firstName || toText(contactName.split(/\s+/)[0] || '') || contactName;
     switch (toLower(variableKey)) {
     case 'nombre_cliente':
-        return toText(source.contactName || '') || 'Cliente';
+        return contactName || 'Cliente';
+    case 'contacto_cliente':
+        return [treatmentLabel, shortName].filter(Boolean).join(' ') || contactName || 'Cliente';
+    case 'tratamiento_cliente':
+        return treatmentLabel;
+    case 'nombre_whatsapp_cliente':
+        return toText(source.whatsappName || '');
     case 'telefono_cliente':
         return toText(source.phone || '');
     case 'email_cliente':
@@ -321,6 +332,16 @@ async function buildTemplateComponentsForRecipient(tenantId = DEFAULT_TENANT_ID,
             };
         })
         .filter((component) => Array.isArray(component.parameters) && component.parameters.length > 0);
+}
+
+let treatmentCatalogPromise = null;
+async function getTreatmentLabelMap() {
+    if (!treatmentCatalogPromise) {
+        treatmentCatalogPromise = customerCatalogsService.getTreatments()
+            .then((items) => new Map((Array.isArray(items) ? items : []).map((item) => [toText(item?.id), toText(item?.abbreviation || item?.label)])))
+            .catch(() => new Map());
+    }
+    return treatmentCatalogPromise;
 }
 
 function normalizeCampaignRecord(input = {}) {
@@ -1472,12 +1493,16 @@ function mapCustomerRowWithAddress(row = {}) {
         customerId: toText(row.customer_id),
         phone: toText(row.phone_e164),
         contactName: toText(row.contact_name),
+        whatsappName: toText(normalizeObject(row.metadata).whatsapp?.contactName || ''),
+        firstName: toText(row.first_name),
         email: toText(row.email),
         tags: ensureArray(row.labels || row.tags),
         marketingOptInStatus: toLower(row.marketing_opt_in_status || 'unknown'),
         commercialStatus: toLower(row.commercial_status || 'unknown'),
         moduleId: toText(row.context_module_id || row.customer_module_id || row.module_id || ''),
         preferredLanguage: toLower(row.preferred_language || 'es'),
+        treatmentId: toText(row.treatment_id || ''),
+        treatmentLabel: toText(row.treatment_label || ''),
         customerTypeId: toText(row.customer_type_id || ''),
         acquisitionSourceId: toText(row.acquisition_source_id || ''),
         assignedUserId: toText(row.assignment_user_id || ''),
@@ -1499,15 +1524,20 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
 
     if (getStorageDriver() !== 'postgres') {
         const customersStore = await readTenantJsonFile('customers.json', { tenantId: cleanTenantId, defaultValue: { items: [] } });
+        const treatmentLabels = await getTreatmentLabelMap();
         const all = ensureArray(customersStore?.items).map((entry) => ({
             customerId: toText(entry.customerId),
             phone: toText(entry.phoneE164 || entry.phone),
             contactName: toText(entry.contactName),
+            whatsappName: toText(normalizeObject(entry.metadata).whatsapp?.contactName || ''),
+            firstName: toText(entry.firstName || entry.first_name || normalizeObject(entry.profile).firstNames || ''),
             email: toText(entry.email),
             tags: ensureArray(entry.tags),
             marketingOptInStatus: toLower(entry.marketingOptInStatus || entry.marketing_opt_in_status || 'unknown'),
             moduleId: toText(entry.moduleId || entry.module_id || ''),
-            preferredLanguage: toLower(entry.preferredLanguage || entry.preferred_language || 'es')
+            preferredLanguage: toLower(entry.preferredLanguage || entry.preferred_language || 'es'),
+            treatmentId: toText(entry.treatmentId || entry.treatment_id || normalizeObject(entry.profile).treatmentId || ''),
+            treatmentLabel: toText(treatmentLabels.get(toText(entry.treatmentId || entry.treatment_id || normalizeObject(entry.profile).treatmentId || '')) || '')
         }));
         const scoped = all
             .filter((item) => item.phone)
@@ -1518,6 +1548,7 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
             .slice(0, maxRecipients);
     }
 
+    const treatmentLabels = await getTreatmentLabelMap();
     await ensurePostgresSchema();
     if (moduleFilter) {
         try {
@@ -1526,10 +1557,13 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                     c.customer_id,
                     c.phone_e164,
                     c.contact_name,
+                    c.first_name,
                     c.email,
                     c.preferred_language,
+                    c.treatment_id,
                     c.customer_type_id,
                     c.acquisition_source_id,
+                    c.metadata,
                     c.created_at,
                     c.module_id AS customer_module_id,
                     cmc.module_id AS context_module_id,
@@ -1579,7 +1613,10 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                 [cleanTenantId, moduleFilter, Math.max(maxRecipients * 3, 300)]
             );
 
-            const contextRows = ensureArray(contextRowsResult?.rows).map(mapCustomerRowWithAddress);
+            const contextRows = ensureArray(contextRowsResult?.rows).map((row) => mapCustomerRowWithAddress({
+                ...row,
+                treatment_label: treatmentLabels.get(toText(row?.treatment_id)) || ''
+            }));
 
             if (contextRows.length > 0) {
                 const withZoneLabels = await attachZoneLabelsToCustomers(cleanTenantId, contextRows, filters);
@@ -1608,13 +1645,16 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
             c.customer_id,
             c.phone_e164,
             c.contact_name,
+            c.first_name,
             c.email,
             c.tags,
             c.module_id,
             c.preferred_language,
             c.marketing_opt_in_status,
+            c.treatment_id,
             c.customer_type_id,
             c.acquisition_source_id,
+            c.metadata,
             c.created_at,
             COALESCE(addr.has_address, FALSE) AS has_address,
             addr.department_names,
@@ -1653,7 +1693,10 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
         [...params, Math.max(maxRecipients * 3, 300)]
     );
 
-    const rows = ensureArray(rowsResult?.rows).map(mapCustomerRowWithAddress);
+    const rows = ensureArray(rowsResult?.rows).map((row) => mapCustomerRowWithAddress({
+        ...row,
+        treatment_label: treatmentLabels.get(toText(row?.treatment_id)) || ''
+    }));
 
     const withZoneLabels = await attachZoneLabelsToCustomers(cleanTenantId, rows, filters);
     return withZoneLabels

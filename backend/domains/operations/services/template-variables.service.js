@@ -6,6 +6,7 @@ const {
     queryPostgres
 } = require('../../../config/persistence-runtime');
 const { parseScopedChatId } = require('../../channels/helpers/chat-scope.helpers');
+const customerCatalogsService = require('../../tenant/services/customer-catalogs.service');
 
 const CATALOG = Object.freeze([
     {
@@ -69,6 +70,36 @@ const CATALOG = Object.freeze([
                 placeholderIndex: 6,
                 exampleValue: 'CUS-8K2M4P',
                 source: 'tenant_customers.customer_id',
+                requiresContext: ['customerId'],
+                supportedIn: ['body']
+            },
+            {
+                key: 'contacto_cliente',
+                label: 'Contacto corto',
+                description: 'Tratamiento y nombre corto del cliente para un saludo natural.',
+                placeholderIndex: 26,
+                exampleValue: 'Sra. Luisa',
+                source: 'tenant_customers.treatment_id + first_name/contact_name',
+                requiresContext: ['customerId'],
+                supportedIn: ['header', 'body', 'button']
+            },
+            {
+                key: 'tratamiento_cliente',
+                label: 'Tratamiento del cliente',
+                description: 'Tratamiento comercial del cliente.',
+                placeholderIndex: 27,
+                exampleValue: 'Sra.',
+                source: 'tenant_customers.treatment_id -> global_customer_treatments.abbreviation',
+                requiresContext: ['customerId'],
+                supportedIn: ['body']
+            },
+            {
+                key: 'nombre_whatsapp_cliente',
+                label: 'Nombre de WhatsApp',
+                description: 'Nombre observado desde WhatsApp, separado del contacto comercial guardado.',
+                placeholderIndex: 28,
+                exampleValue: 'Luisa M.',
+                source: 'tenant_customers.metadata.whatsapp.contactName',
                 requiresContext: ['customerId'],
                 supportedIn: ['body']
             }
@@ -334,6 +365,36 @@ function normalizePreviewValue(value) {
     return text.trim() ? text : null;
 }
 
+function firstToken(value = '') {
+    const tokens = toText(value).split(/\s+/).filter(Boolean);
+    return tokens[0] || '';
+}
+
+async function buildTreatmentsMap() {
+    const items = await customerCatalogsService.getTreatments().catch(() => []);
+    return new Map(
+        (Array.isArray(items) ? items : []).flatMap((item) => {
+            const id = toText(item?.id);
+            if (!id) return [];
+            return [[id, item]];
+        })
+    );
+}
+
+function resolveTreatmentAbbreviation(treatmentsMap = new Map(), treatmentId = '') {
+    const item = treatmentsMap.get(toText(treatmentId));
+    return toText(item?.abbreviation || item?.label || '');
+}
+
+function resolveShortContactName(customer = {}, treatmentLabel = '') {
+    const profile = asObject(customer?.profile);
+    const firstName = toText(customer?.firstName || customer?.first_name || profile.firstNames || profile.nombres || '');
+    const contactName = toText(customer?.contactName || customer?.contact_name || '');
+    const baseName = firstName || firstToken(contactName) || contactName;
+    if (!baseName) return null;
+    return [toText(treatmentLabel), baseName].filter(Boolean).join(' ') || null;
+}
+
 async function queryUserDisplayName(userId = '') {
     const cleanUserId = toText(userId);
     if (!cleanUserId || getStorageDriver() !== 'postgres') return null;
@@ -361,7 +422,7 @@ async function loadCustomerPostgres(tenantId = DEFAULT_TENANT_ID, { customerId =
         if (!cleanCustomerId) return null;
         const result = await queryPostgres(
             `SELECT customer_id, contact_name, phone_e164, email, tags, profile, metadata,
-                    preferred_language, marketing_opt_in_status
+                    preferred_language, marketing_opt_in_status, treatment_id, first_name, last_name_paternal, last_name_maternal
                FROM tenant_customers
               WHERE tenant_id = $1
                 AND customer_id = $2
@@ -376,7 +437,7 @@ async function loadCustomerPostgres(tenantId = DEFAULT_TENANT_ID, { customerId =
         if (!digits) return null;
         const result = await queryPostgres(
             `SELECT customer_id, contact_name, phone_e164, email, tags, profile, metadata,
-                    preferred_language, marketing_opt_in_status
+                    preferred_language, marketing_opt_in_status, treatment_id, first_name, last_name_paternal, last_name_maternal
                FROM tenant_customers
               WHERE tenant_id = $1
                 AND phone_e164 IS NOT NULL
@@ -397,6 +458,7 @@ async function loadCustomerPostgres(tenantId = DEFAULT_TENANT_ID, { customerId =
             const result = cleanCustomerId
                 ? await queryPostgres(
                     `SELECT customer_id, contact_name, phone_e164, email, tags, profile, metadata
+                            , preferred_language, marketing_opt_in_status, treatment_id, first_name, last_name_paternal, last_name_maternal
                        FROM tenant_customers
                       WHERE tenant_id = $1
                         AND customer_id = $2
@@ -465,6 +527,13 @@ async function loadPreviewContextFromFile(tenantId = DEFAULT_TENANT_ID, { chatId
             tags: Array.isArray(customer.tags) ? customer.tags : [],
             profile: asObject(customer.profile),
             preferredLanguage: toText(customer.preferredLanguage || customer.preferred_language || asObject(customer.metadata).preferredLanguage) || null
+            ,
+            treatmentId: toText(customer.treatmentId || customer.treatment_id || asObject(customer.profile).treatmentId) || null,
+            firstName: toText(customer.firstName || customer.first_name || asObject(customer.profile).firstNames) || null,
+            lastNamePaternal: toText(customer.lastNamePaternal || customer.last_name_paternal || asObject(customer.profile).lastNamePaternal) || null,
+            lastNameMaternal: toText(customer.lastNameMaternal || customer.last_name_maternal || asObject(customer.profile).lastNameMaternal) || null,
+            metadata: asObject(customer.metadata),
+            whatsappName: toText(asObject(customer.metadata).whatsapp?.contactName || '') || null
         } : null,
         assignment: assignment ? {
             assigneeUserId: toText(assignment.assigneeUserId || assignment.assignee_user_id) || null,
@@ -507,7 +576,13 @@ async function loadPreviewContextFromPostgres(tenantId = DEFAULT_TENANT_ID, { ch
         email: toText(customerRow.email) || null,
         tags: Array.isArray(customerRow.tags) ? customerRow.tags : [],
         profile: asObject(customerRow.profile),
-        preferredLanguage: toText(customerRow.preferred_language || customerRow.preferredLanguage) || null
+        preferredLanguage: toText(customerRow.preferred_language || customerRow.preferredLanguage) || null,
+        treatmentId: toText(customerRow.treatment_id || customerRow.treatmentId || asObject(customerRow.profile).treatmentId) || null,
+        firstName: toText(customerRow.first_name || customerRow.firstName || asObject(customerRow.profile).firstNames) || null,
+        lastNamePaternal: toText(customerRow.last_name_paternal || customerRow.lastNamePaternal || asObject(customerRow.profile).lastNamePaternal) || null,
+        lastNameMaternal: toText(customerRow.last_name_maternal || customerRow.lastNameMaternal || asObject(customerRow.profile).lastNameMaternal) || null,
+        metadata: asObject(customerRow.metadata),
+        whatsappName: toText(asObject(customerRow.metadata).whatsapp?.contactName || '') || null
     } : null;
 
     const loadAssignment = async () => {
@@ -650,13 +725,16 @@ async function loadPreviewContext(tenantId = DEFAULT_TENANT_ID, options = {}) {
     return loadPreviewContextFromPostgres(tenantId, options);
 }
 
-function buildValueMap(context = {}) {
+function buildValueMap(context = {}, helpers = {}) {
     const customer = context.customer || null;
     const assignment = context.assignment || null;
     const commercial = context.commercial || null;
     const quote = context.quote || null;
     const origin = context.origin || null;
     const quoteSummary = asObject(quote?.summary);
+    const treatmentLabel = toText(helpers?.treatmentLabel || '');
+    const shortContactName = resolveShortContactName(customer, treatmentLabel);
+    const whatsappName = toText(customer?.whatsappName || customer?.metadata?.whatsapp?.contactName || '');
 
     return {
         nombre_cliente: customer?.contactName || toText(customer?.profile?.firstNames) || null,
@@ -665,6 +743,9 @@ function buildValueMap(context = {}) {
         idioma_preferido_cliente: customer?.preferredLanguage || null,
         tags_cliente_csv: Array.isArray(customer?.tags) ? customer.tags.join(',') : null,
         customer_id: customer?.customerId || null,
+        contacto_cliente: shortContactName || customer?.contactName || null,
+        tratamiento_cliente: treatmentLabel || null,
+        nombre_whatsapp_cliente: whatsappName || null,
 
         nombre_agente: assignment?.assigneeName || assignment?.assigneeUserId || null,
         rol_agente: assignment?.assigneeRole || null,
@@ -704,7 +785,12 @@ async function getCatalog(tenantId = DEFAULT_TENANT_ID) {
 async function getPreview(tenantId = DEFAULT_TENANT_ID, { chatId = '', customerId = '' } = {}) {
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
     const context = await loadPreviewContext(cleanTenantId, { chatId, customerId });
-    const valueMap = buildValueMap(context);
+    const treatmentsMap = await buildTreatmentsMap();
+    const treatmentLabel = resolveTreatmentAbbreviation(
+        treatmentsMap,
+        toText(context?.customer?.treatmentId || context?.customer?.profile?.treatmentId || '')
+    );
+    const valueMap = buildValueMap(context, { treatmentLabel });
     const categories = cloneCatalog().map((category) => ({
         ...category,
         variables: Array.isArray(category.variables)

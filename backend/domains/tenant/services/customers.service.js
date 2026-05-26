@@ -2723,20 +2723,24 @@ async function upsertFromInteraction(tenantId = DEFAULT_TENANT_ID, payload = {})
     const existingOrigin = normalizeObject(existingByPhone?.metadata?.origin || existingByPhone?.metadata?.acquisitionOrigin);
     const incomingOrigin = normalizeObject(payload?.metadata?.origin || payload?.origin || {});
     const shouldAttachFirstOrigin = Object.keys(existingOrigin).length === 0 && Object.keys(incomingOrigin).length > 0;
+    const incomingWhatsappName = toText(payload?.contactName || payload?.name || payload?.pushname || '');
+    const existingContactName = toText(existingByPhone?.contactName || '');
 
     const upsertResult = await upsertCustomer(tenantId, {
         customerId: toText(existingByPhone?.customerId || '') || undefined,
         moduleId: toText(payload?.moduleId || ''),
         phoneE164: phone,
-        contactName: toText(payload?.contactName || payload?.name || payload?.pushname || ''),
+        contactName: existingContactName || incomingWhatsappName || undefined,
         metadata: {
             ...(normalizeObject(payload?.metadata)),
             ...(shouldAttachFirstOrigin ? { origin: incomingOrigin } : {}),
             whatsapp: {
+                ...(normalizeObject(existingByPhone?.metadata?.whatsapp)),
                 chatId: toText(payload?.chatId || ''),
                 direction: toText(payload?.direction || ''),
                 messageType: toText(payload?.messageType || ''),
-                lastMessageAt: toText(payload?.lastMessageAt || nowIso())
+                lastMessageAt: toText(payload?.lastMessageAt || nowIso()),
+                contactName: incomingWhatsappName || null
             }
         },
         lastInteractionAt: nowIso(),

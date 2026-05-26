@@ -24,6 +24,7 @@ import CustomerImportWizard from './customers/CustomerImportWizard';
 const CUSTOMER_TABLE_COLUMNS = [
     { key: 'codigo', label: 'Codigo', width: '132px', minWidth: '120px', maxWidth: '152px', type: 'text' },
     { key: 'nombreCompleto', label: 'Nombre Completo', width: '208px', minWidth: '160px', maxWidth: '260px', type: 'text' },
+    { key: 'nombreWhatsapp', label: 'Nombre WhatsApp', width: '208px', minWidth: '160px', maxWidth: '260px', type: 'text' },
     { key: 'nombres', label: 'Nombres', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
     { key: 'apellidoPaterno', label: 'Apellido Paterno', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
     { key: 'apellidoMaterno', label: 'Apellido Materno', width: '176px', minWidth: '140px', maxWidth: '220px', type: 'text' },
@@ -703,6 +704,18 @@ function buildCustomerDisplayName(customer = null) {
 
     if (segments.length) return segments.join(' ');
     return String(customer.customerId || customer.customer_id || '-').trim() || '-';
+}
+
+function buildWhatsappContactName(customer = null) {
+    if (!customer || typeof customer !== 'object') return '-';
+    const metadata = customer?.metadata && typeof customer.metadata === 'object' ? customer.metadata : {};
+    const whatsapp = metadata?.whatsapp && typeof metadata.whatsapp === 'object' ? metadata.whatsapp : {};
+    return String(
+        whatsapp.contactName
+        || whatsapp.profileName
+        || whatsapp.pushname
+        || ''
+    ).trim() || '-';
 }
 
 function buildNamePartsFromCustomer(customer = null) {
@@ -1856,6 +1869,7 @@ function CustomersSection(props = {}) {
             id: safeId,
             codigo: customerId || '-',
             nombreCompleto: buildCustomerDisplayName(customer),
+            nombreWhatsapp: buildWhatsappContactName(customer),
             nombres: nameParts.firstName || '-',
             apellidoPaterno: nameParts.lastNamePaternal || '-',
             apellidoMaterno: nameParts.lastNameMaternal || '-',

@@ -13,6 +13,9 @@ const VALID_TEMPLATE_USE_CASES = new Set(['campaign', 'individual', 'both', 'opt
 
 export const CAMPAIGN_TEMPLATE_VARIABLE_KEYS = new Set([
     'nombre_cliente',
+    'contacto_cliente',
+    'tratamiento_cliente',
+    'nombre_whatsapp_cliente',
     'telefono_cliente',
     'email_cliente',
     'idioma_preferido_cliente',
