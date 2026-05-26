@@ -1,3 +1,4 @@
+const { randomUUID } = require('node:crypto');
 const fallbackQuotesService = require('../../tenant/services/quotes.service');
 
 function isPlainObject(value) {
@@ -355,6 +356,9 @@ function buildOutgoingOrderPayload(quote = {}) {
     const quoteNumber = toPositiveIntOrNull(quote?.quoteNumber ?? quote?.quote_number);
     const revisionNumber = toPositiveIntOrNull(quote?.revisionNumber ?? quote?.revision_number);
     const parentQuoteId = toNullableText(quote?.parentQuoteId ?? quote?.parent_quote_id);
+    const isOptionMode = quote?.isOptionMode === true || quote?.is_option_mode === true;
+    const optionNumber = toPositiveIntOrNull(quote?.optionNumber ?? quote?.option_number);
+    const optionGroupId = toNullableText(quote?.optionGroupId ?? quote?.option_group_id);
     const metadata = isPlainObject(quote?.metadata) ? quote.metadata : {};
     const sourceType = toText(metadata?.sourceType || metadata?.source_type || quote?.sourceType || 'quote').toLowerCase() || 'quote';
     const quoteSummary = {
@@ -382,9 +386,15 @@ function buildOutgoingOrderPayload(quote = {}) {
         quoteNumber,
         revisionNumber,
         parentQuoteId,
+        isOptionMode,
+        optionNumber,
+        optionGroupId,
         quote_number: quoteNumber,
         revision_number: revisionNumber,
         parent_quote_id: parentQuoteId,
+        is_option_mode: isOptionMode,
+        option_number: optionNumber,
+        option_group_id: optionGroupId,
         currency,
         subtotal: toFiniteNumberOrNull(summary?.subtotal),
         products: items,
@@ -395,9 +405,15 @@ function buildOutgoingOrderPayload(quote = {}) {
             quoteNumber,
             revisionNumber,
             parentQuoteId,
+            isOptionMode,
+            optionNumber,
+            optionGroupId,
             quote_number: quoteNumber,
             revision_number: revisionNumber,
             parent_quote_id: parentQuoteId,
+            is_option_mode: isOptionMode,
+            option_number: optionNumber,
+            option_group_id: optionGroupId,
             products: items,
             itemCount: quoteSummary.itemCount,
             currency,
@@ -411,6 +427,44 @@ function buildOutgoingOrderPayload(quote = {}) {
 function resolveActorUserId(authContext = null) {
     const user = isPlainObject(authContext?.user) ? authContext.user : {};
     return toNullableText(user.userId || user.id || authContext?.userId || '');
+}
+
+function normalizeOptionQuote(option = {}) {
+    const source = isPlainObject(option) ? option : {};
+    const items = Array.isArray(source.items) ? source.items.map((item, index) => normalizeQuoteItem(item, index, source.currency || 'PEN')) : [];
+    const summary = normalizeQuoteSummary(source.summary, items, source.currency || 'PEN');
+    return {
+        optionNumber: toPositiveIntOrNull(source.optionNumber ?? source.option_number),
+        currency: toText(source.currency || summary.currency || 'PEN') || 'PEN',
+        items,
+        summary,
+        notes: toNullableText(source.notes),
+        metadata: isPlainObject(source.metadata) ? source.metadata : {}
+    };
+}
+
+function buildOptionText(option = {}) {
+    const safeOptionNumber = toPositiveIntOrNull(option?.optionNumber ?? option?.option_number) || 1;
+    const items = Array.isArray(option?.items) ? option.items : [];
+    const summary = isPlainObject(option?.summary) ? option.summary : {};
+    const lines = items.map((item) => {
+        const title = toTitleCase(item?.title || item?.name || item?.sku || 'Producto') || 'Producto';
+        const qty = Math.max(1, toFiniteNumberOrNull(item?.qty ?? item?.quantity) ?? 1);
+        const lineTotal = roundMoney(toFiniteNumberOrNull(item?.lineTotal) ?? (qty * (toFiniteNumberOrNull(item?.unitPrice ?? item?.price) ?? 0)));
+        return `- ${title} x${qty} - ${formatSoles(lineTotal)}`;
+    });
+    const delivery = Boolean(summary?.deliveryFree) || (toFiniteNumberOrNull(summary?.deliveryAmount) ?? 0) <= 0
+        ? 'Gratis'
+        : formatSoles(summary?.deliveryAmount);
+    return [
+        `*Opcion ${safeOptionNumber} - ${formatSoles(summary?.totalPayable)}*`,
+        ...lines,
+        `Delivery: ${delivery}`
+    ].join('\n').trim();
+}
+
+function sleep(ms = 0) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function createSocketQuoteDeliveryService({
@@ -684,6 +738,227 @@ function createSocketQuoteDeliveryService({
                     ok: false,
                     error: detail
                 });
+            }
+        });
+
+        socket.on('send_option_group', async (payload = {}, ack) => {
+            if (typeof guardRateLimit === 'function' && !guardRateLimit(socket, 'send_option_group')) return;
+            if (!transportOrchestrator.ensureTransportReady(socket, { action: 'enviar opciones de cotizacion', errorEvent: 'quote_error' })) return;
+
+            try {
+                const target = await resolveScopedSendTarget({
+                    rawChatId: payload?.chatId || payload?.to,
+                    rawPhone: payload?.toPhone,
+                    errorEvent: 'quote_error',
+                    action: 'enviar opciones de cotizacion'
+                });
+                if (!target?.ok) {
+                    ack?.({ ok: false, error: 'No se pudo resolver el chat destino.' });
+                    return;
+                }
+
+                const options = Array.isArray(payload?.options)
+                    ? payload.options.map(normalizeOptionQuote).filter((option) => Array.isArray(option.items) && option.items.length > 0)
+                    : [];
+                if (options.length === 0) {
+                    const errorMessage = 'Debes enviar al menos una opcion valida.';
+                    socket.emit('quote_error', { ok: false, error: errorMessage });
+                    ack?.({ ok: false, error: errorMessage });
+                    return;
+                }
+
+                if (typeof checkOutboundConsent === 'function') {
+                    const consentResult = await checkOutboundConsent(tenantId, {
+                        phone: target.targetPhone || target.targetChatId,
+                        messageType: 'template'
+                    });
+                    if (!consentResult?.allowed) {
+                        const errorMessage = 'El cliente no tiene consentimiento de marketing para recibir cotizaciones.';
+                        socket.emit('quote_error', {
+                            ok: false,
+                            chatId: target.scopedChatId || target.targetChatId,
+                            baseChatId: target.targetChatId,
+                            scopeModuleId: target.scopeModuleId || null,
+                            error: errorMessage,
+                            reason: consentResult?.reason || 'marketing_consent_required',
+                            consentStatus: consentResult?.status || 'unknown'
+                        });
+                        ack?.({ ok: false, error: errorMessage });
+                        return;
+                    }
+                }
+
+                const groupId = randomUUID();
+                const moduleContext = target.moduleContext || socket?.data?.waModule || null;
+                const actorUserId = resolveActorUserId(authContext);
+                const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
+                const finalMessage = toText(payload?.finalMessage || '');
+
+                for (let index = 0; index < options.length; index += 1) {
+                    const option = options[index];
+                    const optionMetadata = {
+                        ...(option.metadata || {}),
+                        source: 'socket.send_option_group',
+                        sourceType: 'quote',
+                        isOptionMode: true,
+                        optionNumber: option.optionNumber,
+                        optionGroupId: groupId
+                    };
+                    const createdQuote = await resolvedQuotesService.createQuoteRecord(tenantId, {
+                        chatId: target.targetChatId,
+                        scopeModuleId: target.scopeModuleId || '',
+                        messageId: null,
+                        status: 'draft',
+                        currency: option.currency,
+                        itemsJson: option.items,
+                        summaryJson: option.summary,
+                        notes: option.notes,
+                        createdByUserId: actorUserId,
+                        updatedByUserId: actorUserId,
+                        sentAt: null,
+                        isOptionMode: true,
+                        optionNumber: option.optionNumber || (index + 1),
+                        optionGroupId: groupId,
+                        metadata: optionMetadata
+                    });
+
+                    const normalizedQuote = {
+                        quoteId: createdQuote?.quoteId || null,
+                        quoteNumber: createdQuote?.quoteNumber || null,
+                        revisionNumber: createdQuote?.revisionNumber || null,
+                        parentQuoteId: createdQuote?.parentQuoteId || null,
+                        isOptionMode: true,
+                        optionNumber: createdQuote?.optionNumber || option.optionNumber || (index + 1),
+                        optionGroupId: createdQuote?.optionGroupId || groupId,
+                        currency: option.currency,
+                        items: option.items,
+                        summary: option.summary,
+                        notes: option.notes,
+                        metadata: optionMetadata
+                    };
+
+                    const textBody = buildOptionText(normalizedQuote);
+                    const sentMessage = await waClient.sendMessage(target.targetChatId, textBody);
+                    const sentMessageId = getSerializedMessageId(sentMessage);
+                    if (sentMessageId && agentMeta) {
+                        rememberOutgoingAgentMeta(sentMessageId, agentMeta);
+                    }
+
+                    const outgoingOrderPayload = buildOutgoingOrderPayload(normalizedQuote);
+                    await emitRealtimeOutgoingMessage({
+                        sentMessage,
+                        fallbackChatId: target.targetChatId,
+                        fallbackBody: textBody,
+                        quotedMessageId: '',
+                        quotedMessage: null,
+                        moduleContext,
+                        agentMeta,
+                        mediaPayload: null,
+                        orderPayload: outgoingOrderPayload
+                    });
+
+                    const sentAt = new Date().toISOString();
+                    const sentQuote = await resolvedQuotesService.markQuoteSent(tenantId, {
+                        quoteId: normalizedQuote.quoteId,
+                        messageId: sentMessageId || null,
+                        updatedByUserId: actorUserId,
+                        sentAt
+                    });
+
+                    await recordConversationEvent({
+                        chatId: target.targetChatId,
+                        scopeModuleId: target.scopeModuleId,
+                        eventType: 'chat.message.outgoing.quote',
+                        eventSource: 'socket',
+                        payload: {
+                            quoteId: normalizedQuote.quoteId,
+                            quoteNumber: normalizedQuote.quoteNumber || null,
+                            optionNumber: normalizedQuote.optionNumber || null,
+                            optionGroupId: normalizedQuote.optionGroupId || null,
+                            messageId: sentMessageId || null,
+                            itemCount: normalizedQuote.summary?.itemCount || normalizedQuote.items.length,
+                            totalPayable: normalizedQuote.summary?.totalPayable ?? null,
+                            currency: normalizedQuote.currency
+                        }
+                    });
+
+                    const quoteSentPayload = {
+                        ok: true,
+                        to: target.scopedChatId || target.targetChatId,
+                        chatId: target.scopedChatId || target.targetChatId,
+                        baseChatId: target.targetChatId,
+                        scopeModuleId: target.scopeModuleId || null,
+                        quoteId: normalizedQuote.quoteId,
+                        quoteNumber: normalizedQuote.quoteNumber || null,
+                        revisionNumber: normalizedQuote.revisionNumber || null,
+                        parentQuoteId: normalizedQuote.parentQuoteId || null,
+                        isOptionMode: true,
+                        optionNumber: normalizedQuote.optionNumber || null,
+                        optionGroupId: normalizedQuote.optionGroupId || null,
+                        quote_number: normalizedQuote.quoteNumber || null,
+                        revision_number: normalizedQuote.revisionNumber || null,
+                        parent_quote_id: normalizedQuote.parentQuoteId || null,
+                        is_option_mode: true,
+                        option_number: normalizedQuote.optionNumber || null,
+                        option_group_id: normalizedQuote.optionGroupId || null,
+                        messageId: sentMessageId || null,
+                        status: toText(sentQuote?.status || 'sent') || 'sent',
+                        currency: normalizedQuote.currency,
+                        items: normalizedQuote.items,
+                        summary: normalizedQuote.summary,
+                        notes: normalizedQuote.notes
+                    };
+                    socket.emit('quote_sent', quoteSentPayload);
+                    if (typeof emitToRuntimeContext === 'function') {
+                        emitToRuntimeContext('quote_sent', quoteSentPayload);
+                    }
+
+                    if (index < options.length - 1) {
+                        await sleep(1500);
+                    }
+                }
+
+                if (chatCommercialStatusService && target?.targetChatId) {
+                    try {
+                        const commercialResult = await chatCommercialStatusService.markQuoteSent(tenantId, {
+                            chatId: target.targetChatId,
+                            scopeModuleId: String(target.scopeModuleId || '').trim().toLowerCase(),
+                            source: 'socket',
+                            reason: 'send_option_group_success',
+                            changedByUserId: actorUserId,
+                            at: new Date().toISOString(),
+                            metadata: {
+                                optionGroupId: groupId,
+                                optionsCount: options.length
+                            }
+                        });
+                        if (commercialResult?.changed) {
+                            emitCommercialStatusUpdated?.({
+                                tenantId,
+                                chatId: target.targetChatId,
+                                scopeModuleId: String(target.scopeModuleId || '').trim().toLowerCase(),
+                                result: commercialResult,
+                                source: 'quote_delivery.send_option_group'
+                            });
+                        }
+                    } catch (_) {
+                        // silent: option quote delivery should not fail by commercial status lifecycle issues
+                    }
+                }
+
+                if (finalMessage) {
+                    await waClient.sendMessage(target.targetChatId, finalMessage);
+                }
+
+                ack?.({ ok: true, groupId });
+            } catch (error) {
+                const detail = String(error?.message || error || 'No se pudieron enviar las opciones.');
+                console.warn('[WA][SendOptionGroup] ' + detail);
+                socket.emit('quote_error', {
+                    ok: false,
+                    error: detail
+                });
+                ack?.({ ok: false, error: detail });
             }
         });
 

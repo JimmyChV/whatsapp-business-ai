@@ -609,6 +609,9 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                 quoteNumber: event?.quoteNumber ?? event?.quote_number,
                 revisionNumber: event?.revisionNumber ?? event?.revision_number,
                 parentQuoteId: event?.parentQuoteId ?? event?.parent_quote_id,
+                isOptionMode: event?.isOptionMode ?? event?.is_option_mode,
+                optionNumber: event?.optionNumber ?? event?.option_number,
+                optionGroupId: event?.optionGroupId ?? event?.option_group_id,
                 messageId: event?.messageId,
                 status: event?.status,
                 currency: event?.currency,
@@ -646,14 +649,26 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             }));
         };
 
+        const handleQuoteOptionChosen = (event = {}) => {
+            const incomingChatId = String(event?.chatId || event?.baseChatId || '').trim();
+            const currentChatId = String(activeChatId || '').trim();
+            if (!incomingChatId || !currentChatId) return;
+            const incomingBase = resolveBaseChatId(incomingChatId);
+            const currentBase = resolveBaseChatId(currentChatId);
+            if (incomingChatId !== currentChatId && incomingBase !== currentBase) return;
+            socket.emit('list_chat_quotes', { chatId: currentChatId });
+        };
+
         socket.on('quote_sent', handleQuoteSent);
         socket.on('quote_error', handleQuoteError);
         socket.on('chat_quotes', handleChatQuotes);
+        socket.on('quote_option_chosen', handleQuoteOptionChosen);
 
         return () => {
             socket.off('quote_sent', handleQuoteSent);
             socket.off('quote_error', handleQuoteError);
             socket.off('chat_quotes', handleChatQuotes);
+            socket.off('quote_option_chosen', handleQuoteOptionChosen);
         };
     }, [socket, activeChatId, normalizeQuoteHistoryItem, upsertQuoteHistory]);
 
@@ -1171,7 +1186,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
 
             {/* CATALOG TAB */}
             {activeTab === 'catalog' && (
-                <BusinessCatalogTab catalog={catalog} socket={socket} addToCart={addToCart} onCatalogQtyDelta={updateCatalogQty} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} activeChatPhone={activeChatPhone} cartItems={cart} waModules={waModules} selectedCatalogModuleId={selectedCatalogModuleId} selectedCatalogId={selectedCatalogId} onSelectCatalogModule={onSelectCatalogModule} onSelectCatalog={onSelectCatalog} onUploadCatalogImage={onUploadCatalogImage} onSendCatalogProduct={onSendCatalogProduct} canWriteByAssignment={canUseMessageTools} quoteOptionsWizard={quoteOptionsWizard} onQuoteOptionsWizardChange={updateQuoteOptionsWizard} onResetQuoteOptionsWizard={resetQuoteOptionsWizard} />
+                <BusinessCatalogTab catalog={catalog} socket={socket} addToCart={addToCart} onCatalogQtyDelta={updateCatalogQty} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} activeChatPhone={activeChatPhone} cartItems={cart} waModules={waModules} selectedCatalogModuleId={selectedCatalogModuleId} selectedCatalogId={selectedCatalogId} tenantId={normalizedTenantScopeKey} onSelectCatalogModule={onSelectCatalogModule} onSelectCatalog={onSelectCatalog} onUploadCatalogImage={onUploadCatalogImage} onSendCatalogProduct={onSendCatalogProduct} canWriteByAssignment={canUseMessageTools} quoteOptionsWizard={quoteOptionsWizard} onQuoteOptionsWizardChange={updateQuoteOptionsWizard} onResetQuoteOptionsWizard={resetQuoteOptionsWizard} />
             )}
 
             {activeTab === 'coverage' && (

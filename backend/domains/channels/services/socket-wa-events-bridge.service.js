@@ -8,6 +8,7 @@ const {
     customerConsentService: customerConsentServiceFallback
 } = require('../../operations/services');
 const catalogManagerService = require('../../tenant/services/catalog-manager.service');
+const quotesService = require('../../tenant/services/quotes.service');
 const pattyService = require('./patty.service');
 
 function createSocketWaEventsBridgeService({
@@ -659,6 +660,36 @@ function createSocketWaEventsBridgeService({
                     }
 
                     if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase) {
+                        try {
+                            const incomingText = String(
+                                msg?.body
+                                || msg?.text
+                                || msg?.message
+                                || msg?.caption
+                                || msg?._data?.body
+                                || ''
+                            ).trim();
+                            if (incomingText && typeof quotesService?.detectOptionChoice === 'function') {
+                                const choiceResult = await quotesService.detectOptionChoice(historyTenantId, {
+                                    chatId: relatedChatIdBase,
+                                    text: incomingText
+                                });
+                                if (choiceResult) {
+                                    const optionChoicePayload = {
+                                        ...choiceResult,
+                                        tenantId: historyTenantId,
+                                        chatId: buildScopedChatId(relatedChatIdBase, cleanScopeModuleId) || relatedChatIdBase,
+                                        baseChatId: relatedChatIdBase,
+                                        scopeModuleId: cleanScopeModuleId || null,
+                                        messageId
+                                    };
+                                    emitToRuntimeContext('quote_option_chosen', optionChoicePayload);
+                                }
+                            }
+                        } catch (_) {
+                            // silent: option choice detection must never block inbound flow
+                        }
+
                         try {
                             if (cleanScopeModuleId && pattyService?.tryPattyIntervention) {
                                 pattyService.tryPattyIntervention(

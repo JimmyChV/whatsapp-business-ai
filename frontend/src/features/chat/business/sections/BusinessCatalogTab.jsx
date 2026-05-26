@@ -3,6 +3,8 @@ import { Package, PlusCircle, Search, SlidersHorizontal } from 'lucide-react';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 import {
     addItemToCartState,
+    buildQuoteItemFromCartLine,
+    buildQuoteSummaryFromCart,
     buildCatalogFormDataFromProduct,
     buildCatalogProductPayloadFromForm,
     calculateCartPricing,
@@ -22,8 +24,9 @@ import {
     updateCartItemQtyState
 } from '../helpers';
 import { BusinessCatalogProductCard, BusinessCatalogProductForm } from './catalog';
+import QuoteOptionReview from './QuoteOptionReview';
 
-const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onSendCatalogProduct = null, canWriteByAssignment = false, quoteOptionsWizard = null, onQuoteOptionsWizardChange = null, onResetQuoteOptionsWizard = null }) => {
+const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', tenantId = 'default', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onSendCatalogProduct = null, canWriteByAssignment = false, quoteOptionsWizard = null, onQuoteOptionsWizardChange = null, onResetQuoteOptionsWizard = null }) => {
     const { confirm, notify } = useUiFeedback();
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
@@ -459,6 +462,49 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
             pasoActual: activeOptionNumber < safeTotalOpciones ? activeOptionNumber + 2 : safeTotalOpciones + 2
         });
     };
+    const reviewOptionsData = wizardOptions
+        .filter((option) => Array.isArray(option?.productos) && option.productos.length > 0)
+        .map((option) => {
+            const products = Array.isArray(option?.productos) ? option.productos : [];
+            const delivery = option?.delivery && typeof option.delivery === 'object'
+                ? option.delivery
+                : { type: 'free', amount: 0 };
+            const pricing = calculateCartPricing({
+                cart: products,
+                globalDiscountEnabled: Number(option?.descuentoGlobal || 0) > 0,
+                globalDiscountType: 'amount',
+                globalDiscountValue: Number(option?.descuentoGlobal || 0) || 0,
+                deliveryType: delivery.type === 'amount' ? 'amount' : 'free',
+                deliveryAmount: Number(delivery.amount || 0) || 0,
+                parseMoney,
+                roundMoney,
+                clampNumber
+            });
+            const items = products.map((item, index) => buildQuoteItemFromCartLine({
+                item,
+                line: getOptionLineBreakdown(item),
+                index,
+                currency: 'PEN'
+            }));
+            const summary = buildQuoteSummaryFromCart({
+                cart: products,
+                regularSubtotalTotal: pricing.regularSubtotalTotal,
+                totalDiscountForQuote: pricing.totalDiscountForQuote,
+                subtotalAfterGlobal: pricing.subtotalAfterGlobal,
+                deliveryFee: pricing.deliveryFee,
+                cartTotal: pricing.cartTotal,
+                deliveryType: delivery.type === 'amount' ? 'amount' : 'free',
+                globalDiscountEnabled: Number(option?.descuentoGlobal || 0) > 0,
+                globalDiscountType: 'amount',
+                globalDiscountValue: Number(option?.descuentoGlobal || 0) || 0,
+                currency: 'PEN'
+            });
+            return {
+                optionNumber: Number(option?.numero || 0) || 1,
+                items,
+                summary
+            };
+        });
     const primaryActionStyle = {
         background: 'var(--saas-accent-primary)',
         color: 'var(--saas-accent-primary-text)',
@@ -1016,6 +1062,24 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                         )}
 
                         {safePhase === 'review' && (
+                            <QuoteOptionReview
+                                socket={socket}
+                                options={reviewOptionsData}
+                                totalOptions={safeTotalOpciones}
+                                chatId={activeChatId}
+                                tenantId={tenantId}
+                                onSent={() => {
+                                    if (typeof onResetQuoteOptionsWizard === 'function') {
+                                        onResetQuoteOptionsWizard();
+                                        return;
+                                    }
+                                    setWizardPatch({ modoOpciones: false, phase: 'config', currentOption: 1, pasoActual: 1, opciones: [], mensajeFinal: '' });
+                                }}
+                                onBack={() => setWizardPatch({ phase: 'cart', currentOption: safeTotalOpciones, pasoActual: safeTotalOpciones + 1 })}
+                            />
+                        )}
+
+                        {false && safePhase === 'review' && (
                             <div style={{ background: cardSurface, border: `1px solid ${cardBorder}`, borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', minHeight: '180px' }}>
                                 <div style={{ color: primaryText, fontSize: '0.95rem', fontWeight: 900 }}>
                                     Revisar opciones

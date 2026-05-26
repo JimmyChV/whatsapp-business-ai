@@ -65,6 +65,9 @@ async function ensurePostgresSchema() {
                 quote_number INTEGER NOT NULL DEFAULT 1,
                 revision_number INTEGER NOT NULL DEFAULT 1,
                 parent_quote_id TEXT NULL,
+                is_option_mode BOOLEAN NOT NULL DEFAULT FALSE,
+                option_number INTEGER NULL,
+                option_group_id TEXT NULL,
                 metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -74,6 +77,9 @@ async function ensurePostgresSchema() {
         await queryPostgres(`ALTER TABLE tenant_quotes ADD COLUMN IF NOT EXISTS quote_number INTEGER NOT NULL DEFAULT 1`);
         await queryPostgres(`ALTER TABLE tenant_quotes ADD COLUMN IF NOT EXISTS revision_number INTEGER NOT NULL DEFAULT 1`);
         await queryPostgres(`ALTER TABLE tenant_quotes ADD COLUMN IF NOT EXISTS parent_quote_id TEXT NULL`);
+        await queryPostgres(`ALTER TABLE tenant_quotes ADD COLUMN IF NOT EXISTS is_option_mode BOOLEAN NOT NULL DEFAULT FALSE`);
+        await queryPostgres(`ALTER TABLE tenant_quotes ADD COLUMN IF NOT EXISTS option_number INTEGER NULL`);
+        await queryPostgres(`ALTER TABLE tenant_quotes ADD COLUMN IF NOT EXISTS option_group_id TEXT NULL`);
         await queryPostgres(`
             WITH ranked AS (
                 SELECT
@@ -140,6 +146,11 @@ async function ensurePostgresSchema() {
             ON tenant_quotes(tenant_id, chat_id, quote_number)
             WHERE parent_quote_id IS NULL
         `);
+        await queryPostgres(`
+            CREATE INDEX IF NOT EXISTS idx_tenant_quotes_option_group
+            ON tenant_quotes(option_group_id)
+            WHERE option_group_id IS NOT NULL
+        `);
     })();
     return schemaPromise;
 }
@@ -165,6 +176,9 @@ function normalizeQuoteRecord(input = {}) {
         quoteNumber: toPositiveIntOrNull(source.quoteNumber ?? source.quote_number),
         revisionNumber: toPositiveIntOrNull(source.revisionNumber ?? source.revision_number),
         parentQuoteId: toNullableText(source.parentQuoteId ?? source.parent_quote_id),
+        isOptionMode: source.isOptionMode === true || source.is_option_mode === true,
+        optionNumber: toPositiveIntOrNull(source.optionNumber ?? source.option_number),
+        optionGroupId: toNullableText(source.optionGroupId ?? source.option_group_id),
         metadata: isPlainObject(source.metadata) ? source.metadata : {},
         createdAt,
         updatedAt
@@ -189,6 +203,9 @@ function sanitizeQuotePublic(record = null) {
         quoteNumber: toPositiveIntOrNull(record.quoteNumber ?? record.quote_number),
         revisionNumber: toPositiveIntOrNull(record.revisionNumber ?? record.revision_number),
         parentQuoteId: toNullableText(record.parentQuoteId ?? record.parent_quote_id),
+        isOptionMode: record.isOptionMode === true || record.is_option_mode === true,
+        optionNumber: toPositiveIntOrNull(record.optionNumber ?? record.option_number),
+        optionGroupId: toNullableText(record.optionGroupId ?? record.option_group_id),
         metadata: isPlainObject(record.metadata) ? record.metadata : {},
         createdAt: toText(record.createdAt) || null,
         updatedAt: toText(record.updatedAt) || null
@@ -213,10 +230,30 @@ function sanitizeQuoteRow(row = null) {
         quoteNumber: row.quote_number,
         revisionNumber: row.revision_number,
         parentQuoteId: row.parent_quote_id,
+        isOptionMode: row.is_option_mode === true,
+        optionNumber: row.option_number,
+        optionGroupId: row.option_group_id,
         metadata: row.metadata,
         createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
         updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null
     });
+}
+
+function buildOptionChoicePattern(optionNumber = 0) {
+    const aliasesByOption = {
+        1: ['primera', 'uno', '1'],
+        2: ['segunda', 'dos', '2'],
+        3: ['tercera', 'tres', '3'],
+        4: ['cuarta', 'cuatro', '4'],
+        5: ['quinta', 'cinco', '5']
+    };
+    const aliases = aliasesByOption[optionNumber] || [String(optionNumber || '').trim()];
+    const escaped = aliases
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean)
+        .map((entry) => entry.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    if (escaped.length === 0) return null;
+    return new RegExp(`\\b(opci[oó]n\\s*${optionNumber}|option\\s*${optionNumber}|${escaped.join('|')})\\b`, 'i');
 }
 
 async function resolveQuoteNumberingPostgres(tenantId = DEFAULT_TENANT_ID, clean = {}) {
@@ -297,14 +334,17 @@ async function createQuoteRecordPostgres(tenantId = DEFAULT_TENANT_ID, input = {
             tenant_id, quote_id, chat_id, scope_module_id, message_id, status, currency,
             items_json, summary_json, notes,
             created_by_user_id, updated_by_user_id, sent_at,
-            quote_number, revision_number, parent_quote_id, metadata,
+            quote_number, revision_number, parent_quote_id,
+            is_option_mode, option_number, option_group_id,
+            metadata,
             created_at, updated_at
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7,
             $8::jsonb, $9::jsonb, $10,
             $11, $12, $13,
-            $14, $15, $16, $17::jsonb,
-            $18::timestamptz, $19::timestamptz
+            $14, $15, $16,
+            $17, $18, $19, $20::jsonb,
+            $21::timestamptz, $22::timestamptz
         )
         ON CONFLICT (tenant_id, quote_id)
         DO UPDATE SET
@@ -322,12 +362,16 @@ async function createQuoteRecordPostgres(tenantId = DEFAULT_TENANT_ID, input = {
             quote_number = COALESCE(EXCLUDED.quote_number, tenant_quotes.quote_number),
             revision_number = COALESCE(EXCLUDED.revision_number, tenant_quotes.revision_number),
             parent_quote_id = COALESCE(EXCLUDED.parent_quote_id, tenant_quotes.parent_quote_id),
+            is_option_mode = EXCLUDED.is_option_mode,
+            option_number = EXCLUDED.option_number,
+            option_group_id = EXCLUDED.option_group_id,
             metadata = COALESCE(tenant_quotes.metadata, '{}'::jsonb) || COALESCE(EXCLUDED.metadata, '{}'::jsonb),
             updated_at = NOW()
         RETURNING
             quote_id, chat_id, scope_module_id, message_id, status, currency,
             items_json, summary_json, notes, created_by_user_id, updated_by_user_id,
             sent_at, quote_number, revision_number, parent_quote_id,
+            is_option_mode, option_number, option_group_id,
             metadata, created_at, updated_at`,
         [
             tenantId,
@@ -346,6 +390,9 @@ async function createQuoteRecordPostgres(tenantId = DEFAULT_TENANT_ID, input = {
             numbering.quoteNumber,
             numbering.revisionNumber,
             numbering.parentQuoteId,
+            clean.isOptionMode === true,
+            clean.optionNumber,
+            clean.optionGroupId,
             JSON.stringify(clean.metadata || {}),
             clean.createdAt,
             clean.updatedAt
@@ -366,6 +413,7 @@ async function getQuoteByIdPostgres(tenantId = DEFAULT_TENANT_ID, { quoteId = ''
             quote_id, chat_id, scope_module_id, message_id, status, currency,
             items_json, summary_json, notes, created_by_user_id, updated_by_user_id,
             sent_at, quote_number, revision_number, parent_quote_id,
+            is_option_mode, option_number, option_group_id,
             metadata, created_at, updated_at
          FROM tenant_quotes
          WHERE tenant_id = $1 AND quote_id = $2
@@ -389,6 +437,7 @@ async function listQuotesByChatPostgres(tenantId = DEFAULT_TENANT_ID, { chatId =
             quote_id, chat_id, scope_module_id, message_id, status, currency,
             items_json, summary_json, notes, created_by_user_id, updated_by_user_id,
             sent_at, quote_number, revision_number, parent_quote_id,
+            is_option_mode, option_number, option_group_id,
             metadata, created_at, updated_at
          FROM tenant_quotes
          WHERE tenant_id = $1
@@ -419,10 +468,11 @@ async function markQuoteSentPostgres(
             updated_at = NOW()
          WHERE tenant_id = $1
            AND quote_id = $2
-         RETURNING
+        RETURNING
             quote_id, chat_id, scope_module_id, message_id, status, currency,
             items_json, summary_json, notes, created_by_user_id, updated_by_user_id,
             sent_at, quote_number, revision_number, parent_quote_id,
+            is_option_mode, option_number, option_group_id,
             metadata, created_at, updated_at`,
         [tenantId, cleanQuoteId, toNullableText(messageId), effectiveSentAt, toNullableText(updatedByUserId)]
     );
@@ -448,6 +498,9 @@ async function createQuoteRecordFile(tenantId = DEFAULT_TENANT_ID, input = {}) {
     let quoteNumber = clean.quoteNumber || toPositiveIntOrNull(existingRecord?.quoteNumber) || null;
     let revisionNumber = clean.revisionNumber || toPositiveIntOrNull(existingRecord?.revisionNumber) || null;
     let parentQuoteId = clean.parentQuoteId || toNullableText(existingRecord?.parentQuoteId);
+    const isOptionMode = clean.isOptionMode === true;
+    const optionNumber = clean.optionNumber || toPositiveIntOrNull(existingRecord?.optionNumber) || null;
+    const optionGroupId = clean.optionGroupId || toNullableText(existingRecord?.optionGroupId);
 
     if (parentQuoteId) {
         const parent = items.find((entry) => toText(entry?.quoteId) === parentQuoteId) || null;
@@ -470,6 +523,9 @@ async function createQuoteRecordFile(tenantId = DEFAULT_TENANT_ID, input = {}) {
         quoteNumber,
         revisionNumber,
         parentQuoteId,
+        isOptionMode,
+        optionNumber,
+        optionGroupId,
         createdAt: clean.createdAt || now,
         updatedAt: now
     };
@@ -561,6 +617,108 @@ async function markQuoteSentFile(
     return sanitizeQuotePublic(items[index]);
 }
 
+async function detectOptionChoicePostgres(tenantId = DEFAULT_TENANT_ID, { chatId = '', text = '' } = {}) {
+    await ensurePostgresSchema();
+    const cleanChatId = toText(chatId);
+    const cleanText = toText(text);
+    if (!cleanChatId || !cleanText) return null;
+
+    const activeResult = await queryPostgres(
+        `SELECT option_group_id, COUNT(*) AS total
+         FROM tenant_quotes
+         WHERE tenant_id = $1
+           AND chat_id = $2
+           AND is_option_mode = TRUE
+           AND status = 'sent'
+           AND created_at > NOW() - INTERVAL '48 hours'
+           AND option_group_id IS NOT NULL
+         GROUP BY option_group_id
+         ORDER BY MAX(created_at) DESC
+         LIMIT 1`,
+        [tenantId, cleanChatId]
+    );
+    const activeRow = activeResult?.rows?.[0] || null;
+    const optionGroupId = toNullableText(activeRow?.option_group_id);
+    const total = Math.max(0, Number(activeRow?.total || 0) || 0);
+    if (!optionGroupId || total <= 0) return null;
+
+    for (let optionNumber = 1; optionNumber <= total; optionNumber += 1) {
+        const pattern = buildOptionChoicePattern(optionNumber);
+        if (!pattern || !pattern.test(cleanText)) continue;
+        await queryPostgres(
+            `UPDATE tenant_quotes
+             SET status = CASE
+                 WHEN option_number = $3 THEN 'chosen'
+                 ELSE 'not_chosen'
+             END,
+             updated_at = NOW()
+             WHERE option_group_id = $1
+               AND tenant_id = $2`,
+            [optionGroupId, tenantId, optionNumber]
+        );
+        return {
+            chosenOption: optionNumber,
+            optionGroupId,
+            option_group_id: optionGroupId,
+            totalOptions: total
+        };
+    }
+
+    return null;
+}
+
+async function detectOptionChoiceFile(tenantId = DEFAULT_TENANT_ID, { chatId = '', text = '' } = {}) {
+    const cleanChatId = toText(chatId);
+    const cleanText = toText(text);
+    if (!cleanChatId || !cleanText) return null;
+
+    const parsed = await readTenantJsonFile(QUOTES_FILE, {
+        tenantId,
+        defaultValue: { items: [] }
+    });
+    const items = Array.isArray(parsed?.items) ? parsed.items : [];
+    const recentOptions = items
+        .filter((entry) => (
+            toText(entry?.chatId) === cleanChatId
+            && entry?.isOptionMode === true
+            && toText(entry?.status || 'sent') === 'sent'
+            && toNullableText(entry?.optionGroupId)
+        ))
+        .filter((entry) => {
+            const createdAt = new Date(entry?.createdAt || entry?.updatedAt || 0);
+            return !Number.isNaN(createdAt.getTime()) && (Date.now() - createdAt.getTime()) <= (48 * 60 * 60 * 1000);
+        })
+        .sort((a, b) => new Date(b?.createdAt || 0).getTime() - new Date(a?.createdAt || 0).getTime());
+    if (recentOptions.length === 0) return null;
+
+    const optionGroupId = toNullableText(recentOptions[0]?.optionGroupId);
+    if (!optionGroupId) return null;
+    const groupItems = recentOptions.filter((entry) => toNullableText(entry?.optionGroupId) === optionGroupId);
+    const total = groupItems.length;
+    for (let optionNumber = 1; optionNumber <= total; optionNumber += 1) {
+        const pattern = buildOptionChoicePattern(optionNumber);
+        if (!pattern || !pattern.test(cleanText)) continue;
+        const now = nowIso();
+        const nextItems = items.map((entry) => {
+            if (toNullableText(entry?.optionGroupId) !== optionGroupId) return entry;
+            return {
+                ...entry,
+                status: toPositiveIntOrNull(entry?.optionNumber) === optionNumber ? 'chosen' : 'not_chosen',
+                updatedAt: now
+            };
+        });
+        await writeTenantJsonFile(QUOTES_FILE, { items: nextItems }, { tenantId });
+        return {
+            chosenOption: optionNumber,
+            optionGroupId,
+            option_group_id: optionGroupId,
+            totalOptions: total
+        };
+    }
+
+    return null;
+}
+
 async function createQuoteRecord(tenantId = DEFAULT_TENANT_ID, input = {}) {
     const cleanTenant = resolveTenantId(tenantId);
     if (getStorageDriver() === 'postgres') {
@@ -593,9 +751,19 @@ async function listQuotesByChat(tenantId = DEFAULT_TENANT_ID, input = {}) {
     return listQuotesByChatFile(cleanTenant, input);
 }
 
+async function detectOptionChoice(tenantId = DEFAULT_TENANT_ID, input = {}) {
+    const cleanTenant = resolveTenantId(tenantId);
+    if (getStorageDriver() === 'postgres') {
+        return detectOptionChoicePostgres(cleanTenant, input);
+    }
+    return detectOptionChoiceFile(cleanTenant, input);
+}
+
 module.exports = {
     createQuoteRecord,
+    createQuoteRecordPostgres,
     markQuoteSent,
     getQuoteById,
-    listQuotesByChat
+    listQuotesByChat,
+    detectOptionChoice
 };

@@ -1,0 +1,170 @@
+{
+  "profileId": "cip_mpg1bgif_mbpzd4",
+  "tenantId": "tenant_cleaning",
+  "name": "Lávitat",
+  "description": "",
+  "isDefault": true,
+  "isActive": true,
+  "config": {
+    "catalogIds": [
+      "CAT-KFRNDJ"
+    ],
+    "brandPositioning": {
+      "description": "",
+      "salesStyle": "consultivo",
+      "avoid": []
+    },
+    "categories": [
+      {
+        "id": "cuidado_de_la_cocina",
+        "name": "Cuidado de la cocina",
+        "description": "",
+        "benefits": [],
+        "discoveryQuestions": []
+      },
+      {
+        "id": "cuidado_de_la_ropa",
+        "name": "Cuidado de la ropa",
+        "description": "",
+        "benefits": [],
+        "discoveryQuestions": []
+      },
+      {
+        "id": "cuidado_del_bano",
+        "name": "Cuidado del baño",
+        "description": "",
+        "benefits": [],
+        "discoveryQuestions": []
+      },
+      {
+        "id": "cuidado_del_ba_o",
+        "name": "Cuidado del baño",
+        "description": "",
+        "benefits": [],
+        "discoveryQuestions": []
+      },
+      {
+        "id": "cuidado_del_hogar",
+        "name": "Cuidado del hogar",
+        "description": "",
+        "benefits": [],
+        "discoveryQuestions": []
+      },
+      {
+        "id": "detergentes",
+        "name": "Detergentes",
+        "description": "",
+        "benefits": [],
+        "discoveryQuestions": []
+      },
+      {
+        "id": "jabones_liquidos",
+        "name": "Jabones líquidos",
+        "description": "",
+        "benefits": [],
+        "discoveryQuestions": []
+      },
+      {
+        "id": "jabones_l_quidos",
+        "name": "Jabones líquidos",
+        "description": "",
+        "benefits": [],
+        "discoveryQuestions": []
+      },
+      {
+        "id": "kits_lavitat",
+        "name": "Kits Lavitat",
+        "description": "",
+        "benefits": [],
+        "discoveryQuestions": []
+      },
+      {
+        "id": "lavavajillas",
+        "name": "Lavavajillas",
+        "description": "",
+        "benefits": [],
+        "discoveryQuestions": []
+      },
+      {
+        "id": "limpiadores_desinfectantes",
+        "name": "Limpiadores Desinfectantes",
+        "description": "",
+        "benefits": [],
+        "discoveryQuestions": []
+      },
+      {
+        "id": "limpiavidrios",
+        "name": "Limpiavidrios",
+        "description": "",
+        "benefits": [],
+        "discoveryQuestions": []
+      },
+      {
+        "id": "linea_concentrada",
+        "name": "Linea Concentrada",
+        "description": "",
+        "benefits": [],
+        "discoveryQuestions": []
+      },
+      {
+        "id": "linea_delicada",
+        "name": "Linea Delicada",
+        "description": "",
+        "benefits": [],
+        "discoveryQuestions": []
+      },
+      {
+        "id": "paquetes",
+        "name": "paquetes",
+        "description": "",
+        "benefits": [],
+        "discoveryQuestions": []
+      },
+      {
+        "id": "quitamanchas",
+        "name": "Quitamanchas",
+        "description": "",
+        "benefits": [],
+        "discoveryQuestions": []
+      },
+      {
+        "id": "quitasarros",
+        "name": "Quitasarros",
+        "description": "",
+        "benefits": [],
+        "discoveryQuestions": []
+      },
+      {
+        "id": "sacagrasa",
+        "name": "Sacagrasa",
+        "description": "",
+        "benefits": [],
+        "discoveryQuestions": []
+      },
+      {
+        "id": "suavizantes",
+        "name": "Suavizantes",
+        "description": "",
+        "benefits": [],
+        "discoveryQuestions": []
+      }
+    ],
+    "synonyms": [],
+    "productRoles": {},
+    "playbooks": [],
+    "offerRules": {
+      "threeOptions": true,
+      "economicMinTotal": 90,
+      "freeShippingThresholdAware": true,
+      "alwaysAskBeforeQuote": true,
+      "maxProductsPerProposal": 5
+    },
+    "closingRules": {
+      "askQuantityIfMissing": true,
+      "defaultQuantity": 1,
+      "upsellBeforeQuote": true
+    }
+  },
+  "createdAt": "2026-05-21T22:00:41.566Z",
+  "updatedAt": "2026-05-21T22:01:03.332Z"
+}

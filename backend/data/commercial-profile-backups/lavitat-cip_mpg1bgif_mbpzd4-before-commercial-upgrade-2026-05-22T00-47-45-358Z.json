@@ -1,0 +1,1236 @@
+{
+  "profileId": "cip_mpg1bgif_mbpzd4",
+  "tenantId": "tenant_cleaning",
+  "name": "Lávitat",
+  "description": "Perfil comercial consultivo para Lávitat: categorias estrategicas, sinonimos, roles por SKU, complementos y playbooks de 3 opciones.",
+  "isDefault": true,
+  "isActive": true,
+  "config": {
+    "catalogIds": [
+      "CAT-KFRNDJ"
+    ],
+    "brandPositioning": {
+      "description": "Lávitat vende productos de limpieza para el hogar con enfoque consultivo: entender primero la necesidad del cliente y luego proponer una opción económica, una recomendada y una completa. Priorizar presentaciones de mayor rendimiento, kits y combinaciones que suban el ticket sin inventar descuentos.",
+      "salesStyle": "consultivo",
+      "avoid": [
+        "inventar descuentos o promociones no configuradas",
+        "confirmar stock no verificado",
+        "inventar componentes de kits",
+        "prometer contraentrega si la zona no lo permite",
+        "decir que se deriva a un asesor"
+      ]
+    },
+    "categories": [
+      {
+        "id": "ropa",
+        "name": "Cuidado de la ropa",
+        "description": "Lavado, suavidad y tratamiento de manchas para prendas de uso diario, ropa delicada y familias con alto consumo.",
+        "benefits": [
+          "Limpieza profunda con productos concentrados",
+          "Ropa suave y con aroma agradable",
+          "Opciones para prendas delicadas o piel sensible",
+          "Kits y paquetes para ahorrar por volumen"
+        ],
+        "discoveryQuestions": [
+          "¿Buscas lavado diario, ropa delicada o quitar manchas?",
+          "¿Prefieres una opción económica para probar o una presentación de mayor rendimiento?",
+          "¿Lavas para uso familiar o para un negocio con mayor consumo?"
+        ]
+      },
+      {
+        "id": "cocina",
+        "name": "Cuidado de cocina",
+        "description": "Soluciones para vajilla, grasa y limpieza profunda de cocina.",
+        "benefits": [
+          "Remueve grasa y residuos de cocina",
+          "Opciones pequeñas para prueba y 4L para mayor rendimiento",
+          "Complementa bien con desinfectantes multiuso",
+          "Kits para cubrir cocina completa"
+        ],
+        "discoveryQuestions": [
+          "¿Lo necesitas para lavar platos, quitar grasa o limpieza general de cocina?",
+          "¿Quieres algo para uso diario o para grasa más pesada?",
+          "¿Prefieres presentación pequeña o de mayor rendimiento?"
+        ]
+      },
+      {
+        "id": "bano",
+        "name": "Cuidado del baño",
+        "description": "Limpieza de sarro, vidrios, jabones líquidos y mantenimiento del baño.",
+        "benefits": [
+          "Ayuda con sarro, brillo y limpieza profunda",
+          "Opciones para baño completo y cuidado personal",
+          "Presentaciones grandes y pequeñas según uso",
+          "Kits para resolver baño de forma integral"
+        ],
+        "discoveryQuestions": [
+          "¿Quieres enfocarte en sarro, vidrios o jabón líquido?",
+          "¿Es para limpieza del baño completo o solo mantenimiento?",
+          "¿Prefieres aroma suave, frutal o una opción funcional?"
+        ]
+      },
+      {
+        "id": "hogar",
+        "name": "Limpieza general del hogar",
+        "description": "Limpiadores desinfectantes multiuso para pisos, superficies y ambientes.",
+        "benefits": [
+          "Aromas variados para el hogar",
+          "Tecnología con amonio cuaternario",
+          "Formato 4L para buen rendimiento",
+          "Combina bien con cocina, baño y ropa"
+        ],
+        "discoveryQuestions": [
+          "¿Buscas desinfectar pisos, superficies o dejar aroma en casa?",
+          "¿Tienes alguna fragancia preferida?",
+          "¿Quieres combinarlo con productos de cocina o baño?"
+        ]
+      },
+      {
+        "id": "kits",
+        "name": "Kits y ahorro",
+        "description": "Combos y paquetes para resolver varias necesidades y subir el valor del pedido sin inventar descuentos.",
+        "benefits": [
+          "Opciones listas para comprar",
+          "Mayor valor por combinación de productos",
+          "Ideales para llegar a envío gratis cuando aplica",
+          "Permiten vender por necesidad completa, no producto suelto"
+        ],
+        "discoveryQuestions": [
+          "¿Quieres un kit para ropa, cocina, baño o limpieza general?",
+          "¿Buscas ahorrar por volumen o probar varios productos?",
+          "¿Quieres que te proponga una opción económica, recomendada y completa?"
+        ]
+      }
+    ],
+    "synonyms": [
+      {
+        "term": "suavitel",
+        "mapsTo": "ropa",
+        "mapsToType": "category"
+      },
+      {
+        "term": "suavizante",
+        "mapsTo": "ropa",
+        "mapsToType": "category"
+      },
+      {
+        "term": "detergente",
+        "mapsTo": "ropa",
+        "mapsToType": "category"
+      },
+      {
+        "term": "ace",
+        "mapsTo": "ropa",
+        "mapsToType": "category"
+      },
+      {
+        "term": "ropa",
+        "mapsTo": "ropa",
+        "mapsToType": "category"
+      },
+      {
+        "term": "lavanderia",
+        "mapsTo": "ropa",
+        "mapsToType": "category"
+      },
+      {
+        "term": "lavar ropa",
+        "mapsTo": "ropa",
+        "mapsToType": "category"
+      },
+      {
+        "term": "ropa delicada",
+        "mapsTo": "ropa",
+        "mapsToType": "category"
+      },
+      {
+        "term": "manchas",
+        "mapsTo": "ropa",
+        "mapsToType": "category"
+      },
+      {
+        "term": "mancha",
+        "mapsTo": "ropa",
+        "mapsToType": "category"
+      },
+      {
+        "term": "quitamanchas",
+        "mapsTo": "ropa",
+        "mapsToType": "category"
+      },
+      {
+        "term": "desmanchador",
+        "mapsTo": "ropa",
+        "mapsToType": "category"
+      },
+      {
+        "term": "ayudin",
+        "mapsTo": "cocina",
+        "mapsToType": "category"
+      },
+      {
+        "term": "lava platos",
+        "mapsTo": "cocina",
+        "mapsToType": "category"
+      },
+      {
+        "term": "lavaplatos",
+        "mapsTo": "cocina",
+        "mapsToType": "category"
+      },
+      {
+        "term": "lavavajillas",
+        "mapsTo": "cocina",
+        "mapsToType": "category"
+      },
+      {
+        "term": "vajilla",
+        "mapsTo": "cocina",
+        "mapsToType": "category"
+      },
+      {
+        "term": "platos",
+        "mapsTo": "cocina",
+        "mapsToType": "category"
+      },
+      {
+        "term": "grasa",
+        "mapsTo": "cocina",
+        "mapsToType": "category"
+      },
+      {
+        "term": "desengrasante",
+        "mapsTo": "cocina",
+        "mapsToType": "category"
+      },
+      {
+        "term": "sacagrasa",
+        "mapsTo": "cocina",
+        "mapsToType": "category"
+      },
+      {
+        "term": "cocina",
+        "mapsTo": "cocina",
+        "mapsToType": "category"
+      },
+      {
+        "term": "bano",
+        "mapsTo": "bano",
+        "mapsToType": "category"
+      },
+      {
+        "term": "sarro",
+        "mapsTo": "bano",
+        "mapsToType": "category"
+      },
+      {
+        "term": "quitasarro",
+        "mapsTo": "bano",
+        "mapsToType": "category"
+      },
+      {
+        "term": "vidrios",
+        "mapsTo": "bano",
+        "mapsToType": "category"
+      },
+      {
+        "term": "limpiavidrios",
+        "mapsTo": "bano",
+        "mapsToType": "category"
+      },
+      {
+        "term": "jabon liquido",
+        "mapsTo": "bano",
+        "mapsToType": "category"
+      },
+      {
+        "term": "jabon para manos",
+        "mapsTo": "bano",
+        "mapsToType": "category"
+      },
+      {
+        "term": "jabon",
+        "mapsTo": "bano",
+        "mapsToType": "category"
+      },
+      {
+        "term": "limpiador",
+        "mapsTo": "hogar",
+        "mapsToType": "category"
+      },
+      {
+        "term": "limpiadores",
+        "mapsTo": "hogar",
+        "mapsToType": "category"
+      },
+      {
+        "term": "desinfectante",
+        "mapsTo": "hogar",
+        "mapsToType": "category"
+      },
+      {
+        "term": "multiuso",
+        "mapsTo": "hogar",
+        "mapsToType": "category"
+      },
+      {
+        "term": "multiusos",
+        "mapsTo": "hogar",
+        "mapsToType": "category"
+      },
+      {
+        "term": "piso",
+        "mapsTo": "hogar",
+        "mapsToType": "category"
+      },
+      {
+        "term": "pisos",
+        "mapsTo": "hogar",
+        "mapsToType": "category"
+      },
+      {
+        "term": "superficies",
+        "mapsTo": "hogar",
+        "mapsToType": "category"
+      },
+      {
+        "term": "aroma",
+        "mapsTo": "hogar",
+        "mapsToType": "category"
+      },
+      {
+        "term": "fragancia",
+        "mapsTo": "hogar",
+        "mapsToType": "category"
+      },
+      {
+        "term": "limpieza casa",
+        "mapsTo": "hogar",
+        "mapsToType": "category"
+      },
+      {
+        "term": "casa",
+        "mapsTo": "hogar",
+        "mapsToType": "category"
+      },
+      {
+        "term": "promo",
+        "mapsTo": "kits",
+        "mapsToType": "category"
+      },
+      {
+        "term": "promocion",
+        "mapsTo": "kits",
+        "mapsToType": "category"
+      },
+      {
+        "term": "promociones",
+        "mapsTo": "kits",
+        "mapsToType": "category"
+      },
+      {
+        "term": "oferta",
+        "mapsTo": "kits",
+        "mapsToType": "category"
+      },
+      {
+        "term": "ofertas",
+        "mapsTo": "kits",
+        "mapsToType": "category"
+      },
+      {
+        "term": "combo",
+        "mapsTo": "kits",
+        "mapsToType": "category"
+      },
+      {
+        "term": "combos",
+        "mapsTo": "kits",
+        "mapsToType": "category"
+      },
+      {
+        "term": "kit",
+        "mapsTo": "kits",
+        "mapsToType": "category"
+      },
+      {
+        "term": "kits",
+        "mapsTo": "kits",
+        "mapsToType": "category"
+      },
+      {
+        "term": "paquete",
+        "mapsTo": "kits",
+        "mapsToType": "category"
+      },
+      {
+        "term": "paquetes",
+        "mapsTo": "kits",
+        "mapsToType": "category"
+      },
+      {
+        "term": "ahorro",
+        "mapsTo": "kits",
+        "mapsToType": "category"
+      }
+    ],
+    "productRoles": {
+      "MAT0501001": {
+        "category": "ropa",
+        "role": "core",
+        "priority": 96,
+        "rotationRank": 1,
+        "tags": [
+          "principal",
+          "4l",
+          "concentrado",
+          "alto_valor"
+        ],
+        "complements": [
+          "MAT0501002",
+          "MAT0501005",
+          "MAT05040002",
+          "MAT05040004"
+        ],
+        "substituteSkus": [
+          "MAT0501007",
+          "MAT0501003"
+        ]
+      },
+      "MAT0501002": {
+        "category": "ropa",
+        "role": "complement",
+        "priority": 94,
+        "rotationRank": 2,
+        "tags": [
+          "suavizante",
+          "4l",
+          "complemento_ropa"
+        ],
+        "complements": [
+          "MAT0501001",
+          "MAT0501005",
+          "MAT05040002"
+        ],
+        "substituteSkus": [
+          "MAT0501008",
+          "MAT0501004"
+        ]
+      },
+      "MAT0501003": {
+        "category": "ropa",
+        "role": "premium",
+        "priority": 82,
+        "rotationRank": 4,
+        "tags": [
+          "delicado",
+          "piel_sensible",
+          "4l"
+        ],
+        "complements": [
+          "MAT0501004",
+          "MAT0501005",
+          "MAT05040005"
+        ],
+        "substituteSkus": [
+          "MAT0501009",
+          "MAT0501001"
+        ]
+      },
+      "MAT0501004": {
+        "category": "ropa",
+        "role": "complement",
+        "priority": 78,
+        "rotationRank": 5,
+        "tags": [
+          "suavizante_delicado",
+          "piel_sensible"
+        ],
+        "complements": [
+          "MAT0501003",
+          "MAT0501005",
+          "MAT05040005"
+        ],
+        "substituteSkus": [
+          "MAT0501010",
+          "MAT0501002"
+        ]
+      },
+      "MAT0501005": {
+        "category": "ropa",
+        "role": "complement",
+        "priority": 90,
+        "rotationRank": 3,
+        "tags": [
+          "quitamanchas",
+          "manchas",
+          "4l"
+        ],
+        "complements": [
+          "MAT0501001",
+          "MAT0501002",
+          "MAT05040002"
+        ],
+        "substituteSkus": [
+          "MAT0501006"
+        ]
+      },
+      "MAT0501006": {
+        "category": "ropa",
+        "role": "economic",
+        "priority": 65,
+        "rotationRank": 8,
+        "tags": [
+          "quitamanchas",
+          "prueba",
+          "900ml"
+        ],
+        "complements": [
+          "MAT0501007",
+          "MAT0501008"
+        ],
+        "substituteSkus": [
+          "MAT0501005"
+        ]
+      },
+      "MAT0501007": {
+        "category": "ropa",
+        "role": "economic",
+        "priority": 62,
+        "rotationRank": 9,
+        "tags": [
+          "detergente",
+          "prueba",
+          "1100ml"
+        ],
+        "complements": [
+          "MAT0501008",
+          "MAT0501006"
+        ],
+        "substituteSkus": [
+          "MAT0501001"
+        ]
+      },
+      "MAT0501008": {
+        "category": "ropa",
+        "role": "economic",
+        "priority": 60,
+        "rotationRank": 10,
+        "tags": [
+          "suavizante",
+          "prueba",
+          "1100ml"
+        ],
+        "complements": [
+          "MAT0501007",
+          "MAT0501006"
+        ],
+        "substituteSkus": [
+          "MAT0501002"
+        ]
+      },
+      "MAT0501009": {
+        "category": "ropa",
+        "role": "economic",
+        "priority": 58,
+        "rotationRank": 11,
+        "tags": [
+          "detergente_delicado",
+          "prueba"
+        ],
+        "complements": [
+          "MAT0501010",
+          "MAT0501006"
+        ],
+        "substituteSkus": [
+          "MAT0501003"
+        ]
+      },
+      "MAT0501010": {
+        "category": "ropa",
+        "role": "economic",
+        "priority": 56,
+        "rotationRank": 12,
+        "tags": [
+          "suavizante_delicado",
+          "prueba"
+        ],
+        "complements": [
+          "MAT0501009",
+          "MAT0501006"
+        ],
+        "substituteSkus": [
+          "MAT0501004"
+        ]
+      },
+      "MAT0502001": {
+        "category": "hogar",
+        "role": "core",
+        "priority": 78,
+        "rotationRank": 1,
+        "tags": [
+          "desinfectante",
+          "bebe",
+          "multiuso"
+        ],
+        "complements": [
+          "MAT0502005",
+          "MAT0502006",
+          "MAT0502008"
+        ],
+        "substituteSkus": [
+          "MAT0502002",
+          "MAT0502003",
+          "MAT0502011"
+        ]
+      },
+      "MAT0502002": {
+        "category": "hogar",
+        "role": "core",
+        "priority": 77,
+        "rotationRank": 2,
+        "tags": [
+          "desinfectante",
+          "lavanda",
+          "multiuso"
+        ],
+        "complements": [
+          "MAT0502005",
+          "MAT0502006",
+          "MAT0502008"
+        ],
+        "substituteSkus": [
+          "MAT0502001",
+          "MAT0502003",
+          "MAT0502012"
+        ]
+      },
+      "MAT0502003": {
+        "category": "hogar",
+        "role": "core",
+        "priority": 76,
+        "rotationRank": 3,
+        "tags": [
+          "desinfectante",
+          "primaveral",
+          "multiuso"
+        ],
+        "complements": [
+          "MAT0502005",
+          "MAT0502006",
+          "MAT0502008"
+        ],
+        "substituteSkus": [
+          "MAT0502001",
+          "MAT0502002",
+          "MAT0502013"
+        ]
+      },
+      "MAT0502004": {
+        "category": "hogar",
+        "role": "core",
+        "priority": 75,
+        "rotationRank": 4,
+        "tags": [
+          "desinfectante",
+          "bambu",
+          "multiuso"
+        ],
+        "complements": [
+          "MAT0502005",
+          "MAT0502006",
+          "MAT0502008"
+        ],
+        "substituteSkus": [
+          "MAT0502011",
+          "MAT0502012",
+          "MAT0502013"
+        ]
+      },
+      "MAT0502005": {
+        "category": "cocina",
+        "role": "core",
+        "priority": 95,
+        "rotationRank": 1,
+        "tags": [
+          "lavavajillas",
+          "4l",
+          "principal"
+        ],
+        "complements": [
+          "MAT0502006",
+          "MAT0502001",
+          "MAT05040010"
+        ],
+        "substituteSkus": [
+          "MAT0502014"
+        ]
+      },
+      "MAT0502006": {
+        "category": "cocina",
+        "role": "premium",
+        "priority": 86,
+        "rotationRank": 2,
+        "tags": [
+          "sacagrasa",
+          "desengrasante",
+          "4l"
+        ],
+        "complements": [
+          "MAT0502005",
+          "MAT0502001",
+          "MAT05040010"
+        ],
+        "substituteSkus": [
+          "MAT0502007"
+        ]
+      },
+      "MAT0502007": {
+        "category": "cocina",
+        "role": "economic",
+        "priority": 58,
+        "rotationRank": 6,
+        "tags": [
+          "sacagrasa",
+          "prueba",
+          "650ml"
+        ],
+        "complements": [
+          "MAT0502014",
+          "MAT0502005"
+        ],
+        "substituteSkus": [
+          "MAT0502006"
+        ]
+      },
+      "MAT0502008": {
+        "category": "bano",
+        "role": "core",
+        "priority": 92,
+        "rotationRank": 1,
+        "tags": [
+          "quitasarro",
+          "4l",
+          "principal_bano"
+        ],
+        "complements": [
+          "MAT0502015",
+          "MAT0502009",
+          "MAT05040011"
+        ],
+        "substituteSkus": [
+          "MAT0502015"
+        ]
+      },
+      "MAT0502009": {
+        "category": "bano",
+        "role": "core",
+        "priority": 80,
+        "rotationRank": 3,
+        "tags": [
+          "limpiavidrios",
+          "4l"
+        ],
+        "complements": [
+          "MAT0502008",
+          "MAT0502010",
+          "MAT05040011"
+        ],
+        "substituteSkus": [
+          "MAT0502010"
+        ]
+      },
+      "MAT0502010": {
+        "category": "bano",
+        "role": "economic",
+        "priority": 55,
+        "rotationRank": 7,
+        "tags": [
+          "limpiavidrios",
+          "650ml",
+          "prueba"
+        ],
+        "complements": [
+          "MAT0502009",
+          "MAT0502015"
+        ],
+        "substituteSkus": [
+          "MAT0502009"
+        ]
+      },
+      "MAT0502011": {
+        "category": "hogar",
+        "role": "core",
+        "priority": 74,
+        "rotationRank": 5,
+        "tags": [
+          "desinfectante",
+          "energia_costena",
+          "multiuso"
+        ],
+        "complements": [
+          "MAT0502005",
+          "MAT0502006",
+          "MAT0502008"
+        ],
+        "substituteSkus": [
+          "MAT0502001",
+          "MAT0502002",
+          "MAT0502003"
+        ]
+      },
+      "MAT0502012": {
+        "category": "hogar",
+        "role": "core",
+        "priority": 73,
+        "rotationRank": 6,
+        "tags": [
+          "desinfectante",
+          "misterio_andino",
+          "multiuso"
+        ],
+        "complements": [
+          "MAT0502005",
+          "MAT0502006",
+          "MAT0502008"
+        ],
+        "substituteSkus": [
+          "MAT0502001",
+          "MAT0502002",
+          "MAT0502013"
+        ]
+      },
+      "MAT0502013": {
+        "category": "hogar",
+        "role": "core",
+        "priority": 72,
+        "rotationRank": 7,
+        "tags": [
+          "desinfectante",
+          "magia_amazonica",
+          "multiuso"
+        ],
+        "complements": [
+          "MAT0502005",
+          "MAT0502006",
+          "MAT0502008"
+        ],
+        "substituteSkus": [
+          "MAT0502001",
+          "MAT0502002",
+          "MAT0502012"
+        ]
+      },
+      "MAT0502014": {
+        "category": "cocina",
+        "role": "economic",
+        "priority": 60,
+        "rotationRank": 5,
+        "tags": [
+          "lavavajillas",
+          "prueba",
+          "500ml"
+        ],
+        "complements": [
+          "MAT0502007",
+          "MAT0502005"
+        ],
+        "substituteSkus": [
+          "MAT0502005"
+        ]
+      },
+      "MAT0502015": {
+        "category": "bano",
+        "role": "economic",
+        "priority": 64,
+        "rotationRank": 6,
+        "tags": [
+          "quitasarro",
+          "900ml",
+          "prueba"
+        ],
+        "complements": [
+          "MAT0502008",
+          "MAT0502010"
+        ],
+        "substituteSkus": [
+          "MAT0502008"
+        ]
+      },
+      "MAT0503001": {
+        "category": "bano",
+        "role": "premium",
+        "priority": 78,
+        "rotationRank": 4,
+        "tags": [
+          "jabon_liquido",
+          "avena_miel",
+          "4l"
+        ],
+        "complements": [
+          "MAT0503003",
+          "MAT0502008"
+        ],
+        "substituteSkus": [
+          "MAT0503002",
+          "MAT0503003"
+        ]
+      },
+      "MAT0503002": {
+        "category": "bano",
+        "role": "premium",
+        "priority": 76,
+        "rotationRank": 5,
+        "tags": [
+          "jabon_liquido",
+          "frutos_rojos",
+          "4l"
+        ],
+        "complements": [
+          "MAT0503004",
+          "MAT0502008"
+        ],
+        "substituteSkus": [
+          "MAT0503001",
+          "MAT0503004"
+        ]
+      },
+      "MAT0503003": {
+        "category": "bano",
+        "role": "economic",
+        "priority": 52,
+        "rotationRank": 8,
+        "tags": [
+          "jabon_liquido",
+          "avena_miel",
+          "500ml"
+        ],
+        "complements": [
+          "MAT0503001"
+        ],
+        "substituteSkus": [
+          "MAT0503004"
+        ]
+      },
+      "MAT0503004": {
+        "category": "bano",
+        "role": "economic",
+        "priority": 52,
+        "rotationRank": 9,
+        "tags": [
+          "jabon_liquido",
+          "frutos_rojos",
+          "500ml"
+        ],
+        "complements": [
+          "MAT0503002"
+        ],
+        "substituteSkus": [
+          "MAT0503003"
+        ]
+      },
+      "MAT05040001": {
+        "category": "ropa",
+        "role": "kit",
+        "priority": 90,
+        "rotationRank": 22,
+        "tags": [
+          "kit",
+          "linea_concentrada",
+          "recomendado",
+          "opcion_completa"
+        ],
+        "complements": [
+          "MAT0502005",
+          "MAT0502008"
+        ],
+        "substituteSkus": [
+          "MAT05040002",
+          "MAT05040009"
+        ]
+      },
+      "MAT05040002": {
+        "category": "ropa",
+        "role": "kit",
+        "priority": 98,
+        "rotationRank": 18,
+        "tags": [
+          "kit",
+          "ropa_plus",
+          "mayor_ahorro",
+          "opcion_completa"
+        ],
+        "complements": [
+          "MAT0502005",
+          "MAT0502008"
+        ],
+        "substituteSkus": [
+          "MAT05040001",
+          "MAT05040009"
+        ]
+      },
+      "MAT05040003": {
+        "category": "kits",
+        "role": "kit",
+        "priority": 90,
+        "rotationRank": 1,
+        "tags": [
+          "kit",
+          "primera_experiencia",
+          "mas_vendido"
+        ],
+        "complements": [
+          "MAT05040004",
+          "MAT05040002"
+        ],
+        "substituteSkus": [
+          "MAT05040009",
+          "MAT05040012"
+        ]
+      },
+      "MAT05040004": {
+        "category": "ropa",
+        "role": "kit",
+        "priority": 82,
+        "rotationRank": 20,
+        "tags": [
+          "kit",
+          "ropa_cocina",
+          "recomendado",
+          "opcion_completa"
+        ],
+        "complements": [
+          "MAT0502005",
+          "MAT0502006"
+        ],
+        "substituteSkus": [
+          "MAT05040002",
+          "MAT05040010"
+        ]
+      },
+      "MAT05040005": {
+        "category": "ropa",
+        "role": "kit",
+        "priority": 84,
+        "rotationRank": 24,
+        "tags": [
+          "kit",
+          "linea_delicada",
+          "recomendado",
+          "opcion_completa"
+        ],
+        "complements": [
+          "MAT0502005",
+          "MAT0502008"
+        ],
+        "substituteSkus": [
+          "MAT05040001",
+          "MAT05040002"
+        ]
+      },
+      "MAT05040006": {
+        "category": "ropa",
+        "role": "kit",
+        "priority": 85,
+        "rotationRank": 30,
+        "tags": [
+          "paquete",
+          "detergente_16l",
+          "mayor_ahorro",
+          "opcion_completa"
+        ],
+        "complements": [
+          "MAT05040007",
+          "MAT05040008"
+        ],
+        "substituteSkus": [
+          "MAT0501001"
+        ]
+      },
+      "MAT05040007": {
+        "category": "ropa",
+        "role": "kit",
+        "priority": 80,
+        "rotationRank": 31,
+        "tags": [
+          "paquete",
+          "suavizante_16l",
+          "mayor_ahorro",
+          "opcion_completa"
+        ],
+        "complements": [
+          "MAT05040006",
+          "MAT05040008"
+        ],
+        "substituteSkus": [
+          "MAT0501002"
+        ]
+      },
+      "MAT05040008": {
+        "category": "ropa",
+        "role": "kit",
+        "priority": 80,
+        "rotationRank": 32,
+        "tags": [
+          "paquete",
+          "quitamanchas_16l",
+          "mayor_ahorro",
+          "opcion_completa"
+        ],
+        "complements": [
+          "MAT05040006",
+          "MAT05040007"
+        ],
+        "substituteSkus": [
+          "MAT0501005"
+        ]
+      },
+      "MAT05040009": {
+        "category": "ropa",
+        "role": "kit",
+        "priority": 88,
+        "rotationRank": 21,
+        "tags": [
+          "kit",
+          "cuidado_diario",
+          "recomendado",
+          "opcion_completa"
+        ],
+        "complements": [
+          "MAT0502005",
+          "MAT0502015"
+        ],
+        "substituteSkus": [
+          "MAT05040001",
+          "MAT05040002"
+        ]
+      },
+      "MAT05040010": {
+        "category": "cocina",
+        "role": "kit",
+        "priority": 92,
+        "rotationRank": 18,
+        "tags": [
+          "kit",
+          "cocina",
+          "recomendado",
+          "opcion_completa"
+        ],
+        "complements": [
+          "MAT0502001",
+          "MAT0502008"
+        ],
+        "substituteSkus": [
+          "MAT0502005",
+          "MAT0502006",
+          "MAT05040012"
+        ]
+      },
+      "MAT05040011": {
+        "category": "bano",
+        "role": "kit",
+        "priority": 94,
+        "rotationRank": 18,
+        "tags": [
+          "kit",
+          "bano",
+          "recomendado",
+          "opcion_completa"
+        ],
+        "complements": [
+          "MAT0502008",
+          "MAT0502009"
+        ],
+        "substituteSkus": [
+          "MAT05040012"
+        ]
+      },
+      "MAT05040012": {
+        "category": "bano",
+        "role": "kit",
+        "priority": 88,
+        "rotationRank": 19,
+        "tags": [
+          "kit",
+          "bano_cocina",
+          "recomendado",
+          "opcion_completa"
+        ],
+        "complements": [
+          "MAT0502005",
+          "MAT0502008"
+        ],
+        "substituteSkus": [
+          "MAT05040010",
+          "MAT05040011"
+        ]
+      }
+    },
+    "playbooks": [
+      {
+        "id": "ropa_tres_opciones",
+        "categories": [
+          "ropa"
+        ],
+        "strategy": "three_options",
+        "economicRule": "lowest_price",
+        "recommendedRule": "high_rotation",
+        "completeRule": "add_complements"
+      },
+      {
+        "id": "cocina_tres_opciones",
+        "categories": [
+          "cocina"
+        ],
+        "strategy": "three_options",
+        "economicRule": "lowest_price",
+        "recommendedRule": "high_rotation",
+        "completeRule": "add_complements"
+      },
+      {
+        "id": "bano_tres_opciones",
+        "categories": [
+          "bano"
+        ],
+        "strategy": "three_options",
+        "economicRule": "lowest_price",
+        "recommendedRule": "high_rotation",
+        "completeRule": "add_complements"
+      },
+      {
+        "id": "hogar_tres_opciones",
+        "categories": [
+          "hogar"
+        ],
+        "strategy": "three_options",
+        "economicRule": "lowest_price",
+        "recommendedRule": "high_rotation",
+        "completeRule": "add_complements"
+      },
+      {
+        "id": "kits_ahorro",
+        "categories": [
+          "kits"
+        ],
+        "strategy": "three_options",
+        "economicRule": "lowest_price",
+        "recommendedRule": "high_rotation",
+        "completeRule": "add_complements"
+      }
+    ],
+    "offerRules": {
+      "threeOptions": true,
+      "economicMinTotal": 0,
+      "freeShippingThresholdAware": true,
+      "alwaysAskBeforeQuote": true,
+      "maxProductsPerProposal": 5
+    },
+    "closingRules": {
+      "askQuantityIfMissing": true,
+      "defaultQuantity": 1,
+      "upsellBeforeQuote": true
+    }
+  },
+  "createdAt": "2026-05-21T22:00:41.566Z",
+  "updatedAt": "2026-05-22T00:09:58.074Z"
+}
