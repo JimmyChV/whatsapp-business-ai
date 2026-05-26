@@ -96,7 +96,7 @@ export default function BusinessQuotesTabSection({
                 <div style={{ minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                         <span style={{ fontWeight: 900, color: 'var(--text-primary)', fontSize: compact ? '0.76rem' : '0.8rem' }}>
-                            {title || 'Cotizacion'}
+                            {(isOptionMode ? `Opcion ${optionNumber || ''}`.trim() : title) || 'Cotizacion'}
                         </span>
                         <span style={{ background: badge.background, border: `1px solid ${badge.border}`, color: badge.color, borderRadius: '999px', padding: '2px 7px', fontSize: '0.66rem', fontWeight: 800 }}>
                             {badge.label}

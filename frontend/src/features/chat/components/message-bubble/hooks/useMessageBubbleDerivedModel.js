@@ -66,6 +66,10 @@ const normalizeOrderPayloadForDisplay = (payload = null) => {
     const hasQuoteShape = Boolean(
         quoteId
         || rawPreview.quoteSummary
+        || payload.isOptionMode === true
+        || payload.is_option_mode === true
+        || rawPreview.isOptionMode === true
+        || rawPreview.is_option_mode === true
         || metadataSourceType === 'quote'
     );
     if (hasQuoteShape) {

@@ -249,33 +249,44 @@ function buildQuoteMessageBody(quote = {}, fallbackBody = '') {
     const totalPayable = toFiniteNumberOrNull(summary?.totalPayable)
         ?? Math.max(0, (toFiniteNumberOrNull(summary?.totalAfterDiscount) ?? 0) + (Boolean(summary?.deliveryFree) ? 0 : deliveryAmount));
 
+    const safeSeparator = '------------------';
+    const displayHeader = isOptionMode ? `*OPCION ${optionNumber || 1}*` : header;
     const totalLines = [
-        separator,
+        safeSeparator,
         `Subtotal:         ${formatSoles(subtotal)}`
     ];
     if (discount > 0) {
         totalLines.push(`*Descuento:       - ${formatSoles(discount)}*`);
     }
     totalLines.push(`Delivery:         ${deliveryLabel}`);
-    totalLines.push(separator);
+    totalLines.push(safeSeparator);
     totalLines.push(`*TOTAL A PAGAR:   ${formatSoles(totalPayable)}*`);
     totalLines.push('');
     totalLines.push(separator);
     totalLines.push('_Lávitat® · La confianza que abraza tu hogar_');
 
+    if (isOptionMode && totalLines.length >= 3) {
+        totalLines.splice(-3, 3);
+    } else if (!isOptionMode && totalLines.length >= 3) {
+        totalLines[totalLines.length - 2] = safeSeparator;
+        totalLines[totalLines.length - 1] = '_Lavitat(R) · La confianza que abraza tu hogar_';
+    }
     const notesLine = quote?.notes ? ['', toText(quote.notes)] : [];
     const fallbackLine = !items.length && toText(fallbackBody) ? ['', toText(fallbackBody)] : [];
 
     return [
-        header,
-        separator,
+        displayHeader,
+        safeSeparator,
         '',
         ...lines,
         '',
         ...totalLines,
         ...notesLine,
         ...fallbackLine
-    ].join('\n').trim();
+    ].join('\n')
+        .replace(/Ã—/g, 'x')
+        .replace(/Â·/g, '·')
+        .trim();
 }
 
 function buildQuoteInteractiveMessage(quoteId, body) {

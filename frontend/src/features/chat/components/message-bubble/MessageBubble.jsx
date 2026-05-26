@@ -146,6 +146,23 @@ const MessageBubble = ({
         || actionOrder?.sourceOrder
         || actionOrder?.source_order
     );
+    const isOptionQuote = Boolean(
+        actionOrder?.isOptionMode
+        || actionOrder?.is_option_mode
+        || actionOrder?.rawPreview?.isOptionMode
+        || actionOrder?.rawPreview?.is_option_mode
+        || quoteMetadata?.isOptionMode
+        || quoteMetadata?.is_option_mode
+    );
+    const optionNumber = Number(
+        actionOrder?.optionNumber
+        ?? actionOrder?.option_number
+        ?? actionOrder?.rawPreview?.optionNumber
+        ?? actionOrder?.rawPreview?.option_number
+        ?? quoteMetadata?.optionNumber
+        ?? quoteMetadata?.option_number
+        ?? 0
+    );
     const quoteNumber = Number(
         actionOrder?.quoteNumber
         ?? actionOrder?.quote_number
@@ -167,9 +184,11 @@ const MessageBubble = ({
     const quoteCardNumberLabel = Number.isFinite(quoteNumber) && quoteNumber > 0
         ? ` ${Math.trunc(quoteNumber)}${Number.isFinite(revisionNumber) && revisionNumber > 1 ? ` (Rev. ${Math.trunc(revisionNumber)})` : ''}`
         : '';
+    const optionCardNumberLabel = Number.isFinite(optionNumber) && optionNumber > 0 ? ` ${Math.trunc(optionNumber)}` : '';
     const quoteCardTitle = quoteSourceType === 'order' || quoteHasSourceOrder
         ? '🛒 Resumen De Pedido'
         : `📋 Cotización${quoteCardNumberLabel}`;
+    const displayQuoteCardTitle = isOptionQuote ? `Opcion${optionCardNumberLabel}` : quoteCardTitle;
     const [selectedLocationText, setSelectedLocationText] = useState('');
     const [showForwardPicker, setShowForwardPicker] = useState(false);
     const [forwardSearch, setForwardSearch] = useState('');
@@ -548,7 +567,7 @@ const MessageBubble = ({
             {isOrderActionable && (
                 <div className={`message-order-card${isQuotePayload ? ' is-quote' : ''}${isProductPayload ? ' is-product' : ' is-order'}`}>
                     <div className="message-order-card__title">
-                        {isProductPayload ? 'Producto compartido' : (isQuotePayload ? quoteCardTitle : '🛒 Pedido del cliente')}
+                        {isProductPayload ? 'Producto compartido' : (isQuotePayload ? displayQuoteCardTitle : '🛒 Pedido del cliente')}
                     </div>
                     {orderIdentifier && (
                         <div className="message-order-card__meta">ID: {orderIdentifier}</div>
@@ -708,7 +727,7 @@ const MessageBubble = ({
                 </div>
             )}
 
-            {isUnrecognizedOrderPayload && (
+            {isUnrecognizedOrderPayload && !/^opci[oó]n\s+\d+/i.test(String(msg?.body || '').trim()) && (
                 <div className="message-order-card__hint">
                     Formato de pedido no reconocido. Se muestra el contenido original.
                 </div>
