@@ -1033,16 +1033,13 @@ class WhatsAppCloudClient extends EventEmitter {
             throw new Error('Template media payload is empty.');
         }
 
-        const session = await this.graphJsonWithToken(`/${encodeURIComponent(safeAppId)}/uploads`, {
+        const session = await this.graphJsonWithToken(`/${safeAppId}/uploads`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                file_length: buffer.length,
+            query: {
+                file_length: String(buffer.length),
                 file_name: safeName,
                 file_type: safeMime
-            })
+            }
         });
 
         const uploadSessionId = String(session?.id || '').trim();
@@ -1050,7 +1047,7 @@ class WhatsAppCloudClient extends EventEmitter {
             throw new Error('No se pudo crear la sesion de upload para el header del template.');
         }
 
-        const uploaded = await this.graphJsonWithToken(`/${encodeURIComponent(uploadSessionId)}`, {
+        const uploaded = await this.graphJsonWithToken(`/${uploadSessionId}`, {
             method: 'POST',
             headers: {
                 Authorization: `OAuth ${this.accessToken}`,
