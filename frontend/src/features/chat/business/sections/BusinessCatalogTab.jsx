@@ -12,7 +12,7 @@ import {
 } from '../helpers';
 import { BusinessCatalogProductCard, BusinessCatalogProductForm } from './catalog';
 
-const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onSendCatalogProduct = null, canWriteByAssignment = false }) => {
+const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onSendCatalogProduct = null, canWriteByAssignment = false, quoteOptionsWizard = null, onQuoteOptionsWizardChange = null, onResetQuoteOptionsWizard = null }) => {
     const { confirm, notify } = useUiFeedback();
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
@@ -248,6 +248,72 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
     const warningSurface = 'var(--chat-warning-bg)';
     const warningBorder = 'var(--chat-warning-border)';
     const warningText = 'var(--chat-warning-text-strong)';
+    const wizardState = quoteOptionsWizard && typeof quoteOptionsWizard === 'object'
+        ? quoteOptionsWizard
+        : {};
+    const modoOpciones = Boolean(wizardState.modoOpciones);
+    const optionCountChoices = [2, 3, 4, 5];
+    const safeTotalOpciones = optionCountChoices.includes(Number(wizardState.totalOpciones))
+        ? Number(wizardState.totalOpciones)
+        : 3;
+    const safePasoActual = Math.max(1, Number(wizardState.pasoActual || 1) || 1);
+    const wizardOptions = Array.isArray(wizardState.opciones) ? wizardState.opciones : [];
+    const wizardConfigured = wizardOptions.length > 0;
+    const wizardSteps = wizardConfigured
+        ? [
+            { step: 1, label: 'Configurar', complete: true },
+            ...wizardOptions.map((option, index) => ({
+                step: index + 2,
+                label: option?.label || `Opcion ${index + 1}`,
+                complete: Boolean(option?.confirmada)
+            })),
+            { step: wizardOptions.length + 2, label: 'Revisar', complete: false },
+            { step: wizardOptions.length + 3, label: 'Confirmar envio', complete: false }
+        ]
+        : [{ step: 1, label: 'Configurar', complete: false }];
+    const setWizardPatch = (patch) => {
+        if (typeof onQuoteOptionsWizardChange !== 'function') return;
+        onQuoteOptionsWizardChange(patch);
+    };
+    const handleQuoteModeChange = (nextModoOpciones) => {
+        if (!canWriteByAssignment) {
+            notify({ type: 'warn', message: 'Toma este chat para cotizar.' });
+            return;
+        }
+        if (!nextModoOpciones) {
+            if (typeof onResetQuoteOptionsWizard === 'function') {
+                onResetQuoteOptionsWizard();
+            } else {
+                setWizardPatch({ modoOpciones: false, pasoActual: 1, opciones: [], mensajeFinal: '' });
+            }
+            return;
+        }
+        setWizardPatch({
+            modoOpciones: true,
+            totalOpciones: safeTotalOpciones,
+            pasoActual: 1,
+            opciones: [],
+            mensajeFinal: ''
+        });
+    };
+    const handleStartWizard = () => {
+        const opciones = Array.from({ length: safeTotalOpciones }, (_, index) => ({
+            numero: index + 1,
+            label: `Opcion ${index + 1}`,
+            productos: [],
+            descuentoGlobal: 0,
+            delivery: null,
+            total: 0,
+            confirmada: false
+        }));
+        setWizardPatch({
+            modoOpciones: true,
+            totalOpciones: safeTotalOpciones,
+            pasoActual: 2,
+            opciones,
+            mensajeFinal: ''
+        });
+    };
     const primaryActionStyle = {
         background: 'var(--saas-accent-primary)',
         color: 'var(--saas-accent-primary-text)',
@@ -326,10 +392,35 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                     </div>
                 )}
                 {chatCatalogReadOnly && (
-                    <div className="catalog-readonly-hint" style={{ background: infoSurface, border: `1px solid ${infoBorder}`, color: infoText, borderRadius: '10px', padding: '8px 10px', fontSize: '0.74rem', lineHeight: 1.45 }}>
-                        Gestion de productos bloqueada en chat. Crea y edita productos solo desde Panel SaaS; aqui solo puedes visualizar y enviar.
+                    <div className="catalog-quote-mode-card" style={{ background: infoSurface, border: `1px solid ${infoBorder}`, color: infoText, borderRadius: '10px', padding: '9px 10px', fontSize: '0.74rem', lineHeight: 1.45, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 800 }}>
+                            Modo de cotizacion:
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '7px', background: !modoOpciones ? controlStrongSurface : controlSurface, border: `1px solid ${!modoOpciones ? successBorder : cardBorder}`, borderRadius: '10px', padding: '8px 9px', color: !modoOpciones ? successText : primaryText, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontWeight: 800 }}>
+                                <input
+                                    type="radio"
+                                    name="quote-mode"
+                                    checked={!modoOpciones}
+                                    disabled={!canWriteByAssignment}
+                                    onChange={() => handleQuoteModeChange(false)}
+                                />
+                                Cotizacion unica
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '7px', background: modoOpciones ? controlStrongSurface : controlSurface, border: `1px solid ${modoOpciones ? successBorder : cardBorder}`, borderRadius: '10px', padding: '8px 9px', color: modoOpciones ? successText : primaryText, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontWeight: 800 }}>
+                                <input
+                                    type="radio"
+                                    name="quote-mode"
+                                    checked={modoOpciones}
+                                    disabled={!canWriteByAssignment}
+                                    onChange={() => handleQuoteModeChange(true)}
+                                />
+                                Por opciones
+                            </label>
+                        </div>
                     </div>
                 )}
+                {!modoOpciones && (
                 <div className="catalog-toolbar-card" style={{ background: cardAltSurface, border: `1px solid ${cardBorder}`, borderRadius: '11px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '7px' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: controlStrongSurface, border: `1px solid ${controlBorder}`, borderRadius: '10px', padding: '0 10px', minWidth: 0 }}>
@@ -446,10 +537,127 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                         </div>
                     </div>
                 </div>
+                )}
             </div>
 
             <div className="catalog-tab-scroll" style={{ flex: 1, overflowY: 'auto', padding: '8px 8px 10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {showCatalogForm ? (
+                {modoOpciones ? (
+                    <div className="catalog-options-wizard" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ background: cardSurface, border: `1px solid ${cardBorder}`, borderRadius: '12px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '9px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                                <div>
+                                    <div style={{ color: primaryText, fontSize: '0.9rem', fontWeight: 900 }}>Wizard por opciones</div>
+                                    <div style={{ color: secondaryText, fontSize: '0.73rem', lineHeight: 1.35 }}>Arma varias cotizaciones para que el cliente elija una alternativa.</div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => handleQuoteModeChange(false)}
+                                    style={neutralActionStyle}
+                                >
+                                    Volver a unica
+                                </button>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '7px', overflowX: 'auto', paddingBottom: '2px' }}>
+                                {wizardSteps.map((step) => {
+                                    const isCurrent = Number(step.step) === safePasoActual;
+                                    const isComplete = Boolean(step.complete);
+                                    return (
+                                        <button
+                                            key={`quote_option_step_${step.step}`}
+                                            type="button"
+                                            disabled={!isComplete && !isCurrent && step.step !== 1}
+                                            onClick={() => {
+                                                if (step.step === 1 || isComplete || isCurrent) {
+                                                    setWizardPatch({ pasoActual: step.step });
+                                                }
+                                            }}
+                                            style={{
+                                                flex: '0 0 auto',
+                                                borderRadius: '999px',
+                                                border: `1px solid ${isCurrent ? successBorder : cardBorder}`,
+                                                background: isComplete ? successSurface : (isCurrent ? controlStrongSurface : controlSurface),
+                                                color: isComplete || isCurrent ? successText : secondaryText,
+                                                padding: '6px 10px',
+                                                fontSize: '0.7rem',
+                                                fontWeight: 800,
+                                                cursor: isComplete || isCurrent || step.step === 1 ? 'pointer' : 'not-allowed',
+                                                opacity: isComplete || isCurrent || step.step === 1 ? 1 : 0.65,
+                                                whiteSpace: 'nowrap'
+                                            }}
+                                        >
+                                            {isComplete ? 'OK ' : ''}{step.step}. {step.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {safePasoActual === 1 && (
+                            <div style={{ background: cardSurface, border: `1px solid ${cardBorder}`, borderRadius: '12px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <div>
+                                    <div style={{ color: primaryText, fontSize: '0.95rem', fontWeight: 900 }}>Configurar envio por opciones</div>
+                                    <div style={{ color: secondaryText, fontSize: '0.75rem', lineHeight: 1.45 }}>Define cuantas alternativas quieres preparar antes de empezar.</div>
+                                </div>
+                                <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', color: secondaryText, fontSize: '0.74rem', fontWeight: 700 }}>
+                                    Cuantas opciones quieres enviar?
+                                    <select
+                                        value={safeTotalOpciones}
+                                        disabled={!canWriteByAssignment}
+                                        onChange={(event) => setWizardPatch({ totalOpciones: Number(event.target.value || 3) })}
+                                        style={{ width: '100%', background: controlStrongSurface, border: `1px solid ${cardBorder}`, color: primaryText, borderRadius: '10px', padding: '9px 10px', fontSize: '0.8rem', outline: 'none' }}
+                                    >
+                                        {optionCountChoices.map((count) => (
+                                            <option key={`quote_option_count_${count}`} value={count}>{count} opciones</option>
+                                        ))}
+                                    </select>
+                                </label>
+                                <button
+                                    type="button"
+                                    disabled={!canWriteByAssignment}
+                                    onClick={handleStartWizard}
+                                    style={{
+                                        ...primaryActionStyle,
+                                        justifyContent: 'center',
+                                        padding: '9px 12px',
+                                        borderRadius: '12px',
+                                        opacity: canWriteByAssignment ? 1 : 0.65,
+                                        cursor: canWriteByAssignment ? 'pointer' : 'not-allowed'
+                                    }}
+                                >
+                                    Comenzar
+                                </button>
+                            </div>
+                        )}
+
+                        {safePasoActual > 1 && (
+                            <div style={{ background: cardSurface, border: `1px solid ${cardBorder}`, borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', minHeight: '180px' }}>
+                                <div style={{ color: primaryText, fontSize: '0.95rem', fontWeight: 900 }}>
+                                    {wizardSteps.find((step) => step.step === safePasoActual)?.label || 'Paso del wizard'}
+                                </div>
+                                <div style={{ color: secondaryText, fontSize: '0.78rem', lineHeight: 1.55 }}>
+                                    La estructura del wizard ya esta activa. En el siguiente bloque este paso usara el catalogo para armar productos, descuentos, delivery y totales por opcion.
+                                </div>
+                                <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setWizardPatch({ pasoActual: Math.max(1, safePasoActual - 1) })}
+                                        style={neutralActionStyle}
+                                    >
+                                        Volver
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setWizardPatch({ pasoActual: Math.min(wizardSteps.length, safePasoActual + 1) })}
+                                        style={primaryActionStyle}
+                                    >
+                                        Continuar -&gt;
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                ) : showCatalogForm ? (
                     <BusinessCatalogProductForm
                         editingProduct={editingProduct}
                         formData={formData}

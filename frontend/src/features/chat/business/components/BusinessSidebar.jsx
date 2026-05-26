@@ -116,15 +116,27 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         : null;
     const [chatQuotesByChat, setChatQuotesByChat] = useState({});
     const [quoteHistoryExpanded, setQuoteHistoryExpanded] = useState(true);
+    const buildInitialQuoteOptionsWizardState = useCallback(() => ({
+        modoOpciones: false,
+        totalOpciones: 3,
+        pasoActual: 1,
+        opciones: [],
+        mensajeFinal: ''
+    }), []);
+    const [quoteOptionsWizard, setQuoteOptionsWizard] = useState(() => buildInitialQuoteOptionsWizardState());
     const quoteHistory = useMemo(() => {
         const items = Array.isArray(chatQuotesByChat?.[activeChatId]) ? chatQuotesByChat[activeChatId] : [];
         return items.slice().sort((a, b) => {
+            const aTime = new Date(a?.sentAt || a?.sent_at || a?.updatedAt || a?.updated_at || a?.createdAt || a?.created_at || 0).getTime() || 0;
+            const bTime = new Date(b?.sentAt || b?.sent_at || b?.updatedAt || b?.updated_at || b?.createdAt || b?.created_at || 0).getTime() || 0;
+            if (aTime !== bTime) return bTime - aTime;
             const aNumber = Number(a?.quoteNumber || a?.quote_number || 0) || 0;
             const bNumber = Number(b?.quoteNumber || b?.quote_number || 0) || 0;
-            if (aNumber !== bNumber) return aNumber - bNumber;
+            if (aNumber !== bNumber) return bNumber - aNumber;
             return (Number(b?.revisionNumber || b?.revision_number || 0) || 0) - (Number(a?.revisionNumber || a?.revision_number || 0) || 0);
         });
     }, [activeChatId, chatQuotesByChat]);
+    const quoteOptionsModeActive = Boolean(quoteOptionsWizard?.modoOpciones);
     const [quickSearch, setQuickSearch] = useState('');
     const [orderImportStatus, setOrderImportStatus] = useState(null);
     const lastImportedOrderRef = useRef('');
@@ -239,6 +251,30 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         });
     }, [updateDraft]);
 
+    const updateQuoteOptionsWizard = useCallback((patch) => {
+        setQuoteOptionsWizard((previous) => {
+            const resolvedPatch = typeof patch === 'function' ? patch(previous) : patch;
+            return {
+                ...previous,
+                ...(resolvedPatch && typeof resolvedPatch === 'object' ? resolvedPatch : {})
+            };
+        });
+    }, []);
+
+    const resetQuoteOptionsWizard = useCallback(() => {
+        setQuoteOptionsWizard(buildInitialQuoteOptionsWizardState());
+    }, [buildInitialQuoteOptionsWizardState]);
+
+    useEffect(() => {
+        resetQuoteOptionsWizard();
+    }, [activeChatId, normalizedTenantScopeKey, resetQuoteOptionsWizard]);
+
+    useEffect(() => {
+        if (quoteOptionsModeActive && activeTab === 'cart') {
+            setActiveTab('catalog');
+        }
+    }, [activeTab, quoteOptionsModeActive]);
+
     const normalizeQuoteHistoryItem = useCallback((quote = {}) => {
         if (!quote || typeof quote !== 'object') return null;
         const quoteId = String(quote?.quoteId || quote?.quote_id || '').trim();
@@ -254,6 +290,9 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             quoteNumber: Number(quote?.quoteNumber ?? quote?.quote_number ?? 0) || null,
             revisionNumber: Number(quote?.revisionNumber ?? quote?.revision_number ?? 1) || 1,
             parentQuoteId: String(quote?.parentQuoteId || quote?.parent_quote_id || '').trim() || null,
+            isOptionMode: Boolean(quote?.isOptionMode ?? quote?.is_option_mode ?? false),
+            optionNumber: Number(quote?.optionNumber ?? quote?.option_number ?? 0) || null,
+            optionGroupId: String(quote?.optionGroupId || quote?.option_group_id || '').trim() || null,
             messageId: String(quote?.messageId || quote?.message_id || '').trim() || null,
             status: String(quote?.status || 'sent').trim() || 'sent',
             currency: String(quote?.currency || summary?.currency || 'PEN').trim() || 'PEN',
@@ -261,6 +300,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             summaryJson: summary,
             notes: String(quote?.notes || '').trim() || null,
             sentAt: quote?.sentAt || quote?.sent_at || null,
+            createdAt: quote?.createdAt || quote?.created_at || null,
             updatedAt: quote?.updatedAt || quote?.updated_at || null
         };
     }, []);
@@ -1037,7 +1077,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         ...(aiPanelAvailable ? [{ id: 'ai', icon: <Bot size={15} />, label: 'IA Pro' }] : []),
         { id: 'catalog', icon: <Package size={15} />, label: `Catalogo${catalog.length > 0 ? ` (${catalog.length})` : ''}` },
         { id: 'coverage', icon: <MapPin size={15} />, label: 'Cobertura' },
-        ...((cart.length > 0 || quoteHistory.length > 0) ? [{ id: 'cart', icon: <ShoppingCart size={15} />, label: cart.length > 0 ? `Carrito (${cart.length})` : 'Cotizaciones' }] : []),
+        ...(!quoteOptionsModeActive ? [{ id: 'cart', icon: <ShoppingCart size={15} />, label: 'Cotizaciones' }] : []),
         ...(quickRepliesEnabled ? [{ id: 'quick', icon: <Clock size={15} />, label: 'Rapidas' }] : []),
     ];
 
@@ -1129,7 +1169,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
 
             {/* CATALOG TAB */}
             {activeTab === 'catalog' && (
-                <BusinessCatalogTab catalog={catalog} socket={socket} addToCart={addToCart} onCatalogQtyDelta={updateCatalogQty} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} activeChatPhone={activeChatPhone} cartItems={cart} waModules={waModules} selectedCatalogModuleId={selectedCatalogModuleId} selectedCatalogId={selectedCatalogId} onSelectCatalogModule={onSelectCatalogModule} onSelectCatalog={onSelectCatalog} onUploadCatalogImage={onUploadCatalogImage} onSendCatalogProduct={onSendCatalogProduct} canWriteByAssignment={canUseMessageTools} />
+                <BusinessCatalogTab catalog={catalog} socket={socket} addToCart={addToCart} onCatalogQtyDelta={updateCatalogQty} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} activeChatPhone={activeChatPhone} cartItems={cart} waModules={waModules} selectedCatalogModuleId={selectedCatalogModuleId} selectedCatalogId={selectedCatalogId} onSelectCatalogModule={onSelectCatalogModule} onSelectCatalog={onSelectCatalog} onUploadCatalogImage={onUploadCatalogImage} onSendCatalogProduct={onSendCatalogProduct} canWriteByAssignment={canUseMessageTools} quoteOptionsWizard={quoteOptionsWizard} onQuoteOptionsWizardChange={updateQuoteOptionsWizard} onResetQuoteOptionsWizard={resetQuoteOptionsWizard} />
             )}
 
             {activeTab === 'coverage' && (
@@ -1157,6 +1197,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     setQuoteHistoryExpanded={setQuoteHistoryExpanded}
                     onLoadQuoteToCart={handleLoadQuoteToCart}
                     onStartNewQuote={handleStartNewQuote}
+                    quoteOptionsModeActive={quoteOptionsModeActive}
                     getLineBreakdown={getLineBreakdown}
                     removeFromCart={removeFromCart}
                     updateQty={updateQty}
