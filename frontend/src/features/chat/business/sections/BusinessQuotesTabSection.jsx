@@ -123,8 +123,8 @@ export default function BusinessQuotesTabSection({
     };
 
     return (
-        <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div style={{ background: tone.cardSurface, border: `1px solid ${tone.controlBorder}`, borderRadius: '10px', overflow: 'hidden' }}>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', padding: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ flex: 1, minHeight: 0, background: tone.cardSurface, border: `1px solid ${tone.controlBorder}`, borderRadius: '10px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 <button
                     type="button"
                     onClick={() => typeof setQuoteHistoryExpanded === 'function' && setQuoteHistoryExpanded((prev) => !prev)}
@@ -134,7 +134,7 @@ export default function BusinessQuotesTabSection({
                     {quoteHistoryExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                 </button>
                 {quoteHistoryExpanded && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', padding: '8px' }}>
+                    <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '7px', padding: '8px' }}>
                         {quoteHistoryGroups.length === 0 ? (
                             <div style={{ color: tone.textMuted, background: tone.cardSurfaceAlt, border: `1px dashed ${tone.controlBorder}`, borderRadius: '9px', padding: '12px', fontSize: '0.76rem', lineHeight: 1.45, textAlign: 'center' }}>
                                 Aun no hay cotizaciones enviadas en este chat.

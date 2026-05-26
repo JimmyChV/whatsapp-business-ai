@@ -36,6 +36,20 @@ function nowIso() {
     return new Date().toISOString();
 }
 
+function formatQuotedOptionPreview(optionNumber = null, summary = null) {
+    const safeOptionNumber = toPositiveIntOrNull(optionNumber);
+    const safeSummary = isPlainObject(summary) ? summary : {};
+    const totalRaw = Number(safeSummary?.totalPayable ?? safeSummary?.total ?? 0);
+    const hasTotal = Number.isFinite(totalRaw) && totalRaw > 0;
+    const normalizedTotal = hasTotal
+        ? (Math.round(totalRaw * 100) / 100).toFixed(2).replace(/\.?0+$/, '')
+        : '';
+    return [
+        safeOptionNumber ? `Opcion ${safeOptionNumber}` : 'Opcion elegida',
+        normalizedTotal ? `S/ ${normalizedTotal}` : ''
+    ].filter(Boolean).join(' - ');
+}
+
 function buildQuoteId() {
     return `quote_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -656,11 +670,37 @@ async function detectOptionChoicePostgres(tenantId = DEFAULT_TENANT_ID, { chatId
                AND tenant_id = $2`,
             [optionGroupId, tenantId, optionNumber]
         );
+        const chosenQuoteResult = await queryPostgres(
+            `SELECT quote_id, message_id, option_number, summary_json
+               FROM tenant_quotes
+              WHERE tenant_id = $1
+                AND option_group_id = $2
+                AND option_number = $3
+              ORDER BY COALESCE(sent_at, updated_at, created_at) DESC, created_at DESC
+              LIMIT 1`,
+            [tenantId, optionGroupId, optionNumber]
+        );
+        const chosenQuote = chosenQuoteResult?.rows?.[0] || null;
+        const chosenMessageId = toNullableText(chosenQuote?.message_id);
+        const quotedMessage = chosenMessageId
+            ? {
+                id: chosenMessageId,
+                body: formatQuotedOptionPreview(chosenQuote?.option_number, chosenQuote?.summary_json),
+                fromMe: true,
+                hasMedia: false,
+                type: 'chat'
+            }
+            : null;
         return {
             chosenOption: optionNumber,
             optionGroupId,
             option_group_id: optionGroupId,
-            totalOptions: total
+            totalOptions: total,
+            quoteId: toNullableText(chosenQuote?.quote_id),
+            quote_id: toNullableText(chosenQuote?.quote_id),
+            quoteMessageId: chosenMessageId,
+            quote_message_id: chosenMessageId,
+            quotedMessage
         };
     }
 
@@ -708,11 +748,29 @@ async function detectOptionChoiceFile(tenantId = DEFAULT_TENANT_ID, { chatId = '
             };
         });
         await writeTenantJsonFile(QUOTES_FILE, { items: nextItems }, { tenantId });
+        const chosenQuote = nextItems
+            .filter((entry) => toNullableText(entry?.optionGroupId) === optionGroupId)
+            .find((entry) => toPositiveIntOrNull(entry?.optionNumber) === optionNumber) || null;
+        const chosenMessageId = toNullableText(chosenQuote?.messageId);
+        const quotedMessage = chosenMessageId
+            ? {
+                id: chosenMessageId,
+                body: formatQuotedOptionPreview(chosenQuote?.optionNumber, chosenQuote?.summaryJson),
+                fromMe: true,
+                hasMedia: false,
+                type: 'chat'
+            }
+            : null;
         return {
             chosenOption: optionNumber,
             optionGroupId,
             option_group_id: optionGroupId,
-            totalOptions: total
+            totalOptions: total,
+            quoteId: toNullableText(chosenQuote?.quoteId),
+            quote_id: toNullableText(chosenQuote?.quoteId),
+            quoteMessageId: chosenMessageId,
+            quote_message_id: chosenMessageId,
+            quotedMessage
         };
     }
 

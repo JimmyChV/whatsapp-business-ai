@@ -9,7 +9,7 @@ function formatMoney1(value = 0) {
 function buildDefaultMessage(options = [], total = 0) {
     const safeOptions = Array.isArray(options) ? options : [];
     const count = total || safeOptions.length;
-    return `Hola. Te preparé ${count} opciones para que elijas la que más te convenga.\n\nRevisa las alternativas y dime cuál prefieres tocando uno de los botones.`;
+    return `Te envío ${count} opciones con los productos para que las compares.\n\nDime cuál prefieres tocando uno de los botones.`;
 }
 
 function formatDelivery(summary = {}) {

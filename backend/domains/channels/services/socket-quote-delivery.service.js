@@ -214,12 +214,11 @@ function resolveSourceOrder(metadata = {}, payload = {}) {
 }
 
 function buildQuoteMessageBody(quote = {}, fallbackBody = '') {
-    const separator = '──────────────────';
     const sourceType = toText(quote?.metadata?.sourceType || quote?.metadata?.source_type).toLowerCase();
     const isOptionMode = quote?.isOptionMode === true || quote?.is_option_mode === true;
     const optionNumber = toPositiveIntOrNull(quote?.optionNumber ?? quote?.option_number);
     const header = isOptionMode
-        ? `ðŸ“‹ *OPCIÃ“N ${optionNumber || 1}*`
+        ? `*OPCION ${optionNumber || 1}*`
         : buildQuoteHeader(quote, sourceType);
     const items = Array.isArray(quote?.items) ? quote.items : [];
     const summary = isPlainObject(quote?.summary) ? quote.summary : {};
@@ -230,7 +229,7 @@ function buildQuoteMessageBody(quote = {}, fallbackBody = '') {
         const lineSubtotal = roundMoney(qty * unitPrice);
         return [
             `*${title}*`,
-            `${qty} × ${formatSoles(unitPrice)} = ${formatSoles(lineSubtotal)}`
+            `${qty} x ${formatSoles(unitPrice)} = ${formatSoles(lineSubtotal)}`
         ];
     });
 
@@ -249,44 +248,35 @@ function buildQuoteMessageBody(quote = {}, fallbackBody = '') {
     const totalPayable = toFiniteNumberOrNull(summary?.totalPayable)
         ?? Math.max(0, (toFiniteNumberOrNull(summary?.totalAfterDiscount) ?? 0) + (Boolean(summary?.deliveryFree) ? 0 : deliveryAmount));
 
-    const safeSeparator = '------------------';
-    const displayHeader = isOptionMode ? `*OPCION ${optionNumber || 1}*` : header;
+    const separator = '------------';
     const totalLines = [
-        safeSeparator,
+        separator,
         `Subtotal:         ${formatSoles(subtotal)}`
     ];
     if (discount > 0) {
         totalLines.push(`*Descuento:       - ${formatSoles(discount)}*`);
     }
     totalLines.push(`Delivery:         ${deliveryLabel}`);
-    totalLines.push(safeSeparator);
-    totalLines.push(`*TOTAL A PAGAR:   ${formatSoles(totalPayable)}*`);
-    totalLines.push('');
     totalLines.push(separator);
-    totalLines.push('_Lávitat® · La confianza que abraza tu hogar_');
-
-    if (isOptionMode && totalLines.length >= 3) {
-        totalLines.splice(-3, 3);
-    } else if (!isOptionMode && totalLines.length >= 3) {
-        totalLines[totalLines.length - 2] = safeSeparator;
-        totalLines[totalLines.length - 1] = '_Lavitat(R) · La confianza que abraza tu hogar_';
+    totalLines.push(`*TOTAL A PAGAR:   ${formatSoles(totalPayable)}*`);
+    if (!isOptionMode) {
+        totalLines.push('');
+        totalLines.push(separator);
+        totalLines.push('_Lavitat(R) - La confianza que abraza tu hogar_');
     }
     const notesLine = quote?.notes ? ['', toText(quote.notes)] : [];
     const fallbackLine = !items.length && toText(fallbackBody) ? ['', toText(fallbackBody)] : [];
 
     return [
-        displayHeader,
-        safeSeparator,
+        header,
+        separator,
         '',
         ...lines,
         '',
         ...totalLines,
         ...notesLine,
         ...fallbackLine
-    ].join('\n')
-        .replace(/Ã—/g, 'x')
-        .replace(/Â·/g, '·')
-        .trim();
+    ].join('\n').trim();
 }
 
 function buildQuoteInteractiveMessage(quoteId, body) {

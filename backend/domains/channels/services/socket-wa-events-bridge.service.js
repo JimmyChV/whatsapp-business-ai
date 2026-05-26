@@ -531,12 +531,39 @@ function createSocketWaEventsBridgeService({
                     const senderMeta = await resolveMessageSenderMeta(msg);
                     const fileMeta = extractMessageFileMeta(msg, processedMedia);
                     const quotedMessage = await extractQuotedMessageInfo(msg);
-                    if (quotedMessage) {
+                    let optionChoicePayload = null;
+                    let effectiveQuotedMessage = quotedMessage;
+
+                    if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase) {
+                        try {
+                            const incomingText = String(
+                                msg?.body
+                                || msg?.text
+                                || msg?.message
+                                || msg?.caption
+                                || msg?._data?.body
+                                || ''
+                            ).trim();
+                            if (incomingText && typeof quotesService?.detectOptionChoice === 'function') {
+                                optionChoicePayload = await quotesService.detectOptionChoice(historyTenantId, {
+                                    chatId: relatedChatIdBase,
+                                    text: incomingText
+                                });
+                                if (optionChoicePayload?.quotedMessage && typeof optionChoicePayload.quotedMessage === 'object') {
+                                    effectiveQuotedMessage = optionChoicePayload.quotedMessage;
+                                }
+                            }
+                        } catch (_) {
+                            // silent: option choice detection must never block inbound flow
+                        }
+                    }
+
+                    if (effectiveQuotedMessage) {
                         emitToRuntimeContext('message_updated', {
                             id: messageId,
                             chatId: relatedChatIdBase,
                             scopeModuleId: cleanScopeModuleId,
-                            quotedMessage,
+                            quotedMessage: effectiveQuotedMessage,
                             updatedAt: new Date().toISOString()
                         });
                     }
@@ -546,7 +573,7 @@ function createSocketWaEventsBridgeService({
                         fileMeta,
                         order: enrichedOrder,
                         location,
-                        quotedMessage,
+                        quotedMessage: effectiveQuotedMessage,
                         agentMeta,
                         moduleContext: effectiveModuleContext
                     });
@@ -660,36 +687,16 @@ function createSocketWaEventsBridgeService({
                     }
 
                     if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase) {
-                        try {
-                            const incomingText = String(
-                                msg?.body
-                                || msg?.text
-                                || msg?.message
-                                || msg?.caption
-                                || msg?._data?.body
-                                || ''
-                            ).trim();
-                            if (incomingText && typeof quotesService?.detectOptionChoice === 'function') {
-                                const choiceResult = await quotesService.detectOptionChoice(historyTenantId, {
-                                    chatId: relatedChatIdBase,
-                                    text: incomingText
-                                });
-                                if (choiceResult) {
-                                    const optionChoicePayload = {
-                                        ...choiceResult,
-                                        tenantId: historyTenantId,
-                                        chatId: buildScopedChatId(relatedChatIdBase, cleanScopeModuleId) || relatedChatIdBase,
-                                        baseChatId: relatedChatIdBase,
-                                        scopeModuleId: cleanScopeModuleId || null,
-                                        messageId
-                                    };
-                                    emitToRuntimeContext('quote_option_chosen', optionChoicePayload);
-                                }
-                            }
-                        } catch (_) {
-                            // silent: option choice detection must never block inbound flow
+                        if (optionChoicePayload) {
+                            emitToRuntimeContext('quote_option_chosen', {
+                                ...optionChoicePayload,
+                                tenantId: historyTenantId,
+                                chatId: buildScopedChatId(relatedChatIdBase, cleanScopeModuleId) || relatedChatIdBase,
+                                baseChatId: relatedChatIdBase,
+                                scopeModuleId: cleanScopeModuleId || null,
+                                messageId
+                            });
                         }
-
                         try {
                             if (cleanScopeModuleId && pattyService?.tryPattyIntervention) {
                                 pattyService.tryPattyIntervention(

@@ -3,6 +3,7 @@ import { API_URL } from '../../../../config/runtime';
 
 let googleMapsLoaderPromise = null;
 let googleMapsLoaderKey = '';
+const DEFAULT_COVERAGE_CENTER = { lat: -12.0464, lng: -77.0428 };
 
 function text(value = '') {
     return String(value || '').trim();
@@ -362,26 +363,43 @@ function CoverageMap({
     const mapElementRef = useRef(null);
     const mapRef = useRef(null);
     const overlaysRef = useRef({ markers: [], renderers: [], polylines: [] });
+    const effectiveCoords = coords && Number.isFinite(Number(coords?.lat)) && Number.isFinite(Number(coords?.lng))
+        ? coords
+        : DEFAULT_COVERAGE_CENTER;
 
     useEffect(() => {
-        if (!google?.maps || !mapElementRef.current || !coords) return;
+        if (!google?.maps || !mapElementRef.current) return;
         mapRef.current = new google.maps.Map(mapElementRef.current, {
-            center: coords,
-            zoom: maximized ? 14 : 15,
+            center: effectiveCoords,
+            zoom: coords ? (maximized ? 14 : 15) : (maximized ? 11 : 12),
             mapTypeControl: false,
             streetViewControl: false,
             fullscreenControl: false,
             clickableIcons: false
         });
-    }, [google, maximized, coords?.lat, coords?.lng]);
+        if (typeof onCoordsChange === 'function') {
+            mapRef.current.addListener('click', (event) => {
+                const nextLat = event?.latLng?.lat?.();
+                const nextLng = event?.latLng?.lng?.();
+                if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng)) return;
+                onCoordsChange({ lat: nextLat, lng: nextLng });
+            });
+        }
+    }, [google, maximized, effectiveCoords.lat, effectiveCoords.lng, coords, onCoordsChange]);
 
     useEffect(() => {
         const map = mapRef.current;
-        if (!google?.maps || !map || !coords) return undefined;
+        if (!google?.maps || !map) return undefined;
         overlaysRef.current.markers.forEach((marker) => marker.setMap(null));
         overlaysRef.current.renderers.forEach((renderer) => renderer.setMap(null));
         overlaysRef.current.polylines.forEach((polyline) => polyline.setMap(null));
         overlaysRef.current = { markers: [], renderers: [], polylines: [] };
+
+        if (!coords) {
+            map.setCenter(DEFAULT_COVERAGE_CENTER);
+            map.setZoom(maximized ? 11 : 12);
+            return undefined;
+        }
 
         const bounds = new google.maps.LatLngBounds();
         const clientPosition = new google.maps.LatLng(coords.lat, coords.lng);
@@ -471,7 +489,7 @@ function CoverageMap({
             overlaysRef.current.polylines.forEach((polyline) => polyline.setMap(null));
             overlaysRef.current = { markers: [], renderers: [], polylines: [] };
         };
-    }, [google, coords?.lat, coords?.lng, agencies, onCoordsChange]);
+    }, [google, coords?.lat, coords?.lng, agencies, onCoordsChange, maximized]);
 
     return <div ref={mapElementRef} className={className || 'business-coverage-map'} />;
 }
@@ -931,29 +949,27 @@ export default function BusinessCoverageTabSection({
                 {error ? <div className="business-coverage-error">{error}</div> : null}
             </div>
 
-            {clientCoords ? (
-                <div className="business-coverage-card business-coverage-map-card">
-                    <div className="business-coverage-map-container">
-                        {mapsState.loaded ? (
-                            <>
-                                <CoverageMap
-                                    google={google}
-                                    coords={clientCoords}
-                                    agencies={agencies}
-                                    onCoordsChange={resolveFromCoords}
-                                />
-                                <button type="button" className="business-coverage-map-maximize-btn" onClick={() => setMapMaximized(true)}>
-                                    Maximizar
-                                </button>
-                            </>
-                        ) : (
-                            <div className="business-coverage-map-placeholder">
-                                {apiKey ? 'Cargando mapa...' : 'Configura la API key de Google Maps para ver el mapa.'}
-                            </div>
-                        )}
-                    </div>
+            <div className="business-coverage-card business-coverage-map-card">
+                <div className="business-coverage-map-container">
+                    {mapsState.loaded ? (
+                        <>
+                            <CoverageMap
+                                google={google}
+                                coords={clientCoords}
+                                agencies={agencies}
+                                onCoordsChange={resolveFromCoords}
+                            />
+                            <button type="button" className="business-coverage-map-maximize-btn" onClick={() => setMapMaximized(true)}>
+                                Maximizar
+                            </button>
+                        </>
+                    ) : (
+                        <div className="business-coverage-map-placeholder">
+                            {apiKey ? 'Cargando mapa...' : 'Configura la API key de Google Maps para ver el mapa.'}
+                        </div>
+                    )}
                 </div>
-            ) : null}
+            </div>
 
             {result && zone ? (
                 <div className="business-coverage-card business-coverage-result">
@@ -1041,7 +1057,7 @@ export default function BusinessCoverageTabSection({
                 </div>
             ) : null}
 
-            {mapMaximized && clientCoords ? (
+            {mapMaximized ? (
                 <div className="business-coverage-map-modal" role="dialog" aria-modal="true">
                     <div className="business-coverage-map-modal-head">
                         <strong>Mapa de cobertura</strong>
