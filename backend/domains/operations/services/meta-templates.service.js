@@ -14,6 +14,7 @@ const STORE_FILE = 'meta_templates.json';
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 500;
 const VALID_USE_CASES = new Set(['campaign', 'individual', 'both', 'optin']);
+const MULTIMEDIA_HEADER_FORMATS = new Set(['IMAGE', 'VIDEO', 'DOCUMENT']);
 const DEFAULT_LIST_FIELDS = [
     'id',
     'name',
@@ -101,6 +102,82 @@ function normalizeOffset(value = 0) {
 
 function isPlainObject(value) {
     return value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function cloneJson(value) {
+    return JSON.parse(JSON.stringify(value ?? null));
+}
+
+function isDataUrl(value = '') {
+    return /^data:[^;]+;base64,/i.test(toText(value));
+}
+
+function parseDataUrlPayload(value = '') {
+    const input = toText(value);
+    const match = input.match(/^data:([^;]+);base64,(.+)$/i);
+    if (!match) return null;
+    return {
+        mimetype: toText(match[1]).toLowerCase() || 'application/octet-stream',
+        mediaData: toText(match[2])
+    };
+}
+
+function extensionFromMime(mimetype = '') {
+    const safeMime = toText(mimetype).toLowerCase();
+    const map = {
+        'image/jpeg': 'jpg',
+        'image/jpg': 'jpg',
+        'image/png': 'png',
+        'image/webp': 'webp',
+        'video/mp4': 'mp4',
+        'application/pdf': 'pdf'
+    };
+    if (map[safeMime]) return map[safeMime];
+    const fallback = safeMime.split('/')[1] || 'bin';
+    return fallback.replace(/[^a-z0-9]/gi, '').toLowerCase() || 'bin';
+}
+
+function buildHeaderExampleFilename(format = '', mimetype = '') {
+    const formatLabel = toLower(format || 'media') || 'media';
+    const extension = extensionFromMime(mimetype);
+    return `template-header-${formatLabel}.${extension}`;
+}
+
+async function prepareTemplatePayloadForMeta(runtime = {}, templatePayload = {}) {
+    const clonedPayload = isPlainObject(templatePayload) ? cloneJson(templatePayload) : {};
+    const components = Array.isArray(clonedPayload?.components) ? clonedPayload.components : [];
+    if (components.length === 0) return clonedPayload;
+
+    for (const component of components) {
+        const type = toUpper(component?.type || '');
+        const format = toUpper(component?.format || '');
+        const currentHandle = toText(component?.example?.header_handle?.[0] || '');
+        if (type !== 'HEADER' || !MULTIMEDIA_HEADER_FORMATS.has(format) || !isDataUrl(currentHandle)) continue;
+
+        const parsed = parseDataUrlPayload(currentHandle);
+        if (!parsed?.mediaData) continue;
+
+        const client = waCloudClient.withTenant(runtime.tenantId, {
+            token: runtime.systemUserToken,
+            phoneNumberId: runtime.phoneNumberId
+        });
+        const uploadedHandle = await client.uploadMedia(
+            parsed.mediaData,
+            parsed.mimetype,
+            buildHeaderExampleFilename(format, parsed.mimetype)
+        );
+
+        if (!uploadedHandle) {
+            throw new Error('No se pudo obtener un media handle valido para el header del template.');
+        }
+
+        component.example = {
+            ...(isPlainObject(component.example) ? component.example : {}),
+            header_handle: [uploadedHandle]
+        };
+    }
+
+    return clonedPayload;
 }
 
 function normalizeComponentsJson(input = {}) {
@@ -488,14 +565,15 @@ async function createTemplate(tenantId = DEFAULT_TENANT_ID, { moduleId = '', tem
         throw new Error('templatePayload requerido.');
     }
     const normalizedUseCase = normalizeUseCase(useCase);
+    const payloadForMeta = await prepareTemplatePayloadForMeta(runtime, templatePayload);
     const graphCreated = await waCloudClient.createMessageTemplate(
         runtime.wabaId,
-        templatePayload,
+        payloadForMeta,
         { systemUserToken: runtime.systemUserToken }
     );
 
     const mergedMeta = {
-        ...(isPlainObject(templatePayload) ? templatePayload : {}),
+        ...(isPlainObject(payloadForMeta) ? payloadForMeta : {}),
         ...(isPlainObject(graphCreated) ? graphCreated : {})
     };
 
@@ -521,7 +599,7 @@ async function createTemplate(tenantId = DEFAULT_TENANT_ID, { moduleId = '', tem
         rejectionReason: normalizedMeta.rejectionReason,
         componentsJson: normalizedMeta.componentsJson.length > 0
             ? normalizedMeta.componentsJson
-            : normalizeComponentsJson(templatePayload),
+            : normalizeComponentsJson(payloadForMeta),
         variableMapJson: isPlainObject(variableMapJson) ? variableMapJson : {},
         rawMetaJson: normalizedMeta.rawMetaJson,
         lastSyncedAt: nowIso(),

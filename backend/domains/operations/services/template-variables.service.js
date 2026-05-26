@@ -106,6 +106,32 @@ const CATALOG = Object.freeze([
         ]
     },
     {
+        id: 'campana',
+        label: 'Campana',
+        variables: [
+            {
+                key: 'fecha_inicio',
+                label: 'Fecha de inicio',
+                description: 'Fecha de inicio o vigencia inicial definida en la campana.',
+                placeholderIndex: 29,
+                exampleValue: '26 de mayo de 2026',
+                source: 'tenant_campaigns.valid_from || tenant_campaigns.scheduled_at',
+                requiresContext: ['campaignId'],
+                supportedIn: ['body']
+            },
+            {
+                key: 'fecha_fin',
+                label: 'Fecha de fin',
+                description: 'Fecha de fin o vigencia final definida en la campana.',
+                placeholderIndex: 30,
+                exampleValue: '29 de mayo de 2026',
+                source: 'tenant_campaigns.valid_to',
+                requiresContext: ['campaignId'],
+                supportedIn: ['body']
+            }
+        ]
+    },
+    {
         id: 'agente',
         label: 'Agente',
         variables: [

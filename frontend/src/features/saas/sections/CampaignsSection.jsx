@@ -63,6 +63,7 @@ const EMPTY_FORM = {
     maxRecipients: '',
     inclusionFilters: { ...EMPTY_DEEP_FILTERS },
     exclusionFilters: { ...EMPTY_DEEP_FILTERS },
+    headerMedia: null,
     blocksEnabled: false,
     blockCount: 2
 };
@@ -123,6 +124,32 @@ function toIsoDateBoundary(value = '', boundary = 'start') {
     const suffix = boundary === 'end' ? 'T23:59:59.999' : 'T00:00:00.000';
     const d = new Date(`${raw}${suffix}`);
     return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+}
+
+function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        if (!file) {
+            resolve('');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => resolve(toText(reader.result));
+        reader.onerror = () => reject(reader.error || new Error('No se pudo leer el archivo.'));
+        reader.readAsDataURL(file);
+    });
+}
+
+function resolveHeaderAccept(headerType = '') {
+    switch (toLower(headerType)) {
+    case 'image':
+        return 'image/*';
+    case 'video':
+        return 'video/*';
+    case 'document':
+        return '.pdf,application/pdf';
+    default:
+        return '*/*';
+    }
 }
 
 const COMMERCIAL_STATUS_OPTIONS = [
@@ -460,6 +487,17 @@ function mapCampaignToForm(campaign = {}, labelOptions = [], zoneOptions = []) {
     const selectedZoneRuleIds = (Array.isArray(filters?.zoneLabelIds) ? filters.zoneLabelIds : (filters?.zoneLabelId ? [filters.zoneLabelId] : []))
         .map((entry) => toUpper(entry))
         .filter((entry) => entry && zoneIds.has(entry));
+    const variablesPreviewJson = campaign?.variablesPreviewJson && typeof campaign.variablesPreviewJson === 'object'
+        ? campaign.variablesPreviewJson
+        : {};
+    const headerMedia = variablesPreviewJson?.headerMedia && typeof variablesPreviewJson.headerMedia === 'object'
+        ? {
+            name: toText(variablesPreviewJson.headerMedia.name),
+            type: toText(variablesPreviewJson.headerMedia.type),
+            size: toNumber(variablesPreviewJson.headerMedia.size, 0),
+            base64: toText(variablesPreviewJson.headerMedia.base64)
+        }
+        : null;
     return {
         campaignName: toText(campaign?.campaignName),
         campaignDescription: toText(campaign?.campaignDescription),
@@ -477,6 +515,7 @@ function mapCampaignToForm(campaign = {}, labelOptions = [], zoneOptions = []) {
         languageFilter: toLower(filters?.preferredLanguage || ''),
         searchText: toText(filters?.search),
         maxRecipients: filters?.maxRecipients ? String(filters.maxRecipients) : '',
+        headerMedia,
         inclusionFilters: deepFiltersFromLegacy(selection?.filters || filters),
         exclusionFilters: deepFiltersFromLegacy(selection?.exclusionFilters || selection?.exclusion_filters || {}),
         blocksEnabled: normalizeBlocksConfig(campaign?.blocksConfigJson)?.mode === 'blocks',
@@ -606,6 +645,14 @@ function serializeCampaignForm(form = {}) {
         languageFilter: toLower(source.languageFilter || ''),
         searchText: toText(source.searchText),
         maxRecipients: toText(source.maxRecipients),
+        headerMedia: source?.headerMedia && typeof source.headerMedia === 'object'
+            ? {
+                name: toText(source.headerMedia.name),
+                type: toText(source.headerMedia.type),
+                size: toNumber(source.headerMedia.size, 0),
+                base64: toText(source.headerMedia.base64)
+            }
+            : null,
         inclusionFilters: normalizeDeepFilters(source.inclusionFilters || {}),
         exclusionFilters: normalizeDeepFilters(source.exclusionFilters || {}),
         blocksEnabled: Boolean(source.blocksEnabled),
@@ -668,6 +715,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const requestJsonRef = useRef(requestJson);
     const reviewAudienceRef = useRef([]);
     const previousWizardStepRef = useRef(1);
+    const headerMediaInputRef = useRef(null);
 
     const {
         campaigns = [],
@@ -897,6 +945,7 @@ export default React.memo(function CampaignsSection(props = {}) {
             headerText: toText(header?.text),
             bodyText: toText(body?.text),
             footerText: toText(footer?.text),
+            headerMediaSrc: toText(form?.headerMedia?.base64),
             buttons: Array.isArray(buttons?.buttons)
                 ? buttons.buttons.map((button, index) => ({
                     id: `campaign_preview_btn_${index + 1}`,
@@ -905,7 +954,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                 }))
                 : []
         };
-    }, [selectedTemplate]);
+    }, [form?.headerMedia?.base64, selectedTemplate]);
 
     const estimateNumbers = useMemo(() => ({
         total: Math.max(0, toNumber(reachEstimate?.total)),
@@ -1713,6 +1762,16 @@ export default React.memo(function CampaignsSection(props = {}) {
 
     const buildCampaignPayload = useCallback(() => {
         const audienceFiltersJson = buildAudienceFiltersFromForm(form, labelOptions, zoneOptions);
+        const cleanHeaderType = toLower(selectedTemplatePreview?.headerType || '');
+        const variablesPreviewJson = {};
+        if (['image', 'video', 'document'].includes(cleanHeaderType) && form?.headerMedia?.base64) {
+            variablesPreviewJson.headerMedia = {
+                name: toText(form.headerMedia.name),
+                type: toText(form.headerMedia.type),
+                size: toNumber(form.headerMedia.size, 0),
+                base64: toText(form.headerMedia.base64)
+            };
+        }
         return {
             moduleId: toText(form.moduleId),
             scopeModuleId: toLower(form.moduleId),
@@ -1727,9 +1786,9 @@ export default React.memo(function CampaignsSection(props = {}) {
             audienceFiltersJson,
             audienceSelectionJson: buildAudienceSelectionFromForm(form, excludedCustomerIds),
             blocksConfigJson: blockPreview,
-            variablesPreviewJson: {}
+            variablesPreviewJson
         };
-    }, [blockPreview, excludedCustomerIds, form, labelOptions, zoneOptions]);
+    }, [blockPreview, excludedCustomerIds, form, labelOptions, selectedTemplatePreview?.headerType, zoneOptions]);
 
     const buildEstimatePayload = useCallback((options = {}) => {
         if (options?.baseOnly === true) {
@@ -2123,6 +2182,28 @@ export default React.memo(function CampaignsSection(props = {}) {
         updateCampaign
     ]);
 
+    const handleCampaignHeaderMediaChange = useCallback(async (event) => {
+        const file = event?.target?.files?.[0] || null;
+        if (!file) {
+            setForm((prev) => ({ ...prev, headerMedia: null }));
+            return;
+        }
+        try {
+            const base64 = await readFileAsDataUrl(file);
+            setForm((prev) => ({
+                ...prev,
+                headerMedia: {
+                    name: toText(file.name),
+                    type: toText(file.type),
+                    size: toNumber(file.size, 0),
+                    base64
+                }
+            }));
+        } catch (error) {
+            notify({ type: 'error', message: error?.message || 'No se pudo cargar la media del header.' });
+        }
+    }, [notify]);
+
     const handleRequestCloseCampaignPanel = useCallback(async () => {
         if (showColumnsMenu) {
             setShowColumnsMenu(false);
@@ -2322,10 +2403,21 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 {selectedTemplatePreview.headerType === 'text' && Boolean(selectedTemplatePreview.headerText) ? (
                                     <div className="saas-wa-preview__header">{selectedTemplatePreview.headerText}</div>
                                 ) : null}
-                                {['image', 'video', 'document'].includes(selectedTemplatePreview.headerType) ? (
+                                {selectedTemplatePreview.headerType === 'image' && selectedTemplatePreview.headerMediaSrc ? (
+                                    <div className="saas-wa-preview__media-placeholder">
+                                        <img
+                                            src={selectedTemplatePreview.headerMediaSrc}
+                                            alt={form?.headerMedia?.name || 'Header de campaña'}
+                                            style={{ width: '100%', borderRadius: 12, display: 'block' }}
+                                        />
+                                        <small>{form?.headerMedia?.name || 'Imagen lista para la campaña'}</small>
+                                    </div>
+                                ) : null}
+                                {['image', 'video', 'document'].includes(selectedTemplatePreview.headerType)
+                                    && !(selectedTemplatePreview.headerType === 'image' && selectedTemplatePreview.headerMediaSrc) ? (
                                     <div className="saas-wa-preview__media-placeholder">
                                         <strong>{selectedTemplatePreview.headerType === 'image' ? 'Imagen' : selectedTemplatePreview.headerType === 'video' ? 'Video' : 'Documento'}</strong>
-                                        <small>La plantilla usa un encabezado multimedia definido en Meta.</small>
+                                        <small>{form?.headerMedia?.name ? `Archivo cargado: ${form.headerMedia.name}` : 'La plantilla usa un encabezado multimedia definido en Meta.'}</small>
                                     </div>
                                 ) : null}
                                 <div className="saas-wa-preview__body">{selectedTemplatePreview.bodyText || 'El cuerpo de la plantilla aparecerá aquí.'}</div>
@@ -2810,12 +2902,29 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 <div className="saas-admin-field">
                                     <label>Vigencia desde</label>
                                     <input type="date" value={form.validFrom} onChange={(e) => setForm((p) => ({ ...p, validFrom: e.target.value }))} />
+                                    <small>Disponible en la plantilla como `fecha_inicio`.</small>
                                 </div>
                                 <div className="saas-admin-field">
                                     <label>Vigencia hasta</label>
                                     <input type="date" value={form.validTo} onChange={(e) => setForm((p) => ({ ...p, validTo: e.target.value }))} />
+                                    <small>Disponible en la plantilla como `fecha_fin`.</small>
                                 </div>
                             </div>
+                            {['image', 'video', 'document'].includes(selectedTemplatePreview.headerType) ? (
+                                <div className="saas-admin-form-row saas-admin-form-row--single">
+                                    <div className="saas-admin-field">
+                                        <label>Media del header para la campaña</label>
+                                        <input
+                                            ref={headerMediaInputRef}
+                                            type="file"
+                                            accept={resolveHeaderAccept(selectedTemplatePreview.headerType)}
+                                            onChange={handleCampaignHeaderMediaChange}
+                                        />
+                                        <small>La campaña enviará este archivo en el header multimedia del template.</small>
+                                        {form?.headerMedia?.name ? <small>{form.headerMedia.name}</small> : null}
+                                    </div>
+                                </div>
+                            ) : null}
                             <div className="saas-admin-form-row saas-admin-form-row--single">
                                 <div className="saas-admin-field">
                                     <label>Descripcion</label>

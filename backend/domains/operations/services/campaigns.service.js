@@ -12,11 +12,14 @@ const metaTemplatesService = require('./meta-templates.service');
 const templateVariablesService = require('./template-variables.service');
 const customerCatalogsService = require('../../tenant/services/customer-catalogs.service');
 const customerAddressesService = require('../../tenant/services/customer-addresses.service');
+const waModuleService = require('../../tenant/services/wa-modules.service');
+const waCloudClient = require('../../channels/services/whatsapp-cloud-client.service');
 
 const STORE_FILE = 'campaigns.json';
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 500;
 const DEFAULT_RECIPIENT_LIMIT = 2000;
+const MULTIMEDIA_HEADER_FORMATS = new Set(['IMAGE', 'VIDEO', 'DOCUMENT']);
 
 const CAMPAIGN_STATUSES = new Set(['draft', 'scheduled', 'running', 'paused', 'completed', 'cancelled', 'failed']);
 const RECIPIENT_STATUSES = new Set(['pending', 'claimed', 'sent', 'failed', 'skipped', 'opted_out']);
@@ -262,7 +265,113 @@ function parsePlaceholderIndexesFromText(text = '') {
     return Array.from(indexes).sort((left, right) => left - right);
 }
 
-function resolveTemplateVariableValue(variableKey = '', customer = {}) {
+function formatCampaignDateLabel(value = '') {
+    const iso = toIso(value);
+    if (!iso) return '';
+    try {
+        return new Intl.DateTimeFormat('es-PE', {
+            day: '2-digit',
+            month: 'long',
+            year: 'numeric',
+            timeZone: 'America/Lima'
+        }).format(new Date(iso));
+    } catch (_) {
+        return iso.slice(0, 10);
+    }
+}
+
+function isDataUrl(value = '') {
+    return /^data:[^;]+;base64,/i.test(toText(value));
+}
+
+function parseDataUrlPayload(value = '') {
+    const input = toText(value);
+    const match = input.match(/^data:([^;]+);base64,(.+)$/i);
+    if (!match) return null;
+    return {
+        mimetype: toText(match[1]).toLowerCase() || 'application/octet-stream',
+        mediaData: toText(match[2])
+    };
+}
+
+function extensionFromMime(mimetype = '') {
+    const safeMime = toText(mimetype).toLowerCase();
+    const map = {
+        'image/jpeg': 'jpg',
+        'image/jpg': 'jpg',
+        'image/png': 'png',
+        'image/webp': 'webp',
+        'video/mp4': 'mp4',
+        'application/pdf': 'pdf'
+    };
+    if (map[safeMime]) return map[safeMime];
+    const fallback = safeMime.split('/')[1] || 'bin';
+    return fallback.replace(/[^a-z0-9]/gi, '').toLowerCase() || 'bin';
+}
+
+function buildCampaignMediaFilename(format = '', mimetype = '', sourceName = '') {
+    const cleanSourceName = toText(sourceName);
+    if (cleanSourceName) return cleanSourceName;
+    const extension = extensionFromMime(mimetype);
+    return `campaign-header-${toLower(format || 'media') || 'media'}.${extension}`;
+}
+
+function normalizeCampaignHeaderMedia(campaign = {}) {
+    const source = normalizeObject(campaign?.variablesPreviewJson || {});
+    const headerMedia = normalizeObject(source.headerMedia || source.templateHeaderMedia || {});
+    const base64 = toText(headerMedia.base64 || '');
+    if (!base64) return null;
+    return {
+        base64,
+        type: toText(headerMedia.type || '').toLowerCase(),
+        name: toText(headerMedia.name || ''),
+        size: toNumber(headerMedia.size, 0)
+    };
+}
+
+async function resolveCloudModuleRuntime(tenantId = DEFAULT_TENANT_ID, moduleId = '') {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const cleanModuleId = toText(moduleId);
+    if (!cleanModuleId) throw new Error('moduleId requerido.');
+
+    const module = await waModuleService.getModuleRuntime(cleanTenantId, cleanModuleId);
+    if (!module) throw new Error('Modulo no encontrado.');
+
+    const cloudConfig = waModuleService.resolveModuleCloudConfig(module);
+    const wabaId = toText(cloudConfig?.wabaId);
+    const phoneNumberId = toText(cloudConfig?.phoneNumberId);
+    const systemUserToken = toText(cloudConfig?.systemUserToken);
+    if (!wabaId || !phoneNumberId || !systemUserToken) {
+        throw new Error('Cloud config incompleta para el modulo.');
+    }
+
+    return {
+        tenantId: cleanTenantId,
+        moduleId: toText(module.moduleId || cleanModuleId),
+        scopeModuleId: normalizeScopeModuleId(module.moduleId || cleanModuleId),
+        wabaId,
+        phoneNumberId,
+        systemUserToken
+    };
+}
+
+async function uploadCampaignHeaderMedia(tenantId = DEFAULT_TENANT_ID, moduleId = '', format = '', headerMedia = null) {
+    const mediaSource = headerMedia && typeof headerMedia === 'object' ? headerMedia : null;
+    const parsed = parseDataUrlPayload(mediaSource?.base64 || '');
+    if (!parsed?.mediaData) return null;
+    const runtime = await resolveCloudModuleRuntime(tenantId, moduleId);
+    const client = waCloudClient.withTenant(runtime.tenantId, {
+        token: runtime.systemUserToken,
+        phoneNumberId: runtime.phoneNumberId
+    });
+    return client.uploadMedia(
+        parsed.mediaData,
+        parsed.mimetype,
+        buildCampaignMediaFilename(format, parsed.mimetype, mediaSource?.name)
+    );
+}
+
+function resolveTemplateVariableValue(variableKey = '', customer = {}, campaign = {}) {
     const source = normalizeObject(customer);
     const contactName = toText(source.contactName || '');
     const firstName = toText(source.firstName || '');
@@ -287,6 +396,10 @@ function resolveTemplateVariableValue(variableKey = '', customer = {}) {
         return ensureArray(source.tags).map((entry) => toText(entry)).filter(Boolean).join(', ');
     case 'customer_id':
         return toText(source.customerId || '');
+    case 'fecha_inicio':
+        return formatCampaignDateLabel(campaign?.validFrom || campaign?.scheduledAt || '');
+    case 'fecha_fin':
+        return formatCampaignDateLabel(campaign?.validTo || '');
     default:
         return '';
     }
@@ -311,27 +424,46 @@ async function buildTemplateComponentsForRecipient(tenantId = DEFAULT_TENANT_ID,
             .map((entry) => [Number(entry?.placeholderIndex), entry])
             .filter(([index]) => Number.isFinite(index) && index > 0)
     );
+    const headerMedia = normalizeCampaignHeaderMedia(campaign);
 
-    return templateComponents
-        .filter((component) => {
-            const type = normalizeTemplateComponentType(component?.type);
-            return type === 'BODY' || type === 'HEADER';
-        })
-        .map((component) => {
-            const type = normalizeTemplateComponentType(component?.type || 'BODY');
-            const placeholderIndexes = parsePlaceholderIndexesFromText(component?.text || '');
-            return {
+    const resolvedComponents = [];
+    for (const component of templateComponents) {
+        const type = normalizeTemplateComponentType(component?.type || 'BODY');
+        if (type !== 'BODY' && type !== 'HEADER') continue;
+
+        const format = toUpper(component?.format || '');
+        if (type === 'HEADER' && MULTIMEDIA_HEADER_FORMATS.has(format)) {
+            if (!headerMedia?.base64 || !isDataUrl(headerMedia.base64)) continue;
+            const uploadedMediaId = await uploadCampaignHeaderMedia(cleanTenantId, cleanModuleId, format, headerMedia);
+            if (!uploadedMediaId) continue;
+            const parameterType = toLower(format);
+            resolvedComponents.push({
                 type,
-                parameters: placeholderIndexes.map((placeholderIndex) => {
-                    const variable = variableByIndex.get(placeholderIndex) || null;
-                    return {
-                        type: 'text',
-                        text: resolveTemplateVariableValue(variable?.key || '', customer)
-                    };
-                })
-            };
-        })
-        .filter((component) => Array.isArray(component.parameters) && component.parameters.length > 0);
+                parameters: [
+                    {
+                        type: parameterType,
+                        [parameterType]: { id: uploadedMediaId }
+                    }
+                ]
+            });
+            continue;
+        }
+
+        const placeholderIndexes = parsePlaceholderIndexesFromText(component?.text || '');
+        if (placeholderIndexes.length === 0) continue;
+        resolvedComponents.push({
+            type,
+            parameters: placeholderIndexes.map((placeholderIndex) => {
+                const variable = variableByIndex.get(placeholderIndex) || null;
+                return {
+                    type: 'text',
+                    text: resolveTemplateVariableValue(variable?.key || '', customer, campaign)
+                };
+            })
+        });
+    }
+
+    return resolvedComponents.filter((component) => Array.isArray(component.parameters) && component.parameters.length > 0);
 }
 
 let treatmentCatalogPromise = null;
