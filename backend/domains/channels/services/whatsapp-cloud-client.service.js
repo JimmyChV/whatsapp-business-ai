@@ -122,6 +122,17 @@ class WhatsAppCloudClient extends EventEmitter {
         return this.getRuntimeConfigPublic();
     }
 
+    withTenant(tenantId = '', overrides = {}) {
+        const scopedClient = new WhatsAppCloudClient();
+        scopedClient.mediaIdCache = this.mediaIdCache;
+        scopedClient.setRuntimeConfig({
+            ...(this.runtimeConfig || {}),
+            ...(overrides && typeof overrides === 'object' ? overrides : {}),
+            tenantId: String(tenantId || overrides?.tenantId || this.runtimeConfig?.tenantId || '').trim() || this.runtimeTenantId
+        });
+        return scopedClient;
+    }
+
     getRuntimeConfigPublic() {
         return {
             tenantId: String(this.runtimeConfig?.tenantId || '').trim() || null,
