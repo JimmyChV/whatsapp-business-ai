@@ -18,6 +18,7 @@ export default function useSaasPanelNavigation({
     canViewAi = false,
     canViewCommercialIntelligence = false,
     canViewCampaigns = false,
+    canViewMetaAds = false,
     canViewMetaTemplates = false,
     canViewAutomations = false,
     canViewSchedules = false,
@@ -43,6 +44,7 @@ export default function useSaasPanelNavigation({
         if (cleanId === 'saas_clientes') return canViewCustomers;
         if (cleanId === 'saas_operacion') return canViewOperations;
         if (cleanId === 'saas_campaigns') return canViewCampaigns;
+        if (cleanId === 'saas_meta_ads_campaigns') return canViewMetaAds;
         if (cleanId === 'saas_templates') return canViewMetaTemplates;
         if (cleanId === 'saas_ia') return canViewAi;
         if (cleanId === 'saas_commercial_intelligence') return canViewCommercialIntelligence;
@@ -67,6 +69,7 @@ export default function useSaasPanelNavigation({
         canViewAi,
         canViewCommercialIntelligence,
         canViewCampaigns,
+        canViewMetaAds,
         canViewMetaTemplates,
         canViewAutomations,
         canViewSchedules,

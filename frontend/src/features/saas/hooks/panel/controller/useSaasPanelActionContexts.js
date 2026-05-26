@@ -35,6 +35,7 @@ export default function useSaasPanelActionContexts(input = {}) {
         canViewAi: c.canViewAi,
         canViewCommercialIntelligence: c.canViewCommercialIntelligence,
         canViewCampaigns: c.canViewCampaigns,
+        canViewMetaAds: c.canViewCampaigns,
         canViewMetaTemplates: c.canViewMetaTemplates,
         canViewAutomations: c.canViewAutomations,
         canViewSchedules: c.canViewSchedules,
