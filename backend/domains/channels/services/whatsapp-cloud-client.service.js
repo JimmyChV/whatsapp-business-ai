@@ -355,8 +355,8 @@ class WhatsAppCloudClient extends EventEmitter {
                 query
             });
             const requestHeaders = headers && typeof headers === 'object' ? { ...headers } : {};
-            if (systemUserToken) {
-                requestHeaders['Authorization'] = `Bearer ${systemUserToken}`;
+            if (!requestHeaders['Authorization'] && !requestHeaders['authorization']) {
+                requestHeaders['Authorization'] = `Bearer ${token}`;
             }
             const response = await fetch(url, {
                 method,
