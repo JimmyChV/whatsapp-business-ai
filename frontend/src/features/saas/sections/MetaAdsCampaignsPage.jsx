@@ -183,8 +183,10 @@ function buildSummaryRow(rows = []) {
 export default function MetaAdsCampaignsPage({ context = {} }) {
     const { notify } = useUiFeedback();
     const requestJson = typeof context?.requestJson === 'function' ? context.requestJson : null;
+    const runSectionAction = typeof context?.runSectionAction === 'function' ? context.runSectionAction : null;
     const tenantId = String(context?.settingsTenantId || context?.selectedTenantId || context?.tenantScopeId || '').trim();
     const tenantScopeLocked = context?.tenantScopeLocked === true;
+    const canManageMetaAds = context?.canManageMetaAds === true;
     const [dateRange, setDateRange] = useState(() => buildDefaultDateRange());
     const [searchValue, setSearchValue] = useState('');
     const [rows, setRows] = useState([]);
@@ -206,7 +208,7 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
                 dateStart: dateRange.dateStart,
                 dateStop: dateRange.dateStop
             });
-            const payload = await requestJson(`/api/meta-ads/insights?${query.toString()}`);
+            const payload = await requestJson(`/api/meta-ads/insights?${query.toString()}`, { tenantIdOverride: tenantId });
             setRows(normalizeItems(payload));
         } catch (loadError) {
             setRows([]);
@@ -245,29 +247,57 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
 
     const handleSync = useCallback(async () => {
         if (!requestJson || !tenantId) return;
-        setSyncing(true);
-        setLoading(true);
-        setError('');
-        setSyncMessage('');
-        try {
-            const payload = await requestJson('/api/meta-ads/sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tenantId })
+        const executeSync = async () => {
+            setSyncing(true);
+            setLoading(true);
+            setError('');
+            setSyncMessage('');
+            try {
+                const payload = await requestJson('/api/meta-ads/sync', {
+                    method: 'POST',
+                    tenantIdOverride: tenantId,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: { tenantId }
+                });
+                const nextMessage = `${Number(payload?.adsCount || 0).toLocaleString('es-PE')} ads y ${Number(payload?.insightsCount || 0).toLocaleString('es-PE')} insights sincronizados.`;
+                setSyncMessage(nextMessage);
+                await loadInsights({ silent: true });
+                return {
+                    ...payload,
+                    message: nextMessage
+                };
+            } catch (syncError) {
+                const nextError = String(syncError?.message || 'No se pudo sincronizar Meta Ads.');
+                setError(nextError);
+                throw syncError;
+            } finally {
+                setSyncing(false);
+                setLoading(false);
+            }
+        };
+
+        if (runSectionAction) {
+            const result = await runSectionAction('sync_meta_ads', executeSync, {
+                label: 'campañas Meta',
+                successMessage: '',
+                onSuccess: (payload) => {
+                    const nextMessage = String(payload?.message || '').trim();
+                    if (nextMessage) notify({ type: 'info', message: nextMessage });
+                }
             });
-            const nextMessage = `${Number(payload?.adsCount || 0).toLocaleString('es-PE')} ads y ${Number(payload?.insightsCount || 0).toLocaleString('es-PE')} insights sincronizados.`;
-            setSyncMessage(nextMessage);
-            notify({ type: 'info', message: nextMessage });
-            await loadInsights({ silent: true });
+            return result;
+        }
+
+        try {
+            const payload = await executeSync();
+            if (payload?.message) notify({ type: 'info', message: payload.message });
+            return payload;
         } catch (syncError) {
             const nextError = String(syncError?.message || 'No se pudo sincronizar Meta Ads.');
-            setError(nextError);
             notify({ type: 'error', message: nextError });
-        } finally {
-            setSyncing(false);
-            setLoading(false);
+            return undefined;
         }
-    }, [loadInsights, notify, requestJson, tenantId]);
+    }, [loadInsights, notify, requestJson, runSectionAction, tenantId]);
 
     const headerElement = (
         <SaasViewHeader
@@ -281,7 +311,7 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
                 key: 'sync',
                 label: syncing ? 'Sincronizando...' : 'Sincronizar',
                 onClick: handleSync,
-                disabled: tenantScopeLocked || syncing || loading || !tenantId
+                disabled: tenantScopeLocked || syncing || loading || !tenantId || !canManageMetaAds
             }]}
             extra={(
                 <>

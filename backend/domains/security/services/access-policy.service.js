@@ -31,6 +31,8 @@ const PERMISSIONS = Object.freeze({
     TENANT_CATALOGS_MANAGE: 'tenant.catalogs.manage',
     TENANT_CAMPAIGNS_READ: 'tenant.campaigns.read',
     TENANT_CAMPAIGNS_MANAGE: 'tenant.campaigns.manage',
+    TENANT_META_ADS_READ: 'tenant.meta_ads.read',
+    TENANT_META_ADS_MANAGE: 'tenant.meta_ads.manage',
     TENANT_META_TEMPLATES_READ: 'tenant.meta_templates.read',
     TENANT_META_TEMPLATES_MANAGE: 'tenant.meta_templates.manage',
     TENANT_AUTOMATIONS_READ: 'tenant.automations.read',
@@ -79,6 +81,8 @@ const PERMISSION_LABELS = Object.freeze({
     [PERMISSIONS.TENANT_CATALOGS_MANAGE]: 'Gestionar catalogos',
     [PERMISSIONS.TENANT_CAMPAIGNS_READ]: 'Ver campanas',
     [PERMISSIONS.TENANT_CAMPAIGNS_MANAGE]: 'Gestionar campanas',
+    [PERMISSIONS.TENANT_META_ADS_READ]: 'Ver campanas Meta Ads',
+    [PERMISSIONS.TENANT_META_ADS_MANAGE]: 'Gestionar campanas Meta Ads',
     [PERMISSIONS.TENANT_META_TEMPLATES_READ]: 'Ver plantillas Meta',
     [PERMISSIONS.TENANT_META_TEMPLATES_MANAGE]: 'Gestionar plantillas Meta',
     [PERMISSIONS.TENANT_AUTOMATIONS_READ]: 'Ver automatizaciones',
@@ -143,6 +147,14 @@ const SYSTEM_PERMISSION_PACKS = Object.freeze({
         permissions: [
             PERMISSIONS.TENANT_CAMPAIGNS_READ,
             PERMISSIONS.TENANT_CAMPAIGNS_MANAGE
+        ],
+        active: true
+    },
+    meta_ads_management: {
+        label: 'Gestion de campanas Meta Ads',
+        permissions: [
+            PERMISSIONS.TENANT_META_ADS_READ,
+            PERMISSIONS.TENANT_META_ADS_MANAGE
         ],
         active: true
     },
@@ -245,6 +257,8 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
         optional: [
             PERMISSIONS.TENANT_INTEGRATIONS_READ,
             PERMISSIONS.TENANT_INTEGRATIONS_MANAGE,
+            PERMISSIONS.TENANT_META_ADS_READ,
+            PERMISSIONS.TENANT_META_ADS_MANAGE,
             PERMISSIONS.TENANT_AUDIT_READ,
             PERMISSIONS.TENANT_USERS_OWNER_ASSIGN
         ],
@@ -296,6 +310,8 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
             PERMISSIONS.TENANT_SETTINGS_MANAGE,
             PERMISSIONS.TENANT_MODULES_MANAGE,
             PERMISSIONS.TENANT_CATALOGS_MANAGE,
+            PERMISSIONS.TENANT_META_ADS_READ,
+            PERMISSIONS.TENANT_META_ADS_MANAGE,
             PERMISSIONS.TENANT_LABELS_MANAGE,
             PERMISSIONS.TENANT_ZONES_MANAGE,
             PERMISSIONS.TENANT_COMMERCIAL_INTELLIGENCE_MANAGE,
@@ -348,6 +364,8 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
             PERMISSIONS.TENANT_INTEGRATIONS_MANAGE,
             PERMISSIONS.TENANT_AUDIT_READ,
             PERMISSIONS.TENANT_CAMPAIGNS_MANAGE,
+            PERMISSIONS.TENANT_META_ADS_READ,
+            PERMISSIONS.TENANT_META_ADS_MANAGE,
             PERMISSIONS.TENANT_META_TEMPLATES_MANAGE,
             PERMISSIONS.TENANT_AUTOMATIONS_MANAGE,
             PERMISSIONS.TENANT_SCHEDULES_MANAGE,

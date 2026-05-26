@@ -63,6 +63,8 @@ export default function buildEntitySectionContext(c) {
         canManageUsers: c.canManageUsers,
         canViewCustomers: c.canViewCustomers,
         canManageCustomers: c.canManageCustomers,
+        canViewMetaAds: c.canViewMetaAds,
+        canManageMetaAds: c.canManageMetaAds,
         openUserCreate: c.openUserCreate,
         hasAccessCatalogData: c.hasAccessCatalogData,
         loadingAccessCatalog: c.loadingAccessCatalog,

@@ -37,6 +37,8 @@ export default function useSaasAccessControl({
         PERMISSION_TENANT_CATALOGS_MANAGE,
         PERMISSION_TENANT_CAMPAIGNS_READ,
         PERMISSION_TENANT_CAMPAIGNS_MANAGE,
+        PERMISSION_TENANT_META_ADS_READ,
+        PERMISSION_TENANT_META_ADS_MANAGE,
         PERMISSION_TENANT_META_TEMPLATES_READ,
         PERMISSION_TENANT_META_TEMPLATES_MANAGE,
         PERMISSION_TENANT_AUTOMATIONS_READ,
@@ -54,35 +56,43 @@ export default function useSaasAccessControl({
     } = permissionKeys;
 
     const normalizedRole = String(userRole || '').trim().toLowerCase();
+    const effectiveIsSuperAdmin = Boolean(
+        isSuperAdmin
+        || normalizedRole === 'superadmin'
+        || currentUser?.isSuperAdmin === true
+        || String(currentUser?.role || '').trim().toLowerCase() === 'superadmin'
+    );
     const noRoleContext = !normalizedRole;
 
-    const roleBasedCanManageTenants = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
-    const roleBasedCanViewUsers = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const roleBasedCanManageUsers = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const roleBasedCanManageTenantSettings = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || noRoleContext);
-    const roleBasedCanViewCatalog = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || normalizedRole === 'seller' || noRoleContext);
-    const roleBasedCanManageCatalog = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const roleBasedCanManageRoles = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
-    const roleBasedCanViewSuperAdminSections = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext);
-    const roleBasedCanEditModules = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const roleBasedCanManageQuickReplies = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const roleBasedCanManageLabels = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const roleBasedCanManageZones = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const roleBasedCanManageCustomers = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const roleBasedCanViewAi = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const roleBasedCanManageAi = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const roleBasedCanViewCommercialIntelligence = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const roleBasedCanManageCommercialIntelligence = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || noRoleContext);
-    const roleBasedCanViewCampaigns = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const roleBasedCanManageCampaigns = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const roleBasedCanViewMetaTemplates = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const roleBasedCanManageMetaTemplates = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const roleBasedCanViewAutomations = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const roleBasedCanManageAutomations = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const roleBasedCanViewSchedules = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
-    const roleBasedCanManageSchedules = Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageTenants = Boolean(effectiveIsSuperAdmin || noRoleContext);
+    const roleBasedCanViewUsers = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageUsers = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageTenantSettings = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || noRoleContext);
+    const roleBasedCanViewCatalog = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || normalizedRole === 'seller' || noRoleContext);
+    const roleBasedCanManageCatalog = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageRoles = Boolean(effectiveIsSuperAdmin || noRoleContext);
+    const roleBasedCanViewSuperAdminSections = Boolean(effectiveIsSuperAdmin || noRoleContext);
+    const roleBasedCanEditModules = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageQuickReplies = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageLabels = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageZones = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageCustomers = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanViewAi = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageAi = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanViewCommercialIntelligence = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageCommercialIntelligence = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || noRoleContext);
+    const roleBasedCanViewCampaigns = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageCampaigns = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanViewMetaAds = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageMetaAds = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanViewMetaTemplates = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageMetaTemplates = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanViewAutomations = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageAutomations = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanViewSchedules = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageSchedules = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
 
-    const actorRoleForPolicy = isSuperAdmin || normalizedRole === 'superadmin' ? 'superadmin' : (normalizedRole || 'seller');
+    const actorRoleForPolicy = effectiveIsSuperAdmin ? 'superadmin' : (normalizedRole || 'seller');
     const actorRolePriority = getRolePriority(actorRoleForPolicy);
     const currentUserId = String(currentUser?.userId || currentUser?.id || '').trim();
 
@@ -93,16 +103,15 @@ export default function useSaasAccessControl({
     ), [currentUser?.permissions]);
 
     const hasPermissionContext = Boolean(
-        isSuperAdmin
-        || normalizedRole === 'superadmin'
+        effectiveIsSuperAdmin
         || actorPermissionSet.size > 0
     );
 
     const hasAnyActorPermission = useCallback((keys = []) => {
-        if (isSuperAdmin || normalizedRole === 'superadmin') return true;
+        if (effectiveIsSuperAdmin) return true;
         const source = Array.isArray(keys) ? keys : [];
         return source.some((key) => actorPermissionSet.has(String(key || '').trim()));
-    }, [actorPermissionSet, isSuperAdmin, normalizedRole]);
+    }, [actorPermissionSet, effectiveIsSuperAdmin]);
 
     const canManageTenants = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_PLATFORM_TENANTS_MANAGE])
@@ -195,6 +204,12 @@ export default function useSaasAccessControl({
     const canManageCampaigns = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_CAMPAIGNS_MANAGE])
         : roleBasedCanManageCampaigns;
+    const canViewMetaAds = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_META_ADS_READ, PERMISSION_TENANT_META_ADS_MANAGE])
+        : roleBasedCanViewMetaAds;
+    const canManageMetaAds = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_META_ADS_MANAGE])
+        : roleBasedCanManageMetaAds;
     const canViewMetaTemplates = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_META_TEMPLATES_READ, PERMISSION_TENANT_META_TEMPLATES_MANAGE])
         : roleBasedCanViewMetaTemplates;
@@ -231,7 +246,7 @@ export default function useSaasAccessControl({
         : Boolean(roleBasedCanManageTenantSettings || roleBasedCanManageUsers);
     const canOperateChat = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_CHAT_OPERATE, PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ, PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE])
-        : Boolean(isSuperAdmin || normalizedRole === 'superadmin' || normalizedRole === 'owner' || normalizedRole === 'admin' || normalizedRole === 'seller' || noRoleContext);
+        : Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || normalizedRole === 'seller' || noRoleContext);
     const canManageAssignments = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE])
         : Boolean(roleBasedCanManageTenantSettings || roleBasedCanManageUsers);
@@ -240,7 +255,7 @@ export default function useSaasAccessControl({
         : Boolean(roleBasedCanManageTenantSettings || roleBasedCanManageUsers);
 
     const canEditCatalog = canManageCatalog;
-    const requiresTenantSelection = Boolean(isSuperAdmin || normalizedRole === 'superadmin');
+    const requiresTenantSelection = Boolean(effectiveIsSuperAdmin);
     const canActorManageRoleChanges = Boolean(
         actorRoleForPolicy === 'superadmin'
         || actorRoleForPolicy === 'owner'
@@ -248,11 +263,11 @@ export default function useSaasAccessControl({
     );
 
     const defaultRoleOptions = useMemo(() => {
-        if (isSuperAdmin || normalizedRole === 'superadmin' || noRoleContext) return baseRoleOptions;
+        if (effectiveIsSuperAdmin || noRoleContext) return baseRoleOptions;
         if (normalizedRole === 'owner') return baseRoleOptions.filter((role) => role !== 'owner');
         if (normalizedRole === 'admin') return ['seller'];
         return ['seller'];
-    }, [baseRoleOptions, isSuperAdmin, normalizedRole, noRoleContext]);
+    }, [baseRoleOptions, effectiveIsSuperAdmin, normalizedRole, noRoleContext]);
 
     const roleOptions = useMemo(() => {
         const fromCatalog = Array.isArray(accessCatalog?.actor?.assignableRoles)
@@ -266,8 +281,7 @@ export default function useSaasAccessControl({
 
     const canEditOptionalAccess = Boolean(
         accessCatalog?.actor?.canEditOptionalAccess
-        || isSuperAdmin
-        || normalizedRole === 'superadmin'
+        || effectiveIsSuperAdmin
     );
 
     const accessPackOptions = useMemo(
@@ -384,6 +398,8 @@ export default function useSaasAccessControl({
         canManageCommercialIntelligence,
         canViewCampaigns,
         canManageCampaigns,
+        canViewMetaAds,
+        canManageMetaAds,
         canViewMetaTemplates,
         canManageMetaTemplates,
         canViewAutomations,

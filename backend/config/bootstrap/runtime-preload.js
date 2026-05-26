@@ -41,6 +41,15 @@ async function preloadRuntimeServices({
             })
             .catch((error) => {
                 logger.warn('[MetaAdsSync] no se pudo programar sync diario: ' + String(error?.message || error));
+            }),
+        Promise.resolve()
+            .then(() => {
+                metaAdsSyncService.backfillConfiguredTenantsCurrentYear().catch((error) => {
+                    logger.warn('[MetaAdsSync] no se pudo iniciar backfill historico del año actual: ' + String(error?.message || error));
+                });
+            })
+            .catch((error) => {
+                logger.warn('[MetaAdsSync] no se pudo iniciar backfill historico del año actual: ' + String(error?.message || error));
             })
     ];
 

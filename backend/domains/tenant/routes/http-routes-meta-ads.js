@@ -17,8 +17,8 @@ function registerTenantMetaAdsHttpRoutes({
         if (!dateStart || !dateStop) return res.status(400).json({ ok: false, error: 'dateStart y dateStop son obligatorios.' });
         if (!isTenantAllowedForUser(req, tenantId)
             || !hasAnyPermission(req, [
-                accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ,
-                accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE
+                accessPolicyService.PERMISSIONS.TENANT_META_ADS_READ,
+                accessPolicyService.PERMISSIONS.TENANT_META_ADS_MANAGE
             ])) {
             return res.status(403).json({ ok: false, error: 'No autorizado.' });
         }
@@ -34,24 +34,36 @@ function registerTenantMetaAdsHttpRoutes({
     app.post('/api/meta-ads/sync', async (req, res) => {
         const source = req.body && typeof req.body === 'object' ? req.body : req.query;
         const tenantId = String(source?.tenantId || '').trim();
+        const mode = String(source?.mode || '').trim().toLowerCase();
         if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
         if (!isTenantAllowedForUser(req, tenantId)
-            || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE)) {
+            || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_META_ADS_MANAGE)) {
             return res.status(403).json({ ok: false, error: 'No autorizado.' });
         }
 
-        const now = new Date();
-        const dateStop = now.toISOString().slice(0, 10);
-        const start = new Date(now);
-        start.setDate(start.getDate() - 7);
-        const dateStart = start.toISOString().slice(0, 10);
-
         try {
+            if (mode === 'historical_current_year') {
+                const result = await metaAdsSyncService.syncMetaAdsHistoricalCurrentYear(tenantId, {
+                    force: source?.force === true || String(source?.force || '').trim().toLowerCase() === 'true'
+                });
+                return res.json({
+                    ok: true,
+                    tenantId,
+                    mode: 'historical_current_year',
+                    result
+                });
+            }
+
+            const now = new Date();
+            const today = now.toISOString().slice(0, 10);
+            const dateStart = String(source?.dateStart || '').trim() || today;
+            const dateStop = String(source?.dateStop || '').trim() || dateStart;
             const structure = await metaAdsSyncService.syncMetaAdsStructure(tenantId);
             const insights = await metaAdsSyncService.syncMetaAdsInsights(tenantId, dateStart, dateStop);
             return res.json({
                 ok: true,
                 tenantId,
+                mode: 'incremental',
                 dateStart,
                 dateStop,
                 adsCount: Number(structure?.totalCount || 0),

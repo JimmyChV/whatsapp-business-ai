@@ -25,6 +25,8 @@ export const PERMISSION_DESCRIPTIONS = Object.freeze({
     'tenant.assignment_rules.manage': 'Editar reglas de asignacion automatica de chats.',
     'tenant.campaigns.read': 'Ver campanas, audiencias y estadisticas.',
     'tenant.campaigns.manage': 'Crear, editar, lanzar, pausar o cancelar campanas.',
+    'tenant.meta_ads.read': 'Ver estructura, metricas e insights de Meta Ads.',
+    'tenant.meta_ads.manage': 'Sincronizar y gestionar datos de Meta Ads.',
     'tenant.meta_templates.read': 'Ver plantillas Meta y su estado de aprobacion.',
     'tenant.meta_templates.manage': 'Crear, eliminar y sincronizar plantillas Meta.',
     'tenant.automations.read': 'Ver automatizaciones comerciales configuradas.',
@@ -97,8 +99,8 @@ export const PERMISSION_GROUPS = Object.freeze([
     },
     {
         id: 'campaigns',
-        title: 'CAMPANAS Y PLANTILLAS META',
-        permissions: ['tenant.campaigns.read', 'tenant.campaigns.manage', 'tenant.meta_templates.read', 'tenant.meta_templates.manage']
+        title: 'CAMPANAS Y META ADS',
+        permissions: ['tenant.campaigns.read', 'tenant.campaigns.manage', 'tenant.meta_ads.read', 'tenant.meta_ads.manage', 'tenant.meta_templates.read', 'tenant.meta_templates.manage']
     },
     {
         id: 'automations',

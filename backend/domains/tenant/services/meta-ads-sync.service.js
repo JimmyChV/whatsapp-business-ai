@@ -8,12 +8,13 @@ const {
 } = require('../helpers/integrations-normalizers.helpers');
 
 const GRAPH_API_VERSION = 'v19.0';
-const DAILY_SYNC_HOUR = 6;
+const DAILY_SYNC_HOUR = 1;
 
 let schemaPromise = null;
 let scheduleTimeout = null;
 let scheduleInterval = null;
 let runInFlight = null;
+let backfillInFlight = null;
 
 function toText(value = '') {
     return String(value || '').trim();
@@ -63,6 +64,43 @@ function normalizeDateInput(value, fallback = null) {
 
 function buildTimeRange(dateStart, dateStop) {
     return JSON.stringify({ since: dateStart, until: dateStop });
+}
+
+function addDays(dateLabel, daysDelta = 0) {
+    const normalized = normalizeDateInput(dateLabel);
+    if (!normalized) return null;
+    const next = new Date(`${normalized}T00:00:00.000Z`);
+    next.setUTCDate(next.getUTCDate() + Number(daysDelta || 0));
+    return next.toISOString().slice(0, 10);
+}
+
+function getTodayDateLabel() {
+    return new Date().toISOString().slice(0, 10);
+}
+
+function getYesterdayDateLabel() {
+    return addDays(getTodayDateLabel(), -1);
+}
+
+function getCurrentYearStartLabel() {
+    const now = new Date();
+    return `${now.getUTCFullYear()}-01-01`;
+}
+
+function buildDateWindows(dateStart, dateStop, windowDays = 7) {
+    const normalizedStart = normalizeDateInput(dateStart);
+    const normalizedStop = normalizeDateInput(dateStop, normalizedStart);
+    if (!normalizedStart || !normalizedStop) return [];
+    const windows = [];
+    const size = Math.max(1, Number(windowDays || 1));
+    let cursor = normalizedStart;
+    while (cursor <= normalizedStop) {
+        const windowStop = addDays(cursor, size - 1);
+        const safeStop = windowStop && windowStop < normalizedStop ? windowStop : normalizedStop;
+        windows.push({ dateStart: cursor, dateStop: safeStop });
+        cursor = addDays(safeStop, 1);
+    }
+    return windows;
 }
 
 function aggregateActions(rows = []) {
@@ -146,9 +184,31 @@ async function ensurePostgresSchema() {
               cpm NUMERIC(10,4),
               cpp NUMERIC(10,4),
               frequency NUMERIC(8,4),
+              campaign_id TEXT,
+              campaign_name TEXT,
+              campaign_status TEXT,
+              adset_id TEXT,
+              adset_name TEXT,
+              adset_status TEXT,
+              ad_name TEXT,
+              ad_status TEXT,
               actions JSONB,
               synced_at TIMESTAMPTZ DEFAULT NOW(),
               UNIQUE(tenant_id, object_id, date_start, date_stop)
+            )
+        `);
+        await queryPostgres(`
+            CREATE TABLE IF NOT EXISTS tenant_meta_ads_sync_state (
+              tenant_id TEXT PRIMARY KEY,
+              backfill_year INTEGER,
+              backfill_started_at TIMESTAMPTZ DEFAULT NULL,
+              backfill_completed_at TIMESTAMPTZ DEFAULT NULL,
+              backfill_completed_through DATE DEFAULT NULL,
+              last_structure_sync_at TIMESTAMPTZ DEFAULT NULL,
+              last_insights_sync_from DATE DEFAULT NULL,
+              last_insights_sync_to DATE DEFAULT NULL,
+              last_insights_sync_at TIMESTAMPTZ DEFAULT NULL,
+              updated_at TIMESTAMPTZ DEFAULT NOW()
             )
         `);
         await queryPostgres(`CREATE INDEX IF NOT EXISTS idx_tenant_meta_ads_structure_tenant_type ON tenant_meta_ads_structure(tenant_id, object_type)`);
@@ -209,6 +269,123 @@ async function fetchMetaAdsPages({ path, params = {}, accessToken }) {
     return collected;
 }
 
+async function listConfiguredMetaAdsTenants() {
+    await ensurePostgresSchema();
+    const { rows } = await queryPostgres(
+        `SELECT tenant_id
+           FROM tenant_integrations
+          WHERE COALESCE(config_json->'metaAds'->>'adAccountId', '') <> ''
+            AND COALESCE(config_json->'metaAds'->>'accessToken', '') <> ''`
+    );
+    return Array.from(new Set((Array.isArray(rows) ? rows : []).map((row) => normalizeTenantId(row?.tenant_id)).filter(Boolean)));
+}
+
+async function getMetaAdsSyncState(tenantId = DEFAULT_TENANT_ID) {
+    await ensurePostgresSchema();
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const { rows } = await queryPostgres(
+        `SELECT tenant_id, backfill_year, backfill_started_at, backfill_completed_at, backfill_completed_through,
+                last_structure_sync_at, last_insights_sync_from, last_insights_sync_to, last_insights_sync_at, updated_at
+           FROM tenant_meta_ads_sync_state
+          WHERE tenant_id = $1
+          LIMIT 1`,
+        [cleanTenantId]
+    );
+    return rows?.[0] || null;
+}
+
+async function getMaxHistoricalInsightsDate(tenantId = DEFAULT_TENANT_ID, year = null) {
+    await ensurePostgresSchema();
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const targetYear = Number.isInteger(Number(year)) ? Number(year) : Number.parseInt(getCurrentYearStartLabel().slice(0, 4), 10);
+    const rangeStart = `${targetYear}-01-01`;
+    const rangeStop = `${targetYear}-12-31`;
+    const { rows } = await queryPostgres(
+        `SELECT MAX(date_stop) AS max_date
+           FROM tenant_meta_ads_insights
+          WHERE tenant_id = $1
+            AND object_type = 'ad'
+            AND date_start >= $2::date
+            AND date_stop <= $3::date`,
+        [cleanTenantId, rangeStart, rangeStop]
+    );
+    return normalizeDateInput(rows?.[0]?.max_date, null);
+}
+
+async function upsertMetaAdsSyncState(tenantId = DEFAULT_TENANT_ID, patch = {}) {
+    await ensurePostgresSchema();
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const current = await getMetaAdsSyncState(cleanTenantId);
+    const next = {
+        tenant_id: cleanTenantId,
+        backfill_year: Number.isInteger(Number(patch?.backfill_year))
+            ? Number(patch.backfill_year)
+            : (Number.isInteger(Number(current?.backfill_year)) ? Number(current.backfill_year) : null),
+        backfill_started_at: patch?.backfill_started_at === null
+            ? null
+            : (patch?.backfill_started_at || current?.backfill_started_at || null),
+        backfill_completed_at: patch?.backfill_completed_at === null
+            ? null
+            : (patch?.backfill_completed_at || current?.backfill_completed_at || null),
+        backfill_completed_through: patch?.backfill_completed_through === null
+            ? null
+            : normalizeDateInput(patch?.backfill_completed_through, current?.backfill_completed_through || null),
+        last_structure_sync_at: patch?.last_structure_sync_at === null
+            ? null
+            : (patch?.last_structure_sync_at || current?.last_structure_sync_at || null),
+        last_insights_sync_from: patch?.last_insights_sync_from === null
+            ? null
+            : normalizeDateInput(patch?.last_insights_sync_from, current?.last_insights_sync_from || null),
+        last_insights_sync_to: patch?.last_insights_sync_to === null
+            ? null
+            : normalizeDateInput(patch?.last_insights_sync_to, current?.last_insights_sync_to || null),
+        last_insights_sync_at: patch?.last_insights_sync_at === null
+            ? null
+            : (patch?.last_insights_sync_at || current?.last_insights_sync_at || null)
+    };
+
+    await queryPostgres(
+        `INSERT INTO tenant_meta_ads_sync_state (
+            tenant_id, backfill_year, backfill_started_at, backfill_completed_at, backfill_completed_through,
+            last_structure_sync_at, last_insights_sync_from, last_insights_sync_to, last_insights_sync_at, updated_at
+         ) VALUES (
+            $1, $2, $3::timestamptz, $4::timestamptz, $5::date, $6::timestamptz, $7::date, $8::date, $9::timestamptz, NOW()
+         )
+         ON CONFLICT (tenant_id)
+         DO UPDATE SET
+            backfill_year = COALESCE(EXCLUDED.backfill_year, tenant_meta_ads_sync_state.backfill_year),
+            backfill_started_at = COALESCE(tenant_meta_ads_sync_state.backfill_started_at, EXCLUDED.backfill_started_at),
+            backfill_completed_at = COALESCE(EXCLUDED.backfill_completed_at, tenant_meta_ads_sync_state.backfill_completed_at),
+            backfill_completed_through = CASE
+                WHEN tenant_meta_ads_sync_state.backfill_completed_through IS NULL THEN EXCLUDED.backfill_completed_through
+                WHEN EXCLUDED.backfill_completed_through IS NULL THEN tenant_meta_ads_sync_state.backfill_completed_through
+                ELSE GREATEST(tenant_meta_ads_sync_state.backfill_completed_through, EXCLUDED.backfill_completed_through)
+            END,
+            last_structure_sync_at = COALESCE(EXCLUDED.last_structure_sync_at, tenant_meta_ads_sync_state.last_structure_sync_at),
+            last_insights_sync_from = COALESCE(EXCLUDED.last_insights_sync_from, tenant_meta_ads_sync_state.last_insights_sync_from),
+            last_insights_sync_to = CASE
+                WHEN tenant_meta_ads_sync_state.last_insights_sync_to IS NULL THEN EXCLUDED.last_insights_sync_to
+                WHEN EXCLUDED.last_insights_sync_to IS NULL THEN tenant_meta_ads_sync_state.last_insights_sync_to
+                ELSE GREATEST(tenant_meta_ads_sync_state.last_insights_sync_to, EXCLUDED.last_insights_sync_to)
+            END,
+            last_insights_sync_at = COALESCE(EXCLUDED.last_insights_sync_at, tenant_meta_ads_sync_state.last_insights_sync_at),
+            updated_at = NOW()`,
+        [
+            next.tenant_id,
+            next.backfill_year,
+            next.backfill_started_at,
+            next.backfill_completed_at,
+            next.backfill_completed_through,
+            next.last_structure_sync_at,
+            next.last_insights_sync_from,
+            next.last_insights_sync_to,
+            next.last_insights_sync_at
+        ]
+    );
+
+    return getMetaAdsSyncState(cleanTenantId);
+}
+
 async function upsertStructureRow(tenantId, row = {}) {
     await queryPostgres(
         `INSERT INTO tenant_meta_ads_structure (
@@ -216,10 +393,10 @@ async function upsertStructureRow(tenantId, row = {}) {
          ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
          ON CONFLICT (tenant_id, object_id)
          DO UPDATE SET
-            object_type = EXCLUDED.object_type,
-            object_name = EXCLUDED.object_name,
-            parent_id = EXCLUDED.parent_id,
-            status = EXCLUDED.status,
+            object_type = COALESCE(EXCLUDED.object_type, tenant_meta_ads_structure.object_type),
+            object_name = COALESCE(EXCLUDED.object_name, tenant_meta_ads_structure.object_name),
+            parent_id = COALESCE(EXCLUDED.parent_id, tenant_meta_ads_structure.parent_id),
+            status = COALESCE(EXCLUDED.status, tenant_meta_ads_structure.status),
             synced_at = NOW()`,
         [
             tenantId,
@@ -235,9 +412,13 @@ async function upsertStructureRow(tenantId, row = {}) {
 async function upsertInsightRow(tenantId, row = {}) {
     await queryPostgres(
         `INSERT INTO tenant_meta_ads_insights (
-            tenant_id, object_id, object_type, date_start, date_stop, spend, impressions, reach, clicks, ctr, cpc, cpm, cpp, frequency, actions, synced_at
+            tenant_id, object_id, object_type, date_start, date_stop, spend, impressions, reach, clicks, ctr, cpc, cpm, cpp, frequency,
+            campaign_id, campaign_name, campaign_status, adset_id, adset_name, adset_status, ad_name, ad_status,
+            actions, synced_at
          ) VALUES (
-            $1, $2, $3, $4::date, $5::date, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, NOW()
+            $1, $2, $3, $4::date, $5::date, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+            $15, $16, $17, $18, $19, $20, $21, $22,
+            $23::jsonb, NOW()
          )
          ON CONFLICT (tenant_id, object_id, date_start, date_stop)
          DO UPDATE SET
@@ -251,6 +432,14 @@ async function upsertInsightRow(tenantId, row = {}) {
             cpm = EXCLUDED.cpm,
             cpp = EXCLUDED.cpp,
             frequency = EXCLUDED.frequency,
+            campaign_id = COALESCE(EXCLUDED.campaign_id, tenant_meta_ads_insights.campaign_id),
+            campaign_name = COALESCE(EXCLUDED.campaign_name, tenant_meta_ads_insights.campaign_name),
+            campaign_status = COALESCE(EXCLUDED.campaign_status, tenant_meta_ads_insights.campaign_status),
+            adset_id = COALESCE(EXCLUDED.adset_id, tenant_meta_ads_insights.adset_id),
+            adset_name = COALESCE(EXCLUDED.adset_name, tenant_meta_ads_insights.adset_name),
+            adset_status = COALESCE(EXCLUDED.adset_status, tenant_meta_ads_insights.adset_status),
+            ad_name = COALESCE(EXCLUDED.ad_name, tenant_meta_ads_insights.ad_name),
+            ad_status = COALESCE(EXCLUDED.ad_status, tenant_meta_ads_insights.ad_status),
             actions = EXCLUDED.actions,
             synced_at = NOW()`,
         [
@@ -268,6 +457,14 @@ async function upsertInsightRow(tenantId, row = {}) {
             row.cpm,
             row.cpp,
             row.frequency,
+            row.campaign_id,
+            row.campaign_name,
+            row.campaign_status,
+            row.adset_id,
+            row.adset_name,
+            row.adset_status,
+            row.ad_name,
+            row.ad_status,
             JSON.stringify(Array.isArray(row.actions) ? row.actions : [])
         ]
     );
@@ -275,22 +472,21 @@ async function upsertInsightRow(tenantId, row = {}) {
 
 async function syncMetaAdsStructure(tenantId = DEFAULT_TENANT_ID) {
     const config = await getMetaAdsConfig(tenantId);
-    const effectiveStatus = JSON.stringify(['ACTIVE', 'PAUSED', 'ARCHIVED']);
 
     const [campaigns, adsets, ads] = await Promise.all([
         fetchMetaAdsPages({
             path: `${config.adAccountId}/campaigns`,
-            params: { fields: 'id,name,status,objective', effective_status: effectiveStatus, limit: '100' },
+            params: { fields: 'id,name,status,objective', limit: '100' },
             accessToken: config.accessToken
         }),
         fetchMetaAdsPages({
             path: `${config.adAccountId}/adsets`,
-            params: { fields: 'id,name,status,campaign_id', effective_status: effectiveStatus, limit: '100' },
+            params: { fields: 'id,name,status,campaign_id', limit: '100' },
             accessToken: config.accessToken
         }),
         fetchMetaAdsPages({
             path: `${config.adAccountId}/ads`,
-            params: { fields: 'id,name,status,adset_id,campaign_id', effective_status: effectiveStatus, limit: '100' },
+            params: { fields: 'id,name,status,adset_id,campaign_id', limit: '100' },
             accessToken: config.accessToken
         })
     ]);
@@ -323,6 +519,10 @@ async function syncMetaAdsStructure(tenantId = DEFAULT_TENANT_ID) {
         });
     }
 
+    await upsertMetaAdsSyncState(config.tenantId, {
+        last_structure_sync_at: new Date().toISOString()
+    });
+
     return {
         campaignsCount: campaigns.length,
         adsetsCount: adsets.length,
@@ -331,7 +531,7 @@ async function syncMetaAdsStructure(tenantId = DEFAULT_TENANT_ID) {
     };
 }
 
-async function syncMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, dateStart, dateStop) {
+async function syncMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, dateStart, dateStop, options = {}) {
     const config = await getMetaAdsConfig(tenantId);
     const normalizedDateStart = normalizeDateInput(dateStart);
     const normalizedDateStop = normalizeDateInput(dateStop, normalizedDateStart);
@@ -342,7 +542,7 @@ async function syncMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, dateStart, date
     const insightRows = await fetchMetaAdsPages({
         path: `${config.adAccountId}/insights`,
         params: {
-            fields: 'ad_id,adset_id,campaign_id,date_start,date_stop,spend,impressions,reach,clicks,ctr,cpc,cpm,cpp,frequency,actions',
+            fields: 'ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,date_start,date_stop,spend,impressions,reach,clicks,ctr,cpc,cpm,cpp,frequency,actions',
             level: 'ad',
             time_range: buildTimeRange(normalizedDateStart, normalizedDateStop),
             time_increment: '1',
@@ -367,7 +567,13 @@ async function syncMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, dateStart, date
         frequency: toNumber(row?.frequency, 0, { decimals: 4 }),
         actions: Array.isArray(row?.actions) ? row.actions : [],
         adset_id: toNullableText(row?.adset_id),
-        campaign_id: toNullableText(row?.campaign_id)
+        adset_name: toNullableText(row?.adset_name),
+        adset_status: null,
+        campaign_id: toNullableText(row?.campaign_id),
+        campaign_name: toNullableText(row?.campaign_name),
+        campaign_status: null,
+        ad_name: toNullableText(row?.ad_name),
+        ad_status: null
     })).filter((row) => row.object_id && row.date_start && row.date_stop);
 
     const groupBy = (rows, keyName, objectType) => {
@@ -397,8 +603,44 @@ async function syncMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, dateStart, date
     const campaignRows = groupBy(adRows, 'campaign_id', 'campaign');
     const allRows = [...adRows, ...adsetRows, ...campaignRows];
 
+    for (const row of adRows) {
+        if (row.campaign_id) {
+            await upsertStructureRow(config.tenantId, {
+                object_type: 'campaign',
+                object_id: row.campaign_id,
+                object_name: row.campaign_name,
+                parent_id: null,
+                status: row.campaign_status
+            });
+        }
+        if (row.adset_id) {
+            await upsertStructureRow(config.tenantId, {
+                object_type: 'adset',
+                object_id: row.adset_id,
+                object_name: row.adset_name,
+                parent_id: row.campaign_id,
+                status: row.adset_status
+            });
+        }
+        await upsertStructureRow(config.tenantId, {
+            object_type: 'ad',
+            object_id: row.object_id,
+            object_name: row.ad_name,
+            parent_id: row.adset_id,
+            status: row.ad_status
+        });
+    }
+
     for (const row of allRows) {
         await upsertInsightRow(config.tenantId, row);
+    }
+
+    if (options?.updateSyncState !== false) {
+        await upsertMetaAdsSyncState(config.tenantId, {
+            last_insights_sync_from: normalizedDateStart,
+            last_insights_sync_to: normalizedDateStop,
+            last_insights_sync_at: new Date().toISOString()
+        });
     }
 
     return {
@@ -435,14 +677,14 @@ async function listMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, { dateStart, da
             i.cpp,
             i.frequency,
             i.actions,
-            ad.object_name AS ad_name,
-            ad.status AS ad_status,
-            adset.object_id AS adset_id,
-            adset.object_name AS adset_name,
-            adset.status AS adset_status,
-            campaign.object_id AS campaign_id,
-            campaign.object_name AS campaign_name,
-            campaign.status AS campaign_status
+            COALESCE(i.ad_name, ad.object_name) AS ad_name,
+            COALESCE(i.ad_status, ad.status) AS ad_status,
+            COALESCE(i.adset_id, adset.object_id) AS adset_id,
+            COALESCE(i.adset_name, adset.object_name) AS adset_name,
+            COALESCE(i.adset_status, adset.status) AS adset_status,
+            COALESCE(i.campaign_id, campaign.object_id) AS campaign_id,
+            COALESCE(i.campaign_name, campaign.object_name) AS campaign_name,
+            COALESCE(i.campaign_status, campaign.status) AS campaign_status
          FROM tenant_meta_ads_insights i
          LEFT JOIN tenant_meta_ads_structure ad
            ON ad.tenant_id = i.tenant_id
@@ -450,11 +692,11 @@ async function listMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, { dateStart, da
           AND ad.object_type = 'ad'
          LEFT JOIN tenant_meta_ads_structure adset
            ON adset.tenant_id = i.tenant_id
-          AND adset.object_id = ad.parent_id
+          AND adset.object_id = COALESCE(i.adset_id, ad.parent_id)
           AND adset.object_type = 'adset'
          LEFT JOIN tenant_meta_ads_structure campaign
            ON campaign.tenant_id = i.tenant_id
-          AND campaign.object_id = adset.parent_id
+          AND campaign.object_id = COALESCE(i.campaign_id, adset.parent_id)
           AND campaign.object_type = 'campaign'
          WHERE i.tenant_id = $1
            AND i.object_type = 'ad'
@@ -494,20 +736,132 @@ async function listMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, { dateStart, da
     });
 }
 
+async function syncMetaAdsHistoricalCurrentYear(tenantId = DEFAULT_TENANT_ID, options = {}) {
+    await ensurePostgresSchema();
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const yearStart = getCurrentYearStartLabel();
+    const historicalStop = normalizeDateInput(options?.dateStop, getYesterdayDateLabel());
+    if (!historicalStop || historicalStop < yearStart) {
+        return {
+            ok: true,
+            tenantId: cleanTenantId,
+            skipped: true,
+            reason: 'No hay rango historico pendiente para sincronizar.'
+        };
+    }
+
+    const currentYear = Number.parseInt(yearStart.slice(0, 4), 10);
+    const state = await getMetaAdsSyncState(cleanTenantId);
+    const maxHistoricalInsightsDate = await getMaxHistoricalInsightsDate(cleanTenantId, currentYear);
+    const force = options?.force === true;
+    const alreadyCompletedThrough = [normalizeDateInput(state?.backfill_completed_through, null), maxHistoricalInsightsDate]
+        .filter(Boolean)
+        .sort()
+        .slice(-1)[0] || null;
+    const alreadyCompleted =
+        !force
+        && Number(state?.backfill_year || 0) === currentYear
+        && alreadyCompletedThrough
+        && alreadyCompletedThrough >= historicalStop;
+
+    if (alreadyCompleted) {
+        if (alreadyCompletedThrough && alreadyCompletedThrough !== normalizeDateInput(state?.backfill_completed_through, null)) {
+            await upsertMetaAdsSyncState(cleanTenantId, {
+                backfill_year: currentYear,
+                backfill_completed_at: state?.backfill_completed_at || new Date().toISOString(),
+                backfill_completed_through: alreadyCompletedThrough
+            });
+        }
+        return {
+            ok: true,
+            tenantId: cleanTenantId,
+            skipped: true,
+            year: currentYear,
+            dateStart: yearStart,
+            dateStop: historicalStop,
+            completedThrough: alreadyCompletedThrough
+        };
+    }
+
+    const resumeStart = (!force
+        && Number(state?.backfill_year || 0) === currentYear
+        && alreadyCompletedThrough
+        && alreadyCompletedThrough >= yearStart)
+        ? addDays(alreadyCompletedThrough, 1)
+        : yearStart;
+
+    if (!resumeStart || resumeStart > historicalStop) {
+        await upsertMetaAdsSyncState(cleanTenantId, {
+            backfill_year: currentYear,
+            backfill_started_at: state?.backfill_started_at || new Date().toISOString(),
+            backfill_completed_at: new Date().toISOString(),
+            backfill_completed_through: historicalStop
+        });
+        return {
+            ok: true,
+            tenantId: cleanTenantId,
+            skipped: true,
+            year: currentYear,
+            dateStart: yearStart,
+            dateStop: historicalStop,
+            completedThrough: historicalStop
+        };
+    }
+
+    await upsertMetaAdsSyncState(cleanTenantId, {
+        backfill_year: currentYear,
+        backfill_started_at: new Date().toISOString(),
+        backfill_completed_at: null,
+        backfill_completed_through: force ? null : alreadyCompletedThrough
+    });
+
+    const structure = await syncMetaAdsStructure(cleanTenantId);
+    const windows = buildDateWindows(resumeStart, historicalStop, Number(options?.windowDays || 7));
+    let insightsCount = 0;
+    let completedThrough = force ? null : alreadyCompletedThrough;
+
+    for (const window of windows) {
+        const result = await syncMetaAdsInsights(cleanTenantId, window.dateStart, window.dateStop, {
+            updateSyncState: false
+        });
+        insightsCount += Number(result?.insightsCount || 0);
+        completedThrough = window.dateStop;
+        await upsertMetaAdsSyncState(cleanTenantId, {
+            backfill_year: currentYear,
+            backfill_started_at: state?.backfill_started_at || new Date().toISOString(),
+            backfill_completed_through: completedThrough,
+            last_insights_sync_from: window.dateStart,
+            last_insights_sync_to: window.dateStop,
+            last_insights_sync_at: new Date().toISOString()
+        });
+    }
+
+    await upsertMetaAdsSyncState(cleanTenantId, {
+        backfill_year: currentYear,
+        backfill_completed_at: new Date().toISOString(),
+        backfill_completed_through: completedThrough || historicalStop
+    });
+
+    return {
+        ok: true,
+        tenantId: cleanTenantId,
+        skipped: false,
+        year: currentYear,
+        dateStart: resumeStart,
+        dateStop: historicalStop,
+        completedThrough: completedThrough || historicalStop,
+        windowsCount: windows.length,
+        structure,
+        insightsCount
+    };
+}
+
 async function runMetaAdsDailySyncOnce() {
     if (runInFlight) return runInFlight;
     runInFlight = (async () => {
         await ensurePostgresSchema();
-        const { rows } = await queryPostgres(
-            `SELECT tenant_id
-               FROM tenant_integrations
-              WHERE COALESCE(config_json->'metaAds'->>'adAccountId', '') <> ''
-                AND COALESCE(config_json->'metaAds'->>'accessToken', '') <> ''`
-        );
-        const tenants = Array.from(new Set((Array.isArray(rows) ? rows : []).map((row) => normalizeTenantId(row?.tenant_id)).filter(Boolean)));
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const dateLabel = yesterday.toISOString().slice(0, 10);
+        const tenants = await listConfiguredMetaAdsTenants();
+        const dateLabel = getYesterdayDateLabel();
         const results = [];
 
         for (const tenantId of tenants) {
@@ -532,6 +886,33 @@ async function runMetaAdsDailySyncOnce() {
         return await runInFlight;
     } finally {
         runInFlight = null;
+    }
+}
+
+async function backfillConfiguredTenantsCurrentYear(options = {}) {
+    if (backfillInFlight) return backfillInFlight;
+    backfillInFlight = (async () => {
+        const tenants = await listConfiguredMetaAdsTenants();
+        const results = [];
+        for (const tenantId of tenants) {
+            try {
+                const result = await syncMetaAdsHistoricalCurrentYear(tenantId, options);
+                results.push({ tenantId, ok: true, result });
+            } catch (error) {
+                results.push({ tenantId, ok: false, error: String(error?.message || error) });
+            }
+        }
+        return {
+            ok: true,
+            year: Number.parseInt(getCurrentYearStartLabel().slice(0, 4), 10),
+            tenants: results
+        };
+    })();
+
+    try {
+        return await backfillInFlight;
+    } finally {
+        backfillInFlight = null;
     }
 }
 
@@ -569,9 +950,12 @@ async function startDailySync() {
 
 module.exports = {
     ensurePostgresSchema,
+    getMetaAdsSyncState,
     syncMetaAdsStructure,
     syncMetaAdsInsights,
     listMetaAdsInsights,
+    syncMetaAdsHistoricalCurrentYear,
     runMetaAdsDailySyncOnce,
+    backfillConfiguredTenantsCurrentYear,
     startDailySync
 };
