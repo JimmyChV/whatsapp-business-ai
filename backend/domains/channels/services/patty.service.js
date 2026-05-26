@@ -4631,6 +4631,9 @@ async function createAndSendPattyQuote({
     const effectiveQuoteId = text(createdQuote?.quoteId || quoteId);
     const normalizedQuote = {
         quoteId: effectiveQuoteId,
+        quoteNumber: createdQuote?.quoteNumber || null,
+        revisionNumber: createdQuote?.revisionNumber || null,
+        parentQuoteId: createdQuote?.parentQuoteId || null,
         currency: 'PEN',
         items,
         summary,

@@ -53,7 +53,7 @@ export { ClientProfilePanel };
 // =========================================================
 
 const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], messagesRef = null, activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, onSendCatalogProduct = null, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null, cartDraftsByChat: externalCartDraftsByChat = {}, setCartDraftsByChat: externalSetCartDraftsByChat = null, chatAssignmentState = null, chatCommercialStatusState = null, buildApiHeaders = null }) => {
-    const { notify } = useUiFeedback();
+    const { notify, confirm } = useUiFeedback();
     const [activeTab, setActiveTab] = useState('ai');
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
     const [pattySuggestion, setPattySuggestion] = useState(null);
@@ -114,6 +114,17 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const sourceQuote = activeDraft.sourceQuote && typeof activeDraft.sourceQuote === 'object'
         ? activeDraft.sourceQuote
         : null;
+    const [chatQuotesByChat, setChatQuotesByChat] = useState({});
+    const [quoteHistoryExpanded, setQuoteHistoryExpanded] = useState(true);
+    const quoteHistory = useMemo(() => {
+        const items = Array.isArray(chatQuotesByChat?.[activeChatId]) ? chatQuotesByChat[activeChatId] : [];
+        return items.slice().sort((a, b) => {
+            const aNumber = Number(a?.quoteNumber || a?.quote_number || 0) || 0;
+            const bNumber = Number(b?.quoteNumber || b?.quote_number || 0) || 0;
+            if (aNumber !== bNumber) return aNumber - bNumber;
+            return (Number(b?.revisionNumber || b?.revision_number || 0) || 0) - (Number(a?.revisionNumber || a?.revision_number || 0) || 0);
+        });
+    }, [activeChatId, chatQuotesByChat]);
     const [quickSearch, setQuickSearch] = useState('');
     const [orderImportStatus, setOrderImportStatus] = useState(null);
     const lastImportedOrderRef = useRef('');
@@ -227,6 +238,48 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             return { showCartTotalsBreakdown: Boolean(resolved) };
         });
     }, [updateDraft]);
+
+    const normalizeQuoteHistoryItem = useCallback((quote = {}) => {
+        if (!quote || typeof quote !== 'object') return null;
+        const quoteId = String(quote?.quoteId || quote?.quote_id || '').trim();
+        if (!quoteId) return null;
+        const summary = quote?.summaryJson && typeof quote.summaryJson === 'object'
+            ? quote.summaryJson
+            : (quote?.summary && typeof quote.summary === 'object' ? quote.summary : {});
+        const itemsJson = Array.isArray(quote?.itemsJson)
+            ? quote.itemsJson
+            : (Array.isArray(quote?.items) ? quote.items : []);
+        return {
+            quoteId,
+            quoteNumber: Number(quote?.quoteNumber ?? quote?.quote_number ?? 0) || null,
+            revisionNumber: Number(quote?.revisionNumber ?? quote?.revision_number ?? 1) || 1,
+            parentQuoteId: String(quote?.parentQuoteId || quote?.parent_quote_id || '').trim() || null,
+            messageId: String(quote?.messageId || quote?.message_id || '').trim() || null,
+            status: String(quote?.status || 'sent').trim() || 'sent',
+            currency: String(quote?.currency || summary?.currency || 'PEN').trim() || 'PEN',
+            itemsJson,
+            summaryJson: summary,
+            notes: String(quote?.notes || '').trim() || null,
+            sentAt: quote?.sentAt || quote?.sent_at || null,
+            updatedAt: quote?.updatedAt || quote?.updated_at || null
+        };
+    }, []);
+
+    const upsertQuoteHistory = useCallback((chatId, quote) => {
+        const safeChatId = String(chatId || '').trim();
+        const normalized = normalizeQuoteHistoryItem(quote);
+        if (!safeChatId || !normalized) return;
+        setChatQuotesByChat((prev) => {
+            const safePrev = prev && typeof prev === 'object' ? prev : {};
+            const current = Array.isArray(safePrev[safeChatId]) ? safePrev[safeChatId] : [];
+            const next = current.filter((item) => String(item?.quoteId || '') !== normalized.quoteId);
+            next.push(normalized);
+            return {
+                ...safePrev,
+                [safeChatId]: next
+            };
+        });
+    }, [normalizeQuoteHistoryItem]);
 
     const catalog = useMemo(
         () => (businessData.catalog || []).map((item, idx) => normalizeCatalogItem(item, idx)),
@@ -505,7 +558,21 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
 
             setOrderImportStatus({
                 level: 'ok',
-                text: 'Cotizacion enviada correctamente.'
+                text: event?.quoteNumber
+                    ? `Cotizacion ${event.quoteNumber}${Number(event?.revisionNumber || 0) > 1 ? ` (Rev. ${event.revisionNumber})` : ''} enviada correctamente.`
+                    : 'Cotizacion enviada correctamente.'
+            });
+            upsertQuoteHistory(currentChatId || incomingChatId, {
+                quoteId: event?.quoteId,
+                quoteNumber: event?.quoteNumber ?? event?.quote_number,
+                revisionNumber: event?.revisionNumber ?? event?.revision_number,
+                parentQuoteId: event?.parentQuoteId ?? event?.parent_quote_id,
+                messageId: event?.messageId,
+                status: event?.status,
+                currency: event?.currency,
+                items: event?.items,
+                summary: event?.summary,
+                notes: event?.notes
             });
         };
 
@@ -519,13 +586,38 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             });
         };
 
+        const handleChatQuotes = (event = {}) => {
+            const incomingChatId = String(event?.chatId || event?.baseChatId || event?.to || '').trim();
+            const currentChatId = String(activeChatId || '').trim();
+            if (incomingChatId && currentChatId) {
+                const incomingBase = resolveBaseChatId(incomingChatId);
+                const currentBase = resolveBaseChatId(currentChatId);
+                if (incomingChatId !== currentChatId && incomingBase !== currentBase) return;
+            }
+            if (event?.ok === false) return;
+            const quotes = Array.isArray(event?.quotes)
+                ? event.quotes.map(normalizeQuoteHistoryItem).filter(Boolean)
+                : [];
+            setChatQuotesByChat((prev) => ({
+                ...(prev && typeof prev === 'object' ? prev : {}),
+                [currentChatId || incomingChatId]: quotes
+            }));
+        };
+
         socket.on('quote_sent', handleQuoteSent);
         socket.on('quote_error', handleQuoteError);
+        socket.on('chat_quotes', handleChatQuotes);
 
         return () => {
             socket.off('quote_sent', handleQuoteSent);
             socket.off('quote_error', handleQuoteError);
+            socket.off('chat_quotes', handleChatQuotes);
         };
+    }, [socket, activeChatId, normalizeQuoteHistoryItem, upsertQuoteHistory]);
+
+    useEffect(() => {
+        if (!socket || typeof socket.emit !== 'function' || !activeChatId) return;
+        socket.emit('list_chat_quotes', { chatId: activeChatId });
     }, [socket, activeChatId]);
 
     useEffect(() => {
@@ -585,7 +677,90 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         }
     }, [activeTab, aiPanelAvailable]);
 
-    const sendQuoteToChat = () => {
+    const handleStartNewQuote = useCallback(() => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
+        setCart([]);
+        updateDraft({
+            sourceOrder: null,
+            sourceQuote: null,
+            sourceType: null,
+            globalDiscountEnabled: false,
+            globalDiscountType: 'percentage',
+            globalDiscountValue: 0,
+            deliveryType: 'none',
+            deliveryAmount: 0
+        });
+        setOrderImportStatus({
+            level: 'ok',
+            text: 'Nueva cotizacion lista. Agrega productos desde el catalogo.'
+        });
+        setActiveTab('catalog');
+    }, [canWriteByAssignment, notifyAssignmentLock, setCart, updateDraft]);
+
+    const handleLoadQuoteToCart = useCallback((quote = {}) => {
+        const normalized = normalizeQuoteHistoryItem(quote);
+        if (!normalized) return;
+        const quoteItems = Array.isArray(normalized.itemsJson) ? normalized.itemsJson : [];
+        const importedCart = quoteItems.map((item, index) => {
+            const qty = Math.max(1, Number(item?.qty ?? item?.quantity ?? 1) || 1);
+            const unitPrice = Math.max(0, Number(item?.unitPrice ?? item?.price ?? 0) || 0);
+            const regularPrice = Math.max(unitPrice, Number(item?.lineSubtotal || 0) > 0 ? Number(item.lineSubtotal) / qty : unitPrice);
+            const lineDiscountAmount = Math.max(0, Number(item?.lineDiscountAmount || 0) || 0);
+            return {
+                id: String(item?.productId || item?.itemId || item?.sku || `quote_${normalized.quoteId}_${index + 1}`),
+                productId: String(item?.productId || item?.itemId || '').trim() || null,
+                sku: String(item?.sku || '').trim() || null,
+                title: String(item?.title || item?.name || item?.sku || `Producto ${index + 1}`).trim() || `Producto ${index + 1}`,
+                unit: String(item?.unit || 'unidad').trim() || 'unidad',
+                qty,
+                price: unitPrice.toFixed(2),
+                regularPrice: regularPrice.toFixed(2),
+                salePrice: null,
+                discountPct: 0,
+                description: 'Producto cargado desde cotizacion enviada.',
+                imageUrl: null,
+                source: 'quote_history',
+                stockStatus: null,
+                lineDiscountEnabled: lineDiscountAmount > 0 || Number(item?.lineDiscountValue || 0) > 0,
+                lineDiscountType: String(item?.lineDiscountType || '').trim().toLowerCase() === 'amount' ? 'amount' : 'percent',
+                lineDiscountValue: Math.max(0, Number(item?.lineDiscountValue || 0) || 0),
+                lineDiscountAmount
+            };
+        });
+        const summary = normalized.summaryJson && typeof normalized.summaryJson === 'object' ? normalized.summaryJson : {};
+        const deliveryAmountValue = Math.max(0, Number(summary?.deliveryAmount || 0) || 0);
+        const deliveryFree = summary?.deliveryFree !== false || deliveryAmountValue <= 0;
+        const globalDiscount = summary?.globalDiscount && typeof summary.globalDiscount === 'object'
+            ? summary.globalDiscount
+            : {};
+        updateDraft({
+            cart: importedCart,
+            sourceOrder: null,
+            sourceQuote: {
+                quoteId: normalized.quoteId,
+                quoteNumber: normalized.quoteNumber,
+                revisionNumber: normalized.revisionNumber,
+                messageId: normalized.messageId
+            },
+            sourceType: 'quote',
+            showOrderAdjustments: true,
+            globalDiscountEnabled: Boolean(globalDiscount?.enabled || Number(globalDiscount?.applied || 0) > 0),
+            globalDiscountType: String(globalDiscount?.type || 'amount').trim().toLowerCase() === 'percent' ? 'percent' : 'amount',
+            globalDiscountValue: Math.max(0, Number(globalDiscount?.value ?? globalDiscount?.applied ?? 0) || 0),
+            deliveryType: deliveryFree ? 'free' : 'amount',
+            deliveryAmount: deliveryFree ? 0 : deliveryAmountValue
+        });
+        setOrderImportStatus({
+            level: 'ok',
+            text: `Cotizacion ${normalized.quoteNumber || ''}${normalized.revisionNumber > 1 ? ` (Rev. ${normalized.revisionNumber})` : ''} cargada para editar.`.replace(/\s+/g, ' ').trim()
+        });
+        setActiveTab('cart');
+    }, [normalizeQuoteHistoryItem, updateDraft]);
+
+    const sendQuoteToChat = async () => {
         if (!canWriteByAssignment) {
             notifyAssignmentLock();
             return;
@@ -596,6 +771,16 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         if (!conversationWindowOpen) {
             notifyWindowLock();
             return;
+        }
+        let quoteSendMode = 'new';
+        if (sourceQuote?.quoteId) {
+            const sendAsRevision = await confirm({
+                title: 'Enviar cotizacion cargada',
+                message: 'Puedes enviarla como revision de la cotizacion original o como una cotizacion nueva.',
+                confirmText: 'Enviar revision',
+                cancelText: 'Enviar como nueva'
+            });
+            quoteSendMode = sendAsRevision ? 'revision' : 'new';
         }
         const payload = buildStructuredQuotePayloadFromCart({
             activeChatId,
@@ -619,6 +804,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                 tenantScopeKey: normalizedTenantScopeKey,
                 scopeModuleId: String(activeModuleId || selectedCatalogModuleId || '').trim().toLowerCase() || null,
                 sourceType: sourceQuote ? 'quote' : (sourceOrder ? 'order' : 'quote'),
+                quoteSendMode,
                 sourceQuote: sourceQuote || undefined,
                 sourceOrder: sourceQuote ? undefined : (sourceOrder || undefined)
             }
@@ -851,7 +1037,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         ...(aiPanelAvailable ? [{ id: 'ai', icon: <Bot size={15} />, label: 'IA Pro' }] : []),
         { id: 'catalog', icon: <Package size={15} />, label: `Catalogo${catalog.length > 0 ? ` (${catalog.length})` : ''}` },
         { id: 'coverage', icon: <MapPin size={15} />, label: 'Cobertura' },
-        ...(cart.length > 0 ? [{ id: 'cart', icon: <ShoppingCart size={15} />, label: `Carrito (${cart.length})` }] : []),
+        ...((cart.length > 0 || quoteHistory.length > 0) ? [{ id: 'cart', icon: <ShoppingCart size={15} />, label: cart.length > 0 ? `Carrito (${cart.length})` : 'Cotizaciones' }] : []),
         ...(quickRepliesEnabled ? [{ id: 'quick', icon: <Clock size={15} />, label: 'Rapidas' }] : []),
     ];
 
@@ -965,6 +1151,12 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     cart={cart}
                     orderImportStatus={orderImportStatus}
                     sourceOrder={sourceOrder}
+                    sourceQuote={sourceQuote}
+                    quoteHistory={quoteHistory}
+                    quoteHistoryExpanded={quoteHistoryExpanded}
+                    setQuoteHistoryExpanded={setQuoteHistoryExpanded}
+                    onLoadQuoteToCart={handleLoadQuoteToCart}
+                    onStartNewQuote={handleStartNewQuote}
                     getLineBreakdown={getLineBreakdown}
                     removeFromCart={removeFromCart}
                     updateQty={updateQty}

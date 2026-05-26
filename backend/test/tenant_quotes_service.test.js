@@ -66,6 +66,8 @@ test('tenant_quotes_service persists quote flow and tenant isolation in file dri
         assert.equal(quoteDraft.scopeModuleId, 'mod-4q8k5c');
         assert.equal(quoteDraft.status, 'draft');
         assert.equal(quoteDraft.currency, 'PEN');
+        assert.equal(quoteDraft.quoteNumber, 1);
+        assert.equal(quoteDraft.revisionNumber, 1);
         assert.equal(quoteDraft.itemsJson.length, 2);
         assert.equal(quoteDraft.summaryJson.itemCount, 2);
 
@@ -86,6 +88,36 @@ test('tenant_quotes_service persists quote flow and tenant isolation in file dri
         assert.equal(sentQuote.status, 'sent');
         assert.equal(sentQuote.messageId, 'wamid.HBgLNTE5NDE0NDM3NzYVAgARGBI5RjQ5RjQ5RjQ5RjQ5RkU=');
         assert.ok(sentQuote.sentAt, 'sentAt should be populated');
+
+        const secondQuote = await service.createQuoteRecord(tenantA, {
+            chatId: '51941443776@c.us',
+            scopeModuleId: 'mod-4q8k5c',
+            status: 'draft',
+            currency: 'PEN',
+            itemsJson: [{ title: 'Lavavajillas', qty: 1, unitPrice: 19.9 }],
+            summaryJson: { itemCount: 1, totalPayable: 19.9, currency: 'PEN' }
+        });
+        assert.equal(secondQuote.quoteNumber, 2);
+        assert.equal(secondQuote.revisionNumber, 1);
+
+        const revision = await service.createQuoteRecord(tenantA, {
+            chatId: '51941443776@c.us',
+            scopeModuleId: 'mod-4q8k5c',
+            parentQuoteId: quoteDraft.quoteId,
+            status: 'draft',
+            currency: 'PEN',
+            itemsJson: [{ title: 'Colchon Ortopedico 2p', qty: 1, unitPrice: 49.9 }],
+            summaryJson: { itemCount: 1, totalPayable: 49.9, currency: 'PEN' }
+        });
+        assert.equal(revision.quoteNumber, 1);
+        assert.equal(revision.revisionNumber, 2);
+        assert.equal(revision.parentQuoteId, quoteDraft.quoteId);
+
+        const quoteHistory = await service.listQuotesByChat(tenantA, { chatId: '51941443776@c.us' });
+        assert.equal(quoteHistory.length, 2);
+        assert.equal(quoteHistory[0].quoteNumber, 1);
+        assert.equal(quoteHistory[0].revisionNumber, 2);
+        assert.equal(quoteHistory[1].quoteNumber, 2);
 
         const storedSent = await service.getQuoteById(tenantA, { quoteId: quoteDraft.quoteId });
         assert.ok(storedSent, 'updated quote should remain retrievable');

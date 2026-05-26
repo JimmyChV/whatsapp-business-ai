@@ -1461,9 +1461,18 @@ export default function useSocketChatConversationEvents({
                             ...previousOrder,
                             type: 'quote',
                             quoteId,
+                            quoteNumber: event?.quoteNumber ?? event?.quote_number ?? previousOrder?.quoteNumber ?? previousOrder?.quote_number ?? null,
+                            revisionNumber: event?.revisionNumber ?? event?.revision_number ?? previousOrder?.revisionNumber ?? previousOrder?.revision_number ?? null,
+                            parentQuoteId: event?.parentQuoteId ?? event?.parent_quote_id ?? previousOrder?.parentQuoteId ?? previousOrder?.parent_quote_id ?? null,
                             rawPreview: {
                                 ...previousRawPreview,
                                 type: 'quote',
+                                quoteNumber: event?.quoteNumber ?? event?.quote_number ?? previousRawPreview?.quoteNumber ?? previousRawPreview?.quote_number ?? null,
+                                revisionNumber: event?.revisionNumber ?? event?.revision_number ?? previousRawPreview?.revisionNumber ?? previousRawPreview?.revision_number ?? null,
+                                parentQuoteId: event?.parentQuoteId ?? event?.parent_quote_id ?? previousRawPreview?.parentQuoteId ?? previousRawPreview?.parent_quote_id ?? null,
+                                quote_number: event?.quoteNumber ?? event?.quote_number ?? previousRawPreview?.quote_number ?? null,
+                                revision_number: event?.revisionNumber ?? event?.revision_number ?? previousRawPreview?.revision_number ?? null,
+                                parent_quote_id: event?.parentQuoteId ?? event?.parent_quote_id ?? previousRawPreview?.parent_quote_id ?? null,
                                 quoteSummary: event?.summary && typeof event.summary === 'object'
                                     ? event.summary
                                     : (previousRawPreview?.quoteSummary || null)

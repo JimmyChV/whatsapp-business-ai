@@ -34,6 +34,22 @@ function toTitleCase(value = '') {
         .replace(/(^|\s)(\S)/g, (_, space, letter) => `${space}${letter.toLocaleUpperCase('es-PE')}`);
 }
 
+function toPositiveIntOrNull(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return null;
+    const int = Math.trunc(num);
+    return int > 0 ? int : null;
+}
+
+function buildQuoteHeader(quote = {}, sourceType = 'quote') {
+    if (sourceType === 'order') return '🛒 *RESUMEN DE PEDIDO*';
+    const quoteNumber = toPositiveIntOrNull(quote?.quoteNumber ?? quote?.quote_number);
+    const revisionNumber = toPositiveIntOrNull(quote?.revisionNumber ?? quote?.revision_number);
+    if (!quoteNumber) return '📋 *COTIZACIÓN*';
+    const revisionLabel = revisionNumber && revisionNumber > 1 ? ` (Rev. ${revisionNumber})` : '';
+    return `📋 *COTIZACIÓN ${quoteNumber}${revisionLabel}*`;
+}
+
 function resolveQuoteDisplayUnitPrice(item = {}, qty = 1) {
     const safeQty = Math.max(1, toFiniteNumberOrNull(qty) ?? 1);
     const lineSubtotal = toFiniteNumberOrNull(item?.lineSubtotal ?? item?.subtotal);
@@ -194,9 +210,7 @@ function resolveSourceOrder(metadata = {}, payload = {}) {
 function buildQuoteMessageBody(quote = {}, fallbackBody = '') {
     const separator = '──────────────────';
     const sourceType = toText(quote?.metadata?.sourceType || quote?.metadata?.source_type).toLowerCase();
-    const header = sourceType === 'order'
-        ? '🛒 *RESUMEN DE PEDIDO*'
-        : '📋 *COTIZACIÓN*';
+    const header = buildQuoteHeader(quote, sourceType);
     const items = Array.isArray(quote?.items) ? quote.items : [];
     const summary = isPlainObject(quote?.summary) ? quote.summary : {};
     const lines = items.flatMap((item) => {
@@ -338,6 +352,9 @@ function buildOutgoingOrderPayload(quote = {}) {
     const summary = isPlainObject(quote?.summary) ? quote.summary : {};
     const currency = toText(quote?.currency || summary?.currency || 'PEN') || 'PEN';
     const quoteId = toNullableText(quote?.quoteId);
+    const quoteNumber = toPositiveIntOrNull(quote?.quoteNumber ?? quote?.quote_number);
+    const revisionNumber = toPositiveIntOrNull(quote?.revisionNumber ?? quote?.revision_number);
+    const parentQuoteId = toNullableText(quote?.parentQuoteId ?? quote?.parent_quote_id);
     const metadata = isPlainObject(quote?.metadata) ? quote.metadata : {};
     const sourceType = toText(metadata?.sourceType || metadata?.source_type || quote?.sourceType || 'quote').toLowerCase() || 'quote';
     const quoteSummary = {
@@ -362,6 +379,12 @@ function buildOutgoingOrderPayload(quote = {}) {
         type: 'quote',
         sourceType,
         quoteId,
+        quoteNumber,
+        revisionNumber,
+        parentQuoteId,
+        quote_number: quoteNumber,
+        revision_number: revisionNumber,
+        parent_quote_id: parentQuoteId,
         currency,
         subtotal: toFiniteNumberOrNull(summary?.subtotal),
         products: items,
@@ -369,6 +392,12 @@ function buildOutgoingOrderPayload(quote = {}) {
             type: 'quote',
             sourceType,
             quoteId,
+            quoteNumber,
+            revisionNumber,
+            parentQuoteId,
+            quote_number: quoteNumber,
+            revision_number: revisionNumber,
+            parent_quote_id: parentQuoteId,
             products: items,
             itemCount: quoteSummary.itemCount,
             currency,
@@ -463,16 +492,28 @@ function createSocketQuoteDeliveryService({
                 const actorUserId = resolveActorUserId(authContext);
                 const quoteSourceType = resolveQuoteSourceType(incomingQuote.metadata, payload);
                 const sourceOrder = resolveSourceOrder(incomingQuote.metadata, payload);
+                const sourceQuote = isPlainObject(incomingQuote.metadata?.sourceQuote)
+                    ? incomingQuote.metadata.sourceQuote
+                    : (isPlainObject(payload?.sourceQuote) ? payload.sourceQuote : null);
+                const quoteSendMode = toText(
+                    incomingQuote.metadata?.quoteSendMode
+                    || incomingQuote.metadata?.quote_send_mode
+                    || payload?.quoteSendMode
+                    || payload?.quote_send_mode
+                    || 'new'
+                ).toLowerCase();
+                const parentQuoteId = quoteSendMode === 'revision'
+                    ? toNullableText(sourceQuote?.quoteId || sourceQuote?.quote_id || incomingQuote.metadata?.parentQuoteId || payload?.parentQuoteId)
+                    : null;
                 const quoteMetadata = {
                     ...(incomingQuote.metadata || {}),
                     source: 'socket.send_structured_quote',
                     sourceType: sourceOrder ? 'order' : quoteSourceType,
+                    quoteSendMode,
+                    ...(sourceQuote ? { sourceQuote } : {}),
+                    ...(parentQuoteId ? { parentQuoteId } : {}),
                     ...(sourceOrder ? { sourceOrder } : {})
                 };
-                const quoteBody = buildQuoteMessageBody({
-                    ...incomingQuote,
-                    metadata: quoteMetadata
-                }, payload?.body || payload?.message || '');
                 const sourceOrderQuotedMessageId = toText(sourceOrder?.messageId || sourceOrder?.message_id || '');
                 const quotedMessageId = toText(payload?.quotedMessageId || payload?.quoted || sourceOrderQuotedMessageId || '');
                 const quotedMessage = quotedMessageId && quotedMessageId === sourceOrderQuotedMessageId
@@ -480,7 +521,7 @@ function createSocketQuoteDeliveryService({
                     : null;
 
                 const createdQuote = await resolvedQuotesService.createQuoteRecord(tenantId, {
-                    quoteId: incomingQuote.quoteId || undefined,
+                    quoteId: parentQuoteId ? undefined : (incomingQuote.quoteId || undefined),
                     chatId: target.targetChatId,
                     scopeModuleId: target.scopeModuleId || '',
                     messageId: null,
@@ -492,6 +533,7 @@ function createSocketQuoteDeliveryService({
                     createdByUserId: actorUserId,
                     updatedByUserId: actorUserId,
                     sentAt: null,
+                    parentQuoteId,
                     metadata: quoteMetadata
                 });
 
@@ -499,8 +541,12 @@ function createSocketQuoteDeliveryService({
                 const normalizedQuote = {
                     ...incomingQuote,
                     quoteId: effectiveQuoteId || incomingQuote.quoteId || null,
+                    quoteNumber: createdQuote?.quoteNumber || null,
+                    revisionNumber: createdQuote?.revisionNumber || null,
+                    parentQuoteId: createdQuote?.parentQuoteId || null,
                     metadata: quoteMetadata
                 };
+                const quoteBody = buildQuoteMessageBody(normalizedQuote, payload?.body || payload?.message || '');
 
                 const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
 
@@ -597,6 +643,9 @@ function createSocketQuoteDeliveryService({
                     eventSource: 'socket',
                     payload: {
                         quoteId: effectiveQuoteId,
+                        quoteNumber: normalizedQuote.quoteNumber || null,
+                        revisionNumber: normalizedQuote.revisionNumber || null,
+                        parentQuoteId: normalizedQuote.parentQuoteId || null,
                         messageId: sentMessageId || null,
                         itemCount: normalizedQuote.summary?.itemCount || normalizedQuote.items.length,
                         totalPayable: normalizedQuote.summary?.totalPayable ?? null,
@@ -611,6 +660,12 @@ function createSocketQuoteDeliveryService({
                     baseChatId: target.targetChatId,
                     scopeModuleId: target.scopeModuleId || null,
                     quoteId: effectiveQuoteId,
+                    quoteNumber: normalizedQuote.quoteNumber || null,
+                    revisionNumber: normalizedQuote.revisionNumber || null,
+                    parentQuoteId: normalizedQuote.parentQuoteId || null,
+                    quote_number: normalizedQuote.quoteNumber || null,
+                    revision_number: normalizedQuote.revisionNumber || null,
+                    parent_quote_id: normalizedQuote.parentQuoteId || null,
                     messageId: sentMessageId || null,
                     status: toText(sentQuote?.status || 'sent') || 'sent',
                     currency: normalizedQuote.currency,
@@ -628,6 +683,36 @@ function createSocketQuoteDeliveryService({
                 socket.emit('quote_error', {
                     ok: false,
                     error: detail
+                });
+            }
+        });
+
+        socket.on('list_chat_quotes', async (payload = {}) => {
+            if (typeof guardRateLimit === 'function' && !guardRateLimit(socket, 'list_chat_quotes')) return;
+            try {
+                const target = await resolveScopedSendTarget({
+                    rawChatId: payload?.chatId || payload?.to,
+                    rawPhone: payload?.toPhone,
+                    errorEvent: 'chat_quotes',
+                    action: 'listar cotizaciones'
+                });
+                if (!target?.ok) return;
+                const quotes = typeof resolvedQuotesService.listQuotesByChat === 'function'
+                    ? await resolvedQuotesService.listQuotesByChat(tenantId, {
+                        chatId: target.targetChatId
+                    })
+                    : [];
+                socket.emit('chat_quotes', {
+                    ok: true,
+                    chatId: target.scopedChatId || target.targetChatId,
+                    baseChatId: target.targetChatId,
+                    scopeModuleId: target.scopeModuleId || null,
+                    quotes
+                });
+            } catch (error) {
+                socket.emit('chat_quotes', {
+                    ok: false,
+                    error: String(error?.message || error || 'No se pudieron cargar las cotizaciones.')
                 });
             }
         });

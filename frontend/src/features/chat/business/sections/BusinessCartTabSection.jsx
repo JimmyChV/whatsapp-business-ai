@@ -4,6 +4,12 @@ export default function BusinessCartTabSection({
     cart = [],
     orderImportStatus = null,
     sourceOrder = null,
+    sourceQuote = null,
+    quoteHistory = [],
+    quoteHistoryExpanded = true,
+    setQuoteHistoryExpanded,
+    onLoadQuoteToCart,
+    onStartNewQuote,
     getLineBreakdown,
     removeFromCart,
     updateQty,
@@ -65,6 +71,62 @@ export default function BusinessCartTabSection({
                 {(sourceOrder?.orderId || sourceOrder?.messageId) && (
                     <div style={{ background: tone.cardSurfaceAlt, border: `1px solid ${tone.controlBorder}`, color: tone.textSoft, borderRadius: '8px', padding: '8px 10px', fontSize: '0.74rem', lineHeight: 1.4 }}>
                         Pedido origen: <strong style={{ color: 'var(--text-primary)' }}>{sourceOrder.orderId || sourceOrder.messageId}</strong>
+                    </div>
+                )}
+                {sourceQuote?.quoteId && (
+                    <div style={{ background: tone.cardSurfaceAlt, border: `1px solid ${tone.controlBorder}`, color: tone.textSoft, borderRadius: '8px', padding: '8px 10px', fontSize: '0.74rem', lineHeight: 1.4 }}>
+                        Editando: <strong style={{ color: 'var(--text-primary)' }}>Cotizacion {sourceQuote.quoteNumber || ''}{Number(sourceQuote.revisionNumber || 0) > 1 ? ` (Rev. ${sourceQuote.revisionNumber})` : ''}</strong>
+                    </div>
+                )}
+
+                {Array.isArray(quoteHistory) && quoteHistory.length > 0 && (
+                    <div style={{ background: tone.cardSurface, border: `1px solid ${tone.controlBorder}`, borderRadius: '10px', overflow: 'hidden' }}>
+                        <button
+                            type="button"
+                            onClick={() => typeof setQuoteHistoryExpanded === 'function' && setQuoteHistoryExpanded((prev) => !prev)}
+                            style={{ width: '100%', padding: '9px 10px', background: tone.cardSurfaceAlt, border: 'none', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', fontWeight: 800, fontSize: '0.82rem' }}
+                        >
+                            <span>Cotizaciones</span>
+                            {quoteHistoryExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                        </button>
+                        {quoteHistoryExpanded && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', padding: '8px' }}>
+                                {quoteHistory.map((quote) => {
+                                    const quoteNumber = Number(quote?.quoteNumber || quote?.quote_number || 0) || null;
+                                    const revisionNumber = Number(quote?.revisionNumber || quote?.revision_number || 1) || 1;
+                                    const summary = quote?.summaryJson && typeof quote.summaryJson === 'object' ? quote.summaryJson : {};
+                                    const total = Number(summary?.totalPayable ?? summary?.total ?? 0) || 0;
+                                    return (
+                                        <div key={quote.quoteId} style={{ border: `1px solid ${tone.controlBorder}`, borderRadius: '8px', padding: '8px', background: tone.cardSurfaceAlt, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '8px', alignItems: 'center' }}>
+                                            <div style={{ minWidth: 0 }}>
+                                                <div style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: '0.78rem' }}>
+                                                    Cotizacion {quoteNumber || ''}{revisionNumber > 1 ? ` (Rev. ${revisionNumber})` : ''}
+                                                </div>
+                                                <div style={{ color: tone.textMuted, fontSize: '0.72rem', marginTop: '2px' }}>
+                                                    {total > 0 ? `S/ ${formatMoney(total)}` : 'Sin total'} · {quote.status || 'sent'}
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                disabled={!canWriteByAssignment}
+                                                onClick={() => typeof onLoadQuoteToCart === 'function' && onLoadQuoteToCart(quote)}
+                                                style={{ border: `1px solid ${tone.successBorder}`, color: tone.successText, background: tone.successSurface, borderRadius: '999px', padding: '5px 9px', fontWeight: 800, fontSize: '0.72rem', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', opacity: canWriteByAssignment ? 1 : 0.65 }}
+                                            >
+                                                Cargar
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                                <button
+                                    type="button"
+                                    disabled={!canWriteByAssignment}
+                                    onClick={() => typeof onStartNewQuote === 'function' && onStartNewQuote()}
+                                    style={{ width: '100%', border: `1px dashed ${tone.successBorder}`, background: 'transparent', color: tone.successText, borderRadius: '8px', padding: '8px 10px', fontWeight: 800, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', opacity: canWriteByAssignment ? 1 : 0.65 }}
+                                >
+                                    + Nueva cotizacion
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
 

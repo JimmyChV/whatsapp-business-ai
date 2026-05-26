@@ -25,6 +25,13 @@ function toNullableText(value = '') {
     return text || null;
 }
 
+function toPositiveIntOrNull(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return null;
+    const int = Math.trunc(num);
+    return int > 0 ? int : null;
+}
+
 function nowIso() {
     return new Date().toISOString();
 }
@@ -55,11 +62,57 @@ async function ensurePostgresSchema() {
                 created_by_user_id TEXT NULL REFERENCES users(user_id) ON DELETE SET NULL,
                 updated_by_user_id TEXT NULL REFERENCES users(user_id) ON DELETE SET NULL,
                 sent_at TIMESTAMPTZ NULL,
+                quote_number INTEGER NOT NULL DEFAULT 1,
+                revision_number INTEGER NOT NULL DEFAULT 1,
+                parent_quote_id TEXT NULL,
                 metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 PRIMARY KEY (tenant_id, quote_id)
             )
+        `);
+        await queryPostgres(`ALTER TABLE tenant_quotes ADD COLUMN IF NOT EXISTS quote_number INTEGER NOT NULL DEFAULT 1`);
+        await queryPostgres(`ALTER TABLE tenant_quotes ADD COLUMN IF NOT EXISTS revision_number INTEGER NOT NULL DEFAULT 1`);
+        await queryPostgres(`ALTER TABLE tenant_quotes ADD COLUMN IF NOT EXISTS parent_quote_id TEXT NULL`);
+        await queryPostgres(`
+            WITH ranked AS (
+                SELECT
+                    tenant_id,
+                    quote_id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY tenant_id, chat_id
+                        ORDER BY COALESCE(sent_at, created_at), created_at, quote_id
+                    ) AS rn
+                FROM tenant_quotes
+                WHERE parent_quote_id IS NULL
+            )
+            UPDATE tenant_quotes q
+            SET quote_number = ranked.rn
+            FROM ranked
+            WHERE q.tenant_id = ranked.tenant_id
+              AND q.quote_id = ranked.quote_id
+              AND q.parent_quote_id IS NULL
+              AND q.quote_number = 1
+        `);
+        await queryPostgres(`
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_tenant_quotes_quote_id
+            ON tenant_quotes(quote_id)
+        `);
+        await queryPostgres(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'fk_tenant_quotes_parent_quote'
+                ) THEN
+                    ALTER TABLE tenant_quotes
+                        ADD CONSTRAINT fk_tenant_quotes_parent_quote
+                        FOREIGN KEY (parent_quote_id)
+                        REFERENCES tenant_quotes(quote_id)
+                        ON DELETE SET NULL;
+                END IF;
+            END $$
         `);
         await queryPostgres(`
             CREATE INDEX IF NOT EXISTS idx_tenant_quotes_chat_created
@@ -77,6 +130,15 @@ async function ensurePostgresSchema() {
             CREATE UNIQUE INDEX IF NOT EXISTS uq_tenant_quotes_message
             ON tenant_quotes(tenant_id, message_id)
             WHERE message_id IS NOT NULL
+        `);
+        await queryPostgres(`
+            CREATE INDEX IF NOT EXISTS idx_quotes_chat_number
+            ON tenant_quotes(tenant_id, chat_id, quote_number)
+        `);
+        await queryPostgres(`
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_quotes_chat_number_unique
+            ON tenant_quotes(tenant_id, chat_id, quote_number)
+            WHERE parent_quote_id IS NULL
         `);
     })();
     return schemaPromise;
@@ -100,6 +162,9 @@ function normalizeQuoteRecord(input = {}) {
         createdByUserId: toNullableText(source.createdByUserId),
         updatedByUserId: toNullableText(source.updatedByUserId),
         sentAt: toNullableText(source.sentAt),
+        quoteNumber: toPositiveIntOrNull(source.quoteNumber ?? source.quote_number),
+        revisionNumber: toPositiveIntOrNull(source.revisionNumber ?? source.revision_number),
+        parentQuoteId: toNullableText(source.parentQuoteId ?? source.parent_quote_id),
         metadata: isPlainObject(source.metadata) ? source.metadata : {},
         createdAt,
         updatedAt
@@ -121,9 +186,103 @@ function sanitizeQuotePublic(record = null) {
         createdByUserId: toNullableText(record.createdByUserId),
         updatedByUserId: toNullableText(record.updatedByUserId),
         sentAt: toNullableText(record.sentAt),
+        quoteNumber: toPositiveIntOrNull(record.quoteNumber ?? record.quote_number),
+        revisionNumber: toPositiveIntOrNull(record.revisionNumber ?? record.revision_number),
+        parentQuoteId: toNullableText(record.parentQuoteId ?? record.parent_quote_id),
         metadata: isPlainObject(record.metadata) ? record.metadata : {},
         createdAt: toText(record.createdAt) || null,
         updatedAt: toText(record.updatedAt) || null
+    };
+}
+
+function sanitizeQuoteRow(row = null) {
+    if (!row) return null;
+    return sanitizeQuotePublic({
+        quoteId: row.quote_id,
+        chatId: row.chat_id,
+        scopeModuleId: row.scope_module_id,
+        messageId: row.message_id,
+        status: row.status,
+        currency: row.currency,
+        itemsJson: row.items_json,
+        summaryJson: row.summary_json,
+        notes: row.notes,
+        createdByUserId: row.created_by_user_id,
+        updatedByUserId: row.updated_by_user_id,
+        sentAt: row.sent_at ? new Date(row.sent_at).toISOString() : null,
+        quoteNumber: row.quote_number,
+        revisionNumber: row.revision_number,
+        parentQuoteId: row.parent_quote_id,
+        metadata: row.metadata,
+        createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+        updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null
+    });
+}
+
+async function resolveQuoteNumberingPostgres(tenantId = DEFAULT_TENANT_ID, clean = {}) {
+    const existing = clean.quoteId
+        ? await queryPostgres(
+            `SELECT quote_number, revision_number, parent_quote_id
+             FROM tenant_quotes
+             WHERE tenant_id = $1 AND quote_id = $2
+             LIMIT 1`,
+            [tenantId, clean.quoteId]
+        )
+        : null;
+    const existingRow = existing?.rows?.[0] || null;
+    if (existingRow && !clean.quoteNumber && !clean.revisionNumber && !clean.parentQuoteId) {
+        return {
+            quoteNumber: toPositiveIntOrNull(existingRow.quote_number) || 1,
+            revisionNumber: toPositiveIntOrNull(existingRow.revision_number) || 1,
+            parentQuoteId: toNullableText(existingRow.parent_quote_id)
+        };
+    }
+
+    if (clean.parentQuoteId) {
+        const parentResult = await queryPostgres(
+            `SELECT quote_number
+             FROM tenant_quotes
+             WHERE tenant_id = $1 AND quote_id = $2
+             LIMIT 1`,
+            [tenantId, clean.parentQuoteId]
+        );
+        const parentRow = parentResult?.rows?.[0] || null;
+        const inheritedQuoteNumber = clean.quoteNumber || toPositiveIntOrNull(parentRow?.quote_number) || 1;
+        const revisionResult = await queryPostgres(
+            `SELECT COALESCE(MAX(revision_number), 1) + 1 AS next_revision
+             FROM tenant_quotes
+             WHERE tenant_id = $1
+               AND chat_id = $2
+               AND (quote_id = $3 OR parent_quote_id = $3)`,
+            [tenantId, clean.chatId, clean.parentQuoteId]
+        );
+        return {
+            quoteNumber: inheritedQuoteNumber,
+            revisionNumber: clean.revisionNumber || toPositiveIntOrNull(revisionResult?.rows?.[0]?.next_revision) || 2,
+            parentQuoteId: clean.parentQuoteId
+        };
+    }
+
+    if (clean.quoteNumber) {
+        return {
+            quoteNumber: clean.quoteNumber,
+            revisionNumber: clean.revisionNumber || 1,
+            parentQuoteId: null
+        };
+    }
+
+    const nextResult = await queryPostgres(
+        `SELECT COALESCE(MAX(quote_number), 0) + 1 AS next_quote_number
+         FROM tenant_quotes
+         WHERE tenant_id = $1
+           AND chat_id = $2
+           AND parent_quote_id IS NULL`,
+        [tenantId, clean.chatId]
+    );
+    return {
+        quoteNumber: toPositiveIntOrNull(nextResult?.rows?.[0]?.next_quote_number) || 1,
+        revisionNumber: clean.revisionNumber || 1,
+        parentQuoteId: null
     };
 }
 
@@ -131,18 +290,21 @@ async function createQuoteRecordPostgres(tenantId = DEFAULT_TENANT_ID, input = {
     await ensurePostgresSchema();
     const clean = normalizeQuoteRecord(input);
     if (!clean.chatId) throw new Error('chatId requerido para crear cotizacion.');
+    const numbering = await resolveQuoteNumberingPostgres(tenantId, clean);
 
     const { rows } = await queryPostgres(
         `INSERT INTO tenant_quotes (
             tenant_id, quote_id, chat_id, scope_module_id, message_id, status, currency,
             items_json, summary_json, notes,
-            created_by_user_id, updated_by_user_id, sent_at, metadata,
+            created_by_user_id, updated_by_user_id, sent_at,
+            quote_number, revision_number, parent_quote_id, metadata,
             created_at, updated_at
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7,
             $8::jsonb, $9::jsonb, $10,
-            $11, $12, $13, $14::jsonb,
-            $15::timestamptz, $16::timestamptz
+            $11, $12, $13,
+            $14, $15, $16, $17::jsonb,
+            $18::timestamptz, $19::timestamptz
         )
         ON CONFLICT (tenant_id, quote_id)
         DO UPDATE SET
@@ -157,12 +319,16 @@ async function createQuoteRecordPostgres(tenantId = DEFAULT_TENANT_ID, input = {
             created_by_user_id = COALESCE(tenant_quotes.created_by_user_id, EXCLUDED.created_by_user_id),
             updated_by_user_id = COALESCE(EXCLUDED.updated_by_user_id, tenant_quotes.updated_by_user_id),
             sent_at = COALESCE(EXCLUDED.sent_at, tenant_quotes.sent_at),
+            quote_number = COALESCE(EXCLUDED.quote_number, tenant_quotes.quote_number),
+            revision_number = COALESCE(EXCLUDED.revision_number, tenant_quotes.revision_number),
+            parent_quote_id = COALESCE(EXCLUDED.parent_quote_id, tenant_quotes.parent_quote_id),
             metadata = COALESCE(tenant_quotes.metadata, '{}'::jsonb) || COALESCE(EXCLUDED.metadata, '{}'::jsonb),
             updated_at = NOW()
         RETURNING
             quote_id, chat_id, scope_module_id, message_id, status, currency,
             items_json, summary_json, notes, created_by_user_id, updated_by_user_id,
-            sent_at, metadata, created_at, updated_at`,
+            sent_at, quote_number, revision_number, parent_quote_id,
+            metadata, created_at, updated_at`,
         [
             tenantId,
             clean.quoteId,
@@ -177,6 +343,9 @@ async function createQuoteRecordPostgres(tenantId = DEFAULT_TENANT_ID, input = {
             clean.createdByUserId,
             clean.updatedByUserId,
             clean.sentAt,
+            numbering.quoteNumber,
+            numbering.revisionNumber,
+            numbering.parentQuoteId,
             JSON.stringify(clean.metadata || {}),
             clean.createdAt,
             clean.updatedAt
@@ -184,23 +353,7 @@ async function createQuoteRecordPostgres(tenantId = DEFAULT_TENANT_ID, input = {
     );
 
     const row = rows?.[0] || null;
-    return sanitizeQuotePublic({
-        quoteId: row?.quote_id,
-        chatId: row?.chat_id,
-        scopeModuleId: row?.scope_module_id,
-        messageId: row?.message_id,
-        status: row?.status,
-        currency: row?.currency,
-        itemsJson: row?.items_json,
-        summaryJson: row?.summary_json,
-        notes: row?.notes,
-        createdByUserId: row?.created_by_user_id,
-        updatedByUserId: row?.updated_by_user_id,
-        sentAt: row?.sent_at ? new Date(row.sent_at).toISOString() : null,
-        metadata: row?.metadata,
-        createdAt: row?.created_at ? new Date(row.created_at).toISOString() : null,
-        updatedAt: row?.updated_at ? new Date(row.updated_at).toISOString() : null
-    });
+    return sanitizeQuoteRow(row);
 }
 
 async function getQuoteByIdPostgres(tenantId = DEFAULT_TENANT_ID, { quoteId = '' } = {}) {
@@ -212,7 +365,8 @@ async function getQuoteByIdPostgres(tenantId = DEFAULT_TENANT_ID, { quoteId = ''
         `SELECT
             quote_id, chat_id, scope_module_id, message_id, status, currency,
             items_json, summary_json, notes, created_by_user_id, updated_by_user_id,
-            sent_at, metadata, created_at, updated_at
+            sent_at, quote_number, revision_number, parent_quote_id,
+            metadata, created_at, updated_at
          FROM tenant_quotes
          WHERE tenant_id = $1 AND quote_id = $2
          LIMIT 1`,
@@ -222,23 +376,28 @@ async function getQuoteByIdPostgres(tenantId = DEFAULT_TENANT_ID, { quoteId = ''
     const row = rows?.[0] || null;
     if (!row) return null;
 
-    return sanitizeQuotePublic({
-        quoteId: row.quote_id,
-        chatId: row.chat_id,
-        scopeModuleId: row.scope_module_id,
-        messageId: row.message_id,
-        status: row.status,
-        currency: row.currency,
-        itemsJson: row.items_json,
-        summaryJson: row.summary_json,
-        notes: row.notes,
-        createdByUserId: row.created_by_user_id,
-        updatedByUserId: row.updated_by_user_id,
-        sentAt: row.sent_at ? new Date(row.sent_at).toISOString() : null,
-        metadata: row.metadata,
-        createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
-        updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null
-    });
+    return sanitizeQuoteRow(row);
+}
+
+async function listQuotesByChatPostgres(tenantId = DEFAULT_TENANT_ID, { chatId = '' } = {}) {
+    await ensurePostgresSchema();
+    const cleanChatId = toText(chatId);
+    if (!cleanChatId) return [];
+
+    const { rows } = await queryPostgres(
+        `SELECT DISTINCT ON (quote_number)
+            quote_id, chat_id, scope_module_id, message_id, status, currency,
+            items_json, summary_json, notes, created_by_user_id, updated_by_user_id,
+            sent_at, quote_number, revision_number, parent_quote_id,
+            metadata, created_at, updated_at
+         FROM tenant_quotes
+         WHERE tenant_id = $1
+           AND chat_id = $2
+         ORDER BY quote_number ASC, revision_number DESC, COALESCE(sent_at, created_at) DESC`,
+        [tenantId, cleanChatId]
+    );
+
+    return (Array.isArray(rows) ? rows : []).map(sanitizeQuoteRow).filter(Boolean);
 }
 
 async function markQuoteSentPostgres(
@@ -263,30 +422,15 @@ async function markQuoteSentPostgres(
          RETURNING
             quote_id, chat_id, scope_module_id, message_id, status, currency,
             items_json, summary_json, notes, created_by_user_id, updated_by_user_id,
-            sent_at, metadata, created_at, updated_at`,
+            sent_at, quote_number, revision_number, parent_quote_id,
+            metadata, created_at, updated_at`,
         [tenantId, cleanQuoteId, toNullableText(messageId), effectiveSentAt, toNullableText(updatedByUserId)]
     );
 
     const row = rows?.[0] || null;
     if (!row) return null;
 
-    return sanitizeQuotePublic({
-        quoteId: row.quote_id,
-        chatId: row.chat_id,
-        scopeModuleId: row.scope_module_id,
-        messageId: row.message_id,
-        status: row.status,
-        currency: row.currency,
-        itemsJson: row.items_json,
-        summaryJson: row.summary_json,
-        notes: row.notes,
-        createdByUserId: row.created_by_user_id,
-        updatedByUserId: row.updated_by_user_id,
-        sentAt: row.sent_at ? new Date(row.sent_at).toISOString() : null,
-        metadata: row.metadata,
-        createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
-        updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null
-    });
+    return sanitizeQuoteRow(row);
 }
 
 async function createQuoteRecordFile(tenantId = DEFAULT_TENANT_ID, input = {}) {
@@ -299,13 +443,38 @@ async function createQuoteRecordFile(tenantId = DEFAULT_TENANT_ID, input = {}) {
     });
     const items = Array.isArray(parsed?.items) ? parsed.items : [];
     const now = nowIso();
+    const existingIndex = items.findIndex((entry) => toText(entry?.quoteId) === clean.quoteId);
+    const existingRecord = existingIndex >= 0 ? items[existingIndex] : null;
+    let quoteNumber = clean.quoteNumber || toPositiveIntOrNull(existingRecord?.quoteNumber) || null;
+    let revisionNumber = clean.revisionNumber || toPositiveIntOrNull(existingRecord?.revisionNumber) || null;
+    let parentQuoteId = clean.parentQuoteId || toNullableText(existingRecord?.parentQuoteId);
+
+    if (parentQuoteId) {
+        const parent = items.find((entry) => toText(entry?.quoteId) === parentQuoteId) || null;
+        quoteNumber = quoteNumber || toPositiveIntOrNull(parent?.quoteNumber) || 1;
+        const revisionMax = items.reduce((max, entry) => {
+            const sameFamily = toText(entry?.quoteId) === parentQuoteId || toText(entry?.parentQuoteId) === parentQuoteId;
+            if (!sameFamily) return max;
+            return Math.max(max, toPositiveIntOrNull(entry?.revisionNumber) || 1);
+        }, 1);
+        revisionNumber = revisionNumber || (revisionMax + 1);
+    } else {
+        quoteNumber = quoteNumber || items
+            .filter((entry) => toText(entry?.chatId) === clean.chatId && !toNullableText(entry?.parentQuoteId))
+            .reduce((max, entry) => Math.max(max, toPositiveIntOrNull(entry?.quoteNumber) || 0), 0) + 1;
+        revisionNumber = revisionNumber || 1;
+    }
+
     const nextRecord = {
         ...clean,
+        quoteNumber,
+        revisionNumber,
+        parentQuoteId,
         createdAt: clean.createdAt || now,
         updatedAt: now
     };
 
-    const index = items.findIndex((entry) => toText(entry?.quoteId) === nextRecord.quoteId);
+    const index = existingIndex;
     if (index >= 0) {
         const previous = items[index];
         items[index] = {
@@ -333,6 +502,34 @@ async function getQuoteByIdFile(tenantId = DEFAULT_TENANT_ID, { quoteId = '' } =
     const items = Array.isArray(parsed?.items) ? parsed.items : [];
     const found = items.find((entry) => toText(entry?.quoteId) === cleanQuoteId) || null;
     return sanitizeQuotePublic(found);
+}
+
+async function listQuotesByChatFile(tenantId = DEFAULT_TENANT_ID, { chatId = '' } = {}) {
+    const cleanChatId = toText(chatId);
+    if (!cleanChatId) return [];
+
+    const parsed = await readTenantJsonFile(QUOTES_FILE, {
+        tenantId,
+        defaultValue: { items: [] }
+    });
+    const items = Array.isArray(parsed?.items) ? parsed.items : [];
+    const latestByNumber = new Map();
+    items
+        .filter((entry) => toText(entry?.chatId) === cleanChatId)
+        .forEach((entry) => {
+            const quoteNumber = toPositiveIntOrNull(entry?.quoteNumber) || 1;
+            const current = latestByNumber.get(quoteNumber);
+            const revision = toPositiveIntOrNull(entry?.revisionNumber) || 1;
+            const currentRevision = toPositiveIntOrNull(current?.revisionNumber) || 0;
+            if (!current || revision >= currentRevision) {
+                latestByNumber.set(quoteNumber, entry);
+            }
+        });
+
+    return Array.from(latestByNumber.entries())
+        .sort(([a], [b]) => a - b)
+        .map(([, entry]) => sanitizeQuotePublic(entry))
+        .filter(Boolean);
 }
 
 async function markQuoteSentFile(
@@ -388,8 +585,17 @@ async function getQuoteById(tenantId = DEFAULT_TENANT_ID, input = {}) {
     return getQuoteByIdFile(cleanTenant, input);
 }
 
+async function listQuotesByChat(tenantId = DEFAULT_TENANT_ID, input = {}) {
+    const cleanTenant = resolveTenantId(tenantId);
+    if (getStorageDriver() === 'postgres') {
+        return listQuotesByChatPostgres(cleanTenant, input);
+    }
+    return listQuotesByChatFile(cleanTenant, input);
+}
+
 module.exports = {
     createQuoteRecord,
     markQuoteSent,
-    getQuoteById
+    getQuoteById,
+    listQuotesByChat
 };

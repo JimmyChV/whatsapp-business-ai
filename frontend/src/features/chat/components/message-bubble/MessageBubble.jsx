@@ -146,9 +146,30 @@ const MessageBubble = ({
         || actionOrder?.sourceOrder
         || actionOrder?.source_order
     );
+    const quoteNumber = Number(
+        actionOrder?.quoteNumber
+        ?? actionOrder?.quote_number
+        ?? actionOrder?.rawPreview?.quoteNumber
+        ?? actionOrder?.rawPreview?.quote_number
+        ?? quoteMetadata?.quoteNumber
+        ?? quoteMetadata?.quote_number
+        ?? 0
+    );
+    const revisionNumber = Number(
+        actionOrder?.revisionNumber
+        ?? actionOrder?.revision_number
+        ?? actionOrder?.rawPreview?.revisionNumber
+        ?? actionOrder?.rawPreview?.revision_number
+        ?? quoteMetadata?.revisionNumber
+        ?? quoteMetadata?.revision_number
+        ?? 0
+    );
+    const quoteCardNumberLabel = Number.isFinite(quoteNumber) && quoteNumber > 0
+        ? ` ${Math.trunc(quoteNumber)}${Number.isFinite(revisionNumber) && revisionNumber > 1 ? ` (Rev. ${Math.trunc(revisionNumber)})` : ''}`
+        : '';
     const quoteCardTitle = quoteSourceType === 'order' || quoteHasSourceOrder
         ? '🛒 Resumen De Pedido'
-        : '📋 Cotización';
+        : `📋 Cotización${quoteCardNumberLabel}`;
     const [selectedLocationText, setSelectedLocationText] = useState('');
     const [showForwardPicker, setShowForwardPicker] = useState(false);
     const [forwardSearch, setForwardSearch] = useState('');
@@ -657,13 +678,17 @@ const MessageBubble = ({
                                             ...actionOrder,
                                             sourceType: 'quote',
                                             quoteId: String(actionOrder?.quoteId || actionOrder?.rawPreview?.quoteId || '').trim() || null,
+                                            quoteNumber: Number.isFinite(quoteNumber) && quoteNumber > 0 ? Math.trunc(quoteNumber) : null,
+                                            revisionNumber: Number.isFinite(revisionNumber) && revisionNumber > 0 ? Math.trunc(revisionNumber) : null,
                                             sourceQuoteMessageId: String(msg?.id || '').trim() || actionOrder?.sourceQuoteMessageId || null,
                                             rawPreview: actionOrder?.rawPreview && typeof actionOrder.rawPreview === 'object'
                                                 ? {
                                                     ...actionOrder.rawPreview,
                                                     type: 'quote',
                                                     sourceType: 'quote',
-                                                    quoteId: String(actionOrder?.quoteId || actionOrder.rawPreview.quoteId || '').trim() || null
+                                                    quoteId: String(actionOrder?.quoteId || actionOrder.rawPreview.quoteId || '').trim() || null,
+                                                    quoteNumber: Number.isFinite(quoteNumber) && quoteNumber > 0 ? Math.trunc(quoteNumber) : null,
+                                                    revisionNumber: Number.isFinite(revisionNumber) && revisionNumber > 0 ? Math.trunc(revisionNumber) : null
                                                 }
                                                 : { type: 'quote', sourceType: 'quote' }
                                         }

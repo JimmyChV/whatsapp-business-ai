@@ -94,6 +94,8 @@ export const usePendingOrderCartImport = ({
                 sourceOrder: null,
                 sourceQuote: {
                     quoteId: String(order?.quoteId || order?.rawPreview?.quoteId || '').trim() || null,
+                    quoteNumber: Number(order?.quoteNumber ?? order?.quote_number ?? order?.rawPreview?.quoteNumber ?? order?.rawPreview?.quote_number ?? 0) || null,
+                    revisionNumber: Number(order?.revisionNumber ?? order?.revision_number ?? order?.rawPreview?.revisionNumber ?? order?.rawPreview?.revision_number ?? 0) || null,
                     messageId: String(
                         order?.sourceQuoteMessageId
                         || order?.source_quote_message_id
