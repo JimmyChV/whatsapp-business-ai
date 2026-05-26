@@ -1,6 +1,7 @@
 import {
     CompaniesSection,
     CustomersSection,
+    MetaAdsCampaignsPage,
     SummarySection,
     UsersSection
 } from '../../sections';
@@ -186,6 +187,9 @@ export default function SaasPanelEntitySections(props = {}) {
             ) : null}
             {selectedSectionId === 'saas_clientes' ? (
                 <CustomersSection context={customersContext} />
+            ) : null}
+            {selectedSectionId === 'saas_meta_ads_campaigns' ? (
+                <MetaAdsCampaignsPage context={context} />
             ) : null}
         </>
     );

@@ -182,6 +182,7 @@ export const ADMIN_NAV_ITEMS = [
     { id: 'saas_clientes', label: 'Clientes' },
     { id: 'saas_templates', label: 'Plantillas Meta' },
     { id: 'saas_campaigns', label: 'Campañas' },
+    { id: 'saas_meta_ads_campaigns', label: 'Campañas Meta' },
     { id: 'saas_empresas', label: 'Empresas' },
     { id: 'saas_roles', label: 'Roles' },
     { id: 'saas_planes', label: 'Planes' },

@@ -7,6 +7,7 @@ export { default as CompaniesSection } from './CompaniesSection';
 export { default as CustomersSection } from './CustomersSection';
 export { default as ModulesConfigSection } from './ModulesConfigSection';
 export { default as MetaTemplatesSection } from './MetaTemplatesSection';
+export { default as MetaAdsCampaignsPage } from './MetaAdsCampaignsPage';
 export { default as OperationsSection } from './OperationsSection';
 export { default as PlansSection } from './PlansSection';
 export { default as QuickRepliesSection } from './QuickRepliesSection';

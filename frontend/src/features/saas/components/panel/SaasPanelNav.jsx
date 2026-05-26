@@ -1,3 +1,5 @@
+import { Megaphone } from 'lucide-react';
+
 const TENANT_LOCK_EXEMPT_SECTIONS = new Set(['saas_resumen', 'saas_empresas', 'saas_planes', 'saas_roles', 'saas_global_labels']);
 
 function NavSectionIcon({ sectionId }) {
@@ -28,6 +30,8 @@ function NavSectionIcon({ sectionId }) {
         return <svg {...commonProps}><path d="M3 12h4l2-6 4 12 2-6h6" /></svg>;
     case 'saas_campaigns':
         return <svg {...commonProps}><path d="M3 11v2a2 2 0 0 0 2 2h2l4 4v-8h4l6 4V7l-6 4H5a2 2 0 0 0-2 2z" /></svg>;
+    case 'saas_meta_ads_campaigns':
+        return <Megaphone size={18} strokeWidth={1.8} aria-hidden="true" />;
     case 'saas_templates':
         return <svg {...commonProps}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>;
     case 'saas_ia':
