@@ -39,7 +39,9 @@ export default function BusinessCartTabSection({
     deliveryFee = 0,
     cartTotal = 0,
     sendQuoteToChat,
-    canWriteByAssignment = false
+    canWriteByAssignment = false,
+    showQuoteHistory = false,
+    showSendQuoteAction = true
 }) {
     const tone = {
         warningSurface: 'var(--chat-warning-bg)',
@@ -175,53 +177,55 @@ export default function BusinessCartTabSection({
                     </div>
                 )}
 
-                <div style={{ background: tone.cardSurface, border: `1px solid ${tone.controlBorder}`, borderRadius: '10px', overflow: 'hidden' }}>
-                    <button
-                        type="button"
-                        onClick={() => typeof setQuoteHistoryExpanded === 'function' && setQuoteHistoryExpanded((prev) => !prev)}
-                        style={{ width: '100%', padding: '9px 10px', background: tone.cardSurfaceAlt, border: 'none', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', fontWeight: 800, fontSize: '0.82rem' }}
-                    >
-                        <span>Cotizaciones</span>
-                        {quoteHistoryExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                    </button>
-                    {quoteHistoryExpanded && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', padding: '8px' }}>
-                            {quoteHistoryGroups.length === 0 ? (
-                                <div style={{ color: tone.textMuted, background: tone.cardSurfaceAlt, border: `1px dashed ${tone.controlBorder}`, borderRadius: '9px', padding: '12px', fontSize: '0.76rem', lineHeight: 1.45, textAlign: 'center' }}>
-                                    Aun no hay cotizaciones enviadas en este chat.
-                                </div>
-                            ) : quoteHistoryGroups.map((group) => {
-                                if (group.type === 'options') {
-                                    const dateLabel = formatQuoteDate(group.dateValue).split(' ')[0] || '-';
-                                    const sortedOptions = group.quotes.slice().sort((a, b) => {
-                                        const aOption = Number(a?.optionNumber || a?.option_number || a?.quoteNumber || 0) || 0;
-                                        const bOption = Number(b?.optionNumber || b?.option_number || b?.quoteNumber || 0) || 0;
-                                        return aOption - bOption;
-                                    });
-                                    return (
-                                        <div key={group.key} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                            <div style={{ color: tone.textMuted, fontSize: '0.7rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '3px 2px' }}>
-                                                -- Opciones enviadas {dateLabel} --
+                {showQuoteHistory && (
+                    <div style={{ background: tone.cardSurface, border: `1px solid ${tone.controlBorder}`, borderRadius: '10px', overflow: 'hidden' }}>
+                        <button
+                            type="button"
+                            onClick={() => typeof setQuoteHistoryExpanded === 'function' && setQuoteHistoryExpanded((prev) => !prev)}
+                            style={{ width: '100%', padding: '9px 10px', background: tone.cardSurfaceAlt, border: 'none', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', fontWeight: 800, fontSize: '0.82rem' }}
+                        >
+                            <span>Cotizaciones</span>
+                            {quoteHistoryExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                        </button>
+                        {quoteHistoryExpanded && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', padding: '8px' }}>
+                                {quoteHistoryGroups.length === 0 ? (
+                                    <div style={{ color: tone.textMuted, background: tone.cardSurfaceAlt, border: `1px dashed ${tone.controlBorder}`, borderRadius: '9px', padding: '12px', fontSize: '0.76rem', lineHeight: 1.45, textAlign: 'center' }}>
+                                        Aun no hay cotizaciones enviadas en este chat.
+                                    </div>
+                                ) : quoteHistoryGroups.map((group) => {
+                                    if (group.type === 'options') {
+                                        const dateLabel = formatQuoteDate(group.dateValue).split(' ')[0] || '-';
+                                        const sortedOptions = group.quotes.slice().sort((a, b) => {
+                                            const aOption = Number(a?.optionNumber || a?.option_number || a?.quoteNumber || 0) || 0;
+                                            const bOption = Number(b?.optionNumber || b?.option_number || b?.quoteNumber || 0) || 0;
+                                            return aOption - bOption;
+                                        });
+                                        return (
+                                            <div key={group.key} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                <div style={{ color: tone.textMuted, fontSize: '0.7rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '3px 2px' }}>
+                                                    -- Opciones enviadas {dateLabel} --
+                                                </div>
+                                                {sortedOptions.map((quote) => renderQuoteCard(quote, { compact: true }))}
                                             </div>
-                                            {sortedOptions.map((quote) => renderQuoteCard(quote, { compact: true }))}
-                                        </div>
-                                    );
-                                }
-                                return group.quotes.map((quote) => renderQuoteCard(quote));
-                            })}
-                            {!quoteOptionsModeActive && (
-                                <button
-                                    type="button"
-                                    disabled={!canWriteByAssignment}
-                                    onClick={() => typeof onStartNewQuote === 'function' && onStartNewQuote()}
-                                    style={{ width: '100%', border: `1px dashed ${tone.successBorder}`, background: 'transparent', color: tone.successText, borderRadius: '8px', padding: '8px 10px', fontWeight: 800, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', opacity: canWriteByAssignment ? 1 : 0.65 }}
-                                >
-                                    + Nueva cotizacion
-                                </button>
-                            )}
-                        </div>
-                    )}
-                </div>
+                                        );
+                                    }
+                                    return group.quotes.map((quote) => renderQuoteCard(quote));
+                                })}
+                                {!quoteOptionsModeActive && (
+                                    <button
+                                        type="button"
+                                        disabled={!canWriteByAssignment}
+                                        onClick={() => typeof onStartNewQuote === 'function' && onStartNewQuote()}
+                                        style={{ width: '100%', border: `1px dashed ${tone.successBorder}`, background: 'transparent', color: tone.successText, borderRadius: '8px', padding: '8px 10px', fontWeight: 800, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', opacity: canWriteByAssignment ? 1 : 0.65 }}
+                                    >
+                                        + Nueva cotizacion
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {false && Array.isArray(quoteHistory) && quoteHistory.length > 0 && (
                     <div style={{ background: tone.cardSurface, border: `1px solid ${tone.controlBorder}`, borderRadius: '10px', overflow: 'hidden' }}>
@@ -467,13 +471,15 @@ export default function BusinessCartTabSection({
                         </div>
                     </div>
 
-                    <button
-                        onClick={sendQuoteToChat}
-                        disabled={!canWriteByAssignment}
-                        style={{ width: '100%', padding: '9px', background: canWriteByAssignment ? 'var(--saas-accent-primary)' : 'var(--chat-control-disabled)', border: '1px solid color-mix(in srgb, var(--saas-accent-primary) 60%, transparent)', borderRadius: '8px', color: 'var(--saas-accent-primary-text)', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontSize: '0.84rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: canWriteByAssignment ? 1 : 0.75 }}
-                    >
-                        <Send size={15} /> Enviar cotizacion al cliente
-                    </button>
+                    {showSendQuoteAction && (
+                        <button
+                            onClick={sendQuoteToChat}
+                            disabled={!canWriteByAssignment}
+                            style={{ width: '100%', padding: '9px', background: canWriteByAssignment ? 'var(--saas-accent-primary)' : 'var(--chat-control-disabled)', border: '1px solid color-mix(in srgb, var(--saas-accent-primary) 60%, transparent)', borderRadius: '8px', color: 'var(--saas-accent-primary-text)', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontSize: '0.84rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: canWriteByAssignment ? 1 : 0.75 }}
+                        >
+                            <Send size={15} /> Enviar cotizacion al cliente
+                        </button>
+                    )}
                 </div>
             )}
         </div>

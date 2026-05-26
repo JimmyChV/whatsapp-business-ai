@@ -29,6 +29,11 @@ function roundMoney(value) {
     return Math.round(num * 100) / 100;
 }
 
+function formatCompactSoles(value) {
+    const num = toFiniteNumberOrNull(value) ?? 0;
+    return `S/ ${Math.max(0, num).toFixed(1)}`;
+}
+
 function toTitleCase(value = '') {
     return toText(value)
         .toLocaleLowerCase('es-PE')
@@ -211,7 +216,11 @@ function resolveSourceOrder(metadata = {}, payload = {}) {
 function buildQuoteMessageBody(quote = {}, fallbackBody = '') {
     const separator = '──────────────────';
     const sourceType = toText(quote?.metadata?.sourceType || quote?.metadata?.source_type).toLowerCase();
-    const header = buildQuoteHeader(quote, sourceType);
+    const isOptionMode = quote?.isOptionMode === true || quote?.is_option_mode === true;
+    const optionNumber = toPositiveIntOrNull(quote?.optionNumber ?? quote?.option_number);
+    const header = isOptionMode
+        ? `ðŸ“‹ *OPCIÃ“N ${optionNumber || 1}*`
+        : buildQuoteHeader(quote, sourceType);
     const items = Array.isArray(quote?.items) ? quote.items : [];
     const summary = isPlainObject(quote?.summary) ? quote.summary : {};
     const lines = items.flatMap((item) => {
@@ -443,24 +452,36 @@ function normalizeOptionQuote(option = {}) {
     };
 }
 
-function buildOptionText(option = {}) {
-    const safeOptionNumber = toPositiveIntOrNull(option?.optionNumber ?? option?.option_number) || 1;
-    const items = Array.isArray(option?.items) ? option.items : [];
-    const summary = isPlainObject(option?.summary) ? option.summary : {};
-    const lines = items.map((item) => {
-        const title = toTitleCase(item?.title || item?.name || item?.sku || 'Producto') || 'Producto';
-        const qty = Math.max(1, toFiniteNumberOrNull(item?.qty ?? item?.quantity) ?? 1);
-        const lineTotal = roundMoney(toFiniteNumberOrNull(item?.lineTotal) ?? (qty * (toFiniteNumberOrNull(item?.unitPrice ?? item?.price) ?? 0)));
-        return `- ${title} x${qty} - ${formatSoles(lineTotal)}`;
-    });
-    const delivery = Boolean(summary?.deliveryFree) || (toFiniteNumberOrNull(summary?.deliveryAmount) ?? 0) <= 0
-        ? 'Gratis'
-        : formatSoles(summary?.deliveryAmount);
-    return [
-        `*Opcion ${safeOptionNumber} - ${formatSoles(summary?.totalPayable)}*`,
-        ...lines,
-        `Delivery: ${delivery}`
-    ].join('\n').trim();
+function buildOptionSelectionInteractiveMessage(body, options = []) {
+    const buttons = options
+        .slice(0, 3)
+        .map((option, index) => {
+            const optionNumber = toPositiveIntOrNull(option?.optionNumber ?? option?.option_number) || (index + 1);
+            const totalPayable = toFiniteNumberOrNull(option?.summary?.totalPayable) ?? 0;
+            const title = `Opción ${optionNumber} — ${formatCompactSoles(totalPayable)}`;
+            if (title.length > 20) {
+                throw new Error('Los titulos de botones de opciones exceden 20 caracteres.');
+            }
+            return {
+                type: 'reply',
+                reply: {
+                    id: `option_${optionNumber}`,
+                    title
+                }
+            };
+        });
+    if (buttons.length === 0) {
+        throw new Error('No hay botones de opcion para construir el interactivo.');
+    }
+    return {
+        type: 'button',
+        body: {
+            text: String(body || '').trim()
+        },
+        action: {
+            buttons
+        }
+    };
 }
 
 function sleep(ms = 0) {
@@ -837,7 +858,7 @@ function createSocketQuoteDeliveryService({
                         metadata: optionMetadata
                     };
 
-                    const textBody = buildOptionText(normalizedQuote);
+                    const textBody = buildQuoteMessageBody(normalizedQuote, '');
                     const sentMessage = await waClient.sendMessage(target.targetChatId, textBody);
                     const sentMessageId = getSerializedMessageId(sentMessage);
                     if (sentMessageId && agentMeta) {
@@ -947,7 +968,44 @@ function createSocketQuoteDeliveryService({
                 }
 
                 if (finalMessage) {
-                    await waClient.sendMessage(target.targetChatId, finalMessage);
+                    let finalSentMessage = null;
+                    const finalInteractive = buildOptionSelectionInteractiveMessage(finalMessage, options);
+                    if (typeof waClient?.sendInteractiveMessage === 'function') {
+                        try {
+                            const interactiveMessageId = await waClient.sendInteractiveMessage(target.targetChatId, finalInteractive);
+                            if (interactiveMessageId) {
+                                finalSentMessage = buildSyntheticInteractiveSentMessage({
+                                    messageId: interactiveMessageId,
+                                    chatId: target.targetChatId,
+                                    body: finalMessage,
+                                    interactive: finalInteractive,
+                                    quotedMessageId: ''
+                                });
+                            }
+                        } catch (interactiveError) {
+                            console.warn('[WA][SendOptionGroup] interactive final fallback: ' + String(interactiveError?.message || interactiveError || 'interactive_send_failed'));
+                        }
+                    }
+                    if (!finalSentMessage) {
+                        finalSentMessage = await waClient.sendMessage(target.targetChatId, finalMessage);
+                    }
+                    if (finalSentMessage) {
+                        const finalMessageId = getSerializedMessageId(finalSentMessage);
+                        if (finalMessageId && agentMeta) {
+                            rememberOutgoingAgentMeta(finalMessageId, agentMeta);
+                        }
+                        await emitRealtimeOutgoingMessage({
+                            sentMessage: finalSentMessage,
+                            fallbackChatId: target.targetChatId,
+                            fallbackBody: finalMessage,
+                            quotedMessageId: '',
+                            quotedMessage: null,
+                            moduleContext,
+                            agentMeta,
+                            mediaPayload: null,
+                            orderPayload: null
+                        });
+                    }
                 }
 
                 ack?.({ ok: true, groupId });

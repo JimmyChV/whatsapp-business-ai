@@ -19,6 +19,7 @@ export const useBusinessSidebarUiSync = ({
     }, [activeTab, quickRepliesEnabled, setActiveTab]);
 
     useEffect(() => {
+        if (activeTab === 'quotes') return;
         if (activeTab === 'cart' && cart.length === 0) {
             setActiveTab('catalog');
         }

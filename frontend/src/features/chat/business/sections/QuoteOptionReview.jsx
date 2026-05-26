@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 
 function formatMoney1(value = 0) {
@@ -8,17 +8,19 @@ function formatMoney1(value = 0) {
 
 function buildDefaultMessage(options = [], total = 0) {
     const safeOptions = Array.isArray(options) ? options : [];
-    const lines = safeOptions.map((option) => {
-        const items = Array.isArray(option?.items)
-            ? option.items.map((item) => `- ${item.title || 'Producto'} x${item.qty || 1} - S/ ${formatMoney1(item.lineTotal || 0)}`).join('\n')
-            : '';
-        const delivery = option?.summary?.deliveryFree
-            ? 'Gratis'
-            : `S/ ${formatMoney1(option?.summary?.deliveryAmount || 0)}`;
-        return `*Opcion ${option?.optionNumber || 1} - S/ ${formatMoney1(option?.summary?.totalPayable || 0)}*\n${items}\nDelivery: ${delivery}`;
-    }).join('\n\n');
+    const count = total || safeOptions.length;
+    return `Hola. Te preparé ${count} opciones para que elijas la que más te convenga.\n\nRevisa las alternativas y dime cuál prefieres tocando uno de los botones.`;
+}
 
-    return `Hola! Te preparo ${total || safeOptions.length} opciones:\n\n${lines}\n\nCual te interesa?`;
+function formatDelivery(summary = {}) {
+    return summary?.deliveryFree
+        ? 'Gratis'
+        : `S/ ${formatMoney1(summary?.deliveryAmount || 0)}`;
+}
+
+function formatDiscount(summary = {}) {
+    const discount = Number(summary?.discount || summary?.globalDiscount?.applied || 0) || 0;
+    return discount > 0 ? `S/ ${formatMoney1(discount)}` : 'Sin desc.';
 }
 
 export default function QuoteOptionReview({
@@ -33,10 +35,21 @@ export default function QuoteOptionReview({
     const { notify } = useUiFeedback();
     const [finalMessage, setFinalMessage] = useState(() => buildDefaultMessage(options, totalOptions));
     const [sending, setSending] = useState(false);
+    const [expandedOption, setExpandedOption] = useState(() => Number(options?.[0]?.optionNumber || 1) || 1);
+    const [messageTouched, setMessageTouched] = useState(false);
+    const sendTimeoutRef = useRef(null);
 
     useEffect(() => {
-        setFinalMessage(buildDefaultMessage(options, totalOptions));
-    }, [options, totalOptions]);
+        if (!messageTouched) {
+            setFinalMessage(buildDefaultMessage(options, totalOptions));
+        }
+    }, [options, totalOptions, messageTouched]);
+
+    useEffect(() => () => {
+        if (sendTimeoutRef.current) {
+            clearTimeout(sendTimeoutRef.current);
+        }
+    }, []);
 
     const handleSend = () => {
         if (!socket || typeof socket.emit !== 'function') {
@@ -53,12 +66,23 @@ export default function QuoteOptionReview({
         }
 
         setSending(true);
+        if (sendTimeoutRef.current) {
+            clearTimeout(sendTimeoutRef.current);
+        }
+        sendTimeoutRef.current = setTimeout(() => {
+            setSending(false);
+            notify({ type: 'warn', message: 'El envio demoro demasiado. Revisa el backend y vuelve a intentar.' });
+        }, 15000);
         socket.emit('send_option_group', {
             chatId,
             tenantId,
             options,
             finalMessage
         }, (ack = {}) => {
+            if (sendTimeoutRef.current) {
+                clearTimeout(sendTimeoutRef.current);
+                sendTimeoutRef.current = null;
+            }
             setSending(false);
             if (!ack?.ok) {
                 notify({ type: 'warn', message: String(ack?.error || 'No se pudieron enviar las opciones.') });
@@ -77,20 +101,78 @@ export default function QuoteOptionReview({
                 <span style={{ color: 'var(--text-primary)', fontWeight: 900, fontSize: '0.9rem' }}>Revisar y enviar</span>
             </div>
 
-            {options.map((option) => (
-                <div key={`review_option_${option.optionNumber}`} style={{ background: 'var(--chat-card-surface-alt)', border: '1px solid var(--chat-card-border)', borderRadius: '10px', padding: '10px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '8px', alignItems: 'center' }}>
-                    <div style={{ minWidth: 0 }}>
-                        <strong style={{ color: 'var(--text-primary)', display: 'block' }}>Opcion {option.optionNumber}</strong>
-                        <div style={{ color: 'var(--chat-control-text-soft)', fontSize: '0.75rem', marginTop: '4px' }}>{Array.isArray(option.items) ? option.items.length : 0} producto(s)</div>
-                    </div>
-                    <span style={{ color: 'var(--chat-price-text)', fontWeight: 900 }}>S/ {formatMoney1(option?.summary?.totalPayable || 0)}</span>
-                </div>
-            ))}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {options.map((option) => {
+                    const optionNumber = Number(option?.optionNumber || 0) || 1;
+                    const isExpanded = expandedOption === optionNumber;
+                    const summary = option?.summary || {};
+                    const items = Array.isArray(option?.items) ? option.items : [];
+                    return (
+                        <div key={`review_option_${optionNumber}`} style={{ background: 'var(--chat-card-surface-alt)', border: '1px solid var(--chat-card-border)', borderRadius: '12px', overflow: 'hidden' }}>
+                            <button
+                                type="button"
+                                onClick={() => setExpandedOption((prev) => (prev === optionNumber ? 0 : optionNumber))}
+                                style={{ width: '100%', border: 'none', background: 'transparent', padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', cursor: 'pointer', textAlign: 'left' }}
+                            >
+                                <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', gap: '10px' }}>
+                                    <div style={{ minWidth: 0 }}>
+                                        <strong style={{ color: 'var(--text-primary)', display: 'block', fontSize: '0.9rem' }}>Opción {optionNumber}</strong>
+                                        <div style={{ color: 'var(--chat-control-text-soft)', fontSize: '0.74rem', marginTop: '4px' }}>
+                                            {items.length} producto(s)
+                                        </div>
+                                    </div>
+                                    <span style={{ color: 'var(--chat-price-text)', fontWeight: 900, fontSize: '1rem' }}>
+                                        S/ {formatMoney1(summary?.totalPayable || 0)}
+                                    </span>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '8px' }}>
+                                    <div style={{ background: 'var(--chat-control-surface-strong)', border: '1px solid var(--chat-control-border)', borderRadius: '10px', padding: '8px' }}>
+                                        <div style={{ color: 'var(--chat-control-text-soft)', fontSize: '0.68rem', textTransform: 'uppercase' }}>Descuento</div>
+                                        <div style={{ color: 'var(--text-primary)', fontWeight: 800, fontSize: '0.78rem', marginTop: '4px' }}>{formatDiscount(summary)}</div>
+                                    </div>
+                                    <div style={{ background: 'var(--chat-control-surface-strong)', border: '1px solid var(--chat-control-border)', borderRadius: '10px', padding: '8px' }}>
+                                        <div style={{ color: 'var(--chat-control-text-soft)', fontSize: '0.68rem', textTransform: 'uppercase' }}>Delivery</div>
+                                        <div style={{ color: 'var(--text-primary)', fontWeight: 800, fontSize: '0.78rem', marginTop: '4px' }}>{formatDelivery(summary)}</div>
+                                    </div>
+                                    <div style={{ background: 'var(--chat-control-surface-strong)', border: '1px solid var(--chat-control-border)', borderRadius: '10px', padding: '8px' }}>
+                                        <div style={{ color: 'var(--chat-control-text-soft)', fontSize: '0.68rem', textTransform: 'uppercase' }}>Subtotal</div>
+                                        <div style={{ color: 'var(--text-primary)', fontWeight: 800, fontSize: '0.78rem', marginTop: '4px' }}>S/ {formatMoney1(summary?.subtotal || 0)}</div>
+                                    </div>
+                                </div>
+                            </button>
+
+                            {isExpanded && (
+                                <div style={{ borderTop: '1px solid var(--chat-card-border)', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    {items.map((item, index) => (
+                                        <div key={`option_${optionNumber}_item_${index}`} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '8px', alignItems: 'start' }}>
+                                            <div style={{ minWidth: 0 }}>
+                                                <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.78rem', lineHeight: 1.35 }}>
+                                                    {item?.title || 'Producto'}
+                                                </div>
+                                                <div style={{ color: 'var(--chat-control-text-soft)', fontSize: '0.72rem', marginTop: '3px' }}>
+                                                    Cantidad: {item?.qty || 1}
+                                                </div>
+                                            </div>
+                                            <div style={{ color: 'var(--text-primary)', fontWeight: 800, fontSize: '0.76rem', whiteSpace: 'nowrap' }}>
+                                                S/ {formatMoney1(item?.lineTotal || 0)}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
 
             <textarea
                 rows={8}
                 value={finalMessage}
-                onChange={(event) => setFinalMessage(event.target.value)}
+                onChange={(event) => {
+                    setMessageTouched(true);
+                    setFinalMessage(event.target.value);
+                }}
                 style={{ width: '100%', resize: 'vertical', minHeight: '160px', background: 'var(--chat-control-surface-strong)', border: '1px solid var(--chat-control-border)', color: 'var(--text-primary)', borderRadius: '12px', padding: '12px', fontSize: '0.8rem', lineHeight: 1.5, outline: 'none' }}
             />
 

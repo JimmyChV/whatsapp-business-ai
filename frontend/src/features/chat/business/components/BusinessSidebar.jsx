@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Bot, ShoppingCart, Clock, Package, MapPin } from 'lucide-react';
+import { Bot, ShoppingCart, Clock, Package, MapPin, FileText } from 'lucide-react';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 import {
     addItemToCartState,
@@ -40,6 +40,7 @@ import {
     BusinessCartTabSection,
     BusinessCatalogTab,
     BusinessCoverageTabSection,
+    BusinessQuotesTabSection,
     BusinessQuickRepliesTabSection,
     ClientProfilePanel,
     CompanyProfilePanel
@@ -1092,9 +1093,9 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     });
     const tabs = [
         ...(aiPanelAvailable ? [{ id: 'ai', icon: <Bot size={15} />, label: 'IA Pro' }] : []),
-        { id: 'catalog', icon: <Package size={15} />, label: `Catalogo${catalog.length > 0 ? ` (${catalog.length})` : ''}` },
         { id: 'coverage', icon: <MapPin size={15} />, label: 'Cobertura' },
-        ...(!quoteOptionsModeActive ? [{ id: 'cart', icon: <ShoppingCart size={15} />, label: 'Cotizaciones' }] : []),
+        { id: 'catalog', icon: <Package size={15} />, label: `Catalogo${catalog.length > 0 ? ` (${catalog.length})` : ''}` },
+        { id: 'quotes', icon: <FileText size={15} />, label: 'Cotizaciones' },
         ...(quickRepliesEnabled ? [{ id: 'quick', icon: <Clock size={15} />, label: 'Rapidas' }] : []),
     ];
 
@@ -1186,7 +1187,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
 
             {/* CATALOG TAB */}
             {activeTab === 'catalog' && (
-                <BusinessCatalogTab catalog={catalog} socket={socket} addToCart={addToCart} onCatalogQtyDelta={updateCatalogQty} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} activeChatPhone={activeChatPhone} cartItems={cart} waModules={waModules} selectedCatalogModuleId={selectedCatalogModuleId} selectedCatalogId={selectedCatalogId} tenantId={normalizedTenantScopeKey} onSelectCatalogModule={onSelectCatalogModule} onSelectCatalog={onSelectCatalog} onUploadCatalogImage={onUploadCatalogImage} onSendCatalogProduct={onSendCatalogProduct} canWriteByAssignment={canUseMessageTools} quoteOptionsWizard={quoteOptionsWizard} onQuoteOptionsWizardChange={updateQuoteOptionsWizard} onResetQuoteOptionsWizard={resetQuoteOptionsWizard} />
+                <BusinessCatalogTab catalog={catalog} socket={socket} addToCart={addToCart} onCatalogQtyDelta={updateCatalogQty} catalogMeta={businessData.catalogMeta} activeChatId={activeChatId} activeChatPhone={activeChatPhone} cartItems={cart} waModules={waModules} selectedCatalogModuleId={selectedCatalogModuleId} selectedCatalogId={selectedCatalogId} tenantId={normalizedTenantScopeKey} onSelectCatalogModule={onSelectCatalogModule} onSelectCatalog={onSelectCatalog} onUploadCatalogImage={onUploadCatalogImage} onSendCatalogProduct={onSendCatalogProduct} canWriteByAssignment={canUseMessageTools} quoteOptionsWizard={quoteOptionsWizard} onQuoteOptionsWizardChange={updateQuoteOptionsWizard} onResetQuoteOptionsWizard={resetQuoteOptionsWizard} onOpenCart={() => setActiveTab('cart')} />
             )}
 
             {activeTab === 'coverage' && (
@@ -1209,11 +1210,11 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     orderImportStatus={orderImportStatus}
                     sourceOrder={sourceOrder}
                     sourceQuote={sourceQuote}
-                    quoteHistory={quoteHistory}
-                    quoteHistoryExpanded={quoteHistoryExpanded}
-                    setQuoteHistoryExpanded={setQuoteHistoryExpanded}
-                    onLoadQuoteToCart={handleLoadQuoteToCart}
-                    onStartNewQuote={handleStartNewQuote}
+                    quoteHistory={[]}
+                    quoteHistoryExpanded={false}
+                    setQuoteHistoryExpanded={() => {}}
+                    onLoadQuoteToCart={null}
+                    onStartNewQuote={null}
                     quoteOptionsModeActive={quoteOptionsModeActive}
                     getLineBreakdown={getLineBreakdown}
                     removeFromCart={removeFromCart}
@@ -1243,6 +1244,20 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     deliveryFee={deliveryFee}
                     cartTotal={cartTotal}
                     sendQuoteToChat={sendQuoteToChat}
+                    canWriteByAssignment={canUseMessageTools}
+                    showQuoteHistory={false}
+                />
+            )}
+
+            {activeTab === 'quotes' && (
+                <BusinessQuotesTabSection
+                    quoteHistory={quoteHistory}
+                    quoteHistoryExpanded={quoteHistoryExpanded}
+                    setQuoteHistoryExpanded={setQuoteHistoryExpanded}
+                    onLoadQuoteToCart={handleLoadQuoteToCart}
+                    onStartNewQuote={handleStartNewQuote}
+                    quoteOptionsModeActive={quoteOptionsModeActive}
+                    formatMoney={formatMoney}
                     canWriteByAssignment={canUseMessageTools}
                 />
             )}

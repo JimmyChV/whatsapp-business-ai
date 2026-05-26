@@ -23,10 +23,11 @@ import {
     setCartItemDiscountValueState,
     updateCartItemQtyState
 } from '../helpers';
+import BusinessCartTabSection from './BusinessCartTabSection';
 import { BusinessCatalogProductCard, BusinessCatalogProductForm } from './catalog';
 import QuoteOptionReview from './QuoteOptionReview';
 
-const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', tenantId = 'default', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onSendCatalogProduct = null, canWriteByAssignment = false, quoteOptionsWizard = null, onQuoteOptionsWizardChange = null, onResetQuoteOptionsWizard = null }) => {
+const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta, activeChatId, activeChatPhone = '', cartItems = [], waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', tenantId = 'default', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onSendCatalogProduct = null, canWriteByAssignment = false, quoteOptionsWizard = null, onQuoteOptionsWizardChange = null, onResetQuoteOptionsWizard = null, onOpenCart = null }) => {
     const { confirm, notify } = useUiFeedback();
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
@@ -266,7 +267,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
         ? quoteOptionsWizard
         : {};
     const modoOpciones = Boolean(wizardState.modoOpciones);
-    const optionCountChoices = [2, 3, 4, 5];
+    const optionCountChoices = [2, 3];
     const safeTotalOpciones = optionCountChoices.includes(Number(wizardState.totalOpciones))
         ? Number(wizardState.totalOpciones)
         : 3;
@@ -285,16 +286,20 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
         : -1;
     const currentOption = currentOptionIndex >= 0 ? (wizardOptions[currentOptionIndex] || null) : null;
     const currentOptionProducts = Array.isArray(currentOption?.productos) ? currentOption.productos : [];
-    const currentOptionDelivery = currentOption?.delivery && typeof currentOption.delivery === 'object'
-        ? currentOption.delivery
-        : { type: 'free', amount: 0 };
+    const currentOptionGlobalDiscountEnabled = Boolean(currentOption?.globalDiscountEnabled);
+    const currentOptionGlobalDiscountType = currentOption?.globalDiscountType === 'amount' ? 'amount' : 'percent';
+    const currentOptionGlobalDiscountValue = Number(currentOption?.globalDiscountValue || 0) || 0;
+    const currentOptionDeliveryType = currentOption?.deliveryType === 'amount' ? 'amount' : 'free';
+    const currentOptionDeliveryAmount = Number(currentOption?.deliveryAmount || 0) || 0;
+    const currentOptionShowOrderAdjustments = Boolean(currentOption?.showOrderAdjustments);
+    const currentOptionShowCartTotalsBreakdown = currentOption?.showCartTotalsBreakdown !== false;
     const currentOptionPricing = calculateCartPricing({
         cart: currentOptionProducts,
-        globalDiscountEnabled: Number(currentOption?.descuentoGlobal || 0) > 0,
-        globalDiscountType: 'amount',
-        globalDiscountValue: Number(currentOption?.descuentoGlobal || 0) || 0,
-        deliveryType: currentOptionDelivery.type === 'amount' ? 'amount' : 'free',
-        deliveryAmount: Number(currentOptionDelivery.amount || 0) || 0,
+        globalDiscountEnabled: currentOptionGlobalDiscountEnabled,
+        globalDiscountType: currentOptionGlobalDiscountType,
+        globalDiscountValue: currentOptionGlobalDiscountValue,
+        deliveryType: currentOptionDeliveryType,
+        deliveryAmount: currentOptionDeliveryAmount,
         parseMoney,
         roundMoney,
         clampNumber
@@ -347,8 +352,13 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
             numero: index + 1,
             label: `Opción ${index + 1}`,
             productos: [],
-            descuentoGlobal: 0,
-            delivery: null,
+            globalDiscountEnabled: false,
+            globalDiscountType: 'percent',
+            globalDiscountValue: 0,
+            deliveryType: 'free',
+            deliveryAmount: 0,
+            showOrderAdjustments: false,
+            showCartTotalsBreakdown: true,
             total: 0,
             confirmada: false
         }));
@@ -381,11 +391,11 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
             const safeProducts = Array.isArray(nextProducts) ? nextProducts : [];
             const pricing = calculateCartPricing({
                 cart: safeProducts,
-                globalDiscountEnabled: Number(option?.descuentoGlobal || 0) > 0,
-                globalDiscountType: 'amount',
-                globalDiscountValue: Number(option?.descuentoGlobal || 0) || 0,
-                deliveryType: option?.delivery?.type === 'amount' ? 'amount' : 'free',
-                deliveryAmount: Number(option?.delivery?.amount || 0) || 0,
+                globalDiscountEnabled: Boolean(option?.globalDiscountEnabled),
+                globalDiscountType: option?.globalDiscountType === 'amount' ? 'amount' : 'percent',
+                globalDiscountValue: Number(option?.globalDiscountValue || 0) || 0,
+                deliveryType: option?.deliveryType === 'amount' ? 'amount' : 'free',
+                deliveryAmount: Number(option?.deliveryAmount || 0) || 0,
                 parseMoney,
                 roundMoney,
                 clampNumber
@@ -405,16 +415,13 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                 confirmada: false
             };
             const safeProducts = Array.isArray(nextOption.productos) ? nextOption.productos : [];
-            const delivery = nextOption.delivery && typeof nextOption.delivery === 'object'
-                ? nextOption.delivery
-                : { type: 'free', amount: 0 };
             const pricing = calculateCartPricing({
                 cart: safeProducts,
-                globalDiscountEnabled: Number(nextOption.descuentoGlobal || 0) > 0,
-                globalDiscountType: 'amount',
-                globalDiscountValue: Number(nextOption.descuentoGlobal || 0) || 0,
-                deliveryType: delivery.type === 'amount' ? 'amount' : 'free',
-                deliveryAmount: Number(delivery.amount || 0) || 0,
+                globalDiscountEnabled: Boolean(nextOption.globalDiscountEnabled),
+                globalDiscountType: nextOption.globalDiscountType === 'amount' ? 'amount' : 'percent',
+                globalDiscountValue: Number(nextOption.globalDiscountValue || 0) || 0,
+                deliveryType: nextOption.deliveryType === 'amount' ? 'amount' : 'free',
+                deliveryAmount: Number(nextOption.deliveryAmount || 0) || 0,
                 parseMoney,
                 roundMoney,
                 clampNumber
@@ -466,16 +473,13 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
         .filter((option) => Array.isArray(option?.productos) && option.productos.length > 0)
         .map((option) => {
             const products = Array.isArray(option?.productos) ? option.productos : [];
-            const delivery = option?.delivery && typeof option.delivery === 'object'
-                ? option.delivery
-                : { type: 'free', amount: 0 };
             const pricing = calculateCartPricing({
                 cart: products,
-                globalDiscountEnabled: Number(option?.descuentoGlobal || 0) > 0,
-                globalDiscountType: 'amount',
-                globalDiscountValue: Number(option?.descuentoGlobal || 0) || 0,
-                deliveryType: delivery.type === 'amount' ? 'amount' : 'free',
-                deliveryAmount: Number(delivery.amount || 0) || 0,
+                globalDiscountEnabled: Boolean(option?.globalDiscountEnabled),
+                globalDiscountType: option?.globalDiscountType === 'amount' ? 'amount' : 'percent',
+                globalDiscountValue: Number(option?.globalDiscountValue || 0) || 0,
+                deliveryType: option?.deliveryType === 'amount' ? 'amount' : 'free',
+                deliveryAmount: Number(option?.deliveryAmount || 0) || 0,
                 parseMoney,
                 roundMoney,
                 clampNumber
@@ -493,10 +497,10 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                 subtotalAfterGlobal: pricing.subtotalAfterGlobal,
                 deliveryFee: pricing.deliveryFee,
                 cartTotal: pricing.cartTotal,
-                deliveryType: delivery.type === 'amount' ? 'amount' : 'free',
-                globalDiscountEnabled: Number(option?.descuentoGlobal || 0) > 0,
-                globalDiscountType: 'amount',
-                globalDiscountValue: Number(option?.descuentoGlobal || 0) || 0,
+                deliveryType: option?.deliveryType === 'amount' ? 'amount' : 'free',
+                globalDiscountEnabled: Boolean(option?.globalDiscountEnabled),
+                globalDiscountType: option?.globalDiscountType === 'amount' ? 'amount' : 'percent',
+                globalDiscountValue: Number(option?.globalDiscountValue || 0) || 0,
                 currency: 'PEN'
             });
             return {
@@ -721,6 +725,15 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                     Limpiar
                                 </button>
                             )}
+                            {!modoOpciones && cartItems.length > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={() => typeof onOpenCart === 'function' && onOpenCart()}
+                                    style={primaryActionStyle}
+                                >
+                                    Ver carrito ({cartItems.length})
+                                </button>
+                            )}
                         </div>
 
                         <div style={{ fontSize: '0.7rem', color: secondaryText }}>
@@ -908,6 +921,81 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                     </button>
                                 </div>
 
+                                <div style={{ background: cardSurface, border: `1px solid ${cardBorder}`, borderRadius: '12px', overflow: 'hidden' }}>
+                                    <BusinessCartTabSection
+                                        cart={currentOptionProducts}
+                                        orderImportStatus={null}
+                                        sourceOrder={null}
+                                        sourceQuote={null}
+                                        quoteHistory={[]}
+                                        quoteHistoryExpanded={false}
+                                        setQuoteHistoryExpanded={() => {}}
+                                        onLoadQuoteToCart={null}
+                                        onStartNewQuote={null}
+                                        quoteOptionsModeActive
+                                        getLineBreakdown={getOptionLineBreakdown}
+                                        removeFromCart={handleCurrentOptionRemove}
+                                        updateQty={handleCurrentOptionQtyDelta}
+                                        updateItemDiscountEnabled={handleCurrentOptionDiscountEnabled}
+                                        updateItemDiscountValue={handleCurrentOptionDiscountValue}
+                                        updateItemDiscountType={handleCurrentOptionDiscountType}
+                                        showOrderAdjustments={currentOptionShowOrderAdjustments}
+                                        setShowOrderAdjustments={(value) => updateCurrentOptionPricing({
+                                            showOrderAdjustments: typeof value === 'function'
+                                                ? value(currentOptionShowOrderAdjustments)
+                                                : Boolean(value)
+                                        })}
+                                        globalDiscountEnabled={currentOptionGlobalDiscountEnabled}
+                                        setGlobalDiscountEnabled={(value) => updateCurrentOptionPricing({
+                                            globalDiscountEnabled: typeof value === 'function'
+                                                ? value(currentOptionGlobalDiscountEnabled)
+                                                : Boolean(value)
+                                        })}
+                                        globalDiscountType={currentOptionGlobalDiscountType}
+                                        setGlobalDiscountType={(value) => updateCurrentOptionPricing({
+                                            globalDiscountType: typeof value === 'function'
+                                                ? value(currentOptionGlobalDiscountType)
+                                                : (value === 'amount' ? 'amount' : 'percent')
+                                        })}
+                                        normalizedGlobalDiscountValue={currentOptionGlobalDiscountValue}
+                                        setGlobalDiscountValue={(value) => updateCurrentOptionPricing({
+                                            globalDiscountValue: typeof value === 'function'
+                                                ? value(currentOptionGlobalDiscountValue)
+                                                : Math.max(0, Number(value) || 0)
+                                        })}
+                                        parseMoney={parseMoney}
+                                        deliveryType={currentOptionDeliveryType}
+                                        setDeliveryType={(value) => updateCurrentOptionPricing({
+                                            deliveryType: typeof value === 'function'
+                                                ? value(currentOptionDeliveryType)
+                                                : (value === 'amount' ? 'amount' : 'free')
+                                        })}
+                                        safeDeliveryAmount={currentOptionDeliveryAmount}
+                                        setDeliveryAmount={(value) => updateCurrentOptionPricing({
+                                            deliveryAmount: typeof value === 'function'
+                                                ? value(currentOptionDeliveryAmount)
+                                                : Math.max(0, Number(value) || 0)
+                                        })}
+                                        showCartTotalsBreakdown={currentOptionShowCartTotalsBreakdown}
+                                        setShowCartTotalsBreakdown={(value) => updateCurrentOptionPricing({
+                                            showCartTotalsBreakdown: typeof value === 'function'
+                                                ? value(currentOptionShowCartTotalsBreakdown)
+                                                : Boolean(value)
+                                        })}
+                                        formatMoney={formatMoney}
+                                        regularSubtotalTotal={currentOptionPricing.regularSubtotalTotal}
+                                        totalDiscountForQuote={currentOptionPricing.totalDiscountForQuote}
+                                        subtotalAfterGlobal={currentOptionPricing.subtotalAfterGlobal}
+                                        deliveryFee={currentOptionPricing.deliveryFee}
+                                        cartTotal={currentOptionPricing.cartTotal}
+                                        sendQuoteToChat={() => {}}
+                                        canWriteByAssignment={canWriteByAssignment}
+                                        showQuoteHistory={false}
+                                        showSendQuoteAction={false}
+                                    />
+                                </div>
+
+                                {false && (
                                 <div style={{ background: cardSurface, border: `1px solid ${cardBorder}`, borderRadius: '12px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
 
                                     {currentOptionProducts.length === 0 ? (
@@ -1035,6 +1123,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                         </div>
                                     </div>
                                 </div>
+                                )}
 
                                 <div style={{ position: 'sticky', bottom: 0, zIndex: 5, background: cardSurface, border: `1px solid ${cardBorder}`, borderRadius: '14px', padding: '10px', boxShadow: '0 -8px 22px rgba(15, 23, 42, 0.08)', display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                                     <button type="button" onClick={() => setWizardPatch({ phase: 'catalog', pasoActual: activeOptionNumber + 1 })} style={neutralActionStyle}>
