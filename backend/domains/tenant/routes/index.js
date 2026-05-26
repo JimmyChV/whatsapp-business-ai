@@ -8,6 +8,7 @@ module.exports = {
     ...require('./http-routes-admin-schedules'),
     ...require('./http-routes-admin-tenants-users'),
     ...require('./http-routes-assets-upload'),
+    ...require('./http-routes-meta-ads'),
     ...require('./http-routes-runtime-public')
 };
 

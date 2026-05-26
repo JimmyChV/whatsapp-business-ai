@@ -288,6 +288,8 @@ function normalizeIntegrationsForStorage(input = {}, existing = {}) {
     const currentAppearance = isPlainObject(current.appearance) ? current.appearance : {};
     const sourceGeo = isPlainObject(source.geo) ? source.geo : {};
     const currentGeo = isPlainObject(current.geo) ? current.geo : {};
+    const sourceMetaAds = isPlainObject(source.metaAds) ? source.metaAds : {};
+    const currentMetaAds = isPlainObject(current.metaAds) ? current.metaAds : {};
 
     const catalogMode = normalizeCatalogMode(
         sourceCatalog.mode ?? source.catalogMode,
@@ -368,6 +370,11 @@ function normalizeIntegrationsForStorage(input = {}, existing = {}) {
         hasSourceGoogleMapsApiKey ? sourceGeo.googleMapsApiKey : undefined,
         normalizeText(currentGeo.googleMapsApiKey)
     );
+    const hasSourceMetaAdsAccessToken = Object.prototype.hasOwnProperty.call(sourceMetaAds, 'accessToken');
+    const metaAdsAccessToken = normalizeSecretForStorage(
+        hasSourceMetaAdsAccessToken ? sourceMetaAds.accessToken : undefined,
+        normalizeText(currentMetaAds.accessToken)
+    );
 
     return {
         catalog: {
@@ -397,6 +404,11 @@ function normalizeIntegrationsForStorage(input = {}, existing = {}) {
         geo: {
             googleMapsApiKey
         },
+        metaAds: {
+            businessId: normalizeText(sourceMetaAds.businessId ?? currentMetaAds.businessId),
+            adAccountId: normalizeText(sourceMetaAds.adAccountId ?? currentMetaAds.adAccountId),
+            accessToken: metaAdsAccessToken
+        },
         updatedAt: normalizeText(source.updatedAt ?? current.updatedAt)
     };
 }
@@ -406,11 +418,13 @@ function toPublicConfig(stored = {}) {
     const woo = config.catalog.providers.woocommerce;
     const ai = config.ai;
     const geo = config.geo || {};
+    const metaAds = config.metaAds || {};
 
     const wooKeyPlain = resolveSecretPlain(woo.consumerKey);
     const wooSecretPlain = resolveSecretPlain(woo.consumerSecret);
     const aiKeyPlain = resolveSecretPlain(ai.openaiApiKey);
     const googleMapsKeyPlain = resolveSecretPlain(geo.googleMapsApiKey);
+    const metaAdsAccessTokenPlain = resolveSecretPlain(metaAds.accessToken) || normalizeText(metaAds.accessToken);
 
     const assistantItems = (Array.isArray(ai.assistants) ? ai.assistants : [])
         .map((entry) => toPublicAssistantRecord(entry))
@@ -449,6 +463,12 @@ function toPublicConfig(stored = {}) {
             hasGoogleMapsApiKey: Boolean(geo.googleMapsApiKey),
             googleMapsApiKeyMasked: googleMapsKeyPlain ? maskSecret(googleMapsKeyPlain) : null
         },
+        metaAds: {
+            businessId: normalizeText(metaAds.businessId),
+            adAccountId: normalizeText(metaAds.adAccountId),
+            hasAccessToken: Boolean(metaAds.accessToken),
+            accessTokenMasked: metaAdsAccessTokenPlain ? maskSecret(metaAdsAccessTokenPlain) : null
+        },
         updatedAt: config.updatedAt || null
     };
 }
@@ -458,6 +478,7 @@ function toRuntimeConfig(stored = {}) {
     const woo = config.catalog.providers.woocommerce;
     const ai = config.ai;
     const geo = config.geo || {};
+    const metaAds = config.metaAds || {};
 
     const assistants = (Array.isArray(ai.assistants) ? ai.assistants : [])
         .map((entry) => toRuntimeAssistantRecord(entry))
@@ -491,6 +512,11 @@ function toRuntimeConfig(stored = {}) {
         appearance: config.appearance,
         geo: {
             googleMapsApiKey: resolveSecretPlain(geo.googleMapsApiKey)
+        },
+        metaAds: {
+            businessId: normalizeText(metaAds.businessId),
+            adAccountId: normalizeText(metaAds.adAccountId),
+            accessToken: resolveSecretPlain(metaAds.accessToken) || normalizeText(metaAds.accessToken)
         },
         updatedAt: config.updatedAt || null
     };
@@ -541,7 +567,8 @@ async function saveToPostgres(tenantId = DEFAULT_TENANT_ID, stored = {}) {
         catalog: clean.catalog,
         ai: clean.ai,
         appearance: clean.appearance,
-        geo: clean.geo
+        geo: clean.geo,
+        metaAds: clean.metaAds
     };
     await ensurePostgresSchema();
     await queryPostgres(

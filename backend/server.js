@@ -49,6 +49,7 @@ const {
     registerTenantAdminConfigCatalogHttpRoutes,
     registerTenantAdminAutomationHttpRoutes,
     registerTenantAdminScheduleHttpRoutes,
+    registerTenantMetaAdsHttpRoutes,
     registerTenantAdminTenantsUsersHttpRoutes,
     registerTenantAssetsUploadHttpRoutes,
     registerTenantRuntimePublicHttpRoutes
@@ -427,6 +428,7 @@ registerHttpRoutes({
     registerTenantAdminConfigCatalogHttpRoutes,
     registerTenantAdminAutomationHttpRoutes,
     registerTenantAdminScheduleHttpRoutes,
+    registerTenantMetaAdsHttpRoutes,
     registerOperationsUtilityHttpRoutes,
     registerCloudWebhookHttpRoutes,
     isProduction,

@@ -20,6 +20,7 @@ function registerHttpRoutes({
     registerTenantAdminConfigCatalogHttpRoutes,
     registerTenantAdminAutomationHttpRoutes,
     registerTenantAdminScheduleHttpRoutes,
+    registerTenantMetaAdsHttpRoutes,
     registerOperationsUtilityHttpRoutes,
     registerCloudWebhookHttpRoutes,
     isProduction,
@@ -319,6 +320,14 @@ function registerHttpRoutes({
     registerTenantAdminScheduleHttpRoutes({
         app,
         tenantScheduleService,
+        accessPolicyService,
+        isTenantAllowedForUser,
+        hasPermission,
+        hasAnyPermission
+    });
+
+    registerTenantMetaAdsHttpRoutes({
+        app,
         accessPolicyService,
         isTenantAllowedForUser,
         hasPermission,

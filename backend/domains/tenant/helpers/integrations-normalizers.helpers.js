@@ -44,6 +44,11 @@ const DEFAULT_INTEGRATIONS = Object.freeze({
     geo: {
         googleMapsApiKey: null
     },
+    metaAds: {
+        businessId: null,
+        adAccountId: null,
+        accessToken: null
+    },
     updatedAt: null
 });
 

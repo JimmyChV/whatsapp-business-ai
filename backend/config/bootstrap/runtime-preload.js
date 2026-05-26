@@ -1,4 +1,5 @@
 const catalogSyncService = require('../../domains/tenant/services/catalog-sync.service');
+const metaAdsSyncService = require('../../domains/tenant/services/meta-ads-sync.service');
 
 async function preloadRuntimeServices({
     saasControlService,
@@ -31,6 +32,15 @@ async function preloadRuntimeServices({
             })
             .catch((error) => {
                 logger.warn('[CatalogSync] no se pudo precargar catalogos WooCommerce: ' + String(error?.message || error));
+            }),
+        Promise.resolve()
+            .then(() => {
+                metaAdsSyncService.startDailySync().catch((error) => {
+                    logger.warn('[MetaAdsSync] no se pudo programar sync diario: ' + String(error?.message || error));
+                });
+            })
+            .catch((error) => {
+                logger.warn('[MetaAdsSync] no se pudo programar sync diario: ' + String(error?.message || error));
             })
     ];
 
