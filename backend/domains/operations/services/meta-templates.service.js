@@ -37,6 +37,10 @@ function toLower(value = '') {
     return toText(value).toLowerCase();
 }
 
+function toUpper(value = '') {
+    return toText(value).toUpperCase();
+}
+
 function nowIso() {
     return new Date().toISOString();
 }
