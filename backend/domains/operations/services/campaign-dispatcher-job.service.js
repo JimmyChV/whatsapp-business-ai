@@ -1,6 +1,8 @@
 const { getStorageDriver, queryPostgres } = require('../../../config/persistence-runtime');
 const metaTemplatesService = require('./meta-templates.service');
 const { buildRenderedTemplateFromRecord } = require('../../channels/services/template-message-content.helpers');
+const messageHistoryService = require('./message-history.service');
+const customerService = require('../../tenant/services/customers.service');
 
 function toBool(value, fallback = false) {
     const raw = String(value ?? '').trim().toLowerCase();
@@ -35,6 +37,94 @@ function sleep(ms = 0) {
     const safe = Math.max(0, Number(ms) || 0);
     if (!safe) return Promise.resolve();
     return new Promise((resolve) => setTimeout(resolve, safe));
+}
+
+function buildFormalCustomerName(customer = {}) {
+    const parts = [
+        toText(customer?.lastNamePaternal || customer?.last_name_paternal || ''),
+        toText(customer?.lastNameMaternal || customer?.last_name_maternal || ''),
+        toText(customer?.firstName || customer?.first_name || '')
+    ].filter(Boolean);
+    if (parts.length > 0) return parts.join(' ');
+    return toText(customer?.contactName || customer?.contact_name || customer?.name || '');
+}
+
+async function persistCampaignOutboundHistory(tenantId = '', moduleContext = null, job = {}, renderedTemplate = {}, templateName = '', languageCode = '', response = null) {
+    const cleanTenantId = toText(tenantId);
+    if (!cleanTenantId || !job) return;
+
+    try {
+        const waId = await waClient.resolveSendWaId(job.phone);
+        const messageId = toText(response?.messages?.[0]?.id || '');
+        if (!waId || !messageId) return;
+
+        const chatId = `${waId}@c.us`;
+        const nowIso = new Date().toISOString();
+        const nowUnix = Math.floor(Date.now() / 1000);
+        const customerId = toText(job?.recipientId || '');
+        const customer = customerId && typeof customerService?.getCustomer === 'function'
+            ? await customerService.getCustomer(cleanTenantId, customerId)
+            : null;
+        const displayName = buildFormalCustomerName(customer || {});
+        const moduleId = toText(moduleContext?.moduleId || '').toLowerCase() || null;
+        const modulePhone = toText(moduleContext?.phoneNumber || moduleContext?.phone || '') || null;
+        const previewText = toText(renderedTemplate?.previewText || '') || `Template: ${toText(templateName || '')}`;
+        const templateComponents = Array.isArray(renderedTemplate?.templateComponents) ? renderedTemplate.templateComponents : [];
+
+        await messageHistoryService.upsertMessage(cleanTenantId, {
+            messageId,
+            chatId,
+            fromMe: true,
+            waModuleId: moduleId,
+            waPhoneNumber: modulePhone,
+            body: previewText,
+            messageType: 'template',
+            timestampUnix: nowUnix,
+            ack: 1,
+            hasMedia: false,
+            metadata: {
+                templateName: toText(templateName || '') || null,
+                templateLanguage: toText(languageCode || '') || null,
+                templatePreviewText: previewText || null,
+                templateComponents,
+                campaignId: toText(job?.campaignId || '') || null,
+                jobId: toText(job?.jobId || '') || null,
+                sentViaModuleId: moduleId,
+                sentViaPhoneNumber: modulePhone,
+                sentViaTransport: 'cloud',
+                sentViaChannelType: toText(moduleContext?.channelType || 'whatsapp').toLowerCase() || 'whatsapp'
+            },
+            chat: {
+                id: chatId,
+                displayName: displayName || null,
+                phone: toText(job?.phone || '') || null,
+                subtitle: displayName || null
+            }
+        });
+
+        if (typeof customerService?.upsertFromInteraction === 'function' && toText(job?.phone || '')) {
+            await customerService.upsertFromInteraction(cleanTenantId, {
+                moduleId: toText(moduleContext?.moduleId || ''),
+                channelType: toText(moduleContext?.channelType || 'whatsapp').toLowerCase() || 'whatsapp',
+                messageId,
+                chatId,
+                phone: toText(job?.phone || ''),
+                contactName: displayName || null,
+                direction: 'outbound',
+                messageType: 'template',
+                lastMessageAt: nowIso,
+                metadata: {
+                    messageId,
+                    senderPushname: displayName || null,
+                    waPhoneNumber: modulePhone,
+                    fromMe: true,
+                    templateName: toText(templateName || '') || null
+                }
+            });
+        }
+    } catch (persistError) {
+        logger?.warn?.('[Ops][CampaignDispatcher] outbound history persist failed tenant=' + cleanTenantId + ': ' + String(persistError?.message || persistError));
+    }
 }
 
 function normalizeTemplateComponents(variables = {}) {
@@ -312,7 +402,7 @@ function createCampaignDispatcherJob({
         }
 
         try {
-            await waClient.sendTemplateMessage(job.phone, {
+            const response = await waClient.sendTemplateMessage(job.phone, {
                 templateName: toText(job.templateName || ''),
                 languageCode,
                 components,
@@ -326,6 +416,16 @@ function createCampaignDispatcherJob({
                     templateComponents: Array.isArray(renderedTemplate?.templateComponents) ? renderedTemplate.templateComponents : []
                 }
             });
+
+            await persistCampaignOutboundHistory(
+                tenantId,
+                moduleContext,
+                job,
+                renderedTemplate,
+                toText(job.templateName || ''),
+                languageCode,
+                response
+            );
 
             const sentJob = await campaignQueueService.ackJob(tenantId, { idempotencyKey });
             await syncCampaignRecipientFromQueue(tenantId, sentJob, { reason: 'sent' });
