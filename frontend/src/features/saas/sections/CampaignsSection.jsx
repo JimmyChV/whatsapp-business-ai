@@ -1042,7 +1042,10 @@ export default React.memo(function CampaignsSection(props = {}) {
             templateName: toText(entry?.templateName),
             moduleId: toText(entry?.moduleId),
             templateLanguage: toLower(entry?.templateLanguage || 'es'),
-            componentsJson: Array.isArray(entry?.componentsJson) ? entry.componentsJson : []
+            componentsJson: Array.isArray(entry?.componentsJson) ? entry.componentsJson : [],
+            variableMapJson: entry?.variableMapJson && typeof entry.variableMapJson === 'object'
+                ? entry.variableMapJson
+                : {}
         }))
         .filter((entry) => entry.templateName), [templateItems]);
 
@@ -1170,6 +1173,8 @@ export default React.memo(function CampaignsSection(props = {}) {
         const components = Array.isArray(selectedTemplate?.componentsJson) ? selectedTemplate.componentsJson : [];
         const byType = (type) => components.find((component) => toUpper(component?.type) === type) || null;
         const header = byType('HEADER');
+        const body = byType('BODY');
+        const footer = byType('FOOTER');
         const buttons = byType('BUTTONS');
         const headerFormat = toLower(header?.format || '');
         const headerType = header
@@ -1178,8 +1183,8 @@ export default React.memo(function CampaignsSection(props = {}) {
         return {
             headerType,
             headerText: toText(selectedTemplateResolvedPreview?.headerText || header?.text),
-            bodyText: toText(selectedTemplateResolvedPreview?.bodyText || ''),
-            footerText: toText(selectedTemplateResolvedPreview?.footerText || ''),
+            bodyText: toText(selectedTemplateResolvedPreview?.bodyText || body?.text || ''),
+            footerText: toText(selectedTemplateResolvedPreview?.footerText || footer?.text || ''),
             headerMediaSrc: toText(form?.headerMedia?.base64),
             buttons: Array.isArray(buttons?.buttons)
                 ? buttons.buttons.map((button, index) => ({
