@@ -1,4 +1,5 @@
 import React from 'react';
+import { readFileAsDataUrl } from '../../saas/helpers/assets.helpers';
 
 function toText(value = '') {
     return String(value ?? '').trim();
@@ -72,11 +73,53 @@ export default function SendTemplateModal({
     confirmLabel = 'Enviar template',
     confirmDisabled = true,
     confirmBusy = false,
+    headerMedia = null,
+    validFrom = '',
+    validTo = '',
+    onHeaderMediaChange = null,
+    onValidityChange = null,
     onClose = null,
     onSelectTemplate = null,
     onConfirm = null
 }) {
     if (!isOpen) return null;
+    const templateComponents = Array.isArray(selectedTemplate?.componentsJson) ? selectedTemplate.componentsJson : [];
+    const headerComponent = templateComponents.find((component) => toText(component?.type).toUpperCase() === 'HEADER') || null;
+    const headerType = (() => {
+        const format = toText(headerComponent?.format).toLowerCase();
+        if (format === 'text') return 'text';
+        if (format === 'image' || format === 'video' || format === 'document') return format;
+        return 'none';
+    })();
+    const previewComponents = Array.isArray(preview?.components) ? preview.components : [];
+    const supportsDateRange = previewComponents.some((component) => (
+        Array.isArray(component?.parameters)
+            && component.parameters.some((parameter) => {
+                const key = toText(parameter?.key).toLowerCase();
+                return key === 'fecha_inicio' || key === 'fecha_fin';
+            })
+    ));
+
+    const handleHeaderMediaInputChange = async (event) => {
+        const file = event?.target?.files?.[0] || null;
+        if (!file) {
+            onHeaderMediaChange?.(null);
+            return;
+        }
+        try {
+            const base64 = await readFileAsDataUrl(file);
+            onHeaderMediaChange?.({
+                name: toText(file.name),
+                type: toText(file.type),
+                size: Number(file.size) || 0,
+                base64
+            });
+        } catch (error) {
+            onHeaderMediaChange?.({
+                error: String(error?.message || 'No se pudo leer el archivo seleccionado.')
+            });
+        }
+    };
 
     return (
         <div style={overlayStyle} onClick={() => onClose?.()}>
@@ -191,6 +234,64 @@ export default function SendTemplateModal({
                                                 {toText(preview?.previewText) || 'Sin contenido visible'}
                                             </div>
                                         </div>
+
+                                        {(supportsDateRange || ['image', 'video', 'document'].includes(headerType)) ? (
+                                            <div style={{ border: `1px solid ${tone.border}`, borderRadius: '14px', padding: '14px', background: tone.cardAlt, display: 'grid', gap: '12px' }}>
+                                                <div style={{ fontSize: '0.72rem', color: tone.infoText, fontWeight: 800, letterSpacing: '0.08em' }}>
+                                                    CONFIGURACION DE ENVIO
+                                                </div>
+                                                {supportsDateRange ? (
+                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px' }}>
+                                                        <label style={{ display: 'grid', gap: '6px', fontSize: '0.78rem', color: tone.text }}>
+                                                            <span>Fecha inicio</span>
+                                                            <input
+                                                                type="date"
+                                                                value={toText(validFrom)}
+                                                                onChange={(event) => onValidityChange?.({
+                                                                    validFrom: event.target.value,
+                                                                    validTo
+                                                                })}
+                                                                style={{ border: `1px solid ${tone.controlBorder}`, background: tone.ghostBg, color: tone.text, borderRadius: '10px', padding: '10px 12px' }}
+                                                            />
+                                                        </label>
+                                                        <label style={{ display: 'grid', gap: '6px', fontSize: '0.78rem', color: tone.text }}>
+                                                            <span>Fecha fin</span>
+                                                            <input
+                                                                type="date"
+                                                                value={toText(validTo)}
+                                                                onChange={(event) => onValidityChange?.({
+                                                                    validFrom,
+                                                                    validTo: event.target.value
+                                                                })}
+                                                                style={{ border: `1px solid ${tone.controlBorder}`, background: tone.ghostBg, color: tone.text, borderRadius: '10px', padding: '10px 12px' }}
+                                                            />
+                                                        </label>
+                                                    </div>
+                                                ) : null}
+                                                {['image', 'video', 'document'].includes(headerType) ? (
+                                                    <div style={{ display: 'grid', gap: '8px' }}>
+                                                        <label style={{ display: 'grid', gap: '6px', fontSize: '0.78rem', color: tone.text }}>
+                                                            <span>{headerType === 'image' ? 'Imagen del header' : headerType === 'video' ? 'Video del header' : 'Documento del header'}</span>
+                                                            <input
+                                                                type="file"
+                                                                accept={headerType === 'image' ? 'image/*' : headerType === 'video' ? 'video/*' : '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,text/plain,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document'}
+                                                                onChange={(event) => { void handleHeaderMediaInputChange(event); }}
+                                                                style={{ border: `1px solid ${tone.controlBorder}`, background: tone.ghostBg, color: tone.text, borderRadius: '10px', padding: '10px 12px' }}
+                                                            />
+                                                        </label>
+                                                        {toText(headerMedia?.name) ? (
+                                                            <small style={{ color: tone.textSoft }}>
+                                                                Archivo cargado: {toText(headerMedia.name)}
+                                                            </small>
+                                                        ) : (
+                                                            <small style={{ color: tone.textSoft }}>
+                                                                Esta plantilla necesita un encabezado multimedia al momento de enviar.
+                                                            </small>
+                                                        )}
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                        ) : null}
 
                                         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '12px' }}>
                                             {(Array.isArray(preview?.components) ? preview.components : []).map((component, index) => (

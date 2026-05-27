@@ -13,6 +13,18 @@ function createSocketTemplateMessagesService({
     const ensureArray = (value = []) => (Array.isArray(value) ? value : []);
     const normalizeTemplateComponentType = (value = '') => toUpper(value || 'BODY') || 'BODY';
     const normalizeTemplateToken = (value = '') => toLower(value).replace(/[{}]/g, '').trim();
+    const MULTIMEDIA_HEADER_FORMATS = new Set(['IMAGE', 'VIDEO', 'DOCUMENT']);
+
+    const isDataUrl = (value = '') => /^data:[^;]+;base64,/i.test(toText(value));
+    const parseDataUrlPayload = (value = '') => {
+        const input = toText(value);
+        const match = input.match(/^data:([^;]+);base64,(.+)$/i);
+        if (!match) return null;
+        return {
+            mimetype: toText(match[1]).toLowerCase() || 'application/octet-stream',
+            mediaData: toText(match[2])
+        };
+    };
 
     const parsePlaceholderIndexesFromText = (text = '') => {
         const matches = String(text || '').matchAll(/\{\{\s*(\d+)\s*\}\}/g);
@@ -75,23 +87,51 @@ function createSocketTemplateMessagesService({
         })
         .filter((component) => component && Array.isArray(component.parameters) && component.parameters.length > 0);
 
-    const buildTemplateSendComponents = (template = {}, previewPayload = {}) => {
+    const buildTemplateSendComponents = async (template = {}, previewPayload = {}, options = {}) => {
         const templateComponents = ensureArray(template?.componentsJson);
         const variableMapJson = template?.variableMapJson && typeof template.variableMapJson === 'object'
             ? template.variableMapJson
             : {};
         const previewMaps = buildTemplatePreviewMaps(previewPayload);
-        return ensureArray(templateComponents)
-            .flatMap((component = {}) => {
+        const headerMedia = options?.headerMedia && typeof options.headerMedia === 'object'
+            ? options.headerMedia
+            : null;
+        const resolvedComponents = [];
+        for (const component of ensureArray(templateComponents)) {
                 const type = normalizeTemplateComponentType(component?.type || 'BODY');
                 if (type === 'BUTTONS') {
-                    return buildTemplateButtonComponents(component?.buttons, previewMaps);
+                    resolvedComponents.push(...buildTemplateButtonComponents(component?.buttons, previewMaps));
+                    continue;
                 }
-                if (type !== 'HEADER' && type !== 'BODY') return [];
+                if (type !== 'HEADER' && type !== 'BODY') continue;
+                const format = toUpper(component?.format || '');
+                if (type === 'HEADER' && MULTIMEDIA_HEADER_FORMATS.has(format)) {
+                    if (!headerMedia?.base64 || !isDataUrl(headerMedia.base64)) continue;
+                    if (!waClient || typeof waClient.uploadMedia !== 'function') {
+                        throw new Error('El transporte actual no soporta uploads de media para templates.');
+                    }
+                    const parsed = parseDataUrlPayload(headerMedia.base64);
+                    if (!parsed?.mediaData) continue;
+                    const mediaId = await waClient.uploadMedia(
+                        parsed.mediaData,
+                        parsed.mimetype,
+                        toText(headerMedia.name || 'template-header')
+                    );
+                    if (!mediaId) continue;
+                    const parameterType = toLower(format);
+                    resolvedComponents.push({
+                        type,
+                        parameters: [{
+                            type: parameterType,
+                            [parameterType]: { id: mediaId }
+                        }]
+                    });
+                    continue;
+                }
                 const placeholderIndexes = parsePlaceholderIndexesFromText(component?.text || '');
-                if (placeholderIndexes.length === 0) return [];
+                if (placeholderIndexes.length === 0) continue;
                 const componentMap = variableMapJson?.[toLower(type)] || {};
-                return [{
+                resolvedComponents.push({
                     type,
                     parameters: placeholderIndexes.map((placeholderIndex) => ({
                         type: 'text',
@@ -101,12 +141,12 @@ function createSocketTemplateMessagesService({
                             previewMaps
                         })
                     }))
-                }];
-            })
-            .filter((component) => Array.isArray(component.parameters) && component.parameters.length > 0);
+                });
+        }
+        return resolvedComponents.filter((component) => Array.isArray(component.parameters) && component.parameters.length > 0);
     };
 
-    const buildTemplatePreviewText = (template = {}, previewPayload = {}, templateName = '') => {
+    const buildTemplatePreviewText = (template = {}, previewPayload = {}, templateName = '', options = {}) => {
         const templateComponents = ensureArray(template?.componentsJson);
         const variableMapJson = template?.variableMapJson && typeof template.variableMapJson === 'object'
             ? template.variableMapJson
@@ -116,6 +156,11 @@ function createSocketTemplateMessagesService({
             .map((component = {}) => {
                 const type = normalizeTemplateComponentType(component?.type || 'BODY');
                 if (type !== 'HEADER' && type !== 'BODY' && type !== 'FOOTER') return '';
+                const format = toUpper(component?.format || '');
+                if (type === 'HEADER' && MULTIMEDIA_HEADER_FORMATS.has(format)) {
+                    const fileName = toText(options?.headerMedia?.name || '');
+                    return fileName ? `[${format}] ${fileName}` : `[${format}]`;
+                }
                 const sourceText = toText(component?.text);
                 if (!sourceText) return '';
                 const componentMap = variableMapJson?.[toLower(type)] || {};
@@ -133,7 +178,7 @@ function createSocketTemplateMessagesService({
         return rendered.join('\n').trim() || `Template: ${toText(templateName) || 'sin nombre'}`;
     };
 
-    const buildTemplateRealtimeComponents = (template = {}, previewPayload = {}) => {
+    const buildTemplateRealtimeComponents = (template = {}, previewPayload = {}, options = {}) => {
         const templateComponents = ensureArray(template?.componentsJson);
         const variableMapJson = template?.variableMapJson && typeof template.variableMapJson === 'object'
             ? template.variableMapJson
@@ -144,6 +189,16 @@ function createSocketTemplateMessagesService({
             .map((component = {}) => {
                 const type = normalizeTemplateComponentType(component?.type || 'BODY');
                 if (type !== 'HEADER' && type !== 'BODY' && type !== 'FOOTER') return null;
+                const format = toUpper(component?.format || '');
+                if (type === 'HEADER' && MULTIMEDIA_HEADER_FORMATS.has(format)) {
+                    return {
+                        type,
+                        format: toLower(format),
+                        text: '',
+                        resolvedText: toText(options?.headerMedia?.name || `[${format}]`),
+                        parameters: []
+                    };
+                }
                 const sourceText = toText(component?.text);
                 if (!sourceText) return null;
                 const componentMap = variableMapJson?.[toLower(type)] || {};
@@ -191,6 +246,11 @@ function createSocketTemplateMessagesService({
                 const templateName = toText(payload?.templateName);
                 const templateLanguage = toLower(payload?.templateLanguage || 'es') || 'es';
                 const customerId = toText(payload?.customerId || '');
+                const validFrom = toText(payload?.validFrom || '');
+                const validTo = toText(payload?.validTo || '');
+                const headerMedia = payload?.headerMedia && typeof payload.headerMedia === 'object'
+                    ? payload.headerMedia
+                    : null;
                 if (!templateName) {
                     socket.emit('template_message_error', 'templateName requerido para enviar template.');
                     return;
@@ -220,11 +280,17 @@ function createSocketTemplateMessagesService({
 
                 const previewPayload = await templateVariablesService.getPreview(tenantId, {
                     chatId: target.scopedChatId || target.targetChatId,
-                    customerId
+                    customerId,
+                    validFrom,
+                    validTo
                 });
-                const components = buildTemplateSendComponents(template, previewPayload);
-                const realtimeTemplateComponents = buildTemplateRealtimeComponents(template, previewPayload);
-                const previewText = buildTemplatePreviewText(template, previewPayload, templateName);
+                const components = await buildTemplateSendComponents(template, previewPayload, { headerMedia });
+                const realtimeTemplateComponents = buildTemplateRealtimeComponents(template, previewPayload, { headerMedia });
+                const previewText = buildTemplatePreviewText(template, previewPayload, templateName, { headerMedia });
+                const hasMedia = components.some((component) => ensureArray(component?.parameters).some((parameter) => {
+                    const parameterType = toLower(parameter?.type || '');
+                    return parameterType === 'image' || parameterType === 'video' || parameterType === 'document';
+                }));
 
                 const providerResponse = await waClient.sendTemplateMessage(target.targetChatId, {
                     templateName,
@@ -256,7 +322,7 @@ function createSocketTemplateMessagesService({
                     timestamp: Math.floor(Date.now() / 1000),
                     ack: 1,
                     type: 'template',
-                    hasMedia: false,
+                    hasMedia,
                     templateName,
                     templateLanguage,
                     templatePreviewText: previewText,

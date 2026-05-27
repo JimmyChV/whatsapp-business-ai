@@ -18,7 +18,7 @@ const waCloudClient = require('../../channels/services/whatsapp-cloud-client.ser
 const STORE_FILE = 'campaigns.json';
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 500;
-const DEFAULT_RECIPIENT_LIMIT = 2000;
+const DEFAULT_RECIPIENT_LIMIT = 10000;
 const MULTIMEDIA_HEADER_FORMATS = new Set(['IMAGE', 'VIDEO', 'DOCUMENT']);
 
 const CAMPAIGN_STATUSES = new Set(['draft', 'scheduled', 'running', 'paused', 'completed', 'cancelled', 'failed']);

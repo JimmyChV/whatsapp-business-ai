@@ -46,6 +46,7 @@ const EMPTY_ZONE = {
 };
 const LABEL_COLORS = ['#00A884', '#14B8A6', '#38BDF8', '#6366F1', '#8B5CF6', '#F59E0B', '#F97316', '#EF4444', '#EC4899', '#84CC16'];
 const zoneGeoCache = new Map();
+const TENANT_ZONES_REFRESH_EVENT = 'tenant-zones-recalculated';
 
 const text = (value = '') => String(value || '').trim();
 const upper = (value = '') => text(value).toUpperCase();
@@ -795,7 +796,19 @@ export default function TenantZonesSection(props = {}) {
                         setAgencySync(result);
                         return result;
                     }), disabled: busy || sectionLoading },
-                    { key: 'recalculate', label: recalc ? `Recalc: ${recalc.assigned || 0}` : 'Recalcular zonas', onClick: () => runZoneAction(runSectionAction, runAction, 'recalculate_zones', 'Zonas recalculadas', async () => setRecalc(await recalculateTenantZones(requestJson, { tenantId: zoneCacheKey }))), disabled: busy },
+                    { key: 'recalculate', label: recalc ? `Recalc: ${recalc.assigned || 0}` : 'Recalcular zonas', onClick: () => runZoneAction(runSectionAction, runAction, 'recalculate_zones', 'Zonas recalculadas', async () => {
+                        const result = await recalculateTenantZones(requestJson, { tenantId: zoneCacheKey });
+                        setRecalc(result);
+                        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+                            window.dispatchEvent(new CustomEvent(TENANT_ZONES_REFRESH_EVENT, {
+                                detail: {
+                                    tenantId: zoneCacheKey,
+                                    result
+                                }
+                            }));
+                        }
+                        return result;
+                    }), disabled: busy },
                     { key: 'create', label: 'Nuevo', onClick: openCreate, disabled: busy }
                 ] : []),
                 { key: 'reload', label: sectionError ? 'Reintentar' : 'Recargar', onClick: () => (typeof forceReload === 'function' ? forceReload(lazySectionId) : load({ force: true }).catch((error) => setError?.(String(error?.message || error)))), disabled: busy || sectionLoading }

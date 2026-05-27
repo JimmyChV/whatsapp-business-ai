@@ -772,6 +772,8 @@ function buildValueMap(context = {}, helpers = {}) {
         contacto_cliente: shortContactName || customer?.contactName || null,
         tratamiento_cliente: treatmentLabel || null,
         nombre_whatsapp_cliente: whatsappName || null,
+        fecha_inicio: toText(helpers?.validFromLabel || '') || null,
+        fecha_fin: toText(helpers?.validToLabel || '') || null,
 
         nombre_agente: assignment?.assigneeName || assignment?.assigneeUserId || null,
         rol_agente: assignment?.assigneeRole || null,
@@ -798,6 +800,23 @@ function buildValueMap(context = {}, helpers = {}) {
     };
 }
 
+function formatCampaignDateLabel(value = '') {
+    const text = toText(value);
+    if (!text) return null;
+    const parsed = new Date(text);
+    if (!Number.isFinite(parsed.getTime())) return null;
+    try {
+        return new Intl.DateTimeFormat('es-PE', {
+            day: '2-digit',
+            month: 'long',
+            year: 'numeric',
+            timeZone: 'America/Lima'
+        }).format(parsed);
+    } catch (_) {
+        return parsed.toISOString().slice(0, 10);
+    }
+}
+
 async function getCatalog(tenantId = DEFAULT_TENANT_ID) {
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
     return {
@@ -808,7 +827,7 @@ async function getCatalog(tenantId = DEFAULT_TENANT_ID) {
     };
 }
 
-async function getPreview(tenantId = DEFAULT_TENANT_ID, { chatId = '', customerId = '' } = {}) {
+async function getPreview(tenantId = DEFAULT_TENANT_ID, { chatId = '', customerId = '', validFrom = '', validTo = '' } = {}) {
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
     const context = await loadPreviewContext(cleanTenantId, { chatId, customerId });
     const treatmentsMap = await buildTreatmentsMap();
@@ -816,7 +835,11 @@ async function getPreview(tenantId = DEFAULT_TENANT_ID, { chatId = '', customerI
         treatmentsMap,
         toText(context?.customer?.treatmentId || context?.customer?.profile?.treatmentId || '')
     );
-    const valueMap = buildValueMap(context, { treatmentLabel });
+    const valueMap = buildValueMap(context, {
+        treatmentLabel,
+        validFromLabel: formatCampaignDateLabel(validFrom),
+        validToLabel: formatCampaignDateLabel(validTo)
+    });
     const categories = cloneCatalog().map((category) => ({
         ...category,
         variables: Array.isArray(category.variables)

@@ -1372,7 +1372,9 @@ function registerOperationsHttpRoutes({
             const tenantId = resolveTenantIdFromContext(req);
             const chatId = toText(req.query?.chatId || '');
             const customerId = toText(req.query?.customerId || '');
-            const payload = await getTemplateVariablesPreview(tenantId, { chatId, customerId });
+            const validFrom = toText(req.query?.validFrom || '');
+            const validTo = toText(req.query?.validTo || '');
+            const payload = await getTemplateVariablesPreview(tenantId, { chatId, customerId, validFrom, validTo });
             return res.json({
                 ok: true,
                 tenantId,

@@ -4,6 +4,7 @@ import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import SendTemplateModal from '../../chat/components/SendTemplateModal';
 import { buildTemplateResolvedPreview } from '../../chat/core/helpers/templateMessages.helpers';
 import { normalizeCustomerFormFromItem } from '../helpers';
+import { readFileAsDataUrl } from '../helpers/assets.helpers';
 import { isTemplateAllowedInCampaigns, isTemplateAllowedInIndividual, normalizeTemplateUseCase } from '../helpers/templateUseCase.helpers';
 import {
     SaasDataTable,
@@ -199,6 +200,7 @@ const EMPTY_GEO_CATALOG = {
 const CUSTOMER_SECTION_CACHE_TTL_MS = 5 * 60 * 1000;
 const CUSTOMER_AUX_CATALOG_CACHE = new Map();
 const CUSTOMER_ZONE_CONTEXT_CACHE = new Map();
+const TENANT_ZONES_REFRESH_EVENT = 'tenant-zones-recalculated';
 
 function resolveCustomerSectionCacheKey(tenantScopeId = '') {
     return String(tenantScopeId || '').trim() || '__default__';
@@ -1106,6 +1108,9 @@ function CustomersSection(props = {}) {
     const [selectedSendTemplatePreviewLoading, setSelectedSendTemplatePreviewLoading] = useState(false);
     const [selectedSendTemplatePreviewError, setSelectedSendTemplatePreviewError] = useState('');
     const [sendTemplateSubmitting, setSendTemplateSubmitting] = useState(false);
+    const [directTemplateValidFrom, setDirectTemplateValidFrom] = useState('');
+    const [directTemplateValidTo, setDirectTemplateValidTo] = useState('');
+    const [directTemplateHeaderMedia, setDirectTemplateHeaderMedia] = useState(null);
     const [campaignTemplateModalOpen, setCampaignTemplateModalOpen] = useState(false);
     const [campaignTemplateOptions, setCampaignTemplateOptions] = useState([]);
     const [campaignTemplateOptionsLoading, setCampaignTemplateOptionsLoading] = useState(false);
@@ -2394,19 +2399,24 @@ function CustomersSection(props = {}) {
         setSelectedSendTemplatePreviewLoading(false);
         setSelectedSendTemplatePreviewError('');
         setSendTemplateSubmitting(false);
+        setDirectTemplateValidFrom('');
+        setDirectTemplateValidTo('');
+        setDirectTemplateHeaderMedia(null);
     }, []);
 
-    const handleSelectDirectTemplate = useCallback(async (template = null) => {
+    const loadDirectTemplatePreview = useCallback(async (template = null) => {
         const entry = template && typeof template === 'object' ? template : null;
         if (!entry) return;
-
-        setSelectedSendTemplate(entry);
-        setSelectedSendTemplatePreview(null);
         setSelectedSendTemplatePreviewLoading(true);
         setSelectedSendTemplatePreviewError('');
 
         try {
-            const previewPayload = await requestJson(`/api/tenant/template-variables/preview?customerId=${encodeURIComponent(selectedCustomerIdResolved)}`, {
+            const searchParams = new URLSearchParams({
+                customerId: String(selectedCustomerIdResolved || '').trim()
+            });
+            if (toText(directTemplateValidFrom)) searchParams.set('validFrom', toText(directTemplateValidFrom));
+            if (toText(directTemplateValidTo)) searchParams.set('validTo', toText(directTemplateValidTo));
+            const previewPayload = await requestJson(`/api/tenant/template-variables/preview?${searchParams.toString()}`, {
                 method: 'GET'
             });
             const resolvedPreview = buildTemplateResolvedPreview(entry, previewPayload);
@@ -2421,7 +2431,14 @@ function CustomersSection(props = {}) {
         } finally {
             setSelectedSendTemplatePreviewLoading(false);
         }
-    }, [notify, requestJson, selectedCustomerIdResolved]);
+    }, [directTemplateValidFrom, directTemplateValidTo, notify, requestJson, selectedCustomerIdResolved]);
+
+    const handleSelectDirectTemplate = useCallback((template = null) => {
+        const entry = template && typeof template === 'object' ? template : null;
+        if (!entry) return;
+        setSelectedSendTemplate(entry);
+        setSelectedSendTemplatePreview(null);
+    }, []);
 
     const handleOpenDirectTemplateModal = useCallback(async () => {
         if (!selectedCustomerIdResolved) {
@@ -2473,7 +2490,7 @@ function CustomersSection(props = {}) {
 
             setSendTemplateOptions(items);
             if (items.length > 0) {
-                await handleSelectDirectTemplate(items[0]);
+                handleSelectDirectTemplate(items[0]);
             }
         } catch (error) {
             const message = String(error?.message || 'No se pudieron cargar templates para iniciar la conversacion.');
@@ -2492,11 +2509,50 @@ function CustomersSection(props = {}) {
         selectedCustomerPreferredModuleIds
     ]);
 
+    useEffect(() => {
+        if (!sendTemplateOpen) return;
+        if (!selectedSendTemplate || !selectedCustomerIdResolved) return;
+        void loadDirectTemplatePreview(selectedSendTemplate);
+    }, [
+        directTemplateValidFrom,
+        directTemplateValidTo,
+        loadDirectTemplatePreview,
+        selectedCustomerIdResolved,
+        selectedSendTemplate,
+        sendTemplateOpen
+    ]);
+
+    const directTemplateHeaderType = useMemo(() => {
+        const components = Array.isArray(selectedSendTemplate?.componentsJson) ? selectedSendTemplate.componentsJson : [];
+        const header = components.find((component) => String(component?.type || '').trim().toUpperCase() === 'HEADER') || null;
+        const format = String(header?.format || '').trim().toLowerCase();
+        return ['image', 'video', 'document'].includes(format) ? format : 'none';
+    }, [selectedSendTemplate]);
+
+    const directTemplateRequiresDateRange = useMemo(() => (
+        Array.isArray(selectedSendTemplatePreview?.components)
+            && selectedSendTemplatePreview.components.some((component) => (
+                Array.isArray(component?.parameters)
+                    && component.parameters.some((parameter) => {
+                        const key = String(parameter?.key || '').trim().toLowerCase();
+                        return key === 'fecha_inicio' || key === 'fecha_fin';
+                    })
+            ))
+    ), [selectedSendTemplatePreview]);
+
     const handleConfirmDirectTemplateSend = useCallback(() => {
         const template = selectedSendTemplate && typeof selectedSendTemplate === 'object' ? selectedSendTemplate : null;
         if (!template || !socket || typeof socket.emit !== 'function') return;
         if (!selectedCustomerPhone) {
             notify({ type: 'error', message: 'El cliente no tiene telefono valido para enviar el template.' });
+            return;
+        }
+        if (['image', 'video', 'document'].includes(directTemplateHeaderType) && !toText(directTemplateHeaderMedia?.base64)) {
+            notify({ type: 'error', message: 'Esta plantilla requiere un archivo multimedia en el encabezado.' });
+            return;
+        }
+        if (directTemplateRequiresDateRange && (!toText(directTemplateValidFrom) || !toText(directTemplateValidTo))) {
+            notify({ type: 'error', message: 'Configura fecha inicio y fecha fin para esta plantilla antes de enviarla.' });
             return;
         }
 
@@ -2507,9 +2563,30 @@ function CustomersSection(props = {}) {
             moduleId: String(template?.moduleId || '').trim() || null,
             templateId: String(template?.templateId || '').trim() || null,
             templateName: String(template?.templateName || '').trim(),
-            templateLanguage: String(template?.templateLanguage || 'es').trim().toLowerCase() || 'es'
+            templateLanguage: String(template?.templateLanguage || 'es').trim().toLowerCase() || 'es',
+            validFrom: toText(directTemplateValidFrom),
+            validTo: toText(directTemplateValidTo),
+            headerMedia: directTemplateHeaderMedia && typeof directTemplateHeaderMedia === 'object'
+                ? {
+                    name: toText(directTemplateHeaderMedia.name),
+                    type: toText(directTemplateHeaderMedia.type),
+                    size: Number(directTemplateHeaderMedia.size) || 0,
+                    base64: toText(directTemplateHeaderMedia.base64)
+                }
+                : null
         });
-    }, [notify, selectedCustomerIdResolved, selectedCustomerPhone, selectedSendTemplate, socket]);
+    }, [
+        directTemplateHeaderMedia,
+        directTemplateHeaderType,
+        directTemplateRequiresDateRange,
+        directTemplateValidFrom,
+        directTemplateValidTo,
+        notify,
+        selectedCustomerIdResolved,
+        selectedCustomerPhone,
+        selectedSendTemplate,
+        socket
+    ]);
 
     const resetCampaignTemplateFlow = useCallback(() => {
         setCampaignTemplateModalOpen(false);
@@ -3211,29 +3288,38 @@ function CustomersSection(props = {}) {
 
     useEffect(() => {
         if (!isCustomersSection || tenantScopeLocked || !tenantScopeId || typeof requestJson !== 'function') return;
+        const loadZoneContext = async ({ useCache = true } = {}) => {
+            const cached = useCache ? readFreshCustomerSectionCache(CUSTOMER_ZONE_CONTEXT_CACHE, tenantScopeId) : null;
+            if (cached) {
+                setZoneRules(cached.zoneRules || []);
+                setCustomerZoneLabels(cached.customerZoneLabels || []);
+                return;
+            }
+            const [rulesPayload, labelsPayload] = await Promise.all([
+                fetchTenantZoneRules(requestJson, { includeInactive: false }),
+                fetchTenantCustomerLabels(requestJson, { source: 'zone' })
+            ]);
+            const nextZoneRules = Array.isArray(rulesPayload?.items) ? rulesPayload.items : [];
+            const nextCustomerZoneLabels = Array.isArray(labelsPayload?.items) ? labelsPayload.items : [];
+            CUSTOMER_ZONE_CONTEXT_CACHE.set(resolveCustomerSectionCacheKey(tenantScopeId), {
+                zoneRules: nextZoneRules,
+                customerZoneLabels: nextCustomerZoneLabels,
+                loadedAt: Date.now()
+            });
+            setZoneRules(nextZoneRules);
+            setCustomerZoneLabels(nextCustomerZoneLabels);
+        };
         const cached = readFreshCustomerSectionCache(CUSTOMER_ZONE_CONTEXT_CACHE, tenantScopeId);
         if (cached) {
             setZoneRules(cached.zoneRules || []);
             setCustomerZoneLabels(cached.customerZoneLabels || []);
-            return;
         }
         let cancelled = false;
         void (async () => {
             try {
-                const [rulesPayload, labelsPayload] = await Promise.all([
-                    fetchTenantZoneRules(requestJson, { includeInactive: false }),
-                    fetchTenantCustomerLabels(requestJson, { source: 'zone' })
-                ]);
+                if (cached) return;
+                await loadZoneContext({ useCache: false });
                 if (cancelled) return;
-                const nextZoneRules = Array.isArray(rulesPayload?.items) ? rulesPayload.items : [];
-                const nextCustomerZoneLabels = Array.isArray(labelsPayload?.items) ? labelsPayload.items : [];
-                CUSTOMER_ZONE_CONTEXT_CACHE.set(resolveCustomerSectionCacheKey(tenantScopeId), {
-                    zoneRules: nextZoneRules,
-                    customerZoneLabels: nextCustomerZoneLabels,
-                    loadedAt: Date.now()
-                });
-                setZoneRules(nextZoneRules);
-                setCustomerZoneLabels(nextCustomerZoneLabels);
             } catch {
                 if (!cancelled) {
                     setZoneRules([]);
@@ -3245,6 +3331,34 @@ function CustomersSection(props = {}) {
             cancelled = true;
         };
     }, [isCustomersSection, requestJson, tenantScopeId, tenantScopeLocked]);
+
+    useEffect(() => {
+        if (!isCustomersSection || !tenantScopeId || typeof requestJson !== 'function') return undefined;
+        const handleZonesRecalculated = (event) => {
+            const eventTenantId = String(event?.detail?.tenantId || '').trim();
+            if (eventTenantId && eventTenantId !== String(tenantScopeId || '').trim()) return;
+            CUSTOMER_ZONE_CONTEXT_CACHE.delete(resolveCustomerSectionCacheKey(tenantScopeId));
+            void (async () => {
+                try {
+                    const [rulesPayload, labelsPayload] = await Promise.all([
+                        fetchTenantZoneRules(requestJson, { includeInactive: false }),
+                        fetchTenantCustomerLabels(requestJson, { source: 'zone' })
+                    ]);
+                    const nextZoneRules = Array.isArray(rulesPayload?.items) ? rulesPayload.items : [];
+                    const nextCustomerZoneLabels = Array.isArray(labelsPayload?.items) ? labelsPayload.items : [];
+                    CUSTOMER_ZONE_CONTEXT_CACHE.set(resolveCustomerSectionCacheKey(tenantScopeId), {
+                        zoneRules: nextZoneRules,
+                        customerZoneLabels: nextCustomerZoneLabels,
+                        loadedAt: Date.now()
+                    });
+                    setZoneRules(nextZoneRules);
+                    setCustomerZoneLabels(nextCustomerZoneLabels);
+                } catch (_) { }
+            })();
+        };
+        window.addEventListener(TENANT_ZONES_REFRESH_EVENT, handleZonesRecalculated);
+        return () => window.removeEventListener(TENANT_ZONES_REFRESH_EVENT, handleZonesRecalculated);
+    }, [isCustomersSection, requestJson, tenantScopeId]);
 
     useEffect(() => {
         const next = String(customerSearch || '');
@@ -4000,6 +4114,19 @@ function CustomersSection(props = {}) {
     };
 
     const headerActions = [
+        ...(canManageCampaigns ? [{
+            key: 'toggle-selection',
+            label: campaignSelectionMode ? 'Cancelar seleccion' : 'Seleccionar clientes',
+            onClick: () => {
+                if (campaignSelectionMode) {
+                    exitCampaignSelectionMode();
+                    return;
+                }
+                setCampaignSelectionMode(true);
+            },
+            variant: 'secondary',
+            disabled: busy || tenantScopeLocked
+        }] : []),
         ...(canManageCustomers ? [{
             key: 'add-customer',
             label: 'Agregar',
@@ -4012,19 +4139,6 @@ function CustomersSection(props = {}) {
             label: 'Importar ERP',
             onClick: () => setShowImportModal(true),
             variant: 'primary',
-            disabled: busy || tenantScopeLocked
-        }] : []),
-        ...(canManageCampaigns ? [{
-            key: 'toggle-selection',
-            label: campaignSelectionMode ? 'Cancelar seleccion' : 'Seleccionar clientes',
-            onClick: () => {
-                if (campaignSelectionMode) {
-                    exitCampaignSelectionMode();
-                    return;
-                }
-                setCampaignSelectionMode(true);
-            },
-            variant: 'secondary',
             disabled: busy || tenantScopeLocked
         }] : []),
         canManageCampaigns && campaignSelectionMode && selectedCustomerIdsForCampaign.length > 0 && outreachMode === 'eligible' ? {
@@ -4650,10 +4764,48 @@ function CustomersSection(props = {}) {
                 preview={selectedSendTemplatePreview}
                 previewLoading={selectedSendTemplatePreviewLoading}
                 previewError={selectedSendTemplatePreviewError}
-                confirmDisabled={!selectedSendTemplate || sendTemplateSubmitting || !selectedCustomerPhone}
+                confirmDisabled={
+                    !selectedSendTemplate
+                    || sendTemplateSubmitting
+                    || !selectedCustomerPhone
+                    || (['image', 'video', 'document'].includes(directTemplateHeaderType) && !toText(directTemplateHeaderMedia?.base64))
+                    || (directTemplateRequiresDateRange && (!toText(directTemplateValidFrom) || !toText(directTemplateValidTo)))
+                }
                 confirmBusy={sendTemplateSubmitting}
+                headerMedia={directTemplateHeaderMedia}
+                validFrom={directTemplateValidFrom}
+                validTo={directTemplateValidTo}
+                onHeaderMediaChange={async (media) => {
+                    if (media?.error) {
+                        notify({ type: 'error', message: media.error });
+                        return;
+                    }
+                    if (!media) {
+                        setDirectTemplateHeaderMedia(null);
+                        return;
+                    }
+                    if (media.base64) {
+                        setDirectTemplateHeaderMedia(media);
+                        return;
+                    }
+                    try {
+                        const base64 = await readFileAsDataUrl(media);
+                        setDirectTemplateHeaderMedia({
+                            name: toText(media.name),
+                            type: toText(media.type),
+                            size: Number(media.size) || 0,
+                            base64
+                        });
+                    } catch (error) {
+                        notify({ type: 'error', message: String(error?.message || 'No se pudo leer el archivo seleccionado.') });
+                    }
+                }}
+                onValidityChange={({ validFrom, validTo }) => {
+                    setDirectTemplateValidFrom(String(validFrom || '').trim());
+                    setDirectTemplateValidTo(String(validTo || '').trim());
+                }}
                 onClose={resetSendTemplateFlow}
-                onSelectTemplate={(template) => { void handleSelectDirectTemplate(template); }}
+                onSelectTemplate={(template) => { handleSelectDirectTemplate(template); }}
                 onConfirm={handleConfirmDirectTemplateSend}
             />
             <SendTemplateModal
