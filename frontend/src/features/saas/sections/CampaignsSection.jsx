@@ -610,6 +610,67 @@ function uniqueTextItems(items = []) {
     return Array.from(new Set((Array.isArray(items) ? items : []).map((item) => toText(item)).filter(Boolean)));
 }
 
+function composeAudienceFullName(item = {}) {
+    const names = [
+        toText(item?.firstName || item?.first_name || item?.nombres || ''),
+        toText(item?.middleName || item?.middle_name || ''),
+        toText(item?.lastName || item?.last_name || item?.apellidoPaterno || item?.apellido_paterno || ''),
+        toText(item?.maternalLastName || item?.maternal_last_name || item?.apellidoMaterno || item?.apellido_materno || '')
+    ].filter(Boolean);
+    return toText(names.join(' '));
+}
+
+function normalizeAudienceEstimateItem(item = {}) {
+    const zoneLabelIds = Array.isArray(item?.zoneLabelIds)
+        ? item.zoneLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
+        : [];
+    const zoneLabelNames = Array.isArray(item?.zoneLabelNames)
+        ? item.zoneLabelNames.map((entry) => toText(entry)).filter(Boolean)
+        : [];
+    const fullName = composeAudienceFullName(item);
+    return {
+        customerId: toText(item?.customerId),
+        contactName: toText(item?.contactName || item?.contact_name || item?.nombreContacto || item?.nombre_contacto || '') || 'Sin nombre',
+        fullName,
+        firstName: toText(item?.firstName || item?.first_name || item?.nombres || ''),
+        middleName: toText(item?.middleName || item?.middle_name || ''),
+        lastName: toText(item?.lastName || item?.last_name || item?.apellidoPaterno || item?.apellido_paterno || ''),
+        maternalLastName: toText(item?.maternalLastName || item?.maternal_last_name || item?.apellidoMaterno || item?.apellido_materno || ''),
+        phone: toText(item?.phone) || '-',
+        email: toText(item?.email),
+        segment: toText(item?.segment || item?.segmentName || item?.segment_name || item?.segmento || ''),
+        purchaseRange: toText(item?.purchaseRange || item?.purchase_range || item?.rangoCompras || item?.rango_compras || ''),
+        commercialStatus: toLower(item?.commercialStatus || 'unknown') || 'unknown',
+        tags: Array.isArray(item?.tags)
+            ? item.tags.map((entry) => toText(entry)).filter(Boolean)
+            : [],
+        operationalLabelIds: Array.isArray(item?.operationalLabelIds)
+            ? item.operationalLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
+            : [],
+        zoneLabelIds,
+        zoneLabelNames,
+        zoneLabels: Array.isArray(item?.zoneLabels)
+            ? item.zoneLabels.map((entry) => ({
+                id: toUpper(entry?.id || ''),
+                name: toText(entry?.name || ''),
+                color: toText(entry?.color || '#00A884') || '#00A884'
+            })).filter((entry) => entry.id)
+            : [],
+        customerTypeId: toText(item?.customerTypeId),
+        acquisitionSourceId: toText(item?.acquisitionSourceId),
+        assignedUserId: toText(item?.assignedUserId),
+        departmentName: toText(item?.departmentName),
+        provinceName: toText(item?.provinceName),
+        districtName: toText(item?.districtName),
+        departments: uniqueTextItems(item?.departments),
+        provinces: uniqueTextItems(item?.provinces),
+        districts: uniqueTextItems(item?.districts),
+        hasAddress: item?.hasAddress === true,
+        preferredLanguage: toLower(item?.preferredLanguage || 'es') || 'es',
+        marketingOptInStatus: toLower(item?.marketingOptInStatus || 'unknown') || 'unknown'
+    };
+}
+
 function uniqueOptionObjects(items = [], idKey = 'id', nameKey = 'name') {
     const seen = new Set();
     return (Array.isArray(items) ? items : [])
@@ -1153,128 +1214,17 @@ export default React.memo(function CampaignsSection(props = {}) {
     }), [inclusionOnlyEstimate]);
     const estimatedAudienceItems = useMemo(() => (
         (Array.isArray(reachEstimate?.items) ? reachEstimate.items : [])
-            .map((item) => ({
-                customerId: toText(item?.customerId),
-                contactName: toText(item?.contactName) || 'Sin nombre',
-                phone: toText(item?.phone) || '-',
-                email: toText(item?.email),
-                commercialStatus: toLower(item?.commercialStatus || 'unknown') || 'unknown',
-                tags: Array.isArray(item?.tags)
-                    ? item.tags.map((entry) => toText(entry)).filter(Boolean)
-                    : [],
-                operationalLabelIds: Array.isArray(item?.operationalLabelIds)
-                    ? item.operationalLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
-                    : [],
-                zoneLabelIds: Array.isArray(item?.zoneLabelIds)
-                    ? item.zoneLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
-                    : [],
-                zoneLabelNames: Array.isArray(item?.zoneLabelNames)
-                    ? item.zoneLabelNames.map((entry) => toText(entry)).filter(Boolean)
-                    : [],
-                zoneLabels: Array.isArray(item?.zoneLabels)
-                    ? item.zoneLabels.map((entry) => ({
-                        id: toUpper(entry?.id || ''),
-                        name: toText(entry?.name || ''),
-                        color: toText(entry?.color || '#00A884') || '#00A884'
-                    })).filter((entry) => entry.id)
-                    : [],
-                customerTypeId: toText(item?.customerTypeId),
-                acquisitionSourceId: toText(item?.acquisitionSourceId),
-                assignedUserId: toText(item?.assignedUserId),
-                departmentName: toText(item?.departmentName),
-                provinceName: toText(item?.provinceName),
-                districtName: toText(item?.districtName),
-                departments: uniqueTextItems(item?.departments),
-                provinces: uniqueTextItems(item?.provinces),
-                districts: uniqueTextItems(item?.districts),
-                hasAddress: item?.hasAddress === true,
-                preferredLanguage: toLower(item?.preferredLanguage || 'es') || 'es',
-                marketingOptInStatus: toLower(item?.marketingOptInStatus || 'unknown') || 'unknown'
-            }))
+            .map(normalizeAudienceEstimateItem)
             .filter((item) => item.customerId)
     ), [reachEstimate]);
     const baseAudienceItems = useMemo(() => (
         (Array.isArray(baseAudienceEstimate?.items) ? baseAudienceEstimate.items : [])
-            .map((item) => ({
-                customerId: toText(item?.customerId),
-                contactName: toText(item?.contactName) || 'Sin nombre',
-                phone: toText(item?.phone) || '-',
-                email: toText(item?.email),
-                commercialStatus: toLower(item?.commercialStatus || 'unknown') || 'unknown',
-                tags: Array.isArray(item?.tags)
-                    ? item.tags.map((entry) => toText(entry)).filter(Boolean)
-                    : [],
-                operationalLabelIds: Array.isArray(item?.operationalLabelIds)
-                    ? item.operationalLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
-                    : [],
-                zoneLabelIds: Array.isArray(item?.zoneLabelIds)
-                    ? item.zoneLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
-                    : [],
-                zoneLabelNames: Array.isArray(item?.zoneLabelNames)
-                    ? item.zoneLabelNames.map((entry) => toText(entry)).filter(Boolean)
-                    : [],
-                zoneLabels: Array.isArray(item?.zoneLabels)
-                    ? item.zoneLabels.map((entry) => ({
-                        id: toUpper(entry?.id || ''),
-                        name: toText(entry?.name || ''),
-                        color: toText(entry?.color || '#00A884') || '#00A884'
-                    })).filter((entry) => entry.id)
-                    : [],
-                customerTypeId: toText(item?.customerTypeId),
-                acquisitionSourceId: toText(item?.acquisitionSourceId),
-                assignedUserId: toText(item?.assignedUserId),
-                departmentName: toText(item?.departmentName),
-                provinceName: toText(item?.provinceName),
-                districtName: toText(item?.districtName),
-                departments: uniqueTextItems(item?.departments),
-                provinces: uniqueTextItems(item?.provinces),
-                districts: uniqueTextItems(item?.districts),
-                hasAddress: item?.hasAddress === true,
-                preferredLanguage: toLower(item?.preferredLanguage || 'es') || 'es',
-                marketingOptInStatus: toLower(item?.marketingOptInStatus || 'unknown') || 'unknown'
-            }))
+            .map(normalizeAudienceEstimateItem)
             .filter((item) => item.customerId)
     ), [baseAudienceEstimate]);
     const inclusionOnlyAudienceItems = useMemo(() => (
         (Array.isArray(inclusionOnlyEstimate?.items) ? inclusionOnlyEstimate.items : [])
-            .map((item) => ({
-                customerId: toText(item?.customerId),
-                contactName: toText(item?.contactName) || 'Sin nombre',
-                phone: toText(item?.phone) || '-',
-                email: toText(item?.email),
-                commercialStatus: toLower(item?.commercialStatus || 'unknown') || 'unknown',
-                tags: Array.isArray(item?.tags)
-                    ? item.tags.map((entry) => toText(entry)).filter(Boolean)
-                    : [],
-                operationalLabelIds: Array.isArray(item?.operationalLabelIds)
-                    ? item.operationalLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
-                    : [],
-                zoneLabelIds: Array.isArray(item?.zoneLabelIds)
-                    ? item.zoneLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
-                    : [],
-                zoneLabelNames: Array.isArray(item?.zoneLabelNames)
-                    ? item.zoneLabelNames.map((entry) => toText(entry)).filter(Boolean)
-                    : [],
-                zoneLabels: Array.isArray(item?.zoneLabels)
-                    ? item.zoneLabels.map((entry) => ({
-                        id: toUpper(entry?.id || ''),
-                        name: toText(entry?.name || ''),
-                        color: toText(entry?.color || '#00A884') || '#00A884'
-                    })).filter((entry) => entry.id)
-                    : [],
-                customerTypeId: toText(item?.customerTypeId),
-                acquisitionSourceId: toText(item?.acquisitionSourceId),
-                assignedUserId: toText(item?.assignedUserId),
-                departmentName: toText(item?.departmentName),
-                provinceName: toText(item?.provinceName),
-                districtName: toText(item?.districtName),
-                departments: uniqueTextItems(item?.departments),
-                provinces: uniqueTextItems(item?.provinces),
-                districts: uniqueTextItems(item?.districts),
-                hasAddress: item?.hasAddress === true,
-                preferredLanguage: toLower(item?.preferredLanguage || 'es') || 'es',
-                marketingOptInStatus: toLower(item?.marketingOptInStatus || 'unknown') || 'unknown'
-            }))
+            .map(normalizeAudienceEstimateItem)
             .filter((item) => item.customerId)
     ), [inclusionOnlyEstimate]);
     const audienceItemsForSelectors = useMemo(() => {
@@ -1380,9 +1330,25 @@ export default React.memo(function CampaignsSection(props = {}) {
         const term = toLower(manualExclusionSearch);
         return inclusionOnlyAudienceItems
             .filter((item) => !excludedCustomerIdSet.has(item.customerId))
+            .map((item) => {
+                const savedZone = zoneByCustomerId.get(toText(item.customerId));
+                const fallbackZoneName = savedZone?.name
+                    || item.zoneLabelNames?.[0]
+                    || item.zoneLabels?.[0]?.name
+                    || resolveZoneDisplayName(item.zoneLabelIds?.[0], '');
+                return {
+                    ...item,
+                    resolvedZoneName: toText(fallbackZoneName)
+                };
+            })
             .filter((item) => !term || [
                 item.customerId,
                 item.contactName,
+                item.fullName,
+                item.firstName,
+                item.middleName,
+                item.lastName,
+                item.maternalLastName,
                 item.phone,
                 item.email,
                 item.segment,
@@ -1390,13 +1356,14 @@ export default React.memo(function CampaignsSection(props = {}) {
                 item.departmentName,
                 item.provinceName,
                 item.districtName,
+                item.resolvedZoneName,
                 ...(Array.isArray(item.zoneLabelNames) ? item.zoneLabelNames : []),
                 ...(Array.isArray(item.districts) ? item.districts : []),
                 ...(Array.isArray(item.provinces) ? item.provinces : []),
                 ...(Array.isArray(item.departments) ? item.departments : [])
             ].map((value) => toLower(value)).join(' ').includes(term))
             .slice(0, 12);
-    }, [excludedCustomerIdSet, inclusionOnlyAudienceItems, manualExclusionSearch]);
+    }, [excludedCustomerIdSet, inclusionOnlyAudienceItems, manualExclusionSearch, resolveZoneDisplayName, zoneByCustomerId]);
     const operationalLabelById = useMemo(() => {
         const map = new Map();
         effectiveOperationalLabels.forEach((item) => {
@@ -1493,8 +1460,34 @@ export default React.memo(function CampaignsSection(props = {}) {
     }, [form.blockCount, form.blocksEnabled, form.campaignName, form.moduleId, form.templateId, form.templateName, wizardStep]);
     const reviewVisibleItems = useMemo(() => {
         const term = toLower(reviewSearch);
-        return reviewAudienceItems.filter((item) => !term || `${toLower(item.contactName)} ${toLower(item.phone)}`.includes(term));
-    }, [reviewAudienceItems, reviewSearch]);
+        return reviewAudienceItems
+            .map((item) => {
+                const zoneEntry = item.zoneLabelIds?.[0] ? zoneNameById.get(toUpper(item.zoneLabelIds[0])) : null;
+                const fallbackZoneName = item.zoneLabelNames?.[0] || zoneEntry?.name || resolveZoneDisplayName(item);
+                return {
+                    ...item,
+                    resolvedZoneName: toText(fallbackZoneName)
+                };
+            })
+            .filter((item) => !term || [
+                item.customerId,
+                item.customerCode,
+                item.contactName,
+                item.fullName,
+                item.firstName,
+                item.middleName,
+                item.lastName,
+                item.maternalLastName,
+                item.phone,
+                item.email,
+                item.segment,
+                item.purchaseRange,
+                item.resolvedZoneName,
+                item.departmentName,
+                item.provinceName,
+                item.districtName
+            ].filter(Boolean).some((value) => toLower(value).includes(term)));
+    }, [reviewAudienceItems, reviewSearch, zoneNameById]);
     const reviewExcludedCustomerIdSet = useMemo(() => (
         new Set(
             reviewAudienceItems
@@ -2994,26 +2987,32 @@ export default React.memo(function CampaignsSection(props = {}) {
         const departments = scope === 'exclusionFilters' ? exclusionDepartments : geographyDepartments;
         const provinces = scope === 'exclusionFilters' ? exclusionProvinces : inclusionProvinceOptions;
         const districts = scope === 'exclusionFilters' ? exclusionDistricts : inclusionDistrictOptions;
-        const renderMultiSelectControl = (label, values = [], options = [], onChange, emptyText = 'Sin opciones disponibles.') => (
+        const renderMultiSelectControl = (label, values = [], options = [], keyName = '', normalize = toText, emptyText = 'Sin opciones disponibles.') => (
             <div className="saas-admin-field saas-campaigns-audience-control-card">
-                <label>{label}</label>
+                <label>{label}{Array.isArray(values) && values.length > 0 ? ` (${values.length})` : ''}</label>
                 {options.length === 0 ? (
                     <div className="saas-campaigns-audience-control-empty">{emptyText}</div>
                 ) : (
-                    <select
-                        className="saas-campaigns-audience-multiselect"
-                        multiple
-                        size={Math.min(Math.max(options.length, 2), 4)}
-                        value={values}
-                        onChange={onChange}
-                    >
+                    <div className="saas-campaigns-audience-multiselect" role="listbox" aria-label={label}>
                         {options.map((entry) => (
-                            <option key={entry.value} value={entry.value}>
-                                {entry.label}
-                            </option>
+                            <button
+                                key={entry.value}
+                                type="button"
+                                className={`saas-campaigns-audience-option ${Array.isArray(values) && values.map(normalize).includes(normalize(entry.value)) ? 'is-active' : ''}`.trim()}
+                                onClick={() => toggleDeepFilterValue(scope, keyName, entry.value, normalize)}
+                            >
+                                <span>{entry.label}</span>
+                                <input
+                                    type="checkbox"
+                                    tabIndex={-1}
+                                    readOnly
+                                    checked={Array.isArray(values) && values.map(normalize).includes(normalize(entry.value))}
+                                />
+                            </button>
                         ))}
-                    </select>
+                    </div>
                 )}
+                <small className="saas-campaigns-audience-control-hint">Haz clic para sumar o quitar varios valores de este mismo filtro.</small>
             </div>
         );
         const renderSingleSelectControl = (label, value, options = [], onChange, placeholder = 'Todos') => (
@@ -3092,7 +3091,8 @@ export default React.memo(function CampaignsSection(props = {}) {
                         'Departamento',
                         filters.departments,
                         departments.map((name) => ({ value: name, label: name })),
-                        (event) => updateDeepFilter(scope, 'departments', Array.from(event.target.selectedOptions).map((option) => option.value)),
+                        'departments',
+                        toText,
                         'Sin departamentos disponibles.'
                     )
                 ) : null}
@@ -3101,7 +3101,8 @@ export default React.memo(function CampaignsSection(props = {}) {
                         'Provincia',
                         filters.provinces,
                         provinces.map((name) => ({ value: name, label: name })),
-                        (event) => updateDeepFilter(scope, 'provinces', Array.from(event.target.selectedOptions).map((option) => option.value)),
+                        'provinces',
+                        toText,
                         'Selecciona primero un departamento para acotar provincias.'
                     )
                 ) : null}
@@ -3110,7 +3111,8 @@ export default React.memo(function CampaignsSection(props = {}) {
                         'Distrito',
                         filters.districts,
                         districts.map((name) => ({ value: name, label: name })),
-                        (event) => updateDeepFilter(scope, 'districts', Array.from(event.target.selectedOptions).map((option) => option.value)),
+                        'districts',
+                        toText,
                         'Selecciona primero una provincia para ver distritos.'
                     )
                 ) : null}
@@ -3122,7 +3124,8 @@ export default React.memo(function CampaignsSection(props = {}) {
                         'Tipo de cliente',
                         filters.customer_type_ids,
                         customerTypeOptions.map((entry) => ({ value: entry.id, label: entry.name })),
-                        (event) => updateDeepFilter(scope, 'customer_type_ids', Array.from(event.target.selectedOptions).map((option) => option.value))
+                        'customer_type_ids',
+                        toText
                     )
                 ) : null}
                 {activeCriteria.includes('acquisition_source_ids') && acquisitionOptions.length > 0 ? (
@@ -3130,7 +3133,8 @@ export default React.memo(function CampaignsSection(props = {}) {
                         'Fuente de adquisición',
                         filters.acquisition_source_ids,
                         acquisitionOptions.map((entry) => ({ value: entry.id, label: entry.name })),
-                        (event) => updateDeepFilter(scope, 'acquisition_source_ids', Array.from(event.target.selectedOptions).map((option) => option.value))
+                        'acquisition_source_ids',
+                        toText
                     )
                 ) : null}
                 {activeCriteria.includes('segments') ? (
@@ -3138,7 +3142,8 @@ export default React.memo(function CampaignsSection(props = {}) {
                         'Segmento',
                         filters.segments,
                         segmentOptions.map((entry) => ({ value: entry.id, label: entry.name })),
-                        (event) => updateDeepFilter(scope, 'segments', Array.from(event.target.selectedOptions).map((option) => option.value)),
+                        'segments',
+                        toText,
                         'Sin segmentos disponibles.'
                     )
                 ) : null}
@@ -3148,7 +3153,8 @@ export default React.memo(function CampaignsSection(props = {}) {
                         'Rango de compra',
                         filters.purchase_ranges,
                         purchaseRangeOptions.map((entry) => ({ value: entry.id, label: entry.name })),
-                        (event) => updateDeepFilter(scope, 'purchase_ranges', Array.from(event.target.selectedOptions).map((option) => option.value)),
+                        'purchase_ranges',
+                        toText,
                         'Sin rangos de compra disponibles.'
                     )
                 ) : null}
@@ -3197,25 +3203,26 @@ export default React.memo(function CampaignsSection(props = {}) {
                         'Último template enviado',
                         filters.last_template_names,
                         sentTemplateOptions.map((entry) => ({ value: entry.id, label: entry.name })),
-                        (event) => updateDeepFilter(scope, 'last_template_names', Array.from(event.target.selectedOptions).map((option) => option.value)),
+                        'last_template_names',
+                        toText,
                         'Todavía no hay templates enviados para usar como filtro.'
                     )
                 ) : null}
                 {scope === 'exclusionFilters' && activeCriteria.includes('manual_customers') ? (
                     <div className="saas-admin-field saas-campaigns-audience-control-card">
                         <label>Clientes especificos</label>
-                        <input value={manualExclusionSearch} onChange={(event) => setManualExclusionSearch(event.target.value)} placeholder="Buscar por nombre o teléfono..." />
+                        <input value={manualExclusionSearch} onChange={(event) => setManualExclusionSearch(event.target.value)} placeholder="Buscar por código, nombres, apellidos, teléfono, zona o segmento..." />
                         <div className="saas-campaigns-manual-exclusion-results">
                             {manualExclusionCandidates.length === 0 ? <small className="saas-admin-empty-inline">{inclusionOnlyAudienceItems.length === 0 ? 'No hay audiencia incluida para excluir.' : 'No hay coincidencias disponibles.'}</small> : manualExclusionCandidates.map((item) => (
                                 <button key={`exclude_candidate_${item.customerId}`} type="button" className="saas-campaigns-manual-exclusion-item" onClick={() => toggleAudienceExclusion(item.customerId)}>
                                     <div className="saas-campaigns-manual-exclusion-item__identity">
                                         <strong>{item.contactName || item.customerId}</strong>
-                                        <span>{item.customerId} {item.phone ? `• ${item.phone}` : ''}</span>
+                                        <span>{[item.fullName, item.customerId, item.phone].filter(Boolean).join(' • ')}</span>
                                     </div>
                                     <div className="saas-campaigns-manual-exclusion-item__details">
                                         {item.segment ? <span>Segmento: {item.segment}</span> : null}
                                         {item.purchaseRange ? <span>Rango: {item.purchaseRange}</span> : null}
-                                        {item.zoneLabelNames?.[0] ? <span>Zona: {item.zoneLabelNames[0]}</span> : null}
+                                        {item.resolvedZoneName ? <span>Zona: {item.resolvedZoneName}</span> : null}
                                         {item.districtName || item.provinceName || item.departmentName ? (
                                             <span>
                                                 Ubicación: {[item.districtName, item.provinceName, item.departmentName].filter(Boolean).join(' / ')}
@@ -3450,7 +3457,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 <input
                                     value={reviewSearch}
                                     onChange={(event) => setReviewSearch(event.target.value)}
-                                    placeholder="Buscar por nombre o teléfono..."
+                                    placeholder="Buscar por código, nombres, apellidos, teléfono, zona o segmento..."
                                 />
                             </div>
                         </div>
@@ -3459,8 +3466,9 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 <span>Cliente</span>
                                 <span>TELÉFONO</span>
                                 <span>Estado</span>
+                                <span>Segmento</span>
+                                <span>Rango</span>
                                 <span>Zona</span>
-                                <span>Etiqueta</span>
                                 <span>Excluir</span>
                             </div>
                             {reviewVisibleItems.length === 0 ? (
@@ -3470,13 +3478,12 @@ export default React.memo(function CampaignsSection(props = {}) {
                             ) : reviewVisibleItems.map((item) => {
                                 const commercialMeta = commercialFilterOptions.find((entry) => toLower(entry.key) === toLower(item.commercialStatus));
                                 const zone = item.zoneLabelIds?.[0] ? zoneNameById.get(toUpper(item.zoneLabelIds[0])) : null;
-                                const operationalLabel = item.operationalLabelIds?.[0] ? operationalLabelById.get(toUpper(item.operationalLabelIds[0])) : null;
                                 const isExcluded = reviewExcludedCustomerIdSet.has(item.customerId);
                                 return (
                                     <article key={`review_${item.customerId}`} className={`saas-campaigns-review-row ${isExcluded ? 'is-excluded' : ''}`.trim()}>
                                         <div className="saas-campaigns-review-row__customer">
-                                            <strong>{item.contactName}</strong>
-                                            <small>{item.customerCode || item.customerId}</small>
+                                            <strong>{item.contactName || item.fullName || item.customerId}</strong>
+                                            <small>{[item.fullName, item.customerCode || item.customerId].filter(Boolean).join(' • ')}</small>
                                         </div>
                                         <span className="saas-campaigns-review-row__phone">{item.phone || '-'}</span>
                                         <div className="saas-campaigns-review-row__cell">
@@ -3487,16 +3494,15 @@ export default React.memo(function CampaignsSection(props = {}) {
                                             ) : <span className="saas-campaigns-review-row__empty">-</span>}
                                         </div>
                                         <div className="saas-campaigns-review-row__cell">
-                                            {zone ? (
-                                                <span className="saas-campaigns-review-chip" style={{ '--saas-chip-color': zone.color || '#00A884' }}>
-                                                    {zone.name}
-                                                </span>
-                                            ) : <span className="saas-campaigns-review-row__empty">-</span>}
+                                            {item.segment ? <span>{item.segment}</span> : <span className="saas-campaigns-review-row__empty">-</span>}
                                         </div>
                                         <div className="saas-campaigns-review-row__cell">
-                                            {operationalLabel ? (
-                                                <span className="saas-campaigns-review-chip" style={{ '--saas-chip-color': operationalLabel.color || '#00A884' }}>
-                                                    {operationalLabel.name}
+                                            {item.purchaseRange ? <span>{item.purchaseRange}</span> : <span className="saas-campaigns-review-row__empty">-</span>}
+                                        </div>
+                                        <div className="saas-campaigns-review-row__cell">
+                                            {item.resolvedZoneName || zone ? (
+                                                <span className="saas-campaigns-review-chip" style={{ '--saas-chip-color': zone?.color || '#00A884' }}>
+                                                    {item.resolvedZoneName || zone?.name}
                                                 </span>
                                             ) : <span className="saas-campaigns-review-row__empty">-</span>}
                                         </div>
