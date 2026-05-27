@@ -2463,18 +2463,40 @@ async function listCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
               ORDER BY label ASC`
         ),
         safeQuery(
-            `SELECT DISTINCT NULLIF(BTRIM(segmento), '') AS name
+            `SELECT DISTINCT COALESCE(
+                NULLIF(BTRIM(segmento), ''),
+                NULLIF(BTRIM(metadata #>> '{appsheetImport,segmento}'), ''),
+                NULLIF(BTRIM(metadata #>> '{segmento}'), ''),
+                NULLIF(BTRIM(metadata #>> '{segmentoFinal}'), ''),
+                NULLIF(BTRIM(metadata #>> '{segmento_final}'), '')
+             ) AS name
                FROM tenant_customers
               WHERE tenant_id = $1
-                AND NULLIF(BTRIM(segmento), '') IS NOT NULL
+                AND COALESCE(
+                    NULLIF(BTRIM(segmento), ''),
+                    NULLIF(BTRIM(metadata #>> '{appsheetImport,segmento}'), ''),
+                    NULLIF(BTRIM(metadata #>> '{segmento}'), ''),
+                    NULLIF(BTRIM(metadata #>> '{segmentoFinal}'), ''),
+                    NULLIF(BTRIM(metadata #>> '{segmento_final}'), '')
+                ) IS NOT NULL
               ORDER BY name ASC`,
             [cleanTenantId]
         ),
         safeQuery(
-            `SELECT DISTINCT NULLIF(BTRIM(rango_compras), '') AS name
+            `SELECT DISTINCT COALESCE(
+                NULLIF(BTRIM(rango_compras), ''),
+                NULLIF(BTRIM(metadata #>> '{appsheetImport,rangoCompras}'), ''),
+                NULLIF(BTRIM(metadata #>> '{rangoCompras}'), ''),
+                NULLIF(BTRIM(metadata #>> '{rango_compras}'), '')
+             ) AS name
                FROM tenant_customers
               WHERE tenant_id = $1
-                AND NULLIF(BTRIM(rango_compras), '') IS NOT NULL
+                AND COALESCE(
+                    NULLIF(BTRIM(rango_compras), ''),
+                    NULLIF(BTRIM(metadata #>> '{appsheetImport,rangoCompras}'), ''),
+                    NULLIF(BTRIM(metadata #>> '{rangoCompras}'), ''),
+                    NULLIF(BTRIM(metadata #>> '{rango_compras}'), '')
+                ) IS NOT NULL
               ORDER BY name ASC`,
             [cleanTenantId]
         ),

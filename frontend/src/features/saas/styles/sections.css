@@ -1626,20 +1626,27 @@
   display: grid;
   gap: 8px;
   margin-top: 10px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .saas-campaigns-manual-exclusion-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  display: grid;
+  gap: 8px;
   width: 100%;
   border: 1px solid var(--saas-border-color);
   border-radius: 12px;
   background: var(--saas-bg-surface);
   color: var(--saas-text-primary);
-  padding: 8px 10px;
+  padding: 12px 14px;
   text-align: left;
+}
+
+.saas-campaigns-manual-exclusion-item__identity,
+.saas-campaigns-manual-exclusion-item__details {
+  display: grid;
+  gap: 4px;
 }
 
 .saas-campaigns-manual-exclusion-item strong,
@@ -1647,9 +1654,16 @@
   display: block;
 }
 
-.saas-campaigns-manual-exclusion-item span {
+.saas-campaigns-manual-exclusion-item__identity strong {
   color: var(--saas-text-primary);
-  font-size: 0.72rem;
+  font-size: 0.88rem;
+}
+
+.saas-campaigns-manual-exclusion-item__identity span,
+.saas-campaigns-manual-exclusion-item__details span {
+  color: var(--saas-text-primary);
+  font-size: 0.74rem;
+  opacity: 0.82;
 }
 
 .saas-campaigns-filter-chips--manual {
@@ -6471,9 +6485,9 @@
 
 .saas-campaigns-audience-step__filters {
     display: grid;
-    gap: 12px;
+    gap: 14px;
     align-content: start;
-    grid-template-columns: repeat(2, minmax(180px, 1fr));
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
 }
 
 .saas-campaigns-audience-step__filters > .saas-campaigns-audience-control-card,
@@ -6519,8 +6533,9 @@
 }
 
 .saas-campaigns-audience-multiselect {
-    min-height: 104px;
-    max-height: 140px;
+    min-height: 180px;
+    max-height: 260px;
+    overflow-y: auto;
 }
 
 .saas-campaigns-audience-multiselect:focus,

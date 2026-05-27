@@ -72,8 +72,8 @@ const overlayStyle = {
 };
 
 const cardStyle = {
-    width: 'min(1180px, 100%)',
-    maxHeight: 'min(88vh, 960px)',
+    width: 'min(1320px, 100%)',
+    maxHeight: 'min(90vh, 980px)',
     background: tone.card,
     border: `1px solid ${tone.border}`,
     borderRadius: '18px',
@@ -195,8 +195,8 @@ export default function SendTemplateModal({
                     </button>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '360px minmax(0, 1fr)', gap: '0', minHeight: 0, flex: 1 }}>
-                    <div style={{ borderRight: `1px solid ${tone.menuBorder}`, padding: '18px', overflowY: 'auto', overflowX: 'hidden', background: 'linear-gradient(180deg, rgba(255,255,255,0.78), rgba(249,246,240,0.58))' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '400px minmax(0, 1fr)', gap: '0', minHeight: 0, flex: 1 }}>
+                    <div style={{ borderRight: `1px solid ${tone.menuBorder}`, padding: '20px', overflowY: 'auto', overflowX: 'hidden', background: 'linear-gradient(180deg, rgba(255,255,255,0.78), rgba(249,246,240,0.58))' }}>
                         <div style={{ display: 'grid', gap: '10px', marginBottom: '14px' }}>
                             <div style={{ fontSize: '0.74rem', color: tone.infoText, fontWeight: 800, letterSpacing: '0.08em' }}>
                             TEMPLATES DISPONIBLES
@@ -221,7 +221,7 @@ export default function SendTemplateModal({
                             </div>
                         )}
                         {!templatesLoading && !templatesError && templates.length > 0 && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                 {templates.map((template) => {
                                     const isSelected = String(selectedTemplate?.templateId || '') === String(template?.templateId || '');
                                     return (
@@ -234,7 +234,7 @@ export default function SendTemplateModal({
                                                 border: isSelected ? `1px solid ${tone.successBorder}` : `1px solid ${tone.border}`,
                                                 background: isSelected ? 'linear-gradient(180deg, rgba(214,243,224,0.95), rgba(214,243,224,0.78))' : 'linear-gradient(180deg, rgba(255,255,255,0.92), rgba(245,242,236,0.82))',
                                                 borderRadius: '14px',
-                                                padding: '14px',
+                                                padding: '16px',
                                                 cursor: 'pointer',
                                                 boxShadow: isSelected ? '0 10px 24px rgba(36,124,74,0.12)' : '0 8px 18px rgba(15,23,42,0.05)',
                                                 display: 'grid',
@@ -274,7 +274,7 @@ export default function SendTemplateModal({
                         )}
                     </div>
 
-                    <div style={{ padding: '20px', overflowY: 'auto', background: 'linear-gradient(180deg, rgba(255,255,255,0.9), rgba(248,245,239,0.82))' }}>
+                    <div style={{ padding: '22px', overflowY: 'auto', background: 'linear-gradient(180deg, rgba(255,255,255,0.9), rgba(248,245,239,0.82))' }}>
                         {!selectedTemplate && (
                             <div style={{ border: `1px dashed ${tone.controlBorder}`, borderRadius: '14px', padding: '22px', color: tone.textSoft, fontSize: '0.9rem', background: tone.cardAlt }}>
                                 Elige un template para ver la preview resuelta con el cliente, cotizacion y agente del chat actual.
@@ -282,7 +282,7 @@ export default function SendTemplateModal({
                         )}
 
                         {selectedTemplate && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
                                     <div>
                                         <div style={{ fontSize: '1rem', fontWeight: 800, color: tone.title }}>{toText(selectedTemplate?.templateName) || 'Template'}</div>
@@ -307,11 +307,11 @@ export default function SendTemplateModal({
                                 {!previewLoading && !previewError && preview && (
                                     <>
                                         <div style={{ border: `1px solid ${tone.successBorder}`, background: tone.successSurface, borderRadius: '14px', padding: '16px', display: 'grid', gap: '14px' }}>
-                                            <div style={{ fontSize: '0.74rem', color: tone.successText, fontWeight: 800, letterSpacing: '0.08em', marginBottom: '8px' }}>
+                                        <div style={{ fontSize: '0.74rem', color: tone.successText, fontWeight: 800, letterSpacing: '0.08em', marginBottom: '8px' }}>
                                                 PREVIEW DEL MENSAJE
                                             </div>
                                             <div style={{ display: 'flex', justifyContent: 'center' }}>
-                                                <div style={{ width: 'min(420px, 100%)', borderRadius: '24px', padding: '12px', background: 'linear-gradient(180deg, rgba(232,245,237,0.98), rgba(223,239,229,0.94))', border: `1px solid ${tone.successBorder}`, boxShadow: '0 18px 30px rgba(15,23,42,0.08)' }}>
+                                                <div style={{ width: 'min(460px, 100%)', borderRadius: '24px', padding: '12px', background: 'linear-gradient(180deg, rgba(232,245,237,0.98), rgba(223,239,229,0.94))', border: `1px solid ${tone.successBorder}`, boxShadow: '0 18px 30px rgba(15,23,42,0.08)' }}>
                                                     <div style={{ borderRadius: '18px', overflow: 'hidden', background: '#ffffff', border: `1px solid rgba(15,23,42,0.08)` }}>
                                                         {imagePreviewSrc ? (
                                                             <img

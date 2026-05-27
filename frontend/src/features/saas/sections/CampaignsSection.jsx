@@ -1380,7 +1380,21 @@ export default React.memo(function CampaignsSection(props = {}) {
         const term = toLower(manualExclusionSearch);
         return inclusionOnlyAudienceItems
             .filter((item) => !excludedCustomerIdSet.has(item.customerId))
-            .filter((item) => !term || `${toLower(item.contactName)} ${toLower(item.phone)}`.includes(term))
+            .filter((item) => !term || [
+                item.customerId,
+                item.contactName,
+                item.phone,
+                item.email,
+                item.segment,
+                item.purchaseRange,
+                item.departmentName,
+                item.provinceName,
+                item.districtName,
+                ...(Array.isArray(item.zoneLabelNames) ? item.zoneLabelNames : []),
+                ...(Array.isArray(item.districts) ? item.districts : []),
+                ...(Array.isArray(item.provinces) ? item.provinces : []),
+                ...(Array.isArray(item.departments) ? item.departments : [])
+            ].map((value) => toLower(value)).join(' ').includes(term))
             .slice(0, 12);
     }, [excludedCustomerIdSet, inclusionOnlyAudienceItems, manualExclusionSearch]);
     const operationalLabelById = useMemo(() => {
@@ -3194,8 +3208,20 @@ export default React.memo(function CampaignsSection(props = {}) {
                         <div className="saas-campaigns-manual-exclusion-results">
                             {manualExclusionCandidates.length === 0 ? <small className="saas-admin-empty-inline">{inclusionOnlyAudienceItems.length === 0 ? 'No hay audiencia incluida para excluir.' : 'No hay coincidencias disponibles.'}</small> : manualExclusionCandidates.map((item) => (
                                 <button key={`exclude_candidate_${item.customerId}`} type="button" className="saas-campaigns-manual-exclusion-item" onClick={() => toggleAudienceExclusion(item.customerId)}>
-                                    <strong>{item.contactName}</strong>
-                                    <span>{item.phone}</span>
+                                    <div className="saas-campaigns-manual-exclusion-item__identity">
+                                        <strong>{item.contactName || item.customerId}</strong>
+                                        <span>{item.customerId} {item.phone ? `• ${item.phone}` : ''}</span>
+                                    </div>
+                                    <div className="saas-campaigns-manual-exclusion-item__details">
+                                        {item.segment ? <span>Segmento: {item.segment}</span> : null}
+                                        {item.purchaseRange ? <span>Rango: {item.purchaseRange}</span> : null}
+                                        {item.zoneLabelNames?.[0] ? <span>Zona: {item.zoneLabelNames[0]}</span> : null}
+                                        {item.districtName || item.provinceName || item.departmentName ? (
+                                            <span>
+                                                Ubicación: {[item.districtName, item.provinceName, item.departmentName].filter(Boolean).join(' / ')}
+                                            </span>
+                                        ) : null}
+                                    </div>
                                 </button>
                             ))}
                         </div>

@@ -448,6 +448,24 @@ function ruleMatchesAddress(rule = {}, address = {}) {
     return null;
 }
 
+function hasRecognizedAddressGeo(address = {}) {
+    return Boolean(
+        normalizeMatchValue(address?.districtName || address?.district_name || address?.districtId || address?.district_id || '')
+        || normalizeMatchValue(address?.provinceName || address?.province_name || '')
+        || normalizeMatchValue(address?.departmentName || address?.department_name || '')
+    );
+}
+
+function findPeruShippingFallbackRule(rules = []) {
+    const activeRules = ensureArray(rules).filter((rule) => rule?.isActive !== false);
+    return (
+        activeRules.find((rule) => toText(rule?.segmentKey || rule?.segment_key || '').toLowerCase() === 'resto_marvisur')
+        || activeRules.find((rule) => normalizeMatchValue(rule?.name || '').includes('peru envios'))
+        || activeRules.find((rule) => normalizeMatchValue(rule?.name || '').includes('perú envíos'))
+        || null
+    );
+}
+
 function resolveZoneFromAddress(address = {}, rules = []) {
     const activeRules = ensureArray(rules).filter((rule) => rule?.isActive !== false);
     const matches = activeRules
@@ -455,7 +473,9 @@ function resolveZoneFromAddress(address = {}, rules = []) {
         .filter(Boolean);
     const byPriority = { district: 3, province: 2, department: 1 };
     matches.sort((a, b) => (byPriority[b.level] || 0) - (byPriority[a.level] || 0));
-    return matches[0]?.rule || null;
+    if (matches[0]?.rule) return matches[0].rule;
+    if (!hasRecognizedAddressGeo(address)) return null;
+    return findPeruShippingFallbackRule(activeRules);
 }
 
 async function replaceCustomerZoneLabel(tenantId = DEFAULT_TENANT_ID, { customerId = '', addressId = '', rule = null } = {}) {
