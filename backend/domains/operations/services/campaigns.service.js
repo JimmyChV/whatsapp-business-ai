@@ -1782,15 +1782,30 @@ function normalizeTextArray(value = []) {
     return Array.from(new Set(normalizeStringArray(value).map(toText).filter(Boolean)));
 }
 
+function composeCustomerFullName(source = {}) {
+    return toText([
+        toText(source.firstName || source.first_name || source.nombres || ''),
+        toText(source.middleName || source.middle_name || ''),
+        toText(source.lastNamePaternal || source.last_name_paternal || source.lastName || source.last_name || source.apellido_paterno || ''),
+        toText(source.lastNameMaternal || source.last_name_maternal || source.maternalLastName || source.maternal_last_name || source.apellido_materno || '')
+    ].filter(Boolean).join(' '));
+}
+
 function mapCustomerRowWithAddress(row = {}) {
     return {
         customerId: toText(row.customer_id),
+        customerCode: toText(row.customer_id),
         phone: toText(row.phone_e164),
         contactName: toText(row.contact_name),
         whatsappName: toText(normalizeObject(row.metadata).whatsapp?.contactName || ''),
         firstName: toText(row.first_name),
         lastNamePaternal: toText(row.last_name_paternal),
         lastNameMaternal: toText(row.last_name_maternal),
+        fullName: composeCustomerFullName({
+            firstName: row.first_name,
+            lastNamePaternal: row.last_name_paternal,
+            lastNameMaternal: row.last_name_maternal
+        }),
         email: toText(row.email),
         tags: ensureArray(row.labels || row.tags),
         marketingOptInStatus: toLower(row.marketing_opt_in_status || 'unknown'),
@@ -2352,9 +2367,15 @@ function computeRecipientEligibility(candidates = [], existingRecipients = []) {
 
 function sanitizeEligibleCustomer(customer = {}) {
     const source = normalizeObject(customer);
+    const fullName = composeCustomerFullName(source);
     return {
         customerId: toText(source.customerId || '') || null,
+        customerCode: toText(source.customerCode || source.customerId || '') || null,
         contactName: toText(source.contactName || '') || null,
+        fullName: fullName || null,
+        firstName: toText(source.firstName || source.first_name || '') || null,
+        lastName: toText(source.lastName || source.lastNamePaternal || source.last_name_paternal || '') || null,
+        maternalLastName: toText(source.maternalLastName || source.lastNameMaternal || source.last_name_maternal || '') || null,
         phone: toText(source.phone || '') || null,
         email: toText(source.email || '') || null,
         commercialStatus: toLower(source.commercialStatus || source.commercial_status || 'unknown') || 'unknown',

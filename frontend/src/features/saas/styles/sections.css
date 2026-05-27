@@ -6949,6 +6949,57 @@
     gap: 12px;
 }
 
+.saas-campaigns-summary-preview-meta {
+    display: grid;
+    gap: 6px;
+}
+
+.saas-campaigns-summary-preview-meta small {
+    color: #9cc0d4;
+    font-size: 0.78rem;
+}
+
+.saas-campaigns-summary-payload {
+    border: 1px solid var(--saas-border-color);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--saas-bg-elevated) 45%, transparent);
+    overflow: auto;
+}
+
+.saas-campaigns-payload-table {
+    width: 100%;
+    min-width: 720px;
+    border-collapse: collapse;
+}
+
+.saas-campaigns-payload-table th,
+.saas-campaigns-payload-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(123, 170, 196, 0.16);
+    text-align: left;
+    vertical-align: top;
+    color: #d7ebf8;
+    font-size: 0.8rem;
+}
+
+.saas-campaigns-payload-table thead th {
+    background: var(--saas-bg-elevated);
+    color: #9ec1d6;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.saas-campaigns-table-name-cell {
+    display: grid;
+    gap: 4px;
+}
+
+.saas-campaigns-table-name-cell small {
+    color: #93b6ca;
+    font-size: 0.72rem;
+}
+
 .saas-campaigns-summary-footer {
     display: flex;
     align-items: center;

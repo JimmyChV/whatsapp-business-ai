@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
+import { buildTemplateResolvedPreview } from '../../chat/core/helpers/templateMessages.helpers';
 import { isTemplateAllowedInCampaigns } from '../helpers/templateUseCase.helpers';
 import { fetchTenantCustomerLabels, fetchTenantLabels, fetchTenantZoneRules } from '../services/labels.service';
 import { fetchCampaignFilterOptions, fetchCampaignGeographyOptions, sendCampaignBlock } from '../services/campaigns.service';
@@ -933,6 +934,9 @@ export default React.memo(function CampaignsSection(props = {}) {
         purchase_ranges: [],
         sent_templates: []
     });
+    const [templatePreviewPayload, setTemplatePreviewPayload] = useState(null);
+    const [templatePreviewLoading, setTemplatePreviewLoading] = useState(false);
+    const [templatePreviewError, setTemplatePreviewError] = useState('');
     const audienceRequestRef = useRef(0);
     const estimateRequestRef = useRef({ base: 0, full: 0, inclusion: 0 });
     const requestJsonRef = useRef(requestJson);
@@ -1046,6 +1050,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         requestJsonRef.current = requestJson;
     }, [requestJson]);
 
+
     const filteredCampaigns = useMemo(() => {
         const term = toLower(search);
         return campaigns.filter((item) => (
@@ -1152,12 +1157,19 @@ export default React.memo(function CampaignsSection(props = {}) {
         return moduleOptions.find((entry) => entry.moduleId === cleanModuleId) || null;
     }, [form.moduleId, moduleOptions]);
 
+    const selectedTemplateResolvedPreview = useMemo(() => {
+        if (!selectedTemplate || !templatePreviewPayload) return null;
+        try {
+            return buildTemplateResolvedPreview(selectedTemplate, templatePreviewPayload);
+        } catch (_) {
+            return null;
+        }
+    }, [selectedTemplate, templatePreviewPayload]);
+
     const selectedTemplatePreview = useMemo(() => {
         const components = Array.isArray(selectedTemplate?.componentsJson) ? selectedTemplate.componentsJson : [];
         const byType = (type) => components.find((component) => toUpper(component?.type) === type) || null;
         const header = byType('HEADER');
-        const body = byType('BODY');
-        const footer = byType('FOOTER');
         const buttons = byType('BUTTONS');
         const headerFormat = toLower(header?.format || '');
         const headerType = header
@@ -1165,9 +1177,9 @@ export default React.memo(function CampaignsSection(props = {}) {
             : 'none';
         return {
             headerType,
-            headerText: toText(header?.text),
-            bodyText: toText(body?.text),
-            footerText: toText(footer?.text),
+            headerText: toText(selectedTemplateResolvedPreview?.headerText || header?.text),
+            bodyText: toText(selectedTemplateResolvedPreview?.bodyText || ''),
+            footerText: toText(selectedTemplateResolvedPreview?.footerText || ''),
             headerMediaSrc: toText(form?.headerMedia?.base64),
             buttons: Array.isArray(buttons?.buttons)
                 ? buttons.buttons.map((button, index) => ({
@@ -1175,9 +1187,26 @@ export default React.memo(function CampaignsSection(props = {}) {
                     type: toLower(button?.type || 'quick_reply'),
                     text: toText(button?.text) || `Boton ${index + 1}`
                 }))
-                : []
+                : [],
+            resolvedComponents: Array.isArray(selectedTemplateResolvedPreview?.components) ? selectedTemplateResolvedPreview.components : [],
+            previewText: toText(selectedTemplateResolvedPreview?.previewText || '')
         };
-    }, [form?.headerMedia?.base64, selectedTemplate]);
+    }, [form?.headerMedia?.base64, selectedTemplate, selectedTemplateResolvedPreview]);
+    const resolvedTemplateVariables = useMemo(() => (
+        Array.isArray(selectedTemplatePreview?.resolvedComponents)
+            ? selectedTemplatePreview.resolvedComponents.flatMap((component) => (
+                Array.isArray(component?.parameters)
+                    ? component.parameters.map((parameter) => ({
+                        componentType: toText(component.type),
+                        placeholderIndex: toNumber(parameter?.placeholderIndex, 0),
+                        key: toText(parameter?.key),
+                        label: toText(parameter?.label || parameter?.key || `Variable ${parameter?.placeholderIndex}`),
+                        value: toText(parameter?.value)
+                    }))
+                    : []
+            ))
+            : []
+    ), [selectedTemplatePreview]);
 
     const estimateNumbers = useMemo(() => ({
         total: Math.max(0, toNumber(reachEstimate?.total)),
@@ -1229,27 +1258,27 @@ export default React.memo(function CampaignsSection(props = {}) {
             name: toText(entry.name)
         })).filter((entry) => entry.id && entry.name);
         if (configured.length > 0) return configured;
-        return uniqueTextItems(stableAudienceItems.map((item) => item.segment))
+        return uniqueTextItems(audienceItemsForSelectors.map((item) => item.segment))
             .map((name) => ({ id: name, name }));
-    }, [campaignFilterOptions.segments, stableAudienceItems]);
+    }, [audienceItemsForSelectors, campaignFilterOptions.segments]);
     const purchaseRangeOptions = useMemo(() => {
         const configured = (Array.isArray(campaignFilterOptions.purchase_ranges) ? campaignFilterOptions.purchase_ranges : []).map((entry) => ({
             id: toText(entry.id),
             name: toText(entry.name)
         })).filter((entry) => entry.id && entry.name);
         if (configured.length > 0) return configured;
-        return uniqueTextItems(stableAudienceItems.map((item) => item.purchaseRange))
+        return uniqueTextItems(audienceItemsForSelectors.map((item) => item.purchaseRange))
             .map((name) => ({ id: name, name }));
-    }, [campaignFilterOptions.purchase_ranges, stableAudienceItems]);
+    }, [audienceItemsForSelectors, campaignFilterOptions.purchase_ranges]);
     const sentTemplateOptions = useMemo(() => {
         const configured = (Array.isArray(campaignFilterOptions.sent_templates) ? campaignFilterOptions.sent_templates : []).map((entry) => ({
             id: toText(entry.id),
             name: toText(entry.name)
         })).filter((entry) => entry.id && entry.name);
         if (configured.length > 0) return configured;
-        return uniqueTextItems(stableAudienceItems.map((item) => item.lastTemplateName))
+        return uniqueTextItems(audienceItemsForSelectors.map((item) => item.lastTemplateName))
             .map((name) => ({ id: name, name }));
-    }, [campaignFilterOptions.sent_templates, stableAudienceItems]);
+    }, [audienceItemsForSelectors, campaignFilterOptions.sent_templates]);
     const zoneNameById = useMemo(() => {
         const map = new Map();
         zoneOptions.forEach((item) => {
@@ -1402,6 +1431,50 @@ export default React.memo(function CampaignsSection(props = {}) {
         const source = estimatedAudienceItems.length > 0 ? estimatedAudienceItems : inclusionOnlyAudienceItems;
         return source.filter((item) => !excludedCustomerIdSet.has(item.customerId));
     }, [estimatedAudienceItems, excludedCustomerIdSet, inclusionOnlyAudienceItems]);
+    const previewCustomerId = useMemo(() => (
+        toText(
+            reviewAudienceItems?.[0]?.customerId
+            || currentFinalAudienceItems?.[0]?.customerId
+            || inclusionOnlyAudienceItems?.[0]?.customerId
+            || estimatedAudienceItems?.[0]?.customerId
+            || baseAudienceItems?.[0]?.customerId
+            || ''
+        )
+    ), [baseAudienceItems, currentFinalAudienceItems, estimatedAudienceItems, inclusionOnlyAudienceItems, reviewAudienceItems]);
+
+    useEffect(() => {
+        if (typeof requestJsonRef.current !== 'function' || !selectedTemplate?.templateId) {
+            setTemplatePreviewPayload(null);
+            setTemplatePreviewError('');
+            setTemplatePreviewLoading(false);
+            return;
+        }
+        let cancelled = false;
+        const searchParams = new URLSearchParams();
+        if (previewCustomerId) searchParams.set('customerId', previewCustomerId);
+        if (toText(form.validFrom)) searchParams.set('validFrom', toText(form.validFrom));
+        if (toText(form.validTo)) searchParams.set('validTo', toText(form.validTo));
+
+        setTemplatePreviewLoading(true);
+        setTemplatePreviewError('');
+        void requestJsonRef.current(`/api/tenant/template-variables/preview?${searchParams.toString()}`, { method: 'GET' })
+            .then((payload) => {
+                if (cancelled) return;
+                setTemplatePreviewPayload(payload && typeof payload === 'object' ? payload : null);
+            })
+            .catch((error) => {
+                if (cancelled) return;
+                setTemplatePreviewPayload(null);
+                setTemplatePreviewError(String(error?.message || 'No se pudo resolver la preview del template.'));
+            })
+            .finally(() => {
+                if (!cancelled) setTemplatePreviewLoading(false);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [form.validFrom, form.validTo, previewCustomerId, selectedTemplate?.templateId]);
     const formBaseline = useMemo(() => {
         if (panelMode === 'edit' && selectedCampaign) {
             return serializeCampaignForm(mapCampaignToForm(selectedCampaign, labelOptions, zoneOptions));
@@ -1604,24 +1677,30 @@ export default React.memo(function CampaignsSection(props = {}) {
         )
     ), [recipients]);
     const detailFinalAudienceItems = useMemo(() => {
-        if (selectedBlocks.length === 0 || frozenRecipientCustomerIds.size === 0) return currentFinalAudienceItems;
-        const filtered = currentFinalAudienceItems.filter((item) => frozenRecipientCustomerIds.has(item.customerId));
-        if (filtered.length > 0) return filtered;
+        if (currentFinalAudienceItems.length > 0) return currentFinalAudienceItems;
+        if (frozenRecipientCustomerIds.size === 0) return [];
         return (Array.isArray(recipients) ? recipients : [])
             .map((recipient) => ({
                 customerId: toText(recipient?.customerId),
+                customerCode: toText(recipient?.customerCode || recipient?.customerId),
                 contactName: toText(recipient?.contactName || recipient?.customerName || recipient?.customerId) || 'Sin nombre',
+                fullName: toText(recipient?.fullName || recipient?.customerFullName || ''),
+                firstName: toText(recipient?.firstName || ''),
+                lastName: toText(recipient?.lastName || recipient?.lastNamePaternal || ''),
+                maternalLastName: toText(recipient?.maternalLastName || recipient?.lastNameMaternal || ''),
                 phone: toText(recipient?.phone) || '-',
-                commercialStatus: '',
+                commercialStatus: toLower(recipient?.commercialStatus || '') || '',
+                segment: toText(recipient?.segment || ''),
+                purchaseRange: toText(recipient?.purchaseRange || ''),
                 operationalLabelIds: [],
                 zoneLabelIds: [],
                 zoneLabelNames: [],
                 zoneLabels: []
             }))
             .filter((item) => item.customerId);
-    }, [currentFinalAudienceItems, frozenRecipientCustomerIds, recipients, selectedBlocks.length]);
+    }, [currentFinalAudienceItems, frozenRecipientCustomerIds.size, recipients]);
     const detailAudienceTitle = detailUsesFinalAudience
-        ? `Audiencia final (${detailFinalAudienceItems.length})`
+        ? `Audiencia final (${Math.max(detailFinalAudienceItems.length, toNumber(selectedCampaign?.totalRecipients, 0))})`
         : `Destinatarios (${recipients.length})`;
 
     const runSafe = useCallback(async (action, fallbackMessage) => {
@@ -1639,7 +1718,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         const cleanId = toText(campaignId || selectedCampaignId);
         if (!cleanId) return;
         await Promise.all([
-            typeof loadRecipients === 'function' ? loadRecipients({ campaignId: cleanId, limit: 120, offset: 0 }) : Promise.resolve(),
+            typeof loadRecipients === 'function' ? loadRecipients({ campaignId: cleanId, limit: 10000, offset: 0 }) : Promise.resolve(),
             typeof loadEvents === 'function' ? loadEvents({ campaignId: cleanId, limit: 120, offset: 0 }) : Promise.resolve()
         ]);
     }, [loadEvents, loadRecipients, selectedCampaignId]);
@@ -3590,6 +3669,42 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 <h4>VISTA PREVIA DE LA PLANTILLA</h4>
                             </header>
                             {renderTemplatePreviewBubble()}
+                            <div className="saas-campaigns-summary-preview-meta">
+                                {templatePreviewLoading ? <small>Resolviendo variables con un destinatario muestra...</small> : null}
+                                {!templatePreviewLoading && templatePreviewError ? <small>{templatePreviewError}</small> : null}
+                                {!templatePreviewLoading && !templatePreviewError && previewCustomerId ? <small>{`Preview resuelta con el cliente ${previewCustomerId}.`}</small> : null}
+                            </div>
+                        </section>
+                        <section className="saas-campaigns-summary-section">
+                            <header>
+                                <h4>Payload resuelto del template</h4>
+                            </header>
+                            <div className="saas-campaigns-summary-payload">
+                                {resolvedTemplateVariables.length === 0 ? (
+                                    <div className="saas-admin-empty-inline">No hay variables resueltas para mostrar.</div>
+                                ) : (
+                                    <table className="saas-campaigns-payload-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Componente</th>
+                                                <th>Variable</th>
+                                                <th>Placeholder</th>
+                                                <th>Valor resuelto</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {resolvedTemplateVariables.map((variable, index) => (
+                                                <tr key={`resolved_var_${variable.componentType}_${variable.placeholderIndex}_${index}`}>
+                                                    <td>{variable.componentType || '-'}</td>
+                                                    <td>{variable.label || variable.key || '-'}</td>
+                                                    <td>{variable.placeholderIndex ? `{{${variable.placeholderIndex}}}` : '-'}</td>
+                                                    <td>{variable.value || <span className="saas-admin-empty-inline">(vacío)</span>}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
                         </section>
                         <section className="saas-campaigns-summary-section">
                             <header>
@@ -3882,7 +3997,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 {detailUsesFinalAudience ? (
                                     <>
                                         <div className="saas-campaigns-audience-summary">
-                                            <strong>{`${detailFinalAudienceItems.length} clientes finales definidos en el wizard`}</strong>
+                                            <strong>{`${Math.max(detailFinalAudienceItems.length, toNumber(selectedCampaign?.totalRecipients, 0))} clientes finales definidos en el wizard`}</strong>
                                             <span>Esta vista refleja la audiencia construida en los pasos de inclusion, exclusion y revision manual.</span>
                                         </div>
                                         <div className="saas-campaigns-audience-table-wrap">
@@ -3903,14 +4018,20 @@ export default React.memo(function CampaignsSection(props = {}) {
                                                         {detailFinalAudienceItems.map((item) => {
                                                             const commercialMeta = commercialFilterOptions.find((entry) => toLower(entry.key) === toLower(item.commercialStatus));
                                                             const zone = item.zoneLabelIds?.[0] ? zoneNameById.get(toUpper(item.zoneLabelIds[0])) : null;
+                                                            const zoneName = item.resolvedZoneName || zone?.name || item.zoneLabelNames?.[0] || '-';
                                                             const operationalLabel = item.operationalLabelIds?.[0] ? operationalLabelById.get(toUpper(item.operationalLabelIds[0])) : null;
                                                             return (
                                                                 <tr key={`detail_audience_${item.customerId}`}>
-                                                                    <td>{item.fullName || item.contactName}</td>
+                                                                    <td>
+                                                                        <div className="saas-campaigns-table-name-cell">
+                                                                            <strong>{item.fullName || item.contactName || item.customerId}</strong>
+                                                                            <small>{[item.customerCode || item.customerId, item.contactName].filter(Boolean).join(' • ')}</small>
+                                                                        </div>
+                                                                    </td>
                                                                     <td>{item.phone}</td>
-                                                                    <td>{commercialMeta ? commercialMeta.name : (item.commercialStatus || '-')}</td>
-                                                                    <td>{zone || '-'}</td>
-                                                                    <td>{operationalLabel?.name || '-'}</td>
+                                                                    <td>{commercialMeta ? <span className="saas-campaigns-chip active" style={{ '--campaign-chip-accent': commercialMeta.color }}>{commercialMeta.name}</span> : (item.commercialStatus || '-')}</td>
+                                                                    <td>{zoneName !== '-' ? <span className="saas-campaigns-chip active" style={{ '--campaign-chip-accent': zone?.color || '#00A884' }}>{zoneName}</span> : '-'}</td>
+                                                                    <td>{operationalLabel?.name ? <span className="saas-campaigns-chip active" style={{ '--campaign-chip-accent': operationalLabel.color }}>{operationalLabel.name}</span> : '-'}</td>
                                                                 </tr>
                                                             );
                                                         })}
