@@ -14,6 +14,7 @@ const customerCatalogsService = require('../../tenant/services/customer-catalogs
 const customerAddressesService = require('../../tenant/services/customer-addresses.service');
 const waModuleService = require('../../tenant/services/wa-modules.service');
 const waCloudClient = require('../../channels/services/whatsapp-cloud-client.service');
+const { buildTemplateSendComponents } = require('../../channels/helpers/template-render.helpers');
 
 const STORE_FILE = 'campaigns.json';
 const DEFAULT_LIMIT = 50;
@@ -391,40 +392,6 @@ async function uploadCampaignHeaderMedia(tenantId = DEFAULT_TENANT_ID, moduleId 
     );
 }
 
-function resolveTemplateVariableValue(variableKey = '', customer = {}, campaign = {}) {
-    const source = normalizeObject(customer);
-    const contactName = naturalizeUppercaseWords(source.contactName || '');
-    const firstName = naturalizeUppercaseWords(source.firstName || '');
-    const treatmentLabel = naturalizeUppercaseWords(source.treatmentLabel || '');
-    const shortName = contactName || firstName || '';
-    switch (toLower(variableKey)) {
-    case 'nombre_cliente':
-        return contactName || 'Cliente';
-    case 'contacto_cliente':
-        return [treatmentLabel, shortName].filter(Boolean).join(' ') || contactName || 'Cliente';
-    case 'tratamiento_cliente':
-        return treatmentLabel;
-    case 'nombre_whatsapp_cliente':
-        return naturalizeUppercaseWords(source.whatsappName || '');
-    case 'telefono_cliente':
-        return toText(source.phone || '');
-    case 'email_cliente':
-        return toText(source.email || '');
-    case 'idioma_preferido_cliente':
-        return toLower(source.preferredLanguage || 'es') || 'es';
-    case 'tags_cliente_csv':
-        return ensureArray(source.tags).map((entry) => toText(entry)).filter(Boolean).join(', ');
-    case 'customer_id':
-        return toText(source.customerId || '');
-    case 'fecha_inicio':
-        return formatCampaignDateLabel(campaign?.validFrom || campaign?.scheduledAt || '');
-    case 'fecha_fin':
-        return formatCampaignDateLabel(campaign?.validTo || '');
-    default:
-        return '';
-    }
-}
-
 async function buildTemplateComponentsForRecipient(tenantId = DEFAULT_TENANT_ID, campaign = {}, customer = {}) {
     const cleanTenantId = normalizeTenant(tenantId);
     const cleanTemplateName = toText(campaign?.templateName || '');
@@ -439,23 +406,22 @@ async function buildTemplateComponentsForRecipient(tenantId = DEFAULT_TENANT_ID,
     const templateComponents = ensureArray(template?.componentsJson);
     if (templateComponents.length === 0) return [];
 
-    const variableMapJson = template?.variableMapJson && typeof template.variableMapJson === 'object'
-        ? template.variableMapJson
-        : {};
+    const previewPayload = await templateVariablesService.getPreview(cleanTenantId, {
+        customerId: toText(customer?.customerId || ''),
+        validFrom: campaign?.validFrom || campaign?.scheduledAt || '',
+        validTo: campaign?.validTo || ''
+    });
     const headerMedia = normalizeCampaignHeaderMedia(campaign);
-
-    const resolvedComponents = [];
+    const resolvedComponents = await buildTemplateSendComponents(template, previewPayload);
     for (const component of templateComponents) {
         const type = normalizeTemplateComponentType(component?.type || 'BODY');
-        if (type !== 'BODY' && type !== 'HEADER') continue;
-
         const format = toUpper(component?.format || '');
         if (type === 'HEADER' && MULTIMEDIA_HEADER_FORMATS.has(format)) {
             if (!headerMedia?.base64 || !isDataUrl(headerMedia.base64)) continue;
             const uploadedMediaId = await uploadCampaignHeaderMedia(cleanTenantId, cleanModuleId, format, headerMedia);
             if (!uploadedMediaId) continue;
             const parameterType = toLower(format);
-            resolvedComponents.push({
+            resolvedComponents.unshift({
                 type,
                 parameters: [
                     {
@@ -464,22 +430,8 @@ async function buildTemplateComponentsForRecipient(tenantId = DEFAULT_TENANT_ID,
                     }
                 ]
             });
-            continue;
+            break;
         }
-
-        const placeholderIndexes = parsePlaceholderIndexesFromText(component?.text || '');
-        if (placeholderIndexes.length === 0) continue;
-        const componentMap = variableMapJson?.[toLower(type)] || {};
-        resolvedComponents.push({
-            type,
-            parameters: placeholderIndexes.map((placeholderIndex) => {
-                const originalToken = normalizeTemplateToken(componentMap?.sequentialToOriginal?.[placeholderIndex] || '');
-                return {
-                    type: 'text',
-                    text: resolveTemplateVariableValue(originalToken, customer, campaign)
-                };
-            })
-        });
     }
 
     return resolvedComponents.filter((component) => Array.isArray(component.parameters) && component.parameters.length > 0);
