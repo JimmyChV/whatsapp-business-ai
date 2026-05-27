@@ -265,7 +265,30 @@ function createCampaignDispatcherJob({
 
         const variablesJson = job?.variablesJson && typeof job.variablesJson === 'object' ? job.variablesJson : {};
         const languageCode = resolveTemplateLanguage(job);
-        const components = normalizeTemplateComponents(variablesJson);
+        let components = normalizeTemplateComponents(variablesJson);
+        let campaignRecord = null;
+        try {
+            if (campaignsService && typeof campaignsService.getCampaignById === 'function') {
+                campaignRecord = await campaignsService.getCampaignById(tenantId, toText(job?.campaignId || ''));
+            }
+            if (
+                campaignsService
+                && typeof campaignsService.buildTemplateComponentsForCustomerId === 'function'
+                && campaignRecord
+                && toText(job?.recipientId || '')
+            ) {
+                const rebuiltComponents = await campaignsService.buildTemplateComponentsForCustomerId(
+                    tenantId,
+                    campaignRecord,
+                    toText(job.recipientId)
+                );
+                if (Array.isArray(rebuiltComponents) && rebuiltComponents.length > 0) {
+                    components = rebuiltComponents;
+                }
+            }
+        } catch (rebuildError) {
+            logger?.warn?.('[Ops][CampaignDispatcher] fresh template rebuild failed tenant=' + tenantId + ': ' + String(rebuildError?.message || rebuildError));
+        }
         let templateRecord = null;
         let renderedTemplate = {
             previewText: '',

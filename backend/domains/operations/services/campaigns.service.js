@@ -1855,6 +1855,181 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
         .slice(0, maxRecipients);
 }
 
+async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
+    moduleId = '',
+    customerId = ''
+} = {}) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const cleanCustomerId = toText(customerId);
+    const cleanModuleId = normalizeModuleId(moduleId);
+    if (!cleanCustomerId) return null;
+
+    const treatmentLabels = await getTreatmentLabelMap();
+
+    if (getStorageDriver() !== 'postgres') {
+        const customersStore = await readTenantJsonFile('customers.json', { tenantId: cleanTenantId, defaultValue: { items: [] } });
+        const entry = ensureArray(customersStore?.items)
+            .find((item) => toText(item?.customerId) === cleanCustomerId)
+            || null;
+        if (!entry) return null;
+        return {
+            customerId: toText(entry.customerId),
+            phone: toText(entry.phoneE164 || entry.phone),
+            contactName: toText(entry.contactName),
+            whatsappName: toText(normalizeObject(entry.metadata).whatsapp?.contactName || ''),
+            firstName: toText(entry.firstName || entry.first_name || normalizeObject(entry.profile).firstNames || ''),
+            email: toText(entry.email),
+            tags: ensureArray(entry.tags),
+            marketingOptInStatus: toLower(entry.marketingOptInStatus || entry.marketing_opt_in_status || 'unknown'),
+            moduleId: toText(entry.moduleId || entry.module_id || ''),
+            preferredLanguage: toLower(entry.preferredLanguage || entry.preferred_language || 'es'),
+            treatmentId: toText(entry.treatmentId || entry.treatment_id || normalizeObject(entry.profile).treatmentId || ''),
+            treatmentLabel: toText(treatmentLabels.get(toText(entry.treatmentId || entry.treatment_id || normalizeObject(entry.profile).treatmentId || '')) || '')
+        };
+    }
+
+    await ensurePostgresSchema();
+
+    if (cleanModuleId) {
+        try {
+            const contextRowsResult = await queryPostgres(
+                `SELECT
+                    c.customer_id,
+                    c.phone_e164,
+                    c.contact_name,
+                    c.first_name,
+                    c.email,
+                    c.preferred_language,
+                    c.treatment_id,
+                    c.customer_type_id,
+                    c.acquisition_source_id,
+                    c.metadata,
+                    c.created_at,
+                    c.module_id AS customer_module_id,
+                    cmc.module_id AS context_module_id,
+                    cmc.marketing_opt_in_status,
+                    cmc.commercial_status,
+                    cmc.labels,
+                    cmc.assignment_user_id,
+                    COALESCE(addr.has_address, FALSE) AS has_address,
+                    addr.department_names,
+                    addr.province_names,
+                    addr.district_names,
+                    addr.primary_department_name,
+                    addr.primary_province_name,
+                    addr.primary_district_name
+                 FROM tenant_customer_module_contexts cmc
+                 JOIN tenant_customers c
+                   ON c.tenant_id = cmc.tenant_id
+                  AND c.customer_id = cmc.customer_id
+                 LEFT JOIN LATERAL (
+                    SELECT
+                        COUNT(*) > 0 AS has_address,
+                        ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.department_name), '')), NULL) AS department_names,
+                        ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.province_name), '')), NULL) AS province_names,
+                        ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.district_name), '')), NULL) AS district_names,
+                        COALESCE(
+                            MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.department_name), '') END),
+                            MAX(NULLIF(BTRIM(a.department_name), ''))
+                        ) AS primary_department_name,
+                        COALESCE(
+                            MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.province_name), '') END),
+                            MAX(NULLIF(BTRIM(a.province_name), ''))
+                        ) AS primary_province_name,
+                        COALESCE(
+                            MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.district_name), '') END),
+                            MAX(NULLIF(BTRIM(a.district_name), ''))
+                        ) AS primary_district_name
+                    FROM tenant_customer_addresses a
+                    WHERE a.tenant_id = c.tenant_id
+                      AND a.customer_id = c.customer_id
+                 ) addr ON TRUE
+                 WHERE cmc.tenant_id = $1
+                   AND LOWER(cmc.module_id) = LOWER($2)
+                   AND c.customer_id = $3
+                 LIMIT 1`,
+                [cleanTenantId, cleanModuleId, cleanCustomerId]
+            );
+            const row = ensureArray(contextRowsResult?.rows)[0] || null;
+            if (row) {
+                return mapCustomerRowWithAddress({
+                    ...row,
+                    treatment_label: treatmentLabels.get(toText(row?.treatment_id)) || ''
+                });
+            }
+        } catch (error) {
+            if (!missingRelation(error)) throw error;
+        }
+    }
+
+    const result = await queryPostgres(
+        `SELECT
+            c.customer_id,
+            c.phone_e164,
+            c.contact_name,
+            c.first_name,
+            c.email,
+            c.tags,
+            c.module_id,
+            c.preferred_language,
+            c.marketing_opt_in_status,
+            c.treatment_id,
+            c.customer_type_id,
+            c.acquisition_source_id,
+            c.metadata,
+            c.created_at,
+            COALESCE(addr.has_address, FALSE) AS has_address,
+            addr.department_names,
+            addr.province_names,
+            addr.district_names,
+            addr.primary_department_name,
+            addr.primary_province_name,
+            addr.primary_district_name
+          FROM tenant_customers c
+          LEFT JOIN LATERAL (
+                SELECT
+                    COUNT(*) > 0 AS has_address,
+                    ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.department_name), '')), NULL) AS department_names,
+                    ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.province_name), '')), NULL) AS province_names,
+                    ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.district_name), '')), NULL) AS district_names,
+                    COALESCE(
+                        MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.department_name), '') END),
+                        MAX(NULLIF(BTRIM(a.department_name), ''))
+                    ) AS primary_department_name,
+                    COALESCE(
+                        MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.province_name), '') END),
+                        MAX(NULLIF(BTRIM(a.province_name), ''))
+                    ) AS primary_province_name,
+                    COALESCE(
+                        MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.district_name), '') END),
+                        MAX(NULLIF(BTRIM(a.district_name), ''))
+                    ) AS primary_district_name
+                FROM tenant_customer_addresses a
+                WHERE a.tenant_id = c.tenant_id
+                  AND a.customer_id = c.customer_id
+           ) addr ON TRUE
+         WHERE c.tenant_id = $1
+           AND c.customer_id = $2
+         LIMIT 1`,
+        [cleanTenantId, cleanCustomerId]
+    );
+    const row = ensureArray(result?.rows)[0] || null;
+    if (!row) return null;
+    return mapCustomerRowWithAddress({
+        ...row,
+        treatment_label: treatmentLabels.get(toText(row?.treatment_id)) || ''
+    });
+}
+
+async function buildTemplateComponentsForCustomerId(tenantId = DEFAULT_TENANT_ID, campaign = {}, customerId = '') {
+    const customer = await loadCampaignCustomerById(tenantId, {
+        moduleId: campaign?.moduleId || '',
+        customerId
+    });
+    if (!customer) return [];
+    return buildTemplateComponentsForRecipient(tenantId, campaign, customer);
+}
+
 function computeRecipientEligibility(candidates = [], existingRecipients = []) {
     const knownByPhone = new Set(ensureArray(existingRecipients).map((entry) => toText(entry.phone)));
     const knownByCustomer = new Set(
@@ -3208,5 +3383,6 @@ module.exports = {
     hydrateCampaignReadOnlyState,
     hydrateCampaignRuntimeState,
     applyQueueJobUpdate,
-    onCampaignUpdated
+    onCampaignUpdated,
+    buildTemplateComponentsForCustomerId
 };
