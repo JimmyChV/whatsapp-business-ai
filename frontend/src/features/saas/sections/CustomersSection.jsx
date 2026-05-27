@@ -1028,6 +1028,7 @@ function CustomersSection(props = {}) {
         tenantScopeLocked,
         canManageCustomers = false,
         canManageCampaigns = false,
+        canSelectCustomersForCampaigns = false,
         canOperateChat = false,
         openCustomerCreate,
         customerSearch,
@@ -4113,8 +4114,14 @@ function CustomersSection(props = {}) {
         );
     };
 
+    const canUseCampaignSelection = Boolean(
+        canSelectCustomersForCampaigns
+        || canManageCampaigns
+        || canManageCustomers
+    );
+
     const headerActions = [
-        ...(canManageCampaigns ? [{
+        ...(canUseCampaignSelection ? [{
             key: 'toggle-selection',
             label: campaignSelectionMode ? 'Cancelar seleccion' : 'Seleccionar clientes',
             onClick: () => {
@@ -4141,14 +4148,14 @@ function CustomersSection(props = {}) {
             variant: 'primary',
             disabled: busy || tenantScopeLocked
         }] : []),
-        canManageCampaigns && campaignSelectionMode && selectedCustomerIdsForCampaign.length > 0 && outreachMode === 'eligible' ? {
+        canUseCampaignSelection && campaignSelectionMode && selectedCustomerIdsForCampaign.length > 0 && outreachMode === 'eligible' ? {
             key: 'send-template',
             label: `Enviar campaña${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`,
             onClick: () => { void handleOpenCampaignTemplateModal(); },
             variant: 'secondary',
             disabled: busy || tenantScopeLocked || !outreachModuleId
         } : null,
-        canManageCampaigns && campaignSelectionMode && selectedCustomerIdsForCampaign.length > 0 && outreachMode === 'assign' ? {
+        canUseCampaignSelection && campaignSelectionMode && selectedCustomerIdsForCampaign.length > 0 && outreachMode === 'assign' ? {
             key: 'assign-module',
             label: `Asignar al modulo${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`,
             onClick: () => { void handleOpenCampaignTemplateModal(); },

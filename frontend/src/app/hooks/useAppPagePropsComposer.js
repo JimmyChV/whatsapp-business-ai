@@ -57,6 +57,9 @@ export default function useAppPagePropsComposer({
   };
   const SaasPanelComponent = sessionBlock.SaasPanelComponent;
 
+  const normalizedSessionRole = String(sessionBlock.saasSession?.user?.role || '').trim().toLowerCase();
+  const normalizedSessionRoleLabel = String(sessionBlock.saasSession?.user?.roleLabel || '').trim().toLowerCase();
+
   const saasPanelGateNode = SaasPanelComponent
     ? createElement(SaasPanelComponent, {
       isOpen: true,
@@ -69,7 +72,11 @@ export default function useAppPagePropsComposer({
       activeTenantId: sessionBlock.tenantScopeId,
       canManageSaas: sessionBlock.canManageSaas,
       userRole: sessionBlock.saasUserRole,
-      isSuperAdmin: Boolean(sessionBlock.saasSession?.user?.isSuperAdmin),
+      isSuperAdmin: Boolean(
+        sessionBlock.saasSession?.user?.isSuperAdmin
+        || normalizedSessionRole === 'superadmin'
+        || normalizedSessionRoleLabel === 'superadmin'
+      ),
       currentUser: sessionBlock.saasSession?.user || null,
       preferredTenantId: sessionBlock.requestedWaTenantFromUrl || '',
       launchSource: sessionBlock.requestedLaunchSource || '',

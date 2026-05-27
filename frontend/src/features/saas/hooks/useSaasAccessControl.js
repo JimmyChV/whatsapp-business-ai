@@ -56,11 +56,14 @@ export default function useSaasAccessControl({
     } = permissionKeys;
 
     const normalizedRole = String(userRole || '').trim().toLowerCase();
+    const normalizedCurrentUserRole = String(currentUser?.role || '').trim().toLowerCase();
+    const normalizedCurrentUserRoleLabel = String(currentUser?.roleLabel || '').trim().toLowerCase();
     const effectiveIsSuperAdmin = Boolean(
         isSuperAdmin
         || normalizedRole === 'superadmin'
         || currentUser?.isSuperAdmin === true
-        || String(currentUser?.role || '').trim().toLowerCase() === 'superadmin'
+        || normalizedCurrentUserRole === 'superadmin'
+        || normalizedCurrentUserRoleLabel === 'superadmin'
     );
     const noRoleContext = !normalizedRole;
 
@@ -234,6 +237,13 @@ export default function useSaasAccessControl({
     const canManageCustomers = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_CUSTOMERS_MANAGE])
         : roleBasedCanManageCustomers;
+    const canSelectCustomersForCampaigns = hasPermissionContext
+        ? hasAnyActorPermission([
+            PERMISSION_TENANT_CAMPAIGNS_READ,
+            PERMISSION_TENANT_CAMPAIGNS_MANAGE,
+            PERMISSION_TENANT_CUSTOMERS_MANAGE
+        ])
+        : Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || roleBasedCanManageCustomers);
     const canViewOperations = hasPermissionContext
         ? hasAnyActorPermission([
             PERMISSION_TENANT_CHAT_OPERATE,
@@ -398,6 +408,7 @@ export default function useSaasAccessControl({
         canManageCommercialIntelligence,
         canViewCampaigns,
         canManageCampaigns,
+        canSelectCustomersForCampaigns,
         canViewMetaAds,
         canManageMetaAds,
         canViewMetaTemplates,

@@ -142,6 +142,7 @@ export default function SaasPanelEntitySections(props = {}) {
         canViewCustomers: context.canViewCustomers,
         canManageCustomers: context.canManageCustomers,
         canManageCampaigns: context.canManageCampaigns,
+        canSelectCustomersForCampaigns: context.canSelectCustomersForCampaigns,
         canOperateChat: context.canOperateChat,
         openCustomerCreate: context.openCustomerCreate,
         customerSearch: context.customerSearch,
