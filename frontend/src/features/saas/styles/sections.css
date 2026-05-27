@@ -5303,7 +5303,8 @@
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     min-height: 0 !important;
-    height: auto !important;
+    height: 100% !important;
+    max-height: 100% !important;
     overflow: hidden !important;
 }
 
@@ -5320,6 +5321,8 @@
     min-height: 0 !important;
     height: 100% !important;
     max-height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
     overflow: hidden !important;
 }
 
@@ -5426,6 +5429,7 @@
     scrollbar-gutter: stable;
 }
 
+.saas-admin-shell #saas_etiquetas .saas-entity-detail-panel__body,
 .saas-admin-shell #saas_etiquetas .saas-entity-detail-panel .saas-detail-panel__body {
     flex: 1 1 auto !important;
     min-height: 0 !important;
@@ -5450,7 +5454,9 @@
 .saas-admin-shell #saas_etiquetas .saas-labels-pane,
 .saas-admin-shell #saas_etiquetas .saas-labels-scroll-list,
 .saas-admin-shell #saas_etiquetas .saas-labels-detail-panel,
+.saas-admin-shell #saas_etiquetas .saas-entity-detail-panel,
 .saas-admin-shell #saas_etiquetas .saas-labels-detail-panel .saas-detail-panel__body,
+.saas-admin-shell #saas_etiquetas .saas-entity-detail-panel__body,
 .saas-admin-shell #saas_etiquetas .saas-labels-pane .saas-data-table-wrap {
     scrollbar-width: thin;
     scrollbar-color: var(--saas-scrollbar-thumb) var(--saas-scrollbar-track);
@@ -5460,7 +5466,9 @@
 .saas-admin-shell #saas_etiquetas .saas-labels-pane::-webkit-scrollbar,
 .saas-admin-shell #saas_etiquetas .saas-labels-scroll-list::-webkit-scrollbar,
 .saas-admin-shell #saas_etiquetas .saas-labels-detail-panel::-webkit-scrollbar,
+.saas-admin-shell #saas_etiquetas .saas-entity-detail-panel::-webkit-scrollbar,
 .saas-admin-shell #saas_etiquetas .saas-labels-detail-panel .saas-detail-panel__body::-webkit-scrollbar,
+.saas-admin-shell #saas_etiquetas .saas-entity-detail-panel__body::-webkit-scrollbar,
 .saas-admin-shell #saas_etiquetas .saas-labels-pane .saas-data-table-wrap::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -5470,7 +5478,9 @@
 .saas-admin-shell #saas_etiquetas .saas-labels-pane::-webkit-scrollbar-track,
 .saas-admin-shell #saas_etiquetas .saas-labels-scroll-list::-webkit-scrollbar-track,
 .saas-admin-shell #saas_etiquetas .saas-labels-detail-panel::-webkit-scrollbar-track,
+.saas-admin-shell #saas_etiquetas .saas-entity-detail-panel::-webkit-scrollbar-track,
 .saas-admin-shell #saas_etiquetas .saas-labels-detail-panel .saas-detail-panel__body::-webkit-scrollbar-track,
+.saas-admin-shell #saas_etiquetas .saas-entity-detail-panel__body::-webkit-scrollbar-track,
 .saas-admin-shell #saas_etiquetas .saas-labels-pane .saas-data-table-wrap::-webkit-scrollbar-track {
     background: var(--saas-scrollbar-track);
     border-radius: 999px;
@@ -5480,7 +5490,9 @@
 .saas-admin-shell #saas_etiquetas .saas-labels-pane::-webkit-scrollbar-thumb,
 .saas-admin-shell #saas_etiquetas .saas-labels-scroll-list::-webkit-scrollbar-thumb,
 .saas-admin-shell #saas_etiquetas .saas-labels-detail-panel::-webkit-scrollbar-thumb,
+.saas-admin-shell #saas_etiquetas .saas-entity-detail-panel::-webkit-scrollbar-thumb,
 .saas-admin-shell #saas_etiquetas .saas-labels-detail-panel .saas-detail-panel__body::-webkit-scrollbar-thumb,
+.saas-admin-shell #saas_etiquetas .saas-entity-detail-panel__body::-webkit-scrollbar-thumb,
 .saas-admin-shell #saas_etiquetas .saas-labels-pane .saas-data-table-wrap::-webkit-scrollbar-thumb {
     background: var(--saas-scrollbar-thumb);
     border-radius: 999px;
@@ -5491,7 +5503,9 @@
 .saas-admin-shell #saas_etiquetas .saas-labels-pane::-webkit-scrollbar-thumb:hover,
 .saas-admin-shell #saas_etiquetas .saas-labels-scroll-list::-webkit-scrollbar-thumb:hover,
 .saas-admin-shell #saas_etiquetas .saas-labels-detail-panel::-webkit-scrollbar-thumb:hover,
+.saas-admin-shell #saas_etiquetas .saas-entity-detail-panel::-webkit-scrollbar-thumb:hover,
 .saas-admin-shell #saas_etiquetas .saas-labels-detail-panel .saas-detail-panel__body::-webkit-scrollbar-thumb:hover,
+.saas-admin-shell #saas_etiquetas .saas-entity-detail-panel__body::-webkit-scrollbar-thumb:hover,
 .saas-admin-shell #saas_etiquetas .saas-labels-pane .saas-data-table-wrap::-webkit-scrollbar-thumb:hover {
     background: var(--saas-scrollbar-thumb-hover);
 }
@@ -6895,29 +6909,27 @@
 
 .saas-campaigns-delivery-step {
     display: grid;
-    gap: 22px;
+    gap: 26px;
 }
 
 .saas-campaigns-delivery-step__cards {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 18px;
-    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
 }
 
 .saas-campaigns-delivery-card {
     display: grid;
-    gap: 10px;
+    gap: 12px;
     text-align: left;
-    padding: 22px;
-    min-height: 124px;
+    padding: 20px 22px;
+    min-height: 0;
     border: 1px solid var(--saas-border-color);
     border-radius: 16px;
     background: var(--saas-bg-surface);
     color: #eefbff;
     transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
     cursor: pointer;
-    align-content: start;
 }
 
 .saas-campaigns-delivery-card:hover {
@@ -6926,15 +6938,16 @@
 }
 
 .saas-campaigns-delivery-card strong {
-    font-size: 1.08rem;
-    line-height: 1.25;
+    font-size: 1.12rem;
+    line-height: 1.2;
 }
 
 .saas-campaigns-delivery-card span {
     color: #8fb9cf;
     font-size: 0.9rem;
-    line-height: 1.55;
+    line-height: 1.6;
     display: block;
+    max-width: 72ch;
 }
 
 .saas-campaigns-delivery-card.is-selected {
@@ -6945,8 +6958,8 @@
 
 .saas-campaigns-delivery-step__config {
     display: grid;
-    gap: 14px;
-    padding: 16px;
+    gap: 16px;
+    padding: 20px 22px;
     border: 1px solid var(--saas-border-color);
     border-radius: 16px;
     background: var(--saas-bg-surface);
@@ -10413,62 +10426,6 @@ textarea:focus {
   min-height: 0 !important;
   overflow: visible !important;
   padding-right: 0 !important;
-}
-
-/* Final layout overrides for Labels and Campaigns */
-.saas-admin-shell #saas_etiquetas.saas-admin-card--full.saas-entity-page,
-.saas-admin-shell #saas_etiquetas .saas-td-layout,
-.saas-admin-shell #saas_etiquetas .saas-td-layout__content,
-.saas-admin-shell #saas_etiquetas .saas-td-layout__right,
-.saas-admin-shell #saas_etiquetas .saas-entity-detail-panel {
-  min-height: 0 !important;
-  height: 100% !important;
-  max-height: 100% !important;
-}
-
-.saas-admin-shell #saas_etiquetas .saas-td-layout__content,
-.saas-admin-shell #saas_etiquetas .saas-td-layout__right,
-.saas-admin-shell #saas_etiquetas .saas-entity-detail-panel {
-  display: flex !important;
-  flex-direction: column !important;
-  overflow: hidden !important;
-}
-
-.saas-admin-shell #saas_etiquetas .saas-entity-detail-panel__body,
-.saas-admin-shell #saas_etiquetas .saas-detail-panel__body {
-  flex: 1 1 auto !important;
-  min-height: 0 !important;
-  max-height: 100% !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  padding-bottom: 24px !important;
-  scrollbar-gutter: stable both-edges;
-}
-
-.saas-admin-shell #saas_etiquetas .saas-detail-panel__section,
-.saas-admin-shell #saas_etiquetas .saas-detail-panel__section-content {
-  min-height: 0 !important;
-}
-
-.saas-admin-shell #saas_campaigns .saas-campaigns-wizard-shell,
-.saas-admin-shell #saas_campaigns .saas-campaigns-wizard-content,
-.saas-admin-shell #saas_campaigns .saas-campaigns-wizard-step,
-.saas-admin-shell #saas_campaigns .saas-campaigns-detail-panel__body {
-  overflow: visible !important;
-}
-
-.saas-admin-shell #saas_campaigns .saas-campaigns-delivery-step {
-  gap: 28px !important;
-}
-
-.saas-admin-shell #saas_campaigns .saas-campaigns-delivery-step__cards {
-  gap: 22px !important;
-}
-
-.saas-admin-shell #saas_campaigns .saas-campaigns-delivery-step__config,
-.saas-admin-shell #saas_campaigns .saas-campaigns-delivery-step__single-note,
-.saas-admin-shell #saas_campaigns .saas-campaigns-delivery-step__summary {
-  padding: 22px !important;
 }
 
 .saas-admin-shell #saas_campaigns .saas-campaigns-wizard-step,
