@@ -35,13 +35,34 @@ const EMPTY_DEEP_FILTERS = {
     operational_label_ids: [],
     customer_type_ids: [],
     acquisition_source_ids: [],
+    segments: [],
+    purchase_status: [],
+    purchase_ranges: [],
     assigned_user_id: '',
     has_open_chat: '',
     has_phone: '',
     has_email: '',
     has_address: '',
     created_after: '',
-    created_before: ''
+    created_before: '',
+    last_purchase_after: '',
+    last_purchase_before: '',
+    days_since_last_purchase_min: '',
+    days_since_last_purchase_max: '',
+    purchases_total_min: '',
+    purchases_total_max: '',
+    purchases_180_min: '',
+    purchases_180_max: '',
+    amount_180_min: '',
+    amount_180_max: '',
+    amount_accumulated_min: '',
+    amount_accumulated_max: '',
+    cadence_days_min: '',
+    cadence_days_max: '',
+    has_received_any_template: '',
+    last_template_names: [],
+    last_template_sent_after: '',
+    last_template_sent_before: ''
 };
 
 const EMPTY_FORM = {
@@ -240,13 +261,34 @@ function normalizeDeepFilters(value = {}) {
         operational_label_ids: Array.from(new Set((Array.isArray(source.operational_label_ids) ? source.operational_label_ids : []).map(toUpper).filter(Boolean))),
         customer_type_ids: Array.from(new Set((Array.isArray(source.customer_type_ids) ? source.customer_type_ids : []).map(toText).filter(Boolean))),
         acquisition_source_ids: Array.from(new Set((Array.isArray(source.acquisition_source_ids) ? source.acquisition_source_ids : []).map(toText).filter(Boolean))),
+        segments: Array.from(new Set((Array.isArray(source.segments) ? source.segments : []).map(toText).filter(Boolean))),
+        purchase_status: Array.from(new Set((Array.isArray(source.purchase_status) ? source.purchase_status : []).map(toLower).filter(Boolean))),
+        purchase_ranges: Array.from(new Set((Array.isArray(source.purchase_ranges) ? source.purchase_ranges : []).map(toText).filter(Boolean))),
         assigned_user_id: toText(source.assigned_user_id || ''),
         has_open_chat: source.has_open_chat === true || source.has_open_chat === false ? source.has_open_chat : '',
         has_phone: source.has_phone === true || source.has_phone === false ? source.has_phone : '',
         has_email: source.has_email === true || source.has_email === false ? source.has_email : '',
         has_address: source.has_address === true || source.has_address === false ? source.has_address : '',
         created_after: toText(source.created_after || ''),
-        created_before: toText(source.created_before || '')
+        created_before: toText(source.created_before || ''),
+        last_purchase_after: toText(source.last_purchase_after || ''),
+        last_purchase_before: toText(source.last_purchase_before || ''),
+        days_since_last_purchase_min: toText(source.days_since_last_purchase_min || ''),
+        days_since_last_purchase_max: toText(source.days_since_last_purchase_max || ''),
+        purchases_total_min: toText(source.purchases_total_min || ''),
+        purchases_total_max: toText(source.purchases_total_max || ''),
+        purchases_180_min: toText(source.purchases_180_min || ''),
+        purchases_180_max: toText(source.purchases_180_max || ''),
+        amount_180_min: toText(source.amount_180_min || ''),
+        amount_180_max: toText(source.amount_180_max || ''),
+        amount_accumulated_min: toText(source.amount_accumulated_min || ''),
+        amount_accumulated_max: toText(source.amount_accumulated_max || ''),
+        cadence_days_min: toText(source.cadence_days_min || ''),
+        cadence_days_max: toText(source.cadence_days_max || ''),
+        has_received_any_template: source.has_received_any_template === true || source.has_received_any_template === false ? source.has_received_any_template : '',
+        last_template_names: Array.from(new Set((Array.isArray(source.last_template_names) ? source.last_template_names : []).map(toText).filter(Boolean))),
+        last_template_sent_after: toText(source.last_template_sent_after || ''),
+        last_template_sent_before: toText(source.last_template_sent_before || '')
     };
 }
 
@@ -261,13 +303,34 @@ function deepFiltersFromLegacy(filters = {}) {
         operational_label_ids: filters.operational_label_ids || filters.operationalLabelIds || [],
         customer_type_ids: filters.customer_type_ids || filters.customerTypeIds || [],
         acquisition_source_ids: filters.acquisition_source_ids || filters.acquisitionSourceIds || [],
+        segments: filters.segments || filters.segmentos || [],
+        purchase_status: filters.purchase_status || filters.purchaseStatus || [],
+        purchase_ranges: filters.purchase_ranges || filters.purchaseRanges || filters.rango_compras || [],
         assigned_user_id: filters.assigned_user_id || filters.assignedUserId || '',
         has_open_chat: filters.has_open_chat ?? filters.hasOpenChat ?? '',
         has_phone: filters.has_phone ?? filters.hasPhone ?? '',
         has_email: filters.has_email ?? filters.hasEmail ?? '',
         has_address: filters.has_address ?? filters.hasAddress ?? '',
         created_after: filters.created_after || filters.createdAfter || '',
-        created_before: filters.created_before || filters.createdBefore || ''
+        created_before: filters.created_before || filters.createdBefore || '',
+        last_purchase_after: filters.last_purchase_after || filters.lastPurchaseAfter || '',
+        last_purchase_before: filters.last_purchase_before || filters.lastPurchaseBefore || '',
+        days_since_last_purchase_min: filters.days_since_last_purchase_min ?? filters.daysSinceLastPurchaseMin ?? '',
+        days_since_last_purchase_max: filters.days_since_last_purchase_max ?? filters.daysSinceLastPurchaseMax ?? '',
+        purchases_total_min: filters.purchases_total_min ?? filters.purchasesTotalMin ?? '',
+        purchases_total_max: filters.purchases_total_max ?? filters.purchasesTotalMax ?? '',
+        purchases_180_min: filters.purchases_180_min ?? filters.purchases180Min ?? '',
+        purchases_180_max: filters.purchases_180_max ?? filters.purchases180Max ?? '',
+        amount_180_min: filters.amount_180_min ?? filters.amount180Min ?? '',
+        amount_180_max: filters.amount_180_max ?? filters.amount180Max ?? '',
+        amount_accumulated_min: filters.amount_accumulated_min ?? filters.amountAccumulatedMin ?? '',
+        amount_accumulated_max: filters.amount_accumulated_max ?? filters.amountAccumulatedMax ?? '',
+        cadence_days_min: filters.cadence_days_min ?? filters.cadenceDaysMin ?? '',
+        cadence_days_max: filters.cadence_days_max ?? filters.cadenceDaysMax ?? '',
+        has_received_any_template: filters.has_received_any_template ?? filters.hasReceivedAnyTemplate ?? '',
+        last_template_names: filters.last_template_names || filters.lastTemplateNames || [],
+        last_template_sent_after: filters.last_template_sent_after || filters.lastTemplateSentAfter || '',
+        last_template_sent_before: filters.last_template_sent_before || filters.lastTemplateSentBefore || ''
     });
 }
 
@@ -291,6 +354,9 @@ function hasDeepFilterValue(filters = {}) {
         || f.operational_label_ids.length > 0
         || f.customer_type_ids.length > 0
         || f.acquisition_source_ids.length > 0
+        || f.segments.length > 0
+        || f.purchase_status.length > 0
+        || f.purchase_ranges.length > 0
         || Boolean(f.assigned_user_id)
         || f.has_open_chat === true
         || f.has_open_chat === false
@@ -301,7 +367,26 @@ function hasDeepFilterValue(filters = {}) {
         || f.has_address === true
         || f.has_address === false
         || Boolean(f.created_after)
-        || Boolean(f.created_before);
+        || Boolean(f.created_before)
+        || Boolean(f.last_purchase_after)
+        || Boolean(f.last_purchase_before)
+        || Boolean(f.days_since_last_purchase_min)
+        || Boolean(f.days_since_last_purchase_max)
+        || Boolean(f.purchases_total_min)
+        || Boolean(f.purchases_total_max)
+        || Boolean(f.purchases_180_min)
+        || Boolean(f.purchases_180_max)
+        || Boolean(f.amount_180_min)
+        || Boolean(f.amount_180_max)
+        || Boolean(f.amount_accumulated_min)
+        || Boolean(f.amount_accumulated_max)
+        || Boolean(f.cadence_days_min)
+        || Boolean(f.cadence_days_max)
+        || f.has_received_any_template === true
+        || f.has_received_any_template === false
+        || f.last_template_names.length > 0
+        || Boolean(f.last_template_sent_after)
+        || Boolean(f.last_template_sent_before);
 }
 
 function countDeepFilterSelections(filters = {}) {
@@ -315,13 +400,34 @@ function countDeepFilterSelections(filters = {}) {
         + f.operational_label_ids.length
         + f.customer_type_ids.length
         + f.acquisition_source_ids.length
+        + f.segments.length
+        + f.purchase_status.length
+        + f.purchase_ranges.length
         + (f.assigned_user_id ? 1 : 0)
         + (f.has_open_chat === true || f.has_open_chat === false ? 1 : 0)
         + (f.has_phone === true || f.has_phone === false ? 1 : 0)
         + (f.has_email === true || f.has_email === false ? 1 : 0)
         + (f.has_address === true || f.has_address === false ? 1 : 0)
         + (f.created_after ? 1 : 0)
-        + (f.created_before ? 1 : 0);
+        + (f.created_before ? 1 : 0)
+        + (f.last_purchase_after ? 1 : 0)
+        + (f.last_purchase_before ? 1 : 0)
+        + (f.days_since_last_purchase_min ? 1 : 0)
+        + (f.days_since_last_purchase_max ? 1 : 0)
+        + (f.purchases_total_min ? 1 : 0)
+        + (f.purchases_total_max ? 1 : 0)
+        + (f.purchases_180_min ? 1 : 0)
+        + (f.purchases_180_max ? 1 : 0)
+        + (f.amount_180_min ? 1 : 0)
+        + (f.amount_180_max ? 1 : 0)
+        + (f.amount_accumulated_min ? 1 : 0)
+        + (f.amount_accumulated_max ? 1 : 0)
+        + (f.cadence_days_min ? 1 : 0)
+        + (f.cadence_days_max ? 1 : 0)
+        + (f.has_received_any_template === true || f.has_received_any_template === false ? 1 : 0)
+        + f.last_template_names.length
+        + (f.last_template_sent_after ? 1 : 0)
+        + (f.last_template_sent_before ? 1 : 0);
 }
 
 function getActiveCriteriaKeys(filters = {}) {
@@ -335,8 +441,21 @@ function getActiveCriteriaKeys(filters = {}) {
     if (f.operational_label_ids.length > 0) keys.push('operational_label_ids');
     if (f.customer_type_ids.length > 0) keys.push('customer_type_ids');
     if (f.acquisition_source_ids.length > 0) keys.push('acquisition_source_ids');
+    if (f.segments.length > 0) keys.push('segments');
+    if (f.purchase_status.length > 0) keys.push('purchase_status');
+    if (f.purchase_ranges.length > 0) keys.push('purchase_ranges');
     if (f.assigned_user_id) keys.push('assigned_user_id');
     if (f.created_after || f.created_before) keys.push('created_range');
+    if (f.last_purchase_after || f.last_purchase_before) keys.push('last_purchase_range');
+    if (f.days_since_last_purchase_min || f.days_since_last_purchase_max) keys.push('days_since_last_purchase_range');
+    if (f.purchases_total_min || f.purchases_total_max) keys.push('purchases_total_range');
+    if (f.purchases_180_min || f.purchases_180_max) keys.push('purchases_180_range');
+    if (f.amount_180_min || f.amount_180_max) keys.push('amount_180_range');
+    if (f.amount_accumulated_min || f.amount_accumulated_max) keys.push('amount_accumulated_range');
+    if (f.cadence_days_min || f.cadence_days_max) keys.push('cadence_days_range');
+    if (f.has_received_any_template === true || f.has_received_any_template === false) keys.push('has_received_any_template');
+    if (f.last_template_names.length > 0) keys.push('last_template_names');
+    if (f.last_template_sent_after || f.last_template_sent_before) keys.push('last_template_sent_range');
     if (f.has_phone === true || f.has_phone === false) keys.push('has_phone');
     if (f.has_email === true || f.has_email === false) keys.push('has_email');
     if (f.has_address === true || f.has_address === false) keys.push('has_address');
@@ -364,6 +483,10 @@ function clearCriterionFromFilters(filters = {}, criterion = '') {
     case 'operational_label_ids':
     case 'customer_type_ids':
     case 'acquisition_source_ids':
+    case 'segments':
+    case 'purchase_status':
+    case 'purchase_ranges':
+    case 'last_template_names':
         next[criterion] = [];
         break;
     case 'assigned_user_id':
@@ -373,9 +496,42 @@ function clearCriterionFromFilters(filters = {}, criterion = '') {
         next.created_after = '';
         next.created_before = '';
         break;
+    case 'last_purchase_range':
+        next.last_purchase_after = '';
+        next.last_purchase_before = '';
+        break;
+    case 'days_since_last_purchase_range':
+        next.days_since_last_purchase_min = '';
+        next.days_since_last_purchase_max = '';
+        break;
+    case 'purchases_total_range':
+        next.purchases_total_min = '';
+        next.purchases_total_max = '';
+        break;
+    case 'purchases_180_range':
+        next.purchases_180_min = '';
+        next.purchases_180_max = '';
+        break;
+    case 'amount_180_range':
+        next.amount_180_min = '';
+        next.amount_180_max = '';
+        break;
+    case 'amount_accumulated_range':
+        next.amount_accumulated_min = '';
+        next.amount_accumulated_max = '';
+        break;
+    case 'cadence_days_range':
+        next.cadence_days_min = '';
+        next.cadence_days_max = '';
+        break;
+    case 'last_template_sent_range':
+        next.last_template_sent_after = '';
+        next.last_template_sent_before = '';
+        break;
     case 'has_phone':
     case 'has_email':
     case 'has_address':
+    case 'has_received_any_template':
         next[criterion] = '';
         break;
     default:
@@ -708,7 +864,10 @@ export default React.memo(function CampaignsSection(props = {}) {
         operational_labels: [],
         customer_types: [],
         assigned_users: [],
-        acquisition_sources: []
+        acquisition_sources: [],
+        segments: [],
+        purchase_ranges: [],
+        sent_templates: []
     });
     const audienceRequestRef = useRef(0);
     const estimateRequestRef = useRef({ base: 0, full: 0, inclusion: 0 });
@@ -793,6 +952,27 @@ export default React.memo(function CampaignsSection(props = {}) {
             name: toText(entry.name)
         })).filter((entry) => entry.id && entry.name),
         [campaignFilterOptions.acquisition_sources]
+    );
+    const segmentOptions = useMemo(
+        () => (Array.isArray(campaignFilterOptions.segments) ? campaignFilterOptions.segments : []).map((entry) => ({
+            id: toText(entry.id),
+            name: toText(entry.name)
+        })).filter((entry) => entry.id && entry.name),
+        [campaignFilterOptions.segments]
+    );
+    const purchaseRangeOptions = useMemo(
+        () => (Array.isArray(campaignFilterOptions.purchase_ranges) ? campaignFilterOptions.purchase_ranges : []).map((entry) => ({
+            id: toText(entry.id),
+            name: toText(entry.name)
+        })).filter((entry) => entry.id && entry.name),
+        [campaignFilterOptions.purchase_ranges]
+    );
+    const sentTemplateOptions = useMemo(
+        () => (Array.isArray(campaignFilterOptions.sent_templates) ? campaignFilterOptions.sent_templates : []).map((entry) => ({
+            id: toText(entry.id),
+            name: toText(entry.name)
+        })).filter((entry) => entry.id && entry.name),
+        [campaignFilterOptions.sent_templates]
     );
     const columnPrefs = useSaasColumnPrefs('campaigns', CAMPAIGN_DEFAULT_COLUMN_KEYS, {
         requestJson,
@@ -1536,7 +1716,10 @@ export default React.memo(function CampaignsSection(props = {}) {
                 operational_labels: [],
                 customer_types: [],
                 assigned_users: [],
-                acquisition_sources: []
+                acquisition_sources: [],
+                segments: [],
+                purchase_ranges: [],
+                sent_templates: []
             });
             setTenantOperationalLabels([]);
             setCampaignGeographyOptions({ departments: [], provinces: {}, districts: {} });
@@ -1598,7 +1781,10 @@ export default React.memo(function CampaignsSection(props = {}) {
                 operational_labels: Array.isArray(payload?.operational_labels) && payload.operational_labels.length > 0 ? payload.operational_labels : fallbackOperationalLabels,
                 customer_types: Array.isArray(payload?.customer_types) ? payload.customer_types : [],
                 assigned_users: Array.isArray(payload?.assigned_users) ? payload.assigned_users : [],
-                acquisition_sources: Array.isArray(payload?.acquisition_sources) ? payload.acquisition_sources : []
+                acquisition_sources: Array.isArray(payload?.acquisition_sources) ? payload.acquisition_sources : [],
+                segments: Array.isArray(payload?.segments) ? payload.segments : [],
+                purchase_ranges: Array.isArray(payload?.purchase_ranges) ? payload.purchase_ranges : [],
+                sent_templates: Array.isArray(payload?.sent_templates) ? payload.sent_templates : []
             });
             setCampaignGeographyOptions({
                 departments: Array.isArray(geographyPayload?.departments) ? geographyPayload.departments : [],
@@ -2254,9 +2440,14 @@ export default React.memo(function CampaignsSection(props = {}) {
         addList('operational_label_ids', operationalFilterChipOptions, 'name', 'id', toUpper);
         addList('customer_type_ids', campaignFilterOptions.customer_types, 'name', 'id', toText);
         addList('acquisition_source_ids', acquisitionSourceOptions, 'name', 'id', toText);
+        addList('segments', segmentOptions, 'name', 'id', toText);
+        addList('purchase_ranges', purchaseRangeOptions, 'name', 'id', toText);
+        addList('last_template_names', sentTemplateOptions, 'name', 'id', toText);
         addList('departments', geographyDepartments.map((name) => ({ id: name, name })), 'name', 'id', toText);
         addList('provinces', uniqueTextItems(Object.values(geographyProvinceMap).flat()).map((name) => ({ id: name, name })), 'name', 'id', toText);
         addList('districts', uniqueTextItems(Object.values(geographyDistrictMap).flat()).map((name) => ({ id: name, name })), 'name', 'id', toText);
+        if (filters.purchase_status.includes('with_purchase')) chips.push({ keyName: 'purchase_status', value: 'with_purchase', label: 'Realizó compra', normalize: toText });
+        if (filters.purchase_status.includes('without_purchase')) chips.push({ keyName: 'purchase_status', value: 'without_purchase', label: 'No realizó compra', normalize: toText });
         if (filters.assigned_user_id) {
             const user = campaignFilterOptions.assigned_users.find((entry) => entry.id === filters.assigned_user_id);
             chips.push({ keyName: 'assigned_user_id', value: '', label: user?.name || filters.assigned_user_id, normalize: toText });
@@ -2269,9 +2460,74 @@ export default React.memo(function CampaignsSection(props = {}) {
                 normalize: toText
             });
         }
+        if (filters.last_purchase_after || filters.last_purchase_before) {
+            chips.push({
+                keyName: 'last_purchase_range',
+                value: '',
+                label: `Última compra: ${filters.last_purchase_after || '...'} a ${filters.last_purchase_before || '...'}`,
+                normalize: toText
+            });
+        }
+        if (filters.last_template_sent_after || filters.last_template_sent_before) {
+            chips.push({
+                keyName: 'last_template_sent_range',
+                value: '',
+                label: `Último template enviado: ${filters.last_template_sent_after || '...'} a ${filters.last_template_sent_before || '...'}`,
+                normalize: toText
+            });
+        }
+        if (filters.days_since_last_purchase_min !== '' || filters.days_since_last_purchase_max !== '') {
+            chips.push({
+                keyName: 'days_since_last_purchase_range',
+                value: '',
+                label: `Días desde última compra: ${filters.days_since_last_purchase_min || '...'} a ${filters.days_since_last_purchase_max || '...'}`,
+                normalize: toText
+            });
+        }
+        if (filters.purchases_total_min !== '' || filters.purchases_total_max !== '') {
+            chips.push({
+                keyName: 'purchases_total_range',
+                value: '',
+                label: `Compras totales: ${filters.purchases_total_min || '...'} a ${filters.purchases_total_max || '...'}`,
+                normalize: toText
+            });
+        }
+        if (filters.purchases_180_min !== '' || filters.purchases_180_max !== '') {
+            chips.push({
+                keyName: 'purchases_180_range',
+                value: '',
+                label: `Compras 180 días: ${filters.purchases_180_min || '...'} a ${filters.purchases_180_max || '...'}`,
+                normalize: toText
+            });
+        }
+        if (filters.amount_180_min !== '' || filters.amount_180_max !== '') {
+            chips.push({
+                keyName: 'amount_180_range',
+                value: '',
+                label: `Monto 180 días: ${filters.amount_180_min || '...'} a ${filters.amount_180_max || '...'}`,
+                normalize: toText
+            });
+        }
+        if (filters.amount_accumulated_min !== '' || filters.amount_accumulated_max !== '') {
+            chips.push({
+                keyName: 'amount_accumulated_range',
+                value: '',
+                label: `Monto acumulado: ${filters.amount_accumulated_min || '...'} a ${filters.amount_accumulated_max || '...'}`,
+                normalize: toText
+            });
+        }
+        if (filters.cadence_days_min !== '' || filters.cadence_days_max !== '') {
+            chips.push({
+                keyName: 'cadence_days_range',
+                value: '',
+                label: `Cadencia (días): ${filters.cadence_days_min || '...'} a ${filters.cadence_days_max || '...'}`,
+                normalize: toText
+            });
+        }
         if (filters.has_phone === true) chips.push({ keyName: 'has_phone', value: '', label: 'Tiene teléfono válido', normalize: toText });
         if (filters.has_email === true) chips.push({ keyName: 'has_email', value: '', label: 'Tiene email', normalize: toText });
         if (filters.has_address === true) chips.push({ keyName: 'has_address', value: '', label: 'Tiene dirección registrada', normalize: toText });
+        if (filters.has_received_any_template === true) chips.push({ keyName: 'has_received_any_template', value: '', label: 'Ya recibió algún template', normalize: toText });
         if (chips.length === 0) return null;
         return (
             <div className="saas-campaigns-filter-chips">
@@ -2304,9 +2560,14 @@ export default React.memo(function CampaignsSection(props = {}) {
         addList('operational_label_ids', operationalFilterChipOptions, 'name', 'id', toUpper);
         addList('customer_type_ids', campaignFilterOptions.customer_types, 'name', 'id', toText);
         addList('acquisition_source_ids', acquisitionSourceOptions, 'name', 'id', toText);
+        addList('segments', segmentOptions, 'name', 'id', toText);
+        addList('purchase_ranges', purchaseRangeOptions, 'name', 'id', toText);
+        addList('last_template_names', sentTemplateOptions, 'name', 'id', toText);
         addList('departments', geographyDepartments.map((name) => ({ id: name, name })), 'name', 'id', toText);
         addList('provinces', uniqueTextItems(Object.values(geographyProvinceMap).flat()).map((name) => ({ id: name, name })), 'name', 'id', toText);
         addList('districts', uniqueTextItems(Object.values(geographyDistrictMap).flat()).map((name) => ({ id: name, name })), 'name', 'id', toText);
+        if (filters.purchase_status.includes('with_purchase')) chips.push({ keyName: 'purchase_status', value: 'with_purchase', label: 'Realizó compra' });
+        if (filters.purchase_status.includes('without_purchase')) chips.push({ keyName: 'purchase_status', value: 'without_purchase', label: 'No realizó compra' });
         if (filters.assigned_user_id) {
             const user = campaignFilterOptions.assigned_users.find((entry) => entry.id === filters.assigned_user_id);
             chips.push({ keyName: 'assigned_user_id', value: '', label: user?.name || filters.assigned_user_id });
@@ -2314,9 +2575,34 @@ export default React.memo(function CampaignsSection(props = {}) {
         if (filters.created_after || filters.created_before) {
             chips.push({ keyName: 'created_range', value: '', label: `Registro: ${filters.created_after || '...'} a ${filters.created_before || '...'}` });
         }
+        if (filters.last_purchase_after || filters.last_purchase_before) {
+            chips.push({ keyName: 'last_purchase_range', value: '', label: `Última compra: ${filters.last_purchase_after || '...'} a ${filters.last_purchase_before || '...'}` });
+        }
+        if (filters.last_template_sent_after || filters.last_template_sent_before) {
+            chips.push({ keyName: 'last_template_sent_range', value: '', label: `Último template enviado: ${filters.last_template_sent_after || '...'} a ${filters.last_template_sent_before || '...'}` });
+        }
+        if (filters.days_since_last_purchase_min !== '' || filters.days_since_last_purchase_max !== '') {
+            chips.push({ keyName: 'days_since_last_purchase_range', value: '', label: `Días desde última compra: ${filters.days_since_last_purchase_min || '...'} a ${filters.days_since_last_purchase_max || '...'}` });
+        }
+        if (filters.purchases_total_min !== '' || filters.purchases_total_max !== '') {
+            chips.push({ keyName: 'purchases_total_range', value: '', label: `Compras totales: ${filters.purchases_total_min || '...'} a ${filters.purchases_total_max || '...'}` });
+        }
+        if (filters.purchases_180_min !== '' || filters.purchases_180_max !== '') {
+            chips.push({ keyName: 'purchases_180_range', value: '', label: `Compras 180 días: ${filters.purchases_180_min || '...'} a ${filters.purchases_180_max || '...'}` });
+        }
+        if (filters.amount_180_min !== '' || filters.amount_180_max !== '') {
+            chips.push({ keyName: 'amount_180_range', value: '', label: `Monto 180 días: ${filters.amount_180_min || '...'} a ${filters.amount_180_max || '...'}` });
+        }
+        if (filters.amount_accumulated_min !== '' || filters.amount_accumulated_max !== '') {
+            chips.push({ keyName: 'amount_accumulated_range', value: '', label: `Monto acumulado: ${filters.amount_accumulated_min || '...'} a ${filters.amount_accumulated_max || '...'}` });
+        }
+        if (filters.cadence_days_min !== '' || filters.cadence_days_max !== '') {
+            chips.push({ keyName: 'cadence_days_range', value: '', label: `Cadencia (días): ${filters.cadence_days_min || '...'} a ${filters.cadence_days_max || '...'}` });
+        }
         if (filters.has_phone === true) chips.push({ keyName: 'has_phone', value: '', label: 'Tiene teléfono válido' });
         if (filters.has_email === true) chips.push({ keyName: 'has_email', value: '', label: 'Tiene email' });
         if (filters.has_address === true) chips.push({ keyName: 'has_address', value: '', label: 'Tiene dirección registrada' });
+        if (filters.has_received_any_template === true) chips.push({ keyName: 'has_received_any_template', value: '', label: 'Ya recibió algún template' });
         return chips;
     }, [
         acquisitionSourceOptions,
@@ -2328,7 +2614,10 @@ export default React.memo(function CampaignsSection(props = {}) {
         geographyDistrictMap,
         geographyProvinceMap,
         operationalFilterChipOptions,
+        purchaseRangeOptions,
         resolveZoneDisplayName,
+        segmentOptions,
+        sentTemplateOptions,
         zoneFilterChipOptions
     ]);
 
@@ -2578,6 +2867,29 @@ export default React.memo(function CampaignsSection(props = {}) {
                 items: customerItems
             },
             {
+                title: 'Compra',
+                items: [
+                    { key: 'segments', label: 'Segmento' },
+                    { key: 'purchase_status', label: 'Estado de compra' },
+                    { key: 'purchase_ranges', label: 'Rango de compra' },
+                    { key: 'last_purchase_range', label: 'Última compra' },
+                    { key: 'days_since_last_purchase_range', label: 'Días desde última compra' },
+                    { key: 'purchases_total_range', label: 'Compras totales' },
+                    { key: 'purchases_180_range', label: 'Compras últimos 180 días' },
+                    { key: 'amount_180_range', label: 'Monto últimos 180 días' },
+                    { key: 'amount_accumulated_range', label: 'Monto acumulado' },
+                    { key: 'cadence_days_range', label: 'Cadencia de compra (días)' }
+                ]
+            },
+            {
+                title: 'Historial de templates',
+                items: [
+                    { key: 'has_received_any_template', label: 'Ya recibió algún template' },
+                    { key: 'last_template_names', label: 'Último template enviado' },
+                    { key: 'last_template_sent_range', label: 'Fecha último template enviado' }
+                ]
+            },
+            {
                 title: 'Datos completos',
                 items: [
                     { key: 'has_phone', label: 'Tiene teléfono válido' },
@@ -2611,6 +2923,29 @@ export default React.memo(function CampaignsSection(props = {}) {
         if (exclusionAssignedUserOptions.length > 0) customerItems.push({ key: 'assigned_user_id', label: 'Asignado a' });
         customerItems.push({ key: 'created_range', label: 'Fecha de registro' });
         if (customerItems.length > 0) groups.push({ title: 'Perfil del cliente', items: customerItems });
+        groups.push({
+            title: 'Compra',
+            items: [
+                { key: 'segments', label: 'Segmento' },
+                { key: 'purchase_status', label: 'Estado de compra' },
+                { key: 'purchase_ranges', label: 'Rango de compra' },
+                { key: 'last_purchase_range', label: 'Última compra' },
+                { key: 'days_since_last_purchase_range', label: 'Días desde última compra' },
+                { key: 'purchases_total_range', label: 'Compras totales' },
+                { key: 'purchases_180_range', label: 'Compras últimos 180 días' },
+                { key: 'amount_180_range', label: 'Monto últimos 180 días' },
+                { key: 'amount_accumulated_range', label: 'Monto acumulado' },
+                { key: 'cadence_days_range', label: 'Cadencia de compra (días)' }
+            ]
+        });
+        groups.push({
+            title: 'Historial de templates',
+            items: [
+                { key: 'has_received_any_template', label: 'Ya recibió algún template' },
+                { key: 'last_template_names', label: 'Último template enviado' },
+                { key: 'last_template_sent_range', label: 'Fecha último template enviado' }
+            ]
+        });
         groups.push({
             title: 'Datos completos',
             items: [
@@ -2689,6 +3024,53 @@ export default React.memo(function CampaignsSection(props = {}) {
                 <input type="checkbox" checked={filters[keyName] === true} onChange={(event) => updateDeepFilter(scope, keyName, event.target.checked ? true : '')} />
             </label>
         );
+        const renderDateRangeControl = (label, fromKey, toKey, fromLabel = 'Desde', toLabel = 'Hasta') => (
+            <div className="saas-campaigns-compact-filters saas-campaigns-audience-control-card">
+                <div className="saas-admin-field">
+                    <label>{label} {fromLabel}</label>
+                    <input type="date" value={filters[fromKey] || ''} onChange={(event) => updateDeepFilter(scope, fromKey, event.target.value)} />
+                </div>
+                <div className="saas-admin-field">
+                    <label>{label} {toLabel}</label>
+                    <input type="date" value={filters[toKey] || ''} onChange={(event) => updateDeepFilter(scope, toKey, event.target.value)} />
+                </div>
+            </div>
+        );
+        const renderNumberRangeControl = (label, minKey, maxKey, minLabel = 'Mínimo', maxLabel = 'Máximo') => (
+            <div className="saas-campaigns-compact-filters saas-campaigns-audience-control-card">
+                <div className="saas-admin-field">
+                    <label>{label} {minLabel}</label>
+                    <input type="number" min="0" value={filters[minKey] ?? ''} onChange={(event) => updateDeepFilter(scope, minKey, event.target.value)} />
+                </div>
+                <div className="saas-admin-field">
+                    <label>{label} {maxLabel}</label>
+                    <input type="number" min="0" value={filters[maxKey] ?? ''} onChange={(event) => updateDeepFilter(scope, maxKey, event.target.value)} />
+                </div>
+            </div>
+        );
+        const renderPurchaseStatusControl = () => (
+            <div className="saas-admin-field saas-campaigns-audience-control-card">
+                <label>Estado de compra</label>
+                <div className="saas-campaigns-chip-group">
+                    {[
+                        { value: 'with_purchase', label: 'Realizó compra' },
+                        { value: 'without_purchase', label: 'No realizó compra' }
+                    ].map((option) => {
+                        const active = filters.purchase_status.includes(option.value);
+                        return (
+                            <button
+                                key={`${scope}_purchase_status_${option.value}`}
+                                type="button"
+                                className={`saas-campaigns-chip ${active ? 'active' : ''}`}
+                                onClick={() => toggleDeepFilterValue(scope, 'purchase_status', option.value, toText)}
+                            >
+                                {option.label}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+        );
         return (
             <div className="saas-campaigns-audience-step__filters">
                 {activeCriteria.includes('departments') ? (
@@ -2737,6 +3119,25 @@ export default React.memo(function CampaignsSection(props = {}) {
                         (event) => updateDeepFilter(scope, 'acquisition_source_ids', Array.from(event.target.selectedOptions).map((option) => option.value))
                     )
                 ) : null}
+                {activeCriteria.includes('segments') ? (
+                    renderMultiSelectControl(
+                        'Segmento',
+                        filters.segments,
+                        segmentOptions.map((entry) => ({ value: entry.id, label: entry.name })),
+                        (event) => updateDeepFilter(scope, 'segments', Array.from(event.target.selectedOptions).map((option) => option.value)),
+                        'Sin segmentos disponibles.'
+                    )
+                ) : null}
+                {activeCriteria.includes('purchase_status') ? renderPurchaseStatusControl() : null}
+                {activeCriteria.includes('purchase_ranges') ? (
+                    renderMultiSelectControl(
+                        'Rango de compra',
+                        filters.purchase_ranges,
+                        purchaseRangeOptions.map((entry) => ({ value: entry.id, label: entry.name })),
+                        (event) => updateDeepFilter(scope, 'purchase_ranges', Array.from(event.target.selectedOptions).map((option) => option.value)),
+                        'Sin rangos de compra disponibles.'
+                    )
+                ) : null}
                 {activeCriteria.includes('assigned_user_id') ? (
                     renderSingleSelectControl(
                         'Asignado a',
@@ -2757,6 +3158,14 @@ export default React.memo(function CampaignsSection(props = {}) {
                         </div>
                     </div>
                 ) : null}
+                {activeCriteria.includes('last_purchase_range') ? renderDateRangeControl('Última compra', 'last_purchase_after', 'last_purchase_before') : null}
+                {activeCriteria.includes('last_template_sent_range') ? renderDateRangeControl('Último template enviado', 'last_template_sent_after', 'last_template_sent_before') : null}
+                {activeCriteria.includes('days_since_last_purchase_range') ? renderNumberRangeControl('Días desde última compra', 'days_since_last_purchase_min', 'days_since_last_purchase_max') : null}
+                {activeCriteria.includes('purchases_total_range') ? renderNumberRangeControl('Compras totales', 'purchases_total_min', 'purchases_total_max') : null}
+                {activeCriteria.includes('purchases_180_range') ? renderNumberRangeControl('Compras últimos 180 días', 'purchases_180_min', 'purchases_180_max') : null}
+                {activeCriteria.includes('amount_180_range') ? renderNumberRangeControl('Monto últimos 180 días', 'amount_180_min', 'amount_180_max') : null}
+                {activeCriteria.includes('amount_accumulated_range') ? renderNumberRangeControl('Monto acumulado', 'amount_accumulated_min', 'amount_accumulated_max') : null}
+                {activeCriteria.includes('cadence_days_range') ? renderNumberRangeControl('Cadencia de compra (días)', 'cadence_days_min', 'cadence_days_max') : null}
                 {activeCriteria.includes('has_phone') ? (
                     renderBooleanControl('has_phone', 'Tiene teléfono válido')
                 ) : null}
@@ -2765,6 +3174,18 @@ export default React.memo(function CampaignsSection(props = {}) {
                 ) : null}
                 {activeCriteria.includes('has_address') ? (
                     renderBooleanControl('has_address', 'Tiene dirección registrada')
+                ) : null}
+                {activeCriteria.includes('has_received_any_template') ? (
+                    renderBooleanControl('has_received_any_template', 'Ya recibió algún template')
+                ) : null}
+                {activeCriteria.includes('last_template_names') ? (
+                    renderMultiSelectControl(
+                        'Último template enviado',
+                        filters.last_template_names,
+                        sentTemplateOptions.map((entry) => ({ value: entry.id, label: entry.name })),
+                        (event) => updateDeepFilter(scope, 'last_template_names', Array.from(event.target.selectedOptions).map((option) => option.value)),
+                        'Todavía no hay templates enviados para usar como filtro.'
+                    )
                 ) : null}
                 {scope === 'exclusionFilters' && activeCriteria.includes('manual_customers') ? (
                     <div className="saas-admin-field saas-campaigns-audience-control-card">

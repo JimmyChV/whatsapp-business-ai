@@ -1307,6 +1307,12 @@ function normalizeNullableBool(value) {
     return null;
 }
 
+function normalizeNullableNumber(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
 function normalizeAudienceSelection(value = {}) {
     const source = normalizeObject(value);
     const normalizeFilterSet = (filters = {}) => {
@@ -1318,6 +1324,9 @@ function normalizeAudienceSelection(value = {}) {
             operational_label_ids: normalizeStringArray(f.operational_label_ids || f.labelIds || f.labels).map((entry) => toLower(entry)),
             customer_type_ids: normalizeStringArray(f.customer_type_ids || f.customerTypeIds).map(toText),
             acquisition_source_ids: normalizeStringArray(f.acquisition_source_ids || f.acquisitionSourceIds).map(toText),
+            segments: normalizeStringArray(f.segments || f.segmentos).map(toText),
+            purchase_status: normalizeStringArray(f.purchase_status || f.purchaseStatus).map(toLower),
+            purchase_ranges: normalizeStringArray(f.purchase_ranges || f.purchaseRanges || f.rango_compras).map(toText),
             departments: normalizeStringArray(f.departments || f.departmentNames).map(toText),
             provinces: normalizeStringArray(f.provinces || f.provinceNames).map(toText),
             districts: normalizeStringArray(f.districts || f.districtNames).map(toText),
@@ -1327,7 +1336,25 @@ function normalizeAudienceSelection(value = {}) {
             has_email: normalizeNullableBool(f.has_email ?? f.hasEmail),
             has_address: normalizeNullableBool(f.has_address ?? f.hasAddress),
             created_after: toIso(f.created_after || f.createdAfter),
-            created_before: toIso(f.created_before || f.createdBefore)
+            created_before: toIso(f.created_before || f.createdBefore),
+            last_purchase_after: toIso(f.last_purchase_after || f.lastPurchaseAfter),
+            last_purchase_before: toIso(f.last_purchase_before || f.lastPurchaseBefore),
+            days_since_last_purchase_min: normalizeNullableNumber(f.days_since_last_purchase_min ?? f.daysSinceLastPurchaseMin),
+            days_since_last_purchase_max: normalizeNullableNumber(f.days_since_last_purchase_max ?? f.daysSinceLastPurchaseMax),
+            purchases_total_min: normalizeNullableNumber(f.purchases_total_min ?? f.purchasesTotalMin),
+            purchases_total_max: normalizeNullableNumber(f.purchases_total_max ?? f.purchasesTotalMax),
+            purchases_180_min: normalizeNullableNumber(f.purchases_180_min ?? f.purchases180Min),
+            purchases_180_max: normalizeNullableNumber(f.purchases_180_max ?? f.purchases180Max),
+            amount_180_min: normalizeNullableNumber(f.amount_180_min ?? f.amount180Min),
+            amount_180_max: normalizeNullableNumber(f.amount_180_max ?? f.amount180Max),
+            amount_accumulated_min: normalizeNullableNumber(f.amount_accumulated_min ?? f.amountAccumulatedMin),
+            amount_accumulated_max: normalizeNullableNumber(f.amount_accumulated_max ?? f.amountAccumulatedMax),
+            cadence_days_min: normalizeNullableNumber(f.cadence_days_min ?? f.cadenceDaysMin),
+            cadence_days_max: normalizeNullableNumber(f.cadence_days_max ?? f.cadenceDaysMax),
+            has_received_any_template: normalizeNullableBool(f.has_received_any_template ?? f.hasReceivedAnyTemplate),
+            last_template_names: normalizeStringArray(f.last_template_names || f.lastTemplateNames).map(toText),
+            last_template_sent_after: toIso(f.last_template_sent_after || f.lastTemplateSentAfter),
+            last_template_sent_before: toIso(f.last_template_sent_before || f.lastTemplateSentBefore)
         };
     };
 
@@ -1349,6 +1376,9 @@ function legacyFiltersFromAudienceSelection(selection = {}) {
         operationalLabelIds: filters.operational_label_ids,
         customerTypeIds: filters.customer_type_ids,
         acquisitionSourceIds: filters.acquisition_source_ids,
+        segments: filters.segments,
+        purchaseStatus: filters.purchase_status,
+        purchaseRanges: filters.purchase_ranges,
         departments: filters.departments,
         provinces: filters.provinces,
         districts: filters.districts,
@@ -1358,7 +1388,25 @@ function legacyFiltersFromAudienceSelection(selection = {}) {
         hasEmail: filters.has_email,
         hasAddress: filters.has_address,
         createdAfter: filters.created_after,
-        createdBefore: filters.created_before
+        createdBefore: filters.created_before,
+        lastPurchaseAfter: filters.last_purchase_after,
+        lastPurchaseBefore: filters.last_purchase_before,
+        daysSinceLastPurchaseMin: filters.days_since_last_purchase_min,
+        daysSinceLastPurchaseMax: filters.days_since_last_purchase_max,
+        purchasesTotalMin: filters.purchases_total_min,
+        purchasesTotalMax: filters.purchases_total_max,
+        purchases180Min: filters.purchases_180_min,
+        purchases180Max: filters.purchases_180_max,
+        amount180Min: filters.amount_180_min,
+        amount180Max: filters.amount_180_max,
+        amountAccumulatedMin: filters.amount_accumulated_min,
+        amountAccumulatedMax: filters.amount_accumulated_max,
+        cadenceDaysMin: filters.cadence_days_min,
+        cadenceDaysMax: filters.cadence_days_max,
+        hasReceivedAnyTemplate: filters.has_received_any_template,
+        lastTemplateNames: filters.last_template_names,
+        lastTemplateSentAfter: filters.last_template_sent_after,
+        lastTemplateSentBefore: filters.last_template_sent_before
     };
 }
 
@@ -1371,6 +1419,9 @@ function matchFiltersFromDeepFilterSet(filters = {}) {
         operationalLabelIds: normalizeStringArray(source.operational_label_ids || source.operationalLabelIds || source.labelIds || source.labels).map(toLower),
         customerTypeIds: normalizeStringArray(source.customer_type_ids || source.customerTypeIds).map(toText),
         acquisitionSourceIds: normalizeStringArray(source.acquisition_source_ids || source.acquisitionSourceIds).map(toText),
+        segments: normalizeStringArray(source.segments || source.segmentos).map(toText),
+        purchaseStatus: normalizeStringArray(source.purchase_status || source.purchaseStatus).map(toLower),
+        purchaseRanges: normalizeStringArray(source.purchase_ranges || source.purchaseRanges || source.rango_compras).map(toText),
         departments: normalizeStringArray(source.departments || source.departmentNames).map(toText),
         provinces: normalizeStringArray(source.provinces || source.provinceNames).map(toText),
         districts: normalizeStringArray(source.districts || source.districtNames).map(toText),
@@ -1380,7 +1431,25 @@ function matchFiltersFromDeepFilterSet(filters = {}) {
         hasEmail: normalizeNullableBool(source.has_email ?? source.hasEmail),
         hasAddress: normalizeNullableBool(source.has_address ?? source.hasAddress),
         createdAfter: toIso(source.created_after || source.createdAfter),
-        createdBefore: toIso(source.created_before || source.createdBefore)
+        createdBefore: toIso(source.created_before || source.createdBefore),
+        lastPurchaseAfter: toIso(source.last_purchase_after || source.lastPurchaseAfter),
+        lastPurchaseBefore: toIso(source.last_purchase_before || source.lastPurchaseBefore),
+        daysSinceLastPurchaseMin: normalizeNullableNumber(source.days_since_last_purchase_min ?? source.daysSinceLastPurchaseMin),
+        daysSinceLastPurchaseMax: normalizeNullableNumber(source.days_since_last_purchase_max ?? source.daysSinceLastPurchaseMax),
+        purchasesTotalMin: normalizeNullableNumber(source.purchases_total_min ?? source.purchasesTotalMin),
+        purchasesTotalMax: normalizeNullableNumber(source.purchases_total_max ?? source.purchasesTotalMax),
+        purchases180Min: normalizeNullableNumber(source.purchases_180_min ?? source.purchases180Min),
+        purchases180Max: normalizeNullableNumber(source.purchases_180_max ?? source.purchases180Max),
+        amount180Min: normalizeNullableNumber(source.amount_180_min ?? source.amount180Min),
+        amount180Max: normalizeNullableNumber(source.amount_180_max ?? source.amount180Max),
+        amountAccumulatedMin: normalizeNullableNumber(source.amount_accumulated_min ?? source.amountAccumulatedMin),
+        amountAccumulatedMax: normalizeNullableNumber(source.amount_accumulated_max ?? source.amountAccumulatedMax),
+        cadenceDaysMin: normalizeNullableNumber(source.cadence_days_min ?? source.cadenceDaysMin),
+        cadenceDaysMax: normalizeNullableNumber(source.cadence_days_max ?? source.cadenceDaysMax),
+        hasReceivedAnyTemplate: normalizeNullableBool(source.has_received_any_template ?? source.hasReceivedAnyTemplate),
+        lastTemplateNames: normalizeStringArray(source.last_template_names || source.lastTemplateNames).map(toText),
+        lastTemplateSentAfter: toIso(source.last_template_sent_after || source.lastTemplateSentAfter),
+        lastTemplateSentBefore: toIso(source.last_template_sent_before || source.lastTemplateSentBefore)
     };
 }
 
@@ -1436,6 +1505,10 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     const customerTypeId = toText(customer.customerTypeId || customer.customer_type_id || '');
     const acquisitionSourceIds = new Set(normalizeStringArray(filters.acquisitionSourceIds || filters.acquisition_source_ids).map(toText));
     const acquisitionSourceId = toText(customer.acquisitionSourceId || customer.acquisition_source_id || '');
+    const segments = new Set(normalizeStringArray(filters.segments || filters.segmentos).map(toLower));
+    const customerSegment = toLower(customer.segment || customer.segmento || '');
+    const purchaseStatuses = new Set(normalizeStringArray(filters.purchaseStatus || filters.purchase_status).map(toLower));
+    const purchaseRanges = new Set(normalizeStringArray(filters.purchaseRanges || filters.purchase_ranges || filters.rango_compras).map(toLower));
     const departments = new Set(normalizeStringArray(filters.departments || filters.departmentNames).map(toLower));
     const provinces = new Set(normalizeStringArray(filters.provinces || filters.provinceNames).map(toLower));
     const districts = new Set(normalizeStringArray(filters.districts || filters.districtNames).map(toLower));
@@ -1448,6 +1521,36 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     const createdAfter = toIso(filters.createdAfter || filters.created_after);
     const createdBefore = toIso(filters.createdBefore || filters.created_before);
     const customerCreatedAt = toIso(customer.createdAt || customer.created_at);
+    const lastPurchaseAfter = toIso(filters.lastPurchaseAfter || filters.last_purchase_after);
+    const lastPurchaseBefore = toIso(filters.lastPurchaseBefore || filters.last_purchase_before);
+    const customerLastPurchaseAt = toIso(customer.lastPurchaseAt || customer.ultima_fecha_compra);
+    const daysSinceLastPurchaseMin = normalizeNullableNumber(filters.daysSinceLastPurchaseMin ?? filters.days_since_last_purchase_min);
+    const daysSinceLastPurchaseMax = normalizeNullableNumber(filters.daysSinceLastPurchaseMax ?? filters.days_since_last_purchase_max);
+    const customerDaysSinceLastPurchase = normalizeNullableNumber(customer.daysSinceLastPurchase ?? customer.dias_ultima_compra);
+    const purchasesTotalMin = normalizeNullableNumber(filters.purchasesTotalMin ?? filters.purchases_total_min);
+    const purchasesTotalMax = normalizeNullableNumber(filters.purchasesTotalMax ?? filters.purchases_total_max);
+    const customerPurchasesTotal = normalizeNullableNumber(customer.purchasesTotal ?? customer.compras_total);
+    const purchases180Min = normalizeNullableNumber(filters.purchases180Min ?? filters.purchases_180_min);
+    const purchases180Max = normalizeNullableNumber(filters.purchases180Max ?? filters.purchases_180_max);
+    const customerPurchases180 = normalizeNullableNumber(customer.purchases180 ?? customer.compras_180);
+    const amount180Min = normalizeNullableNumber(filters.amount180Min ?? filters.amount_180_min);
+    const amount180Max = normalizeNullableNumber(filters.amount180Max ?? filters.amount_180_max);
+    const customerAmount180 = normalizeNullableNumber(customer.amount180 ?? customer.monto_180);
+    const amountAccumulatedMin = normalizeNullableNumber(filters.amountAccumulatedMin ?? filters.amount_accumulated_min);
+    const amountAccumulatedMax = normalizeNullableNumber(filters.amountAccumulatedMax ?? filters.amount_accumulated_max);
+    const customerAmountAccumulated = normalizeNullableNumber(customer.amountAccumulated ?? customer.monto_acumulado);
+    const cadenceDaysMin = normalizeNullableNumber(filters.cadenceDaysMin ?? filters.cadence_days_min);
+    const cadenceDaysMax = normalizeNullableNumber(filters.cadenceDaysMax ?? filters.cadence_days_max);
+    const customerCadenceDays = normalizeNullableNumber(customer.cadenceDays ?? customer.cadencia_prom_dias);
+    const hasReceivedAnyTemplate = normalizeNullableBool(filters.hasReceivedAnyTemplate ?? filters.has_received_any_template);
+    const customerHasReceivedAnyTemplate = customer.hasReceivedAnyTemplate === true;
+    const lastTemplateNames = new Set(normalizeStringArray(filters.lastTemplateNames || filters.last_template_names).map(toLower));
+    const customerLastTemplateName = toLower(customer.lastTemplateName || '');
+    const lastTemplateSentAfter = toIso(filters.lastTemplateSentAfter || filters.last_template_sent_after);
+    const lastTemplateSentBefore = toIso(filters.lastTemplateSentBefore || filters.last_template_sent_before);
+    const customerLastTemplateSentAt = toIso(customer.lastTemplateSentAt || customer.last_template_sent_at);
+    const customerMadePurchase = normalizeNullableBool(customer.madePurchase ?? customer.realizo_compra);
+    const customerPurchaseRange = toLower(customer.purchaseRange || customer.rango_compras || '');
     const haystack = `${toLower(customer.contactName)} ${toLower(customer.phone)} ${toLower(customer.email)} ${toLower(customer.customerId)}`;
 
     if (includeCustomerIds.size && !includeCustomerIds.has(customerId)) return false;
@@ -1493,6 +1596,12 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     if (assignedUserId && customerAssignedUserId !== assignedUserId) return false;
     if (customerTypeIds.size > 0 && !customerTypeIds.has(customerTypeId)) return false;
     if (acquisitionSourceIds.size > 0 && !acquisitionSourceIds.has(acquisitionSourceId)) return false;
+    if (segments.size > 0 && !segments.has(customerSegment)) return false;
+    if (purchaseStatuses.size > 0) {
+        const normalizedPurchaseStatus = customerMadePurchase === true ? 'with_purchase' : 'without_purchase';
+        if (!purchaseStatuses.has(normalizedPurchaseStatus)) return false;
+    }
+    if (purchaseRanges.size > 0 && !purchaseRanges.has(customerPurchaseRange)) return false;
     if (departments.size > 0 && !customerDepartments.some((entry) => departments.has(entry))) return false;
     if (provinces.size > 0 && !customerProvinces.some((entry) => provinces.has(entry))) return false;
     if (districts.size > 0 && !customerDistricts.some((entry) => districts.has(entry))) return false;
@@ -1504,6 +1613,25 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     if (hasAddress === false && (customer.hasAddress === true || customerDepartments.length > 0 || customerProvinces.length > 0 || customerDistricts.length > 0)) return false;
     if (createdAfter && customerCreatedAt && customerCreatedAt < createdAfter) return false;
     if (createdBefore && customerCreatedAt && customerCreatedAt > createdBefore) return false;
+    if (lastPurchaseAfter && customerLastPurchaseAt && customerLastPurchaseAt < lastPurchaseAfter) return false;
+    if (lastPurchaseBefore && customerLastPurchaseAt && customerLastPurchaseAt > lastPurchaseBefore) return false;
+    if (daysSinceLastPurchaseMin !== null && customerDaysSinceLastPurchase !== null && customerDaysSinceLastPurchase < daysSinceLastPurchaseMin) return false;
+    if (daysSinceLastPurchaseMax !== null && customerDaysSinceLastPurchase !== null && customerDaysSinceLastPurchase > daysSinceLastPurchaseMax) return false;
+    if (purchasesTotalMin !== null && customerPurchasesTotal !== null && customerPurchasesTotal < purchasesTotalMin) return false;
+    if (purchasesTotalMax !== null && customerPurchasesTotal !== null && customerPurchasesTotal > purchasesTotalMax) return false;
+    if (purchases180Min !== null && customerPurchases180 !== null && customerPurchases180 < purchases180Min) return false;
+    if (purchases180Max !== null && customerPurchases180 !== null && customerPurchases180 > purchases180Max) return false;
+    if (amount180Min !== null && customerAmount180 !== null && customerAmount180 < amount180Min) return false;
+    if (amount180Max !== null && customerAmount180 !== null && customerAmount180 > amount180Max) return false;
+    if (amountAccumulatedMin !== null && customerAmountAccumulated !== null && customerAmountAccumulated < amountAccumulatedMin) return false;
+    if (amountAccumulatedMax !== null && customerAmountAccumulated !== null && customerAmountAccumulated > amountAccumulatedMax) return false;
+    if (cadenceDaysMin !== null && customerCadenceDays !== null && customerCadenceDays < cadenceDaysMin) return false;
+    if (cadenceDaysMax !== null && customerCadenceDays !== null && customerCadenceDays > cadenceDaysMax) return false;
+    if (hasReceivedAnyTemplate === true && !customerHasReceivedAnyTemplate) return false;
+    if (hasReceivedAnyTemplate === false && customerHasReceivedAnyTemplate) return false;
+    if (lastTemplateNames.size > 0 && !lastTemplateNames.has(customerLastTemplateName)) return false;
+    if (lastTemplateSentAfter && customerLastTemplateSentAt && customerLastTemplateSentAt < lastTemplateSentAfter) return false;
+    if (lastTemplateSentBefore && customerLastTemplateSentAt && customerLastTemplateSentAt > lastTemplateSentBefore) return false;
 
     // TODO: wire has_open_chat once a stable tenant chat status source is confirmed for campaign audiences.
 
@@ -1560,6 +1688,9 @@ function customerMatchesExclusionFilters(customer = {}, filters = {}) {
         || normalizeZoneLabelIds(normalized).length > 0
         || normalizeOperationalLabelIds(normalized).length > 0
         || normalizeStringArray(normalized.acquisitionSourceIds || normalized.acquisition_source_ids).length > 0
+        || normalizeStringArray(normalized.segments || normalized.segmentos).length > 0
+        || normalizeStringArray(normalized.purchaseStatus || normalized.purchase_status).length > 0
+        || normalizeStringArray(normalized.purchaseRanges || normalized.purchase_ranges || normalized.rango_compras).length > 0
         || normalizeStringArray(normalized.departments || normalized.departmentNames).length > 0
         || normalizeStringArray(normalized.provinces || normalized.provinceNames).length > 0
         || normalizeStringArray(normalized.districts || normalized.districtNames).length > 0
@@ -1569,6 +1700,24 @@ function customerMatchesExclusionFilters(customer = {}, filters = {}) {
         || normalizeNullableBool(normalized.hasAddress ?? normalized.has_address) !== null
         || Boolean(toText(normalized.createdAfter || normalized.created_after || ''))
         || Boolean(toText(normalized.createdBefore || normalized.created_before || ''))
+        || Boolean(toText(normalized.lastPurchaseAfter || normalized.last_purchase_after || ''))
+        || Boolean(toText(normalized.lastPurchaseBefore || normalized.last_purchase_before || ''))
+        || normalizeNullableNumber(normalized.daysSinceLastPurchaseMin ?? normalized.days_since_last_purchase_min) !== null
+        || normalizeNullableNumber(normalized.daysSinceLastPurchaseMax ?? normalized.days_since_last_purchase_max) !== null
+        || normalizeNullableNumber(normalized.purchasesTotalMin ?? normalized.purchases_total_min) !== null
+        || normalizeNullableNumber(normalized.purchasesTotalMax ?? normalized.purchases_total_max) !== null
+        || normalizeNullableNumber(normalized.purchases180Min ?? normalized.purchases_180_min) !== null
+        || normalizeNullableNumber(normalized.purchases180Max ?? normalized.purchases_180_max) !== null
+        || normalizeNullableNumber(normalized.amount180Min ?? normalized.amount_180_min) !== null
+        || normalizeNullableNumber(normalized.amount180Max ?? normalized.amount_180_max) !== null
+        || normalizeNullableNumber(normalized.amountAccumulatedMin ?? normalized.amount_accumulated_min) !== null
+        || normalizeNullableNumber(normalized.amountAccumulatedMax ?? normalized.amount_accumulated_max) !== null
+        || normalizeNullableNumber(normalized.cadenceDaysMin ?? normalized.cadence_days_min) !== null
+        || normalizeNullableNumber(normalized.cadenceDaysMax ?? normalized.cadence_days_max) !== null
+        || normalizeNullableBool(normalized.hasReceivedAnyTemplate ?? normalized.has_received_any_template) !== null
+        || normalizeStringArray(normalized.lastTemplateNames || normalized.last_template_names).length > 0
+        || Boolean(toText(normalized.lastTemplateSentAfter || normalized.last_template_sent_after || ''))
+        || Boolean(toText(normalized.lastTemplateSentBefore || normalized.last_template_sent_before || ''))
         || normalizeNullableBool(normalized.hasOpenChat ?? normalized.has_open_chat) !== null;
     if (!hasFilters) return false;
     return customerMatchesFilters(customer, normalized);
@@ -1608,7 +1757,20 @@ function mapCustomerRowWithAddress(row = {}) {
         treatmentLabel: toText(row.treatment_label || ''),
         customerTypeId: toText(row.customer_type_id || ''),
         acquisitionSourceId: toText(row.acquisition_source_id || ''),
+        segment: toText(row.segmento || row.segment || ''),
+        madePurchase: normalizeNullableBool(row.realizo_compra),
+        daysSinceLastPurchase: normalizeNullableNumber(row.dias_ultima_compra),
+        lastPurchaseAt: toIso(row.ultima_fecha_compra),
+        purchasesTotal: normalizeNullableNumber(row.compras_total),
+        purchases180: normalizeNullableNumber(row.compras_180),
+        amount180: normalizeNullableNumber(row.monto_180),
+        amountAccumulated: normalizeNullableNumber(row.monto_acumulado),
+        cadenceDays: normalizeNullableNumber(row.cadencia_prom_dias),
+        purchaseRange: toText(row.rango_compras || ''),
         assignedUserId: toText(row.assignment_user_id || ''),
+        hasReceivedAnyTemplate: Boolean(row.last_template_name || row.last_template_sent_at),
+        lastTemplateName: toText(row.last_template_name || ''),
+        lastTemplateSentAt: toIso(row.last_template_sent_at),
         createdAt: toIso(row.created_at),
         departmentName: toText(row.primary_department_name || ''),
         provinceName: toText(row.primary_province_name || ''),
@@ -1666,6 +1828,16 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                     c.treatment_id,
                     c.customer_type_id,
                     c.acquisition_source_id,
+                    c.segmento,
+                    c.realizo_compra,
+                    c.dias_ultima_compra,
+                    c.ultima_fecha_compra,
+                    c.compras_total,
+                    c.compras_180,
+                    c.monto_180,
+                    c.monto_acumulado,
+                    c.cadencia_prom_dias,
+                    c.rango_compras,
                     c.metadata,
                     c.created_at,
                     c.module_id AS customer_module_id,
@@ -1674,6 +1846,8 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                     cmc.commercial_status,
                     cmc.labels,
                     cmc.assignment_user_id,
+                    tmpl.last_template_name,
+                    tmpl.last_template_sent_at,
                     COALESCE(addr.has_address, FALSE) AS has_address,
                     addr.department_names,
                     addr.province_names,
@@ -1707,6 +1881,22 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                     WHERE a.tenant_id = c.tenant_id
                       AND a.customer_id = c.customer_id
                  ) addr ON TRUE
+                 LEFT JOIN LATERAL (
+                    SELECT
+                        NULLIF(BTRIM(COALESCE(m.metadata->>'templateName', '')), '') AS last_template_name,
+                        TO_TIMESTAMP(COALESCE(m.timestamp_unix, 0)) AT TIME ZONE 'UTC' AS last_template_sent_at
+                    FROM tenant_messages m
+                    WHERE m.tenant_id = c.tenant_id
+                      AND m.from_me = TRUE
+                      AND LOWER(COALESCE(m.message_type, '')) = 'template'
+                      AND (
+                        NULLIF(BTRIM(COALESCE(m.wa_phone_number, '')), '') = c.phone_e164
+                        OR NULLIF(BTRIM(COALESCE(m.sender_phone, '')), '') = c.phone_e164
+                        OR NULLIF(BTRIM(COALESCE(m.chat_id, '')), '') = c.phone_e164
+                      )
+                    ORDER BY COALESCE(m.timestamp_unix, 0) DESC, m.created_at DESC
+                    LIMIT 1
+                 ) tmpl ON TRUE
                  WHERE cmc.tenant_id = $1
                    AND LOWER(cmc.module_id) = LOWER($2)
                    AND COALESCE(c.phone_e164, '') <> ''
@@ -1757,8 +1947,20 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
             c.treatment_id,
             c.customer_type_id,
             c.acquisition_source_id,
+            c.segmento,
+            c.realizo_compra,
+            c.dias_ultima_compra,
+            c.ultima_fecha_compra,
+            c.compras_total,
+            c.compras_180,
+            c.monto_180,
+            c.monto_acumulado,
+            c.cadencia_prom_dias,
+            c.rango_compras,
             c.metadata,
             c.created_at,
+            tmpl.last_template_name,
+            tmpl.last_template_sent_at,
             COALESCE(addr.has_address, FALSE) AS has_address,
             addr.department_names,
             addr.province_names,
@@ -1790,6 +1992,22 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                 WHERE a.tenant_id = c.tenant_id
                   AND a.customer_id = c.customer_id
            ) addr ON TRUE
+          LEFT JOIN LATERAL (
+                SELECT
+                    NULLIF(BTRIM(COALESCE(m.metadata->>'templateName', '')), '') AS last_template_name,
+                    TO_TIMESTAMP(COALESCE(m.timestamp_unix, 0)) AT TIME ZONE 'UTC' AS last_template_sent_at
+                FROM tenant_messages m
+                WHERE m.tenant_id = c.tenant_id
+                  AND m.from_me = TRUE
+                  AND LOWER(COALESCE(m.message_type, '')) = 'template'
+                  AND (
+                    NULLIF(BTRIM(COALESCE(m.wa_phone_number, '')), '') = c.phone_e164
+                    OR NULLIF(BTRIM(COALESCE(m.sender_phone, '')), '') = c.phone_e164
+                    OR NULLIF(BTRIM(COALESCE(m.chat_id, '')), '') = c.phone_e164
+                  )
+                ORDER BY COALESCE(m.timestamp_unix, 0) DESC, m.created_at DESC
+                LIMIT 1
+           ) tmpl ON TRUE
           WHERE ${where.join(' AND ')}
           ORDER BY updated_at DESC
           LIMIT $${params.length + 1}`,
@@ -1855,6 +2073,16 @@ async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
                     c.treatment_id,
                     c.customer_type_id,
                     c.acquisition_source_id,
+                    c.segmento,
+                    c.realizo_compra,
+                    c.dias_ultima_compra,
+                    c.ultima_fecha_compra,
+                    c.compras_total,
+                    c.compras_180,
+                    c.monto_180,
+                    c.monto_acumulado,
+                    c.cadencia_prom_dias,
+                    c.rango_compras,
                     c.metadata,
                     c.created_at,
                     c.module_id AS customer_module_id,
@@ -1863,6 +2091,8 @@ async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
                     cmc.commercial_status,
                     cmc.labels,
                     cmc.assignment_user_id,
+                    tmpl.last_template_name,
+                    tmpl.last_template_sent_at,
                     COALESCE(addr.has_address, FALSE) AS has_address,
                     addr.department_names,
                     addr.province_names,
@@ -1896,6 +2126,22 @@ async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
                     WHERE a.tenant_id = c.tenant_id
                       AND a.customer_id = c.customer_id
                  ) addr ON TRUE
+                 LEFT JOIN LATERAL (
+                    SELECT
+                        NULLIF(BTRIM(COALESCE(m.metadata->>'templateName', '')), '') AS last_template_name,
+                        TO_TIMESTAMP(COALESCE(m.timestamp_unix, 0)) AT TIME ZONE 'UTC' AS last_template_sent_at
+                    FROM tenant_messages m
+                    WHERE m.tenant_id = c.tenant_id
+                      AND m.from_me = TRUE
+                      AND LOWER(COALESCE(m.message_type, '')) = 'template'
+                      AND (
+                        NULLIF(BTRIM(COALESCE(m.wa_phone_number, '')), '') = c.phone_e164
+                        OR NULLIF(BTRIM(COALESCE(m.sender_phone, '')), '') = c.phone_e164
+                        OR NULLIF(BTRIM(COALESCE(m.chat_id, '')), '') = c.phone_e164
+                      )
+                    ORDER BY COALESCE(m.timestamp_unix, 0) DESC, m.created_at DESC
+                    LIMIT 1
+                 ) tmpl ON TRUE
                  WHERE cmc.tenant_id = $1
                    AND LOWER(cmc.module_id) = LOWER($2)
                    AND c.customer_id = $3
@@ -1928,8 +2174,20 @@ async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
             c.treatment_id,
             c.customer_type_id,
             c.acquisition_source_id,
+            c.segmento,
+            c.realizo_compra,
+            c.dias_ultima_compra,
+            c.ultima_fecha_compra,
+            c.compras_total,
+            c.compras_180,
+            c.monto_180,
+            c.monto_acumulado,
+            c.cadencia_prom_dias,
+            c.rango_compras,
             c.metadata,
             c.created_at,
+            tmpl.last_template_name,
+            tmpl.last_template_sent_at,
             COALESCE(addr.has_address, FALSE) AS has_address,
             addr.department_names,
             addr.province_names,
@@ -1960,6 +2218,22 @@ async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
                 WHERE a.tenant_id = c.tenant_id
                   AND a.customer_id = c.customer_id
            ) addr ON TRUE
+          LEFT JOIN LATERAL (
+                SELECT
+                    NULLIF(BTRIM(COALESCE(m.metadata->>'templateName', '')), '') AS last_template_name,
+                    TO_TIMESTAMP(COALESCE(m.timestamp_unix, 0)) AT TIME ZONE 'UTC' AS last_template_sent_at
+                FROM tenant_messages m
+                WHERE m.tenant_id = c.tenant_id
+                  AND m.from_me = TRUE
+                  AND LOWER(COALESCE(m.message_type, '')) = 'template'
+                  AND (
+                    NULLIF(BTRIM(COALESCE(m.wa_phone_number, '')), '') = c.phone_e164
+                    OR NULLIF(BTRIM(COALESCE(m.sender_phone, '')), '') = c.phone_e164
+                    OR NULLIF(BTRIM(COALESCE(m.chat_id, '')), '') = c.phone_e164
+                  )
+                ORDER BY COALESCE(m.timestamp_unix, 0) DESC, m.created_at DESC
+                LIMIT 1
+           ) tmpl ON TRUE
          WHERE c.tenant_id = $1
            AND c.customer_id = $2
          LIMIT 1`,
@@ -2033,6 +2307,19 @@ function sanitizeEligibleCustomer(customer = {}) {
         marketingOptInStatus: toLower(source.marketingOptInStatus || source.marketing_opt_in_status || 'unknown') || 'unknown',
         customerTypeId: toText(source.customerTypeId || source.customer_type_id || '') || null,
         acquisitionSourceId: toText(source.acquisitionSourceId || source.acquisition_source_id || '') || null,
+        segment: toText(source.segment || source.segmento || '') || null,
+        madePurchase: normalizeNullableBool(source.madePurchase ?? source.realizo_compra),
+        daysSinceLastPurchase: normalizeNullableNumber(source.daysSinceLastPurchase ?? source.dias_ultima_compra),
+        lastPurchaseAt: toIso(source.lastPurchaseAt || source.ultima_fecha_compra),
+        purchasesTotal: normalizeNullableNumber(source.purchasesTotal ?? source.compras_total),
+        purchases180: normalizeNullableNumber(source.purchases180 ?? source.compras_180),
+        amount180: normalizeNullableNumber(source.amount180 ?? source.monto_180),
+        amountAccumulated: normalizeNullableNumber(source.amountAccumulated ?? source.monto_acumulado),
+        cadenceDays: normalizeNullableNumber(source.cadenceDays ?? source.cadencia_prom_dias),
+        purchaseRange: toText(source.purchaseRange || source.rango_compras || '') || null,
+        hasReceivedAnyTemplate: source.hasReceivedAnyTemplate === true,
+        lastTemplateName: toText(source.lastTemplateName || '') || null,
+        lastTemplateSentAt: toIso(source.lastTemplateSentAt || source.last_template_sent_at),
         assignedUserId: toText(source.assignedUserId || source.assignmentUserId || source.assignment_user_id || '') || null,
         departmentName: toText(source.departmentName || '') || null,
         provinceName: toText(source.provinceName || '') || null,
@@ -2110,7 +2397,11 @@ async function listCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
             zone_labels: [],
             operational_labels: [],
             customer_types: [],
-            assigned_users: []
+            assigned_users: [],
+            acquisition_sources: [],
+            segments: [],
+            purchase_ranges: [],
+            sent_templates: []
         };
     }
 
@@ -2125,7 +2416,7 @@ async function listCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
         }
     };
 
-    const [commercialRows, zoneRows, operationalRows, typeRows, userRows, acquisitionSourceRows] = await Promise.all([
+    const [commercialRows, zoneRows, operationalRows, typeRows, userRows, acquisitionSourceRows, segmentRows, purchaseRangeRows, sentTemplateRows] = await Promise.all([
         safeQuery(
             `SELECT commercial_status_key AS key, name, color
                FROM global_labels
@@ -2170,6 +2461,32 @@ async function listCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
             `SELECT id, label AS name
                FROM global_acquisition_sources
               ORDER BY label ASC`
+        ),
+        safeQuery(
+            `SELECT DISTINCT NULLIF(BTRIM(segmento), '') AS name
+               FROM tenant_customers
+              WHERE tenant_id = $1
+                AND NULLIF(BTRIM(segmento), '') IS NOT NULL
+              ORDER BY name ASC`,
+            [cleanTenantId]
+        ),
+        safeQuery(
+            `SELECT DISTINCT NULLIF(BTRIM(rango_compras), '') AS name
+               FROM tenant_customers
+              WHERE tenant_id = $1
+                AND NULLIF(BTRIM(rango_compras), '') IS NOT NULL
+              ORDER BY name ASC`,
+            [cleanTenantId]
+        ),
+        safeQuery(
+            `SELECT DISTINCT NULLIF(BTRIM(COALESCE(metadata->>'templateName', '')), '') AS name
+               FROM tenant_messages
+              WHERE tenant_id = $1
+                AND from_me = TRUE
+                AND LOWER(COALESCE(message_type, '')) = 'template'
+                AND NULLIF(BTRIM(COALESCE(metadata->>'templateName', '')), '') IS NOT NULL
+              ORDER BY name ASC`,
+            [cleanTenantId]
         )
     ]);
 
@@ -2179,7 +2496,10 @@ async function listCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
         operational_labels: operationalRows.map((row) => ({ id: toUpper(row.id), name: toText(row.name), color: toText(row.color || '#00A884') })),
         customer_types: typeRows.map((row) => ({ id: toText(row.id), name: toText(row.name) })),
         assigned_users: userRows.map((row) => ({ id: toText(row.id), name: toText(row.name) })),
-        acquisition_sources: acquisitionSourceRows.map((row) => ({ id: toText(row.id), name: toText(row.name) }))
+        acquisition_sources: acquisitionSourceRows.map((row) => ({ id: toText(row.id), name: toText(row.name) })),
+        segments: segmentRows.map((row) => ({ id: toText(row.name), name: toText(row.name) })).filter((row) => row.id),
+        purchase_ranges: purchaseRangeRows.map((row) => ({ id: toText(row.name), name: toText(row.name) })).filter((row) => row.id),
+        sent_templates: sentTemplateRows.map((row) => ({ id: toText(row.name), name: toText(row.name) })).filter((row) => row.id)
     };
 }
 
