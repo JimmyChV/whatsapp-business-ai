@@ -1017,33 +1017,6 @@ export default React.memo(function CampaignsSection(props = {}) {
         })).filter((entry) => entry.id && entry.name),
         [campaignFilterOptions.acquisition_sources]
     );
-    const segmentOptions = useMemo(() => {
-        const configured = (Array.isArray(campaignFilterOptions.segments) ? campaignFilterOptions.segments : []).map((entry) => ({
-            id: toText(entry.id),
-            name: toText(entry.name)
-        })).filter((entry) => entry.id && entry.name);
-        if (configured.length > 0) return configured;
-        return uniqueTextItems(audienceItemsForSelectors.map((item) => item.segment))
-            .map((name) => ({ id: name, name }));
-    }, [audienceItemsForSelectors, campaignFilterOptions.segments]);
-    const purchaseRangeOptions = useMemo(() => {
-        const configured = (Array.isArray(campaignFilterOptions.purchase_ranges) ? campaignFilterOptions.purchase_ranges : []).map((entry) => ({
-            id: toText(entry.id),
-            name: toText(entry.name)
-        })).filter((entry) => entry.id && entry.name);
-        if (configured.length > 0) return configured;
-        return uniqueTextItems(audienceItemsForSelectors.map((item) => item.purchaseRange))
-            .map((name) => ({ id: name, name }));
-    }, [audienceItemsForSelectors, campaignFilterOptions.purchase_ranges]);
-    const sentTemplateOptions = useMemo(() => {
-        const configured = (Array.isArray(campaignFilterOptions.sent_templates) ? campaignFilterOptions.sent_templates : []).map((entry) => ({
-            id: toText(entry.id),
-            name: toText(entry.name)
-        })).filter((entry) => entry.id && entry.name);
-        if (configured.length > 0) return configured;
-        return uniqueTextItems(audienceItemsForSelectors.map((item) => item.lastTemplateName))
-            .map((name) => ({ id: name, name }));
-    }, [audienceItemsForSelectors, campaignFilterOptions.sent_templates]);
     const columnPrefs = useSaasColumnPrefs('campaigns', CAMPAIGN_DEFAULT_COLUMN_KEYS, {
         requestJson,
         availableColumns: CAMPAIGN_TABLE_COLUMNS
@@ -1245,6 +1218,33 @@ export default React.memo(function CampaignsSection(props = {}) {
         () => buildGeographyOptionsFromAudience(audienceItemsForSelectors),
         [audienceItemsForSelectors]
     );
+    const segmentOptions = useMemo(() => {
+        const configured = (Array.isArray(campaignFilterOptions.segments) ? campaignFilterOptions.segments : []).map((entry) => ({
+            id: toText(entry.id),
+            name: toText(entry.name)
+        })).filter((entry) => entry.id && entry.name);
+        if (configured.length > 0) return configured;
+        return uniqueTextItems(audienceItemsForSelectors.map((item) => item.segment))
+            .map((name) => ({ id: name, name }));
+    }, [audienceItemsForSelectors, campaignFilterOptions.segments]);
+    const purchaseRangeOptions = useMemo(() => {
+        const configured = (Array.isArray(campaignFilterOptions.purchase_ranges) ? campaignFilterOptions.purchase_ranges : []).map((entry) => ({
+            id: toText(entry.id),
+            name: toText(entry.name)
+        })).filter((entry) => entry.id && entry.name);
+        if (configured.length > 0) return configured;
+        return uniqueTextItems(audienceItemsForSelectors.map((item) => item.purchaseRange))
+            .map((name) => ({ id: name, name }));
+    }, [audienceItemsForSelectors, campaignFilterOptions.purchase_ranges]);
+    const sentTemplateOptions = useMemo(() => {
+        const configured = (Array.isArray(campaignFilterOptions.sent_templates) ? campaignFilterOptions.sent_templates : []).map((entry) => ({
+            id: toText(entry.id),
+            name: toText(entry.name)
+        })).filter((entry) => entry.id && entry.name);
+        if (configured.length > 0) return configured;
+        return uniqueTextItems(audienceItemsForSelectors.map((item) => item.lastTemplateName))
+            .map((name) => ({ id: name, name }));
+    }, [audienceItemsForSelectors, campaignFilterOptions.sent_templates]);
     const zoneNameById = useMemo(() => {
         const map = new Map();
         zoneOptions.forEach((item) => {

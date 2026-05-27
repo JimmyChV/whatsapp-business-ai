@@ -416,11 +416,59 @@ function OperationalPanelUnified({ context }) {
         setLabelPanelMode?.('view');
     };
     const isEditing = labelPanelMode === 'create' || labelPanelMode === 'edit';
-    const right = <SaasDetailPanel title={labelPanelMode === 'create' ? 'Nueva etiqueta' : labelPanelMode === 'edit' ? 'Editar etiqueta' : selectedTenantLabel?.name || 'Etiqueta'} subtitle={isEditing ? 'Configura la etiqueta, color, orden y modulos donde aplica.' : 'Etiqueta del tenant.'} className="saas-labels-detail-panel" actions={<>{labelPanelMode === 'view' && selectedTenantLabel && canManageLabels ? <><button type="button" disabled={busy} onClick={openTenantLabelEdit}>Editar</button><button type="button" className="danger" disabled={busy} onClick={() => runLabelsAction(runSectionAction, runAction, 'delete_label', 'Etiqueta desactivada', async () => deactivateTenantLabel(selectedTenantLabel?.labelId))}>Desactivar</button></> : null}<button type="button" className="saas-btn-cancel" disabled={busy} onClick={close}>Volver</button></>}>
-        {labelPanelMode === 'view' && selectedTenantLabel ? <SaasDetailPanelSection title="Detalle"><div className="saas-admin-detail-grid"><div className="saas-admin-detail-field"><span>Codigo</span><strong>{selectedTenantLabel.labelId || '-'}</strong></div><div className="saas-admin-detail-field"><span>Nombre</span><strong>{selectedTenantLabel.name || '-'}</strong></div><div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedTenantLabel.isActive === false ? 'Inactiva' : 'Activa'}</strong></div><div className="saas-admin-detail-field"><span>Color</span><strong><Dot color={selectedTenantLabel.color || '#00A884'} />{selectedTenantLabel.color || '#00A884'}</strong></div><div className="saas-admin-detail-field"><span>Modulos</span><strong>{selectedTenantLabel.moduleIds?.length ? selectedTenantLabel.moduleIds.length : 'Compartida'}</strong></div></div>{selectedTenantLabel.description ? <p className="saas-labels-detail-description">{selectedTenantLabel.description}</p> : null}</SaasDetailPanelSection> : null}
-        {isEditing ? <><SaasDetailPanelSection title="Datos base"><div className="saas-admin-form-row"><input value={labelForm.name} onChange={(e) => setLabelForm((p) => ({ ...p, name: e.target.value }))} placeholder="Nombre de etiqueta" disabled={busy} /><input value={labelForm.labelId} onChange={(e) => setLabelForm((p) => ({ ...p, labelId: String(e.target.value || '').trim().toUpperCase() }))} placeholder="Codigo" disabled={busy || labelPanelMode === 'edit'} /></div><div className="saas-admin-form-row"><input value={labelForm.description} onChange={(e) => setLabelForm((p) => ({ ...p, description: e.target.value }))} placeholder="Descripcion" disabled={busy} /><input type="number" min="1" value={labelForm.sortOrder} onChange={(e) => setLabelForm((p) => ({ ...p, sortOrder: e.target.value }))} placeholder="Orden" disabled={busy} /></div><div className="saas-admin-form-row"><ColorPicker value={normalizeTenantLabelColor(labelForm.color || '', DEFAULT_LABEL_COLORS[0])} disabled={busy} onChange={(color) => setLabelForm((p) => ({ ...p, color }))} /><label className="saas-admin-module-toggle"><input type="checkbox" checked={labelForm.isActive !== false} onChange={(e) => setLabelForm((p) => ({ ...p, isActive: e.target.checked }))} disabled={busy} /><span>Activa</span></label></div></SaasDetailPanelSection><SaasDetailPanelSection title="Asignacion por modulo"><div className="saas-admin-modules">{waModules.map((m) => { const moduleId = String(m?.moduleId || '').trim().toLowerCase(); const checked = Array.isArray(labelForm.moduleIds) && labelForm.moduleIds.includes(moduleId); return <label key={`assignment_module_${moduleId}`} className="saas-admin-module-toggle"><input type="checkbox" checked={checked} onChange={() => toggleModuleInLabelForm(moduleId)} disabled={busy} /><span>{m?.name || moduleId}</span></label>; })}</div></SaasDetailPanelSection><SaasDetailPanelSection title="Acciones"><div className="saas-admin-form-row saas-admin-form-row--actions"><button type="button" disabled={busy || !canManageLabels || !String(labelForm.name || '').trim()} onClick={() => runLabelsAction(runSectionAction, runAction, 'save_label', labelPanelMode === 'create' ? 'Etiqueta creada' : 'Etiqueta actualizada', async () => saveTenantLabel())}>{labelPanelMode === 'create' ? 'Guardar etiqueta' : 'Actualizar etiqueta'}</button><button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelTenantLabelEdit}>Cancelar</button></div></SaasDetailPanelSection></> : null}
-    </SaasDetailPanel>;
-    return <SaasEntityPage title="Etiquetas" sectionKey="tenant_labels_inner" rows={buildLabelRows(visibleTenantLabels, 'labelId', 'operational')} columns={LABEL_TABLE_COLUMNS} selectedId={selectedId} onSelect={(row) => openDetail(row)} onClose={close} renderDetail={() => right} renderForm={() => right} mode={isEditing ? 'form' : 'detail'} dirty={isEditing} loading={sectionLoading} emptyText={sectionError || 'No hay etiquetas para mostrar.'} searchPlaceholder="Buscar etiqueta" actions={[{ key: 'reload', label: sectionError ? 'Reintentar' : 'Recargar', onClick: () => (typeof forceReload === 'function' ? forceReload(lazySectionId) : settingsTenantId && loadTenantLabels(settingsTenantId).catch((e) => setError?.(String(e?.message || e || 'No se pudieron recargar etiquetas.')))), disabled: busy || sectionLoading || !settingsTenantId }, ...(canManageLabels ? [{ key: 'create', label: 'Nuevo', onClick: openTenantLabelCreate, disabled: busy || !settingsTenantId }] : [])]} filters={OPERATIONAL_LABEL_FILTERS} layoutClassName="saas-labels-layout" detailShell={false} hideCloseButton />;
+    const renderDetail = () => (
+        <>
+            {labelPanelMode === 'view' && selectedTenantLabel ? (
+                <SaasDetailPanelSection title="Detalle">
+                    <div className="saas-admin-detail-grid">
+                        <div className="saas-admin-detail-field"><span>Codigo</span><strong>{selectedTenantLabel.labelId || '-'}</strong></div>
+                        <div className="saas-admin-detail-field"><span>Nombre</span><strong>{selectedTenantLabel.name || '-'}</strong></div>
+                        <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedTenantLabel.isActive === false ? 'Inactiva' : 'Activa'}</strong></div>
+                        <div className="saas-admin-detail-field"><span>Color</span><strong><Dot color={selectedTenantLabel.color || '#00A884'} />{selectedTenantLabel.color || '#00A884'}</strong></div>
+                        <div className="saas-admin-detail-field"><span>Modulos</span><strong>{selectedTenantLabel.moduleIds?.length ? selectedTenantLabel.moduleIds.length : 'Compartida'}</strong></div>
+                    </div>
+                    {selectedTenantLabel.description ? <p className="saas-labels-detail-description">{selectedTenantLabel.description}</p> : null}
+                </SaasDetailPanelSection>
+            ) : null}
+        </>
+    );
+    const renderForm = () => (
+        <>
+            <SaasDetailPanelSection title="Datos base">
+                <div className="saas-admin-form-row">
+                    <input value={labelForm.name} onChange={(e) => setLabelForm((p) => ({ ...p, name: e.target.value }))} placeholder="Nombre de etiqueta" disabled={busy} />
+                    <input value={labelForm.labelId} onChange={(e) => setLabelForm((p) => ({ ...p, labelId: String(e.target.value || '').trim().toUpperCase() }))} placeholder="Codigo" disabled={busy || labelPanelMode === 'edit'} />
+                </div>
+                <div className="saas-admin-form-row">
+                    <input value={labelForm.description} onChange={(e) => setLabelForm((p) => ({ ...p, description: e.target.value }))} placeholder="Descripcion" disabled={busy} />
+                    <input type="number" min="1" value={labelForm.sortOrder} onChange={(e) => setLabelForm((p) => ({ ...p, sortOrder: e.target.value }))} placeholder="Orden" disabled={busy} />
+                </div>
+                <div className="saas-admin-form-row">
+                    <ColorPicker value={normalizeTenantLabelColor(labelForm.color || '', DEFAULT_LABEL_COLORS[0])} disabled={busy} onChange={(color) => setLabelForm((p) => ({ ...p, color }))} />
+                    <label className="saas-admin-module-toggle">
+                        <input type="checkbox" checked={labelForm.isActive !== false} onChange={(e) => setLabelForm((p) => ({ ...p, isActive: e.target.checked }))} disabled={busy} />
+                        <span>Activa</span>
+                    </label>
+                </div>
+            </SaasDetailPanelSection>
+            <SaasDetailPanelSection title="Asignacion por modulo">
+                <div className="saas-admin-modules">
+                    {waModules.map((m) => {
+                        const moduleId = String(m?.moduleId || '').trim().toLowerCase();
+                        const checked = Array.isArray(labelForm.moduleIds) && labelForm.moduleIds.includes(moduleId);
+                        return <label key={`assignment_module_${moduleId}`} className="saas-admin-module-toggle"><input type="checkbox" checked={checked} onChange={() => toggleModuleInLabelForm(moduleId)} disabled={busy} /><span>{m?.name || moduleId}</span></label>;
+                    })}
+                </div>
+            </SaasDetailPanelSection>
+            <SaasDetailPanelSection title="Acciones">
+                <div className="saas-admin-form-row saas-admin-form-row--actions">
+                    <button type="button" disabled={busy || !canManageLabels || !String(labelForm.name || '').trim()} onClick={() => runLabelsAction(runSectionAction, runAction, 'save_label', labelPanelMode === 'create' ? 'Etiqueta creada' : 'Etiqueta actualizada', async () => saveTenantLabel())}>{labelPanelMode === 'create' ? 'Guardar etiqueta' : 'Actualizar etiqueta'}</button>
+                    <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelTenantLabelEdit}>Cancelar</button>
+                </div>
+            </SaasDetailPanelSection>
+        </>
+    );
+    return <SaasEntityPage title="Etiquetas" sectionKey="tenant_labels_inner" rows={buildLabelRows(visibleTenantLabels, 'labelId', 'operational')} columns={LABEL_TABLE_COLUMNS} selectedId={selectedId} onSelect={(row) => openDetail(row)} onClose={close} renderDetail={renderDetail} renderForm={renderForm} mode={isEditing ? 'form' : 'detail'} dirty={isEditing} loading={sectionLoading} emptyText={sectionError || 'No hay etiquetas para mostrar.'} searchPlaceholder="Buscar etiqueta" actions={[{ key: 'reload', label: sectionError ? 'Reintentar' : 'Recargar', onClick: () => (typeof forceReload === 'function' ? forceReload(lazySectionId) : settingsTenantId && loadTenantLabels(settingsTenantId).catch((e) => setError?.(String(e?.message || e || 'No se pudieron recargar etiquetas.')))), disabled: busy || sectionLoading || !settingsTenantId }, ...(canManageLabels ? [{ key: 'create', label: 'Nuevo', onClick: openTenantLabelCreate, disabled: busy || !settingsTenantId }] : [])]} filters={OPERATIONAL_LABEL_FILTERS} layoutClassName="saas-labels-layout" detailTitle={labelPanelMode === 'create' ? 'Nueva etiqueta' : labelPanelMode === 'edit' ? 'Editar etiqueta' : selectedTenantLabel?.name || 'Etiqueta'} detailSubtitle={isEditing ? 'Configura la etiqueta, color, orden y modulos donde aplica.' : 'Etiqueta del tenant.'} detailActions={labelPanelMode === 'view' && selectedTenantLabel && canManageLabels ? <><button type="button" disabled={busy} onClick={openTenantLabelEdit}>Editar</button><button type="button" className="danger" disabled={busy} onClick={() => runLabelsAction(runSectionAction, runAction, 'delete_label', 'Etiqueta desactivada', async () => deactivateTenantLabel(selectedTenantLabel?.labelId))}>Desactivar</button></> : null} />;
 }
 
 export default function TenantLabelsSection(props = {}) {
