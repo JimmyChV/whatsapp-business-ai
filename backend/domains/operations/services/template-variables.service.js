@@ -396,6 +396,22 @@ function firstToken(value = '') {
     return tokens[0] || '';
 }
 
+function looksAllUppercase(value = '') {
+    const text = toText(value);
+    if (!text) return false;
+    const letters = Array.from(text).filter((char) => /\p{L}/u.test(char));
+    if (letters.length === 0) return false;
+    return letters.every((char) => char === char.toLocaleUpperCase('es-PE'));
+}
+
+function naturalizeUppercaseWords(value = '') {
+    const text = toText(value);
+    if (!looksAllUppercase(text)) return text;
+    return text
+        .toLocaleLowerCase('es-PE')
+        .replace(/(^|[\s([{"'/-])(\p{L})/gu, (_, prefix, letter) => `${prefix}${letter.toLocaleUpperCase('es-PE')}`);
+}
+
 async function buildTreatmentsMap() {
     const items = await customerCatalogsService.getTreatments().catch(() => []);
     return new Map(
@@ -409,16 +425,16 @@ async function buildTreatmentsMap() {
 
 function resolveTreatmentAbbreviation(treatmentsMap = new Map(), treatmentId = '') {
     const item = treatmentsMap.get(toText(treatmentId));
-    return toText(item?.abbreviation || item?.label || '');
+    return naturalizeUppercaseWords(item?.abbreviation || item?.label || '');
 }
 
 function resolveShortContactName(customer = {}, treatmentLabel = '') {
     const profile = asObject(customer?.profile);
-    const firstName = toText(customer?.firstName || customer?.first_name || profile.firstNames || profile.nombres || '');
-    const contactName = toText(customer?.contactName || customer?.contact_name || '');
+    const firstName = naturalizeUppercaseWords(customer?.firstName || customer?.first_name || profile.firstNames || profile.nombres || '');
+    const contactName = naturalizeUppercaseWords(customer?.contactName || customer?.contact_name || '');
     const baseName = contactName || firstName || firstToken(contactName);
     if (!baseName) return null;
-    return [toText(treatmentLabel), baseName].filter(Boolean).join(' ') || null;
+    return [naturalizeUppercaseWords(treatmentLabel), baseName].filter(Boolean).join(' ') || null;
 }
 
 async function queryUserDisplayName(userId = '') {
@@ -758,18 +774,18 @@ function buildValueMap(context = {}, helpers = {}) {
     const quote = context.quote || null;
     const origin = context.origin || null;
     const quoteSummary = asObject(quote?.summary);
-    const treatmentLabel = toText(helpers?.treatmentLabel || '');
+    const treatmentLabel = naturalizeUppercaseWords(helpers?.treatmentLabel || '');
     const shortContactName = resolveShortContactName(customer, treatmentLabel);
-    const whatsappName = toText(customer?.whatsappName || customer?.metadata?.whatsapp?.contactName || '');
+    const whatsappName = naturalizeUppercaseWords(customer?.whatsappName || customer?.metadata?.whatsapp?.contactName || '');
 
     return {
-        nombre_cliente: customer?.contactName || toText(customer?.profile?.firstNames) || null,
+        nombre_cliente: naturalizeUppercaseWords(customer?.contactName || customer?.profile?.firstNames || '') || null,
         telefono_cliente: customer?.phoneE164 || null,
         email_cliente: customer?.email || null,
         idioma_preferido_cliente: customer?.preferredLanguage || null,
         tags_cliente_csv: Array.isArray(customer?.tags) ? customer.tags.join(',') : null,
         customer_id: customer?.customerId || null,
-        contacto_cliente: shortContactName || customer?.contactName || null,
+        contacto_cliente: shortContactName || naturalizeUppercaseWords(customer?.contactName || '') || null,
         tratamiento_cliente: treatmentLabel || null,
         nombre_whatsapp_cliente: whatsappName || null,
         fecha_inicio: toText(helpers?.validFromLabel || '') || null,

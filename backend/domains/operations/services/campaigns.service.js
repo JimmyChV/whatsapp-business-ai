@@ -265,6 +265,26 @@ function parsePlaceholderIndexesFromText(text = '') {
     return Array.from(indexes).sort((left, right) => left - right);
 }
 
+function normalizeTemplateToken(value = '') {
+    return toLower(value).replace(/[{}]/g, '').trim();
+}
+
+function looksAllUppercase(value = '') {
+    const text = toText(value);
+    if (!text) return false;
+    const letters = Array.from(text).filter((char) => /\p{L}/u.test(char));
+    if (letters.length === 0) return false;
+    return letters.every((char) => char === char.toLocaleUpperCase('es-PE'));
+}
+
+function naturalizeUppercaseWords(value = '') {
+    const text = toText(value);
+    if (!looksAllUppercase(text)) return text;
+    return text
+        .toLocaleLowerCase('es-PE')
+        .replace(/(^|[\s([{"'/-])(\p{L})/gu, (_, prefix, letter) => `${prefix}${letter.toLocaleUpperCase('es-PE')}`);
+}
+
 function formatCampaignDateLabel(value = '') {
     const iso = toIso(value);
     if (!iso) return '';
@@ -373,10 +393,10 @@ async function uploadCampaignHeaderMedia(tenantId = DEFAULT_TENANT_ID, moduleId 
 
 function resolveTemplateVariableValue(variableKey = '', customer = {}, campaign = {}) {
     const source = normalizeObject(customer);
-    const contactName = toText(source.contactName || '');
-    const firstName = toText(source.firstName || '');
-    const treatmentLabel = toText(source.treatmentLabel || '');
-    const shortName = contactName || firstName || toText(contactName.split(/\s+/)[0] || '');
+    const contactName = naturalizeUppercaseWords(source.contactName || '');
+    const firstName = naturalizeUppercaseWords(source.firstName || '');
+    const treatmentLabel = naturalizeUppercaseWords(source.treatmentLabel || '');
+    const shortName = contactName || firstName || '';
     switch (toLower(variableKey)) {
     case 'nombre_cliente':
         return contactName || 'Cliente';
@@ -385,7 +405,7 @@ function resolveTemplateVariableValue(variableKey = '', customer = {}, campaign 
     case 'tratamiento_cliente':
         return treatmentLabel;
     case 'nombre_whatsapp_cliente':
-        return toText(source.whatsappName || '');
+        return naturalizeUppercaseWords(source.whatsappName || '');
     case 'telefono_cliente':
         return toText(source.phone || '');
     case 'email_cliente':
@@ -411,19 +431,17 @@ async function buildTemplateComponentsForRecipient(tenantId = DEFAULT_TENANT_ID,
     const cleanModuleId = toText(campaign?.moduleId || '');
     if (!cleanTemplateName || !cleanModuleId) return [];
 
-    const templateComponents = await metaTemplatesService.getTemplateComponents(cleanTenantId, {
+    const template = await metaTemplatesService.getTemplateRecord(cleanTenantId, {
         templateName: cleanTemplateName,
         moduleId: cleanModuleId,
         templateLanguage: toLower(campaign?.templateLanguage || 'es') || 'es'
     });
-    if (!Array.isArray(templateComponents) || templateComponents.length === 0) return [];
+    const templateComponents = ensureArray(template?.componentsJson);
+    if (templateComponents.length === 0) return [];
 
-    const catalog = await templateVariablesService.getCatalog(cleanTenantId);
-    const variableByIndex = new Map(
-        flattenTemplateVariableCatalog(catalog)
-            .map((entry) => [Number(entry?.placeholderIndex), entry])
-            .filter(([index]) => Number.isFinite(index) && index > 0)
-    );
+    const variableMapJson = template?.variableMapJson && typeof template.variableMapJson === 'object'
+        ? template.variableMapJson
+        : {};
     const headerMedia = normalizeCampaignHeaderMedia(campaign);
 
     const resolvedComponents = [];
@@ -451,13 +469,14 @@ async function buildTemplateComponentsForRecipient(tenantId = DEFAULT_TENANT_ID,
 
         const placeholderIndexes = parsePlaceholderIndexesFromText(component?.text || '');
         if (placeholderIndexes.length === 0) continue;
+        const componentMap = variableMapJson?.[toLower(type)] || {};
         resolvedComponents.push({
             type,
             parameters: placeholderIndexes.map((placeholderIndex) => {
-                const variable = variableByIndex.get(placeholderIndex) || null;
+                const originalToken = normalizeTemplateToken(componentMap?.sequentialToOriginal?.[placeholderIndex] || '');
                 return {
                     type: 'text',
-                    text: resolveTemplateVariableValue(variable?.key || '', customer, campaign)
+                    text: resolveTemplateVariableValue(originalToken, customer, campaign)
                 };
             })
         });
