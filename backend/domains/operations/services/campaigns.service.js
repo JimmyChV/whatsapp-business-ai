@@ -1298,6 +1298,35 @@ function normalizeStringArray(input = []) {
     return source.map((entry) => toText(entry)).filter(Boolean);
 }
 
+function resolveCustomerSegmentValue(source = {}) {
+    const customer = normalizeObject(source);
+    const metadata = normalizeObject(customer.metadata);
+    const appsheetImport = normalizeObject(metadata.appsheetImport);
+    return toText(
+        customer.segment
+        || customer.segmento
+        || appsheetImport.segmento
+        || metadata.segmento
+        || metadata.segmentoFinal
+        || metadata.segmento_final
+        || ''
+    );
+}
+
+function resolveCustomerPurchaseRangeValue(source = {}) {
+    const customer = normalizeObject(source);
+    const metadata = normalizeObject(customer.metadata);
+    const appsheetImport = normalizeObject(metadata.appsheetImport);
+    return toText(
+        customer.purchaseRange
+        || customer.rango_compras
+        || appsheetImport.rangoCompras
+        || metadata.rangoCompras
+        || metadata.rango_compras
+        || ''
+    );
+}
+
 function normalizeNullableBool(value) {
     if (value === null || value === undefined || value === '') return null;
     if (value === true || value === false) return value;
@@ -1506,7 +1535,7 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     const acquisitionSourceIds = new Set(normalizeStringArray(filters.acquisitionSourceIds || filters.acquisition_source_ids).map(toText));
     const acquisitionSourceId = toText(customer.acquisitionSourceId || customer.acquisition_source_id || '');
     const segments = new Set(normalizeStringArray(filters.segments || filters.segmentos).map(toLower));
-    const customerSegment = toLower(customer.segment || customer.segmento || '');
+    const customerSegment = toLower(resolveCustomerSegmentValue(customer));
     const purchaseStatuses = new Set(normalizeStringArray(filters.purchaseStatus || filters.purchase_status).map(toLower));
     const purchaseRanges = new Set(normalizeStringArray(filters.purchaseRanges || filters.purchase_ranges || filters.rango_compras).map(toLower));
     const departments = new Set(normalizeStringArray(filters.departments || filters.departmentNames).map(toLower));
@@ -1550,7 +1579,7 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     const lastTemplateSentBefore = toIso(filters.lastTemplateSentBefore || filters.last_template_sent_before);
     const customerLastTemplateSentAt = toIso(customer.lastTemplateSentAt || customer.last_template_sent_at);
     const customerMadePurchase = normalizeNullableBool(customer.madePurchase ?? customer.realizo_compra);
-    const customerPurchaseRange = toLower(customer.purchaseRange || customer.rango_compras || '');
+    const customerPurchaseRange = toLower(resolveCustomerPurchaseRangeValue(customer));
     const haystack = `${toLower(customer.contactName)} ${toLower(customer.phone)} ${toLower(customer.email)} ${toLower(customer.customerId)}`;
 
     if (includeCustomerIds.size && !includeCustomerIds.has(customerId)) return false;
@@ -1757,7 +1786,7 @@ function mapCustomerRowWithAddress(row = {}) {
         treatmentLabel: toText(row.treatment_label || ''),
         customerTypeId: toText(row.customer_type_id || ''),
         acquisitionSourceId: toText(row.acquisition_source_id || ''),
-        segment: toText(row.segmento || row.segment || ''),
+        segment: resolveCustomerSegmentValue(row),
         madePurchase: normalizeNullableBool(row.realizo_compra),
         daysSinceLastPurchase: normalizeNullableNumber(row.dias_ultima_compra),
         lastPurchaseAt: toIso(row.ultima_fecha_compra),
@@ -1766,7 +1795,7 @@ function mapCustomerRowWithAddress(row = {}) {
         amount180: normalizeNullableNumber(row.monto_180),
         amountAccumulated: normalizeNullableNumber(row.monto_acumulado),
         cadenceDays: normalizeNullableNumber(row.cadencia_prom_dias),
-        purchaseRange: toText(row.rango_compras || ''),
+        purchaseRange: resolveCustomerPurchaseRangeValue(row),
         assignedUserId: toText(row.assignment_user_id || ''),
         hasReceivedAnyTemplate: Boolean(row.last_template_name || row.last_template_sent_at),
         lastTemplateName: toText(row.last_template_name || ''),
@@ -2307,7 +2336,7 @@ function sanitizeEligibleCustomer(customer = {}) {
         marketingOptInStatus: toLower(source.marketingOptInStatus || source.marketing_opt_in_status || 'unknown') || 'unknown',
         customerTypeId: toText(source.customerTypeId || source.customer_type_id || '') || null,
         acquisitionSourceId: toText(source.acquisitionSourceId || source.acquisition_source_id || '') || null,
-        segment: toText(source.segment || source.segmento || '') || null,
+        segment: resolveCustomerSegmentValue(source) || null,
         madePurchase: normalizeNullableBool(source.madePurchase ?? source.realizo_compra),
         daysSinceLastPurchase: normalizeNullableNumber(source.daysSinceLastPurchase ?? source.dias_ultima_compra),
         lastPurchaseAt: toIso(source.lastPurchaseAt || source.ultima_fecha_compra),
@@ -2316,7 +2345,7 @@ function sanitizeEligibleCustomer(customer = {}) {
         amount180: normalizeNullableNumber(source.amount180 ?? source.monto_180),
         amountAccumulated: normalizeNullableNumber(source.amountAccumulated ?? source.monto_acumulado),
         cadenceDays: normalizeNullableNumber(source.cadenceDays ?? source.cadencia_prom_dias),
-        purchaseRange: toText(source.purchaseRange || source.rango_compras || '') || null,
+        purchaseRange: resolveCustomerPurchaseRangeValue(source) || null,
         hasReceivedAnyTemplate: source.hasReceivedAnyTemplate === true,
         lastTemplateName: toText(source.lastTemplateName || '') || null,
         lastTemplateSentAt: toIso(source.lastTemplateSentAt || source.last_template_sent_at),

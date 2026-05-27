@@ -99,8 +99,12 @@ export default function SendTemplateModal({
     headerMedia = null,
     validFrom = '',
     validTo = '',
+    deliveryMode = 'single',
+    blockCount = 2,
+    audienceCount = 0,
     onHeaderMediaChange = null,
     onValidityChange = null,
+    onDeliveryConfigChange = null,
     onClose = null,
     onSelectTemplate = null,
     onConfirm = null
@@ -117,6 +121,10 @@ export default function SendTemplateModal({
     React.useEffect(() => {
         setValidToDraft(normalizedValidTo);
     }, [normalizedValidTo]);
+
+    const normalizedDeliveryMode = toText(deliveryMode).toLowerCase() === 'blocks' ? 'blocks' : 'single';
+    const normalizedBlockCount = Math.max(2, Math.min(10, Math.floor(Number(blockCount) || 2)));
+    const normalizedAudienceCount = Math.max(0, Math.floor(Number(audienceCount) || 0));
 
     const emitValidityChange = (next = {}) => {
         const nextValidFrom = normalizeDateInputValue(next.validFrom ?? validFromDraft);
@@ -432,6 +440,76 @@ export default function SendTemplateModal({
                                                                 Esta plantilla necesita un encabezado multimedia al momento de enviar.
                                                             </small>
                                                         )}
+                                                    </div>
+                                                ) : null}
+                                                {typeof onDeliveryConfigChange === 'function' ? (
+                                                    <div style={{ display: 'grid', gap: '12px', paddingTop: '4px' }}>
+                                                        <div style={{ fontSize: '0.78rem', color: tone.text }}>Modo de envío</div>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px' }}>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => onDeliveryConfigChange({ mode: 'single', blockCount: normalizedBlockCount })}
+                                                                style={{
+                                                                    border: `1px solid ${normalizedDeliveryMode === 'single' ? tone.successBorder : tone.controlBorder}`,
+                                                                    background: normalizedDeliveryMode === 'single' ? tone.successSurface : tone.ghostBg,
+                                                                    color: normalizedDeliveryMode === 'single' ? tone.successText : tone.text,
+                                                                    borderRadius: '12px',
+                                                                    padding: '12px',
+                                                                    textAlign: 'left',
+                                                                    cursor: 'pointer',
+                                                                    display: 'grid',
+                                                                    gap: '4px'
+                                                                }}
+                                                            >
+                                                                <strong style={{ fontSize: '0.92rem' }}>Envío único</strong>
+                                                                <span style={{ fontSize: '0.76rem', color: normalizedDeliveryMode === 'single' ? tone.successText : tone.textSoft }}>
+                                                                    Todos los {normalizedAudienceCount} clientes salen en una sola ejecución.
+                                                                </span>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => onDeliveryConfigChange({ mode: 'blocks', blockCount: normalizedBlockCount })}
+                                                                style={{
+                                                                    border: `1px solid ${normalizedDeliveryMode === 'blocks' ? tone.successBorder : tone.controlBorder}`,
+                                                                    background: normalizedDeliveryMode === 'blocks' ? tone.successSurface : tone.ghostBg,
+                                                                    color: normalizedDeliveryMode === 'blocks' ? tone.successText : tone.text,
+                                                                    borderRadius: '12px',
+                                                                    padding: '12px',
+                                                                    textAlign: 'left',
+                                                                    cursor: 'pointer',
+                                                                    display: 'grid',
+                                                                    gap: '4px'
+                                                                }}
+                                                            >
+                                                                <strong style={{ fontSize: '0.92rem' }}>Envío por bloques</strong>
+                                                                <span style={{ fontSize: '0.76rem', color: normalizedDeliveryMode === 'blocks' ? tone.successText : tone.textSoft }}>
+                                                                    Divide la audiencia en grupos controlados para no saturar el despacho.
+                                                                </span>
+                                                            </button>
+                                                        </div>
+                                                        {normalizedDeliveryMode === 'blocks' ? (
+                                                            <div style={{ display: 'grid', gridTemplateColumns: '140px minmax(0, 1fr)', gap: '12px', alignItems: 'end' }}>
+                                                                <label style={{ display: 'grid', gap: '6px', fontSize: '0.78rem', color: tone.text }}>
+                                                                    <span>Bloques</span>
+                                                                    <input
+                                                                        type="number"
+                                                                        min="2"
+                                                                        max="10"
+                                                                        value={normalizedBlockCount}
+                                                                        onChange={(event) => {
+                                                                            const next = Math.max(2, Math.min(10, Math.floor(Number(event.target.value) || 2)));
+                                                                            onDeliveryConfigChange({ mode: 'blocks', blockCount: next });
+                                                                        }}
+                                                                        style={{ border: `1px solid ${tone.controlBorder}`, background: tone.ghostBg, color: tone.text, borderRadius: '10px', padding: '10px 12px' }}
+                                                                    />
+                                                                </label>
+                                                                <div style={{ fontSize: '0.76rem', color: tone.textSoft, paddingBottom: '10px' }}>
+                                                                    {normalizedAudienceCount > 0
+                                                                        ? `${normalizedAudienceCount} clientes se repartirán en ${normalizedBlockCount} bloque(s).`
+                                                                        : `La campaña saldrá en ${normalizedBlockCount} bloque(s).`}
+                                                                </div>
+                                                            </div>
+                                                        ) : null}
                                                     </div>
                                                 ) : null}
                                             </div>

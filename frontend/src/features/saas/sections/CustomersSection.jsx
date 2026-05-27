@@ -17,7 +17,7 @@ import {
 } from '../components/layout';
 import { applyEntityFilters, createEmptyFilterItem, normalizeFilterDefinitions, normalizeFilterItems } from '../components/layout/filterUtils';
 import { normalizeSortState } from '../components/layout/sortUtils';
-import { createCampaign as createCampaignApi, startCampaign as startCampaignApi } from '../services/campaigns.service';
+import { createCampaign as createCampaignApi, sendCampaignBlock, startCampaign as startCampaignApi } from '../services/campaigns.service';
 import { fetchTenantCustomerLabels, fetchTenantZoneRules } from '../services/labels.service';
 import { listMetaTemplates } from '../services/metaTemplates.service';
 import CustomerImportWizard from './customers/CustomerImportWizard';
@@ -1128,6 +1128,8 @@ function CustomersSection(props = {}) {
     const [campaignTemplateValidFrom, setCampaignTemplateValidFrom] = useState('');
     const [campaignTemplateValidTo, setCampaignTemplateValidTo] = useState('');
     const [campaignTemplateHeaderMedia, setCampaignTemplateHeaderMedia] = useState(null);
+    const [campaignTemplateBlocksEnabled, setCampaignTemplateBlocksEnabled] = useState(false);
+    const [campaignTemplateBlockCount, setCampaignTemplateBlockCount] = useState(2);
     const [zoneRules, setZoneRules] = useState(initialZoneContextCache?.zoneRules || []);
     const [customerZoneLabels, setCustomerZoneLabels] = useState(initialZoneContextCache?.customerZoneLabels || []);
     const [showImportModal, setShowImportModal] = useState(false);
@@ -2609,7 +2611,27 @@ function CustomersSection(props = {}) {
         setCampaignTemplateValidFrom('');
         setCampaignTemplateValidTo('');
         setCampaignTemplateHeaderMedia(null);
+        setCampaignTemplateBlocksEnabled(false);
+        setCampaignTemplateBlockCount(2);
     }, []);
+
+    const buildExpressCampaignBlocksConfig = useCallback((totalAudience = 0) => {
+        if (!campaignTemplateBlocksEnabled) return null;
+        const cleanBlockCount = Math.max(2, Math.min(10, Math.floor(Number(campaignTemplateBlockCount) || 2)));
+        const cleanTotalAudience = Math.max(0, Math.floor(Number(totalAudience) || 0));
+        const baseSize = Math.floor(cleanTotalAudience / cleanBlockCount);
+        const remainder = cleanTotalAudience % cleanBlockCount;
+        return {
+            mode: 'blocks',
+            blocks: Array.from({ length: cleanBlockCount }, (_, index) => ({
+                blockIndex: index,
+                size: index === cleanBlockCount - 1 ? baseSize + remainder : baseSize,
+                status: 'pending',
+                sentAt: null
+            })),
+            totalAudience: cleanTotalAudience
+        };
+    }, [campaignTemplateBlockCount, campaignTemplateBlocksEnabled]);
 
     const resetImportFlow = useCallback(() => {
         setShowImportModal(false);
@@ -3049,6 +3071,7 @@ function CustomersSection(props = {}) {
         }
 
         const timestamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+        const blocksConfigJson = buildExpressCampaignBlocksConfig(selectedCustomerIdsForCampaign.length);
         setCampaignTemplateSubmitting(true);
         try {
             if (outreachMode === 'assign') {
@@ -3077,6 +3100,7 @@ function CustomersSection(props = {}) {
                 audienceSelectionJson: {
                     excludedCustomerIds: []
                 },
+                blocksConfigJson,
                 variablesPreviewJson: {
                     ...(selectedCampaignTemplatePreview?.payload || {}),
                     headerMedia: campaignTemplateHeaderMedia && typeof campaignTemplateHeaderMedia === 'object'
@@ -3094,12 +3118,18 @@ function CustomersSection(props = {}) {
             const campaignId = String(createdResponse?.campaign?.campaignId || '').trim();
             if (!campaignId) throw new Error('No se pudo obtener el campaignId de la campaña express.');
 
-            await startCampaignApi(requestJson, { campaignId });
+            if (blocksConfigJson?.mode === 'blocks') {
+                await sendCampaignBlock(requestJson, { campaignId, blockIndex: 0 });
+            } else {
+                await startCampaignApi(requestJson, { campaignId });
+            }
             notify({
                 type: 'info',
                 message: outreachMode === 'assign'
                     ? `Clientes asignados al modulo y envio opt-in iniciado para ${selectedCustomerIdsForCampaign.length} cliente(s).`
-                    : `Campana express iniciada para ${selectedCustomerIdsForCampaign.length} cliente(s).`
+                    : blocksConfigJson?.mode === 'blocks'
+                        ? `Campana express preparada en ${blocksConfigJson.blocks.length} bloque(s) para ${selectedCustomerIdsForCampaign.length} cliente(s).`
+                        : `Campana express iniciada para ${selectedCustomerIdsForCampaign.length} cliente(s).`
             });
             setSelectedCustomerIdsForCampaign([]);
             resetCampaignTemplateFlow();
@@ -3116,8 +3146,11 @@ function CustomersSection(props = {}) {
         notify,
         outreachMode,
         outreachModuleId,
+        buildExpressCampaignBlocksConfig,
         campaignTemplateHeaderMedia,
         campaignTemplateHeaderType,
+        campaignTemplateBlockCount,
+        campaignTemplateBlocksEnabled,
         campaignTemplateRequiresDateRange,
         campaignTemplateValidFrom,
         campaignTemplateValidTo,
@@ -4902,6 +4935,9 @@ function CustomersSection(props = {}) {
                 headerMedia={campaignTemplateHeaderMedia}
                 validFrom={campaignTemplateValidFrom}
                 validTo={campaignTemplateValidTo}
+                deliveryMode={campaignTemplateBlocksEnabled ? 'blocks' : 'single'}
+                blockCount={campaignTemplateBlockCount}
+                audienceCount={selectedCustomerIdsForCampaign.length}
                 onHeaderMediaChange={async (media) => {
                     if (media?.error) {
                         notify({ type: 'error', message: media.error });
@@ -4930,6 +4966,12 @@ function CustomersSection(props = {}) {
                 onValidityChange={({ validFrom, validTo }) => {
                     setCampaignTemplateValidFrom(String(validFrom || '').trim());
                     setCampaignTemplateValidTo(String(validTo || '').trim());
+                }}
+                onDeliveryConfigChange={({ mode, blockCount }) => {
+                    const nextMode = toText(mode).toLowerCase() === 'blocks' ? 'blocks' : 'single';
+                    const nextCount = Math.max(2, Math.min(10, Math.floor(Number(blockCount) || 2)));
+                    setCampaignTemplateBlocksEnabled(nextMode === 'blocks');
+                    setCampaignTemplateBlockCount(nextCount);
                 }}
                 onClose={resetCampaignTemplateFlow}
                 onSelectTemplate={(template) => { void handleSelectCampaignTemplate(template); }}

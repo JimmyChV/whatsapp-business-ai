@@ -2799,7 +2799,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                     return (
                         <article key={item.customerId} className="saas-campaigns-audience-live-item">
                             <div className="saas-campaigns-audience-live-item__main">
-                                <strong>{item.contactName}</strong>
+                                <strong>{item.fullName || item.contactName || item.customerId}</strong>
                                 <span>{item.phone || 'Sin teléfono'}</span>
                             </div>
                             <div className="saas-campaigns-audience-live-item__meta">
@@ -3216,7 +3216,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                             {manualExclusionCandidates.length === 0 ? <small className="saas-admin-empty-inline">{inclusionOnlyAudienceItems.length === 0 ? 'No hay audiencia incluida para excluir.' : 'No hay coincidencias disponibles.'}</small> : manualExclusionCandidates.map((item) => (
                                 <button key={`exclude_candidate_${item.customerId}`} type="button" className="saas-campaigns-manual-exclusion-item" onClick={() => toggleAudienceExclusion(item.customerId)}>
                                     <div className="saas-campaigns-manual-exclusion-item__identity">
-                                        <strong>{item.contactName || item.customerId}</strong>
+                                        <strong>{item.fullName || item.contactName || item.customerId}</strong>
                                         <span>{[item.fullName, item.customerId, item.phone].filter(Boolean).join(' • ')}</span>
                                     </div>
                                     <div className="saas-campaigns-manual-exclusion-item__details">
@@ -3482,7 +3482,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 return (
                                     <article key={`review_${item.customerId}`} className={`saas-campaigns-review-row ${isExcluded ? 'is-excluded' : ''}`.trim()}>
                                         <div className="saas-campaigns-review-row__customer">
-                                            <strong>{item.contactName || item.fullName || item.customerId}</strong>
+                                            <strong>{item.fullName || item.contactName || item.customerId}</strong>
                                             <small>{[item.fullName, item.customerCode || item.customerId].filter(Boolean).join(' • ')}</small>
                                         </div>
                                         <span className="saas-campaigns-review-row__phone">{item.phone || '-'}</span>
@@ -3931,7 +3931,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                                                             const operationalLabel = item.operationalLabelIds?.[0] ? operationalLabelById.get(toUpper(item.operationalLabelIds[0])) : null;
                                                             return (
                                                                 <tr key={`detail_audience_${item.customerId}`}>
-                                                                    <td>{item.contactName}</td>
+                                                                    <td>{item.fullName || item.contactName}</td>
                                                                     <td>{item.phone}</td>
                                                                     <td>{commercialMeta ? commercialMeta.name : (item.commercialStatus || '-')}</td>
                                                                     <td>{zone || '-'}</td>
