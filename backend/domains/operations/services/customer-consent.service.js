@@ -416,11 +416,40 @@ async function hasMarketingConsent(tenantId = DEFAULT_TENANT_ID, options = {}) {
     return Boolean(latest && latest.status === 'granted');
 }
 
+async function syncMarketingConsentState(tenantId = DEFAULT_TENANT_ID, payload = {}) {
+    const customerId = toText(payload.customerId || payload.customer_id);
+    const normalizedStatus = toLower(payload.status || payload.marketingOptInStatus || payload.marketing_opt_in_status || '');
+    if (!customerId) throw new Error('customerId requerido para sincronizar consentimiento.');
+
+    if (['granted', 'opted_in'].includes(normalizedStatus)) {
+        return grantConsent(tenantId, {
+            customerId,
+            consentType: 'marketing',
+            source: payload.source,
+            proofPayload: payload.proofPayload || payload.proof_payload,
+            grantedAt: payload.grantedAt || payload.granted_at || payload.at
+        });
+    }
+
+    if (['revoked', 'opted_out'].includes(normalizedStatus)) {
+        return revokeConsent(tenantId, {
+            customerId,
+            consentType: 'marketing',
+            source: payload.source,
+            proofPayload: payload.proofPayload || payload.proof_payload,
+            revokedAt: payload.revokedAt || payload.revoked_at || payload.at
+        });
+    }
+
+    return null;
+}
+
 module.exports = {
     grantConsent,
     revokeConsent,
     getLatestConsent,
     listConsents,
-    hasMarketingConsent
+    hasMarketingConsent,
+    syncMarketingConsentState
 };
 

@@ -376,7 +376,7 @@ function resolveTemplateVariableValue(variableKey = '', customer = {}, campaign 
     const contactName = toText(source.contactName || '');
     const firstName = toText(source.firstName || '');
     const treatmentLabel = toText(source.treatmentLabel || '');
-    const shortName = firstName || toText(contactName.split(/\s+/)[0] || '') || contactName;
+    const shortName = contactName || firstName || toText(contactName.split(/\s+/)[0] || '');
     switch (toLower(variableKey)) {
     case 'nombre_cliente':
         return contactName || 'Cliente';

@@ -597,13 +597,14 @@ function createSocketWaEventsBridgeService({
                                     customerId,
                                     moduleId: cleanScopeModuleId
                                 });
-                                const shouldAutoOptIn = String(existingContext?.marketingOptInStatus || '').trim().toLowerCase() === 'pending';
+                                const previousOptInStatus = String(existingContext?.marketingOptInStatus || '').trim().toLowerCase();
+                                const shouldAutoOptIn = previousOptInStatus !== 'opted_in';
                                 await customerModuleContextsService.upsertContext(historyTenantId, {
                                     customerId,
                                     moduleId: cleanScopeModuleId,
                                     marketingOptInStatus: shouldAutoOptIn ? 'opted_in' : undefined,
                                     marketingOptInUpdatedAt: shouldAutoOptIn ? activityAtIso : undefined,
-                                    marketingOptInSource: shouldAutoOptIn ? 'customer_reply_pending_optin' : undefined,
+                                    marketingOptInSource: shouldAutoOptIn ? 'customer_inbound_message' : undefined,
                                     firstInteractionAt: existingContext?.firstInteractionAt || activityAtIso,
                                     lastInteractionAt: activityAtIso,
                                     metadata: {
@@ -618,11 +619,11 @@ function createSocketWaEventsBridgeService({
                                     }
                                 });
 
-                                if (shouldAutoOptIn && customerConsentService && typeof customerConsentService.grantConsent === 'function') {
+                                if (customerConsentService && typeof customerConsentService.grantConsent === 'function') {
                                     await customerConsentService.grantConsent(historyTenantId, {
                                         customerId,
                                         consentType: 'marketing',
-                                        source: 'customer_reply_pending_optin',
+                                        source: 'customer_inbound_message',
                                         grantedAt: activityAtIso,
                                         proofPayload: {
                                             moduleId: cleanScopeModuleId,

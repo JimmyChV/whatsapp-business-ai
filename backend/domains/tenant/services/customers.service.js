@@ -28,6 +28,7 @@ const {
 } = require('../helpers/customers-normalizers.helpers');
 const { normalizeCustomerFields, toUpper } = require('../../../utils/normalize-text');
 const customerLifecycleService = require('../../operations/services/customer-lifecycle.service');
+const customerConsentService = require('../../operations/services/customer-consent.service');
 const CUSTOMERS_FILE = 'customers.json';
 const PAGE_LIMIT_DEFAULT = 50;
 const PAGE_LIMIT_MAX = 500;
@@ -111,6 +112,45 @@ function chunkArray(items = [], size = ERP_IMPORT_BATCH_SIZE) {
         chunks.push(source.slice(index, index + chunkSize));
     }
     return chunks;
+}
+
+function supportsMarketingConsentSync(status = '') {
+    const normalized = toLower(status || '');
+    return normalized === 'opted_in' || normalized === 'opted_out';
+}
+
+function buildConsentSyncTargets(insertCandidates = [], updateCandidates = []) {
+    const items = [];
+    insertCandidates.forEach((entry) => {
+        const status = entry?.candidate?.marketingOptInStatus;
+        if (!supportsMarketingConsentSync(status)) return;
+        items.push({
+            customerId: entry?.customerId,
+            status,
+            source: 'appsheet_import'
+        });
+    });
+    updateCandidates.forEach((entry) => {
+        const status = entry?.candidate?.marketingOptInStatus;
+        if (!supportsMarketingConsentSync(status)) return;
+        items.push({
+            customerId: entry?.existing?.customer_id,
+            status,
+            source: 'appsheet_import'
+        });
+    });
+
+    const deduped = new Map();
+    items.forEach((item) => {
+        const customerId = toText(item?.customerId || '');
+        if (!customerId) return;
+        deduped.set(customerId, {
+            customerId,
+            status: toLower(item?.status || ''),
+            source: item?.source || 'appsheet_import'
+        });
+    });
+    return Array.from(deduped.values());
 }
 
 async function ensurePostgresSchema() {
@@ -391,7 +431,7 @@ async function listCustomersPostgres(tenantId = DEFAULT_TENANT_ID, options = {})
         `SELECT *
          FROM tenant_customers
          WHERE ${where}
-         ORDER BY updated_at DESC
+         ORDER BY customer_id ASC
          LIMIT $${nextIndex} OFFSET $${nextIndex + 1}`,
         [...params, page.limit, page.offset]
     );
@@ -450,7 +490,7 @@ async function listCustomersFile(tenantId = DEFAULT_TENANT_ID, options = {}) {
         });
     }
 
-    filtered = [...filtered].sort((a, b) => String(b?.updatedAt || '').localeCompare(String(a?.updatedAt || '')));
+    filtered = [...filtered].sort((a, b) => String(a?.customerId || '').localeCompare(String(b?.customerId || ''), 'es', { sensitivity: 'base' }));
 
     return {
         items: filtered.slice(page.offset, page.offset + page.limit),
@@ -1651,6 +1691,7 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
     console.log('[ERP-IMPORT][SERVICE] validation done importId=%s valid=%s inserts=%s updates=%s errors=%s', importId, validCandidates.length, inserts.length, updates.length, errors.length);
 
     const importedCustomerMap = new Map();
+    let consentSyncTargets = [];
     validCandidates.forEach((candidate) => {
         const existing = existingByErpId.get(candidate.erpId) || null;
         importedCustomerMap.set(candidate.erpId, {
@@ -1718,6 +1759,7 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
     const addressCounts = { inserted: 0, updated: 0, errors: 0, unmatched: addressSummary.unmatched };
     const client = await pool.connect();
     const totalWorkUnits = Math.max(1, validCandidates.length + previewMatchedAddressCandidates.length);
+    let transactionCommitted = false;
 
     function updateCommitProgress(phase = 'running', message = '') {
         const processedCustomers = customerCounts.inserted + customerCounts.updated;
@@ -1891,13 +1933,22 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
             );
         }
 
-        const contextRows = insertCandidates
-            .filter((entry) => entry.candidate.moduleId)
-            .map((entry) => ({
-                customerId: entry.customerId,
-                moduleId: entry.candidate.moduleId,
-                marketingOptInStatus: entry.candidate.marketingOptInStatus
-            }));
+        const contextRows = [
+            ...insertCandidates
+                .filter((entry) => entry.candidate.moduleId)
+                .map((entry) => ({
+                    customerId: entry.customerId,
+                    moduleId: entry.candidate.moduleId,
+                    marketingOptInStatus: entry.candidate.marketingOptInStatus
+                })),
+            ...updateCandidates
+                .filter((entry) => entry.candidate.moduleId)
+                .map((entry) => ({
+                    customerId: entry.existing?.customer_id,
+                    moduleId: entry.candidate.moduleId,
+                    marketingOptInStatus: entry.candidate.marketingOptInStatus
+                }))
+        ];
         let contextChunkIndex = 0;
         for (const chunk of chunkArray(contextRows, ERP_IMPORT_BATCH_SIZE)) {
             throwIfErpImportCancelled(importId);
@@ -1957,7 +2008,7 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                 async (entries) => {
                     const values = [];
                     const placeholders = entries.map(({ candidate, existing }, index) => {
-                        const offset = index * 36;
+                        const offset = index * 39;
                         const profile = buildAppSheetCustomerProfile(candidate);
                         const metadata = buildAppSheetCustomerMetadata(candidate);
                         values.push(
@@ -1996,7 +2047,10 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                             candidate.segmento,
                             candidate.realizoCompra,
                             candidate.cadenciaPromDias,
-                            candidate.rangoCompras
+                            candidate.rangoCompras,
+                            candidate.marketingOptInStatus,
+                            nowIso(),
+                            'appsheet_import'
                         );
                         return `(
                             $${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8},
@@ -2004,7 +2058,7 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                             $${offset + 16}::jsonb, $${offset + 17}::jsonb, $${offset + 18}, $${offset + 19}, $${offset + 20}, $${offset + 21},
                             $${offset + 22}, $${offset + 23}::date, $${offset + 24}::date, $${offset + 25}, $${offset + 26}, $${offset + 27},
                             $${offset + 28}, $${offset + 29}, $${offset + 30}, $${offset + 31}, $${offset + 32}, $${offset + 33}, $${offset + 34},
-                            $${offset + 35}, $${offset + 36}
+                            $${offset + 35}, $${offset + 36}, $${offset + 37}, $${offset + 38}::timestamptz, $${offset + 39}
                         )`;
                     });
                     await client.query(
@@ -2045,6 +2099,9 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                             realizo_compra = payload.realizo_compra,
                             cadencia_prom_dias = payload.cadencia_prom_dias,
                             rango_compras = payload.rango_compras,
+                            marketing_opt_in_status = payload.marketing_opt_in_status,
+                            marketing_opt_in_updated_at = payload.marketing_opt_in_updated_at,
+                            marketing_opt_in_source = payload.marketing_opt_in_source,
                             is_active = TRUE,
                             updated_at = NOW()
                          FROM (
@@ -2055,7 +2112,8 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                             acquisition_source_id, notes, profile, metadata, erp_id, erp_employee_id, referral_customer_id,
                             dias_ultima_compra, ultimo_pedido_id, ultima_fecha_compra, primera_fecha_compra, primer_pedido_id,
                             compras_total, compras_120, monto_120, compras_180, monto_180, ticket_prom_180, monto_acumulado,
-                            segmento, realizo_compra, cadencia_prom_dias, rango_compras
+                            segmento, realizo_compra, cadencia_prom_dias, rango_compras,
+                            marketing_opt_in_status, marketing_opt_in_updated_at, marketing_opt_in_source
                          )
                          WHERE customers.tenant_id = $${values.length + 1}
                            AND customers.customer_id = payload.customer_id`,
@@ -2109,6 +2167,9 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                                 realizo_compra = $35,
                                 cadencia_prom_dias = $36,
                                 rango_compras = $37,
+                                marketing_opt_in_status = $38,
+                                marketing_opt_in_updated_at = $39::timestamptz,
+                                marketing_opt_in_source = $40,
                                 is_active = TRUE,
                                 updated_at = NOW()
                              WHERE tenant_id = $1 AND customer_id = $2`,
@@ -2119,7 +2180,8 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                                 JSON.stringify(metadata), candidate.erpId, candidate.erpEmployeeId, candidate.referralCustomerId, candidate.diasUltimaCompra,
                                 candidate.ultimoPedidoId, candidate.ultimaFechaCompra, candidate.primeraFechaCompra, candidate.primerPedidoId, candidate.comprasTotal,
                                 candidate.compras120, candidate.monto120, candidate.compras180, candidate.monto180, candidate.ticketProm180,
-                                candidate.montoAcumulado, candidate.segmento, candidate.realizoCompra, candidate.cadenciaPromDias, candidate.rangoCompras
+                                candidate.montoAcumulado, candidate.segmento, candidate.realizoCompra, candidate.cadenciaPromDias, candidate.rangoCompras,
+                                candidate.marketingOptInStatus, nowIso(), 'appsheet_import'
                             ]
                         );
                         importedCustomerMap.set(candidate.erpId, { ...candidate, customerId: existing.customer_id });
@@ -2423,7 +2485,29 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
         }
 
         await client.query('COMMIT');
+        transactionCommitted = true;
         console.log('[ERP-IMPORT][SERVICE] commit ok importId=%s customersInserted=%s customersUpdated=%s addressesInserted=%s addressesUpdated=%s', importId, customerCounts.inserted, customerCounts.updated, addressCounts.inserted, addressCounts.updated);
+        consentSyncTargets = buildConsentSyncTargets(insertCandidates, updateCandidates);
+        if (consentSyncTargets.length > 0 && customerConsentService && typeof customerConsentService.syncMarketingConsentState === 'function') {
+            setErpImportProgress(importId, {
+                status: 'running',
+                phase: 'consents',
+                message: 'Sincronizando consentimientos globales...'
+            });
+            for (const target of consentSyncTargets) {
+                throwIfErpImportCancelled(importId);
+                await customerConsentService.syncMarketingConsentState(cleanTenantId, {
+                    customerId: target.customerId,
+                    status: target.status,
+                    source: target.source,
+                    at: nowIso(),
+                    proofPayload: {
+                        syncedFrom: 'appsheet_import',
+                        importId
+                    }
+                });
+            }
+        }
         setErpImportProgress(importId, {
             status: 'completed',
             phase: 'completed',
@@ -2443,13 +2527,18 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                 customersUpdated: customerCounts.updated,
                 addressesProcessed: addressCounts.inserted + addressCounts.updated,
                 addressesInserted: addressCounts.inserted,
-                addressesUpdated: addressCounts.updated
+                addressesUpdated: addressCounts.updated,
+                consentsSynced: consentSyncTargets.length
             },
             percent: 100
         });
     } catch (error) {
-        await client.query('ROLLBACK');
-        console.error('[ERP-IMPORT][SERVICE] rollback importId=%s error=%s', importId, error?.message || error);
+        if (!transactionCommitted) {
+            await client.query('ROLLBACK');
+            console.error('[ERP-IMPORT][SERVICE] rollback importId=%s error=%s', importId, error?.message || error);
+        } else {
+            console.error('[ERP-IMPORT][SERVICE] post-commit error importId=%s error=%s', importId, error?.message || error);
+        }
         const wasCancelled = error?.code === 'ERP_IMPORT_CANCELLED';
         setErpImportProgress(importId, {
             status: wasCancelled ? 'cancelled' : 'failed',

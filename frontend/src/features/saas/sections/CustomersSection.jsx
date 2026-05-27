@@ -162,6 +162,10 @@ const CUSTOMER_DEFAULT_SORT = {
     direction: 'desc'
 };
 
+function toText(value = '') {
+    return String(value ?? '').trim();
+}
+
 function CustomerTableSkeleton({ rows = 8 }) {
     const rowIndexes = Array.from({ length: rows }, (_, index) => index);
     return (
@@ -1121,6 +1125,9 @@ function CustomersSection(props = {}) {
     const [selectedCampaignTemplatePreviewLoading, setSelectedCampaignTemplatePreviewLoading] = useState(false);
     const [selectedCampaignTemplatePreviewError, setSelectedCampaignTemplatePreviewError] = useState('');
     const [campaignTemplateSubmitting, setCampaignTemplateSubmitting] = useState(false);
+    const [campaignTemplateValidFrom, setCampaignTemplateValidFrom] = useState('');
+    const [campaignTemplateValidTo, setCampaignTemplateValidTo] = useState('');
+    const [campaignTemplateHeaderMedia, setCampaignTemplateHeaderMedia] = useState(null);
     const [zoneRules, setZoneRules] = useState(initialZoneContextCache?.zoneRules || []);
     const [customerZoneLabels, setCustomerZoneLabels] = useState(initialZoneContextCache?.customerZoneLabels || []);
     const [showImportModal, setShowImportModal] = useState(false);
@@ -2599,6 +2606,9 @@ function CustomersSection(props = {}) {
         setSelectedCampaignTemplatePreviewLoading(false);
         setSelectedCampaignTemplatePreviewError('');
         setCampaignTemplateSubmitting(false);
+        setCampaignTemplateValidFrom('');
+        setCampaignTemplateValidTo('');
+        setCampaignTemplateHeaderMedia(null);
     }, []);
 
     const resetImportFlow = useCallback(() => {
@@ -2903,10 +2913,11 @@ function CustomersSection(props = {}) {
         setSelectedCampaignTemplatePreviewError('');
 
         try {
-            const suffix = firstSelectedCustomerIdForCampaign
-                ? `?customerId=${encodeURIComponent(firstSelectedCustomerIdForCampaign)}`
-                : '';
-            const previewPayload = await requestJson(`/api/tenant/template-variables/preview${suffix}`, { method: 'GET' });
+            const searchParams = new URLSearchParams();
+            if (firstSelectedCustomerIdForCampaign) searchParams.set('customerId', String(firstSelectedCustomerIdForCampaign).trim());
+            if (toText(campaignTemplateValidFrom)) searchParams.set('validFrom', toText(campaignTemplateValidFrom));
+            if (toText(campaignTemplateValidTo)) searchParams.set('validTo', toText(campaignTemplateValidTo));
+            const previewPayload = await requestJson(`/api/tenant/template-variables/preview?${searchParams.toString()}`, { method: 'GET' });
             const resolvedPreview = buildTemplateResolvedPreview(entry, previewPayload);
             setSelectedCampaignTemplatePreview({
                 ...resolvedPreview,
@@ -2919,7 +2930,7 @@ function CustomersSection(props = {}) {
         } finally {
             setSelectedCampaignTemplatePreviewLoading(false);
         }
-    }, [firstSelectedCustomerIdForCampaign, notify, requestJson]);
+    }, [campaignTemplateValidFrom, campaignTemplateValidTo, firstSelectedCustomerIdForCampaign, notify, requestJson]);
 
     const handleOpenCampaignTemplateModal = useCallback(async () => {
         if (selectedCustomerIdsForCampaign.length === 0) {
@@ -2985,6 +2996,36 @@ function CustomersSection(props = {}) {
         }
     }, [handleSelectCampaignTemplate, moduleNameById, notify, outreachMode, outreachModuleId, requestJson, selectedCustomerIdsForCampaign.length]);
 
+    useEffect(() => {
+        if (!campaignTemplateModalOpen) return;
+        if (!selectedCampaignTemplate) return;
+        void handleSelectCampaignTemplate(selectedCampaignTemplate);
+    }, [
+        campaignTemplateModalOpen,
+        campaignTemplateValidFrom,
+        campaignTemplateValidTo,
+        handleSelectCampaignTemplate,
+        selectedCampaignTemplate
+    ]);
+
+    const campaignTemplateHeaderType = useMemo(() => {
+        const components = Array.isArray(selectedCampaignTemplate?.componentsJson) ? selectedCampaignTemplate.componentsJson : [];
+        const header = components.find((component) => String(component?.type || '').trim().toUpperCase() === 'HEADER') || null;
+        const format = String(header?.format || '').trim().toLowerCase();
+        return ['image', 'video', 'document'].includes(format) ? format : 'none';
+    }, [selectedCampaignTemplate]);
+
+    const campaignTemplateRequiresDateRange = useMemo(() => (
+        Array.isArray(selectedCampaignTemplatePreview?.components)
+            && selectedCampaignTemplatePreview.components.some((component) => (
+                Array.isArray(component?.parameters)
+                    && component.parameters.some((parameter) => {
+                        const key = String(parameter?.key || '').trim().toLowerCase();
+                        return key === 'fecha_inicio' || key === 'fecha_fin';
+                    })
+            ))
+    ), [selectedCampaignTemplatePreview]);
+
     const handleConfirmExpressCampaign = useCallback(async () => {
         const template = selectedCampaignTemplate && typeof selectedCampaignTemplate === 'object' ? selectedCampaignTemplate : null;
         if (!template) return;
@@ -2996,6 +3037,14 @@ function CustomersSection(props = {}) {
         const moduleId = String(outreachModuleId || template?.moduleId || '').trim();
         if (!moduleId) {
             notify({ type: 'error', message: 'El template seleccionado no tiene modulo asociado.' });
+            return;
+        }
+        if (['image', 'video', 'document'].includes(campaignTemplateHeaderType) && !toText(campaignTemplateHeaderMedia?.base64)) {
+            notify({ type: 'error', message: 'Esta plantilla requiere un archivo multimedia en el encabezado.' });
+            return;
+        }
+        if (campaignTemplateRequiresDateRange && (!toText(campaignTemplateValidFrom) || !toText(campaignTemplateValidTo))) {
+            notify({ type: 'error', message: 'Configura fecha inicio y fecha fin para esta plantilla antes de lanzarla.' });
             return;
         }
 
@@ -3028,7 +3077,19 @@ function CustomersSection(props = {}) {
                 audienceSelectionJson: {
                     excludedCustomerIds: []
                 },
-                variablesPreviewJson: selectedCampaignTemplatePreview?.payload || {}
+                variablesPreviewJson: {
+                    ...(selectedCampaignTemplatePreview?.payload || {}),
+                    headerMedia: campaignTemplateHeaderMedia && typeof campaignTemplateHeaderMedia === 'object'
+                        ? {
+                            name: toText(campaignTemplateHeaderMedia.name),
+                            type: toText(campaignTemplateHeaderMedia.type),
+                            size: Number(campaignTemplateHeaderMedia.size) || 0,
+                            base64: toText(campaignTemplateHeaderMedia.base64)
+                        }
+                        : null
+                },
+                validFrom: toText(campaignTemplateValidFrom) || null,
+                validTo: toText(campaignTemplateValidTo) || null
             });
             const campaignId = String(createdResponse?.campaign?.campaignId || '').trim();
             if (!campaignId) throw new Error('No se pudo obtener el campaignId de la campaña express.');
@@ -3055,6 +3116,11 @@ function CustomersSection(props = {}) {
         notify,
         outreachMode,
         outreachModuleId,
+        campaignTemplateHeaderMedia,
+        campaignTemplateHeaderType,
+        campaignTemplateRequiresDateRange,
+        campaignTemplateValidFrom,
+        campaignTemplateValidTo,
         requestJson,
         resetCampaignTemplateFlow,
         selectedCampaignTemplate,
@@ -4825,8 +4891,46 @@ function CustomersSection(props = {}) {
                 previewLoading={selectedCampaignTemplatePreviewLoading}
                 previewError={selectedCampaignTemplatePreviewError}
                 confirmLabel={`${outreachMode === 'assign' ? 'Asignar y enviar opt-in' : 'Lanzar campaña'}${selectedCustomerIdsForCampaign.length > 0 ? ` (${selectedCustomerIdsForCampaign.length})` : ''}`}
-                confirmDisabled={!selectedCampaignTemplate || campaignTemplateSubmitting || selectedCustomerIdsForCampaign.length === 0}
+                confirmDisabled={
+                    !selectedCampaignTemplate
+                    || campaignTemplateSubmitting
+                    || selectedCustomerIdsForCampaign.length === 0
+                    || (campaignTemplateRequiresDateRange && (!toText(campaignTemplateValidFrom) || !toText(campaignTemplateValidTo)))
+                    || (['image', 'video', 'document'].includes(campaignTemplateHeaderType) && !toText(campaignTemplateHeaderMedia?.base64))
+                }
                 confirmBusy={campaignTemplateSubmitting}
+                headerMedia={campaignTemplateHeaderMedia}
+                validFrom={campaignTemplateValidFrom}
+                validTo={campaignTemplateValidTo}
+                onHeaderMediaChange={async (media) => {
+                    if (media?.error) {
+                        notify({ type: 'error', message: media.error });
+                        return;
+                    }
+                    if (!media) {
+                        setCampaignTemplateHeaderMedia(null);
+                        return;
+                    }
+                    if (media.base64) {
+                        setCampaignTemplateHeaderMedia(media);
+                        return;
+                    }
+                    try {
+                        const base64 = await readFileAsDataUrl(media);
+                        setCampaignTemplateHeaderMedia({
+                            name: toText(media.name),
+                            type: toText(media.type),
+                            size: Number(media.size) || 0,
+                            base64
+                        });
+                    } catch (error) {
+                        notify({ type: 'error', message: String(error?.message || 'No se pudo leer el archivo seleccionado.') });
+                    }
+                }}
+                onValidityChange={({ validFrom, validTo }) => {
+                    setCampaignTemplateValidFrom(String(validFrom || '').trim());
+                    setCampaignTemplateValidTo(String(validTo || '').trim());
+                }}
                 onClose={resetCampaignTemplateFlow}
                 onSelectTemplate={(template) => { void handleSelectCampaignTemplate(template); }}
                 onConfirm={() => { void handleConfirmExpressCampaign(); }}

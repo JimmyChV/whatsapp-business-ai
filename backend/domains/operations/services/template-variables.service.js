@@ -416,7 +416,7 @@ function resolveShortContactName(customer = {}, treatmentLabel = '') {
     const profile = asObject(customer?.profile);
     const firstName = toText(customer?.firstName || customer?.first_name || profile.firstNames || profile.nombres || '');
     const contactName = toText(customer?.contactName || customer?.contact_name || '');
-    const baseName = firstName || firstToken(contactName) || contactName;
+    const baseName = contactName || firstName || firstToken(contactName);
     if (!baseName) return null;
     return [toText(treatmentLabel), baseName].filter(Boolean).join(' ') || null;
 }

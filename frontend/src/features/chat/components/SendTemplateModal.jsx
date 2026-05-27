@@ -5,6 +5,29 @@ function toText(value = '') {
     return String(value ?? '').trim();
 }
 
+function normalizeDateInputValue(value = '') {
+    const raw = toText(value);
+    if (!raw) return '';
+    const isoMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (isoMatch?.[1]) return isoMatch[1];
+    const parsed = new Date(raw);
+    if (!Number.isFinite(parsed.getTime())) return '';
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const day = String(parsed.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function getResolvedComponent(preview = null, type = '') {
+    const components = Array.isArray(preview?.components) ? preview.components : [];
+    return components.find((component) => toText(component?.type).toUpperCase() === toText(type).toUpperCase()) || null;
+}
+
+function getResolvedButtonComponents(preview = null) {
+    const components = Array.isArray(preview?.components) ? preview.components : [];
+    return components.filter((component) => toText(component?.type).toUpperCase() === 'BUTTON');
+}
+
 const tone = {
     overlay: 'var(--chat-overlay-backdrop)',
     card: 'var(--chat-shell-panel-gradient)',
@@ -49,8 +72,8 @@ const overlayStyle = {
 };
 
 const cardStyle = {
-    width: 'min(960px, 100%)',
-    maxHeight: 'min(82vh, 860px)',
+    width: 'min(1180px, 100%)',
+    maxHeight: 'min(88vh, 960px)',
     background: tone.card,
     border: `1px solid ${tone.border}`,
     borderRadius: '18px',
@@ -82,6 +105,30 @@ export default function SendTemplateModal({
     onSelectTemplate = null,
     onConfirm = null
 }) {
+    const normalizedValidFrom = normalizeDateInputValue(validFrom);
+    const normalizedValidTo = normalizeDateInputValue(validTo);
+    const [validFromDraft, setValidFromDraft] = React.useState(normalizedValidFrom);
+    const [validToDraft, setValidToDraft] = React.useState(normalizedValidTo);
+
+    React.useEffect(() => {
+        setValidFromDraft(normalizedValidFrom);
+    }, [normalizedValidFrom]);
+
+    React.useEffect(() => {
+        setValidToDraft(normalizedValidTo);
+    }, [normalizedValidTo]);
+
+    const emitValidityChange = (next = {}) => {
+        const nextValidFrom = normalizeDateInputValue(next.validFrom ?? validFromDraft);
+        const nextValidTo = normalizeDateInputValue(next.validTo ?? validToDraft);
+        setValidFromDraft(nextValidFrom);
+        setValidToDraft(nextValidTo);
+        onValidityChange?.({
+            validFrom: nextValidFrom,
+            validTo: nextValidTo
+        });
+    };
+
     if (!isOpen) return null;
     const templateComponents = Array.isArray(selectedTemplate?.componentsJson) ? selectedTemplate.componentsJson : [];
     const headerComponent = templateComponents.find((component) => toText(component?.type).toUpperCase() === 'HEADER') || null;
@@ -99,6 +146,14 @@ export default function SendTemplateModal({
                 return key === 'fecha_inicio' || key === 'fecha_fin';
             })
     ));
+    const imagePreviewSrc = headerType === 'image' ? toText(headerMedia?.base64) : '';
+    const headerPreview = getResolvedComponent(preview, 'HEADER');
+    const bodyPreview = getResolvedComponent(preview, 'BODY');
+    const footerPreview = getResolvedComponent(preview, 'FOOTER');
+    const buttonPreviews = getResolvedButtonComponents(preview);
+    const renderedHeaderText = toText(headerPreview?.resolvedText || headerPreview?.text);
+    const renderedBodyText = toText(bodyPreview?.resolvedText || bodyPreview?.text || preview?.previewText);
+    const renderedFooterText = toText(footerPreview?.resolvedText || footerPreview?.text);
 
     const handleHeaderMediaInputChange = async (event) => {
         const file = event?.target?.files?.[0] || null;
@@ -128,7 +183,7 @@ export default function SendTemplateModal({
                     <div>
                         <div style={{ fontSize: '1rem', fontWeight: 800, color: tone.title }}>Enviar template</div>
                         <div style={{ fontSize: '0.8rem', color: tone.textSoft, marginTop: '4px' }}>
-                            Selecciona un template individual y revisa sus variables resueltas con el contexto real del chat.
+                            Selecciona un template y revisa sus variables resueltas con el contexto real antes de enviarlo.
                         </div>
                     </div>
                     <button
@@ -140,10 +195,15 @@ export default function SendTemplateModal({
                     </button>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '300px minmax(0, 1fr)', gap: '0', minHeight: 0, flex: 1 }}>
-                    <div style={{ borderRight: `1px solid ${tone.menuBorder}`, padding: '16px', overflowY: 'auto' }}>
-                        <div style={{ fontSize: '0.74rem', color: tone.infoText, fontWeight: 800, letterSpacing: '0.08em', marginBottom: '10px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '360px minmax(0, 1fr)', gap: '0', minHeight: 0, flex: 1 }}>
+                    <div style={{ borderRight: `1px solid ${tone.menuBorder}`, padding: '18px', overflowY: 'auto', overflowX: 'hidden', background: 'linear-gradient(180deg, rgba(255,255,255,0.78), rgba(249,246,240,0.58))' }}>
+                        <div style={{ display: 'grid', gap: '10px', marginBottom: '14px' }}>
+                            <div style={{ fontSize: '0.74rem', color: tone.infoText, fontWeight: 800, letterSpacing: '0.08em' }}>
                             TEMPLATES DISPONIBLES
+                            </div>
+                            <div style={{ fontSize: '0.78rem', color: tone.textSoft, lineHeight: 1.45 }}>
+                                Elige la plantilla y revisa su preview antes de enviarla.
+                            </div>
                         </div>
                         {templatesLoading && (
                             <div style={{ padding: '14px', borderRadius: '12px', background: tone.cardAlt, color: tone.textSoft, fontSize: '0.82rem', border: `1px solid ${tone.border}` }}>
@@ -172,20 +232,40 @@ export default function SendTemplateModal({
                                             style={{
                                                 textAlign: 'left',
                                                 border: isSelected ? `1px solid ${tone.successBorder}` : `1px solid ${tone.border}`,
-                                                background: isSelected ? tone.successSurface : tone.cardAlt,
-                                                borderRadius: '12px',
-                                                padding: '12px',
-                                                cursor: 'pointer'
+                                                background: isSelected ? 'linear-gradient(180deg, rgba(214,243,224,0.95), rgba(214,243,224,0.78))' : 'linear-gradient(180deg, rgba(255,255,255,0.92), rgba(245,242,236,0.82))',
+                                                borderRadius: '14px',
+                                                padding: '14px',
+                                                cursor: 'pointer',
+                                                boxShadow: isSelected ? '0 10px 24px rgba(36,124,74,0.12)' : '0 8px 18px rgba(15,23,42,0.05)',
+                                                display: 'grid',
+                                                gap: '8px',
+                                                width: '100%',
+                                                minWidth: 0,
+                                                overflow: 'hidden'
                                             }}
                                         >
-                                            <div style={{ fontSize: '0.9rem', fontWeight: 700, color: tone.title }}>{toText(template?.templateName) || 'Template'}</div>
-                                            <div style={{ display: 'flex', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
+                                            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
+                                                <div style={{ fontSize: '0.92rem', fontWeight: 700, color: tone.title, lineHeight: 1.35, minWidth: 0, overflowWrap: 'anywhere' }}>
+                                                    {toText(template?.templateName) || 'Template'}
+                                                </div>
+                                                {isSelected ? (
+                                                    <span style={{ fontSize: '0.68rem', color: tone.successText, background: 'rgba(36,124,74,0.12)', border: `1px solid ${tone.successBorder}`, borderRadius: '999px', padding: '4px 8px', whiteSpace: 'nowrap' }}>
+                                                        Activo
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', minWidth: 0 }}>
                                                 <span style={{ fontSize: '0.68rem', color: tone.textSoft, border: `1px solid ${tone.controlBorder}`, borderRadius: '999px', padding: '3px 8px', background: tone.ghostBg }}>
                                                     {toText(template?.templateLanguage).toUpperCase() || 'ES'}
                                                 </span>
                                                 <span style={{ fontSize: '0.68rem', color: tone.textSoft, border: `1px solid ${tone.controlBorder}`, borderRadius: '999px', padding: '3px 8px', background: tone.ghostBg }}>
                                                     {toText(template?.useCase) || 'both'}
                                                 </span>
+                                                {toText(template?.moduleId) ? (
+                                                    <span style={{ fontSize: '0.68rem', color: tone.textSoft, border: `1px solid ${tone.controlBorder}`, borderRadius: '999px', padding: '3px 8px', background: tone.ghostBg }}>
+                                                        {toText(template?.moduleId)}
+                                                    </span>
+                                                ) : null}
                                             </div>
                                         </button>
                                     );
@@ -194,7 +274,7 @@ export default function SendTemplateModal({
                         )}
                     </div>
 
-                    <div style={{ padding: '18px', overflowY: 'auto' }}>
+                    <div style={{ padding: '20px', overflowY: 'auto', background: 'linear-gradient(180deg, rgba(255,255,255,0.9), rgba(248,245,239,0.82))' }}>
                         {!selectedTemplate && (
                             <div style={{ border: `1px dashed ${tone.controlBorder}`, borderRadius: '14px', padding: '22px', color: tone.textSoft, fontSize: '0.9rem', background: tone.cardAlt }}>
                                 Elige un template para ver la preview resuelta con el cliente, cotizacion y agente del chat actual.
@@ -226,12 +306,57 @@ export default function SendTemplateModal({
 
                                 {!previewLoading && !previewError && preview && (
                                     <>
-                                        <div style={{ border: `1px solid ${tone.successBorder}`, background: tone.successSurface, borderRadius: '14px', padding: '16px' }}>
+                                        <div style={{ border: `1px solid ${tone.successBorder}`, background: tone.successSurface, borderRadius: '14px', padding: '16px', display: 'grid', gap: '14px' }}>
                                             <div style={{ fontSize: '0.74rem', color: tone.successText, fontWeight: 800, letterSpacing: '0.08em', marginBottom: '8px' }}>
                                                 PREVIEW DEL MENSAJE
                                             </div>
-                                            <div style={{ whiteSpace: 'pre-wrap', color: tone.text, fontSize: '0.92rem', lineHeight: 1.5 }}>
-                                                {toText(preview?.previewText) || 'Sin contenido visible'}
+                                            <div style={{ display: 'flex', justifyContent: 'center' }}>
+                                                <div style={{ width: 'min(420px, 100%)', borderRadius: '24px', padding: '12px', background: 'linear-gradient(180deg, rgba(232,245,237,0.98), rgba(223,239,229,0.94))', border: `1px solid ${tone.successBorder}`, boxShadow: '0 18px 30px rgba(15,23,42,0.08)' }}>
+                                                    <div style={{ borderRadius: '18px', overflow: 'hidden', background: '#ffffff', border: `1px solid rgba(15,23,42,0.08)` }}>
+                                                        {imagePreviewSrc ? (
+                                                            <img
+                                                                src={imagePreviewSrc}
+                                                                alt={toText(headerMedia?.name) || 'Header preview'}
+                                                                style={{ display: 'block', width: '100%', height: 'auto', objectFit: 'cover', background: '#f8fafc' }}
+                                                            />
+                                                        ) : null}
+                                                        <div style={{ padding: '16px 16px 14px', display: 'grid', gap: '12px' }}>
+                                                            {renderedHeaderText ? (
+                                                                <div style={{ whiteSpace: 'pre-wrap', color: tone.text, fontSize: '0.9rem', lineHeight: 1.45, fontWeight: 700 }}>
+                                                                    {renderedHeaderText}
+                                                                </div>
+                                                            ) : null}
+                                                            <div style={{ whiteSpace: 'pre-wrap', color: tone.text, fontSize: '0.92rem', lineHeight: 1.55 }}>
+                                                                {renderedBodyText || 'Sin contenido visible'}
+                                                            </div>
+                                                            {renderedFooterText ? (
+                                                                <div style={{ color: tone.textSoft, fontSize: '0.78rem', lineHeight: 1.4 }}>
+                                                                    {renderedFooterText}
+                                                                </div>
+                                                            ) : null}
+                                                        </div>
+                                                        {buttonPreviews.length > 0 ? (
+                                                            <div style={{ borderTop: `1px solid ${tone.border}`, display: 'grid' }}>
+                                                                {buttonPreviews.map((component, index) => (
+                                                                    <div
+                                                                        key={`button_preview_${index}`}
+                                                                        style={{
+                                                                            padding: '12px 14px',
+                                                                            textAlign: 'center',
+                                                                            fontSize: '0.86rem',
+                                                                            fontWeight: 700,
+                                                                            color: tone.infoText,
+                                                                            borderTop: index > 0 ? `1px solid ${tone.border}` : 'none',
+                                                                            background: 'rgba(255,255,255,0.92)'
+                                                                        }}
+                                                                    >
+                                                                        {toText(component?.resolvedText || component?.text) || 'Botón'}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
 
@@ -246,10 +371,14 @@ export default function SendTemplateModal({
                                                             <span>Fecha inicio</span>
                                                             <input
                                                                 type="date"
-                                                                value={toText(validFrom)}
-                                                                onChange={(event) => onValidityChange?.({
+                                                                value={validFromDraft}
+                                                                onChange={(event) => emitValidityChange({
                                                                     validFrom: event.target.value,
-                                                                    validTo
+                                                                    validTo: validToDraft
+                                                                })}
+                                                                onInput={(event) => emitValidityChange({
+                                                                    validFrom: event.target.value,
+                                                                    validTo: validToDraft
                                                                 })}
                                                                 style={{ border: `1px solid ${tone.controlBorder}`, background: tone.ghostBg, color: tone.text, borderRadius: '10px', padding: '10px 12px' }}
                                                             />
@@ -258,9 +387,13 @@ export default function SendTemplateModal({
                                                             <span>Fecha fin</span>
                                                             <input
                                                                 type="date"
-                                                                value={toText(validTo)}
-                                                                onChange={(event) => onValidityChange?.({
-                                                                    validFrom,
+                                                                value={validToDraft}
+                                                                onChange={(event) => emitValidityChange({
+                                                                    validFrom: validFromDraft,
+                                                                    validTo: event.target.value
+                                                                })}
+                                                                onInput={(event) => emitValidityChange({
+                                                                    validFrom: validFromDraft,
                                                                     validTo: event.target.value
                                                                 })}
                                                                 style={{ border: `1px solid ${tone.controlBorder}`, background: tone.ghostBg, color: tone.text, borderRadius: '10px', padding: '10px 12px' }}
@@ -280,9 +413,20 @@ export default function SendTemplateModal({
                                                             />
                                                         </label>
                                                         {toText(headerMedia?.name) ? (
-                                                            <small style={{ color: tone.textSoft }}>
-                                                                Archivo cargado: {toText(headerMedia.name)}
-                                                            </small>
+                                                            <div style={{ display: 'grid', gap: '10px' }}>
+                                                                <small style={{ color: tone.textSoft }}>
+                                                                    Archivo cargado: {toText(headerMedia.name)}
+                                                                </small>
+                                                                {imagePreviewSrc ? (
+                                                                    <div style={{ maxWidth: '280px', borderRadius: '12px', overflow: 'hidden', border: `1px solid ${tone.border}`, background: 'rgba(255,255,255,0.85)' }}>
+                                                                        <img
+                                                                            src={imagePreviewSrc}
+                                                                            alt={toText(headerMedia?.name) || 'Preview'}
+                                                                            style={{ display: 'block', width: '100%', height: 'auto', objectFit: 'cover' }}
+                                                                        />
+                                                                    </div>
+                                                                ) : null}
+                                                            </div>
                                                         ) : (
                                                             <small style={{ color: tone.textSoft }}>
                                                                 Esta plantilla necesita un encabezado multimedia al momento de enviar.

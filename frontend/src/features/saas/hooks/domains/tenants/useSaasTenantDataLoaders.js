@@ -259,7 +259,7 @@ export default function useSaasTenantDataLoaders({
             applyCustomersState(cached);
         }
 
-        const pageSize = 200;
+        const pageSize = 500;
         const loadToken = String(Date.now() + Math.random());
         loadTokenByTenantRef.current[cleanTenantId] = loadToken;
 
@@ -345,7 +345,7 @@ export default function useSaasTenantDataLoaders({
             };
         }
 
-        const pageSize = 200;
+        const pageSize = 500;
         let offset = 0;
         let expectedTotal = null;
         const deltaItems = [];
