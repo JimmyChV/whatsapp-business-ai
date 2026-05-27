@@ -237,7 +237,26 @@ function randomId(prefix = 'id') {
 }
 
 function ensureArray(input = []) {
-    return Array.isArray(input) ? input : [];
+    if (Array.isArray(input)) return input;
+    if (input === null || input === undefined || input === '') return [];
+    if (input instanceof Set) return Array.from(input);
+    if (typeof input === 'string') {
+        const trimmed = input.trim();
+        if (!trimmed) return [];
+        if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+            try {
+                const parsed = JSON.parse(trimmed);
+                if (Array.isArray(parsed)) return parsed;
+            } catch (_) {
+                // ignore malformed JSON strings and continue with looser parsing
+            }
+        }
+        if (trimmed.includes(',')) {
+            return trimmed.split(',').map((entry) => entry.trim()).filter(Boolean);
+        }
+        return [trimmed];
+    }
+    return [input];
 }
 
 function cloneJson(value) {
@@ -1294,7 +1313,7 @@ async function updateCampaign(tenantId = DEFAULT_TENANT_ID, { campaignId = '', p
 }
 
 function normalizeStringArray(input = []) {
-    const source = Array.isArray(input) ? input : (input ? [input] : []);
+    const source = ensureArray(input);
     return source.map((entry) => toText(entry)).filter(Boolean);
 }
 
@@ -1339,6 +1358,15 @@ const LAST_TEMPLATE_NAME_SQL = `
         ''
     )), '')
 `;
+
+function normalizeCampaignMarketingStatus(value = '') {
+    const cleanValue = toLower(value);
+    if (!cleanValue) return 'unknown';
+    if (['granted', 'opted_in', 'optedin', 'subscribed'].includes(cleanValue)) return 'opted_in';
+    if (['revoked', 'opted_out', 'optedout', 'unsubscribed'].includes(cleanValue)) return 'opted_out';
+    if (['pending', 'unknown', 'unset'].includes(cleanValue)) return 'pending';
+    return cleanValue;
+}
 
 function normalizeNullableBool(value) {
     if (value === null || value === undefined || value === '') return null;
@@ -1528,7 +1556,7 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     const zoneLabelIds = new Set(normalizeZoneLabelIds(filters));
     const operationalLabelIds = new Set(normalizeOperationalLabelIds(filters));
     const search = toLower(filters.search || '');
-    const marketingStatus = new Set(normalizeStringArray(filters.marketingStatus).map((entry) => toLower(entry)));
+    const marketingStatus = new Set(normalizeStringArray(filters.marketingStatus).map(normalizeCampaignMarketingStatus));
     const commercialStatus = new Set(
         normalizeStringArray(
             filters.commercialStatus
@@ -1539,7 +1567,7 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     );
 
     const customerId = toText(customer.customerId);
-    const tags = ensureArray(customer.tags).map((entry) => toLower(entry));
+    const tags = normalizeStringArray(customer.tags).map((entry) => toLower(entry));
     const tagsSet = new Set(tags);
     const assignedUserId = toText(filters.assignedUserId || filters.assigned_user_id || '');
     const customerAssignedUserId = toText(customer.assignedUserId || customer.assignmentUserId || customer.assignment_user_id || '');
@@ -1557,6 +1585,10 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     const customerDepartments = ensureArray(customer.departments || [customer.departmentName]).map((entry) => toLower(entry)).filter(Boolean);
     const customerProvinces = ensureArray(customer.provinces || [customer.provinceName]).map((entry) => toLower(entry)).filter(Boolean);
     const customerDistricts = ensureArray(customer.districts || [customer.districtName]).map((entry) => toLower(entry)).filter(Boolean);
+    const preferredLanguage = toLower(filters.preferredLanguage || filters.preferred_language || '');
+    const customerPreferredLanguage = toLower(customer.preferredLanguage || customer.preferred_language || 'es');
+    const hasOpenChat = normalizeNullableBool(filters.hasOpenChat ?? filters.has_open_chat);
+    const customerHasOpenChat = normalizeNullableBool(customer.hasOpenChat ?? customer.has_open_chat);
     const hasPhone = normalizeNullableBool(filters.hasPhone ?? filters.has_phone);
     const hasEmail = normalizeNullableBool(filters.hasEmail ?? filters.has_email);
     const hasAddress = normalizeNullableBool(filters.hasAddress ?? filters.has_address);
@@ -1626,7 +1658,7 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     }
 
     if (marketingStatus.size > 0) {
-        const currentMarketingStatus = toLower(customer.marketingOptInStatus || 'unknown');
+        const currentMarketingStatus = normalizeCampaignMarketingStatus(customer.marketingOptInStatus || 'unknown');
         if (!marketingStatus.has(currentMarketingStatus)) return false;
     }
 
@@ -1634,6 +1666,8 @@ function customerMatchesFilters(customer = {}, filters = {}) {
         const currentCommercialStatus = toLower(customer.commercialStatus || customer.commercial_status || 'unknown');
         if (!commercialStatus.has(currentCommercialStatus)) return false;
     }
+
+    if (preferredLanguage && customerPreferredLanguage !== preferredLanguage) return false;
 
     if (assignedUserId && customerAssignedUserId !== assignedUserId) return false;
     if (customerTypeIds.size > 0 && !customerTypeIds.has(customerTypeId)) return false;
@@ -1674,8 +1708,7 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     if (lastTemplateNames.size > 0 && !lastTemplateNames.has(customerLastTemplateName)) return false;
     if (lastTemplateSentAfter && customerLastTemplateSentAt && customerLastTemplateSentAt < lastTemplateSentAfter) return false;
     if (lastTemplateSentBefore && customerLastTemplateSentAt && customerLastTemplateSentAt > lastTemplateSentBefore) return false;
-
-    // TODO: wire has_open_chat once a stable tenant chat status source is confirmed for campaign audiences.
+    if (hasOpenChat !== null && customerHasOpenChat !== hasOpenChat) return false;
 
     return true;
 }
@@ -1807,8 +1840,8 @@ function mapCustomerRowWithAddress(row = {}) {
             lastNameMaternal: row.last_name_maternal
         }),
         email: toText(row.email),
-        tags: ensureArray(row.labels || row.tags),
-        marketingOptInStatus: toLower(row.marketing_opt_in_status || 'unknown'),
+        tags: normalizeStringArray(row.labels || row.tags),
+        marketingOptInStatus: normalizeCampaignMarketingStatus(row.marketing_opt_in_status || row.customer_marketing_opt_in_status || 'unknown'),
         commercialStatus: toLower(row.commercial_status || 'unknown'),
         moduleId: toText(row.context_module_id || row.customer_module_id || row.module_id || ''),
         preferredLanguage: toLower(row.preferred_language || 'es'),
@@ -1827,6 +1860,7 @@ function mapCustomerRowWithAddress(row = {}) {
         cadenceDays: normalizeNullableNumber(row.cadencia_prom_dias),
         purchaseRange: resolveCustomerPurchaseRangeValue(row),
         assignedUserId: toText(row.assignment_user_id || ''),
+        hasOpenChat: normalizeNullableBool(row.has_open_chat),
         hasReceivedAnyTemplate: Boolean(row.last_template_name || row.last_template_sent_at),
         lastTemplateName: toText(row.last_template_name || ''),
         lastTemplateSentAt: toIso(row.last_template_sent_at),
@@ -1856,12 +1890,37 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
             whatsappName: toText(normalizeObject(entry.metadata).whatsapp?.contactName || ''),
             firstName: toText(entry.firstName || entry.first_name || normalizeObject(entry.profile).firstNames || ''),
             email: toText(entry.email),
-            tags: ensureArray(entry.tags),
-            marketingOptInStatus: toLower(entry.marketingOptInStatus || entry.marketing_opt_in_status || 'unknown'),
+            tags: normalizeStringArray(entry.tags),
+            marketingOptInStatus: normalizeCampaignMarketingStatus(entry.marketingOptInStatus || entry.marketing_opt_in_status || 'unknown'),
             moduleId: toText(entry.moduleId || entry.module_id || ''),
             preferredLanguage: toLower(entry.preferredLanguage || entry.preferred_language || 'es'),
             treatmentId: toText(entry.treatmentId || entry.treatment_id || normalizeObject(entry.profile).treatmentId || ''),
-            treatmentLabel: toText(treatmentLabels.get(toText(entry.treatmentId || entry.treatment_id || normalizeObject(entry.profile).treatmentId || '')) || '')
+            treatmentLabel: toText(treatmentLabels.get(toText(entry.treatmentId || entry.treatment_id || normalizeObject(entry.profile).treatmentId || '')) || ''),
+            customerTypeId: toText(entry.customerTypeId || entry.customer_type_id || ''),
+            acquisitionSourceId: toText(entry.acquisitionSourceId || entry.acquisition_source_id || ''),
+            segment: resolveCustomerSegmentValue(entry),
+            madePurchase: normalizeNullableBool(entry.madePurchase ?? entry.realizo_compra),
+            daysSinceLastPurchase: normalizeNullableNumber(entry.daysSinceLastPurchase ?? entry.dias_ultima_compra),
+            lastPurchaseAt: toIso(entry.lastPurchaseAt || entry.ultima_fecha_compra),
+            purchasesTotal: normalizeNullableNumber(entry.purchasesTotal ?? entry.compras_total),
+            purchases180: normalizeNullableNumber(entry.purchases180 ?? entry.compras_180),
+            amount180: normalizeNullableNumber(entry.amount180 ?? entry.monto_180),
+            amountAccumulated: normalizeNullableNumber(entry.amountAccumulated ?? entry.monto_acumulado),
+            cadenceDays: normalizeNullableNumber(entry.cadenceDays ?? entry.cadencia_prom_dias),
+            purchaseRange: resolveCustomerPurchaseRangeValue(entry),
+            assignedUserId: toText(entry.assignedUserId || entry.assignmentUserId || entry.assignment_user_id || ''),
+            hasOpenChat: normalizeNullableBool(entry.hasOpenChat ?? entry.has_open_chat),
+            hasReceivedAnyTemplate: Boolean(entry.hasReceivedAnyTemplate || entry.lastTemplateName || entry.last_template_name || entry.lastTemplateSentAt || entry.last_template_sent_at),
+            lastTemplateName: toText(entry.lastTemplateName || entry.last_template_name || ''),
+            lastTemplateSentAt: toIso(entry.lastTemplateSentAt || entry.last_template_sent_at),
+            createdAt: toIso(entry.createdAt || entry.created_at),
+            departments: normalizeTextArray(entry.departments),
+            provinces: normalizeTextArray(entry.provinces),
+            districts: normalizeTextArray(entry.districts),
+            departmentName: toText(entry.departmentName || entry.department_name || ''),
+            provinceName: toText(entry.provinceName || entry.province_name || ''),
+            districtName: toText(entry.districtName || entry.district_name || ''),
+            hasAddress: normalizeNullableBool(entry.hasAddress ?? entry.has_address) === true
         }));
         const scoped = all
             .filter((item) => item.phone)
@@ -1886,6 +1945,7 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                     c.last_name_maternal,
                     c.email,
                     c.preferred_language,
+                    c.marketing_opt_in_status AS customer_marketing_opt_in_status,
                     c.treatment_id,
                     c.customer_type_id,
                     c.acquisition_source_id,
@@ -1907,6 +1967,7 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                     cmc.commercial_status,
                     cmc.labels,
                     cmc.assignment_user_id,
+                    COALESCE(chat.has_open_chat, FALSE) AS has_open_chat,
                     tmpl.last_template_name,
                     tmpl.last_template_sent_at,
                     COALESCE(addr.has_address, FALSE) AS has_address,
@@ -1942,6 +2003,19 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                     WHERE a.tenant_id = c.tenant_id
                       AND a.customer_id = c.customer_id
                  ) addr ON TRUE
+                 LEFT JOIN LATERAL (
+                    SELECT TRUE AS has_open_chat
+                    FROM tenant_chats ch
+                    WHERE ch.tenant_id = c.tenant_id
+                      AND REGEXP_REPLACE(COALESCE(ch.phone, ''), '\D', '', 'g') = REGEXP_REPLACE(COALESCE(c.phone_e164, ''), '\D', '', 'g')
+                      AND COALESCE(ch.archived, FALSE) = FALSE
+                      AND (
+                        LOWER(COALESCE(ch.metadata->>'scopeModuleId', ch.metadata->>'moduleId', '')) = LOWER(cmc.module_id)
+                        OR COALESCE(ch.metadata->>'scopeModuleId', ch.metadata->>'moduleId', '') = ''
+                      )
+                    ORDER BY ch.updated_at DESC
+                    LIMIT 1
+                 ) chat ON TRUE
                  LEFT JOIN LATERAL (
                     SELECT
                         ${LAST_TEMPLATE_NAME_SQL} AS last_template_name,
@@ -2025,6 +2099,7 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
             c.rango_compras,
             c.metadata,
             c.created_at,
+            COALESCE(chat.has_open_chat, FALSE) AS has_open_chat,
             tmpl.last_template_name,
             tmpl.last_template_sent_at,
             COALESCE(addr.has_address, FALSE) AS has_address,
@@ -2058,6 +2133,19 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                 WHERE a.tenant_id = c.tenant_id
                   AND a.customer_id = c.customer_id
            ) addr ON TRUE
+          LEFT JOIN LATERAL (
+                SELECT TRUE AS has_open_chat
+                FROM tenant_chats ch
+                WHERE ch.tenant_id = c.tenant_id
+                  AND REGEXP_REPLACE(COALESCE(ch.phone, ''), '\D', '', 'g') = REGEXP_REPLACE(COALESCE(c.phone_e164, ''), '\D', '', 'g')
+                  AND COALESCE(ch.archived, FALSE) = FALSE
+                  AND (
+                    LOWER(COALESCE(ch.metadata->>'scopeModuleId', ch.metadata->>'moduleId', '')) = LOWER(c.module_id)
+                    OR COALESCE(ch.metadata->>'scopeModuleId', ch.metadata->>'moduleId', '') = ''
+                  )
+                ORDER BY ch.updated_at DESC
+                LIMIT 1
+           ) chat ON TRUE
           LEFT JOIN LATERAL (
                 SELECT
                     ${LAST_TEMPLATE_NAME_SQL} AS last_template_name,
@@ -2118,12 +2206,37 @@ async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
             whatsappName: toText(normalizeObject(entry.metadata).whatsapp?.contactName || ''),
             firstName: toText(entry.firstName || entry.first_name || normalizeObject(entry.profile).firstNames || ''),
             email: toText(entry.email),
-            tags: ensureArray(entry.tags),
-            marketingOptInStatus: toLower(entry.marketingOptInStatus || entry.marketing_opt_in_status || 'unknown'),
+            tags: normalizeStringArray(entry.tags),
+            marketingOptInStatus: normalizeCampaignMarketingStatus(entry.marketingOptInStatus || entry.marketing_opt_in_status || 'unknown'),
             moduleId: toText(entry.moduleId || entry.module_id || ''),
             preferredLanguage: toLower(entry.preferredLanguage || entry.preferred_language || 'es'),
             treatmentId: toText(entry.treatmentId || entry.treatment_id || normalizeObject(entry.profile).treatmentId || ''),
-            treatmentLabel: toText(treatmentLabels.get(toText(entry.treatmentId || entry.treatment_id || normalizeObject(entry.profile).treatmentId || '')) || '')
+            treatmentLabel: toText(treatmentLabels.get(toText(entry.treatmentId || entry.treatment_id || normalizeObject(entry.profile).treatmentId || '')) || ''),
+            customerTypeId: toText(entry.customerTypeId || entry.customer_type_id || ''),
+            acquisitionSourceId: toText(entry.acquisitionSourceId || entry.acquisition_source_id || ''),
+            segment: resolveCustomerSegmentValue(entry),
+            madePurchase: normalizeNullableBool(entry.madePurchase ?? entry.realizo_compra),
+            daysSinceLastPurchase: normalizeNullableNumber(entry.daysSinceLastPurchase ?? entry.dias_ultima_compra),
+            lastPurchaseAt: toIso(entry.lastPurchaseAt || entry.ultima_fecha_compra),
+            purchasesTotal: normalizeNullableNumber(entry.purchasesTotal ?? entry.compras_total),
+            purchases180: normalizeNullableNumber(entry.purchases180 ?? entry.compras_180),
+            amount180: normalizeNullableNumber(entry.amount180 ?? entry.monto_180),
+            amountAccumulated: normalizeNullableNumber(entry.amountAccumulated ?? entry.monto_acumulado),
+            cadenceDays: normalizeNullableNumber(entry.cadenceDays ?? entry.cadencia_prom_dias),
+            purchaseRange: resolveCustomerPurchaseRangeValue(entry),
+            assignedUserId: toText(entry.assignedUserId || entry.assignmentUserId || entry.assignment_user_id || ''),
+            hasOpenChat: normalizeNullableBool(entry.hasOpenChat ?? entry.has_open_chat),
+            hasReceivedAnyTemplate: Boolean(entry.hasReceivedAnyTemplate || entry.lastTemplateName || entry.last_template_name || entry.lastTemplateSentAt || entry.last_template_sent_at),
+            lastTemplateName: toText(entry.lastTemplateName || entry.last_template_name || ''),
+            lastTemplateSentAt: toIso(entry.lastTemplateSentAt || entry.last_template_sent_at),
+            createdAt: toIso(entry.createdAt || entry.created_at),
+            departments: normalizeTextArray(entry.departments),
+            provinces: normalizeTextArray(entry.provinces),
+            districts: normalizeTextArray(entry.districts),
+            departmentName: toText(entry.departmentName || entry.department_name || ''),
+            provinceName: toText(entry.provinceName || entry.province_name || ''),
+            districtName: toText(entry.districtName || entry.district_name || ''),
+            hasAddress: normalizeNullableBool(entry.hasAddress ?? entry.has_address) === true
         };
     }
 
@@ -2162,6 +2275,7 @@ async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
                     cmc.commercial_status,
                     cmc.labels,
                     cmc.assignment_user_id,
+                    COALESCE(chat.has_open_chat, FALSE) AS has_open_chat,
                     tmpl.last_template_name,
                     tmpl.last_template_sent_at,
                     COALESCE(addr.has_address, FALSE) AS has_address,
@@ -2197,6 +2311,19 @@ async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
                     WHERE a.tenant_id = c.tenant_id
                       AND a.customer_id = c.customer_id
                  ) addr ON TRUE
+                 LEFT JOIN LATERAL (
+                    SELECT TRUE AS has_open_chat
+                    FROM tenant_chats ch
+                    WHERE ch.tenant_id = c.tenant_id
+                      AND REGEXP_REPLACE(COALESCE(ch.phone, ''), '\D', '', 'g') = REGEXP_REPLACE(COALESCE(c.phone_e164, ''), '\D', '', 'g')
+                      AND COALESCE(ch.archived, FALSE) = FALSE
+                      AND (
+                        LOWER(COALESCE(ch.metadata->>'scopeModuleId', ch.metadata->>'moduleId', '')) = LOWER(cmc.module_id)
+                        OR COALESCE(ch.metadata->>'scopeModuleId', ch.metadata->>'moduleId', '') = ''
+                      )
+                    ORDER BY ch.updated_at DESC
+                    LIMIT 1
+                 ) chat ON TRUE
                  LEFT JOIN LATERAL (
                     SELECT
                         ${LAST_TEMPLATE_NAME_SQL} AS last_template_name,
@@ -2259,12 +2386,13 @@ async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
             c.monto_180,
             c.monto_acumulado,
             c.cadencia_prom_dias,
-            c.rango_compras,
-            c.metadata,
-            c.created_at,
-            tmpl.last_template_name,
-            tmpl.last_template_sent_at,
-            COALESCE(addr.has_address, FALSE) AS has_address,
+              c.rango_compras,
+              c.metadata,
+              c.created_at,
+              COALESCE(chat.has_open_chat, FALSE) AS has_open_chat,
+              tmpl.last_template_name,
+              tmpl.last_template_sent_at,
+              COALESCE(addr.has_address, FALSE) AS has_address,
             addr.department_names,
             addr.province_names,
             addr.district_names,
@@ -2290,13 +2418,26 @@ async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
                         MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.district_name), '') END),
                         MAX(NULLIF(BTRIM(a.district_name), ''))
                     ) AS primary_district_name
-                FROM tenant_customer_addresses a
-                WHERE a.tenant_id = c.tenant_id
-                  AND a.customer_id = c.customer_id
-           ) addr ON TRUE
-          LEFT JOIN LATERAL (
-                SELECT
-                    ${LAST_TEMPLATE_NAME_SQL} AS last_template_name,
+                  FROM tenant_customer_addresses a
+                  WHERE a.tenant_id = c.tenant_id
+                    AND a.customer_id = c.customer_id
+             ) addr ON TRUE
+            LEFT JOIN LATERAL (
+                 SELECT TRUE AS has_open_chat
+                 FROM tenant_chats ch
+                 WHERE ch.tenant_id = c.tenant_id
+                   AND REGEXP_REPLACE(COALESCE(ch.phone, ''), '\D', '', 'g') = REGEXP_REPLACE(COALESCE(c.phone_e164, ''), '\D', '', 'g')
+                   AND COALESCE(ch.archived, FALSE) = FALSE
+                   AND (
+                     LOWER(COALESCE(ch.metadata->>'scopeModuleId', ch.metadata->>'moduleId', '')) = LOWER(c.module_id)
+                     OR COALESCE(ch.metadata->>'scopeModuleId', ch.metadata->>'moduleId', '') = ''
+                   )
+                 ORDER BY ch.updated_at DESC
+                 LIMIT 1
+            ) chat ON TRUE
+            LEFT JOIN LATERAL (
+                 SELECT
+                     ${LAST_TEMPLATE_NAME_SQL} AS last_template_name,
                     TO_TIMESTAMP(COALESCE(m.timestamp_unix, 0)) AT TIME ZONE 'UTC' AS last_template_sent_at
                 FROM tenant_messages m
                 WHERE m.tenant_id = c.tenant_id
