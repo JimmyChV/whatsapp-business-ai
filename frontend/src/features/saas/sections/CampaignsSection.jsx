@@ -1214,9 +1214,14 @@ export default React.memo(function CampaignsSection(props = {}) {
         if (estimatedAudienceItems.length > 0) return estimatedAudienceItems;
         return baseAudienceItems;
     }, [baseAudienceItems, estimatedAudienceItems, inclusionOnlyAudienceItems]);
+    const stableAudienceItems = useMemo(() => {
+        if (baseAudienceItems.length > 0) return baseAudienceItems;
+        if (estimatedAudienceItems.length > 0) return estimatedAudienceItems;
+        return inclusionOnlyAudienceItems;
+    }, [baseAudienceItems, estimatedAudienceItems, inclusionOnlyAudienceItems]);
     const audienceGeographyOptions = useMemo(
-        () => buildGeographyOptionsFromAudience(audienceItemsForSelectors),
-        [audienceItemsForSelectors]
+        () => buildGeographyOptionsFromAudience(stableAudienceItems),
+        [stableAudienceItems]
     );
     const segmentOptions = useMemo(() => {
         const configured = (Array.isArray(campaignFilterOptions.segments) ? campaignFilterOptions.segments : []).map((entry) => ({
@@ -1224,27 +1229,27 @@ export default React.memo(function CampaignsSection(props = {}) {
             name: toText(entry.name)
         })).filter((entry) => entry.id && entry.name);
         if (configured.length > 0) return configured;
-        return uniqueTextItems(audienceItemsForSelectors.map((item) => item.segment))
+        return uniqueTextItems(stableAudienceItems.map((item) => item.segment))
             .map((name) => ({ id: name, name }));
-    }, [audienceItemsForSelectors, campaignFilterOptions.segments]);
+    }, [campaignFilterOptions.segments, stableAudienceItems]);
     const purchaseRangeOptions = useMemo(() => {
         const configured = (Array.isArray(campaignFilterOptions.purchase_ranges) ? campaignFilterOptions.purchase_ranges : []).map((entry) => ({
             id: toText(entry.id),
             name: toText(entry.name)
         })).filter((entry) => entry.id && entry.name);
         if (configured.length > 0) return configured;
-        return uniqueTextItems(audienceItemsForSelectors.map((item) => item.purchaseRange))
+        return uniqueTextItems(stableAudienceItems.map((item) => item.purchaseRange))
             .map((name) => ({ id: name, name }));
-    }, [audienceItemsForSelectors, campaignFilterOptions.purchase_ranges]);
+    }, [campaignFilterOptions.purchase_ranges, stableAudienceItems]);
     const sentTemplateOptions = useMemo(() => {
         const configured = (Array.isArray(campaignFilterOptions.sent_templates) ? campaignFilterOptions.sent_templates : []).map((entry) => ({
             id: toText(entry.id),
             name: toText(entry.name)
         })).filter((entry) => entry.id && entry.name);
         if (configured.length > 0) return configured;
-        return uniqueTextItems(audienceItemsForSelectors.map((item) => item.lastTemplateName))
+        return uniqueTextItems(stableAudienceItems.map((item) => item.lastTemplateName))
             .map((name) => ({ id: name, name }));
-    }, [audienceItemsForSelectors, campaignFilterOptions.sent_templates]);
+    }, [campaignFilterOptions.sent_templates, stableAudienceItems]);
     const zoneNameById = useMemo(() => {
         const map = new Map();
         zoneOptions.forEach((item) => {
@@ -1286,7 +1291,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         if (directOptions.length > 0) return directOptions;
 
         const derivedZoneMap = new Map();
-        audienceItemsForSelectors.forEach((item) => {
+        stableAudienceItems.forEach((item) => {
             (Array.isArray(item?.zoneLabelIds) ? item.zoneLabelIds : []).forEach((zoneId, index) => {
                 const id = toUpper(zoneId);
                 if (!id || derivedZoneMap.has(id)) return;
@@ -1299,7 +1304,7 @@ export default React.memo(function CampaignsSection(props = {}) {
             });
         });
         return Array.from(derivedZoneMap.values());
-    }, [audienceItemsForSelectors, zoneNameById, zoneOptions]);
+    }, [stableAudienceItems, zoneNameById, zoneOptions]);
     const resolveZoneDisplayName = useCallback((zoneLabelId = '', fallbackName = '') => {
         const cleanZoneLabelId = toUpper(zoneLabelId);
         if (!cleanZoneLabelId) return toText(fallbackName);
@@ -1526,15 +1531,7 @@ export default React.memo(function CampaignsSection(props = {}) {
             { id: 'pending', name: 'Pendiente', color: '#FFB02E' },
             { id: 'opted_out', name: 'Sin opt-in', color: '#FF5C5C' }
         ];
-        const source = inclusionOnlyAudienceItems;
-        if (inclusionOnlyEstimate && source.length === 0) {
-            return {
-                commercialStatuses: [],
-                optInStatuses: [],
-                zoneLabels: [],
-                operationalLabels: []
-            };
-        }
+        const source = stableAudienceItems;
         if (source.length === 0) {
             return {
                 commercialStatuses: commercialFilterOptions,
@@ -1555,74 +1552,43 @@ export default React.memo(function CampaignsSection(props = {}) {
             zoneLabels: zoneFilterChipOptions.filter((item) => zoneSet.has(toUpper(item.id))),
             operationalLabels: operationalFilterChipOptions.filter((item) => operationalSet.has(toUpper(item.id)))
         };
-    }, [commercialFilterOptions, inclusionOnlyAudienceItems, inclusionOnlyEstimate, operationalFilterChipOptions, zoneFilterChipOptions]);
-    const inclusionProvinceOptions = useMemo(() => {
-        if (form.inclusionFilters.departments.length === 0) {
-            return uniqueTextItems(Object.values(geographyProvinceMap).flat());
-        }
-        return uniqueTextItems(
-            form.inclusionFilters.departments.flatMap((department) => geographyProvinceMap[toText(department)] || [])
-        );
-    }, [form.inclusionFilters.departments, geographyProvinceMap]);
-    const inclusionDistrictOptions = useMemo(() => {
-        if (form.inclusionFilters.provinces.length === 0) {
-            const keys = Object.keys(geographyDistrictMap);
-            const byDepartments = form.inclusionFilters.departments.length === 0
-                ? keys
-                : keys.filter((key) => form.inclusionFilters.departments.some((department) => key.startsWith(`${toText(department)}-`)));
-            return uniqueTextItems(byDepartments.flatMap((key) => geographyDistrictMap[key] || []));
-        }
-        return uniqueTextItems(
-            form.inclusionFilters.provinces.flatMap((province) => {
-                const matchingKeys = Object.keys(geographyDistrictMap).filter((key) => key.endsWith(`-${toText(province)}`));
-                return matchingKeys.flatMap((key) => geographyDistrictMap[key] || []);
-            })
-        );
-    }, [form.inclusionFilters.departments, form.inclusionFilters.provinces, geographyDistrictMap]);
+    }, [commercialFilterOptions, operationalFilterChipOptions, stableAudienceItems, zoneFilterChipOptions]);
+    const inclusionProvinceOptions = useMemo(
+        () => uniqueTextItems(Object.values(geographyProvinceMap).flat()),
+        [geographyProvinceMap]
+    );
+    const inclusionDistrictOptions = useMemo(
+        () => uniqueTextItems(Object.values(geographyDistrictMap).flat()),
+        [geographyDistrictMap]
+    );
     const inclusionCustomerTypeOptions = useMemo(
         () => uniqueOptionObjects(campaignFilterOptions.customer_types, 'id', 'name'),
         [campaignFilterOptions.customer_types]
     );
     const exclusionCustomerTypeOptions = useMemo(() => {
-        const ids = new Set(inclusionOnlyAudienceItems.map((item) => toText(item.customerTypeId)).filter(Boolean));
+        const ids = new Set(stableAudienceItems.map((item) => toText(item.customerTypeId)).filter(Boolean));
         return inclusionCustomerTypeOptions.filter((option) => ids.has(toText(option.id)));
-    }, [inclusionCustomerTypeOptions, inclusionOnlyAudienceItems]);
+    }, [inclusionCustomerTypeOptions, stableAudienceItems]);
     const exclusionAcquisitionSourceOptions = useMemo(() => {
-        const ids = new Set(inclusionOnlyAudienceItems.map((item) => toText(item.acquisitionSourceId)).filter(Boolean));
+        const ids = new Set(stableAudienceItems.map((item) => toText(item.acquisitionSourceId)).filter(Boolean));
         return acquisitionSourceOptions.filter((option) => ids.has(toText(option.id)));
-    }, [acquisitionSourceOptions, inclusionOnlyAudienceItems]);
+    }, [acquisitionSourceOptions, stableAudienceItems]);
     const exclusionAssignedUserOptions = useMemo(() => {
-        const ids = new Set(inclusionOnlyAudienceItems.map((item) => toText(item.assignedUserId)).filter(Boolean));
+        const ids = new Set(stableAudienceItems.map((item) => toText(item.assignedUserId)).filter(Boolean));
         return campaignFilterOptions.assigned_users.filter((option) => ids.has(toText(option.id)));
-    }, [campaignFilterOptions.assigned_users, inclusionOnlyAudienceItems]);
+    }, [campaignFilterOptions.assigned_users, stableAudienceItems]);
     const exclusionDepartments = useMemo(
-        () => uniqueTextItems(inclusionOnlyAudienceItems.flatMap((item) => item.departments.length > 0 ? item.departments : [item.departmentName])),
-        [inclusionOnlyAudienceItems]
+        () => uniqueTextItems(stableAudienceItems.flatMap((item) => item.departments.length > 0 ? item.departments : [item.departmentName])),
+        [stableAudienceItems]
     );
-    const exclusionProvinces = useMemo(() => {
-        const items = form.exclusionFilters.departments.length > 0
-            ? inclusionOnlyAudienceItems.filter((item) => {
-                const departments = item.departments.length > 0 ? item.departments : [item.departmentName];
-                return departments.some((entry) => form.exclusionFilters.departments.includes(toText(entry)));
-            })
-            : inclusionOnlyAudienceItems;
-        return uniqueTextItems(items.flatMap((item) => item.provinces.length > 0 ? item.provinces : [item.provinceName]));
-    }, [form.exclusionFilters.departments, inclusionOnlyAudienceItems]);
-    const exclusionDistricts = useMemo(() => {
-        let items = inclusionOnlyAudienceItems;
-        if (form.exclusionFilters.provinces.length > 0) {
-            items = items.filter((item) => {
-                const provinces = item.provinces.length > 0 ? item.provinces : [item.provinceName];
-                return provinces.some((entry) => form.exclusionFilters.provinces.includes(toText(entry)));
-            });
-        } else if (form.exclusionFilters.departments.length > 0) {
-            items = items.filter((item) => {
-                const departments = item.departments.length > 0 ? item.departments : [item.departmentName];
-                return departments.some((entry) => form.exclusionFilters.departments.includes(toText(entry)));
-            });
-        }
-        return uniqueTextItems(items.flatMap((item) => item.districts.length > 0 ? item.districts : [item.districtName]));
-    }, [form.exclusionFilters.departments, form.exclusionFilters.provinces, inclusionOnlyAudienceItems]);
+    const exclusionProvinces = useMemo(
+        () => uniqueTextItems(stableAudienceItems.flatMap((item) => item.provinces.length > 0 ? item.provinces : [item.provinceName])),
+        [stableAudienceItems]
+    );
+    const exclusionDistricts = useMemo(
+        () => uniqueTextItems(stableAudienceItems.flatMap((item) => item.districts.length > 0 ? item.districts : [item.districtName])),
+        [stableAudienceItems]
+    );
     const selectedStatusKey = toLower(selectedCampaign?.status);
     const detailUsesFinalAudience = panelMode === 'detail' && ['draft', 'scheduled'].includes(selectedStatusKey);
     const selectedBlocksConfig = useMemo(() => normalizeBlocksConfig(selectedCampaign?.blocksConfigJson), [selectedCampaign]);

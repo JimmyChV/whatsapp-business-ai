@@ -6902,6 +6902,7 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 18px;
+    align-items: stretch;
 }
 
 .saas-campaigns-delivery-card {
@@ -6909,12 +6910,14 @@
     gap: 10px;
     text-align: left;
     padding: 22px;
+    min-height: 124px;
     border: 1px solid var(--saas-border-color);
     border-radius: 16px;
     background: var(--saas-bg-surface);
     color: #eefbff;
     transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
     cursor: pointer;
+    align-content: start;
 }
 
 .saas-campaigns-delivery-card:hover {
@@ -6924,12 +6927,14 @@
 
 .saas-campaigns-delivery-card strong {
     font-size: 1.08rem;
+    line-height: 1.25;
 }
 
 .saas-campaigns-delivery-card span {
     color: #8fb9cf;
     font-size: 0.9rem;
     line-height: 1.55;
+    display: block;
 }
 
 .saas-campaigns-delivery-card.is-selected {
@@ -6994,7 +6999,7 @@
 
 .saas-campaigns-delivery-step__single-note,
 .saas-campaigns-delivery-step__summary {
-    padding: 16px 18px;
+    padding: 20px 22px;
     border: 1px solid var(--saas-border-color);
     border-radius: 14px;
     background: var(--saas-bg-surface);
@@ -10408,6 +10413,62 @@ textarea:focus {
   min-height: 0 !important;
   overflow: visible !important;
   padding-right: 0 !important;
+}
+
+/* Final layout overrides for Labels and Campaigns */
+.saas-admin-shell #saas_etiquetas.saas-admin-card--full.saas-entity-page,
+.saas-admin-shell #saas_etiquetas .saas-td-layout,
+.saas-admin-shell #saas_etiquetas .saas-td-layout__content,
+.saas-admin-shell #saas_etiquetas .saas-td-layout__right,
+.saas-admin-shell #saas_etiquetas .saas-entity-detail-panel {
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: 100% !important;
+}
+
+.saas-admin-shell #saas_etiquetas .saas-td-layout__content,
+.saas-admin-shell #saas_etiquetas .saas-td-layout__right,
+.saas-admin-shell #saas_etiquetas .saas-entity-detail-panel {
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.saas-admin-shell #saas_etiquetas .saas-entity-detail-panel__body,
+.saas-admin-shell #saas_etiquetas .saas-detail-panel__body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding-bottom: 24px !important;
+  scrollbar-gutter: stable both-edges;
+}
+
+.saas-admin-shell #saas_etiquetas .saas-detail-panel__section,
+.saas-admin-shell #saas_etiquetas .saas-detail-panel__section-content {
+  min-height: 0 !important;
+}
+
+.saas-admin-shell #saas_campaigns .saas-campaigns-wizard-shell,
+.saas-admin-shell #saas_campaigns .saas-campaigns-wizard-content,
+.saas-admin-shell #saas_campaigns .saas-campaigns-wizard-step,
+.saas-admin-shell #saas_campaigns .saas-campaigns-detail-panel__body {
+  overflow: visible !important;
+}
+
+.saas-admin-shell #saas_campaigns .saas-campaigns-delivery-step {
+  gap: 28px !important;
+}
+
+.saas-admin-shell #saas_campaigns .saas-campaigns-delivery-step__cards {
+  gap: 22px !important;
+}
+
+.saas-admin-shell #saas_campaigns .saas-campaigns-delivery-step__config,
+.saas-admin-shell #saas_campaigns .saas-campaigns-delivery-step__single-note,
+.saas-admin-shell #saas_campaigns .saas-campaigns-delivery-step__summary {
+  padding: 22px !important;
 }
 
 .saas-admin-shell #saas_campaigns .saas-campaigns-wizard-step,
