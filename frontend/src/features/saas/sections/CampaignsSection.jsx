@@ -614,8 +614,8 @@ function composeAudienceFullName(item = {}) {
     const names = [
         toText(item?.firstName || item?.first_name || item?.nombres || ''),
         toText(item?.middleName || item?.middle_name || ''),
-        toText(item?.lastName || item?.last_name || item?.apellidoPaterno || item?.apellido_paterno || ''),
-        toText(item?.maternalLastName || item?.maternal_last_name || item?.apellidoMaterno || item?.apellido_materno || '')
+        toText(item?.lastName || item?.last_name || item?.lastNamePaternal || item?.last_name_paternal || item?.apellidoPaterno || item?.apellido_paterno || ''),
+        toText(item?.maternalLastName || item?.maternal_last_name || item?.lastNameMaternal || item?.last_name_maternal || item?.apellidoMaterno || item?.apellido_materno || '')
     ].filter(Boolean);
     return toText(names.join(' '));
 }
@@ -625,7 +625,7 @@ function normalizeAudienceEstimateItem(item = {}) {
         ? item.zoneLabelIds.map((entry) => toUpper(entry)).filter(Boolean)
         : [];
     const zoneLabelNames = Array.isArray(item?.zoneLabelNames)
-        ? item.zoneLabelNames.map((entry) => toText(entry)).filter(Boolean)
+        ? item.zoneLabelNames.map((entry) => toText(entry?.name || entry)).filter(Boolean)
         : [];
     const fullName = composeAudienceFullName(item);
     return {
@@ -634,8 +634,8 @@ function normalizeAudienceEstimateItem(item = {}) {
         fullName,
         firstName: toText(item?.firstName || item?.first_name || item?.nombres || ''),
         middleName: toText(item?.middleName || item?.middle_name || ''),
-        lastName: toText(item?.lastName || item?.last_name || item?.apellidoPaterno || item?.apellido_paterno || ''),
-        maternalLastName: toText(item?.maternalLastName || item?.maternal_last_name || item?.apellidoMaterno || item?.apellido_materno || ''),
+        lastName: toText(item?.lastName || item?.last_name || item?.lastNamePaternal || item?.last_name_paternal || item?.apellidoPaterno || item?.apellido_paterno || ''),
+        maternalLastName: toText(item?.maternalLastName || item?.maternal_last_name || item?.lastNameMaternal || item?.last_name_maternal || item?.apellidoMaterno || item?.apellido_materno || ''),
         phone: toText(item?.phone) || '-',
         email: toText(item?.email),
         segment: toText(item?.segment || item?.segmentName || item?.segment_name || item?.segmento || ''),
@@ -667,7 +667,10 @@ function normalizeAudienceEstimateItem(item = {}) {
         districts: uniqueTextItems(item?.districts),
         hasAddress: item?.hasAddress === true,
         preferredLanguage: toLower(item?.preferredLanguage || 'es') || 'es',
-        marketingOptInStatus: toLower(item?.marketingOptInStatus || 'unknown') || 'unknown'
+        marketingOptInStatus: toLower(item?.marketingOptInStatus || 'unknown') || 'unknown',
+        hasReceivedAnyTemplate: Boolean(item?.hasReceivedAnyTemplate || item?.lastTemplateName || item?.last_template_name || item?.lastTemplateSentAt || item?.last_template_sent_at),
+        lastTemplateName: toText(item?.lastTemplateName || item?.last_template_name || ''),
+        lastTemplateSentAt: toText(item?.lastTemplateSentAt || item?.last_template_sent_at || '')
     };
 }
 
@@ -1014,27 +1017,33 @@ export default React.memo(function CampaignsSection(props = {}) {
         })).filter((entry) => entry.id && entry.name),
         [campaignFilterOptions.acquisition_sources]
     );
-    const segmentOptions = useMemo(
-        () => (Array.isArray(campaignFilterOptions.segments) ? campaignFilterOptions.segments : []).map((entry) => ({
+    const segmentOptions = useMemo(() => {
+        const configured = (Array.isArray(campaignFilterOptions.segments) ? campaignFilterOptions.segments : []).map((entry) => ({
             id: toText(entry.id),
             name: toText(entry.name)
-        })).filter((entry) => entry.id && entry.name),
-        [campaignFilterOptions.segments]
-    );
-    const purchaseRangeOptions = useMemo(
-        () => (Array.isArray(campaignFilterOptions.purchase_ranges) ? campaignFilterOptions.purchase_ranges : []).map((entry) => ({
+        })).filter((entry) => entry.id && entry.name);
+        if (configured.length > 0) return configured;
+        return uniqueTextItems(audienceItemsForSelectors.map((item) => item.segment))
+            .map((name) => ({ id: name, name }));
+    }, [audienceItemsForSelectors, campaignFilterOptions.segments]);
+    const purchaseRangeOptions = useMemo(() => {
+        const configured = (Array.isArray(campaignFilterOptions.purchase_ranges) ? campaignFilterOptions.purchase_ranges : []).map((entry) => ({
             id: toText(entry.id),
             name: toText(entry.name)
-        })).filter((entry) => entry.id && entry.name),
-        [campaignFilterOptions.purchase_ranges]
-    );
-    const sentTemplateOptions = useMemo(
-        () => (Array.isArray(campaignFilterOptions.sent_templates) ? campaignFilterOptions.sent_templates : []).map((entry) => ({
+        })).filter((entry) => entry.id && entry.name);
+        if (configured.length > 0) return configured;
+        return uniqueTextItems(audienceItemsForSelectors.map((item) => item.purchaseRange))
+            .map((name) => ({ id: name, name }));
+    }, [audienceItemsForSelectors, campaignFilterOptions.purchase_ranges]);
+    const sentTemplateOptions = useMemo(() => {
+        const configured = (Array.isArray(campaignFilterOptions.sent_templates) ? campaignFilterOptions.sent_templates : []).map((entry) => ({
             id: toText(entry.id),
             name: toText(entry.name)
-        })).filter((entry) => entry.id && entry.name),
-        [campaignFilterOptions.sent_templates]
-    );
+        })).filter((entry) => entry.id && entry.name);
+        if (configured.length > 0) return configured;
+        return uniqueTextItems(audienceItemsForSelectors.map((item) => item.lastTemplateName))
+            .map((name) => ({ id: name, name }));
+    }, [audienceItemsForSelectors, campaignFilterOptions.sent_templates]);
     const columnPrefs = useSaasColumnPrefs('campaigns', CAMPAIGN_DEFAULT_COLUMN_KEYS, {
         requestJson,
         availableColumns: CAMPAIGN_TABLE_COLUMNS
@@ -3234,7 +3243,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                         </div>
                         <div className="saas-campaigns-filter-chips saas-campaigns-filter-chips--manual">
                             {manualExcludedAudienceItems.length === 0 ? <small className="saas-admin-empty-inline">Sin exclusiones manuales.</small> : manualExcludedAudienceItems.map((item) => (
-                                <button key={`excluded_manual_${item.customerId}`} type="button" onClick={() => toggleAudienceExclusion(item.customerId)}>{item.contactName || item.phone}<span>x</span></button>
+                                <button key={`excluded_manual_${item.customerId}`} type="button" onClick={() => toggleAudienceExclusion(item.customerId)}>{item.fullName || item.contactName || item.phone}<span>x</span></button>
                             ))}
                         </div>
                     </div>

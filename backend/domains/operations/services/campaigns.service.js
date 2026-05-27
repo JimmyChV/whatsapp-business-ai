@@ -1306,6 +1306,8 @@ function resolveCustomerSegmentValue(source = {}) {
         customer.segment
         || customer.segmento
         || appsheetImport.segmento
+        || appsheetImport.segmentoFinal
+        || appsheetImport.segmento_final
         || metadata.segmento
         || metadata.segmentoFinal
         || metadata.segmento_final
@@ -1321,11 +1323,22 @@ function resolveCustomerPurchaseRangeValue(source = {}) {
         customer.purchaseRange
         || customer.rango_compras
         || appsheetImport.rangoCompras
+        || appsheetImport.rango_compras
         || metadata.rangoCompras
         || metadata.rango_compras
         || ''
     );
 }
+
+const LAST_TEMPLATE_NAME_SQL = `
+    NULLIF(BTRIM(COALESCE(
+        m.metadata->>'templateName',
+        m.metadata #>> '{rawData,templateName}',
+        m.metadata #>> '{rawMetadata,templateName}',
+        m.metadata->>'template_name',
+        ''
+    )), '')
+`;
 
 function normalizeNullableBool(value) {
     if (value === null || value === undefined || value === '') return null;
@@ -1776,6 +1789,8 @@ function mapCustomerRowWithAddress(row = {}) {
         contactName: toText(row.contact_name),
         whatsappName: toText(normalizeObject(row.metadata).whatsapp?.contactName || ''),
         firstName: toText(row.first_name),
+        lastNamePaternal: toText(row.last_name_paternal),
+        lastNameMaternal: toText(row.last_name_maternal),
         email: toText(row.email),
         tags: ensureArray(row.labels || row.tags),
         marketingOptInStatus: toLower(row.marketing_opt_in_status || 'unknown'),
@@ -1852,6 +1867,8 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                     c.phone_e164,
                     c.contact_name,
                     c.first_name,
+                    c.last_name_paternal,
+                    c.last_name_maternal,
                     c.email,
                     c.preferred_language,
                     c.treatment_id,
@@ -1912,12 +1929,15 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                  ) addr ON TRUE
                  LEFT JOIN LATERAL (
                     SELECT
-                        NULLIF(BTRIM(COALESCE(m.metadata->>'templateName', '')), '') AS last_template_name,
+                        ${LAST_TEMPLATE_NAME_SQL} AS last_template_name,
                         TO_TIMESTAMP(COALESCE(m.timestamp_unix, 0)) AT TIME ZONE 'UTC' AS last_template_sent_at
                     FROM tenant_messages m
                     WHERE m.tenant_id = c.tenant_id
                       AND m.from_me = TRUE
-                      AND LOWER(COALESCE(m.message_type, '')) = 'template'
+                      AND (
+                        LOWER(COALESCE(m.message_type, '')) = 'template'
+                        OR ${LAST_TEMPLATE_NAME_SQL} IS NOT NULL
+                      )
                       AND (
                         NULLIF(BTRIM(COALESCE(m.wa_phone_number, '')), '') = c.phone_e164
                         OR NULLIF(BTRIM(COALESCE(m.sender_phone, '')), '') = c.phone_e164
@@ -1968,6 +1988,8 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
             c.phone_e164,
             c.contact_name,
             c.first_name,
+            c.last_name_paternal,
+            c.last_name_maternal,
             c.email,
             c.tags,
             c.module_id,
@@ -2023,12 +2045,15 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
            ) addr ON TRUE
           LEFT JOIN LATERAL (
                 SELECT
-                    NULLIF(BTRIM(COALESCE(m.metadata->>'templateName', '')), '') AS last_template_name,
+                    ${LAST_TEMPLATE_NAME_SQL} AS last_template_name,
                     TO_TIMESTAMP(COALESCE(m.timestamp_unix, 0)) AT TIME ZONE 'UTC' AS last_template_sent_at
                 FROM tenant_messages m
                 WHERE m.tenant_id = c.tenant_id
                   AND m.from_me = TRUE
-                  AND LOWER(COALESCE(m.message_type, '')) = 'template'
+                  AND (
+                    LOWER(COALESCE(m.message_type, '')) = 'template'
+                    OR ${LAST_TEMPLATE_NAME_SQL} IS NOT NULL
+                  )
                   AND (
                     NULLIF(BTRIM(COALESCE(m.wa_phone_number, '')), '') = c.phone_e164
                     OR NULLIF(BTRIM(COALESCE(m.sender_phone, '')), '') = c.phone_e164
@@ -2097,6 +2122,8 @@ async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
                     c.phone_e164,
                     c.contact_name,
                     c.first_name,
+                    c.last_name_paternal,
+                    c.last_name_maternal,
                     c.email,
                     c.preferred_language,
                     c.treatment_id,
@@ -2157,12 +2184,15 @@ async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
                  ) addr ON TRUE
                  LEFT JOIN LATERAL (
                     SELECT
-                        NULLIF(BTRIM(COALESCE(m.metadata->>'templateName', '')), '') AS last_template_name,
+                        ${LAST_TEMPLATE_NAME_SQL} AS last_template_name,
                         TO_TIMESTAMP(COALESCE(m.timestamp_unix, 0)) AT TIME ZONE 'UTC' AS last_template_sent_at
                     FROM tenant_messages m
                     WHERE m.tenant_id = c.tenant_id
                       AND m.from_me = TRUE
-                      AND LOWER(COALESCE(m.message_type, '')) = 'template'
+                      AND (
+                        LOWER(COALESCE(m.message_type, '')) = 'template'
+                        OR ${LAST_TEMPLATE_NAME_SQL} IS NOT NULL
+                      )
                       AND (
                         NULLIF(BTRIM(COALESCE(m.wa_phone_number, '')), '') = c.phone_e164
                         OR NULLIF(BTRIM(COALESCE(m.sender_phone, '')), '') = c.phone_e164
@@ -2195,6 +2225,8 @@ async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
             c.phone_e164,
             c.contact_name,
             c.first_name,
+            c.last_name_paternal,
+            c.last_name_maternal,
             c.email,
             c.tags,
             c.module_id,
@@ -2249,12 +2281,15 @@ async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
            ) addr ON TRUE
           LEFT JOIN LATERAL (
                 SELECT
-                    NULLIF(BTRIM(COALESCE(m.metadata->>'templateName', '')), '') AS last_template_name,
+                    ${LAST_TEMPLATE_NAME_SQL} AS last_template_name,
                     TO_TIMESTAMP(COALESCE(m.timestamp_unix, 0)) AT TIME ZONE 'UTC' AS last_template_sent_at
                 FROM tenant_messages m
                 WHERE m.tenant_id = c.tenant_id
                   AND m.from_me = TRUE
-                  AND LOWER(COALESCE(m.message_type, '')) = 'template'
+                  AND (
+                    LOWER(COALESCE(m.message_type, '')) = 'template'
+                    OR ${LAST_TEMPLATE_NAME_SQL} IS NOT NULL
+                  )
                   AND (
                     NULLIF(BTRIM(COALESCE(m.wa_phone_number, '')), '') = c.phone_e164
                     OR NULLIF(BTRIM(COALESCE(m.sender_phone, '')), '') = c.phone_e164
@@ -2495,6 +2530,8 @@ async function listCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
             `SELECT DISTINCT COALESCE(
                 NULLIF(BTRIM(segmento), ''),
                 NULLIF(BTRIM(metadata #>> '{appsheetImport,segmento}'), ''),
+                NULLIF(BTRIM(metadata #>> '{appsheetImport,segmentoFinal}'), ''),
+                NULLIF(BTRIM(metadata #>> '{appsheetImport,segmento_final}'), ''),
                 NULLIF(BTRIM(metadata #>> '{segmento}'), ''),
                 NULLIF(BTRIM(metadata #>> '{segmentoFinal}'), ''),
                 NULLIF(BTRIM(metadata #>> '{segmento_final}'), '')
@@ -2504,6 +2541,8 @@ async function listCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
                 AND COALESCE(
                     NULLIF(BTRIM(segmento), ''),
                     NULLIF(BTRIM(metadata #>> '{appsheetImport,segmento}'), ''),
+                    NULLIF(BTRIM(metadata #>> '{appsheetImport,segmentoFinal}'), ''),
+                    NULLIF(BTRIM(metadata #>> '{appsheetImport,segmento_final}'), ''),
                     NULLIF(BTRIM(metadata #>> '{segmento}'), ''),
                     NULLIF(BTRIM(metadata #>> '{segmentoFinal}'), ''),
                     NULLIF(BTRIM(metadata #>> '{segmento_final}'), '')
@@ -2515,6 +2554,7 @@ async function listCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
             `SELECT DISTINCT COALESCE(
                 NULLIF(BTRIM(rango_compras), ''),
                 NULLIF(BTRIM(metadata #>> '{appsheetImport,rangoCompras}'), ''),
+                NULLIF(BTRIM(metadata #>> '{appsheetImport,rango_compras}'), ''),
                 NULLIF(BTRIM(metadata #>> '{rangoCompras}'), ''),
                 NULLIF(BTRIM(metadata #>> '{rango_compras}'), '')
              ) AS name
@@ -2523,6 +2563,7 @@ async function listCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
                 AND COALESCE(
                     NULLIF(BTRIM(rango_compras), ''),
                     NULLIF(BTRIM(metadata #>> '{appsheetImport,rangoCompras}'), ''),
+                    NULLIF(BTRIM(metadata #>> '{appsheetImport,rango_compras}'), ''),
                     NULLIF(BTRIM(metadata #>> '{rangoCompras}'), ''),
                     NULLIF(BTRIM(metadata #>> '{rango_compras}'), '')
                 ) IS NOT NULL
@@ -2530,12 +2571,33 @@ async function listCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
             [cleanTenantId]
         ),
         safeQuery(
-            `SELECT DISTINCT NULLIF(BTRIM(COALESCE(metadata->>'templateName', '')), '') AS name
+            `SELECT DISTINCT NULLIF(BTRIM(COALESCE(
+                metadata->>'templateName',
+                metadata #>> '{rawData,templateName}',
+                metadata #>> '{rawMetadata,templateName}',
+                metadata->>'template_name',
+                ''
+            )), '') AS name
                FROM tenant_messages
               WHERE tenant_id = $1
                 AND from_me = TRUE
-                AND LOWER(COALESCE(message_type, '')) = 'template'
-                AND NULLIF(BTRIM(COALESCE(metadata->>'templateName', '')), '') IS NOT NULL
+                AND (
+                    LOWER(COALESCE(message_type, '')) = 'template'
+                    OR NULLIF(BTRIM(COALESCE(
+                        metadata->>'templateName',
+                        metadata #>> '{rawData,templateName}',
+                        metadata #>> '{rawMetadata,templateName}',
+                        metadata->>'template_name',
+                        ''
+                    )), '') IS NOT NULL
+                )
+                AND NULLIF(BTRIM(COALESCE(
+                    metadata->>'templateName',
+                    metadata #>> '{rawData,templateName}',
+                    metadata #>> '{rawMetadata,templateName}',
+                    metadata->>'template_name',
+                    ''
+                )), '') IS NOT NULL
               ORDER BY name ASC`,
             [cleanTenantId]
         )

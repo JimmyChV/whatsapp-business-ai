@@ -8687,6 +8687,8 @@ textarea:focus {
 .saas-admin-shell #saas_etiquetas .saas-admin-detail-pane {
   min-height: 0 !important;
   height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
 .saas-admin-shell #saas_etiquetas .saas-labels-pane .saas-data-table-wrap,
@@ -8706,6 +8708,21 @@ textarea:focus {
 .saas-admin-shell #saas_etiquetas .saas-admin-detail-pane {
   min-height: 0 !important;
   max-height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+.saas-admin-shell #saas_etiquetas .saas-admin-detail-pane > *,
+.saas-admin-shell #saas_etiquetas .saas-labels-editor-card > * {
+  min-height: 0 !important;
+}
+
+.saas-admin-shell #saas_etiquetas .saas-admin-detail-pane .saas-detail-panel__body,
+.saas-admin-shell #saas_etiquetas .saas-labels-editor-card .saas-detail-panel__body,
+.saas-admin-shell #saas_etiquetas .saas-admin-detail-pane form,
+.saas-admin-shell #saas_etiquetas .saas-labels-editor-card form {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
 }
