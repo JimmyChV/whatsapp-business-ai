@@ -471,6 +471,11 @@ function registerOperationsHttpRoutes({
         : async () => {
             throw new Error('Servicio de bloques de campana no disponible.');
         };
+    const repairCampaignMessageHistory = typeof campaignsApi.repairCampaignMessageHistory === 'function'
+        ? campaignsApi.repairCampaignMessageHistory.bind(campaignsApi)
+        : async () => {
+            throw new Error('Servicio de reparacion de historial de campana no disponible.');
+        };
     const pauseCampaign = typeof campaignsApi.pauseCampaign === 'function'
         ? campaignsApi.pauseCampaign.bind(campaignsApi)
         : async () => {
@@ -2607,6 +2612,33 @@ function registerOperationsHttpRoutes({
         } catch (error) {
             console.error('[assignment] release failed:', error);
             return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo liberar la asignacion.') });
+        }
+    });
+
+    app.post('/api/tenant/campaigns/:campaignId/history/repair', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            const access = ensureCampaignWriteAccess(req, tenantId);
+            if (!access.ok) {
+                return res.status(Number(access.statusCode || 403)).json({ ok: false, error: String(access.error || 'No autorizado.') });
+            }
+
+            const campaignId = toText(req.params?.campaignId || '');
+            const rawBlockIndex = req.body?.blockIndex;
+            if (!campaignId) return res.status(400).json({ ok: false, error: 'campaignId invalido.' });
+
+            const result = await repairCampaignMessageHistory(tenantId, {
+                campaignId,
+                blockIndex: rawBlockIndex === undefined || rawBlockIndex === null || rawBlockIndex === ''
+                    ? null
+                    : Number(rawBlockIndex),
+                actorUserId: resolveActorUserId(req)
+            });
+
+            return res.json({ ok: true, tenantId, campaignId, ...result });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo reparar el historial de la campana.') });
         }
     });
 

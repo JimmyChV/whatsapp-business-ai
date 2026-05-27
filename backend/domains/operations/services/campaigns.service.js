@@ -10,6 +10,8 @@ const {
 const campaignQueueService = require('./campaign-queue.service');
 const metaTemplatesService = require('./meta-templates.service');
 const templateVariablesService = require('./template-variables.service');
+const messageHistoryService = require('./message-history.service');
+const customerService = require('../../tenant/services/customers.service');
 const customerCatalogsService = require('../../tenant/services/customer-catalogs.service');
 const customerAddressesService = require('../../tenant/services/customer-addresses.service');
 const waModuleService = require('../../tenant/services/wa-modules.service');
@@ -271,6 +273,12 @@ function toUpper(value = '') {
     return toText(value).toUpperCase();
 }
 
+function toChatIdFromPhone(value = '') {
+    const digits = String(value || '').replace(/[^\d]/g, '').trim();
+    if (!digits) return '';
+    return `${digits}@c.us`;
+}
+
 function flattenTemplateVariableCatalog(catalog = {}) {
     return ensureArray(catalog?.categories).flatMap((category) => ensureArray(category?.variables));
 }
@@ -303,6 +311,16 @@ function naturalizeUppercaseWords(value = '') {
     return text
         .toLocaleLowerCase('es-PE')
         .replace(/(^|[\s([{"'/-])(\p{L})/gu, (_, prefix, letter) => `${prefix}${letter.toLocaleUpperCase('es-PE')}`);
+}
+
+function buildFormalCustomerName(customer = {}) {
+    const parts = [
+        naturalizeUppercaseWords(toText(customer?.lastNamePaternal || customer?.last_name_paternal || '')),
+        naturalizeUppercaseWords(toText(customer?.lastNameMaternal || customer?.last_name_maternal || '')),
+        naturalizeUppercaseWords(toText(customer?.firstName || customer?.first_name || ''))
+    ].filter(Boolean);
+    if (parts.length > 0) return parts.join(' ');
+    return naturalizeUppercaseWords(toText(customer?.contactName || customer?.contact_name || customer?.name || ''));
 }
 
 function formatCampaignDateLabel(value = '') {
@@ -2966,6 +2984,177 @@ async function updateCampaignBlocksConfig(tenantId = DEFAULT_TENANT_ID, campaign
     return updated;
 }
 
+async function campaignHistoryMessageExists(tenantId = DEFAULT_TENANT_ID, {
+    campaignId = '',
+    recipientId = '',
+    chatId = ''
+} = {}) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const cleanCampaignId = toText(campaignId);
+    const cleanRecipientId = toText(recipientId);
+    const cleanChatId = toText(chatId);
+    if (!cleanCampaignId || !cleanRecipientId || !cleanChatId) return false;
+
+    if (getStorageDriver() !== 'postgres') return false;
+    try {
+        const result = await queryPostgres(
+            `SELECT 1
+               FROM tenant_messages
+              WHERE tenant_id = $1
+                AND chat_id = $2
+                AND (
+                    COALESCE(metadata->>'recipientId', '') = $3
+                    OR (
+                        COALESCE(metadata->>'campaignId', '') = $4
+                        AND COALESCE(metadata->>'chatId', '') = $2
+                    )
+                )
+              LIMIT 1`,
+            [cleanTenantId, cleanChatId, cleanRecipientId, cleanCampaignId]
+        );
+        return Boolean(result?.rows?.length);
+    } catch (_) {
+        return false;
+    }
+}
+
+async function repairCampaignMessageHistory(tenantId = DEFAULT_TENANT_ID, options = {}) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const campaignId = toText(options.campaignId || '');
+    const blockIndex = options.blockIndex === undefined || options.blockIndex === null
+        ? null
+        : toInt(options.blockIndex, -1, { min: -1, max: 1000 });
+    if (!campaignId) throw new Error('campaignId requerido para reparar historial.');
+    if (blockIndex !== null && blockIndex < 0) throw new Error('blockIndex invalido.');
+
+    const campaign = await getCampaignById(cleanTenantId, campaignId);
+    if (!campaign) throw new Error('Campana no encontrada.');
+
+    let recipients = await listCampaignRecipientsOrderedForBlocks(cleanTenantId, { campaignId });
+    if (blockIndex !== null) {
+        const sliced = getBlockSlice(campaign.blocksConfigJson, blockIndex, recipients);
+        recipients = sliced.recipients;
+    }
+
+    let inserted = 0;
+    let skipped = 0;
+    let alreadyPresent = 0;
+
+    const runtimeModule = toText(campaign.moduleId || '')
+        ? await waModuleService.getModuleRuntime(cleanTenantId, toText(campaign.moduleId || ''))
+        : null;
+    const templateRecord = await metaTemplatesService.getTemplateRecord(cleanTenantId, {
+        templateName: toText(campaign.templateName || ''),
+        moduleId: toText(campaign.moduleId || ''),
+        templateLanguage: toLower(campaign.templateLanguage || 'es') || 'es'
+    }).catch(() => null);
+
+    for (const recipient of ensureArray(recipients)) {
+        const status = normalizeRecipientStatus(recipient?.status);
+        if (!['sent', 'delivered', 'read'].includes(status)) {
+            skipped += 1;
+            continue;
+        }
+
+        const chatId = toChatIdFromPhone(recipient?.phone || '');
+        if (!chatId) {
+            skipped += 1;
+            continue;
+        }
+
+        const exists = await campaignHistoryMessageExists(cleanTenantId, {
+            campaignId: campaign.campaignId,
+            recipientId: recipient.recipientId,
+            chatId
+        });
+        if (exists) {
+            alreadyPresent += 1;
+            continue;
+        }
+
+        const customerId = toText(recipient?.customerId || '');
+        const customer = customerId ? await customerService.getCustomer(cleanTenantId, customerId).catch(() => null) : null;
+        let components = normalizeTemplateComponents(recipient?.variablesJson || {});
+        try {
+            if (customerId) {
+                const rebuilt = await buildTemplateComponentsForCustomerId(cleanTenantId, campaign, customerId);
+                if (Array.isArray(rebuilt) && rebuilt.length > 0) components = rebuilt;
+            }
+        } catch (_) { }
+
+        const renderedTemplate = buildRenderedTemplateFromRecord(
+            templateRecord,
+            components,
+            toText(campaign.templateName || '')
+        );
+        const previewText = toText(renderedTemplate?.previewText || '') || `Template: ${toText(campaign.templateName || '')}`;
+        const messageId = toText(recipient?.metaMessageId || '') || `campaign_backfill_${campaign.campaignId}_${recipient.recipientId}`;
+        const timestampUnix = Math.floor(new Date(recipient?.sentAt || recipient?.updatedAt || nowIso()).getTime() / 1000);
+        const formalName = buildFormalCustomerName(customer || {});
+        const moduleId = toText(runtimeModule?.moduleId || campaign.moduleId || '').toLowerCase() || null;
+        const modulePhone = toText(runtimeModule?.phoneNumber || runtimeModule?.phone || '') || null;
+
+        await messageHistoryService.upsertMessage(cleanTenantId, {
+            messageId,
+            chatId,
+            fromMe: true,
+            waModuleId: moduleId,
+            waPhoneNumber: modulePhone,
+            body: previewText,
+            messageType: 'template',
+            timestampUnix: Number.isFinite(timestampUnix) ? timestampUnix : Math.floor(Date.now() / 1000),
+            ack: 1,
+            hasMedia: false,
+            metadata: {
+                templateName: toText(campaign.templateName || '') || null,
+                templateLanguage: toText(campaign.templateLanguage || '') || null,
+                templatePreviewText: previewText || null,
+                templateComponents: Array.isArray(renderedTemplate?.templateComponents) ? renderedTemplate.templateComponents : [],
+                campaignId: toText(campaign.campaignId || '') || null,
+                recipientId: toText(recipient.recipientId || '') || null,
+                customerId: customerId || null,
+                repaired: true,
+                chatId
+            },
+            chat: {
+                id: chatId,
+                displayName: formalName || null,
+                phone: toText(recipient?.phone || '') || null,
+                subtitle: formalName || null
+            }
+        });
+        inserted += 1;
+    }
+
+    await recordCampaignEvent(cleanTenantId, {
+        campaignId: campaign.campaignId,
+        moduleId: campaign.moduleId,
+        eventType: 'campaign_updated',
+        severity: 'info',
+        actorType: options.actorUserId ? 'user' : 'system',
+        actorId: toNullableText(options.actorUserId),
+        reason: 'history_repaired',
+        message: blockIndex === null
+            ? 'Historial de mensajes reparado para la campaña'
+            : `Historial de mensajes reparado para el bloque ${blockIndex + 1}`,
+        payloadJson: {
+            blockIndex,
+            inserted,
+            skipped,
+            alreadyPresent
+        }
+    });
+
+    return {
+        campaign,
+        blockIndex,
+        inserted,
+        skipped,
+        alreadyPresent,
+        totalReviewed: ensureArray(recipients).length
+    };
+}
+
 async function refreshCampaignBlockStatuses(tenantId = DEFAULT_TENANT_ID, campaign = {}) {
     const cleanTenantId = normalizeTenant(tenantId);
     const config = normalizeBlocksConfig(campaign?.blocksConfigJson);
@@ -3931,5 +4120,6 @@ module.exports = {
     hydrateCampaignRuntimeState,
     applyQueueJobUpdate,
     onCampaignUpdated,
-    buildTemplateComponentsForCustomerId
+    buildTemplateComponentsForCustomerId,
+    repairCampaignMessageHistory
 };
