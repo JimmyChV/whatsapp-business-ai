@@ -465,6 +465,7 @@ function createSocketChatListService({
             : null;
         console.log('[ChatList] windowCalc', {
             chatId: chat?.id?._serialized || chatId || null,
+            scopeModuleId: normalizedScopeModuleId || null,
             hasLastCustomer: !!lastCustomerMessageAt,
             windowExpiresAt,
             laboralMinutesRemaining,
