@@ -440,6 +440,14 @@ function createCampaignDispatcherJob({
             return { status: 'sent' };
         } catch (error) {
             const code = extractErrorCode(error);
+            logger?.warn?.('[Ops][CampaignDispatcher] send cycle failed tenant=' + tenantId
+                + ' campaign=' + toText(job?.campaignId || '')
+                + ' recipient=' + toText(job?.recipientId || '')
+                + ' phone=' + toText(job?.phone || '')
+                + ' idem=' + idempotencyKey
+                + ' code=' + String(code ?? '')
+                + ' error=' + String(error?.message || error)
+                + (error?.stack ? `\n${error.stack}` : ''));
             if (Number(code) === 130429) {
                 pauseModuleForRateLimit(tenantId, moduleId || 'default', 60_000);
                 await recordRateLimitEvent(tenantId, job, code);
