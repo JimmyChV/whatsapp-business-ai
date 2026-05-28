@@ -55,6 +55,11 @@ function createSocketChatListService({
 
         scheduleCache.set(cacheKey, { value: schedule || null, updatedAt: Date.now() });
         runtimeStore.set('scheduleCache', scheduleCache);
+        console.log('[ChatList] activeSchedule', {
+            tenantId,
+            found: !!schedule,
+            scheduleId: schedule?.scheduleId || null
+        });
         return schedule || null;
     };
 
@@ -458,6 +463,13 @@ function createSocketChatListService({
                 ? tenantScheduleService.getRemainingLaboralMinutes(activeSchedule, windowExpiresAt, laboralWindowMeasuredAt)
                 : null)
             : null;
+        console.log('[ChatList] windowCalc', {
+            chatId: chat?.id?._serialized || chatId || null,
+            hasLastCustomer: !!lastCustomerMessageAt,
+            windowExpiresAt,
+            laboralMinutesRemaining,
+            hasSchedule: !!activeSchedule
+        });
 
         return {
             id: scopedSummaryId || chatId,
