@@ -1,3 +1,5 @@
+const { queryPostgres } = require('../../../config/persistence-runtime');
+
 function createSocketChatListService({
     runtimeStore,
     waClient,
@@ -55,12 +57,38 @@ function createSocketChatListService({
 
         scheduleCache.set(cacheKey, { value: schedule || null, updatedAt: Date.now() });
         runtimeStore.set('scheduleCache', scheduleCache);
-        console.log('[ChatList] activeSchedule', {
+        console.log('[ChatList] scheduleResolution', {
             tenantId,
+            cacheKey,
             found: !!schedule,
             scheduleId: schedule?.scheduleId || null
         });
         return schedule || null;
+    };
+
+    const resolveLastInboundMessageAt = async ({
+        tenantId = 'default',
+        chatId = ''
+    } = {}) => {
+        const safeTenantId = String(tenantId || 'default').trim() || 'default';
+        const safeChatId = String(chatId || '').trim();
+        if (!safeChatId) return null;
+        try {
+            const { rows } = await queryPostgres(
+                `SELECT created_at
+                   FROM tenant_messages
+                  WHERE tenant_id = $1
+                    AND chat_id = $2
+                    AND from_me = false
+               ORDER BY created_at DESC
+                  LIMIT 1`,
+                [safeTenantId, safeChatId]
+            );
+            const value = String(rows?.[0]?.created_at || '').trim();
+            return value || null;
+        } catch (_) {
+            return null;
+        }
     };
 
     const getSortedVisibleChats = async ({ forceRefresh = false } = {}) => {
@@ -219,9 +247,16 @@ function createSocketChatListService({
                 scopeModuleId: ''
             });
             const fallbackLastCustomerMessageAt = String(fallbackAssignment?.lastCustomerMessageAt || '').trim();
-            return fallbackLastCustomerMessageAt || null;
+            if (fallbackLastCustomerMessageAt) return fallbackLastCustomerMessageAt;
+            return await resolveLastInboundMessageAt({
+                tenantId: safeTenantId,
+                chatId: safeChatId
+            });
         } catch (_) {
-            return null;
+            return await resolveLastInboundMessageAt({
+                tenantId: safeTenantId,
+                chatId: safeChatId
+            });
         }
     };
 
