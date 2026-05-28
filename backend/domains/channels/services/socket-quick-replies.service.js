@@ -5,6 +5,7 @@ function createSocketQuickRepliesService({
     listQuickReplies,
     fetchQuickReplyMedia,
     normalizeScopedModuleId,
+    resolveSocketModuleContext,
     pathModule,
     getSerializedMessageId,
     sanitizeAgentMeta,
@@ -138,6 +139,18 @@ function createSocketQuickRepliesService({
         quickReplyMediaMaxBytes,
         quickReplyMediaTimeoutMs
     } = {}) => {
+        const ensurePayloadModuleTransport = async (payload = {}, errorEvent = 'error', action = 'enviar respuestas rapidas') => {
+            const requestedModuleId = String(payload?.moduleId || '').trim().toLowerCase();
+            if (!requestedModuleId || typeof resolveSocketModuleContext !== 'function') return true;
+            const moduleContextPayload = await resolveSocketModuleContext(tenantId, authContext, requestedModuleId);
+            const selectedModule = moduleContextPayload?.selected || null;
+            if (!selectedModule?.moduleId || String(selectedModule.moduleId || '').trim().toLowerCase() !== requestedModuleId) {
+                socket.emit(errorEvent, 'No tienes acceso al modulo solicitado para ' + action + '.');
+                return false;
+            }
+            await transportOrchestrator.ensureTransportForSelectedModule(selectedModule);
+            return true;
+        };
         socket.on('get_quick_replies', async (payload = {}) => {
             try {
                 const quickRepliesEnabled = await isFeatureEnabledForTenant(tenantId, 'quickReplies');
@@ -163,6 +176,7 @@ function createSocketQuickRepliesService({
 
         socket.on('send_quick_reply', async (payload = {}) => {
             if (!guardRateLimit(socket, 'send_quick_reply')) return;
+            if (!(await ensurePayloadModuleTransport(payload, 'error', 'enviar respuestas rapidas'))) return;
             if (!transportOrchestrator.ensureTransportReady(socket, { action: 'enviar respuestas rapidas', errorEvent: 'error' })) return;
             try {
                 const quickRepliesEnabled = await isFeatureEnabledForTenant(tenantId, 'quickReplies');

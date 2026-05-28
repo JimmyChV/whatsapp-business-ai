@@ -2,6 +2,7 @@ function createSocketTemplateMessagesService({
     waClient,
     metaTemplatesService,
     templateVariablesService,
+    resolveSocketModuleContext,
     getSerializedMessageId,
     buildSocketAgentMeta,
     sanitizeAgentMeta,
@@ -239,9 +240,22 @@ function createSocketTemplateMessagesService({
         emitRealtimeOutgoingMessage,
         recordConversationEvent
     } = {}) => {
+        const ensurePayloadModuleTransport = async (payload = {}, errorEvent = 'template_message_error', action = 'enviar templates') => {
+            const requestedModuleId = toLower(payload?.moduleId || '');
+            if (!requestedModuleId || typeof resolveSocketModuleContext !== 'function') return true;
+            const moduleContextPayload = await resolveSocketModuleContext(tenantId, authContext, requestedModuleId);
+            const selectedModule = moduleContextPayload?.selected || null;
+            if (!selectedModule?.moduleId || toLower(selectedModule.moduleId) !== requestedModuleId) {
+                socket.emit(errorEvent, 'No tienes acceso al modulo solicitado para ' + action + '.');
+                return false;
+            }
+            await transportOrchestrator.ensureTransportForSelectedModule(selectedModule);
+            return true;
+        };
         const recentSendIds = new Set();
         socket.on('send_template_message', async (payload = {}) => {
             if (!guardRateLimit(socket, 'send_template_message')) return;
+            if (!(await ensurePayloadModuleTransport(payload, 'template_message_error', 'enviar templates'))) return;
             if (!transportOrchestrator.ensureTransportReady(socket, { action: 'enviar templates', errorEvent: 'template_message_error' })) return;
             try {
                 const sendRequestId = toText(payload?.sendRequestId || payload?.clientTempId || '');

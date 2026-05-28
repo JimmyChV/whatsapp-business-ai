@@ -2,6 +2,7 @@ function createSocketCatalogDeliveryService({
     waClient,
     fetchCatalogProductImage,
     ensureCloudApiCompatibleCatalogImage,
+    resolveSocketModuleContext,
     slugifyFileName,
     buildCatalogProductCaption,
     getSerializedMessageId,
@@ -21,8 +22,21 @@ function createSocketCatalogDeliveryService({
         emitRealtimeOutgoingMessage,
         recordConversationEvent
     } = {}) => {
+        const ensurePayloadModuleTransport = async (payload = {}, errorEvent = 'error', action = 'enviar productos de catalogo') => {
+            const requestedModuleId = String(payload?.moduleId || '').trim().toLowerCase();
+            if (!requestedModuleId || typeof resolveSocketModuleContext !== 'function') return true;
+            const moduleContextPayload = await resolveSocketModuleContext(tenantId, authContext, requestedModuleId);
+            const selectedModule = moduleContextPayload?.selected || null;
+            if (!selectedModule?.moduleId || String(selectedModule.moduleId || '').trim().toLowerCase() !== requestedModuleId) {
+                socket.emit(errorEvent, 'No tienes acceso al modulo solicitado para ' + action + '.');
+                return false;
+            }
+            await transportOrchestrator.ensureTransportForSelectedModule(selectedModule);
+            return true;
+        };
         socket.on('send_catalog_product', async (payload = {}) => {
             if (!guardRateLimit(socket, 'send_catalog_product')) return;
+            if (!(await ensurePayloadModuleTransport(payload, 'error', 'enviar productos de catalogo'))) return;
             if (!transportOrchestrator.ensureTransportReady(socket, { action: 'enviar productos de catalogo', errorEvent: 'error' })) return;
 
             const catalogEnabled = await isFeatureEnabledForTenant(tenantId, 'catalog');
