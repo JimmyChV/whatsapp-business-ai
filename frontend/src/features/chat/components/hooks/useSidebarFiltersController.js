@@ -132,7 +132,8 @@ const useSidebarFiltersController = ({
   chatCommercialStatusState = null,
   commercialStatusOptions = DEFAULT_COMMERCIAL_STATUS_OPTIONS,
   onFiltersChange = null,
-  searchQuery = ''
+  searchQuery = '',
+  windowTick = Date.now()
 } = {}) => {
   void waModules;
   const assignmentsLoaded = Boolean(chatAssignmentState?.assignmentsLoaded);
@@ -346,7 +347,7 @@ const useSidebarFiltersController = ({
       if (statusToken !== filters.commercialStatus) return false;
     }
     if (filters.windowFilter !== 'all') {
-      const windowState = getWindowState(chat?.lastCustomerMessageAt);
+      const windowState = getWindowState(chat, windowTick);
       if (filters.windowFilter === 'active' && !windowState.active) return false;
       if (filters.windowFilter === 'expiring' && !windowState.expiring) return false;
       if (filters.windowFilter === 'expired' && !windowState.expired) return false;
@@ -378,7 +379,7 @@ const useSidebarFiltersController = ({
 
     // TODO(bug): filtro sin resultados queda en estado "cargando" indefinidamente — falta estado de "sin resultados"
     return textHaystack.includes(q);
-  }), [assignmentsLoaded, chats, filters, localQuery, isAssignedToMeResolver, resolveChatAssignment, resolveChatCommercialStatus, statusesLoaded]);
+  }), [assignmentsLoaded, chats, filters, localQuery, isAssignedToMeResolver, resolveChatAssignment, resolveChatCommercialStatus, statusesLoaded, windowTick]);
 
   const resetFilters = () => {
     onFiltersChange?.(normalizeFilters({
@@ -388,6 +389,7 @@ const useSidebarFiltersController = ({
       onlyAssignedToMe: false,
       assigneeUserId: '',
       commercialStatus: 'all',
+      windowFilter: 'all',
       contactMode: 'all',
       archivedMode: 'all',
       pinnedMode: 'all'

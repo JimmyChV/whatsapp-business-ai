@@ -3,6 +3,7 @@ function createSocketChatListService({
     waClient,
     tenantLabelService,
     conversationOpsService,
+    tenantScheduleService,
     customerService,
     customerAddressesService,
     normalizeScopedModuleId,
@@ -25,8 +26,36 @@ function createSocketChatListService({
     runWithConcurrency,
     getWaRuntime
 } = {}) {
+    const DAY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
     const invalidateChatListCache = () => {
         runtimeStore.set('chatListCache', { items: [], updatedAt: 0 });
+    };
+
+    const getActiveTenantSchedule = async (tenantId = 'default') => {
+        const cacheKey = `activeSchedule::${String(tenantId || 'default').trim() || 'default'}`;
+        const scheduleCache = runtimeStore.get('scheduleCache', new Map());
+        const cached = scheduleCache.get(cacheKey);
+        const cacheTtlMs = 60 * 1000;
+        if (cached && (Date.now() - Number(cached.updatedAt || 0)) <= cacheTtlMs) {
+            return cached.value || null;
+        }
+
+        let schedule = null;
+        try {
+            if (typeof tenantScheduleService?.getActiveSchedule === 'function') {
+                schedule = await tenantScheduleService.getActiveSchedule(tenantId);
+            } else if (typeof tenantScheduleService?.listSchedules === 'function') {
+                const items = await tenantScheduleService.listSchedules(tenantId);
+                schedule = (Array.isArray(items) ? items : []).find((item) => item?.isActive !== false) || null;
+            }
+        } catch (_) {
+            schedule = null;
+        }
+
+        scheduleCache.set(cacheKey, { value: schedule || null, updatedAt: Date.now() });
+        runtimeStore.set('scheduleCache', scheduleCache);
+        return schedule || null;
     };
 
     const getSortedVisibleChats = async ({ forceRefresh = false } = {}) => {
@@ -417,6 +446,18 @@ function createSocketChatListService({
             chatId,
             scopeModuleId: normalizedScopeModuleId
         });
+        const lastCustomerDate = lastCustomerMessageAt ? new Date(lastCustomerMessageAt) : null;
+        const hasValidLastCustomerDate = Boolean(lastCustomerDate) && Number.isFinite(lastCustomerDate.getTime());
+        const windowExpiresAt = hasValidLastCustomerDate
+            ? new Date(lastCustomerDate.getTime() + DAY_WINDOW_MS).toISOString()
+            : null;
+        const activeSchedule = lastCustomerMessageAt ? await getActiveTenantSchedule(resolvedTenantId) : null;
+        const laboralWindowMeasuredAt = hasValidLastCustomerDate ? new Date().toISOString() : null;
+        const laboralMinutesRemaining = hasValidLastCustomerDate
+            ? (typeof tenantScheduleService?.getRemainingLaboralMinutes === 'function'
+                ? tenantScheduleService.getRemainingLaboralMinutes(activeSchedule, windowExpiresAt, laboralWindowMeasuredAt)
+                : null)
+            : null;
 
         return {
             id: scopedSummaryId || chatId,
@@ -437,6 +478,9 @@ function createSocketChatListService({
             erpCustomerName: erpCustomer ? resolveChatDisplayName({ ...effectiveChat, erpCustomer }) : null,
             archived: Boolean(chat?.archived),
             lastCustomerMessageAt,
+            windowExpiresAt,
+            laboralMinutesRemaining,
+            laboralWindowMeasuredAt,
             lastMessageModuleId: normalizedScopeModuleId || null,
             lastMessageModuleName: String(scopeModuleName || '').trim() || null,
             lastMessageModuleImageUrl: String(scopeModuleImageUrl || '').trim() || null,

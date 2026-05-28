@@ -1,5 +1,3 @@
-const DAY_WINDOW_MS = 24 * 60 * 60 * 1000;
-const HOUR_MS = 60 * 60 * 1000;
 const MINUTE_MS = 60 * 1000;
 
 const toSafeDate = (value = '') => {
@@ -8,53 +6,69 @@ const toSafeDate = (value = '') => {
   return parsed;
 };
 
-const formatMinutes = (remaining = 0) => {
-  const totalMinutes = Math.max(1, Math.floor(Number(remaining || 0) / MINUTE_MS));
-  return `${totalMinutes}m`;
+const normalizeMinutes = (value = null) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.floor(parsed));
 };
 
-const formatHours = (remaining = 0) => {
-  const safeRemaining = Math.max(0, Number(remaining || 0));
-  const hours = Math.floor(safeRemaining / HOUR_MS);
-  const minutes = Math.max(0, Math.floor((safeRemaining % HOUR_MS) / MINUTE_MS));
-  if (hours <= 0) return formatMinutes(safeRemaining);
-  if (minutes <= 0) return `${hours}h`;
-  return `${hours}h ${minutes}m`;
+const formatLaborMinutes = (minutes = 0) => {
+  const safeMinutes = Math.max(1, Math.floor(Number(minutes || 0)));
+  if (safeMinutes < 60) return `${safeMinutes}m`;
+  const hours = Math.floor(safeMinutes / 60);
+  const remainder = safeMinutes % 60;
+  if (remainder <= 0) return `${hours}h`;
+  return `${hours}h ${remainder}m`;
 };
 
-export function getWindowState(lastCustomerMessageAt, nowMs = Date.now()) {
-  const date = toSafeDate(lastCustomerMessageAt);
-  if (!date) return { status: 'unknown', remaining: null, active: false, expiring: false, expired: false, label: '' };
+const resolveCurrentLaboralMinutes = (source = {}, nowMs = Date.now()) => {
+  const baseMinutes = normalizeMinutes(source?.laboralMinutesRemaining);
+  if (baseMinutes === null) return null;
 
-  const elapsed = Number(nowMs || Date.now()) - date.getTime();
-  const remaining = DAY_WINDOW_MS - elapsed;
-  if (remaining <= 0) {
-    return { status: 'expired', remaining: 0, active: false, expiring: false, expired: true, label: '0m' };
+  const measuredAt = toSafeDate(source?.laboralWindowMeasuredAt);
+  if (!measuredAt) return baseMinutes;
+
+  const elapsedMinutes = Math.max(0, Math.floor((Number(nowMs || Date.now()) - measuredAt.getTime()) / MINUTE_MS));
+  return Math.max(0, baseMinutes - elapsedMinutes);
+};
+
+export function getWindowState(source = {}, nowMs = Date.now()) {
+  const expiresAt = toSafeDate(source?.windowExpiresAt);
+  const isExpired = Boolean(expiresAt) && expiresAt.getTime() <= Number(nowMs || Date.now());
+  if (isExpired) {
+    return { status: 'expired', laborMinutesRemaining: 0, active: false, expiring: false, expired: true, label: '' };
   }
 
-  const expiring = remaining <= 3 * HOUR_MS;
+  const laborMinutesRemaining = resolveCurrentLaboralMinutes(source, nowMs);
+  if (laborMinutesRemaining === null) {
+    return { status: 'unknown', laborMinutesRemaining: null, active: false, expiring: false, expired: false, label: '' };
+  }
+  if (laborMinutesRemaining <= 0) {
+    return { status: 'inactive', laborMinutesRemaining: 0, active: false, expiring: false, expired: false, label: '' };
+  }
+
   return {
     status: 'active',
-    remaining,
+    laborMinutesRemaining,
     active: true,
-    expiring,
+    expiring: laborMinutesRemaining <= 120,
     expired: false,
-    label: remaining <= HOUR_MS ? formatMinutes(remaining) : formatHours(remaining)
+    label: formatLaborMinutes(laborMinutesRemaining)
   };
 }
 
-export function getWindowStatus(lastCustomerMessageAt, nowMs = Date.now()) {
-  const base = getWindowState(lastCustomerMessageAt, nowMs);
-  if (base.status === 'unknown' || base.status === 'expired') return null;
+export function getWindowStatus(source = {}, nowMs = Date.now()) {
+  const base = getWindowState(source, nowMs);
+  if (!base.active) return null;
 
-  if (base.remaining <= HOUR_MS) {
-    return { ...base, status: 'critical', label: formatMinutes(base.remaining) };
+  if (base.laborMinutesRemaining <= 60) {
+    return { ...base, status: 'critical', label: formatLaborMinutes(base.laborMinutesRemaining) };
   }
-  if (base.remaining <= 3 * HOUR_MS) {
-    return { ...base, status: 'warning', label: formatHours(base.remaining) };
+  if (base.laborMinutesRemaining <= 120) {
+    return { ...base, status: 'warning', label: formatLaborMinutes(base.laborMinutesRemaining) };
   }
-  if (base.remaining <= 6 * HOUR_MS) {
-    return { ...base, status: 'ok', label: formatHours(base.remaining) };
+  if (base.laborMinutesRemaining <= 240) {
+    return { ...base, status: 'ok', label: formatLaborMinutes(base.laborMinutesRemaining) };
   }
   return null;
 }
@@ -62,7 +76,7 @@ export function getWindowStatus(lastCustomerMessageAt, nowMs = Date.now()) {
 export const WINDOW_FILTER_OPTIONS = [
   { value: 'all', label: 'Todas' },
   { value: 'active', label: 'Con ventana activa' },
-  { value: 'expiring', label: 'Por vencer (< 3h)' },
+  { value: 'expiring', label: 'Por vencer (< 2h)' },
   { value: 'expired', label: 'Vencida' }
 ];
 

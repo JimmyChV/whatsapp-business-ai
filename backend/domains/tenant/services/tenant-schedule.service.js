@@ -203,6 +203,11 @@ async function listSchedules(tenantId) {
     return rows.map(normalizeRow);
 }
 
+async function getActiveSchedule(tenantId) {
+    const schedules = await listSchedules(tenantId);
+    return schedules.find((item) => item?.isActive !== false) || null;
+}
+
 async function getSchedule(tenantId, scheduleId) {
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
     const cleanScheduleId = normalizeScheduleId(scheduleId);
@@ -350,6 +355,53 @@ function isMinuteWithinHours(minutes, hours = []) {
     });
 }
 
+function getScheduleHoursForDate(schedule = null, parts = null) {
+    if (!schedule || !parts) return [];
+    const customDay = Array.isArray(schedule?.customDays)
+        ? schedule.customDays.find((item) => item?.date === parts.date)
+        : null;
+    if (customDay) {
+        if (customDay.type === 'closed') return [];
+        return normalizeHours(customDay.hours);
+    }
+    const holiday = Array.isArray(schedule?.holidays)
+        ? schedule.holidays.find((item) => item?.month === parts.month && item?.day === parts.day)
+        : null;
+    if (holiday) return [];
+    return normalizeHours(schedule?.weeklyHours?.[parts.dayKey] || []);
+}
+
+function getRemainingLaboralMinutes(schedule = null, windowExpiresAt = null, now = new Date()) {
+    if (!schedule || schedule?.isActive === false) return null;
+    const nowDate = now instanceof Date ? now : new Date(now);
+    const expiresDate = windowExpiresAt instanceof Date ? windowExpiresAt : new Date(windowExpiresAt);
+    if (Number.isNaN(nowDate.getTime()) || Number.isNaN(expiresDate.getTime())) return null;
+    if (expiresDate.getTime() <= nowDate.getTime()) return 0;
+
+    const timezone = normalizeTimezone(schedule?.timezone);
+    const nowParts = getTimezoneParts(nowDate, timezone);
+    const expiresParts = getTimezoneParts(expiresDate, timezone);
+    const todaysHours = getScheduleHoursForDate(schedule, nowParts);
+    if (!todaysHours.length) return 0;
+
+    const expiresToday = expiresParts.date === nowParts.date;
+    const expiryMinuteLimit = expiresToday ? expiresParts.minutes : null;
+
+    let totalMinutes = 0;
+    for (const range of todaysHours) {
+        const start = timeToMinutes(range.start);
+        const end = timeToMinutes(range.end);
+        if (start === null || end === null || end <= start) continue;
+        const rangeStart = Math.max(start, nowParts.minutes);
+        const rangeEnd = expiresToday ? Math.min(end, expiryMinuteLimit) : end;
+        if (rangeEnd > rangeStart) {
+            totalMinutes += (rangeEnd - rangeStart);
+        }
+    }
+
+    return Math.max(0, totalMinutes);
+}
+
 async function isWithinSchedule(tenantId, scheduleId, datetime = new Date()) {
     const schedule = await getSchedule(tenantId, scheduleId);
     if (!schedule || schedule.isActive === false) {
@@ -382,9 +434,11 @@ async function isWithinSchedule(tenantId, scheduleId, datetime = new Date()) {
 module.exports = {
     DEFAULT_WEEKLY_HOURS,
     listSchedules,
+    getActiveSchedule,
     getSchedule,
     createSchedule,
     updateSchedule,
     deleteSchedule,
-    isWithinSchedule
+    isWithinSchedule,
+    getRemainingLaboralMinutes
 };

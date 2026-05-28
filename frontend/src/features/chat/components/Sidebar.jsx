@@ -106,6 +106,7 @@ const Sidebar = ({
         showLabelPanel,
         setShowLabelPanel
     } = useSidebarUiToggles();
+    const [windowTick, setWindowTick] = React.useState(() => Date.now());
     const [globalCommercialStatusOptions, setGlobalCommercialStatusOptions] = React.useState([{ value: 'all', label: 'Todos' }]);
     const {
         filters,
@@ -131,7 +132,8 @@ const Sidebar = ({
         chatCommercialStatusState,
         commercialStatusOptions: globalCommercialStatusOptions,
         onFiltersChange,
-        searchQuery
+        searchQuery,
+        windowTick
     });
     const {
         formatTime,
@@ -176,7 +178,6 @@ const Sidebar = ({
     const windowMenuRef = React.useRef(null);
     const labelPanelRef = React.useRef(null);
     const customerSearchRequestRef = React.useRef(0);
-    const [windowTick, setWindowTick] = React.useState(() => Date.now());
     const visibleChats = React.useMemo(() => {
         const items = Array.isArray(filteredChats) ? [...filteredChats] : [];
         return items.sort((a, b) => {
@@ -801,7 +802,7 @@ const Sidebar = ({
                         const chatAssignment = getAssignment(chat.id);
                         const isAssignedToMe = isAssignedToMeResolver(chat.id);
                         const chatCommercialStatus = getCommercialStatus(chat.id);
-                        const chatWindowStatus = getWindowStatus(chat?.lastCustomerMessageAt, windowTick);
+                        const chatWindowStatus = getWindowStatus(chat, windowTick);
                         const moduleConfig = moduleConfigById.get(String(moduleBadge?.moduleId || chat?.scopeModuleId || '').trim().toLowerCase()) || null;
                         const hasAssignee = Boolean(String(chatAssignment?.assigneeUserId || '').trim()) && String(chatAssignment?.status || '').trim().toLowerCase() !== 'released';
                         const showPattyAssignee = !hasAssignee && !chatCommercialStatus?.needsAdvisor && resolveModulePattyMode(moduleConfig) === 'autonomous';
@@ -874,7 +875,7 @@ const Sidebar = ({
                                             </div>
                                         )}
                                         {chatWindowStatus && (
-                                            <span className={`chat-window-badge chat-window-badge--${chatWindowStatus.status}`.trim()} title={`Ventana 24h: ${chatWindowStatus.label} restantes`}>
+                                            <span className={`chat-window-badge chat-window-badge--${chatWindowStatus.status}`.trim()} title={`Ventana 24h: ${chatWindowStatus.label} laborales restantes hoy`}>
                                                 <Clock3 size={11} />
                                                 <span>{chatWindowStatus.label}</span>
                                             </span>
