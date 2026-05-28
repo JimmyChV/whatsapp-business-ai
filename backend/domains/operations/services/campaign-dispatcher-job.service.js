@@ -49,7 +49,7 @@ function buildFormalCustomerName(customer = {}) {
     return toText(customer?.contactName || customer?.contact_name || customer?.name || '');
 }
 
-async function persistCampaignOutboundHistory(tenantId = '', moduleContext = null, job = {}, renderedTemplate = {}, templateName = '', languageCode = '', response = null) {
+async function persistCampaignOutboundHistory(tenantId = '', moduleContext = null, job = {}, renderedTemplate = {}, templateName = '', languageCode = '', response = null, logger = null) {
     const cleanTenantId = toText(tenantId);
     if (!cleanTenantId || !job) return;
 
@@ -428,7 +428,8 @@ function createCampaignDispatcherJob({
                 renderedTemplate,
                 toText(job.templateName || ''),
                 languageCode,
-                response
+                response,
+                logger
             );
 
             const sentJob = await campaignQueueService.ackJob(tenantId, { idempotencyKey });
