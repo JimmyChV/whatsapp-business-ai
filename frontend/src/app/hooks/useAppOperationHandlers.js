@@ -355,7 +355,8 @@ export default function useAppOperationHandlers({
     setSelectedSendTemplatePreview,
     setSelectedSendTemplatePreviewLoading,
     setSelectedSendTemplatePreviewError,
-    setSendTemplateSubmitting
+    setSendTemplateSubmitting,
+    sendTemplateSubmitting
   });
 
   useGlobalEscapeToCloseChat({

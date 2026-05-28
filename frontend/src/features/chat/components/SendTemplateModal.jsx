@@ -109,6 +109,7 @@ export default function SendTemplateModal({
     onSelectTemplate = null,
     onConfirm = null
 }) {
+    const confirmLockRef = React.useRef(false);
     const normalizedValidFrom = normalizeDateInputValue(validFrom);
     const normalizedValidTo = normalizeDateInputValue(validTo);
     const [validFromDraft, setValidFromDraft] = React.useState(normalizedValidFrom);
@@ -121,6 +122,16 @@ export default function SendTemplateModal({
     React.useEffect(() => {
         setValidToDraft(normalizedValidTo);
     }, [normalizedValidTo]);
+
+    React.useEffect(() => {
+        if (!isOpen || !confirmBusy) {
+            confirmLockRef.current = false;
+        }
+    }, [confirmBusy, isOpen]);
+
+    React.useEffect(() => () => {
+        confirmLockRef.current = false;
+    }, []);
 
     const normalizedDeliveryMode = toText(deliveryMode).toLowerCase() === 'blocks' ? 'blocks' : 'single';
     const normalizedBlockCount = Math.max(2, Math.min(10, Math.floor(Number(blockCount) || 2)));
@@ -182,6 +193,12 @@ export default function SendTemplateModal({
                 error: String(error?.message || 'No se pudo leer el archivo seleccionado.')
             });
         }
+    };
+
+    const handleConfirmClick = () => {
+        if (confirmLockRef.current) return;
+        confirmLockRef.current = true;
+        onConfirm?.();
     };
 
     return (
@@ -566,9 +583,9 @@ export default function SendTemplateModal({
                     </button>
                     {typeof onConfirm === 'function' && (
                         <button
-                            type="button"
-                            onClick={() => onConfirm?.()}
-                            disabled={confirmDisabled || confirmBusy}
+                        type="button"
+                        onClick={handleConfirmClick}
+                        disabled={confirmDisabled || confirmBusy}
                             style={{
                                 border: `1px solid ${confirmDisabled || confirmBusy ? tone.ghostBorder : tone.primaryBorder}`,
                                 background: confirmDisabled || confirmBusy ? tone.disabledBg : tone.primaryBg,

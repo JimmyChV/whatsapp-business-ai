@@ -1113,6 +1113,7 @@ function CustomersSection(props = {}) {
     const [selectedSendTemplatePreviewLoading, setSelectedSendTemplatePreviewLoading] = useState(false);
     const [selectedSendTemplatePreviewError, setSelectedSendTemplatePreviewError] = useState('');
     const [sendTemplateSubmitting, setSendTemplateSubmitting] = useState(false);
+    const sendTemplateSubmittingRef = useRef(false);
     const [directTemplateValidFrom, setDirectTemplateValidFrom] = useState('');
     const [directTemplateValidTo, setDirectTemplateValidTo] = useState('');
     const [directTemplateHeaderMedia, setDirectTemplateHeaderMedia] = useState(null);
@@ -2400,6 +2401,7 @@ function CustomersSection(props = {}) {
     }, [canManageCustomers, loadCustomers, requestJson, runAction, runSectionAction, selectedCustomer, tenantScopeId]);
 
     const resetSendTemplateFlow = useCallback(() => {
+        sendTemplateSubmittingRef.current = false;
         setSendTemplateOpen(false);
         setSendTemplateOptions([]);
         setSendTemplateOptionsLoading(false);
@@ -2551,6 +2553,7 @@ function CustomersSection(props = {}) {
     ), [selectedSendTemplatePreview]);
 
     const handleConfirmDirectTemplateSend = useCallback(() => {
+        if (sendTemplateSubmittingRef.current) return;
         const template = selectedSendTemplate && typeof selectedSendTemplate === 'object' ? selectedSendTemplate : null;
         if (!template || !socket || typeof socket.emit !== 'function') return;
         if (!selectedCustomerPhone) {
@@ -2566,8 +2569,15 @@ function CustomersSection(props = {}) {
             return;
         }
 
+        const sendRequestId = (
+            typeof globalThis?.crypto?.randomUUID === 'function'
+                ? globalThis.crypto.randomUUID()
+                : `template_send_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+        );
+        sendTemplateSubmittingRef.current = true;
         setSendTemplateSubmitting(true);
         socket.emit('send_template_message', {
+            sendRequestId,
             toPhone: selectedCustomerPhone,
             customerId: selectedCustomerIdResolved || null,
             moduleId: String(template?.moduleId || '').trim() || null,
@@ -3674,10 +3684,17 @@ function CustomersSection(props = {}) {
         socket.on('template_message_sent', handleTemplateMessageSent);
         socket.on('template_message_error', handleTemplateMessageError);
         return () => {
+            sendTemplateSubmittingRef.current = false;
             socket.off('template_message_sent', handleTemplateMessageSent);
             socket.off('template_message_error', handleTemplateMessageError);
         };
     }, [resetSendTemplateFlow, socket]);
+
+    useEffect(() => {
+        if (!sendTemplateSubmitting) {
+            sendTemplateSubmittingRef.current = false;
+        }
+    }, [sendTemplateSubmitting]);
 
     useEffect(() => {
         resetSendTemplateFlow();

@@ -239,10 +239,19 @@ function createSocketTemplateMessagesService({
         emitRealtimeOutgoingMessage,
         recordConversationEvent
     } = {}) => {
+        const recentSendIds = new Set();
         socket.on('send_template_message', async (payload = {}) => {
             if (!guardRateLimit(socket, 'send_template_message')) return;
             if (!transportOrchestrator.ensureTransportReady(socket, { action: 'enviar templates', errorEvent: 'template_message_error' })) return;
             try {
+                const sendRequestId = toText(payload?.sendRequestId || payload?.clientTempId || '');
+                if (sendRequestId) {
+                    if (recentSendIds.has(sendRequestId)) return;
+                    recentSendIds.add(sendRequestId);
+                    setTimeout(() => {
+                        recentSendIds.delete(sendRequestId);
+                    }, 30000);
+                }
                 const templateName = toText(payload?.templateName);
                 const templateLanguage = toLower(payload?.templateLanguage || 'es') || 'es';
                 const customerId = toText(payload?.customerId || '');

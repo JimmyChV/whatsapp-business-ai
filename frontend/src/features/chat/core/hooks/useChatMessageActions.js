@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 import { buildTemplateResolvedPreview } from '../helpers/templateMessages.helpers';
 import { getTemplateVariablesPreview, listApprovedIndividualTemplates } from '../services/templateMessages.service';
@@ -49,9 +49,21 @@ export default function useChatMessageActions({
   setSelectedSendTemplatePreview,
   setSelectedSendTemplatePreviewLoading,
   setSelectedSendTemplatePreviewError,
-  setSendTemplateSubmitting
+  setSendTemplateSubmitting,
+  sendTemplateSubmitting
 } = {}) {
   const { notify } = useUiFeedback();
+  const templateSendSubmittingRef = useRef(false);
+
+  useEffect(() => {
+    if (!sendTemplateSubmitting) {
+      templateSendSubmittingRef.current = false;
+    }
+  }, [sendTemplateSubmitting]);
+
+  useEffect(() => () => {
+    templateSendSubmittingRef.current = false;
+  }, []);
 
   const resolveSessionSenderIdentity = useCallback(() => {
     const sessionUser = (saasSessionRef?.current?.user && typeof saasSessionRef.current.user === 'object')
@@ -270,6 +282,7 @@ export default function useChatMessageActions({
   }, []);
 
   const handleExitActiveChat = useCallback(() => {
+    templateSendSubmittingRef.current = false;
     activeChatIdRef.current = null;
     setActiveChatId(null);
     prevMessagesMetaRef.current = { count: 0, lastId: '' };
@@ -318,6 +331,7 @@ export default function useChatMessageActions({
   ]);
 
   const handleCloseSendTemplate = useCallback(() => {
+    templateSendSubmittingRef.current = false;
     setSendTemplateOpen(false);
     setSendTemplateOptionsError('');
     setSelectedSendTemplate(null);
@@ -444,10 +458,16 @@ export default function useChatMessageActions({
   ]);
 
   const handleConfirmSendTemplate = useCallback(() => {
+    if (templateSendSubmittingRef.current) return;
     const activeId = String(activeChatIdRef.current || activeChatId || '').trim();
     const template = selectedSendTemplate && typeof selectedSendTemplate === 'object' ? selectedSendTemplate : null;
     if (!activeId || !template || !socket || typeof socket.emit !== 'function') return;
 
+    const sendRequestId = (
+      typeof globalThis?.crypto?.randomUUID === 'function'
+        ? globalThis.crypto.randomUUID()
+        : `template_send_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+    );
     const activeChatForSend = chatsRef.current.find((chat) => String(chat?.id || '') === String(activeChatId || activeId));
     const activeChatPhone = normalizeDigits(activeChatForSend?.phone || '');
     const toPhone = activeChatPhone || null;
@@ -474,6 +494,7 @@ export default function useChatMessageActions({
       retryPayload: {
         eventName: 'send_template_message',
         payload: {
+          sendRequestId,
           to: activeId,
           toPhone,
           chatId: activeId,
@@ -492,8 +513,10 @@ export default function useChatMessageActions({
       }
     });
 
+    templateSendSubmittingRef.current = true;
     setSendTemplateSubmitting(true);
     socket.emit('send_template_message', {
+      sendRequestId,
       to: activeId,
       toPhone,
       chatId: activeId,
@@ -514,6 +537,7 @@ export default function useChatMessageActions({
     normalizeDigits,
     selectedSendTemplate,
     selectedSendTemplatePreview,
+    sendTemplateSubmitting,
     setSendTemplateSubmitting,
     socket
   ]);
