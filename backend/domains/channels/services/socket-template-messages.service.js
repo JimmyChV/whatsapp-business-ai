@@ -317,6 +317,8 @@ function createSocketTemplateMessagesService({
                     languageCode: templateLanguage,
                     components,
                     metadata: {
+                        tenantId,
+                        chatId: target.targetChatId,
                         previewText,
                         templateName,
                         templateLanguage,
@@ -324,6 +326,7 @@ function createSocketTemplateMessagesService({
                         templateComponents: realtimeTemplateComponents
                     }
                 });
+                if (!providerResponse) return;
 
                 const sentMessageId = getSerializedMessageId(providerResponse);
                 const templateMetadata = {

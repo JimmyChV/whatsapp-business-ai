@@ -80,7 +80,8 @@ function createSocketQuickRepliesService({
         chatId,
         body,
         interactive,
-        quotedMessageId = ''
+        quotedMessageId = '',
+        metadata = null
     } = {}) => {
         const safeMessageId = String(messageId || '').trim();
         if (!safeMessageId) return null;
@@ -99,8 +100,8 @@ function createSocketQuickRepliesService({
             quotedMessageId: String(quotedMessageId || '').trim() || null,
             timestamp: Math.floor(Date.now() / 1000),
             hasMedia: false,
-            rawData: { interactive },
-            _data: { interactive }
+            rawData: { interactive, metadata: metadata && typeof metadata === 'object' ? metadata : null },
+            _data: { interactive, metadata: metadata && typeof metadata === 'object' ? metadata : null }
         };
     };
 
@@ -239,6 +240,10 @@ function createSocketQuickRepliesService({
 
                 const moduleContext = target.moduleContext || socket?.data?.waModule || null;
                 const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
+                const baseSendMetadata = {
+                    tenantId,
+                    chatId: target.targetChatId
+                };
 
                 let sentMessage = null;
                 let mediaPayload = null;
@@ -273,8 +278,13 @@ function createSocketQuickRepliesService({
                             safeFileName,
                             captionText,
                             false,
-                            quotedMessageId
+                            quotedMessageId,
+                            {
+                                ...baseSendMetadata,
+                                mediaUrl: String(fetchedMedia?.publicUrl || fetchedMedia?.sourceUrl || mediaEntry.url || '').trim() || null
+                            }
                         );
+                        if (!sentAssetMessage) return;
                         if (index === 0 && clientTempId && sentAssetMessage && typeof sentAssetMessage === 'object') {
                             sentAssetMessage.clientTempId = clientTempId;
                         }
@@ -317,15 +327,21 @@ function createSocketQuickRepliesService({
                         return;
                     }
                     const interactive = buildQuickReplyInteractive(bodyText, quickReplyButtons);
-                    const interactiveMessageId = await waClient.sendInteractiveMessage(target.targetChatId, interactive, {
-                        quotedMessageId: mediaAssets.length > 0 ? '' : quoted
-                    });
+                    const interactiveSendOptions = {
+                        quotedMessageId: mediaAssets.length > 0 ? '' : quoted,
+                        metadata: {
+                            ...baseSendMetadata
+                        }
+                    };
+                    const interactiveMessageId = await waClient.sendInteractiveMessage(target.targetChatId, interactive, interactiveSendOptions);
+                    if (!interactiveMessageId) return;
                     sentMessage = buildSyntheticInteractiveSentMessage({
                         messageId: interactiveMessageId,
                         chatId: target.targetChatId,
                         body: bodyText,
                         interactive,
-                        quotedMessageId: mediaAssets.length > 0 ? '' : quoted
+                        quotedMessageId: mediaAssets.length > 0 ? '' : quoted,
+                        metadata: interactiveSendOptions.metadata
                     });
                     if (clientTempId && mediaAssets.length === 0 && sentMessage && typeof sentMessage === 'object') {
                         sentMessage.clientTempId = clientTempId;
@@ -345,10 +361,20 @@ function createSocketQuickRepliesService({
                     });
                 } else if (mediaAssets.length === 0) {
                     if (quoted) {
-                        sentMessage = await waClient.sendMessage(target.targetChatId, bodyText, { quotedMessageId: quoted });
+                        sentMessage = await waClient.sendMessage(target.targetChatId, bodyText, {
+                            quotedMessageId: quoted,
+                            metadata: {
+                                ...baseSendMetadata
+                            }
+                        });
                     } else {
-                        sentMessage = await waClient.sendMessage(target.targetChatId, bodyText);
+                        sentMessage = await waClient.sendMessage(target.targetChatId, bodyText, {
+                            metadata: {
+                                ...baseSendMetadata
+                            }
+                        });
                     }
+                    if (!sentMessage) return;
                     const sentMessageId = getSerializedMessageId(sentMessage);
                     if (clientTempId && sentMessage && typeof sentMessage === 'object') {
                         sentMessage.clientTempId = clientTempId;

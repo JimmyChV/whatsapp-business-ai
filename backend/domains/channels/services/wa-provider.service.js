@@ -1,5 +1,10 @@
 ﻿const EventEmitter = require('events');
 const cloudClient = require('./whatsapp-cloud-client.service');
+const {
+    buildSendFingerprintKey,
+    currentSendBucket,
+    withSendIdempotency
+} = require('../helpers/send-idempotency.helper');
 
 const ACTIVE_TRANSPORTS = new Set(['cloud']);
 const TRANSPORTS = new Set(['cloud', 'idle']);
@@ -13,6 +18,42 @@ function normalizeMode(value = '') {
     if (DUAL_MODE_ALIASES.has(mode)) return 'idle';
     if (mode === 'cloud' || mode === 'idle') return mode;
     return '';
+}
+
+function toText(value = '') {
+    return String(value ?? '').trim();
+}
+
+function ensurePlainObject(value = null) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function ensureMetadataContainer(target = {}) {
+    const safeTarget = ensurePlainObject(target);
+    const metadata = ensurePlainObject(safeTarget.metadata);
+    safeTarget.metadata = metadata;
+    return metadata;
+}
+
+function attachSendFingerprintToResult(result, sendFingerprint = '', metadata = null) {
+    const safeFingerprint = toText(sendFingerprint);
+    if (!safeFingerprint || !result || typeof result !== 'object') return result;
+
+    const safeMetadata = ensurePlainObject(metadata);
+    result._data = ensurePlainObject(result._data);
+    result._data.metadata = {
+        ...ensurePlainObject(result._data.metadata),
+        ...safeMetadata,
+        sendFingerprint: safeFingerprint
+    };
+    result.rawData = ensurePlainObject(result.rawData);
+    result.rawData.metadata = {
+        ...ensurePlainObject(result.rawData.metadata),
+        ...safeMetadata,
+        sendFingerprint: safeFingerprint
+    };
+    result.sendFingerprint = safeFingerprint;
+    return result;
 }
 
 class WAProvider extends EventEmitter {
@@ -251,16 +292,93 @@ class WAProvider extends EventEmitter {
         return await this.activeAdapter.getMessages(chatId, limit);
     }
 
+    resolveSendIdempotencyContext({
+        chatId = '',
+        type = '',
+        fingerprint = '',
+        metadata = null
+    } = {}) {
+        const safeMetadata = ensurePlainObject(metadata);
+        if (safeMetadata.disableSendIdempotency === true) return null;
+
+        const tenantId = toText(safeMetadata.tenantId || '');
+        const safeChatId = toText(safeMetadata.chatId || chatId);
+        const safeType = toText(safeMetadata.sendIdempotencyType || type).toLowerCase();
+        const safeFingerprint = toText(safeMetadata.sendIdempotencyFingerprint || fingerprint);
+        if (!tenantId || !safeChatId || !safeType || !safeFingerprint) return null;
+
+        const bucket = currentSendBucket();
+        const sendFingerprint = buildSendFingerprintKey({
+            tenantId,
+            chatId: safeChatId,
+            type: safeType,
+            fingerprint: safeFingerprint,
+            bucket
+        });
+
+        safeMetadata.sendFingerprint = sendFingerprint;
+        safeMetadata.tenantId = tenantId;
+        safeMetadata.chatId = safeChatId;
+
+        return {
+            tenantId,
+            chatId: safeChatId,
+            type: safeType,
+            fingerprint: safeFingerprint,
+            bucket,
+            sendFingerprint,
+            metadata: safeMetadata
+        };
+    }
+
     async sendMessage(to, body, options = {}) {
         if (!this.activeAdapter?.sendMessage) throw new Error('Transport not available');
-        return await this.activeAdapter.sendMessage(to, body, options);
+        const safeOptions = ensurePlainObject(options);
+        const metadata = ensureMetadataContainer(safeOptions);
+        const context = this.resolveSendIdempotencyContext({
+            chatId: to,
+            type: 'text',
+            fingerprint: toText(body).slice(0, 50),
+            metadata
+        });
+        if (!context) {
+            return await this.activeAdapter.sendMessage(to, body, safeOptions);
+        }
+        const result = await withSendIdempotency({
+            tenantId: context.tenantId,
+            chatId: context.chatId,
+            type: context.type,
+            fingerprint: context.fingerprint,
+            bucket: context.bucket,
+            fn: () => this.activeAdapter.sendMessage(to, body, safeOptions)
+        });
+        return attachSendFingerprintToResult(result, context.sendFingerprint, metadata);
     }
 
     async sendTemplateMessage(to, payload = {}) {
         if (!this.activeAdapter?.sendTemplateMessage) {
             throw new Error('Template send is not supported in this transport.');
         }
-        return await this.activeAdapter.sendTemplateMessage(to, payload);
+        const safePayload = ensurePlainObject(payload);
+        const metadata = ensureMetadataContainer(safePayload.metadata);
+        const context = this.resolveSendIdempotencyContext({
+            chatId: to,
+            type: 'template',
+            fingerprint: toText(safePayload.templateName || 'unknown'),
+            metadata
+        });
+        if (!context) {
+            return await this.activeAdapter.sendTemplateMessage(to, safePayload);
+        }
+        const result = await withSendIdempotency({
+            tenantId: context.tenantId,
+            chatId: context.chatId,
+            type: context.type,
+            fingerprint: context.fingerprint,
+            bucket: context.bucket,
+            fn: () => this.activeAdapter.sendTemplateMessage(to, safePayload)
+        });
+        return attachSendFingerprintToResult(result, context.sendFingerprint, metadata);
     }
 
     async sendInteractiveMessage(to, interactive = {}, options = {}) {
@@ -268,7 +386,27 @@ class WAProvider extends EventEmitter {
             console.warn('[WA][Provider] adapter does not support interactive messages.');
             return null;
         }
-        return await this.activeAdapter.sendInteractiveMessage(to, interactive, options);
+        const safeOptions = ensurePlainObject(options);
+        const metadata = ensureMetadataContainer(safeOptions);
+        const safeInteractive = ensurePlainObject(interactive);
+        const bodyTitle = toText(safeInteractive?.body?.text || safeInteractive?.header?.text || '');
+        const context = this.resolveSendIdempotencyContext({
+            chatId: to,
+            type: 'interactive',
+            fingerprint: `${toText(safeInteractive?.type || 'interactive')}:${bodyTitle}`,
+            metadata
+        });
+        if (!context) {
+            return await this.activeAdapter.sendInteractiveMessage(to, interactive, safeOptions);
+        }
+        return await withSendIdempotency({
+            tenantId: context.tenantId,
+            chatId: context.chatId,
+            type: context.type,
+            fingerprint: context.fingerprint,
+            bucket: context.bucket,
+            fn: () => this.activeAdapter.sendInteractiveMessage(to, interactive, safeOptions)
+        });
     }
 
     async sendReaction(to, payload = {}) {
@@ -311,7 +449,35 @@ class WAProvider extends EventEmitter {
 
     async sendMedia(to, mediaData, mimetype, filename, caption, isPtt = false, quotedMessageId = null, metadata = null) {
         if (!this.activeAdapter?.sendMedia) throw new Error('Media send is not supported in this transport.');
-        return await this.activeAdapter.sendMedia(to, mediaData, mimetype, filename, caption, isPtt, quotedMessageId, metadata);
+        const safeMetadata = ensurePlainObject(metadata);
+        const context = this.resolveSendIdempotencyContext({
+            chatId: to,
+            type: toText(safeMetadata.sendIdempotencyType || 'media'),
+            fingerprint: toText(
+                safeMetadata.sendIdempotencyFingerprint
+                || safeMetadata.mediaId
+                || safeMetadata.mediaUrl
+                || safeMetadata.url
+                || `${toText(filename)}:${toText(mimetype)}:${toText(caption).slice(0, 50)}`
+            ),
+            metadata: safeMetadata
+        });
+        if (!context) {
+            return await this.activeAdapter.sendMedia(to, mediaData, mimetype, filename, caption, isPtt, quotedMessageId, safeMetadata);
+        }
+        const result = await withSendIdempotency({
+            tenantId: context.tenantId,
+            chatId: context.chatId,
+            type: context.type,
+            fingerprint: context.fingerprint,
+            bucket: context.bucket,
+            fn: () => this.activeAdapter.sendMedia(to, mediaData, mimetype, filename, caption, isPtt, quotedMessageId, safeMetadata)
+        });
+        return attachSendFingerprintToResult(result, context.sendFingerprint, safeMetadata);
+    }
+
+    async sendQuickReply(to, body, options = {}) {
+        return await this.sendMessage(to, body, options);
     }
 
     async markAsRead(chatId) {

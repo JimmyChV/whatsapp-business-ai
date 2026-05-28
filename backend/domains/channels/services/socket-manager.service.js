@@ -805,6 +805,7 @@ class SocketManager {
                     notifyName: senderMeta?.notifyName || null,
                     senderPushname: senderMeta?.senderPushname || null,
                     isGroupMessage: Boolean(senderMeta?.isGroupMessage),
+                    sendFingerprint: String(rawMetadata?.sendFingerprint || '').trim() || null,
                     templateName: String(rawData?.templateName || rawMetadata?.templateName || '').trim() || null,
                     templateLanguage: String(rawData?.templateLanguage || rawMetadata?.templateLanguage || '').trim() || null,
                     templatePreviewText: String(rawMetadata?.previewText || '').trim() || null,
@@ -1670,7 +1671,13 @@ class SocketManager {
 
                     if (firstMessage && String(firstMessage).trim()) {
                         const firstText = String(firstMessage).trim();
-                        const firstSentMessage = await waClient.sendMessage(directChatId, firstText);
+                        const firstSentMessage = await waClient.sendMessage(directChatId, firstText, {
+                            metadata: {
+                                tenantId,
+                                chatId: directChatId
+                            }
+                        });
+                        if (!firstSentMessage) return;
                         const firstAgentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, activeModuleContext));
                         const firstSentMessageId = getSerializedMessageId(firstSentMessage);
                         if (firstSentMessageId && firstAgentMeta) {

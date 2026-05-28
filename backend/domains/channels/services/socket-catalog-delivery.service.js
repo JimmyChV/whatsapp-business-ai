@@ -56,6 +56,12 @@ function createSocketCatalogDeliveryService({
                 const imageUrl = String(product?.imageUrl || product?.image || '').trim();
                 const moduleContext = target.moduleContext || socket?.data?.waModule || null;
                 const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
+                const baseSendMetadata = {
+                    tenantId,
+                    chatId: target.targetChatId,
+                    sendIdempotencyType: 'catalog',
+                    sendIdempotencyFingerprint: String(product?.id || product?.productId || imageUrl || caption).trim() || caption.slice(0, 50)
+                };
 
                 let sentWithImage = false;
                 let sentResponse = null;
@@ -78,8 +84,14 @@ function createSocketCatalogDeliveryService({
                             compatibleMedia.mimetype,
                             filename,
                             caption,
-                            false
+                            false,
+                            null,
+                            {
+                                ...baseSendMetadata,
+                                mediaUrl: String(compatibleMedia?.publicUrl || compatibleMedia?.sourceUrl || imageUrl || '').trim() || null
+                            }
                         );
+                        if (!sentResponse) return;
                         sentWithImage = true;
                         catalogMediaPayload = {
                             mimetype: compatibleMedia.mimetype,
@@ -94,8 +106,13 @@ function createSocketCatalogDeliveryService({
                 }
 
                 if (!sentWithImage) {
-                    sentResponse = await waClient.sendMessage(target.targetChatId, caption);
+                    sentResponse = await waClient.sendMessage(target.targetChatId, caption, {
+                        metadata: {
+                            ...baseSendMetadata
+                        }
+                    });
                 }
+                if (!sentResponse) return;
 
                 const sentMessageId = getSerializedMessageId(sentResponse)
                     || String(sentResponse?.messages?.[0]?.id || sentResponse?.message_id || '').trim();

@@ -318,9 +318,13 @@ function createSocketMessageDeliveryService({
                      action: 'enviar mensajes'
                  });
                 if (!target?.ok) return;
-                  const moduleContext = target.moduleContext || socket?.data?.waModule || null;
-                const enrichedAuthContext = await enrichAuthContextWithUserName(authContext);
-                const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(enrichedAuthContext, moduleContext));
+                 const moduleContext = target.moduleContext || socket?.data?.waModule || null;
+                 const enrichedAuthContext = await enrichAuthContextWithUserName(authContext);
+                 const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(enrichedAuthContext, moduleContext));
+                 const sendMetadata = {
+                     tenantId,
+                     chatId: target.targetChatId
+                 };
                 let sentMessage = null;
                 const hasOpenWindow = await hasOpenCustomerCareWindow(target.targetChatId);
                 if (!hasOpenWindow) {
@@ -340,14 +344,23 @@ function createSocketMessageDeliveryService({
                          }
                      } catch (resolveQuotedError) {
                      }
-                       try {
-                         sentMessage = await waClient.sendMessage(quotedTargetChatId, text, { quotedMessageId: quoted });
+                      try {
+                         sentMessage = await waClient.sendMessage(quotedTargetChatId, text, {
+                             quotedMessageId: quoted,
+                             metadata: {
+                                 ...sendMetadata,
+                                 chatId: quotedTargetChatId
+                             }
+                         });
                      } catch (sendWithQuoteError) {
                          sentMessage = await waClient.replyToMessage(quotedTargetChatId, quoted, text);
                      }
                  } else {
-                     sentMessage = await waClient.sendMessage(target.targetChatId, text);
+                     sentMessage = await waClient.sendMessage(target.targetChatId, text, {
+                         metadata: sendMetadata
+                     });
                  }
+                 if (!sentMessage) return;
                    const sentMessageId = getSerializedMessageId(sentMessage);
                  if (sentMessageId && agentMeta) {
                      rememberOutgoingAgentMeta(sentMessageId, agentMeta);
@@ -474,10 +487,24 @@ function createSocketMessageDeliveryService({
                      action: 'enviar adjuntos'
                  });
                 if (!target?.ok) return;
-                  const moduleContext = target.moduleContext || socket?.data?.waModule || null;
+                 const moduleContext = target.moduleContext || socket?.data?.waModule || null;
                  const enrichedAuthContext = await enrichAuthContextWithUserName(authContext);
                  const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(enrichedAuthContext, moduleContext));
-                 const sentMessage = await waClient.sendMedia(target.targetChatId, effectiveMediaData, effectiveMimetype, effectiveFilename, caption, isPtt, quoted || null);
+                 const sentMessage = await waClient.sendMedia(
+                     target.targetChatId,
+                     effectiveMediaData,
+                     effectiveMimetype,
+                     effectiveFilename,
+                     caption,
+                     isPtt,
+                     quoted || null,
+                     {
+                         tenantId,
+                         chatId: target.targetChatId,
+                         mediaUrl: effectiveMediaUrl || null
+                     }
+                 );
+                 if (!sentMessage) return;
                  const sentMessageId = getSerializedMessageId(sentMessage);
                  if (sentMessageId && agentMeta) {
                      rememberOutgoingAgentMeta(sentMessageId, agentMeta);

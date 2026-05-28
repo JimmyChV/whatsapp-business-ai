@@ -318,7 +318,8 @@ function buildSyntheticInteractiveSentMessage({
     chatId,
     body,
     interactive,
-    quotedMessageId = ''
+    quotedMessageId = '',
+    metadata = null
 } = {}) {
     const safeMessageId = toText(messageId);
     if (!safeMessageId) return null;
@@ -338,10 +339,12 @@ function buildSyntheticInteractiveSentMessage({
         timestamp: Math.floor(Date.now() / 1000),
         hasMedia: false,
         rawData: {
-            interactive
+            interactive,
+            metadata: metadata && typeof metadata === 'object' ? metadata : null
         },
         _data: {
-            interactive
+            interactive,
+            metadata: metadata && typeof metadata === 'object' ? metadata : null
         }
     };
 }
@@ -625,20 +628,30 @@ function createSocketQuoteDeliveryService({
                 const quoteBody = buildQuoteMessageBody(normalizedQuote, payload?.body || payload?.message || '');
 
                 const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
+                const baseSendMetadata = {
+                    tenantId,
+                    chatId: target.targetChatId,
+                    sendIdempotencyFingerprint: `quote:${effectiveQuoteId || normalizedQuote.quoteNumber || quoteBody.slice(0, 50)}`
+                };
 
                 let sentMessage = null;
                 const quoteInteractive = buildQuoteInteractiveMessage(normalizedQuote.quoteId, quoteBody);
                 if (typeof waClient?.sendInteractiveMessage === 'function') {
-                    const interactiveMessageId = await waClient.sendInteractiveMessage(target.targetChatId, quoteInteractive, {
-                        quotedMessageId
-                    });
+                    const interactiveSendOptions = {
+                        quotedMessageId,
+                        metadata: {
+                            ...baseSendMetadata
+                        }
+                    };
+                    const interactiveMessageId = await waClient.sendInteractiveMessage(target.targetChatId, quoteInteractive, interactiveSendOptions);
                     if (interactiveMessageId) {
                         sentMessage = buildSyntheticInteractiveSentMessage({
                             messageId: interactiveMessageId,
                             chatId: target.targetChatId,
                             body: quoteBody,
                             interactive: quoteInteractive,
-                            quotedMessageId
+                            quotedMessageId,
+                            metadata: interactiveSendOptions.metadata
                         });
                     }
                 }
@@ -646,14 +659,24 @@ function createSocketQuoteDeliveryService({
                 if (!sentMessage) {
                     if (quotedMessageId) {
                         try {
-                            sentMessage = await waClient.sendMessage(target.targetChatId, quoteBody, { quotedMessageId });
+                            sentMessage = await waClient.sendMessage(target.targetChatId, quoteBody, {
+                                quotedMessageId,
+                                metadata: {
+                                    ...baseSendMetadata
+                                }
+                            });
                         } catch (_) {
                             sentMessage = await waClient.replyToMessage(target.targetChatId, quotedMessageId, quoteBody);
                         }
                     } else {
-                        sentMessage = await waClient.sendMessage(target.targetChatId, quoteBody);
+                        sentMessage = await waClient.sendMessage(target.targetChatId, quoteBody, {
+                            metadata: {
+                                ...baseSendMetadata
+                            }
+                        });
                     }
                 }
+                if (!sentMessage) return;
 
                 const sentMessageId = getSerializedMessageId(sentMessage);
                 if (sentMessageId && agentMeta) {
@@ -814,6 +837,10 @@ function createSocketQuoteDeliveryService({
                 const moduleContext = target.moduleContext || socket?.data?.waModule || null;
                 const actorUserId = resolveActorUserId(authContext);
                 const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
+                const baseSendMetadata = {
+                    tenantId,
+                    chatId: target.targetChatId
+                };
                 const finalMessage = toText(payload?.finalMessage || '');
 
                 for (let index = 0; index < options.length; index += 1) {
@@ -860,7 +887,13 @@ function createSocketQuoteDeliveryService({
                     };
 
                     const textBody = buildQuoteMessageBody(normalizedQuote, '');
-                    const sentMessage = await waClient.sendMessage(target.targetChatId, textBody);
+                    const sentMessage = await waClient.sendMessage(target.targetChatId, textBody, {
+                        metadata: {
+                            ...baseSendMetadata,
+                            sendIdempotencyFingerprint: `quote-option:${normalizedQuote.quoteId || normalizedQuote.optionGroupId || normalizedQuote.optionNumber || index + 1}`
+                        }
+                    });
+                    if (!sentMessage) continue;
                     const sentMessageId = getSerializedMessageId(sentMessage);
                     if (sentMessageId && agentMeta) {
                         rememberOutgoingAgentMeta(sentMessageId, agentMeta);
@@ -973,14 +1006,21 @@ function createSocketQuoteDeliveryService({
                     const finalInteractive = buildOptionSelectionInteractiveMessage(finalMessage, options);
                     if (typeof waClient?.sendInteractiveMessage === 'function') {
                         try {
-                            const interactiveMessageId = await waClient.sendInteractiveMessage(target.targetChatId, finalInteractive);
+                            const interactiveSendOptions = {
+                                metadata: {
+                                    ...baseSendMetadata,
+                                    sendIdempotencyFingerprint: `quote-option-final:${groupId}`
+                                }
+                            };
+                            const interactiveMessageId = await waClient.sendInteractiveMessage(target.targetChatId, finalInteractive, interactiveSendOptions);
                             if (interactiveMessageId) {
                                 finalSentMessage = buildSyntheticInteractiveSentMessage({
                                     messageId: interactiveMessageId,
                                     chatId: target.targetChatId,
                                     body: finalMessage,
                                     interactive: finalInteractive,
-                                    quotedMessageId: ''
+                                    quotedMessageId: '',
+                                    metadata: interactiveSendOptions.metadata
                                 });
                             }
                         } catch (interactiveError) {
@@ -988,7 +1028,12 @@ function createSocketQuoteDeliveryService({
                         }
                     }
                     if (!finalSentMessage) {
-                        finalSentMessage = await waClient.sendMessage(target.targetChatId, finalMessage);
+                        finalSentMessage = await waClient.sendMessage(target.targetChatId, finalMessage, {
+                            metadata: {
+                                ...baseSendMetadata,
+                                sendIdempotencyFingerprint: `quote-option-final:${groupId}`
+                            }
+                        });
                     }
                     if (finalSentMessage) {
                         const finalMessageId = getSerializedMessageId(finalSentMessage);
