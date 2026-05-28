@@ -254,6 +254,12 @@ function createSocketTemplateMessagesService({
         };
         const recentSendIds = new Set();
         socket.on('send_template_message', async (payload = {}) => {
+            console.log('[TemplateSocket] handler triggered', {
+                timestamp: new Date().toISOString(),
+                socketId: socket.id,
+                to: payload?.to || payload?.toPhone || payload?.chatId,
+                moduleId: payload?.moduleId
+            });
             if (!guardRateLimit(socket, 'send_template_message')) return;
             if (!(await ensurePayloadModuleTransport(payload, 'template_message_error', 'enviar templates'))) return;
             if (!transportOrchestrator.ensureTransportReady(socket, { action: 'enviar templates', errorEvent: 'template_message_error' })) return;
