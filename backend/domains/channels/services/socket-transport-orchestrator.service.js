@@ -92,7 +92,7 @@ function createModuleTransportEnsurer({
         return nextRuntime;
     };
 
-    return { ensureTransportForSelectedModule };
+    return { ensureTransportForSelectedModule, applyCloudConfigForModule };
 }
 
 function createSocketTransportOrchestrator({
@@ -128,7 +128,7 @@ function createSocketTransportOrchestrator({
         targetSocket.emit(errorEvent, safeMessage);
     };
 
-    const { ensureTransportForSelectedModule } = createModuleTransportEnsurer({
+    const { ensureTransportForSelectedModule, applyCloudConfigForModule } = createModuleTransportEnsurer({
         tenantId,
         waClient,
         waModuleService,
