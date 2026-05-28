@@ -1,36 +1,15 @@
-function createSocketTransportOrchestrator({
-    socket,
+function createModuleTransportEnsurer({
     tenantId = 'default',
-    authContext = null,
-    authzAudit,
     waClient,
     waModuleService,
-    moduleContextService,
-    runtimeStore,
-    guardRateLimit,
-    getTenantRoom,
-    getWaRuntime,
-    emitWaCapabilities,
-    setActiveRuntimeContext,
-    invalidateChatListCache,
-    waRequireSelectedModule = false
+    getWaRuntime = () => ({}),
+    invalidateChatListCache = () => {},
+    emitWaCapabilities = () => {},
+    socket = null,
+    runtimeStore = null,
+    setActiveRuntimeContext = () => {},
+    authzAudit = null
 } = {}) {
-    const emitTransportError = (targetSocket, errorEvent, message, action = '') => {
-        const safeMessage = String(message || '').trim();
-        if (errorEvent === 'transport_info') {
-            targetSocket.emit(errorEvent, {
-                message: safeMessage,
-                error: safeMessage,
-                detail: safeMessage,
-                action: String(action || '').trim() || null,
-                transportReady: false
-            });
-            return;
-        }
-
-        targetSocket.emit(errorEvent, safeMessage);
-    };
-
     const applyCloudConfigForModule = async (selectedModule = null) => {
         if (!selectedModule || typeof selectedModule !== 'object') return null;
         if (String(selectedModule?.transportMode || '').trim().toLowerCase() !== 'cloud') return null;
@@ -66,12 +45,12 @@ function createSocketTransportOrchestrator({
 
         if (activeTransport === moduleTransport) {
             invalidateChatListCache();
-            runtimeStore.set('contactListCache', { items: [], updatedAt: 0 });
+            runtimeStore?.set?.('contactListCache', { items: [], updatedAt: 0 });
             emitWaCapabilities(socket);
-            socket.emit('transport_mode_set', runtime);
+            socket?.emit?.('transport_mode_set', runtime);
 
             if (waClient.isReady) {
-                socket.emit('ready', { message: 'WhatsApp transport listo' });
+                socket?.emit?.('ready', { message: 'WhatsApp transport listo' });
             }
 
             setActiveRuntimeContext({
@@ -88,17 +67,17 @@ function createSocketTransportOrchestrator({
 
         const nextRuntime = await waClient.setTransportMode(moduleTransport);
         invalidateChatListCache();
-        runtimeStore.set('contactListCache', { items: [], updatedAt: 0 });
+        runtimeStore?.set?.('contactListCache', { items: [], updatedAt: 0 });
         emitWaCapabilities(socket);
-        socket.emit('transport_mode_set', nextRuntime);
-        await authzAudit.auditSocketAction('wa.transport_mode.autoset_by_module', {
+        socket?.emit?.('transport_mode_set', nextRuntime);
+        await authzAudit?.auditSocketAction?.('wa.transport_mode.autoset_by_module', {
             resourceType: 'wa_module',
             resourceId: selectedModule?.moduleId || null,
             payload: { moduleTransport, runtime: nextRuntime }
         });
 
         if (waClient.isReady) {
-            socket.emit('ready', { message: 'WhatsApp transport listo' });
+            socket?.emit?.('ready', { message: 'WhatsApp transport listo' });
         }
 
         setActiveRuntimeContext({
@@ -112,6 +91,55 @@ function createSocketTransportOrchestrator({
 
         return nextRuntime;
     };
+
+    return { ensureTransportForSelectedModule };
+}
+
+function createSocketTransportOrchestrator({
+    socket,
+    tenantId = 'default',
+    authContext = null,
+    authzAudit,
+    waClient,
+    waModuleService,
+    moduleContextService,
+    runtimeStore,
+    guardRateLimit,
+    getTenantRoom,
+    getWaRuntime,
+    emitWaCapabilities,
+    setActiveRuntimeContext,
+    invalidateChatListCache,
+    waRequireSelectedModule = false
+} = {}) {
+    const emitTransportError = (targetSocket, errorEvent, message, action = '') => {
+        const safeMessage = String(message || '').trim();
+        if (errorEvent === 'transport_info') {
+            targetSocket.emit(errorEvent, {
+                message: safeMessage,
+                error: safeMessage,
+                detail: safeMessage,
+                action: String(action || '').trim() || null,
+                transportReady: false
+            });
+            return;
+        }
+
+        targetSocket.emit(errorEvent, safeMessage);
+    };
+
+    const { ensureTransportForSelectedModule } = createModuleTransportEnsurer({
+        tenantId,
+        waClient,
+        waModuleService,
+        getWaRuntime,
+        invalidateChatListCache,
+        emitWaCapabilities,
+        socket,
+        runtimeStore,
+        setActiveRuntimeContext,
+        authzAudit
+    });
 
     const ensureTransportReady = (targetSocket = socket, {
         action = 'completar la operacion',
@@ -313,5 +341,6 @@ function createSocketTransportOrchestrator({
 }
 
 module.exports = {
-    createSocketTransportOrchestrator
+    createSocketTransportOrchestrator,
+    createModuleTransportEnsurer
 };

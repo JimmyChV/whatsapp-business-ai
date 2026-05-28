@@ -86,6 +86,7 @@ const {
     invalidateWebhookCloudRegistryCache,
     registerCloudWebhookHttpRoutes
 } = require('./domains/channels');
+const { createModuleTransportEnsurer } = require('./domains/channels/services/socket-transport-orchestrator.service');
 const { createTenantAdminPayloadSanitizers } = require('./domains/tenant/helpers/admin-payload-sanitizers');
 const { createTenantAssetUploadHelpers } = require('./domains/tenant/helpers/asset-upload.helpers');
 const { createRequestAccessHelpers } = require('./domains/security/helpers/request-access.helpers');
@@ -546,6 +547,12 @@ const chatAssignmentInactivityJob = chatAssignmentInactivityJobService.createCha
     logger,
     opsTelemetry
 });
+const campaignDispatcherTransportOrchestrator = createModuleTransportEnsurer({
+    tenantId: 'default',
+    waClient,
+    waModuleService,
+    getWaRuntime: () => (typeof waClient.getRuntimeInfo === 'function' ? waClient.getRuntimeInfo() : {})
+});
 const campaignDispatcherJob = campaignDispatcherJobService.createCampaignDispatcherJob({
     campaignQueueService,
     campaignsService,
@@ -553,6 +560,7 @@ const campaignDispatcherJob = campaignDispatcherJobService.createCampaignDispatc
     tenantService,
     waModuleService,
     waClient,
+    transportOrchestrator: campaignDispatcherTransportOrchestrator,
     metaTemplatesService,
     logger,
     opsTelemetry

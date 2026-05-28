@@ -45,7 +45,8 @@ test('campaign dispatcher completes a successful template send cycle with mocked
         resolveSendWaId: 0,
         ackJob: 0,
         applyQueueJobUpdate: 0,
-        upsertMessage: 0
+        upsertMessage: 0,
+        ensureTransportForSelectedModule: 0
     };
 
     try {
@@ -122,6 +123,13 @@ test('campaign dispatcher completes a successful template send cycle with mocked
                     return { messages: [{ id: 'wamid.HBgLMOCK123' }] };
                 }
             },
+            transportOrchestrator: {
+                ensureTransportForSelectedModule: async (moduleContext) => {
+                    calls.ensureTransportForSelectedModule += 1;
+                    assert.equal(moduleContext?.moduleId, 'mod_1');
+                    assert.equal(moduleContext?.tenantId, 'tenant_test');
+                }
+            },
             metaTemplatesService: {
                 getTemplateRecord: async () => ({
                     name: 'promo_template',
@@ -149,6 +157,7 @@ test('campaign dispatcher completes a successful template send cycle with mocked
         assert.equal(result?.failed, 0);
         assert.equal(result?.skipped, 0);
         assert.equal(calls.sendTemplateMessage, 1);
+        assert.equal(calls.ensureTransportForSelectedModule, 1);
         assert.equal(calls.resolveSendWaId, 1);
         assert.equal(calls.ackJob, 1);
         assert.ok(calls.applyQueueJobUpdate >= 2);
@@ -200,7 +209,8 @@ test('campaign dispatcher processes multiple queued sends in one run without ret
         ackJob: 0,
         failJob: 0,
         skipJob: 0,
-        upsertMessage: 0
+        upsertMessage: 0,
+        ensureTransportForSelectedModule: 0
     };
 
     try {
@@ -274,6 +284,13 @@ test('campaign dispatcher processes multiple queued sends in one run without ret
                     return { messages: [{ id: `wamid.${payload.templateName}.${phone}` }] };
                 }
             },
+            transportOrchestrator: {
+                ensureTransportForSelectedModule: async (moduleContext) => {
+                    calls.ensureTransportForSelectedModule += 1;
+                    assert.equal(moduleContext?.moduleId, 'mod_1');
+                    assert.equal(moduleContext?.tenantId, 'tenant_test');
+                }
+            },
             metaTemplatesService: {
                 getTemplateRecord: async () => ({
                     name: 'promo_template',
@@ -300,10 +317,148 @@ test('campaign dispatcher processes multiple queued sends in one run without ret
         assert.equal(result?.failed, 0);
         assert.equal(result?.skipped, 0);
         assert.equal(calls.sendTemplateMessage, 4);
+        assert.equal(calls.ensureTransportForSelectedModule, 4);
         assert.equal(calls.ackJob, 4);
         assert.equal(calls.failJob, 0);
         assert.equal(calls.skipJob, 0);
         assert.equal(calls.upsertMessage, 4);
+    } finally {
+        messageHistoryService.upsertMessage = originalUpsertMessage;
+        customerService.upsertFromInteraction = originalUpsertFromInteraction;
+        customerService.getCustomer = originalGetCustomer;
+        process.env.SAAS_STORAGE_DRIVER = prevDriver;
+        process.env.CAMPAIGN_DISPATCHER_ENABLED = prevEnabled;
+    }
+});
+
+test('campaign dispatcher falls back to direct cloud transport activation when no orchestrator is injected', async () => {
+    const prevDriver = process.env.SAAS_STORAGE_DRIVER;
+    const prevEnabled = process.env.CAMPAIGN_DISPATCHER_ENABLED;
+
+    process.env.SAAS_STORAGE_DRIVER = 'file';
+    process.env.CAMPAIGN_DISPATCHER_ENABLED = 'true';
+
+    const messageHistoryService = require('../domains/operations/services/message-history.service');
+    const customerService = require('../domains/tenant/services/customers.service');
+
+    const originalUpsertMessage = messageHistoryService.upsertMessage;
+    const originalUpsertFromInteraction = customerService.upsertFromInteraction;
+    const originalGetCustomer = customerService.getCustomer;
+
+    const queueJob = {
+        jobId: 'job_fallback',
+        campaignId: 'camp_fallback',
+        recipientId: 'cus_fallback',
+        idempotencyKey: 'idem_fallback',
+        moduleId: 'mod_fallback',
+        phone: '+51988877766',
+        templateName: 'promo_template',
+        variablesJson: {
+            components: [
+                {
+                    type: 'BODY',
+                    parameters: [{ type: 'text', text: 'Hola fallback' }]
+                }
+            ]
+        },
+        attemptCount: 0
+    };
+
+    const calls = {
+        setCloudRuntimeConfig: 0,
+        setTransportMode: 0,
+        initialize: 0,
+        sendTemplateMessage: 0
+    };
+
+    try {
+        messageHistoryService.upsertMessage = async () => ({ ok: true });
+        customerService.getCustomer = async () => ({
+            firstName: 'Laura',
+            lastNamePaternal: 'Mendoza',
+            lastNameMaternal: 'Rios'
+        });
+        customerService.upsertFromInteraction = async () => ({ ok: true });
+
+        const service = loadCampaignDispatcherJobServiceFresh();
+        const dispatcher = service.createCampaignDispatcherJob({
+            campaignQueueService: {
+                claimBatch: async () => [queueJob],
+                ackJob: async () => ({ ...queueJob, status: 'sent' }),
+                skipJob: async () => ({ ...queueJob, status: 'skipped' }),
+                failJob: async () => ({ ...queueJob, status: 'failed' })
+            },
+            campaignsService: {
+                applyQueueJobUpdate: async () => {},
+                getCampaignById: async () => ({
+                    campaignId: 'camp_fallback',
+                    validTo: '2026-05-30T00:00:00.000Z'
+                }),
+                buildTemplateComponentsForCustomerId: async () => queueJob.variablesJson.components
+            },
+            customerConsentService: {
+                hasMarketingConsent: async () => true
+            },
+            tenantService: {
+                getTenants: () => [{ id: 'tenant_test', active: true }]
+            },
+            waModuleService: {
+                getModuleRuntime: async () => ({
+                    tenantId: 'tenant_test',
+                    moduleId: 'mod_fallback',
+                    isActive: true,
+                    transportMode: 'cloud',
+                    channelType: 'whatsapp',
+                    phoneNumber: '+51911111111'
+                }),
+                resolveModuleCloudConfig: () => ({ accessToken: 'token', phoneNumberId: 'pnid' })
+            },
+            waClient: {
+                isReady: false,
+                setCloudRuntimeConfig: (config) => {
+                    calls.setCloudRuntimeConfig += 1;
+                    assert.equal(config?.tenantId, 'tenant_test');
+                },
+                getRuntimeInfo: () => ({ activeTransport: 'idle' }),
+                setTransportMode: async (mode) => {
+                    calls.setTransportMode += 1;
+                    assert.equal(mode, 'cloud');
+                    return { activeTransport: 'cloud' };
+                },
+                initialize: async () => {
+                    calls.initialize += 1;
+                },
+                resolveSendWaId: async () => '51988877766',
+                sendTemplateMessage: async () => {
+                    calls.sendTemplateMessage += 1;
+                    return { messages: [{ id: 'wamid.HBgLFALLBACK123' }] };
+                }
+            },
+            metaTemplatesService: {
+                getTemplateRecord: async () => ({
+                    name: 'promo_template',
+                    components: [
+                        { type: 'BODY', text: 'Hola {{1}}' }
+                    ]
+                })
+            },
+            logger: {
+                info: () => {},
+                warn: () => {}
+            },
+            opsTelemetry: {
+                recordInternalError: () => {}
+            }
+        });
+
+        const result = await dispatcher.runNow();
+
+        assert.equal(result?.ok, true);
+        assert.equal(result?.sent, 1);
+        assert.equal(calls.setCloudRuntimeConfig, 1);
+        assert.equal(calls.setTransportMode, 1);
+        assert.equal(calls.initialize, 1);
+        assert.equal(calls.sendTemplateMessage, 1);
     } finally {
         messageHistoryService.upsertMessage = originalUpsertMessage;
         customerService.upsertFromInteraction = originalUpsertFromInteraction;

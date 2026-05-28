@@ -193,6 +193,7 @@ function createCampaignDispatcherJob({
     tenantService,
     waModuleService,
     waClient,
+    transportOrchestrator,
     metaTemplatesService: injectedMetaTemplatesService,
     logger,
     opsTelemetry
@@ -310,6 +311,10 @@ function createCampaignDispatcherJob({
 
     async function ensureCloudTransportForModule(moduleContext = null) {
         if (!moduleContext) throw new Error('module_unavailable');
+        if (transportOrchestrator && typeof transportOrchestrator.ensureTransportForSelectedModule === 'function') {
+            await transportOrchestrator.ensureTransportForSelectedModule(moduleContext);
+            return;
+        }
         const cloudConfig = {
             ...(waModuleService.resolveModuleCloudConfig(moduleContext) || {}),
             tenantId: String(moduleContext?.tenantId || '').trim() || null
