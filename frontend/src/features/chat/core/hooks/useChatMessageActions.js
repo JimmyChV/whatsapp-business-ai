@@ -176,6 +176,11 @@ export default function useChatMessageActions({
   const emitOutgoingRetryPayload = useCallback((payload = null) => {
     const safePayload = payload && typeof payload === 'object' ? payload : null;
     if (!safePayload || !socket || typeof socket.emit !== 'function') return false;
+    console.warn('[RetryPayload] emitting retry', {
+      eventName: safePayload?.eventName || '',
+      chatId: safePayload?.payload?.chatId || '',
+      timestamp: new Date().toISOString()
+    });
     const eventName = String(safePayload.eventName || '').trim();
     if (!eventName) return false;
     socket.emit(eventName, safePayload.payload || {});

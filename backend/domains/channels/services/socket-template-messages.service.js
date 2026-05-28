@@ -333,6 +333,11 @@ function createSocketTemplateMessagesService({
                 if (!providerResponse) return;
 
                 const sentMessageId = getSerializedMessageId(providerResponse);
+                const sendFingerprint = toText(
+                    providerResponse?._data?.metadata?.sendFingerprint
+                    || providerResponse?.rawData?.metadata?.sendFingerprint
+                    || ''
+                ) || null;
                 const templateMetadata = {
                     previewText,
                     templateName,
@@ -341,7 +346,8 @@ function createSocketTemplateMessagesService({
                     clientTempId: toText(payload?.clientTempId || ''),
                     templateComponents: realtimeTemplateComponents,
                     templateHeaderType,
-                    templateHeaderImageUrl
+                    templateHeaderImageUrl,
+                    sendFingerprint
                 };
                 const sentMessage = {
                     id: sentMessageId || ('local_template_' + Date.now().toString(36)),
