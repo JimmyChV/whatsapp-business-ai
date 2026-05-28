@@ -299,6 +299,7 @@ class SocketManager {
             runtimeStore: this.runtimeStore,
             waClient,
             tenantLabelService,
+            conversationOpsService,
             customerService,
             customerAddressesService,
             normalizeScopedModuleId,

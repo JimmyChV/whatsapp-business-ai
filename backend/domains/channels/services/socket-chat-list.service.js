@@ -2,6 +2,7 @@ function createSocketChatListService({
     runtimeStore,
     waClient,
     tenantLabelService,
+    conversationOpsService,
     customerService,
     customerAddressesService,
     normalizeScopedModuleId,
@@ -159,6 +160,36 @@ function createSocketChatListService({
     };
 
     const buildLabelMapKey = (chatId = '', scopeModuleId = '') => `${String(chatId || '')}::${normalizeScopedModuleId(scopeModuleId || '')}`;
+
+    const resolveLastCustomerMessageAt = async ({
+        tenantId = 'default',
+        chatId = '',
+        scopeModuleId = ''
+    } = {}) => {
+        const safeTenantId = String(tenantId || 'default').trim() || 'default';
+        const safeChatId = String(chatId || '').trim();
+        const safeScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
+        if (!safeChatId || typeof conversationOpsService?.getChatAssignment !== 'function') return null;
+
+        try {
+            const scopedAssignment = await conversationOpsService.getChatAssignment(safeTenantId, {
+                chatId: safeChatId,
+                scopeModuleId: safeScopeModuleId
+            });
+            const scopedLastCustomerMessageAt = String(scopedAssignment?.lastCustomerMessageAt || '').trim();
+            if (scopedLastCustomerMessageAt) return scopedLastCustomerMessageAt;
+
+            if (!safeScopeModuleId) return null;
+            const fallbackAssignment = await conversationOpsService.getChatAssignment(safeTenantId, {
+                chatId: safeChatId,
+                scopeModuleId: ''
+            });
+            const fallbackLastCustomerMessageAt = String(fallbackAssignment?.lastCustomerMessageAt || '').trim();
+            return fallbackLastCustomerMessageAt || null;
+        } catch (_) {
+            return null;
+        }
+    };
 
     const listChatLabelsMapWithScopeFallback = async ({
         tenantId = 'default',
@@ -381,6 +412,11 @@ function createSocketChatListService({
         } catch (error) {
             labels = [];
         }
+        const lastCustomerMessageAt = await resolveLastCustomerMessageAt({
+            tenantId: resolvedTenantId,
+            chatId,
+            scopeModuleId: normalizedScopeModuleId
+        });
 
         return {
             id: scopedSummaryId || chatId,
@@ -400,6 +436,7 @@ function createSocketChatListService({
             customerId: erpCustomer?.customerId || null,
             erpCustomerName: erpCustomer ? resolveChatDisplayName({ ...effectiveChat, erpCustomer }) : null,
             archived: Boolean(chat?.archived),
+            lastCustomerMessageAt,
             lastMessageModuleId: normalizedScopeModuleId || null,
             lastMessageModuleName: String(scopeModuleName || '').trim() || null,
             lastMessageModuleImageUrl: String(scopeModuleImageUrl || '').trim() || null,
