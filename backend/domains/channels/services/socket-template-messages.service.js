@@ -284,6 +284,17 @@ function createSocketTemplateMessagesService({
                     validFrom,
                     validTo
                 });
+                const headerComponent = Array.isArray(template?.componentsJson)
+                    ? template.componentsJson.find((component) => toText(component?.type).toUpperCase() === 'HEADER')
+                    : null;
+                const templateHeaderType = toText(headerComponent?.format || '').toUpperCase() || 'TEXT';
+                const templateHeaderImageUrl = templateHeaderType === 'IMAGE'
+                    ? (
+                        toText(headerMedia?.base64 || '')
+                        || toText(headerComponent?.example?.header_handle?.[0] || '')
+                        || null
+                    )
+                    : null;
                 const components = await buildTemplateSendComponents(template, previewPayload, { headerMedia });
                 const realtimeTemplateComponents = buildTemplateRealtimeComponents(template, previewPayload, { headerMedia });
                 const previewText = buildTemplatePreviewText(template, previewPayload, templateName, { headerMedia });
@@ -312,7 +323,9 @@ function createSocketTemplateMessagesService({
                     templateLanguage,
                     templateId: toText(payload?.templateId || ''),
                     clientTempId: toText(payload?.clientTempId || ''),
-                    templateComponents: realtimeTemplateComponents
+                    templateComponents: realtimeTemplateComponents,
+                    templateHeaderType,
+                    templateHeaderImageUrl
                 };
                 const sentMessage = {
                     id: sentMessageId || ('local_template_' + Date.now().toString(36)),
@@ -327,6 +340,8 @@ function createSocketTemplateMessagesService({
                     templateLanguage,
                     templatePreviewText: previewText,
                     templateComponents: realtimeTemplateComponents,
+                    templateHeaderType,
+                    templateHeaderImageUrl,
                     _data: {
                         templateName,
                         templateLanguage,
@@ -373,6 +388,8 @@ function createSocketTemplateMessagesService({
                     templateLanguage,
                     previewText,
                     templateComponents: realtimeTemplateComponents,
+                    templateHeaderType,
+                    templateHeaderImageUrl,
                     type: 'template',
                     timestamp: Math.floor(Date.now() / 1000),
                     messageId: sentMessageId || null

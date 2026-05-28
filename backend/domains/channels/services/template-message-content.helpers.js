@@ -14,6 +14,56 @@ function normalizeTemplateComponentType(value = '') {
     return toUpper(value || 'BODY') || 'BODY';
 }
 
+function normalizeTemplateHeaderFormat(value = '') {
+    return toUpper(value || 'TEXT') || 'TEXT';
+}
+
+function findTemplateHeaderComponent(template = {}) {
+    const directComponents = ensureArray(template?.componentsJson);
+    const directHeader = directComponents.find((component = {}) => (
+        normalizeTemplateComponentType(component?.type || 'BODY') === 'HEADER'
+    ));
+    if (directHeader) return directHeader;
+
+    const rawComponents = ensureArray(template?.rawMetaJson?.components);
+    return rawComponents.find((component = {}) => (
+        normalizeTemplateComponentType(component?.type || 'BODY') === 'HEADER'
+    )) || null;
+}
+
+function extractTemplateHeaderHandle(component = {}) {
+    const example = component?.example && typeof component.example === 'object' ? component.example : {};
+    const directArrayHandle = Array.isArray(component?.header_handle) ? component.header_handle[0] : '';
+    const exampleArrayHandle = Array.isArray(example?.header_handle) ? example.header_handle[0] : '';
+    const directHandle = toText(
+        exampleArrayHandle
+        || directArrayHandle
+        || component?.headerHandle
+        || example?.headerHandle
+        || component?.url
+        || example?.url
+        || component?.mediaId
+        || example?.mediaId
+        || ''
+    );
+    return directHandle;
+}
+
+function resolveTemplateHeaderInfo(template = {}) {
+    const headerComponent = findTemplateHeaderComponent(template);
+    if (!headerComponent) {
+        return {
+            type: 'TEXT',
+            url: ''
+        };
+    }
+
+    return {
+        type: normalizeTemplateHeaderFormat(headerComponent?.format || headerComponent?.headerFormat || 'TEXT'),
+        url: extractTemplateHeaderHandle(headerComponent)
+    };
+}
+
 function parsePlaceholderIndexesFromText(text = '') {
     const matches = String(text || '').matchAll(/\{\{\s*(\d+)\s*\}\}/g);
     const indexes = new Set();
@@ -53,10 +103,22 @@ function resolveTemplateTextWithSentParameters(sourceText = '', parameterValues 
 function buildRenderedTemplateFromRecord(template = {}, sentComponents = [], templateName = '') {
     const templateComponents = ensureArray(template?.componentsJson);
     const sentParametersByType = buildSentParametersByType(sentComponents);
+    const templateHeaderInfo = resolveTemplateHeaderInfo(template);
     const renderedComponents = templateComponents
         .map((component = {}) => {
             const type = normalizeTemplateComponentType(component?.type || 'BODY');
             if (type !== 'HEADER' && type !== 'BODY' && type !== 'FOOTER') return null;
+            const format = normalizeTemplateHeaderFormat(component?.format || component?.headerFormat || '');
+            if (type === 'HEADER' && format === 'IMAGE') {
+                return {
+                    type: 'IMAGE',
+                    format: 'IMAGE',
+                    url: toText(templateHeaderInfo?.url || ''),
+                    text: '',
+                    resolvedText: '',
+                    parameters: []
+                };
+            }
             const sourceText = toText(component?.text);
             if (!sourceText) return null;
             const sentParameterGroups = sentParametersByType.get(type) || [];
@@ -82,7 +144,11 @@ function buildRenderedTemplateFromRecord(template = {}, sentComponents = [], tem
 
     return {
         previewText,
-        templateComponents: renderedComponents
+        templateComponents: renderedComponents,
+        templateHeaderType: toText(templateHeaderInfo?.type || '') || null,
+        templateHeaderImageUrl: normalizeTemplateHeaderFormat(templateHeaderInfo?.type || '') === 'IMAGE'
+            ? (toText(templateHeaderInfo?.url || '') || null)
+            : null
     };
 }
 

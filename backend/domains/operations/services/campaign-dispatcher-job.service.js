@@ -70,6 +70,8 @@ async function persistCampaignOutboundHistory(tenantId = '', moduleContext = nul
         const modulePhone = toText(moduleContext?.phoneNumber || moduleContext?.phone || '') || null;
         const previewText = toText(renderedTemplate?.previewText || '') || `Template: ${toText(templateName || '')}`;
         const templateComponents = Array.isArray(renderedTemplate?.templateComponents) ? renderedTemplate.templateComponents : [];
+        const templateHeaderType = toText(renderedTemplate?.templateHeaderType || '') || null;
+        const templateHeaderImageUrl = toText(renderedTemplate?.templateHeaderImageUrl || '') || null;
 
         await messageHistoryService.upsertMessage(cleanTenantId, {
             messageId,
@@ -87,6 +89,8 @@ async function persistCampaignOutboundHistory(tenantId = '', moduleContext = nul
                 templateLanguage: toText(languageCode || '') || null,
                 templatePreviewText: previewText || null,
                 templateComponents,
+                templateHeaderType,
+                templateHeaderImageUrl,
                 campaignId: toText(job?.campaignId || '') || null,
                 jobId: toText(job?.jobId || '') || null,
                 sentViaModuleId: moduleId,

@@ -155,6 +155,8 @@ export default function useSocketMessageLifecycleEvents({
             templateLanguage,
             previewText,
             templateComponents,
+            templateHeaderType,
+            templateHeaderImageUrl,
             clientTempId,
             messageId,
             timestamp
@@ -183,6 +185,8 @@ export default function useSocketMessageLifecycleEvents({
                 templateLanguage: String(templateLanguage || '').trim() || null,
                 templatePreviewText: String(previewText || '').trim() || null,
                 templateComponents: Array.isArray(templateComponents) ? templateComponents : [],
+                templateHeaderType: String(templateHeaderType || '').trim() || null,
+                templateHeaderImageUrl: String(templateHeaderImageUrl || '').trim() || null,
                 reactions: []
             };
 

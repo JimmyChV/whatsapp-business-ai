@@ -22,6 +22,12 @@ function normalizeParameterText(parameter = {}) {
     return toText(parameter);
 }
 
+function isLikelyRenderableTemplateImageUrl(value = '') {
+    const source = toText(value);
+    if (!source) return false;
+    return /^(https?:\/\/|data:image\/|blob:|\/)/i.test(source);
+}
+
 export function isGenericTemplateFallbackText(text = '', templateName = '') {
     const safeText = toLower(text);
     const safeTemplateName = toLower(templateName);
@@ -41,7 +47,9 @@ export function mergeTemplateMessageContent(existingMessage = {}, incomingMessag
     const existingPreviewText = toText(existing?.templatePreviewText || existing?.body || '');
     const incomingLooksGeneric = isGenericTemplateFallbackText(incomingPreviewText, safeTemplateName);
     const existingHasRealContent = Boolean(
-        existingTemplate.headerText
+        existingTemplate.headerImageUrl
+        || existingTemplate.headerType === 'IMAGE'
+        || existingTemplate.headerText
         || existingTemplate.bodyText
         || existingTemplate.footerText
         || (
@@ -50,7 +58,9 @@ export function mergeTemplateMessageContent(existingMessage = {}, incomingMessag
         )
     );
     const incomingHasStructuredContent = Boolean(
-        incomingTemplate.headerText
+        incomingTemplate.headerImageUrl
+        || incomingTemplate.headerType === 'IMAGE'
+        || incomingTemplate.headerText
         || incomingTemplate.bodyText
         || incomingTemplate.footerText
         || (
@@ -87,6 +97,8 @@ export function mergeTemplateMessageContent(existingMessage = {}, incomingMessag
         merged.templatePreviewText = null;
         merged.templateName = null;
         merged.templateLanguage = null;
+        merged.templateHeaderType = null;
+        merged.templateHeaderImageUrl = null;
         return merged;
     }
 
@@ -111,10 +123,24 @@ export function mergeTemplateMessageContent(existingMessage = {}, incomingMessag
         merged.templateComponents = Array.isArray(existing?.templateComponents) ? existing.templateComponents : [];
         merged.templatePreviewText = existing?.templatePreviewText || existingPreviewText || null;
         merged.body = existing?.body || existingPreviewText || merged.body;
+        merged.templateHeaderType = toText(existing?.templateHeaderType || '') || null;
+        merged.templateHeaderImageUrl = toText(existing?.templateHeaderImageUrl || '') || null;
     } else if (Array.isArray(incoming?.templateComponents) && incoming.templateComponents.length > 0) {
         merged.templateComponents = incoming.templateComponents;
     } else if (!Array.isArray(merged.templateComponents)) {
         merged.templateComponents = Array.isArray(existing?.templateComponents) ? existing.templateComponents : [];
+    }
+
+    if (toText(incoming?.templateHeaderType || '')) {
+        merged.templateHeaderType = toText(incoming.templateHeaderType);
+    } else if (!toText(merged?.templateHeaderType || '') && toText(existing?.templateHeaderType || '')) {
+        merged.templateHeaderType = toText(existing.templateHeaderType);
+    }
+
+    if (toText(incoming?.templateHeaderImageUrl || '')) {
+        merged.templateHeaderImageUrl = toText(incoming.templateHeaderImageUrl);
+    } else if (!toText(merged?.templateHeaderImageUrl || '') && toText(existing?.templateHeaderImageUrl || '')) {
+        merged.templateHeaderImageUrl = toText(existing.templateHeaderImageUrl);
     }
 
     if (!toText(merged.templateName) && safeTemplateName) {
@@ -134,6 +160,8 @@ export function mergeTemplateMessageContent(existingMessage = {}, incomingMessag
         merged.templatePreviewText = null;
         merged.templateName = null;
         merged.templateLanguage = null;
+        merged.templateHeaderType = null;
+        merged.templateHeaderImageUrl = null;
     }
 
     return merged;
@@ -266,10 +294,18 @@ export function buildRenderedTemplateMessage(message = {}) {
     const templateLanguage = toText(source?.templateLanguage || '');
     const rawTemplatePreviewText = toText(source?.templatePreviewText || '');
     const rawBodyText = toText(source?.body || '');
+    const rawTemplateHeaderType = toText(source?.templateHeaderType || source?.metadata?.templateHeaderType || '');
+    const rawTemplateHeaderImageUrl = toText(source?.templateHeaderImageUrl || source?.metadata?.templateHeaderImageUrl || '');
     const templateComponents = Array.isArray(source?.templateComponents) ? source.templateComponents : [];
     const renderedComponents = templateComponents
         .map((component = {}) => {
             const type = normalizeComponentType(component?.type || 'BODY');
+            if (type === 'IMAGE') {
+                return {
+                    type: 'IMAGE',
+                    url: toText(component?.url || component?.imageUrl || component?.resolvedUrl || '')
+                };
+            }
             const parameters = Array.isArray(component?.parameters) ? component.parameters : [];
             const explicitResolvedText = toText(component?.resolvedText || component?.text || '');
             return {
@@ -279,17 +315,22 @@ export function buildRenderedTemplateMessage(message = {}) {
                 )).filter(Boolean).join(' ')
             };
         })
-        .filter((component) => component.resolvedText);
+        .filter((component) => component.resolvedText || component.url);
 
     const headerText = renderedComponents.find((component) => component.type === 'HEADER')?.resolvedText || '';
     const bodyText = renderedComponents.find((component) => component.type === 'BODY')?.resolvedText || '';
     const footerText = renderedComponents.find((component) => component.type === 'FOOTER')?.resolvedText || '';
+    const derivedHeaderImageUrl = toText(renderedComponents.find((component) => component.type === 'IMAGE')?.url || '');
+    const headerType = toText(rawTemplateHeaderType || (derivedHeaderImageUrl ? 'IMAGE' : (headerText ? 'TEXT' : '')));
+    const headerImageUrl = isLikelyRenderableTemplateImageUrl(rawTemplateHeaderImageUrl)
+        ? rawTemplateHeaderImageUrl
+        : (isLikelyRenderableTemplateImageUrl(derivedHeaderImageUrl) ? derivedHeaderImageUrl : '');
     const previewText = [headerText, bodyText, footerText].filter(Boolean).join('\n').trim()
         || rawTemplatePreviewText
         || rawBodyText
         || `Template: ${templateName || 'sin nombre'}`;
 
-    const hasStructuredComponents = renderedComponents.length > 0;
+    const hasStructuredComponents = renderedComponents.length > 0 || Boolean(headerImageUrl);
     const hasStrongTemplateMetadata = Boolean(
         templateName
         && (
@@ -323,6 +364,8 @@ export function buildRenderedTemplateMessage(message = {}) {
         ),
         templateName: templateName || null,
         templateLanguage: templateLanguage || null,
+        headerType: headerType || null,
+        headerImageUrl: headerImageUrl || null,
         headerText,
         bodyText,
         footerText,

@@ -42,6 +42,8 @@ const formatOrderCardTitle = (value = '') => {
         .replace(/(^|[\s/.-])(\S)/g, (_, prefix, char) => `${prefix}${char.toLocaleUpperCase('es-PE')}`);
 };
 
+const isRenderableTemplateHeaderImageSrc = (value = '') => /^(https?:\/\/|data:image\/|blob:|\/)/i.test(String(value || '').trim());
+
 const MessageBubble = ({
     msg,
     onPrefillMessage,
@@ -195,6 +197,7 @@ const MessageBubble = ({
     const [showActionsMenu, setShowActionsMenu] = useState(false);
     const [showReactionPicker, setShowReactionPicker] = useState(false);
     const [preferredSkinTone, setPreferredSkinTone] = useState('neutral');
+    const [templateHeaderImageFailed, setTemplateHeaderImageFailed] = useState(false);
     const bubbleRef = useRef(null);
     const reactionOptions = ['👍', '❤️', '😂', '😮', '😢', '🙏'].map((emoji) => {
         const variants = REACTION_TONE_VARIANTS[emoji];
@@ -303,6 +306,10 @@ const MessageBubble = ({
         }
     }, []);
 
+    useEffect(() => {
+        setTemplateHeaderImageFailed(false);
+    }, [msg?.id, msg?.templateHeaderImageUrl, msg?.templateHeaderType]);
+
     const hasLocationCoords = Number.isFinite(locationData?.latitude) && Number.isFinite(locationData?.longitude);
     const locationMapQuery = hasLocationCoords
         ? `${locationData.latitude},${locationData.longitude}`
@@ -371,7 +378,15 @@ const MessageBubble = ({
         : null;
     const isGifMedia = /gif/i.test(String(msg?.mimetype || '')) || /\.gif(?:$|[?#])/i.test(String(mediaUrl || ''));
     const renderedTemplate = buildRenderedTemplateMessage(msg);
-    const shouldRenderTemplateBubble = renderedTemplate.isTemplateMessage && !msg.hasMedia && !isCatalogItem && !isOrderActionable;
+    const shouldRenderTemplateBubble = renderedTemplate.isTemplateMessage && !isCatalogItem && !isOrderActionable;
+    const shouldRenderStandaloneMedia = msg.hasMedia && !renderedTemplate.isTemplateMessage;
+    const templateHeaderImageSrc = isRenderableTemplateHeaderImageSrc(renderedTemplate.headerImageUrl)
+        ? renderedTemplate.headerImageUrl
+        : '';
+    const shouldRenderTemplateHeaderImage = shouldRenderTemplateBubble
+        && renderedTemplate.headerType === 'IMAGE'
+        && Boolean(templateHeaderImageSrc)
+        && !templateHeaderImageFailed;
     const inlineVideoSrc = mediaDataUrl || (mediaUrl || null);
     const {
         canOpenAttachmentAsPdf,
@@ -486,7 +501,7 @@ const MessageBubble = ({
                 </div>
             )}
 
-            {msg.hasMedia && mediaImageSrc && (isImageMedia || isGifMedia) && (
+            {shouldRenderStandaloneMedia && mediaImageSrc && (isImageMedia || isGifMedia) && (
                 <img
                     src={mediaImageSrc}
                     className="message-media"
@@ -504,7 +519,7 @@ const MessageBubble = ({
                 />
             )}
 
-            {msg.hasMedia && inlineVideoSrc && isVideoMedia && !isGifMedia && (
+            {shouldRenderStandaloneMedia && inlineVideoSrc && isVideoMedia && !isGifMedia && (
                 <video
                     src={inlineVideoSrc}
                     controls
@@ -520,7 +535,7 @@ const MessageBubble = ({
                 />
             )}
 
-            {msg.hasMedia && msg.mediaData && msg.mimetype?.startsWith('audio/') && (
+            {shouldRenderStandaloneMedia && msg.mediaData && msg.mimetype?.startsWith('audio/') && (
                 <audio
                     src={mediaDataUrl}
                     controls
@@ -529,7 +544,7 @@ const MessageBubble = ({
                 />
             )}
 
-            {hasBinaryAttachment && attachmentMeta && (
+            {shouldRenderStandaloneMedia && hasBinaryAttachment && attachmentMeta && (
                 <div className={`message-file-card ${attachmentMeta.accentClass}`}>
                     <div className="message-file-preview">
                         <div className="message-file-preview-badge">{attachmentMeta.extensionBadge}</div>
@@ -906,6 +921,31 @@ const MessageBubble = ({
                                 Template: {renderedTemplate.templateName}
                             </div>
                         )}
+                        {shouldRenderTemplateHeaderImage ? (
+                            <img
+                                src={templateHeaderImageSrc}
+                                className="message-media message-template-preview__image"
+                                alt="Header del template"
+                                style={{
+                                    borderRadius: '8px',
+                                    marginBottom: '4px',
+                                    maxWidth: 'min(320px, 56vw)',
+                                    maxHeight: '260px',
+                                    objectFit: 'cover',
+                                    cursor: onOpenMedia ? 'zoom-in' : 'default',
+                                    display: 'block'
+                                }}
+                                onError={() => setTemplateHeaderImageFailed(true)}
+                                onClick={() => {
+                                    if (!onOpenMedia) return;
+                                    onOpenMedia({
+                                        src: templateHeaderImageSrc,
+                                        mimetype: 'image/*',
+                                        messageId: msg.id
+                                    });
+                                }}
+                            />
+                        ) : null}
                         {renderedTemplate.headerText ? (
                             <div className="message-template-preview__header">
                                 {renderWhatsAppFormattedText(renderedTemplate.headerText)}

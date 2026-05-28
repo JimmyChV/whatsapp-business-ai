@@ -98,7 +98,9 @@ function createSocketChatHistoryMediaService({
             templateName: String(metadata?.templateName || '').trim() || null,
             templateLanguage: String(metadata?.templateLanguage || '').trim() || null,
             templatePreviewText: String(metadata?.templatePreviewText || '').trim() || null,
-            templateComponents: Array.isArray(metadata?.templateComponents) ? metadata.templateComponents : []
+            templateComponents: Array.isArray(metadata?.templateComponents) ? metadata.templateComponents : [],
+            templateHeaderType: String(metadata?.templateHeaderType || '').trim() || null,
+            templateHeaderImageUrl: String(metadata?.templateHeaderImageUrl || '').trim() || null
         };
     };
 
