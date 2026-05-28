@@ -60,6 +60,13 @@ async function withSendIdempotency({
         throw new Error('withSendIdempotency requiere una funcion fn.');
     }
 
+    console.log('[Idempotency] attempting lock', {
+        tenantId,
+        chatId,
+        type,
+        fingerprint
+    });
+
     const safeTenantId = normalizeTenantId(tenantId || '');
     const safeChatId = normalizeChatId(chatId);
     const safeType = toText(type).toLowerCase();

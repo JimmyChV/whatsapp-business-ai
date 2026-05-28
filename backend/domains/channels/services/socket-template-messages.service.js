@@ -312,6 +312,10 @@ function createSocketTemplateMessagesService({
                     return parameterType === 'image' || parameterType === 'video' || parameterType === 'document';
                 }));
 
+                console.log('[TemplateSocket] about to send', {
+                    tenantId,
+                    chatId: target.targetChatId
+                });
                 const providerResponse = await waClient.sendTemplateMessage(target.targetChatId, {
                     templateName,
                     languageCode: templateLanguage,

@@ -361,6 +361,10 @@ class WAProvider extends EventEmitter {
         }
         const safePayload = ensurePlainObject(payload);
         const metadata = ensureMetadataContainer(safePayload.metadata);
+        console.log('[Provider] sendTemplateMessage called', {
+            hasTenantId: Boolean(metadata?.tenantId),
+            hasChatId: Boolean(metadata?.chatId)
+        });
         const context = this.resolveSendIdempotencyContext({
             chatId: to,
             type: 'template',
