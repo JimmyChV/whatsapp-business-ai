@@ -261,6 +261,33 @@ function ensureArray(input = []) {
     return [input];
 }
 
+function normalizeTemplateComponents(variables = {}) {
+    if (Array.isArray(variables?.components)) {
+        return variables.components;
+    }
+    if (Array.isArray(variables?.parameters)) {
+        return [{ type: 'body', parameters: variables.parameters }];
+    }
+    if (Array.isArray(variables?.bodyVariables)) {
+        return [{
+            type: 'body',
+            parameters: variables.bodyVariables.map((entry) => ({ type: 'text', text: String(entry ?? '') }))
+        }];
+    }
+    if (variables && typeof variables === 'object' && !Array.isArray(variables)) {
+        const keys = Object.keys(variables)
+            .filter((key) => !['components', 'parameters', 'bodyVariables', 'language', 'languageCode'].includes(key))
+            .sort();
+        if (keys.length) {
+            return [{
+                type: 'body',
+                parameters: keys.map((key) => ({ type: 'text', text: String(variables[key] ?? '') }))
+            }];
+        }
+    }
+    return [];
+}
+
 function cloneJson(value) {
     return JSON.parse(JSON.stringify(value ?? null));
 }
