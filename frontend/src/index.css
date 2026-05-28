@@ -5207,6 +5207,7 @@ body {
   min-width: 0;
   display: flex;
   align-items: center;
+  gap: 6px;
 }
 
 .chat-row-statuses {
@@ -5231,6 +5232,43 @@ body {
 .chat-inline-labels--dots {
   margin-left: 0;
   margin-bottom: 0;
+}
+
+.chat-window-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.chat-window-badge svg {
+  flex: 0 0 auto;
+}
+
+.chat-window-badge--ok {
+  background: var(--chat-success-surface);
+  border-color: var(--chat-success-border);
+  color: var(--chat-success-text);
+}
+
+.chat-window-badge--warning {
+  background: var(--chat-warning-bg);
+  border-color: var(--chat-warning-border);
+  color: var(--chat-warning-text);
+}
+
+.chat-window-badge--critical {
+  background: var(--chat-danger-soft);
+  border-color: var(--chat-danger-border);
+  color: var(--chat-danger-text);
+  animation: pulse 1.8s ease-in-out infinite;
 }
 
 .chat-inline-label-dot {

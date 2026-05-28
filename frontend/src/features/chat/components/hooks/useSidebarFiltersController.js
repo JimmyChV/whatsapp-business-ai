@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
+import { getWindowState } from '../../core/helpers/windowTimer.helpers';
 
 const WA_LABEL_COLORS = ['#25D366', '#34B7F1', '#FFB02E', '#FF5C5C', '#9C6BFF', '#00A884', '#7D8D95'];
 const DEFAULT_COMMERCIAL_STATUS_OPTIONS = [{ value: 'all', label: 'Todos' }];
@@ -65,6 +66,9 @@ const normalizeFilters = (filters = {}, commercialStatusOptions = DEFAULT_COMMER
     onlyAssignedToMe: Boolean(filters?.onlyAssignedToMe),
     assigneeUserId: normalizeFilterToken(filters?.assigneeUserId || ''),
     commercialStatus: normalizeCommercialStatus(filters?.commercialStatus || 'all', commercialStatusOptions),
+    windowFilter: ['all', 'active', 'expiring', 'expired'].includes(String(filters?.windowFilter || 'all').trim().toLowerCase())
+      ? String(filters?.windowFilter || 'all').trim().toLowerCase()
+      : 'all',
     contactMode,
     archivedMode,
     pinnedMode
@@ -251,6 +255,7 @@ const useSidebarFiltersController = ({
     || filters.onlyAssignedToMe
     || Boolean(filters.assigneeUserId)
     || filters.commercialStatus !== 'all'
+    || filters.windowFilter !== 'all'
     || filters.contactMode !== 'all'
     || filters.archivedMode !== 'all'
     || filters.pinnedMode !== 'all';
@@ -309,6 +314,9 @@ const useSidebarFiltersController = ({
     if (filters.commercialStatus !== 'all') {
       chips.push(`Estado: ${commercialStatusLabelByValue[filters.commercialStatus] || filters.commercialStatus}`);
     }
+    if (filters.windowFilter === 'active') chips.push('Ventana activa');
+    if (filters.windowFilter === 'expiring') chips.push('Por vencer');
+    if (filters.windowFilter === 'expired') chips.push('Ventana vencida');
     if (filters.archivedMode === 'archived') chips.push('Archivados');
     if (filters.pinnedMode === 'pinned') chips.push('Fijados');
     if (filters.contactMode === 'my') chips.push('Guardados');
@@ -336,6 +344,12 @@ const useSidebarFiltersController = ({
       const chatCommercialStatus = resolveChatCommercialStatus(chat);
       const statusToken = normalizeFilterToken(chatCommercialStatus?.status || 'nuevo') || 'nuevo';
       if (statusToken !== filters.commercialStatus) return false;
+    }
+    if (filters.windowFilter !== 'all') {
+      const windowState = getWindowState(chat?.lastCustomerMessageAt);
+      if (filters.windowFilter === 'active' && !windowState.active) return false;
+      if (filters.windowFilter === 'expiring' && !windowState.expiring) return false;
+      if (filters.windowFilter === 'expired' && !windowState.expired) return false;
     }
     if (filters.contactMode === 'my' && !isSavedCustomerChat(chat)) return false;
     if (filters.contactMode === 'unknown' && isSavedCustomerChat(chat)) return false;

@@ -1,5 +1,5 @@
 import React from 'react';
-import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck, UserCheck, ChevronDown, Moon, Sun } from 'lucide-react';
+import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck, UserCheck, ChevronDown, Moon, Sun, Clock3 } from 'lucide-react';
 import ChannelBrandIcon from './ChannelBrandIcon';
 import AssignmentBadge from './assignment/AssignmentBadge';
 import CommercialStatusBadge from './commercial/CommercialStatusBadge';
@@ -9,6 +9,7 @@ import useSidebarInfiniteScroll from './hooks/useSidebarInfiniteScroll';
 import useSidebarUiToggles from './hooks/useSidebarUiToggles';
 import { API_URL } from '../../../config/runtime';
 import { searchTenantCustomersForChat } from '../core/services/customerSearch.service';
+import { getWindowStatus, WINDOW_FILTER_OPTIONS } from '../core/helpers/windowTimer.helpers';
 
 
 const normalizePhoneDigits = (value = '') => String(value || '').replace(/\D/g, '');
@@ -167,12 +168,15 @@ const Sidebar = ({
     const statusesLoaded = Boolean(chatCommercialStatusState?.statusesLoaded);
     const [showAssigneeFilterMenu, setShowAssigneeFilterMenu] = React.useState(false);
     const [showCommercialFilterMenu, setShowCommercialFilterMenu] = React.useState(false);
+    const [showWindowFilterMenu, setShowWindowFilterMenu] = React.useState(false);
     const [customerSearchResults, setCustomerSearchResults] = React.useState([]);
     const [customerSearchLoading, setCustomerSearchLoading] = React.useState(false);
     const assigneeMenuRef = React.useRef(null);
     const commercialMenuRef = React.useRef(null);
+    const windowMenuRef = React.useRef(null);
     const labelPanelRef = React.useRef(null);
     const customerSearchRequestRef = React.useRef(0);
+    const [windowTick, setWindowTick] = React.useState(() => Date.now());
     const visibleChats = React.useMemo(() => {
         const items = Array.isArray(filteredChats) ? [...filteredChats] : [];
         return items.sort((a, b) => {
@@ -192,6 +196,9 @@ const Sidebar = ({
             if (commercialMenuRef.current && !commercialMenuRef.current.contains(target)) {
                 setShowCommercialFilterMenu(false);
             }
+            if (windowMenuRef.current && !windowMenuRef.current.contains(target)) {
+                setShowWindowFilterMenu(false);
+            }
             if (labelPanelRef.current && !labelPanelRef.current.contains(target) && !target.closest('.sidebar-ribbon-btn[data-label="Etiquetas"]')) {
                 setShowLabelPanel(false);
             }
@@ -206,11 +213,19 @@ const Sidebar = ({
             setShowLabelPanel(false);
             setShowAssigneeFilterMenu(false);
             setShowCommercialFilterMenu(false);
+            setShowWindowFilterMenu(false);
             setShowMenu(false);
         };
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
     }, [setShowLabelPanel, setShowMenu]);
+
+    React.useEffect(() => {
+        const timerId = window.setInterval(() => {
+            setWindowTick(Date.now());
+        }, 60_000);
+        return () => window.clearInterval(timerId);
+    }, []);
 
     const selectedAssigneeLabel = React.useMemo(() => {
         if (filters.assigneeUserId === '__unassigned__') return 'Sin asignar';
@@ -223,6 +238,10 @@ const Sidebar = ({
         const selected = commercialStatusOptions.find((entry) => String(entry?.value || '') === String(filters.commercialStatus || 'all'));
         return selected?.label || 'Todos';
     }, [commercialStatusOptions, filters.commercialStatus]);
+    const selectedWindowFilterLabel = React.useMemo(() => {
+        const selected = WINDOW_FILTER_OPTIONS.find((entry) => String(entry?.value || '') === String(filters.windowFilter || 'all'));
+        return selected?.label || 'Todas';
+    }, [filters.windowFilter]);
 
     const currentTenantId = String(activeTenantId || '').trim();
     const sortedTenantOptions = Array.isArray(tenantOptions)
@@ -560,6 +579,20 @@ const Sidebar = ({
                             <Tag size={18} />
                             {selectedLabelCount > 0 && <span className="sidebar-ribbon-badge">{selectedLabelCount > 9 ? '9+' : selectedLabelCount}</span>}
                         </button>
+                        <button
+                            type="button"
+                            className={`sidebar-ribbon-btn ${String(filters.windowFilter || 'all') !== 'all' ? 'active' : ''}`}
+                            onClick={() => {
+                                setShowWindowFilterMenu((prev) => !prev);
+                                setShowAssigneeFilterMenu(false);
+                                setShowCommercialFilterMenu(false);
+                                setShowLabelPanel(false);
+                            }}
+                            title="Ventana 24h"
+                            data-label="Ventana 24h"
+                        >
+                            <Clock3 size={18} />
+                        </button>
                     </div>
                     <div className="sidebar-main-column">
                         <div className="sidebar-filter-content">
@@ -658,6 +691,40 @@ const Sidebar = ({
                                         )}
                                     </div>
                                 )}
+                                <div className="sidebar-filter-pill-dropdown" ref={windowMenuRef}>
+                                    <button
+                                        type="button"
+                                        className={`sidebar-filter-pill-trigger ${String(filters.windowFilter || 'all') !== 'all' ? 'active' : ''}`}
+                                        onClick={() => {
+                                            setShowWindowFilterMenu((prev) => !prev);
+                                            setShowAssigneeFilterMenu(false);
+                                            setShowCommercialFilterMenu(false);
+                                        }}
+                                        title="Filtrar por ventana 24h"
+                                    >
+                                        <span className="sidebar-filter-pill-label">Ventana</span>
+                                        <span className="sidebar-filter-pill-value">{selectedWindowFilterLabel}</span>
+                                        <ChevronDown size={14} className={`sidebar-filter-pill-caret ${showWindowFilterMenu ? 'open' : ''}`} />
+                                    </button>
+                                    {showWindowFilterMenu && (
+                                        <div className="sidebar-filter-pill-menu" role="menu" aria-label="Filtrar por ventana 24h">
+                                            {WINDOW_FILTER_OPTIONS.map((entry) => (
+                                                <button
+                                                    key={entry.value}
+                                                    type="button"
+                                                    className={`sidebar-filter-pill-item ${String(filters.windowFilter || 'all') === String(entry.value) ? 'active' : ''}`}
+                                                    onClick={() => {
+                                                        updateFilters({ windowFilter: entry.value });
+                                                        setShowWindowFilterMenu(false);
+                                                    }}
+                                                >
+                                                    {String(filters.windowFilter || 'all') === String(entry.value) ? '● ' : '○ '}
+                                                    {entry.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                             <div className="sidebar-active-filters-row">
                                 {!hasAnyFilter ? (
@@ -708,7 +775,7 @@ const Sidebar = ({
                             </div>
                         )}
                     </div>
-            <div className="chat-list" onClick={() => { if (showMenu) setShowMenu(false); if (showLabelPanel) setShowLabelPanel(false); if (showAssigneeFilterMenu) setShowAssigneeFilterMenu(false); if (showCommercialFilterMenu) setShowCommercialFilterMenu(false); }} onScroll={handleChatListScroll}>
+            <div className="chat-list" onClick={() => { if (showMenu) setShowMenu(false); if (showLabelPanel) setShowLabelPanel(false); if (showAssigneeFilterMenu) setShowAssigneeFilterMenu(false); if (showCommercialFilterMenu) setShowCommercialFilterMenu(false); if (showWindowFilterMenu) setShowWindowFilterMenu(false); }} onScroll={handleChatListScroll}>
                 {filteredChats.length === 0 && chats.length === 0 && !chatsLoaded ? (
                     [1, 2, 3, 4, 5].map((i) => (
                         <div key={i} className="chat-item chat-item-modern">
@@ -734,6 +801,7 @@ const Sidebar = ({
                         const chatAssignment = getAssignment(chat.id);
                         const isAssignedToMe = isAssignedToMeResolver(chat.id);
                         const chatCommercialStatus = getCommercialStatus(chat.id);
+                        const chatWindowStatus = getWindowStatus(chat?.lastCustomerMessageAt, windowTick);
                         const moduleConfig = moduleConfigById.get(String(moduleBadge?.moduleId || chat?.scopeModuleId || '').trim().toLowerCase()) || null;
                         const hasAssignee = Boolean(String(chatAssignment?.assigneeUserId || '').trim()) && String(chatAssignment?.status || '').trim().toLowerCase() !== 'released';
                         const showPattyAssignee = !hasAssignee && !chatCommercialStatus?.needsAdvisor && resolveModulePattyMode(moduleConfig) === 'autonomous';
@@ -804,6 +872,12 @@ const Sidebar = ({
                                                 ))}
                                                 {labels.length > 4 && <span className="chat-inline-label-more">+{labels.length - 4}</span>}
                                             </div>
+                                        )}
+                                        {chatWindowStatus && (
+                                            <span className={`chat-window-badge chat-window-badge--${chatWindowStatus.status}`.trim()} title={`Ventana 24h: ${chatWindowStatus.label} restantes`}>
+                                                <Clock3 size={11} />
+                                                <span>{chatWindowStatus.label}</span>
+                                            </span>
                                         )}
                                         <div className="chat-row-statuses">
                                             <CommercialStatusBadge

@@ -532,6 +532,9 @@ export const normalizeChatFilters = (filters = {}) => {
     : 'all';
   const rawCommercialStatus = String(filters?.commercialStatus || 'all').trim().toLowerCase();
   const commercialStatus = rawCommercialStatus || 'all';
+  const windowFilter = ['all', 'active', 'expiring', 'expired'].includes(String(filters?.windowFilter || 'all').trim().toLowerCase())
+    ? String(filters?.windowFilter || 'all').trim().toLowerCase()
+    : 'all';
 
   return {
     labelTokens,
@@ -543,6 +546,7 @@ export const normalizeChatFilters = (filters = {}) => {
     contactMode,
     archivedMode,
     pinnedMode,
+    windowFilter
   };
 };
 
