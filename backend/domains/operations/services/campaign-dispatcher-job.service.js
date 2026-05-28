@@ -49,12 +49,14 @@ function buildFormalCustomerName(customer = {}) {
     return toText(customer?.contactName || customer?.contact_name || customer?.name || '');
 }
 
-async function persistCampaignOutboundHistory(tenantId = '', moduleContext = null, job = {}, renderedTemplate = {}, templateName = '', languageCode = '', response = null, logger = null) {
+async function persistCampaignOutboundHistory(tenantId = '', moduleContext = null, job = {}, renderedTemplate = {}, templateName = '', languageCode = '', response = null, logger = null, waClient = null) {
     const cleanTenantId = toText(tenantId);
     if (!cleanTenantId || !job) return;
 
     try {
-        const waId = await waClient.resolveSendWaId(job.phone);
+        const waId = typeof waClient?.resolveSendWaId === 'function'
+            ? await waClient.resolveSendWaId(job.phone)
+            : null;
         const messageId = toText(response?.messages?.[0]?.id || '');
         if (!waId || !messageId) return;
 
@@ -429,7 +431,8 @@ function createCampaignDispatcherJob({
                 toText(job.templateName || ''),
                 languageCode,
                 response,
-                logger
+                logger,
+                waClient
             );
 
             const sentJob = await campaignQueueService.ackJob(tenantId, { idempotencyKey });
