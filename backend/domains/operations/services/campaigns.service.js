@@ -99,6 +99,17 @@ function toIso(value = '') {
     return parsed.toISOString();
 }
 
+function toFilterDateBoundary(value = '', boundary = 'start') {
+    if (value instanceof Date) return toIso(value);
+    const text = toText(value);
+    if (!text) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+        const suffix = boundary === 'end' ? 'T23:59:59.999Z' : 'T00:00:00.000Z';
+        return toIso(`${text}${suffix}`);
+    }
+    return toIso(text);
+}
+
 function toNumber(value, fallback = 0) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
@@ -1448,6 +1459,25 @@ function buildTemplateHistoryLateralSql(customerAlias = 'c') {
     `;
 }
 
+function buildLatestAssignmentLateralSql(moduleExpression = "''") {
+    return `
+        SELECT ta.assignee_user_id
+          FROM tenant_chat_assignments ta
+          JOIN tenant_channel_events ce
+            ON ce.tenant_id = ta.tenant_id
+           AND ce.chat_id = ta.chat_id
+          CROSS JOIN LATERAL (
+                SELECT COALESCE(NULLIF(BTRIM(ta.scope_module_id), ''), NULLIF(BTRIM(ce.module_id), '')) AS resolved_module_id
+          ) scoped
+         WHERE ta.tenant_id = c.tenant_id
+           AND COALESCE(BTRIM(ce.customer_id), '') = c.customer_id
+           AND COALESCE(BTRIM(scoped.resolved_module_id), '') <> ''
+           AND LOWER(scoped.resolved_module_id) = LOWER(COALESCE(${moduleExpression}, ''))
+         ORDER BY COALESCE(ta.updated_at, ta.created_at, ce.created_at) DESC
+         LIMIT 1
+    `;
+}
+
 function normalizeCampaignMarketingStatus(value = '') {
     const cleanValue = toLower(value);
     if (!cleanValue) return 'unknown';
@@ -1495,8 +1525,8 @@ function normalizeAudienceSelection(value = {}) {
             phone_statuses: normalizeStringArray(f.phone_statuses || f.phoneStatuses || f.phone_status).map(toLower),
             has_email: normalizeNullableBool(f.has_email ?? f.hasEmail),
             has_address: normalizeNullableBool(f.has_address ?? f.hasAddress),
-            created_after: toIso(f.created_after || f.createdAfter),
-            created_before: toIso(f.created_before || f.createdBefore),
+            created_after: toFilterDateBoundary(f.created_after || f.createdAfter, 'start'),
+            created_before: toFilterDateBoundary(f.created_before || f.createdBefore, 'end'),
             last_purchase_after: toIso(f.last_purchase_after || f.lastPurchaseAfter),
             last_purchase_before: toIso(f.last_purchase_before || f.lastPurchaseBefore),
             days_since_last_purchase_min: normalizeNullableNumber(f.days_since_last_purchase_min ?? f.daysSinceLastPurchaseMin),
@@ -1548,8 +1578,8 @@ function legacyFiltersFromAudienceSelection(selection = {}) {
         phoneStatuses: filters.phone_statuses,
         hasEmail: filters.has_email,
         hasAddress: filters.has_address,
-        createdAfter: filters.created_after,
-        createdBefore: filters.created_before,
+        createdAfter: toFilterDateBoundary(filters.created_after, 'start'),
+        createdBefore: toFilterDateBoundary(filters.created_before, 'end'),
         lastPurchaseAfter: filters.last_purchase_after,
         lastPurchaseBefore: filters.last_purchase_before,
         daysSinceLastPurchaseMin: filters.days_since_last_purchase_min,
@@ -1592,8 +1622,8 @@ function matchFiltersFromDeepFilterSet(filters = {}) {
         phoneStatuses: normalizeStringArray(source.phone_statuses || source.phoneStatuses || source.phone_status).map(toLower),
         hasEmail: normalizeNullableBool(source.has_email ?? source.hasEmail),
         hasAddress: normalizeNullableBool(source.has_address ?? source.hasAddress),
-        createdAfter: toIso(source.created_after || source.createdAfter),
-        createdBefore: toIso(source.created_before || source.createdBefore),
+        createdAfter: toFilterDateBoundary(source.created_after || source.createdAfter, 'start'),
+        createdBefore: toFilterDateBoundary(source.created_before || source.createdBefore, 'end'),
         lastPurchaseAfter: toIso(source.last_purchase_after || source.lastPurchaseAfter),
         lastPurchaseBefore: toIso(source.last_purchase_before || source.lastPurchaseBefore),
         daysSinceLastPurchaseMin: normalizeNullableNumber(source.days_since_last_purchase_min ?? source.daysSinceLastPurchaseMin),
@@ -1686,8 +1716,8 @@ function customerMatchesFilters(customer = {}, filters = {}) {
     const hasPhone = normalizeNullableBool(filters.hasPhone ?? filters.has_phone);
     const hasEmail = normalizeNullableBool(filters.hasEmail ?? filters.has_email);
     const hasAddress = normalizeNullableBool(filters.hasAddress ?? filters.has_address);
-    const createdAfter = toIso(filters.createdAfter || filters.created_after);
-    const createdBefore = toIso(filters.createdBefore || filters.created_before);
+    const createdAfter = toFilterDateBoundary(filters.createdAfter || filters.created_after, 'start');
+    const createdBefore = toFilterDateBoundary(filters.createdBefore || filters.created_before, 'end');
     const customerCreatedAt = toIso(customer.createdAt || customer.created_at);
     const lastPurchaseAfter = toIso(filters.lastPurchaseAfter || filters.last_purchase_after);
     const lastPurchaseBefore = toIso(filters.lastPurchaseBefore || filters.last_purchase_before);
@@ -2061,9 +2091,9 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                     c.last_name_paternal,
                     c.last_name_maternal,
                     c.email,
+                    c.phone_status,
                     c.preferred_language,
                     c.marketing_opt_in_status AS customer_marketing_opt_in_status,
-                    c.phone_status,
                     c.treatment_id,
                     c.customer_type_id,
                     c.acquisition_source_id,
@@ -2084,7 +2114,7 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                     cmc.marketing_opt_in_status,
                     cmc.commercial_status,
                     cmc.labels,
-                    cmc.assignment_user_id,
+                    COALESCE(cmc.assignment_user_id, latest_assignment.assignee_user_id, '') AS assignment_user_id,
                     op_labels.operational_label_ids,
                     COALESCE(chat.has_open_chat, FALSE) AS has_open_chat,
                     tmpl_history.historical_template_names,
@@ -2126,6 +2156,9 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                  LEFT JOIN LATERAL (
                     ${buildOperationalLabelsLateralSql('cmc.module_id')}
                  ) op_labels ON TRUE
+                 LEFT JOIN LATERAL (
+                    ${buildLatestAssignmentLateralSql('cmc.module_id')}
+                 ) latest_assignment ON TRUE
                  LEFT JOIN LATERAL (
                     SELECT TRUE AS has_open_chat
                     FROM tenant_chats ch
@@ -2389,6 +2422,7 @@ async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
                     c.last_name_paternal,
                     c.last_name_maternal,
                     c.email,
+                    c.phone_status,
                     c.preferred_language,
                     c.treatment_id,
                     c.customer_type_id,
@@ -2410,7 +2444,7 @@ async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
                     cmc.marketing_opt_in_status,
                     cmc.commercial_status,
                     cmc.labels,
-                    cmc.assignment_user_id,
+                    COALESCE(cmc.assignment_user_id, latest_assignment.assignee_user_id, '') AS assignment_user_id,
                     op_labels.operational_label_ids,
                     COALESCE(chat.has_open_chat, FALSE) AS has_open_chat,
                     tmpl_history.historical_template_names,
@@ -2450,6 +2484,12 @@ async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
                       AND a.customer_id = c.customer_id
                  ) addr ON TRUE
                  LEFT JOIN LATERAL (
+                    ${buildOperationalLabelsLateralSql('cmc.module_id')}
+                 ) op_labels ON TRUE
+                 LEFT JOIN LATERAL (
+                    ${buildLatestAssignmentLateralSql('cmc.module_id')}
+                 ) latest_assignment ON TRUE
+                 LEFT JOIN LATERAL (
                     SELECT TRUE AS has_open_chat
                     FROM tenant_chats ch
                     WHERE ch.tenant_id = c.tenant_id
@@ -2462,6 +2502,9 @@ async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
                     ORDER BY ch.updated_at DESC
                     LIMIT 1
                  ) chat ON TRUE
+                 LEFT JOIN LATERAL (
+                    ${buildTemplateHistoryLateralSql('c')}
+                 ) tmpl_history ON TRUE
                  LEFT JOIN LATERAL (
                     SELECT
                         ${LAST_TEMPLATE_NAME_SQL} AS last_template_name,
@@ -2528,6 +2571,7 @@ async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
             c.rango_compras,
             c.metadata,
             c.created_at,
+            COALESCE(latest_assignment.assignee_user_id, '') AS assignment_user_id,
             op_labels.operational_label_ids,
             COALESCE(chat.has_open_chat, FALSE) AS has_open_chat,
             tmpl_history.historical_template_names,
@@ -2563,11 +2607,14 @@ async function loadCampaignCustomerById(tenantId = DEFAULT_TENANT_ID, {
                   WHERE a.tenant_id = c.tenant_id
                     AND a.customer_id = c.customer_id
              ) addr ON TRUE
-          LEFT JOIN LATERAL (
+           LEFT JOIN LATERAL (
                 ${buildOperationalLabelsLateralSql('c.module_id')}
-             ) op_labels ON TRUE
-            LEFT JOIN LATERAL (
-                 SELECT TRUE AS has_open_chat
+           ) op_labels ON TRUE
+          LEFT JOIN LATERAL (
+                ${buildLatestAssignmentLateralSql('c.module_id')}
+           ) latest_assignment ON TRUE
+          LEFT JOIN LATERAL (
+                SELECT TRUE AS has_open_chat
                  FROM tenant_chats ch
                  WHERE ch.tenant_id = c.tenant_id
                    AND REGEXP_REPLACE(COALESCE(ch.phone, ''), '\D', '', 'g') = REGEXP_REPLACE(COALESCE(c.phone_e164, ''), '\D', '', 'g')
@@ -2821,13 +2868,12 @@ async function listCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
               ORDER BY label ASC`
         ),
         safeQuery(
-            `SELECT u.user_id AS id, COALESCE(NULLIF(BTRIM(u.display_name), ''), u.email, u.user_id) AS name
+            `SELECT DISTINCT u.user_id AS id, COALESCE(NULLIF(BTRIM(u.display_name), ''), u.email, u.user_id) AS name
                FROM memberships m
                JOIN users u ON u.user_id = m.user_id
               WHERE m.tenant_id = $1
                 AND m.is_active = TRUE
                 AND u.is_active = TRUE
-                AND LOWER(m.role) IN ('seller', 'admin')
               ORDER BY name ASC`,
             [cleanTenantId]
         ),
