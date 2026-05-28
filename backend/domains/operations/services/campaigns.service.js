@@ -17,6 +17,7 @@ const customerAddressesService = require('../../tenant/services/customer-address
 const waModuleService = require('../../tenant/services/wa-modules.service');
 const waCloudClient = require('../../channels/services/whatsapp-cloud-client.service');
 const { buildTemplateSendComponents } = require('../../channels/helpers/template-render.helpers');
+const { buildRenderedTemplateFromRecord } = require('../../channels/services/template-message-content.helpers');
 
 const STORE_FILE = 'campaigns.json';
 const DEFAULT_LIMIT = 50;
