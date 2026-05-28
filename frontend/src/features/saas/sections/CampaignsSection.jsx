@@ -42,6 +42,7 @@ const EMPTY_DEEP_FILTERS = {
     assigned_user_id: '',
     has_open_chat: '',
     has_phone: '',
+    phone_statuses: [],
     has_email: '',
     has_address: '',
     created_after: '',
@@ -268,6 +269,7 @@ function normalizeDeepFilters(value = {}) {
         assigned_user_id: toText(source.assigned_user_id || ''),
         has_open_chat: source.has_open_chat === true || source.has_open_chat === false ? source.has_open_chat : '',
         has_phone: source.has_phone === true || source.has_phone === false ? source.has_phone : '',
+        phone_statuses: Array.from(new Set((Array.isArray(source.phone_statuses) ? source.phone_statuses : []).map(toLower).filter(Boolean))),
         has_email: source.has_email === true || source.has_email === false ? source.has_email : '',
         has_address: source.has_address === true || source.has_address === false ? source.has_address : '',
         created_after: toText(source.created_after || ''),
@@ -310,6 +312,7 @@ function deepFiltersFromLegacy(filters = {}) {
         assigned_user_id: filters.assigned_user_id || filters.assignedUserId || '',
         has_open_chat: filters.has_open_chat ?? filters.hasOpenChat ?? '',
         has_phone: filters.has_phone ?? filters.hasPhone ?? '',
+        phone_statuses: filters.phone_statuses || filters.phoneStatuses || filters.phone_status || [],
         has_email: filters.has_email ?? filters.hasEmail ?? '',
         has_address: filters.has_address ?? filters.hasAddress ?? '',
         created_after: filters.created_after || filters.createdAfter || '',
@@ -363,6 +366,7 @@ function hasDeepFilterValue(filters = {}) {
         || f.has_open_chat === false
         || f.has_phone === true
         || f.has_phone === false
+        || f.phone_statuses.length > 0
         || f.has_email === true
         || f.has_email === false
         || f.has_address === true
@@ -407,6 +411,7 @@ function countDeepFilterSelections(filters = {}) {
         + (f.assigned_user_id ? 1 : 0)
         + (f.has_open_chat === true || f.has_open_chat === false ? 1 : 0)
         + (f.has_phone === true || f.has_phone === false ? 1 : 0)
+        + f.phone_statuses.length
         + (f.has_email === true || f.has_email === false ? 1 : 0)
         + (f.has_address === true || f.has_address === false ? 1 : 0)
         + (f.created_after ? 1 : 0)
@@ -458,6 +463,7 @@ function getActiveCriteriaKeys(filters = {}) {
     if (f.last_template_names.length > 0) keys.push('last_template_names');
     if (f.last_template_sent_after || f.last_template_sent_before) keys.push('last_template_sent_range');
     if (f.has_phone === true || f.has_phone === false) keys.push('has_phone');
+    if (f.phone_statuses.length > 0) keys.push('phone_statuses');
     if (f.has_email === true || f.has_email === false) keys.push('has_email');
     if (f.has_address === true || f.has_address === false) keys.push('has_address');
     return keys;
@@ -488,6 +494,7 @@ function clearCriterionFromFilters(filters = {}, criterion = '') {
     case 'purchase_status':
     case 'purchase_ranges':
     case 'last_template_names':
+    case 'phone_statuses':
         next[criterion] = [];
         break;
     case 'assigned_user_id':
@@ -660,6 +667,7 @@ function normalizeAudienceEstimateItem(item = {}) {
         customerTypeId: toText(item?.customerTypeId),
         acquisitionSourceId: toText(item?.acquisitionSourceId),
         assignedUserId: toText(item?.assignedUserId),
+        phoneStatus: toLower(item?.phoneStatus || item?.phone_status || 'unknown') || 'unknown',
         departmentName: toText(item?.departmentName),
         provinceName: toText(item?.provinceName),
         districtName: toText(item?.districtName),
@@ -771,11 +779,17 @@ function buildAudienceFiltersFromForm(form = {}, labelOptions = [], zoneOptions 
         customer_type_ids: inclusionFilters.customer_type_ids,
         acquisition_source_ids: inclusionFilters.acquisition_source_ids,
         assigned_user_id: inclusionFilters.assigned_user_id || undefined,
+        has_open_chat: inclusionFilters.has_open_chat === '' ? undefined : inclusionFilters.has_open_chat,
         has_phone: inclusionFilters.has_phone === '' ? undefined : inclusionFilters.has_phone,
+        phone_statuses: inclusionFilters.phone_statuses,
         has_email: inclusionFilters.has_email === '' ? undefined : inclusionFilters.has_email,
         has_address: inclusionFilters.has_address === '' ? undefined : inclusionFilters.has_address,
         created_after: inclusionFilters.created_after || undefined,
         created_before: inclusionFilters.created_before || undefined,
+        has_received_any_template: inclusionFilters.has_received_any_template === '' ? undefined : inclusionFilters.has_received_any_template,
+        last_template_names: inclusionFilters.last_template_names,
+        last_template_sent_after: inclusionFilters.last_template_sent_after || undefined,
+        last_template_sent_before: inclusionFilters.last_template_sent_before || undefined,
         search: toText(form?.searchText || '')
     };
 }
@@ -2509,6 +2523,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         addList('segments', segmentOptions, 'name', 'id', toText);
         addList('purchase_ranges', purchaseRangeOptions, 'name', 'id', toText);
         addList('last_template_names', sentTemplateOptions, 'name', 'id', toText);
+        addList('phone_statuses', campaignFilterOptions.phone_statuses, 'name', 'id', toLower);
         addList('departments', geographyDepartments.map((name) => ({ id: name, name })), 'name', 'id', toText);
         addList('provinces', uniqueTextItems(Object.values(geographyProvinceMap).flat()).map((name) => ({ id: name, name })), 'name', 'id', toText);
         addList('districts', uniqueTextItems(Object.values(geographyDistrictMap).flat()).map((name) => ({ id: name, name })), 'name', 'id', toText);
@@ -2590,7 +2605,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                 normalize: toText
             });
         }
-        if (filters.has_phone === true) chips.push({ keyName: 'has_phone', value: '', label: 'Tiene teléfono válido', normalize: toText });
+        if (filters.has_phone === true) chips.push({ keyName: 'has_phone', value: '', label: 'Tiene teléfono registrado', normalize: toText });
         if (filters.has_email === true) chips.push({ keyName: 'has_email', value: '', label: 'Tiene email', normalize: toText });
         if (filters.has_address === true) chips.push({ keyName: 'has_address', value: '', label: 'Tiene dirección registrada', normalize: toText });
         if (filters.has_received_any_template === true) chips.push({ keyName: 'has_received_any_template', value: '', label: 'Ya recibió algún template', normalize: toText });
@@ -2629,6 +2644,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         addList('segments', segmentOptions, 'name', 'id', toText);
         addList('purchase_ranges', purchaseRangeOptions, 'name', 'id', toText);
         addList('last_template_names', sentTemplateOptions, 'name', 'id', toText);
+        addList('phone_statuses', campaignFilterOptions.phone_statuses, 'name', 'id', toLower);
         addList('departments', geographyDepartments.map((name) => ({ id: name, name })), 'name', 'id', toText);
         addList('provinces', uniqueTextItems(Object.values(geographyProvinceMap).flat()).map((name) => ({ id: name, name })), 'name', 'id', toText);
         addList('districts', uniqueTextItems(Object.values(geographyDistrictMap).flat()).map((name) => ({ id: name, name })), 'name', 'id', toText);
@@ -2665,7 +2681,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         if (filters.cadence_days_min !== '' || filters.cadence_days_max !== '') {
             chips.push({ keyName: 'cadence_days_range', value: '', label: `Cadencia (días): ${filters.cadence_days_min || '...'} a ${filters.cadence_days_max || '...'}` });
         }
-        if (filters.has_phone === true) chips.push({ keyName: 'has_phone', value: '', label: 'Tiene teléfono válido' });
+        if (filters.has_phone === true) chips.push({ keyName: 'has_phone', value: '', label: 'Tiene teléfono registrado' });
         if (filters.has_email === true) chips.push({ keyName: 'has_email', value: '', label: 'Tiene email' });
         if (filters.has_address === true) chips.push({ keyName: 'has_address', value: '', label: 'Tiene dirección registrada' });
         if (filters.has_received_any_template === true) chips.push({ keyName: 'has_received_any_template', value: '', label: 'Ya recibió algún template' });
@@ -2951,14 +2967,15 @@ export default React.memo(function CampaignsSection(props = {}) {
                 title: 'Historial de templates',
                 items: [
                     { key: 'has_received_any_template', label: 'Ya recibió algún template' },
-                    { key: 'last_template_names', label: 'Último template enviado' },
+                    { key: 'last_template_names', label: 'Alguna vez recibió template' },
                     { key: 'last_template_sent_range', label: 'Fecha último template enviado' }
                 ]
             },
             {
                 title: 'Datos completos',
                 items: [
-                    { key: 'has_phone', label: 'Tiene teléfono válido' },
+                    { key: 'has_phone', label: 'Tiene teléfono registrado' },
+                    { key: 'phone_statuses', label: 'Estado del teléfono' },
                     { key: 'has_email', label: 'Tiene email' },
                     { key: 'has_address', label: 'Tiene dirección registrada' }
                 ]
@@ -3008,14 +3025,15 @@ export default React.memo(function CampaignsSection(props = {}) {
             title: 'Historial de templates',
             items: [
                 { key: 'has_received_any_template', label: 'Ya recibió algún template' },
-                { key: 'last_template_names', label: 'Último template enviado' },
+                { key: 'last_template_names', label: 'Alguna vez recibió template' },
                 { key: 'last_template_sent_range', label: 'Fecha último template enviado' }
             ]
         });
         groups.push({
             title: 'Datos completos',
             items: [
-                { key: 'has_phone', label: 'Tiene teléfono válido' },
+                { key: 'has_phone', label: 'Tiene teléfono registrado' },
+                { key: 'phone_statuses', label: 'Estado del teléfono' },
                 { key: 'has_email', label: 'Tiene email' },
                 { key: 'has_address', label: 'Tiene dirección registrada' },
                 { key: 'manual_customers', label: 'Clientes especificos' }
@@ -3043,6 +3061,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         const customerTypeOptions = scope === 'exclusionFilters' ? exclusionCustomerTypeOptions : inclusionCustomerTypeOptions;
         const assignedUserOptions = scope === 'exclusionFilters' ? exclusionAssignedUserOptions : campaignFilterOptions.assigned_users;
         const acquisitionOptions = scope === 'exclusionFilters' ? exclusionAcquisitionSourceOptions : acquisitionSourceOptions;
+        const phoneStatusOptions = campaignFilterOptions.phone_statuses || [];
         const departments = scope === 'exclusionFilters' ? exclusionDepartments : geographyDepartments;
         const provinces = scope === 'exclusionFilters' ? exclusionProvinces : inclusionProvinceOptions;
         const districts = scope === 'exclusionFilters' ? exclusionDistricts : inclusionDistrictOptions;
@@ -3246,7 +3265,17 @@ export default React.memo(function CampaignsSection(props = {}) {
                 {activeCriteria.includes('amount_accumulated_range') ? renderNumberRangeControl('Monto acumulado', 'amount_accumulated_min', 'amount_accumulated_max') : null}
                 {activeCriteria.includes('cadence_days_range') ? renderNumberRangeControl('Cadencia de compra (días)', 'cadence_days_min', 'cadence_days_max') : null}
                 {activeCriteria.includes('has_phone') ? (
-                    renderBooleanControl('has_phone', 'Tiene teléfono válido')
+                    renderBooleanControl('has_phone', 'Tiene teléfono registrado')
+                ) : null}
+                {activeCriteria.includes('phone_statuses') ? (
+                    renderMultiSelectControl(
+                        'Estado del teléfono',
+                        filters.phone_statuses,
+                        phoneStatusOptions.map((entry) => ({ value: entry.id, label: entry.name })),
+                        'phone_statuses',
+                        toLower,
+                        'Sin estados de teléfono disponibles.'
+                    )
                 ) : null}
                 {activeCriteria.includes('has_email') ? (
                     renderBooleanControl('has_email', 'Tiene email')
@@ -3259,7 +3288,7 @@ export default React.memo(function CampaignsSection(props = {}) {
                 ) : null}
                 {activeCriteria.includes('last_template_names') ? (
                     renderMultiSelectControl(
-                        'Último template enviado',
+                        'Alguna vez recibió template',
                         filters.last_template_names,
                         sentTemplateOptions.map((entry) => ({ value: entry.id, label: entry.name })),
                         'last_template_names',
