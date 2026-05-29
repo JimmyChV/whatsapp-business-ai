@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import {
     normalizeCatalogItem,
     normalizeSkuKey,
@@ -25,6 +25,8 @@ export const usePendingOrderCartImport = ({
     updateDraft = null,
     formatMoney
 } = {}) => {
+    const isImportingRef = useRef(false);
+
     useEffect(() => {
         if (!pendingOrderCartLoad || !activeChatId) return;
         if (String(pendingOrderCartLoad.chatId || '') !== String(activeChatId)) return;
@@ -34,6 +36,8 @@ export const usePendingOrderCartImport = ({
         if (token && lastImportedOrderRef?.current === dedupeKey) return;
         if (token && lastImportedOrderRef) lastImportedOrderRef.current = dedupeKey;
 
+        isImportingRef.current = true;
+        try {
         const applyDraftPatch = (patchOrFn) => {
             if (typeof updateDraft !== 'function') return false;
             updateDraft(patchOrFn);
@@ -406,6 +410,9 @@ export const usePendingOrderCartImport = ({
             level: fallbackLines > 0 ? 'warn' : 'ok',
             text: `${statusBits.join(' | ')}${subtotalLabel}`
         });
+        } finally {
+            isImportingRef.current = false;
+        }
     }, [
         pendingOrderCartLoad,
         activeChatId,
@@ -423,6 +430,8 @@ export const usePendingOrderCartImport = ({
         updateDraft,
         formatMoney
     ]);
+
+    return { isImportingCart: isImportingRef };
 };
 
 

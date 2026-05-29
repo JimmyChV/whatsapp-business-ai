@@ -137,8 +137,6 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             pendingOrderCartLoad.messageId
         ].filter(Boolean).join(':');
     }, [activeChatId, pendingOrderCartLoad]);
-    const pendingCartImportActive = Boolean(pendingCartImportKey);
-    const [cartImportGraceKey, setCartImportGraceKey] = useState('');
     const [chatQuotesByChat, setChatQuotesByChat] = useState({});
     const [quoteHistoryExpanded, setQuoteHistoryExpanded] = useState(true);
     const buildInitialQuoteOptionsWizardState = useCallback(() => ({
@@ -407,7 +405,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setAiScopeLoading,
         setAiThreadMessages
     });
-    usePendingOrderCartImport({
+    const { isImportingCart } = usePendingOrderCartImport({
         pendingOrderCartLoad,
         activeChatId,
         catalog,
@@ -434,25 +432,16 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         if (!pendingCartImportKey) return;
         if (lastOpenedCartImportRef.current === pendingCartImportKey) return;
         lastOpenedCartImportRef.current = pendingCartImportKey;
-        setCartImportGraceKey(pendingCartImportKey);
         openToolsPanel('cart');
     }, [openToolsPanel, pendingCartImportKey]);
-    useEffect(() => {
-        if (!cartImportGraceKey) return undefined;
-        if (cart.length > 0 || activeTab !== 'cart') {
-            setCartImportGraceKey('');
-            return undefined;
-        }
-        const timer = setTimeout(() => setCartImportGraceKey(''), 600);
-        return () => clearTimeout(timer);
-    }, [activeTab, cart.length, cartImportGraceKey]);
     useBusinessSidebarUiSync({
         aiEndRef,
         aiMessages,
         activeTab,
         quickRepliesEnabled,
         cart,
-        allowEmptyCartTab: pendingCartImportActive && cartImportGraceKey === pendingCartImportKey,
+        allowEmptyCartTab: false,
+        isImportingCart,
         setActiveTab
     });
     useCompanyProfileOverlay({

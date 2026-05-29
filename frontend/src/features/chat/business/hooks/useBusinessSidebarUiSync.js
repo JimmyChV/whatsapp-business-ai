@@ -7,6 +7,7 @@ export const useBusinessSidebarUiSync = ({
     quickRepliesEnabled = false,
     cart = [],
     allowEmptyCartTab = false,
+    isImportingCart = null,
     setActiveTab
 } = {}) => {
     useEffect(() => {
@@ -21,8 +22,13 @@ export const useBusinessSidebarUiSync = ({
 
     useEffect(() => {
         if (activeTab === 'quotes') return;
-        if (activeTab === 'cart' && cart.length === 0 && !allowEmptyCartTab) {
+        if (
+            activeTab === 'cart'
+            && cart.length === 0
+            && !allowEmptyCartTab
+            && !isImportingCart?.current
+        ) {
             setActiveTab('catalog');
         }
-    }, [activeTab, allowEmptyCartTab, cart.length, setActiveTab]);
+    }, [activeTab, allowEmptyCartTab, cart.length, isImportingCart, setActiveTab]);
 };
