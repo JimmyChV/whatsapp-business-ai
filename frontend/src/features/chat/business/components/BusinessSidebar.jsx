@@ -123,14 +123,21 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const sourceQuote = activeDraft.sourceQuote && typeof activeDraft.sourceQuote === 'object'
         ? activeDraft.sourceQuote
         : null;
-    const pendingCartImportActive = Boolean(
-        pendingOrderCartLoad
-        && activeChatId
-        && String(pendingOrderCartLoad.chatId || '') === String(activeChatId)
-        && pendingOrderCartLoad.order
-        && typeof pendingOrderCartLoad.order === 'object'
-    );
-    const requestedCartTabActive = String(requestedToolTab?.tabId || '') === 'cart';
+    const pendingCartImportKey = useMemo(() => {
+        if (!pendingOrderCartLoad || !activeChatId) return '';
+        if (String(pendingOrderCartLoad.chatId || '') !== String(activeChatId)) return '';
+        if (!pendingOrderCartLoad.order || typeof pendingOrderCartLoad.order !== 'object') return '';
+        return [
+            activeChatId,
+            pendingOrderCartLoad.token,
+            pendingOrderCartLoad.order?.orderId,
+            pendingOrderCartLoad.order?.quoteId,
+            pendingOrderCartLoad.order?.sourceQuoteMessageId,
+            pendingOrderCartLoad.messageId
+        ].filter(Boolean).join(':');
+    }, [activeChatId, pendingOrderCartLoad]);
+    const pendingCartImportActive = Boolean(pendingCartImportKey);
+    const [cartImportGraceKey, setCartImportGraceKey] = useState('');
     const [chatQuotesByChat, setChatQuotesByChat] = useState({});
     const [quoteHistoryExpanded, setQuoteHistoryExpanded] = useState(true);
     const buildInitialQuoteOptionsWizardState = useCallback(() => ({
@@ -423,28 +430,28 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setShowCompanyProfile(false);
     }, [requestedToolTab]);
     useEffect(() => {
-        if (!pendingOrderCartLoad || !activeChatId) return;
-        if (String(pendingOrderCartLoad.chatId || '') !== String(activeChatId)) return;
-        if (!pendingOrderCartLoad.order || typeof pendingOrderCartLoad.order !== 'object') return;
-        const cartImportKey = [
-            activeChatId,
-            pendingOrderCartLoad.token,
-            pendingOrderCartLoad.order?.orderId,
-            pendingOrderCartLoad.order?.quoteId,
-            pendingOrderCartLoad.order?.sourceQuoteMessageId,
-            pendingOrderCartLoad.messageId
-        ].filter(Boolean).join(':');
-        if (cartImportKey && lastOpenedCartImportRef.current === cartImportKey) return;
-        if (cartImportKey) lastOpenedCartImportRef.current = cartImportKey;
+        if (!pendingCartImportKey) return;
+        if (lastOpenedCartImportRef.current === pendingCartImportKey) return;
+        lastOpenedCartImportRef.current = pendingCartImportKey;
+        setCartImportGraceKey(pendingCartImportKey);
         openToolsPanel('cart');
-    }, [activeChatId, openToolsPanel, pendingOrderCartLoad]);
+    }, [openToolsPanel, pendingCartImportKey]);
+    useEffect(() => {
+        if (!cartImportGraceKey) return undefined;
+        if (cart.length > 0 || activeTab !== 'cart') {
+            setCartImportGraceKey('');
+            return undefined;
+        }
+        const timer = setTimeout(() => setCartImportGraceKey(''), 600);
+        return () => clearTimeout(timer);
+    }, [activeTab, cart.length, cartImportGraceKey]);
     useBusinessSidebarUiSync({
         aiEndRef,
         aiMessages,
         activeTab,
         quickRepliesEnabled,
         cart,
-        allowEmptyCartTab: pendingCartImportActive || requestedCartTabActive,
+        allowEmptyCartTab: pendingCartImportActive && cartImportGraceKey === pendingCartImportKey,
         setActiveTab
     });
     useCompanyProfileOverlay({
@@ -1309,11 +1316,11 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     orderImportStatus={orderImportStatus}
                     sourceOrder={sourceOrder}
                     sourceQuote={sourceQuote}
-                    quoteHistory={[]}
-                    quoteHistoryExpanded={false}
-                    setQuoteHistoryExpanded={() => {}}
-                    onLoadQuoteToCart={null}
-                    onStartNewQuote={null}
+                    quoteHistory={quoteHistory}
+                    quoteHistoryExpanded={quoteHistoryExpanded}
+                    setQuoteHistoryExpanded={setQuoteHistoryExpanded}
+                    onLoadQuoteToCart={handleLoadQuoteToCart}
+                    onStartNewQuote={handleStartNewQuote}
                     quoteOptionsModeActive={quoteOptionsModeActive}
                     getLineBreakdown={getLineBreakdown}
                     removeFromCart={removeFromCart}
@@ -1344,7 +1351,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     cartTotal={cartTotal}
                     sendQuoteToChat={sendQuoteToChat}
                     canWriteByAssignment={canUseMessageTools}
-                    showQuoteHistory={false}
+                    showQuoteHistory
                 />
             )}
 
