@@ -139,7 +139,7 @@ function createSocketChatListService({
                 : null)
             : null;
 
-        return {
+        const enrichedItem = {
             ...item,
             baseChatId: baseChatId || item?.baseChatId || null,
             scopeModuleId: resolvedScopeModuleId || item?.scopeModuleId || null,
@@ -148,6 +148,15 @@ function createSocketChatListService({
             laboralMinutesRemaining,
             laboralWindowMeasuredAt
         };
+        console.log('[Window] enriched result', {
+            chatId: enrichedItem?.id || enrichedItem?.chatId || null,
+            baseChatId: enrichedItem?.baseChatId || null,
+            scopeModuleId: enrichedItem?.scopeModuleId || null,
+            lastCustomerMessageAt: enrichedItem?.lastCustomerMessageAt || null,
+            windowExpiresAt: enrichedItem?.windowExpiresAt || null,
+            laboralMinutesRemaining: enrichedItem?.laboralMinutesRemaining ?? null
+        });
+        return enrichedItem;
     };
 
     const enrichChatPageWithWindowData = async (page = null, tenantId = 'default', scopeModuleId = '') => {
