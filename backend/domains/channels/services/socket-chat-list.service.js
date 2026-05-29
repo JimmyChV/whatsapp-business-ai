@@ -57,12 +57,6 @@ function createSocketChatListService({
 
         scheduleCache.set(cacheKey, { value: schedule || null, updatedAt: Date.now() });
         runtimeStore.set('scheduleCache', scheduleCache);
-        console.log('[ChatList] scheduleResolution', {
-            tenantId,
-            cacheKey,
-            found: !!schedule,
-            scheduleId: schedule?.scheduleId || null
-        });
         return schedule || null;
     };
 
@@ -89,6 +83,76 @@ function createSocketChatListService({
         } catch (_) {
             return null;
         }
+    };
+
+    const resolveBaseChatIdFromSummary = (item = {}) => {
+        const explicitBaseChatId = String(item?.baseChatId || '').trim();
+        if (explicitBaseChatId) return explicitBaseChatId;
+        const rawId = String(item?.id || '').trim();
+        if (!rawId) return '';
+        const scopeSeparator = '::mod::';
+        const separatorIndex = rawId.lastIndexOf(scopeSeparator);
+        if (separatorIndex < 0) return rawId;
+        return String(rawId.slice(0, separatorIndex) || '').trim() || rawId;
+    };
+
+    const enrichWithWindowData = async (item = null, tenantId = 'default', scopeModuleId = '') => {
+        if (!item || typeof item !== 'object') return item;
+        const resolvedTenantId = String(tenantId || 'default').trim() || 'default';
+        const resolvedScopeModuleId = normalizeScopedModuleId(
+            scopeModuleId
+            || item?.scopeModuleId
+            || item?.lastMessageModuleId
+            || ''
+        );
+        const baseChatId = resolveBaseChatIdFromSummary(item);
+        if (!baseChatId) {
+            return {
+                ...item,
+                lastCustomerMessageAt: null,
+                windowExpiresAt: null,
+                laboralMinutesRemaining: null,
+                laboralWindowMeasuredAt: null
+            };
+        }
+
+        const lastCustomerMessageAt = await resolveLastCustomerMessageAt({
+            tenantId: resolvedTenantId,
+            chatId: baseChatId,
+            scopeModuleId: resolvedScopeModuleId
+        });
+        const lastCustomerDate = lastCustomerMessageAt ? new Date(lastCustomerMessageAt) : null;
+        const hasValidLastCustomerDate = Boolean(lastCustomerDate) && Number.isFinite(lastCustomerDate.getTime());
+        const windowExpiresAt = hasValidLastCustomerDate
+            ? new Date(lastCustomerDate.getTime() + DAY_WINDOW_MS).toISOString()
+            : null;
+        const activeSchedule = lastCustomerMessageAt ? await getActiveTenantSchedule(resolvedTenantId) : null;
+        const laboralWindowMeasuredAt = hasValidLastCustomerDate ? new Date().toISOString() : null;
+        const laboralMinutesRemaining = hasValidLastCustomerDate
+            ? (typeof tenantScheduleService?.getRemainingLaboralMinutes === 'function'
+                ? tenantScheduleService.getRemainingLaboralMinutes(activeSchedule, windowExpiresAt, laboralWindowMeasuredAt)
+                : null)
+            : null;
+
+        return {
+            ...item,
+            baseChatId: baseChatId || item?.baseChatId || null,
+            scopeModuleId: resolvedScopeModuleId || item?.scopeModuleId || null,
+            lastCustomerMessageAt,
+            windowExpiresAt,
+            laboralMinutesRemaining,
+            laboralWindowMeasuredAt
+        };
+    };
+
+    const enrichChatPageWithWindowData = async (page = null, tenantId = 'default', scopeModuleId = '') => {
+        const safePage = page && typeof page === 'object' ? page : {};
+        const rawItems = Array.isArray(safePage.items) ? safePage.items : [];
+        const items = await Promise.all(rawItems.map((item) => enrichWithWindowData(item, tenantId, scopeModuleId)));
+        return {
+            ...safePage,
+            items
+        };
     };
 
     const getSortedVisibleChats = async ({ forceRefresh = false } = {}) => {
@@ -481,33 +545,6 @@ function createSocketChatListService({
         } catch (error) {
             labels = [];
         }
-        const lastCustomerMessageAt = await resolveLastCustomerMessageAt({
-            tenantId: resolvedTenantId,
-            chatId,
-            scopeModuleId: normalizedScopeModuleId
-        });
-        const lastCustomerDate = lastCustomerMessageAt ? new Date(lastCustomerMessageAt) : null;
-        const hasValidLastCustomerDate = Boolean(lastCustomerDate) && Number.isFinite(lastCustomerDate.getTime());
-        const windowExpiresAt = hasValidLastCustomerDate
-            ? new Date(lastCustomerDate.getTime() + DAY_WINDOW_MS).toISOString()
-            : null;
-        const activeSchedule = lastCustomerMessageAt ? await getActiveTenantSchedule(resolvedTenantId) : null;
-        const laboralWindowMeasuredAt = hasValidLastCustomerDate ? new Date().toISOString() : null;
-        const laboralMinutesRemaining = hasValidLastCustomerDate
-            ? (typeof tenantScheduleService?.getRemainingLaboralMinutes === 'function'
-                ? tenantScheduleService.getRemainingLaboralMinutes(activeSchedule, windowExpiresAt, laboralWindowMeasuredAt)
-                : null)
-            : null;
-        console.log('[ChatList] windowCalc', {
-            tenantId: resolvedTenantId,
-            chatId: chat?.id?._serialized || chatId || null,
-            scopeModuleId: normalizedScopeModuleId || null,
-            hasLastCustomer: !!lastCustomerMessageAt,
-            windowExpiresAt,
-            laboralMinutesRemaining,
-            hasSchedule: !!activeSchedule
-        });
-
         return {
             id: scopedSummaryId || chatId,
             baseChatId: chatId,
@@ -526,10 +563,6 @@ function createSocketChatListService({
             customerId: erpCustomer?.customerId || null,
             erpCustomerName: erpCustomer ? resolveChatDisplayName({ ...effectiveChat, erpCustomer }) : null,
             archived: Boolean(chat?.archived),
-            lastCustomerMessageAt,
-            windowExpiresAt,
-            laboralMinutesRemaining,
-            laboralWindowMeasuredAt,
             lastMessageModuleId: normalizedScopeModuleId || null,
             lastMessageModuleName: String(scopeModuleName || '').trim() || null,
             lastMessageModuleImageUrl: String(scopeModuleImageUrl || '').trim() || null,
@@ -594,7 +627,8 @@ function createSocketChatListService({
                         filterKey,
                         scopeModuleId: activeScopeModuleId || ''
                     });
-                    socket.emit('chats', fallbackPage);
+                    const enrichedFallbackPage = await enrichChatPageWithWindowData(fallbackPage, tenantId, activeScopeModuleId || '');
+                    socket.emit('chats', enrichedFallbackPage);
                     return;
                 }
 
@@ -729,7 +763,8 @@ function createSocketChatListService({
                         scopeModuleId: activeScopeModuleId || ''
                     });
                     if (Array.isArray(fallbackPageIfEmpty?.items) && fallbackPageIfEmpty.items.length > 0) {
-                        socket.emit('chats', fallbackPageIfEmpty);
+                        const enrichedFallbackPageIfEmpty = await enrichChatPageWithWindowData(fallbackPageIfEmpty, tenantId, activeScopeModuleId || '');
+                        socket.emit('chats', enrichedFallbackPageIfEmpty);
                         return;
                     }
                 }
@@ -783,6 +818,10 @@ function createSocketChatListService({
                     }
                 }
 
+                items = await Promise.all(
+                    items.map((item) => enrichWithWindowData(item, tenantId, activeScopeModuleId || ''))
+                );
+
                 const nextOffset = offset + items.length;
                 const total = Math.max(filtered.length, historyTotalHint, offset + items.length);
                 const hasMore = nextOffset < total;
@@ -830,7 +869,9 @@ function createSocketChatListService({
                         filterKey: String(payload?.filterKey || '').trim(),
                         scopeModuleId: normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '') || null
                     });
-                    socket.emit('chats', fallbackPage);
+                    const fallbackScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '') || '';
+                    const enrichedFallbackPage = await enrichChatPageWithWindowData(fallbackPage, tenantId, fallbackScopeModuleId);
+                    socket.emit('chats', enrichedFallbackPage);
                 } catch (historyErr) {
                     socket.emit('chats', {
                         items: [],
