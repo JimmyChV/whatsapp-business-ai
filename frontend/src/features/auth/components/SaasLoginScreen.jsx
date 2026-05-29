@@ -1,4 +1,5 @@
 import '../auth.css';
+import { Check, Eye, EyeOff, Lock, Mail } from 'lucide-react';
 
 function SaasLoginScreen({
   loginEmail,
@@ -34,200 +35,241 @@ function SaasLoginScreen({
 }) {
   return (
     <div className='login-screen login-screen--saas'>
-      <div className='login-ambient' aria-hidden='true' />
-      <form onSubmit={handleSaasLogin} className='saas-login-card fade-in'>
-        <div className='saas-login-head'>
-          <span className='saas-login-kicker'>Control plane</span>
-          <div className='saas-login-title'>Acceso seguro</div>
-          <p>Inicia sesion con usuario y contrasena. La empresa se asigna automaticamente segun tus permisos.</p>
-        </div>
-
-        <label className='saas-login-field'>
-          <span>Usuario o correo</span>
-          <input
-            type='text'
-            value={loginEmail}
-            onChange={(e) => setLoginEmail(e.target.value)}
-            autoComplete='username'
-            placeholder='usuario@empresa.com o user_id'
-            disabled={saasAuthBusy || recoveryBusy}
-          />
-        </label>
-
-        <label className='saas-login-field'>
-          <span>Contrasena</span>
-          <div className='saas-login-password-wrap'>
-            <input
-              type={showLoginPassword ? 'text' : 'password'}
-              value={loginPassword}
-              onChange={(e) => setLoginPassword(e.target.value)}
-              autoComplete='current-password'
-              placeholder='********'
-              disabled={saasAuthBusy || recoveryBusy}
-            />
-            <button
-              type='button'
-              className='saas-login-visibility'
-              onClick={() => setShowLoginPassword((prev) => !prev)}
-              disabled={saasAuthBusy || recoveryBusy}
-              aria-label={showLoginPassword ? 'Ocultar contrasena' : 'Mostrar contrasena'}
-            >
-              {showLoginPassword ? 'Ocultar' : 'Ver'}
-            </button>
+      <div className='saas-login-shell fade-in'>
+        <aside className='saas-login-brand-panel'>
+          <div className='saas-login-brand-mark' aria-hidden='true'>
+            <Check size={20} strokeWidth={3} />
           </div>
-        </label>
-
-        {saasAuthError && (
-          <div className='saas-login-error'>
-            {saasAuthError}
+          <div className='saas-login-brand-copy'>
+            <h1>Gestión de WhatsApp para tu empresa</h1>
+            <p>Atiende, cotiza y vende desde un solo lugar.</p>
           </div>
-        )}
-        {saasAuthNotice && (
-          <div className='saas-login-notice'>
-            {saasAuthNotice}
-          </div>
-        )}
+          <ul className='saas-login-feature-list'>
+            <li>Atención multi-agente en tiempo real</li>
+            <li>IA comercial</li>
+            <li>Campañas masivas por bloques</li>
+            <li>Cotizaciones y catálogo integrado</li>
+            <li>Cobertura logística en el chat</li>
+          </ul>
+          <div className='saas-login-brand-footer'>© 2026 · Panel de control</div>
+        </aside>
 
-        {recoveryStep === 'idle' ? (
-          <>
-            <button
-              type='submit'
-              disabled={saasAuthBusy || recoveryBusy}
-              className='saas-login-submit'
-            >
-              {saasAuthBusy ? 'Ingresando...' : 'Iniciar sesion'}
-            </button>
-            <button
-              type='button'
-              className='saas-login-link'
-              onClick={openRecoveryFlow}
-              disabled={saasAuthBusy || recoveryBusy}
-            >
-              Olvide mi contrasena
-            </button>
-          </>
-        ) : (
-          <div className='saas-recovery-box'>
-            <div className='saas-recovery-head'>
-              <strong>Recuperar acceso</strong>
-              <small>Paso seguro en 2 etapas con codigo por correo.</small>
+        <section className='saas-login-form-panel'>
+          <form onSubmit={handleSaasLogin} className='saas-login-card'>
+            <div className='saas-login-head saas-login-head--split'>
+              <div className='saas-login-title'>Bienvenido de nuevo</div>
+              <p>Tu empresa se asigna automáticamente según tus permisos.</p>
             </div>
 
-            {recoveryNotice && <div className='saas-login-notice'>{recoveryNotice}</div>}
-            {recoveryError && <div className='saas-login-error'>{recoveryError}</div>}
+            {recoveryStep === 'idle' ? (
+              <>
+                <label className='saas-login-field saas-login-field--split'>
+                  <span>Usuario o correo</span>
+                  <div className='saas-login-input-shell'>
+                    <span className='saas-login-input-icon' aria-hidden='true'><Mail size={16} /></span>
+                    <input
+                      type='text'
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      autoComplete='username'
+                      placeholder='tu@empresa.com'
+                      disabled={saasAuthBusy || recoveryBusy}
+                    />
+                  </div>
+                </label>
 
-            {recoveryStep === 'request' && (
-              <div className='saas-recovery-form'>
-                <label className='saas-login-field'>
-                  <span>Correo</span>
-                  <input
-                    type='email'
-                    value={recoveryEmail}
-                    onChange={(event) => setRecoveryEmail(event.target.value)}
-                    placeholder='usuario@empresa.com'
-                    autoComplete='email'
-                    disabled={recoveryBusy}
-                  />
+                <label className='saas-login-field saas-login-field--split'>
+                  <span>Contraseña</span>
+                  <div className='saas-login-password-wrap saas-login-input-shell'>
+                    <span className='saas-login-input-icon' aria-hidden='true'><Lock size={16} /></span>
+                    <input
+                      type={showLoginPassword ? 'text' : 'password'}
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      autoComplete='current-password'
+                      placeholder='••••••••'
+                      disabled={saasAuthBusy || recoveryBusy}
+                    />
+                    <button
+                      type='button'
+                      className='saas-login-visibility saas-login-visibility--icon'
+                      onClick={() => setShowLoginPassword((prev) => !prev)}
+                      disabled={saasAuthBusy || recoveryBusy}
+                      aria-label={showLoginPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                      title={showLoginPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                    >
+                      {showLoginPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      <span>{showLoginPassword ? 'Ocultar' : 'Ver'}</span>
+                    </button>
+                  </div>
                 </label>
-                <button
-                  type='button'
-                  disabled={recoveryBusy}
-                  className='saas-login-submit'
-                  onClick={handleRecoveryRequest}
-                >
-                  {recoveryBusy ? 'Enviando...' : 'Enviar codigo'}
-                </button>
-              </div>
-            )}
 
-            {recoveryStep === 'verify' && (
-              <div className='saas-recovery-form'>
-                <label className='saas-login-field'>
-                  <span>Correo</span>
-                  <input type='email' value={recoveryEmail} disabled />
-                </label>
-                <label className='saas-login-field'>
-                  <span>Codigo de verificacion</span>
-                  <input
-                    type='text'
-                    value={recoveryCode}
-                    onChange={(event) => setRecoveryCode(event.target.value)}
-                    placeholder='000000'
-                    autoComplete='one-time-code'
-                    disabled={recoveryBusy}
-                  />
-                </label>
+                <div className='saas-login-inline-actions'>
+                  <button
+                    type='button'
+                    className='saas-login-link saas-login-link--inline'
+                    onClick={openRecoveryFlow}
+                    disabled={saasAuthBusy || recoveryBusy}
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </button>
+                </div>
+
+                {saasAuthError && <div className='saas-login-error'>{saasAuthError}</div>}
+                {saasAuthNotice && <div className='saas-login-notice'>{saasAuthNotice}</div>}
+
                 <button
-                  type='button'
-                  disabled={recoveryBusy}
-                  className='saas-login-submit'
-                  onClick={handleRecoveryVerify}
+                  type='submit'
+                  disabled={saasAuthBusy || recoveryBusy}
+                  className='saas-login-submit saas-login-submit--split'
                 >
-                  {recoveryBusy ? 'Validando...' : 'Validar codigo'}
+                  {saasAuthBusy ? 'Ingresando...' : 'Ingresar'}
                 </button>
-                {recoveryDebugCode && (
-                  <div className='saas-login-debug'>
-                    Codigo debug (solo entorno local): <strong>{recoveryDebugCode}</strong>
+
+                <div className='saas-login-legal'>
+                  Al ingresar aceptas los términos de uso de la plataforma.
+                </div>
+              </>
+            ) : (
+              <div className='saas-recovery-box saas-recovery-box--split'>
+                <div className='saas-recovery-head'>
+                  <strong>Recuperar acceso</strong>
+                  <small>Paso seguro en 2 etapas con código por correo.</small>
+                </div>
+
+                {recoveryNotice && <div className='saas-login-notice'>{recoveryNotice}</div>}
+                {recoveryError && <div className='saas-login-error'>{recoveryError}</div>}
+
+                {recoveryStep === 'request' && (
+                  <div className='saas-recovery-form'>
+                    <label className='saas-login-field saas-login-field--split'>
+                      <span>Correo</span>
+                      <div className='saas-login-input-shell'>
+                        <span className='saas-login-input-icon' aria-hidden='true'><Mail size={16} /></span>
+                        <input
+                          type='email'
+                          value={recoveryEmail}
+                          onChange={(event) => setRecoveryEmail(event.target.value)}
+                          placeholder='usuario@empresa.com'
+                          autoComplete='email'
+                          disabled={recoveryBusy}
+                        />
+                      </div>
+                    </label>
+                    <button
+                      type='button'
+                      disabled={recoveryBusy}
+                      className='saas-login-submit saas-login-submit--split'
+                      onClick={handleRecoveryRequest}
+                    >
+                      {recoveryBusy ? 'Enviando...' : 'Enviar código'}
+                    </button>
                   </div>
                 )}
-              </div>
-            )}
 
-            {recoveryStep === 'reset' && (
-              <div className='saas-recovery-form'>
-                <label className='saas-login-field'>
-                  <span>Nueva contrasena</span>
-                  <input
-                    type={showRecoveryPassword ? 'text' : 'password'}
-                    value={recoveryPassword}
-                    onChange={(event) => setRecoveryPassword(event.target.value)}
-                    placeholder='Minimo 10 caracteres, mayuscula, numero y simbolo'
-                    autoComplete='new-password'
-                    disabled={recoveryBusy}
-                  />
-                </label>
-                <label className='saas-login-field'>
-                  <span>Confirmar contrasena</span>
-                  <input
-                    type={showRecoveryPassword ? 'text' : 'password'}
-                    value={recoveryPasswordConfirm}
-                    onChange={(event) => setRecoveryPasswordConfirm(event.target.value)}
-                    placeholder='Repite la nueva contrasena'
-                    autoComplete='new-password'
-                    disabled={recoveryBusy}
-                  />
-                </label>
-                <label className='saas-login-check'>
-                  <input
-                    type='checkbox'
-                    checked={showRecoveryPassword}
-                    onChange={(event) => setShowRecoveryPassword(event.target.checked)}
-                    disabled={recoveryBusy}
-                  />
-                  <span>Mostrar contrasena</span>
-                </label>
+                {recoveryStep === 'verify' && (
+                  <div className='saas-recovery-form'>
+                    <label className='saas-login-field saas-login-field--split'>
+                      <span>Correo</span>
+                      <div className='saas-login-input-shell'>
+                        <span className='saas-login-input-icon' aria-hidden='true'><Mail size={16} /></span>
+                        <input type='email' value={recoveryEmail} disabled />
+                      </div>
+                    </label>
+                    <label className='saas-login-field saas-login-field--split'>
+                      <span>Código de verificación</span>
+                      <div className='saas-login-input-shell'>
+                        <input
+                          type='text'
+                          value={recoveryCode}
+                          onChange={(event) => setRecoveryCode(event.target.value)}
+                          placeholder='000000'
+                          autoComplete='one-time-code'
+                          disabled={recoveryBusy}
+                        />
+                      </div>
+                    </label>
+                    <button
+                      type='button'
+                      disabled={recoveryBusy}
+                      className='saas-login-submit saas-login-submit--split'
+                      onClick={handleRecoveryVerify}
+                    >
+                      {recoveryBusy ? 'Validando...' : 'Validar código'}
+                    </button>
+                    {recoveryDebugCode && (
+                      <div className='saas-login-debug'>
+                        Codigo debug (solo entorno local): <strong>{recoveryDebugCode}</strong>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {recoveryStep === 'reset' && (
+                  <div className='saas-recovery-form'>
+                    <label className='saas-login-field saas-login-field--split'>
+                      <span>Nueva contraseña</span>
+                      <div className='saas-login-password-wrap saas-login-input-shell'>
+                        <span className='saas-login-input-icon' aria-hidden='true'><Lock size={16} /></span>
+                        <input
+                          type={showRecoveryPassword ? 'text' : 'password'}
+                          value={recoveryPassword}
+                          onChange={(event) => setRecoveryPassword(event.target.value)}
+                          placeholder='Mínimo 10 caracteres, mayúscula, número y símbolo'
+                          autoComplete='new-password'
+                          disabled={recoveryBusy}
+                        />
+                      </div>
+                    </label>
+                    <label className='saas-login-field saas-login-field--split'>
+                      <span>Confirmar contraseña</span>
+                      <div className='saas-login-password-wrap saas-login-input-shell'>
+                        <span className='saas-login-input-icon' aria-hidden='true'><Lock size={16} /></span>
+                        <input
+                          type={showRecoveryPassword ? 'text' : 'password'}
+                          value={recoveryPasswordConfirm}
+                          onChange={(event) => setRecoveryPasswordConfirm(event.target.value)}
+                          placeholder='Repite la nueva contraseña'
+                          autoComplete='new-password'
+                          disabled={recoveryBusy}
+                        />
+                        <button
+                          type='button'
+                          className='saas-login-visibility saas-login-visibility--icon'
+                          onClick={() => setShowRecoveryPassword((prev) => !prev)}
+                          disabled={recoveryBusy}
+                          aria-label={showRecoveryPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                          title={showRecoveryPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                        >
+                          {showRecoveryPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                          <span>{showRecoveryPassword ? 'Ocultar' : 'Ver'}</span>
+                        </button>
+                      </div>
+                    </label>
+                    <button
+                      type='button'
+                      disabled={recoveryBusy}
+                      className='saas-login-submit saas-login-submit--split'
+                      onClick={handleRecoveryReset}
+                    >
+                      {recoveryBusy ? 'Actualizando...' : 'Actualizar contraseña'}
+                    </button>
+                  </div>
+                )}
+
                 <button
                   type='button'
+                  className='saas-login-link saas-login-link--inline'
+                  onClick={resetRecoveryFlow}
                   disabled={recoveryBusy}
-                  className='saas-login-submit'
-                  onClick={handleRecoveryReset}
                 >
-                  {recoveryBusy ? 'Actualizando...' : 'Actualizar contrasena'}
+                  Volver al inicio de sesión
                 </button>
               </div>
             )}
-
-            <button
-              type='button'
-              className='saas-login-link'
-              onClick={resetRecoveryFlow}
-              disabled={recoveryBusy}
-            >
-              Volver al inicio de sesion
-            </button>
-          </div>
-        )}
-      </form>
+          </form>
+        </section>
+      </div>
     </div>
   );
 }
