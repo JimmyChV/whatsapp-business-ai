@@ -31,18 +31,18 @@ const QUICK_REPLY_FALLBACK_VARIABLE_CATEGORIES = Object.freeze([
         variables: [
             { key: 'contacto_cliente', label: 'Nombre con tratamiento', description: 'Nombre con tratamiento', exampleValue: 'Sra. Luisa' },
             { key: 'nombre_cliente', label: 'Nombre completo', description: 'Nombre completo', exampleValue: 'Maria Perez' },
-            { key: 'telefono_cliente', label: 'Telefono', description: 'Telefono', exampleValue: '+51941443776' },
+            { key: 'telefono_cliente', label: 'Teléfono', description: 'Teléfono del cliente', exampleValue: '+51941443776' },
             { key: 'email_cliente', label: 'Email', description: 'Email', exampleValue: 'cliente@correo.com' },
-            { key: 'erp_id', label: 'Codigo ERP', description: 'Codigo ERP', exampleValue: 'CLI-000245' },
+            { key: 'erp_id', label: 'Código ERP', description: 'Código ERP', exampleValue: 'CLI-000245' },
             { key: 'tipo_cliente', label: 'Tipo de cliente', description: 'Tipo de cliente', exampleValue: 'Mayorista' },
             { key: 'fecha_registro', label: 'Fecha de registro', description: 'Fecha de registro', exampleValue: '29/05/2026' }
         ]
     },
     {
         id: 'direccion',
-        label: 'Direccion',
+        label: 'Dirección',
         variables: [
-            { key: 'direccion', label: 'Direccion', description: 'Direccion', exampleValue: 'Av. Los Ingenieros 245' },
+            { key: 'direccion', label: 'Dirección', description: 'Dirección principal', exampleValue: 'Av. Los Ingenieros 245' },
             { key: 'distrito', label: 'Distrito', description: 'Distrito', exampleValue: 'Rimac' },
             { key: 'provincia', label: 'Provincia', description: 'Provincia', exampleValue: 'Lima' },
             { key: 'departamento', label: 'Departamento', description: 'Departamento', exampleValue: 'Lima' },
@@ -53,9 +53,9 @@ const QUICK_REPLY_FALLBACK_VARIABLE_CATEGORIES = Object.freeze([
         id: 'zona_envio',
         label: 'Zona y envio',
         variables: [
-            { key: 'zona_envio', label: 'Zona de envio', description: 'Zona de envio', exampleValue: 'Lima Norte' },
-            { key: 'tipo_envio', label: 'Tipo de envio', description: 'Tipo de envio', exampleValue: 'Delivery' },
-            { key: 'costo_envio', label: 'Costo de envio', description: 'Costo de envio', exampleValue: 'S/ 12.00' }
+            { key: 'zona_envio', label: 'Zona de envío', description: 'Zona de envío', exampleValue: 'Lima Norte' },
+            { key: 'tipo_envio', label: 'Tipo de envío', description: 'Tipo de envío', exampleValue: 'Delivery' },
+            { key: 'costo_envio', label: 'Costo de envío', description: 'Costo de envío', exampleValue: 'S/ 12.00' }
         ]
     },
     {
@@ -71,7 +71,7 @@ const QUICK_REPLY_FALLBACK_VARIABLE_CATEGORIES = Object.freeze([
         label: 'Fecha',
         variables: [
             { key: 'fecha_inicio', label: 'Fecha de inicio', description: 'Fecha de inicio', exampleValue: '26 de mayo de 2026' },
-            { key: 'fecha_fin', label: 'Fecha limite', description: 'Fecha limite', exampleValue: '29 de mayo de 2026' }
+            { key: 'fecha_fin', label: 'Fecha límite', description: 'Fecha límite', exampleValue: '29 de mayo de 2026' }
         ]
     }
 ]);
@@ -629,7 +629,7 @@ export default function QuickRepliesSection(props = {}) {
                                 <textarea ref={quickReplyTextRef} value={quickReplyItemForm.text || ''} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, text: event.target.value }))} rows={8} placeholder="Escribe el mensaje. Puedes insertar variables desde la columna central." disabled={busy || uploadingQuickReplyAssets} />
                             </div>
                             <div className="saas-admin-form-row">
-                                <label>Categoria</label>
+                                <label>Categoría</label>
                                 <select
                                     value={normalizeQuickReplyCategory(quickReplyItemForm.category)}
                                     onChange={(event) => {
@@ -717,7 +717,7 @@ export default function QuickRepliesSection(props = {}) {
                                             }}
                                         />
                                         <strong>{uploadingQuickReplyAssets ? 'Subiendo adjuntos...' : 'Subir adjuntos'}</strong>
-                                        <small>JPEG o PNG recomendado para WhatsApp. Max 50 MB.</small>
+                                        <small>Imágenes, PDF, Word, Excel, PowerPoint, ZIP, audio y MP4. Máx. 50 MB por archivo.</small>
                                     </label>
                                 </div>
                                 {quickReplyItemFormAssets.length > 0 ? (
@@ -809,12 +809,16 @@ export default function QuickRepliesSection(props = {}) {
                                                                 disabled={busy || uploadingQuickReplyAssets}
                                                                 onClick={() => insertQuickReplyVariable(variable?.key)}
                                                             >
+                                                                <span className="saas-meta-template-var-token">{`{{${variable?.key}}}`}</span>
                                                                 <div className="saas-meta-template-var-item-main">
-                                                                    <span className="saas-meta-template-var-token">{`{{${variable?.key}}}`}</span>
                                                                     <strong>{variable?.label || variable?.key}</strong>
-                                                                    <small>{variable?.description || variable?.exampleValue || variable?.key}</small>
+                                                                    <small>
+                                                                        {text(variable?.description).toLowerCase() !== text(variable?.label).toLowerCase()
+                                                                            ? text(variable?.description)
+                                                                            : text(variable?.exampleValue || variable?.description || variable?.key)}
+                                                                    </small>
                                                                 </div>
-                                                                <span className="saas-meta-template-var-insert-label">Insertar</span>
+                                                                <span className="saas-meta-template-var-insert-label" aria-hidden="true">+</span>
                                                             </button>
                                                         ))}
                                                     </div>
@@ -950,7 +954,7 @@ export default function QuickRepliesSection(props = {}) {
                         ) : null}
                         <div className="saas-admin-detail-grid">
                             <div className="saas-admin-detail-field"><span>Etiqueta</span><strong>{selectedQuickReplyItem.label || '-'}</strong></div>
-                            <div className="saas-admin-detail-field"><span>Categoria</span><strong>{getQuickReplyCategoryLabel(selectedQuickReplyItem.category)}</strong></div>
+                            <div className="saas-admin-detail-field"><span>Categoría</span><strong>{getQuickReplyCategoryLabel(selectedQuickReplyItem.category)}</strong></div>
                             <div className="saas-admin-detail-field"><span>Patty</span><strong>{selectedQuickReplyItem.availableForPatty ? 'Disponible' : 'No disponible'}</strong></div>
                             <div className="saas-admin-detail-field"><span>Estado</span><strong>{selectedQuickReplyItem.isActive === false ? 'Inactiva' : 'Activa'}</strong></div>
                             <div className="saas-admin-detail-field"><span>Adjuntos</span><strong>{selectedQuickReplyItemMediaAssets.length}</strong></div>
