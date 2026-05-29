@@ -113,7 +113,12 @@ export const usePendingOrderCartImport = ({
         const quoteSummary = order?.rawPreview?.quoteSummary && typeof order.rawPreview.quoteSummary === 'object'
             ? order.rawPreview.quoteSummary
             : null;
-        const sourceItems = Array.isArray(order.products) ? order.products : [];
+        const sourceItems = [
+            order.products,
+            order.rawPreview?.products,
+            order.items,
+            order.rawPreview?.items
+        ].find((items) => Array.isArray(items) && items.length > 0) || [];
         const titleFallbackItems = sourceItems.length === 0
             ? parseOrderTitleItems(order?.rawPreview?.title || order?.rawPreview?.orderTitle || '')
             : [];

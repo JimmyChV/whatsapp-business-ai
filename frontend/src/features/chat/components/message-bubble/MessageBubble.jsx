@@ -710,6 +710,9 @@ const MessageBubble = ({
                                     ? (isQuotePayload
                                         ? {
                                             ...actionOrder,
+                                            products: Array.isArray(actionOrder?.products) && actionOrder.products.length > 0
+                                                ? actionOrder.products
+                                                : orderItems,
                                             sourceType: 'quote',
                                             quoteId: String(actionOrder?.quoteId || actionOrder?.rawPreview?.quoteId || '').trim() || null,
                                             quoteNumber: Number.isFinite(quoteNumber) && quoteNumber > 0 ? Math.trunc(quoteNumber) : null,
@@ -722,12 +725,19 @@ const MessageBubble = ({
                                                     sourceType: 'quote',
                                                     quoteId: String(actionOrder?.quoteId || actionOrder.rawPreview.quoteId || '').trim() || null,
                                                     quoteNumber: Number.isFinite(quoteNumber) && quoteNumber > 0 ? Math.trunc(quoteNumber) : null,
-                                                    revisionNumber: Number.isFinite(revisionNumber) && revisionNumber > 0 ? Math.trunc(revisionNumber) : null
+                                                    revisionNumber: Number.isFinite(revisionNumber) && revisionNumber > 0 ? Math.trunc(revisionNumber) : null,
+                                                    products: Array.isArray(actionOrder?.rawPreview?.products) && actionOrder.rawPreview.products.length > 0
+                                                        ? actionOrder.rawPreview.products
+                                                        : orderItems,
+                                                    quoteSummary: actionOrder?.rawPreview?.quoteSummary || quoteSummaryRaw || null
                                                 }
-                                                : { type: 'quote', sourceType: 'quote' }
+                                                : { type: 'quote', sourceType: 'quote', products: orderItems, quoteSummary: quoteSummaryRaw || null }
                                         }
                                         : {
                                             ...actionOrder,
+                                            products: Array.isArray(actionOrder?.products) && actionOrder.products.length > 0
+                                                ? actionOrder.products
+                                                : orderItems,
                                             sourceMessageId: String(msg?.id || '').trim() || actionOrder?.sourceMessageId || null
                                         })
                                     : null;

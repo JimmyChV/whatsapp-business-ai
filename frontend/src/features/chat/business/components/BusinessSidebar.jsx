@@ -123,11 +123,6 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const sourceQuote = activeDraft.sourceQuote && typeof activeDraft.sourceQuote === 'object'
         ? activeDraft.sourceQuote
         : null;
-    const hasCartSourceContext = Boolean(
-        sourceQuote?.quoteId
-        || sourceOrder?.orderId
-        || sourceOrder?.messageId
-    );
     const isEditingQuoteCart = Boolean(sourceQuote?.quoteId);
     const pendingCartImportKey = useMemo(() => {
         if (!pendingOrderCartLoad || !activeChatId) return '';
@@ -457,7 +452,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         activeTab,
         quickRepliesEnabled,
         cart,
-        allowEmptyCartTab: hasCartSourceContext || (pendingCartImportActive && cartImportGraceKey === pendingCartImportKey),
+        allowEmptyCartTab: pendingCartImportActive && cartImportGraceKey === pendingCartImportKey,
         setActiveTab
     });
     useCompanyProfileOverlay({
