@@ -161,7 +161,7 @@ const ChatWindow = ({
         && !activeChatCommercialStatus?.needsAdvisor
         && resolveModulePattyMode(activeModuleConfig) === 'autonomous';
     const headerLabels = Array.isArray(activeChatDetails?.labels) ? activeChatDetails.labels : [];
-    const visibleHeaderLabels = headerLabels.slice(0, 2);
+    const visibleHeaderLabels = headerLabels.slice(0, 3);
     const hiddenHeaderLabelsCount = Math.max(0, headerLabels.length - visibleHeaderLabels.length);
     const conversationWindowOpen = activeChatDetails?.windowOpen !== false;
     const pendingJumpMessageIdRef = useRef('');
@@ -225,45 +225,38 @@ const ChatWindow = ({
                 <div className="chat-header-meta">
                     <div className="chat-header-title-row chat-header-title-row--clean">
                         <h3 className="chat-header-name" title={headerDisplayName}>{headerDisplayName}</h3>
-                        <div className="chat-header-title-tools">
-                            <div className="chat-header-badges">
-                                <CommercialStatusBadge
-                                    commercialStatus={activeChatCommercialStatus}
-                                    compact
-                                />
-                                <AssignmentBadge
-                                    assignment={activeChatAssignment}
-                                    isAssignedToMe={isAssignedToMe}
-                                    needsAdvisor={Boolean(activeChatCommercialStatus?.needsAdvisor)}
-                                    needsAdvisorReason={activeChatCommercialStatus?.needsAdvisorReason || ''}
-                                    virtualAssigneeLabel={showPattyAssignee ? 'Patty IA' : ''}
-                                    compact
-                                />
-                                {activeChatCommercialStatus?.needsAdvisor && (
-                                    <TakeChatButton
-                                        chatId={activeChatScopedId}
-                                        scopeModuleId={activeScopeModuleId}
-                                        assignment={activeChatAssignment}
-                                        chatAssignmentState={chatAssignmentState}
-                                        className="take-chat-button--header"
-                                    />
-                                )}
-                            </div>
-                            <CommercialStatusActions
-                                chatId={activeChatScopedId}
-                                commercialStatus={activeChatCommercialStatus}
-                                chatCommercialStatusState={chatCommercialStatusState}
-                                currentUserRole={currentUserRole}
-                            />
-                        </div>
                     </div>
-                    <div className="chat-header-subline chat-header-subline--summary">
+                    <div className="chat-header-info-row">
                         {headerLocation && (
                             <span className="chat-header-location-chip" title={headerLocation}>
                                 {headerLocation}
                             </span>
                         )}
                         {activeChatDetails?.isBusiness && <span className="chat-header-secondary-pill">Business</span>}
+                        <CommercialStatusBadge
+                            commercialStatus={activeChatCommercialStatus}
+                            compact
+                        />
+                        <AssignmentBadge
+                            assignment={activeChatAssignment}
+                            isAssignedToMe={isAssignedToMe}
+                            needsAdvisor={Boolean(activeChatCommercialStatus?.needsAdvisor)}
+                            needsAdvisorReason={activeChatCommercialStatus?.needsAdvisorReason || ''}
+                            virtualAssigneeLabel={showPattyAssignee ? 'Patty IA' : ''}
+                            compact
+                        />
+                        {activeChatCommercialStatus?.needsAdvisor && (
+                            <TakeChatButton
+                                chatId={activeChatScopedId}
+                                scopeModuleId={activeScopeModuleId}
+                                assignment={activeChatAssignment}
+                                chatAssignmentState={chatAssignmentState}
+                                className="take-chat-button--header"
+                            />
+                        )}
+                    </div>
+                    {(visibleHeaderLabels.length > 0 || hiddenHeaderLabelsCount > 0) && (
+                        <div className="chat-header-labels-row">
                         {visibleHeaderLabels.map((label, index) => (
                             <span
                                 key={`${label?.id || label?.name || 'h'}_${index}`}
@@ -279,97 +272,87 @@ const ChatWindow = ({
                                 +{hiddenHeaderLabelsCount}
                             </span>
                         )}
-                        {showHeaderModule && (
-                            <span className="chat-header-module-inline" title={headerModuleName || 'Modulo'}>
-                                <span className="chat-header-module-inline-label">Modulo</span>
-                                <span className="chat-header-module-mini">
-                                    {headerModuleImageUrl
-                                        ? <img src={headerModuleImageUrl} alt={headerModuleName || 'Modulo'} className="chat-header-module-avatar" />
-                                        : <span className="chat-header-module-dot" aria-hidden="true" />}
-                                    <span className="chat-header-module-name">{headerModuleName || 'MODULO'}</span>
-                                    {headerModuleChannel && (
-                                        <span className="chat-header-module-channel" title={headerModuleChannel}>
-                                            <ChannelBrandIcon
-                                                channelType={headerModuleChannelType}
-                                                className="chat-header-module-channel-icon"
-                                                size={10}
-                                                title={headerModuleChannel}
-                                            />
-                                        </span>
-                                    )}
-                                </span>
-                            </span>
-                        )}
-                    </div>
+                        </div>
+                    )}
                 </div>
                 <div className="chat-header-actions" onClick={e => e.stopPropagation()}>
-                    <button className={`btn-icon ui-icon-btn chat-header-action-btn ${searchVisible ? 'active' : ''}`}
-                        onClick={() => setSearchVisible(v => !v)} title="Buscar en chat">
-                        <Search size={20} />
-                    </button>
-                    <button className={`btn-icon ui-icon-btn chat-header-action-btn ${showMapModal ? 'active' : ''}`}
-                        onClick={() => openMapModal({ query: '' })}
-                        title="Abrir mapa">
-                        <MapPin size={20} />
-                    </button>
-                    <div className="chat-header-menu-wrap">
-                        <button className={`btn-icon ui-icon-btn chat-header-action-btn ${showLabelMenu ? 'active' : ''}`}
-                            onClick={() => setShowLabelMenu(v => !v)} title="Etiquetas">
-                            <Tag size={20} />
-                        </button>
-                        {showLabelMenu && (
-                            <div className="chat-header-popover chat-header-label-popover">
-                                <div className="chat-header-popover-title">Etiquetas del tenant (CRM)</div>
-                                {labelDefinitions.length === 0 && <div className="chat-header-popover-empty">No hay etiquetas disponibles.</div>}
-                                {labelDefinitions.map((label) => {
-                                    const labelId = String(label?.id || label?.labelId || '').trim();
-                                    const isActive = (activeChatDetails?.labels || []).some((l) => String(l?.id || l?.labelId || '').trim() === labelId);
-                                    return (
-                                        <label key={labelId || label.name} className="chat-header-label-option">
-                                            <input type="checkbox" checked={isActive} onChange={() => onToggleChatLabel?.(activeChatDetails?.id, labelId)} />
-                                            <span className="chat-header-label-color" style={{ background: label.color || '#8696a0' }} />
-                                            <span className="chat-header-label-name">{label.name}</span>
-                                        </label>
-                                    );
-                                })}
-                            </div>
-                        )}
+                    <div className="chat-header-actions-top">
+                        <CommercialStatusActions
+                            chatId={activeChatScopedId}
+                            commercialStatus={activeChatCommercialStatus}
+                            chatCommercialStatusState={chatCommercialStatusState}
+                            currentUserRole={currentUserRole}
+                        />
                     </div>
-                    <div className="chat-header-menu-wrap">
-                        <button className="btn-icon ui-icon-btn chat-header-action-btn"
-                            onClick={() => setShowMenu(v => !v)} title="Mas opciones">
-                            <MoreVertical size={20} />
+                    <div className="chat-header-actions-row">
+                        <button className={`btn-icon ui-icon-btn chat-header-action-btn ${searchVisible ? 'active' : ''}`}
+                            onClick={() => setSearchVisible(v => !v)} title="Buscar en chat">
+                            <Search size={20} />
                         </button>
-                        {showMenu && (
-                            <div className="chat-header-popover chat-header-actions-popover">
-                                {[
-                                    { label: 'Ver perfil del contacto', action: () => setShowClientProfile(true) },
-                                    { label: 'Buscar mensajes', action: () => setSearchVisible(true) },
-                                    {
-                                        label: activeChatDetails?.pinned ? 'Desfijar chat' : 'Fijar chat',
-                                        action: () => onToggleChatPinned?.(activeChatDetails?.id, !Boolean(activeChatDetails?.pinned))
-                                    },
-                                    { label: 'Modo Copiloto IA', action: () => setIsCopilotMode(v => !v) },
-                                ].map((item, i) => (
-                                    <div key={i}
-                                        onClick={() => { item.action(); setShowMenu(false); }}
-                                        className="chat-header-action-item"
-                                    >
-                                        {item.label}
-                                    </div>
-                                ))}
-                                <div className="chat-header-popover-divider" />
-                                <div className="chat-header-popover-section">
-                                    <AssignmentSelector
-                                        activeTenantId={activeTenantId}
-                                        chatId={activeChatScopedId}
-                                        scopeModuleId={activeScopeModuleId}
-                                        buildApiHeaders={buildApiHeaders}
-                                        currentUserRole={currentUserRole}
-                                    />
+                        <button className={`btn-icon ui-icon-btn chat-header-action-btn ${showMapModal ? 'active' : ''}`}
+                            onClick={() => openMapModal({ query: '' })}
+                            title="Abrir mapa">
+                            <MapPin size={20} />
+                        </button>
+                        <div className="chat-header-menu-wrap">
+                            <button className={`btn-icon ui-icon-btn chat-header-action-btn ${showLabelMenu ? 'active' : ''}`}
+                                onClick={() => setShowLabelMenu(v => !v)} title="Etiquetas">
+                                <Tag size={20} />
+                            </button>
+                            {showLabelMenu && (
+                                <div className="chat-header-popover chat-header-label-popover">
+                                    <div className="chat-header-popover-title">Etiquetas del tenant (CRM)</div>
+                                    {labelDefinitions.length === 0 && <div className="chat-header-popover-empty">No hay etiquetas disponibles.</div>}
+                                    {labelDefinitions.map((label) => {
+                                        const labelId = String(label?.id || label?.labelId || '').trim();
+                                        const isActive = (activeChatDetails?.labels || []).some((l) => String(l?.id || l?.labelId || '').trim() === labelId);
+                                        return (
+                                            <label key={labelId || label.name} className="chat-header-label-option">
+                                                <input type="checkbox" checked={isActive} onChange={() => onToggleChatLabel?.(activeChatDetails?.id, labelId)} />
+                                                <span className="chat-header-label-color" style={{ background: label.color || '#8696a0' }} />
+                                                <span className="chat-header-label-name">{label.name}</span>
+                                            </label>
+                                        );
+                                    })}
                                 </div>
-                            </div>
-                        )}
+                            )}
+                        </div>
+                        <div className="chat-header-menu-wrap">
+                            <button className="btn-icon ui-icon-btn chat-header-action-btn"
+                                onClick={() => setShowMenu(v => !v)} title="Mas opciones">
+                                <MoreVertical size={20} />
+                            </button>
+                            {showMenu && (
+                                <div className="chat-header-popover chat-header-actions-popover">
+                                    {[
+                                        { label: 'Ver perfil del contacto', action: () => setShowClientProfile(true) },
+                                        { label: 'Buscar mensajes', action: () => setSearchVisible(true) },
+                                        {
+                                            label: activeChatDetails?.pinned ? 'Desfijar chat' : 'Fijar chat',
+                                            action: () => onToggleChatPinned?.(activeChatDetails?.id, !Boolean(activeChatDetails?.pinned))
+                                        },
+                                        { label: 'Modo Copiloto IA', action: () => setIsCopilotMode(v => !v) },
+                                    ].map((item, i) => (
+                                        <div key={i}
+                                            onClick={() => { item.action(); setShowMenu(false); }}
+                                            className="chat-header-action-item"
+                                        >
+                                            {item.label}
+                                        </div>
+                                    ))}
+                                    <div className="chat-header-popover-divider" />
+                                    <div className="chat-header-popover-section">
+                                        <AssignmentSelector
+                                            activeTenantId={activeTenantId}
+                                            chatId={activeChatScopedId}
+                                            scopeModuleId={activeScopeModuleId}
+                                            buildApiHeaders={buildApiHeaders}
+                                            currentUserRole={currentUserRole}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>

@@ -731,11 +731,11 @@ const Sidebar = ({
                                 {!hasAnyFilter ? (
                                     <span className="sidebar-active-filter-empty">Sin filtros activos</span>
                                 ) : (
-                                    activeFilterChips.map((chip, index) => (
-                                        <span key={`${chip}_${index}`} className="sidebar-active-filter-chip">
-                                            {chip}
-                                        </span>
-                                    ))
+                                    <span className="sidebar-active-filter-summary">
+                                        {activeFilterChips.length === 1
+                                            ? activeFilterChips[0]
+                                            : `${activeFilterChips.length} filtros activos`}
+                                    </span>
                                 )}
                             </div>
 
@@ -859,27 +859,32 @@ const Sidebar = ({
                                     </div>
 
                                     <div className="chat-row-meta chat-row-meta--compact">
-                                        {labels.length > 0 && (
-                                            <div
-                                                className="chat-row-labels chat-inline-labels chat-inline-labels--dots"
-                                                title={labels.map((label) => String(label?.name || '').trim()).filter(Boolean).join(', ')}
-                                            >
-                                                {labels.slice(0, 4).map((label, idx) => (
-                                                    <span
-                                                        key={`${label?.id || label?.name || 'l'}_${idx}`}
-                                                        className="chat-inline-label-dot"
-                                                        style={{ '--label-color': label?.color || 'var(--chat-control-text-soft)' }}
-                                                    />
-                                                ))}
-                                                {labels.length > 4 && <span className="chat-inline-label-more">+{labels.length - 4}</span>}
-                                            </div>
-                                        )}
-                                        {chatWindowStatus && (
-                                            <span className={`chat-window-badge chat-window-badge--${chatWindowStatus.status}`.trim()} title={`Ventana 24h: ${chatWindowStatus.label} laborales restantes hoy`}>
-                                                <Clock3 size={11} />
-                                                <span>{chatWindowStatus.label}</span>
-                                            </span>
-                                        )}
+                                        <div className="chat-row-tags">
+                                            {labels.length > 0 && (
+                                                <div
+                                                    className="chat-row-labels chat-inline-labels chat-inline-labels--dots"
+                                                    title={labels.map((label) => String(label?.name || '').trim()).filter(Boolean).join(', ')}
+                                                >
+                                                    {labels.slice(0, 4).map((label, idx) => (
+                                                        <span
+                                                            key={`${label?.id || label?.name || 'l'}_${idx}`}
+                                                            className="chat-inline-label-dot"
+                                                            style={{ '--label-color': label?.color || 'var(--chat-control-text-soft)' }}
+                                                        />
+                                                    ))}
+                                                    {labels.length > 4 && <span className="chat-inline-label-more">+{labels.length - 4}</span>}
+                                                </div>
+                                            )}
+                                            {chatWindowStatus && (
+                                                <span
+                                                    className={`chat-window-badge chat-window-badge--${chatWindowStatus.status}`.trim()}
+                                                    title={`Ventana 24h: ${chatWindowStatus.label} laborales restantes`}
+                                                >
+                                                    <Clock3 size={11} />
+                                                    <span>{chatWindowStatus.label}</span>
+                                                </span>
+                                            )}
+                                        </div>
                                         <div className="chat-row-statuses">
                                             <CommercialStatusBadge
                                                 commercialStatus={chatCommercialStatus}

@@ -70,7 +70,7 @@ export function getWindowStatus(source = {}, nowMs = Date.now()) {
   if (base.laborMinutesRemaining <= 240) {
     return { ...base, status: 'ok', label: formatLaborMinutes(base.laborMinutesRemaining) };
   }
-  return null;
+  return { ...base, status: 'active', label: formatLaborMinutes(base.laborMinutesRemaining) };
 }
 
 export const WINDOW_FILTER_OPTIONS = [
