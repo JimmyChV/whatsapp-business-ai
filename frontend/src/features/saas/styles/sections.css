@@ -1004,6 +1004,25 @@
   align-items: center;
 }
 
+.saas-meta-template-var-item--interactive {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.saas-meta-template-var-item--interactive:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--saas-accent-primary) 36%, var(--saas-border-color));
+  background: color-mix(in srgb, var(--saas-accent-primary) 10%, var(--saas-bg-surface));
+  box-shadow: 0 10px 18px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.saas-meta-template-var-item--interactive:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
 .saas-meta-template-var-item-main {
   display: grid;
   gap: 2px;
@@ -1040,6 +1059,20 @@
   padding: 0;
   font-size: 1rem;
   font-weight: 700;
+}
+
+.saas-meta-template-var-insert-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 74px;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--saas-accent-primary) 12%, var(--saas-bg-surface));
+  color: var(--saas-accent-primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
 }
 
 .saas-meta-template-examples {
@@ -10895,12 +10928,32 @@ textarea:focus {
 
 .saas-quick-reply-variable-panel__head {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
-  align-items: center;
+  align-items: start;
 }
 
-.saas-quick-reply-variable-panel__head input {
+.saas-quick-reply-variable-panel__title {
+  display: grid;
+  gap: 3px;
+}
+
+.saas-quick-reply-variable-panel__title strong {
+  color: var(--saas-text-primary, var(--color-text, #111));
+  font-size: 0.92rem;
+}
+
+.saas-quick-reply-variable-panel__title small {
+  color: var(--saas-text-secondary, var(--color-text-muted, rgba(0, 0, 0, 0.55)));
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.saas-quick-reply-variable-panel__toggle {
+  min-width: 92px;
+}
+
+.saas-quick-reply-variable-panel__search {
   min-width: 0;
 }
 

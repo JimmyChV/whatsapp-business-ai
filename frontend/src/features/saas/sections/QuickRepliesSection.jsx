@@ -29,44 +29,49 @@ const QUICK_REPLY_FALLBACK_VARIABLE_CATEGORIES = Object.freeze([
         id: 'cliente',
         label: 'Cliente',
         variables: [
-            { key: 'nombre_cliente', label: 'Nombre del cliente', description: 'Nombre visible para saludo.', exampleValue: 'Maria Perez' },
-            { key: 'telefono_cliente', label: 'Telefono del cliente', description: 'Telefono principal.', exampleValue: '+51941443776' },
-            { key: 'email_cliente', label: 'Email del cliente', description: 'Correo del cliente.', exampleValue: 'cliente@correo.com' },
-            { key: 'customer_id', label: 'ID de cliente', description: 'Identificador interno.', exampleValue: 'CUS-8K2M4P' }
+            { key: 'contacto_cliente', label: 'Nombre con tratamiento', description: 'Nombre con tratamiento', exampleValue: 'Sra. Luisa' },
+            { key: 'nombre_cliente', label: 'Nombre completo', description: 'Nombre completo', exampleValue: 'Maria Perez' },
+            { key: 'telefono_cliente', label: 'Telefono', description: 'Telefono', exampleValue: '+51941443776' },
+            { key: 'email_cliente', label: 'Email', description: 'Email', exampleValue: 'cliente@correo.com' },
+            { key: 'erp_id', label: 'Codigo ERP', description: 'Codigo ERP', exampleValue: 'CLI-000245' },
+            { key: 'tipo_cliente', label: 'Tipo de cliente', description: 'Tipo de cliente', exampleValue: 'Mayorista' },
+            { key: 'fecha_registro', label: 'Fecha de registro', description: 'Fecha de registro', exampleValue: '29/05/2026' }
+        ]
+    },
+    {
+        id: 'direccion',
+        label: 'Direccion',
+        variables: [
+            { key: 'direccion', label: 'Direccion', description: 'Direccion', exampleValue: 'Av. Los Ingenieros 245' },
+            { key: 'distrito', label: 'Distrito', description: 'Distrito', exampleValue: 'Rimac' },
+            { key: 'provincia', label: 'Provincia', description: 'Provincia', exampleValue: 'Lima' },
+            { key: 'departamento', label: 'Departamento', description: 'Departamento', exampleValue: 'Lima' },
+            { key: 'referencia', label: 'Referencia', description: 'Referencia', exampleValue: 'Frente al parque' }
+        ]
+    },
+    {
+        id: 'zona_envio',
+        label: 'Zona y envio',
+        variables: [
+            { key: 'zona_envio', label: 'Zona de envio', description: 'Zona de envio', exampleValue: 'Lima Norte' },
+            { key: 'tipo_envio', label: 'Tipo de envio', description: 'Tipo de envio', exampleValue: 'Delivery' },
+            { key: 'costo_envio', label: 'Costo de envio', description: 'Costo de envio', exampleValue: 'S/ 12.00' }
         ]
     },
     {
         id: 'agente',
         label: 'Agente',
         variables: [
-            { key: 'nombre_agente', label: 'Nombre del agente', description: 'Asesor asignado al chat.', exampleValue: 'Owner Lavitat' },
-            { key: 'rol_agente', label: 'Rol del agente', description: 'Rol operativo.', exampleValue: 'seller' },
-            { key: 'modulo_chat_id', label: 'Modulo del chat', description: 'Modulo/canal del chat.', exampleValue: 'MOD-4Q8K5C' }
+            { key: 'nombre_agente', label: 'Nombre del agente', description: 'Nombre del agente', exampleValue: 'Owner Lavitat' },
+            { key: 'rol_agente', label: 'Rol', description: 'Rol', exampleValue: 'seller' }
         ]
     },
     {
-        id: 'comercial',
-        label: 'Comercial',
+        id: 'campana',
+        label: 'Fecha',
         variables: [
-            { key: 'estado_comercial_chat', label: 'Estado comercial', description: 'Estado comercial actual.', exampleValue: 'cotizado' },
-            { key: 'estado_asignacion_chat', label: 'Estado de asignacion', description: 'Estado operativo del chat.', exampleValue: 'active' }
-        ]
-    },
-    {
-        id: 'cotizacion',
-        label: 'Cotizacion',
-        variables: [
-            { key: 'ultima_cotizacion_id', label: 'ID de ultima cotizacion', description: 'Ultima cotizacion enviada.', exampleValue: 'quote_mnb9jysp_tg3fiy' },
-            { key: 'ultima_cotizacion_total', label: 'Total de ultima cotizacion', description: 'Total final.', exampleValue: '186.2' },
-            { key: 'ultima_cotizacion_items_count', label: 'Items cotizados', description: 'Cantidad de items.', exampleValue: '3' }
-        ]
-    },
-    {
-        id: 'origen',
-        label: 'Origen',
-        variables: [
-            { key: 'origen_chat_tipo', label: 'Origen del chat', description: 'Origen detectado.', exampleValue: 'meta_ad' },
-            { key: 'origen_campana_id', label: 'ID de campana', description: 'Campana asociada.', exampleValue: 'camp_abril_2026_01' }
+            { key: 'fecha_inicio', label: 'Fecha de inicio', description: 'Fecha de inicio', exampleValue: '26 de mayo de 2026' },
+            { key: 'fecha_fin', label: 'Fecha limite', description: 'Fecha limite', exampleValue: '29 de mayo de 2026' }
         ]
     }
 ]);
@@ -259,6 +264,7 @@ export default function QuickRepliesSection(props = {}) {
     const [quickReplyVariableSearch, setQuickReplyVariableSearch] = React.useState('');
     const [quickReplyVariableCatalogLoaded, setQuickReplyVariableCatalogLoaded] = React.useState(false);
     const [quickReplyExpandedVariableCategories, setQuickReplyExpandedVariableCategories] = React.useState({});
+    const [showQuickReplyVariablesPanel, setShowQuickReplyVariablesPanel] = React.useState(true);
     const [showQuickReplyEmojiPicker, setShowQuickReplyEmojiPicker] = React.useState(false);
     const [quickReplyEmojiSkinTone, setQuickReplyEmojiSkinTone] = React.useState(() => {
         if (typeof window === 'undefined') return SkinTones.NEUTRAL;
@@ -751,18 +757,31 @@ export default function QuickRepliesSection(props = {}) {
                         </section>
                         <aside className="saas-quick-reply-variable-panel" aria-label="Variables disponibles">
                             <div className="saas-quick-reply-variable-panel__head">
-                                <strong>Variables</strong>
-                                <input
-                                    value={quickReplyVariableSearch}
-                                    onChange={(event) => setQuickReplyVariableSearch(event.target.value)}
-                                    placeholder="Buscar variable..."
-                                    disabled={busy || quickReplyVariableLoading}
-                                />
+                                <div className="saas-quick-reply-variable-panel__title">
+                                    <strong>Variables disponibles</strong>
+                                    <small>Haz click en cualquier variable para insertarla en el mensaje.</small>
+                                </div>
+                                <button
+                                    type="button"
+                                    className="saas-btn-cancel saas-quick-reply-variable-panel__toggle"
+                                    onClick={() => setShowQuickReplyVariablesPanel((prev) => !prev)}
+                                >
+                                    {showQuickReplyVariablesPanel ? 'Ocultar' : 'Mostrar'}
+                                </button>
                             </div>
-                            {quickReplyVariableLoading ? <small className="saas-quick-reply-preview-muted">Cargando variables...</small> : null}
-                            {quickReplyVariableError ? <small className="saas-meta-template-error">{quickReplyVariableError}</small> : null}
-                            {!quickReplyVariableLoading && !quickReplyVariableError ? (
-                                <div className="saas-quick-reply-variable-list">
+                            {showQuickReplyVariablesPanel ? (
+                                <>
+                                    <input
+                                        className="saas-quick-reply-variable-panel__search"
+                                        value={quickReplyVariableSearch}
+                                        onChange={(event) => setQuickReplyVariableSearch(event.target.value)}
+                                        placeholder="Buscar variable..."
+                                        disabled={busy || quickReplyVariableLoading}
+                                    />
+                                    {quickReplyVariableLoading ? <small className="saas-quick-reply-preview-muted">Cargando variables...</small> : null}
+                                    {quickReplyVariableError ? <small className="saas-meta-template-error">{quickReplyVariableError}</small> : null}
+                                    {!quickReplyVariableLoading && !quickReplyVariableError ? (
+                                        <div className="saas-quick-reply-variable-list">
                                     {filteredQuickReplyVariableCategories.map((category) => {
                                         const categoryKey = text(category?.id || category?.label).toLowerCase();
                                         const variables = Array.isArray(category?.variables) ? category.variables : [];
@@ -783,29 +802,30 @@ export default function QuickRepliesSection(props = {}) {
                                                 {isExpanded ? (
                                                     <div className="saas-meta-template-var-list">
                                                         {variables.map((variable) => (
-                                                            <div className="saas-meta-template-var-item" key={`qr_var_${category?.id}_${variable?.key}`}>
+                                                            <button
+                                                                type="button"
+                                                                className="saas-meta-template-var-item saas-meta-template-var-item--interactive"
+                                                                key={`qr_var_${category?.id}_${variable?.key}`}
+                                                                disabled={busy || uploadingQuickReplyAssets}
+                                                                onClick={() => insertQuickReplyVariable(variable?.key)}
+                                                            >
                                                                 <div className="saas-meta-template-var-item-main">
                                                                     <span className="saas-meta-template-var-token">{`{{${variable?.key}}}`}</span>
                                                                     <strong>{variable?.label || variable?.key}</strong>
                                                                     <small>{variable?.description || variable?.exampleValue || variable?.key}</small>
                                                                 </div>
-                                                                <button
-                                                                    type="button"
-                                                                    className="saas-btn saas-btn--primary saas-meta-template-var-insert"
-                                                                    disabled={busy || uploadingQuickReplyAssets}
-                                                                    onClick={() => insertQuickReplyVariable(variable?.key)}
-                                                                >
-                                                                    +
-                                                                </button>
-                                                            </div>
+                                                                <span className="saas-meta-template-var-insert-label">Insertar</span>
+                                                            </button>
                                                         ))}
                                                     </div>
                                                 ) : null}
                                             </div>
                                         );
                                     })}
-                                    {filteredQuickReplyVariableCategories.length === 0 ? <small className="saas-quick-reply-preview-muted">Sin variables para mostrar.</small> : null}
-                                </div>
+                                            {filteredQuickReplyVariableCategories.length === 0 ? <small className="saas-quick-reply-preview-muted">Sin variables para mostrar.</small> : null}
+                                        </div>
+                                    ) : null}
+                                </>
                             ) : null}
                         </aside>
                         <aside className="saas-quick-reply-preview" aria-label="Preview WhatsApp">
