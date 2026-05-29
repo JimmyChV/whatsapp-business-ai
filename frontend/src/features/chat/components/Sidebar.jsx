@@ -174,6 +174,11 @@ const Sidebar = ({
     const [showWindowFilterMenu, setShowWindowFilterMenu] = React.useState(false);
     const [customerSearchResults, setCustomerSearchResults] = React.useState([]);
     const [customerSearchLoading, setCustomerSearchLoading] = React.useState(false);
+    const closeMobileAdvancedFilters = React.useCallback(() => {
+        if (typeof window === 'undefined') return;
+        if (!window.matchMedia?.('(max-width: 768px)')?.matches) return;
+        setShowAdvancedFilters(false);
+    }, []);
     const assigneeMenuRef = React.useRef(null);
     const commercialMenuRef = React.useRef(null);
     const windowMenuRef = React.useRef(null);
@@ -608,7 +613,16 @@ const Sidebar = ({
                         <div className="sidebar-filter-header-row">
                             <span className="sidebar-filter-title">Filtros avanzados</span>
                             {hasAnyFilter && (
-                                <button type="button" className="sidebar-filter-clear" onClick={resetFilters}>Limpiar</button>
+                                <button
+                                    type="button"
+                                    className="sidebar-filter-clear"
+                                    onClick={() => {
+                                        resetFilters();
+                                        closeMobileAdvancedFilters();
+                                    }}
+                                >
+                                    Limpiar
+                                </button>
                             )}
                         </div>
                             <div className="sidebar-filter-pill-toolbar">
@@ -620,6 +634,8 @@ const Sidebar = ({
                                             onClick={() => {
                                                 setShowAssigneeFilterMenu((prev) => !prev);
                                                 setShowCommercialFilterMenu(false);
+                                                setShowWindowFilterMenu(false);
+                                                setShowLabelPanel(false);
                                             }}
                                             title="Filtrar por usuario"
                                         >
@@ -635,6 +651,7 @@ const Sidebar = ({
                                                     onClick={() => {
                                                         updateFilters({ assigneeUserId: '' });
                                                         setShowAssigneeFilterMenu(false);
+                                                        closeMobileAdvancedFilters();
                                                     }}
                                                 >
                                                     Todos los usuarios
@@ -645,6 +662,7 @@ const Sidebar = ({
                                                     onClick={() => {
                                                         updateFilters({ assigneeUserId: '__unassigned__' });
                                                         setShowAssigneeFilterMenu(false);
+                                                        closeMobileAdvancedFilters();
                                                     }}
                                                 >
                                                     Sin asignar
@@ -657,6 +675,7 @@ const Sidebar = ({
                                                         onClick={() => {
                                                             updateFilters({ assigneeUserId: String(entry.value || '').trim() });
                                                             setShowAssigneeFilterMenu(false);
+                                                            closeMobileAdvancedFilters();
                                                         }}
                                                     >
                                                         {entry.label}
@@ -674,6 +693,8 @@ const Sidebar = ({
                                             onClick={() => {
                                                 setShowCommercialFilterMenu((prev) => !prev);
                                                 setShowAssigneeFilterMenu(false);
+                                                setShowWindowFilterMenu(false);
+                                                setShowLabelPanel(false);
                                             }}
                                             title="Filtrar por estado comercial"
                                         >
@@ -691,6 +712,7 @@ const Sidebar = ({
                                                         onClick={() => {
                                                             updateFilters({ commercialStatus: String(entry.value || 'all').trim().toLowerCase() });
                                                             setShowCommercialFilterMenu(false);
+                                                            closeMobileAdvancedFilters();
                                                         }}
                                                     >
                                                         {entry.label}
@@ -708,6 +730,7 @@ const Sidebar = ({
                                             setShowWindowFilterMenu((prev) => !prev);
                                             setShowAssigneeFilterMenu(false);
                                             setShowCommercialFilterMenu(false);
+                                            setShowLabelPanel(false);
                                         }}
                                         title="Filtrar por ventana 24h"
                                     >
@@ -725,6 +748,7 @@ const Sidebar = ({
                                                     onClick={() => {
                                                         updateFilters({ windowFilter: entry.value });
                                                         setShowWindowFilterMenu(false);
+                                                        closeMobileAdvancedFilters();
                                                     }}
                                                 >
                                                     {String(filters.windowFilter || 'all') === String(entry.value) ? '● ' : '○ '}
@@ -790,7 +814,14 @@ const Sidebar = ({
                                 ? activeFilterChips[0]
                                 : `${activeFilterChips.length} filtros activos`}
                         </span>
-                        <button type="button" className="sidebar-mobile-filter-clear" onClick={resetFilters}>
+                        <button
+                            type="button"
+                            className="sidebar-mobile-filter-clear"
+                            onClick={() => {
+                                resetFilters();
+                                setShowAdvancedFilters(false);
+                            }}
+                        >
                             Limpiar
                         </button>
                     </div>

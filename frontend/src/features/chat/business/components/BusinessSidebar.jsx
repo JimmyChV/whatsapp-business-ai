@@ -151,6 +151,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const [quickSearch, setQuickSearch] = useState('');
     const [orderImportStatus, setOrderImportStatus] = useState(null);
     const lastImportedOrderRef = useRef('');
+    const lastOpenedCartImportRef = useRef('');
     const tenantScopeRef = useRef(String(tenantScopeKey || 'default').trim() || 'default');
     const canWriteByAssignment = typeof chatAssignmentState?.isAssignedToMe === 'function'
         ? chatAssignmentState.isAssignedToMe(activeChatId)
@@ -407,6 +408,22 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         updateDraft,
         formatMoney
     });
+    useEffect(() => {
+        if (!pendingOrderCartLoad || !activeChatId) return;
+        if (String(pendingOrderCartLoad.chatId || '') !== String(activeChatId)) return;
+        if (!pendingOrderCartLoad.order || typeof pendingOrderCartLoad.order !== 'object') return;
+        const cartImportKey = [
+            activeChatId,
+            pendingOrderCartLoad.token,
+            pendingOrderCartLoad.order?.orderId,
+            pendingOrderCartLoad.order?.quoteId,
+            pendingOrderCartLoad.order?.sourceQuoteMessageId,
+            pendingOrderCartLoad.messageId
+        ].filter(Boolean).join(':');
+        if (cartImportKey && lastOpenedCartImportRef.current === cartImportKey) return;
+        if (cartImportKey) lastOpenedCartImportRef.current = cartImportKey;
+        openToolsPanel('cart');
+    }, [activeChatId, openToolsPanel, pendingOrderCartLoad]);
     useBusinessSidebarUiSync({
         aiEndRef,
         aiMessages,

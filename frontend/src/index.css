@@ -10205,20 +10205,25 @@ body {
 
   .sidebar-filter-content {
     position: absolute;
-    top: 0;
-    left: 58px;
-    right: 8px;
-    z-index: 45;
+    top: 8px;
+    left: 60px;
+    right: 10px;
+    z-index: 120;
     display: none;
-    padding: 10px;
+    max-height: min(62dvh, 380px);
+    padding: 10px 10px 12px;
+    overflow: visible;
     border: 1px solid var(--chat-pill-border);
     border-radius: 18px;
-    background: color-mix(in srgb, var(--saas-bg-surface) 96%, transparent);
-    box-shadow: 0 18px 40px color-mix(in srgb, var(--saas-bg-base) 24%, transparent);
+    background: var(--saas-bg-surface);
+    box-shadow:
+      0 24px 56px color-mix(in srgb, var(--saas-bg-base) 34%, transparent),
+      0 0 0 999px color-mix(in srgb, var(--saas-bg-base) 8%, transparent);
   }
 
   .sidebar-filter-content.is-open {
     display: grid;
+    gap: 8px;
   }
 
   .sidebar-filter-pill-toolbar {
@@ -10226,8 +10231,37 @@ body {
     gap: 8px;
   }
 
+  .sidebar-filter-pill-dropdown {
+    position: relative;
+  }
+
+  .sidebar-filter-pill-menu {
+    z-index: 140;
+    width: 100%;
+    max-height: min(42dvh, 230px);
+    overflow: auto;
+    background: var(--saas-bg-surface);
+    box-shadow: 0 18px 36px color-mix(in srgb, var(--saas-bg-base) 22%, transparent);
+  }
+
+  .sidebar-label-dropdown {
+    left: 0;
+    right: 0;
+    z-index: 140;
+    width: 100%;
+    max-height: min(46dvh, 280px);
+    overflow: hidden;
+    background: var(--saas-bg-surface);
+    box-shadow: 0 18px 36px color-mix(in srgb, var(--saas-bg-base) 22%, transparent);
+  }
+
+  .sidebar-label-list {
+    max-height: 190px;
+    overflow: auto;
+  }
+
   .sidebar-active-filters-row {
-    padding-top: 0;
+    display: none;
   }
 
   .sidebar-mobile-filter-strip {
@@ -10239,11 +10273,16 @@ body {
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    margin: 0 8px 6px 0;
-    padding: 7px 9px;
-    border: 1px solid color-mix(in srgb, var(--saas-accent-primary) 30%, var(--chat-pill-border));
-    border-radius: 14px;
-    background: color-mix(in srgb, var(--saas-accent-primary) 8%, var(--saas-bg-surface));
+    margin: 0 10px 8px 0;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in srgb, var(--saas-accent-primary) 34%, var(--chat-pill-border));
+    border-radius: 16px;
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--saas-accent-primary) 11%, var(--saas-bg-surface)),
+      color-mix(in srgb, var(--saas-accent-primary) 5%, var(--saas-bg-surface))
+    );
+    box-shadow: 0 10px 22px color-mix(in srgb, var(--saas-accent-primary) 10%, transparent);
   }
 
   .sidebar-mobile-filter-summary {
@@ -10252,7 +10291,7 @@ body {
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--saas-text-secondary);
-    font-size: 0.74rem;
+    font-size: 0.76rem;
     font-weight: 800;
   }
 

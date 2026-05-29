@@ -160,6 +160,7 @@ export default function OperationPage({
   }, [handleChatSelect]);
   const handleMobileLoadOrderToCart = useCallback((orderPayload) => {
     if (!activeChatId) return;
+    if (!orderPayload || typeof orderPayload !== 'object') return;
     handleLoadOrderToCart?.(activeChatId, orderPayload);
     setMobilePanel('tools');
   }, [activeChatId, handleLoadOrderToCart]);
