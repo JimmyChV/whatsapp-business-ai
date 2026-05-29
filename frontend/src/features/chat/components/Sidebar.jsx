@@ -108,6 +108,7 @@ const Sidebar = ({
     } = useSidebarUiToggles();
     const [windowTick, setWindowTick] = React.useState(() => Date.now());
     const [globalCommercialStatusOptions, setGlobalCommercialStatusOptions] = React.useState([{ value: 'all', label: 'Todos' }]);
+    const [showAdvancedFilters, setShowAdvancedFilters] = React.useState(false);
     const {
         filters,
         updateFilters,
@@ -496,10 +497,10 @@ const Sidebar = ({
                     <div className="sidebar-left-ribbon" aria-label="Filtros de chat">
                         <button
                             type="button"
-                            className={`sidebar-ribbon-btn ${!hasAnyFilter ? 'active' : ''}`}
-                            onClick={resetFilters}
+                            className={`sidebar-ribbon-btn ${showAdvancedFilters || hasAnyFilter ? 'active' : ''}`}
+                            onClick={() => setShowAdvancedFilters((prev) => !prev)}
                             title="Todos"
-                            data-label="Todos"
+                            data-label="Filtros"
                         >
                             <SlidersHorizontal size={18} />
                         </button>
@@ -596,7 +597,7 @@ const Sidebar = ({
                         </button>
                     </div>
                     <div className="sidebar-main-column">
-                        <div className="sidebar-filter-content">
+                        <div className={`sidebar-filter-content ${showAdvancedFilters ? 'is-open' : ''}`}>
                         <div className="sidebar-filter-header-row">
                             <span className="sidebar-filter-title">Filtros avanzados</span>
                             {hasAnyFilter && (
@@ -776,7 +777,7 @@ const Sidebar = ({
                             </div>
                         )}
                     </div>
-            <div className="chat-list" onClick={() => { if (showMenu) setShowMenu(false); if (showLabelPanel) setShowLabelPanel(false); if (showAssigneeFilterMenu) setShowAssigneeFilterMenu(false); if (showCommercialFilterMenu) setShowCommercialFilterMenu(false); if (showWindowFilterMenu) setShowWindowFilterMenu(false); }} onScroll={handleChatListScroll}>
+            <div className="chat-list" onClick={() => { if (showMenu) setShowMenu(false); if (showLabelPanel) setShowLabelPanel(false); if (showAssigneeFilterMenu) setShowAssigneeFilterMenu(false); if (showCommercialFilterMenu) setShowCommercialFilterMenu(false); if (showWindowFilterMenu) setShowWindowFilterMenu(false); if (showAdvancedFilters) setShowAdvancedFilters(false); }} onScroll={handleChatListScroll}>
                 {filteredChats.length === 0 && chats.length === 0 && !chatsLoaded ? (
                     [1, 2, 3, 4, 5].map((i) => (
                         <div key={i} className="chat-item chat-item-modern">

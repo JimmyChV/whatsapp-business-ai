@@ -65,6 +65,8 @@ const ChatWindow = ({
     waModules = [],
     chatAssignmentState = null,
     chatCommercialStatusState = null,
+    onMobileBack = null,
+    onMobileOpenTools = null,
     ...inputProps
 }) => {
     const {
@@ -201,6 +203,18 @@ const ChatWindow = ({
         >
             {/* Chat Header */}
             <div className="chat-header chat-header-pro" onClick={() => setShowClientProfile(v => !v)}>
+                <button
+                    type="button"
+                    className="chat-mobile-nav-btn chat-mobile-back-btn"
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        onMobileBack?.();
+                    }}
+                    aria-label="Volver a la lista de chats"
+                    title="Volver"
+                >
+                    ←
+                </button>
                 <div
                     className="chat-header-avatar chat-header-avatar--module"
                     style={{
@@ -285,6 +299,14 @@ const ChatWindow = ({
                         />
                     </div>
                     <div className="chat-header-actions-row">
+                        <button
+                            type="button"
+                            className="chat-mobile-nav-btn chat-mobile-tools-btn"
+                            onClick={() => onMobileOpenTools?.()}
+                            title="Abrir herramientas"
+                        >
+                            Herramientas
+                        </button>
                         <button className={`btn-icon ui-icon-btn chat-header-action-btn ${searchVisible ? 'active' : ''}`}
                             onClick={() => setSearchVisible(v => !v)} title="Buscar en chat">
                             <Search size={20} />

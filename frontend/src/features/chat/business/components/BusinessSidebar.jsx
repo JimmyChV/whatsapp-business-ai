@@ -53,7 +53,7 @@ export { ClientProfilePanel };
 
 // =========================================================
 
-const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], messagesRef = null, activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, onSendCatalogProduct = null, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null, cartDraftsByChat: externalCartDraftsByChat = {}, setCartDraftsByChat: externalSetCartDraftsByChat = null, chatAssignmentState = null, chatCommercialStatusState = null, buildApiHeaders = null }) => {
+const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], messagesRef = null, activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, onSendCatalogProduct = null, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null, cartDraftsByChat: externalCartDraftsByChat = {}, setCartDraftsByChat: externalSetCartDraftsByChat = null, chatAssignmentState = null, chatCommercialStatusState = null, buildApiHeaders = null, onMobileBackToChat = null, onMobileOpenTools = null }) => {
     const { notify, confirm } = useUiFeedback();
     const [activeTab, setActiveTab] = useState('ai');
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
@@ -1100,10 +1100,25 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     ];
     const primaryTabs = tabs.filter(tab => tab.tier === 'primary');
     const secondaryTabs = tabs.filter(tab => tab.tier === 'secondary');
+    const selectBusinessTab = useCallback((tabId) => {
+        setActiveTab(tabId);
+        setShowCompanyProfile(false);
+        onMobileOpenTools?.();
+    }, [onMobileOpenTools]);
 
 
     return (
         <div className="business-sidebar business-sidebar-pro">
+            <div className="business-mobile-header">
+                <button
+                    type="button"
+                    className="business-mobile-back-btn"
+                    onClick={() => onMobileBackToChat?.()}
+                >
+                    ← Chat
+                </button>
+                <span>Herramientas</span>
+            </div>
             {/* Tabs */}
             <div className="business-tabs-shell">
                 <div className="business-tabs business-tabs--primary">
@@ -1111,7 +1126,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                           <button
                               key={t.id}
                               type="button"
-                              onClick={() => { setActiveTab(t.id); setShowCompanyProfile(false); }}
+                              onClick={() => selectBusinessTab(t.id)}
                               className={`business-tab-btn business-tab-btn--primary ${activeTab === t.id ? 'active' : ''}`}
                           >
                             <span className="business-tab-icon">{t.icon}</span>
@@ -1123,9 +1138,9 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     <div className="business-tabs business-tabs--secondary">
                         {secondaryTabs.map(t => (
                               <button
-                                  key={t.id}
-                                  type="button"
-                                  onClick={() => { setActiveTab(t.id); setShowCompanyProfile(false); }}
+                              key={t.id}
+                              type="button"
+                                  onClick={() => selectBusinessTab(t.id)}
                                   className={`business-tab-btn business-tab-btn--secondary ${activeTab === t.id ? 'active' : ''}`}
                               >
                                 <span className="business-tab-icon">{t.icon}</span>

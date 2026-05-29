@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Sidebar, BusinessSidebar, ClientProfilePanel, ChatWindow, NewChatModal } from '../features/chat/components';
 import { sanitizeDisplayText } from '../features/chat/core';
 import {
@@ -126,6 +126,7 @@ export default function OperationPage({
   SaasPanelComponent,
 }) {
   const [cartDraftsByChat, setCartDraftsByChat] = useState({});
+  const [mobilePanel, setMobilePanel] = useState('list');
   const originalDocumentTitleRef = useRef(typeof document !== 'undefined' ? document.title : 'WhatsApp Business Pro');
   const activeChatDetails = chats.find((c) => c.id === activeChatId) || null;
   const mergedActiveChatDetails = activeChatDetails || clientContact
@@ -149,7 +150,15 @@ export default function OperationPage({
     }))
     .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
-  const appContainerClassName = forceOperationLaunch ? 'app-container app-container--operation' : 'app-container';
+  const appContainerClassName = forceOperationLaunch
+    ? 'app-container app-container--operation operation-page'
+    : 'app-container operation-page';
+
+  const handleMobileChatSelect = useCallback((chatId, options) => {
+    handleChatSelect?.(chatId, options);
+    setMobilePanel('chat');
+  }, [handleChatSelect]);
+  const effectiveMobilePanel = activeChatId ? mobilePanel : 'list';
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -176,6 +185,7 @@ export default function OperationPage({
       if (String(targetTenantId) !== String(tenantScopeId || '').trim()) return;
 
       handleChatSelect?.(targetChatId, { clearSearch: true });
+      setMobilePanel('chat');
       setToasts((prev) => (Array.isArray(prev) ? prev : []).filter((toast) => String(toast?.chatId || '') !== targetChatId));
       clearChatNotificationOpenRequest();
     };
@@ -200,7 +210,7 @@ export default function OperationPage({
   }, [handleChatSelect, setToasts, tenantScopeId]);
 
   return (
-    <div className={appContainerClassName}>
+    <div className={appContainerClassName} data-mobile-panel={effectiveMobilePanel}>
       <input
         type="file"
         ref={fileInputRef}
@@ -209,40 +219,42 @@ export default function OperationPage({
         accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
       />
 
-      <Sidebar
-        chats={chats}
-        chatsLoaded={chatsLoaded}
-        activeChatId={activeChatId}
-        onChatSelect={handleChatSelect}
-        myProfile={myProfile || businessData?.profile}
-        onLogout={handleLogoutWhatsapp}
-        onRefreshChats={handleRefreshChats}
-        onStartNewChat={handleStartNewChat}
-        labelDefinitions={labelDefinitions}
-        onCreateLabel={handleCreateLabel}
-        onLoadMoreChats={handleLoadMoreChats}
-        chatsHasMore={chatsHasMore}
-        chatsLoadingMore={isLoadingMoreChats}
-        chatsTotal={chatsTotal}
-        searchQuery={chatSearchQuery}
-        onSearchQueryChange={handleChatSearchChange}
-        activeFilters={chatFilters}
-        onFiltersChange={handleChatFiltersChange}
-        onOpenCompanyProfile={handleOpenCompanyProfile}
-        buildApiHeaders={buildApiHeaders}
-        saasAuthEnabled={saasAuthEnabled}
-        tenantOptions={availableTenantOptions}
-        activeTenantId={tenantScopeId}
-        tenantSwitchError={tenantSwitchError}
-        onSaasLogout={handleSaasLogout}
-        canManageSaas={canManageSaas}
-        onOpenSaasAdmin={() => handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId })}
-        waModules={availableWaModules}
-        chatAssignmentState={chatAssignmentState}
-        chatCommercialStatusState={chatCommercialStatusState}
-        showBackToPanel={Boolean(forceOperationLaunch && canManageSaas)}
-        onBackToPanel={() => handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId })}
-      />
+      <div className="chat-sidebar-panel">
+        <Sidebar
+          chats={chats}
+          chatsLoaded={chatsLoaded}
+          activeChatId={activeChatId}
+          onChatSelect={handleMobileChatSelect}
+          myProfile={myProfile || businessData?.profile}
+          onLogout={handleLogoutWhatsapp}
+          onRefreshChats={handleRefreshChats}
+          onStartNewChat={handleStartNewChat}
+          labelDefinitions={labelDefinitions}
+          onCreateLabel={handleCreateLabel}
+          onLoadMoreChats={handleLoadMoreChats}
+          chatsHasMore={chatsHasMore}
+          chatsLoadingMore={isLoadingMoreChats}
+          chatsTotal={chatsTotal}
+          searchQuery={chatSearchQuery}
+          onSearchQueryChange={handleChatSearchChange}
+          activeFilters={chatFilters}
+          onFiltersChange={handleChatFiltersChange}
+          onOpenCompanyProfile={handleOpenCompanyProfile}
+          buildApiHeaders={buildApiHeaders}
+          saasAuthEnabled={saasAuthEnabled}
+          tenantOptions={availableTenantOptions}
+          activeTenantId={tenantScopeId}
+          tenantSwitchError={tenantSwitchError}
+          onSaasLogout={handleSaasLogout}
+          canManageSaas={canManageSaas}
+          onOpenSaasAdmin={() => handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId })}
+          waModules={availableWaModules}
+          chatAssignmentState={chatAssignmentState}
+          chatCommercialStatusState={chatCommercialStatusState}
+          showBackToPanel={Boolean(forceOperationLaunch && canManageSaas)}
+          onBackToPanel={() => handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId })}
+        />
+      </div>
 
       <div className="main-workspace">
         {activeChatId ? (
@@ -311,6 +323,8 @@ export default function OperationPage({
               waModules={availableWaModules}
               chatAssignmentState={chatAssignmentState}
               chatCommercialStatusState={chatCommercialStatusState}
+              onMobileBack={() => setMobilePanel('list')}
+              onMobileOpenTools={() => setMobilePanel('tools')}
             />
 
             {showClientProfile && (
@@ -364,6 +378,7 @@ export default function OperationPage({
                 className="in-app-toast"
                 onClick={() => {
                   handleChatSelect(toast.chatId, { clearSearch: true });
+                  setMobilePanel('chat');
                   setToasts((prev) => prev.filter((t) => t.id !== toast.id));
                 }}
               >
@@ -382,7 +397,10 @@ export default function OperationPage({
           </div>
         )}
 
-        {activeChatId && (
+      </div>
+
+      {activeChatId && (
+        <div className="business-sidebar-panel">
           <BusinessSidebar
             tenantScopeKey={tenantScopeId}
             setInputText={setInputText}
@@ -413,9 +431,11 @@ export default function OperationPage({
             chatAssignmentState={chatAssignmentState}
             chatCommercialStatusState={chatCommercialStatusState}
             buildApiHeaders={buildApiHeaders}
+            onMobileBackToChat={() => setMobilePanel('chat')}
+            onMobileOpenTools={() => setMobilePanel('tools')}
           />
-        )}
-      </div>
+        </div>
+      )}
 
       <NewChatModal
         isOpen={newChatDialog.open}
