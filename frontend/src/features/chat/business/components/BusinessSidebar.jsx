@@ -123,6 +123,12 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const sourceQuote = activeDraft.sourceQuote && typeof activeDraft.sourceQuote === 'object'
         ? activeDraft.sourceQuote
         : null;
+    const hasCartSourceContext = Boolean(
+        sourceQuote?.quoteId
+        || sourceOrder?.orderId
+        || sourceOrder?.messageId
+    );
+    const isEditingQuoteCart = Boolean(sourceQuote?.quoteId);
     const pendingCartImportKey = useMemo(() => {
         if (!pendingOrderCartLoad || !activeChatId) return '';
         if (String(pendingOrderCartLoad.chatId || '') !== String(activeChatId)) return '';
@@ -451,7 +457,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         activeTab,
         quickRepliesEnabled,
         cart,
-        allowEmptyCartTab: pendingCartImportActive && cartImportGraceKey === pendingCartImportKey,
+        allowEmptyCartTab: hasCartSourceContext || (pendingCartImportActive && cartImportGraceKey === pendingCartImportKey),
         setActiveTab
     });
     useCompanyProfileOverlay({
@@ -1351,7 +1357,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     cartTotal={cartTotal}
                     sendQuoteToChat={sendQuoteToChat}
                     canWriteByAssignment={canUseMessageTools}
-                    showQuoteHistory
+                    showQuoteHistory={!isEditingQuoteCart}
                 />
             )}
 

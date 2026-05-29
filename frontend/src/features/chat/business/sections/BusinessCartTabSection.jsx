@@ -171,7 +171,7 @@ export default function BusinessCartTabSection({
                         Pedido origen: <strong style={{ color: 'var(--text-primary)' }}>{sourceOrder.orderId || sourceOrder.messageId}</strong>
                     </div>
                 )}
-                {sourceQuote?.quoteId && (
+                {sourceQuote?.quoteId && !orderImportStatus?.text && (
                     <div style={{ background: tone.cardSurfaceAlt, border: `1px solid ${tone.controlBorder}`, color: tone.textSoft, borderRadius: '8px', padding: '8px 10px', fontSize: '0.74rem', lineHeight: 1.4 }}>
                         Editando: <strong style={{ color: 'var(--text-primary)' }}>Cotizacion {sourceQuote.quoteNumber || ''}{Number(sourceQuote.revisionNumber || 0) > 1 ? ` (Rev. ${sourceQuote.revisionNumber})` : ''}</strong>
                     </div>
