@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Send, Sparkles } from 'lucide-react';
 import { API_URL } from '../../../../config/runtime';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
@@ -78,6 +78,7 @@ export default function BusinessAiTabSection({
     const [pattyModePayload, setPattyModePayload] = useState(null);
     const [pattyModeLoading, setPattyModeLoading] = useState(false);
     const [pattyModeSaving, setPattyModeSaving] = useState(false);
+    const activeReviewSessionRef = useRef({ key: '', chatId: '', scopeModuleId: '', active: false });
 
     const baseChatId = useMemo(
         () => String(activeChatId || '').split('::mod::')[0] || String(activeChatId || '').trim(),
@@ -194,6 +195,31 @@ export default function BusinessAiTabSection({
             setPattyModeSaving(false);
         }
     }, [baseChatId, buildJsonHeaders, notify, scopeModuleId]);
+
+    useEffect(() => {
+        const currentKey = baseChatId ? `${baseChatId}::${scopeModuleId || ''}` : '';
+        const previous = activeReviewSessionRef.current || {};
+        if (previous.active && previous.key && previous.key !== currentKey) {
+            const previousChatId = String(previous.chatId || '').trim();
+            const previousScopeModuleId = String(previous.scopeModuleId || '').trim();
+            if (previousChatId && activeTenantId) {
+                void fetch(`${API_URL}/api/tenant/chats/${encodeURIComponent(previousChatId)}/patty-mode`, {
+                    method: 'POST',
+                    headers: buildJsonHeaders(),
+                    body: JSON.stringify({
+                        mode: null,
+                        scopeModuleId: previousScopeModuleId
+                    })
+                }).catch(() => {});
+            }
+        }
+        activeReviewSessionRef.current = {
+            key: currentKey,
+            chatId: baseChatId,
+            scopeModuleId,
+            active: Boolean(reviewOverrideActive)
+        };
+    }, [activeTenantId, baseChatId, buildJsonHeaders, reviewOverrideActive, scopeModuleId]);
 
     const releaseChat = useCallback(async () => {
         if (!baseChatId || !canReleaseChat) return;

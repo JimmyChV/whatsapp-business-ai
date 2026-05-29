@@ -2413,22 +2413,6 @@ function registerOperationsHttpRoutes({
                         source: 'http.assignment.clear_needs_advisor'
                     });
                 }
-                const pattyModeResult = await setChatPattyMode(tenantId, {
-                    chatId,
-                    scopeModuleId,
-                    mode: 'review',
-                    pattyTakenBy: assigneeUserId,
-                    reason: 'assignment_manual'
-                });
-                if (typeof emitCommercialStatusUpdated === 'function') {
-                    emitCommercialStatusUpdated({
-                        tenantId,
-                        chatId,
-                        scopeModuleId,
-                        result: pattyModeResult,
-                        source: 'http.assignment.patty_mode'
-                    });
-                }
             }
 
             await auditLogService.writeAuditLog(tenantId, {
@@ -2491,22 +2475,6 @@ function registerOperationsHttpRoutes({
                 status: 'active'
             });
 
-            const pattyModeResult = await setChatPattyMode(tenantId, {
-                chatId,
-                scopeModuleId,
-                mode: 'review',
-                pattyTakenBy: actorUserId,
-                reason: 'take_chat'
-            });
-            if (typeof emitCommercialStatusUpdated === 'function') {
-                emitCommercialStatusUpdated({
-                    tenantId,
-                    chatId,
-                    scopeModuleId,
-                    result: pattyModeResult,
-                    source: 'http.take_chat.patty_mode'
-                });
-            }
             const needsAdvisorResult = await clearNeedsAdvisor(tenantId, chatId, scopeModuleId);
             if (typeof emitCommercialStatusUpdated === 'function' && needsAdvisorResult?.changed) {
                 emitCommercialStatusUpdated({
