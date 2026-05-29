@@ -8790,13 +8790,13 @@ body {
 }
 
 .business-tabs {
-  gap: 10px !important;
+  gap: 8px !important;
 }
 
 .business-tab-btn {
   position: relative !important;
-  min-height: 44px !important;
-  border-radius: 14px !important;
+  min-height: 38px !important;
+  border-radius: 13px !important;
   border: 1px solid color-mix(in srgb, var(--chat-card-border) 78%, transparent) !important;
   background: color-mix(in srgb, var(--chat-control-surface) 88%, transparent) !important;
   color: var(--saas-text-primary) !important;
@@ -8821,7 +8821,7 @@ body {
   border-color: color-mix(in srgb, var(--saas-accent-primary) 34%, var(--chat-card-border)) !important;
   background: color-mix(in srgb, var(--chat-control-surface) 70%, var(--saas-accent-primary) 12%) !important;
   color: var(--saas-text-primary) !important;
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--saas-accent-primary) 10%, transparent) !important;
+  box-shadow: 0 6px 14px color-mix(in srgb, var(--saas-accent-primary) 8%, transparent) !important;
 }
 
 .business-tab-btn.active {
@@ -8834,7 +8834,7 @@ body {
   color: var(--saas-text-primary) !important;
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--saas-accent-primary) 24%, transparent),
-    0 12px 24px color-mix(in srgb, var(--saas-accent-primary) 16%, transparent) !important;
+    0 8px 16px color-mix(in srgb, var(--saas-accent-primary) 12%, transparent) !important;
 }
 
 :root[data-theme="light"] .business-tab-btn {
@@ -8847,7 +8847,7 @@ body {
 :root[data-theme="light"] .business-tab-btn:hover {
   border-color: color-mix(in srgb, var(--saas-accent-primary) 44%, var(--saas-border-subtle)) !important;
   background: color-mix(in srgb, #ffffff 76%, var(--saas-accent-primary) 10%) !important;
-  box-shadow: 0 10px 22px color-mix(in srgb, var(--saas-accent-primary) 10%, transparent) !important;
+  box-shadow: 0 8px 16px color-mix(in srgb, var(--saas-accent-primary) 9%, transparent) !important;
 }
 
 :root[data-theme="light"] .business-tab-btn.active {
@@ -8860,7 +8860,7 @@ body {
   color: var(--saas-text-primary) !important;
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--saas-accent-primary) 22%, transparent),
-    0 12px 24px color-mix(in srgb, var(--saas-accent-primary) 12%, transparent) !important;
+    0 8px 16px color-mix(in srgb, var(--saas-accent-primary) 10%, transparent) !important;
 }
 
 :root[data-theme="light"] .message-ack.sent,
@@ -9136,10 +9136,27 @@ body {
   align-items: stretch !important;
 }
 
+.business-tabs-shell {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  padding: 10px 12px 8px !important;
+}
+
+.business-tabs--primary {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+
+.business-tabs--secondary {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
 .business-tab-btn {
   min-width: 0 !important;
   width: 100% !important;
+  min-height: 38px !important;
   padding-inline: 10px !important;
+  border-radius: 13px !important;
 }
 
 .business-tab-btn .business-tab-label {
@@ -9147,6 +9164,31 @@ body {
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   white-space: nowrap !important;
+}
+
+.business-tab-btn--primary .business-tab-label {
+  font-size: 0.71rem !important;
+}
+
+.business-tab-btn--secondary {
+  min-height: 34px !important;
+  border-radius: 12px !important;
+  background: color-mix(in srgb, var(--chat-control-surface) 80%, transparent) !important;
+}
+
+.business-tab-btn--secondary .business-tab-icon {
+  opacity: 0.72 !important;
+}
+
+.business-tab-btn--secondary .business-tab-label {
+  font-size: 0.69rem !important;
+  font-weight: 750 !important;
+}
+
+@media (max-width: 1200px) {
+  .business-tabs--secondary {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
 }
 
 .business-coverage-shell {
@@ -9636,6 +9678,10 @@ body {
 @media (max-width: 1720px) {
   .business-tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .business-tabs--primary {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
   }
 }
 

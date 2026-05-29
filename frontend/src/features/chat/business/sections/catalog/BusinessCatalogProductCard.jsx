@@ -46,30 +46,30 @@ export default function BusinessCatalogProductCard({
     };
 
     return (
-        <div style={{ background: tone.cardSurface, borderRadius: '11px', border: `1px solid ${tone.controlBorder}`, padding: '8px', display: 'grid', gridTemplateColumns: '74px 1fr', gap: '8px', alignItems: 'start' }}>
-            <div style={{ width: '74px', height: '74px', borderRadius: '9px', background: tone.cardSurfaceAlt, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${tone.controlBorder}` }}>
+        <div style={{ background: tone.cardSurface, borderRadius: '11px', border: `1px solid ${tone.controlBorder}`, padding: '7px', display: 'grid', gridTemplateColumns: '66px 1fr', gap: '8px', alignItems: 'start' }}>
+            <div style={{ width: '66px', height: '66px', borderRadius: '9px', background: tone.cardSurfaceAlt, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${tone.controlBorder}` }}>
                 {item.imageUrl
                     ? <img src={item.imageUrl} alt={item.title || 'Producto'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     : <Package size={24} color="var(--chat-control-text-soft)" />}
             </div>
 
-            <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '5px', justifyContent: 'flex-start' }}>
-                <div style={{ fontSize: '0.84rem', color: 'var(--text-primary)', fontWeight: 700, lineHeight: 1.24, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+            <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px', justifyContent: 'flex-start' }}>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)', fontWeight: 700, lineHeight: 1.2, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
                     {String(item.title || `Producto ${index + 1}`)}
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                     {hasDiscount && (
-                        <span style={{ fontSize: '0.72rem', color: tone.textMuted, textDecoration: 'line-through' }}>S/ {formatMoney(regularPrice)}</span>
+                        <span style={{ fontSize: '0.68rem', color: tone.textMuted, textDecoration: 'line-through' }}>S/ {formatMoney(regularPrice)}</span>
                     )}
                     {hasDiscount && (
-                        <span style={{ fontSize: '0.7rem', color: tone.successText, background: tone.successSurface, border: `1px solid ${tone.successBorder}`, borderRadius: '999px', padding: '2px 7px', fontWeight: 700 }}>
+                        <span style={{ fontSize: '0.67rem', color: tone.successText, background: tone.successSurface, border: `1px solid ${tone.successBorder}`, borderRadius: '999px', padding: '2px 6px', fontWeight: 700 }}>
                             -{effectiveDiscount.toFixed(effectiveDiscount % 1 === 0 ? 0 : 1)}%
                         </span>
                     )}
                 </div>
 
-                <div style={{ fontSize: '1rem', color: tone.priceText, fontWeight: 800 }}>
+                <div style={{ fontSize: '0.94rem', color: tone.priceText, fontWeight: 800 }}>
                     {finalPrice > 0 ? `S/ ${formatMoney(finalPrice)}` : 'Precio: Consultar'}
                 </div>
 
@@ -80,18 +80,18 @@ export default function BusinessCatalogProductCard({
                     </div>
                 )}
 
-                <div style={{ marginTop: '4px', display: 'grid', gridTemplateColumns: quoteOptionMode ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))', gap: '7px', alignItems: 'stretch' }}>
+                <div style={{ marginTop: '2px', display: 'grid', gridTemplateColumns: quoteOptionMode ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))', gap: '6px', alignItems: 'stretch' }}>
                     {!quoteOptionMode && (
                         <button
                             onClick={() => sendCatalogProduct(item, index)}
                             disabled={!canWriteByAssignment}
-                            style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '7px 9px', background: canWriteByAssignment ? tone.infoSurface : 'var(--chat-control-disabled)', border: `1px solid ${tone.infoBorder}`, borderRadius: '9px', color: canWriteByAssignment ? tone.infoText : 'var(--saas-text-inverse)', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontSize: '0.73rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: canWriteByAssignment ? 1 : 0.75 }}
+                            style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '6px 8px', background: canWriteByAssignment ? tone.infoSurface : 'var(--chat-control-disabled)', border: `1px solid ${tone.infoBorder}`, borderRadius: '9px', color: canWriteByAssignment ? tone.infoText : 'var(--saas-text-inverse)', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontSize: '0.71rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: canWriteByAssignment ? 1 : 0.75 }}
                         >
                             <Send size={12} /> Enviar
                         </button>
                     )}
                     {inCart ? (
-                        <div style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', background: tone.successSurface, border: `1px solid ${tone.successBorder}`, borderRadius: '9px', padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                        <div style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', background: tone.successSurface, border: `1px solid ${tone.successBorder}`, borderRadius: '9px', padding: '3px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
                             <button
                                 onClick={() => onCatalogQtyDelta && onCatalogQtyDelta(item.id, -1)}
                                 disabled={!canWriteByAssignment}
@@ -112,7 +112,7 @@ export default function BusinessCatalogProductCard({
                         <button
                             onClick={() => addToCart(item, 1)}
                             disabled={!canWriteByAssignment}
-                            style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '7px 9px', background: canWriteByAssignment ? 'var(--saas-accent-primary)' : 'var(--chat-control-disabled)', border: '1px solid color-mix(in srgb, var(--saas-accent-primary) 68%, transparent)', borderRadius: '9px', color: 'var(--saas-accent-primary-text)', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontSize: '0.73rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: canWriteByAssignment ? 1 : 0.75 }}
+                            style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '6px 8px', background: canWriteByAssignment ? 'var(--saas-accent-primary)' : 'var(--chat-control-disabled)', border: '1px solid color-mix(in srgb, var(--saas-accent-primary) 68%, transparent)', borderRadius: '9px', color: 'var(--saas-accent-primary-text)', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontSize: '0.71rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: canWriteByAssignment ? 1 : 0.75 }}
                         >
                             <ShoppingCart size={12} /> {quoteOptionMode ? `Agregar a ${optionLabel || 'opción'}` : 'Carrito'}
                         </button>

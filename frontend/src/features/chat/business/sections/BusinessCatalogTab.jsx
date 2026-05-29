@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Package, PlusCircle, Search, SlidersHorizontal } from 'lucide-react';
+import { ChevronDown, ChevronUp, Package, PlusCircle, Search, Settings2, SlidersHorizontal } from 'lucide-react';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 import {
     addItemToCartState,
@@ -38,6 +38,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
     const [catalogCategoryFilter, setCatalogCategoryFilter] = useState('all');
     const [catalogTypeFilter, setCatalogTypeFilter] = useState('all');
     const [showCatalogFilters, setShowCatalogFilters] = useState(false);
+    const [showCatalogSetup, setShowCatalogSetup] = useState(false);
     const moduleOptions = Array.isArray(waModules)
         ? waModules
             .filter((module) => module && String(module.moduleId || '').trim())
@@ -62,6 +63,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
     const effectiveCatalogSource = String(activeCatalogOption?.sourceType || catalogMeta?.source || 'local').trim().toLowerCase() || 'local';
     const isExternalCatalog = ['native', 'woocommerce', 'meta'].includes(effectiveCatalogSource);
     const chatCatalogReadOnly = true;
+    const canToggleCatalogSetup = moduleOptions.length > 0 || chatCatalogReadOnly;
     const showCatalogForm = !chatCatalogReadOnly && showForm;
     const handleAddClick = () => {
         setEditingProduct(null);
@@ -534,7 +536,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
 
     return (
         <div className="catalog-tab-shell" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div className="catalog-tab-toolbar" style={{ padding: '8px 8px 6px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '8px', background: cardSurface, borderBottom: `1px solid ${cardBorder}` }}>
+            <div className="catalog-tab-toolbar" style={{ padding: '6px 8px 5px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '6px', background: cardSurface, borderBottom: `1px solid ${cardBorder}` }}>
                 {catalogMeta?.source === 'local' && catalogMeta?.wooStatus && catalogMeta?.wooStatus !== 'ok' && (
                     <div className="catalog-source-warning" style={{ background: warningSurface, color: warningText, border: `1px solid ${warningBorder}`, borderRadius: '9px', padding: '8px 10px', fontSize: '0.75rem' }}>
                         WooCommerce no devolvio productos ({catalogMeta?.wooSource || 'sin fuente'}).
@@ -542,57 +544,83 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                     </div>
                 )}
 
-                                {moduleOptions.length > 0 && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '8px', alignItems: 'end' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <label style={{ fontSize: '0.68rem', color: secondaryText, letterSpacing: '0.02em', textTransform: 'uppercase' }}>Modulo</label>
-                            <select
-                                value={activeCatalogModuleId}
-                                disabled={!canWriteByAssignment}
-                                onChange={(event) => {
-                                    const nextModuleId = String(event.target.value || '').trim();
-                                    if (!nextModuleId || typeof onSelectCatalogModule !== 'function') return;
-                                    onSelectCatalogModule(nextModuleId);
-                                }}
-                                style={{ width: '100%', background: controlStrongSurface, border: `1px solid ${cardBorder}`, color: primaryText, borderRadius: '10px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none', opacity: canWriteByAssignment ? 1 : 0.72, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed' }}
-                            >
-                                {moduleOptions.map((module) => (
-                                    <option key={'catalog_module_' + module.moduleId} value={module.moduleId}>{module.name}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <label style={{ fontSize: '0.68rem', color: secondaryText, letterSpacing: '0.02em', textTransform: 'uppercase' }}>Catalogo</label>
-                            <select
-                                value={activeCatalogId}
-                                disabled={!canWriteByAssignment}
-                                onChange={(event) => {
-                                    const nextCatalogId = String(event.target.value || '').trim().toUpperCase();
-                                    if (typeof onSelectCatalog !== 'function') return;
-                                    onSelectCatalog(nextCatalogId);
-                                }}
-                                style={{ width: '100%', background: controlStrongSurface, border: `1px solid ${cardBorder}`, color: primaryText, borderRadius: '10px', padding: '8px 10px', fontSize: '0.78rem', outline: 'none', opacity: canWriteByAssignment ? 1 : 0.72, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed' }}
-                            >
-                                {catalogOptions.length === 0 && <option value="">Sin catalogos</option>}
-                                {catalogOptions.map((entry) => (
-                                    <option key={'catalog_option_' + entry.catalogId} value={entry.catalogId}>{entry.name}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div style={{ fontSize: '0.68rem', color: secondaryText, whiteSpace: 'nowrap', alignSelf: 'end' }}>
-                            Scope: {activeCatalogModuleId || 'tenant'}
-                        </div>
+                <div style={{ display: 'grid', gridTemplateColumns: canToggleCatalogSetup ? '1fr auto' : '1fr', gap: '8px', alignItems: 'end' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label style={{ fontSize: '0.64rem', color: secondaryText, letterSpacing: '0.02em', textTransform: 'uppercase' }}>Catalogo</label>
+                        <select
+                            value={activeCatalogId}
+                            disabled={!canWriteByAssignment}
+                            onChange={(event) => {
+                                const nextCatalogId = String(event.target.value || '').trim().toUpperCase();
+                                if (typeof onSelectCatalog !== 'function') return;
+                                onSelectCatalog(nextCatalogId);
+                            }}
+                            style={{ width: '100%', background: controlStrongSurface, border: `1px solid ${cardBorder}`, color: primaryText, borderRadius: '10px', padding: '7px 10px', fontSize: '0.76rem', outline: 'none', opacity: canWriteByAssignment ? 1 : 0.72, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed' }}
+                        >
+                            {catalogOptions.length === 0 && <option value="">Sin catalogos</option>}
+                            {catalogOptions.map((entry) => (
+                                <option key={'catalog_option_' + entry.catalogId} value={entry.catalogId}>{entry.name}</option>
+                            ))}
+                        </select>
                     </div>
-                )}
-                {chatCatalogReadOnly && (
-                    <div className="catalog-quote-mode-card" style={{ background: infoSurface, border: `1px solid ${infoBorder}`, color: infoText, borderRadius: '10px', padding: '9px 10px', fontSize: '0.74rem', lineHeight: 1.45, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 800 }}>
-                            Modo de cotización:
+
+                    {canToggleCatalogSetup && (
+                        <button
+                            type="button"
+                            onClick={() => setShowCatalogSetup((prev) => !prev)}
+                            disabled={!canWriteByAssignment}
+                            style={{
+                                height: '36px',
+                                minWidth: '96px',
+                                borderRadius: '10px',
+                                border: showCatalogSetup ? `1px solid ${successBorder}` : `1px solid ${cardBorder}`,
+                                background: showCatalogSetup ? successSurface : controlStrongSurface,
+                                color: showCatalogSetup ? successText : primaryText,
+                                cursor: canWriteByAssignment ? 'pointer' : 'not-allowed',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '6px',
+                                fontSize: '0.72rem',
+                                fontWeight: 800,
+                                opacity: canWriteByAssignment ? 1 : 0.72
+                            }}
+                        >
+                            <Settings2 size={14} />
+                            Ajustes
+                            {showCatalogSetup ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </button>
+                    )}
+                </div>
+
+                {showCatalogSetup && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {moduleOptions.length > 0 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <label style={{ fontSize: '0.64rem', color: secondaryText, letterSpacing: '0.02em', textTransform: 'uppercase' }}>Modulo</label>
+                                <select
+                                    value={activeCatalogModuleId}
+                                    disabled={!canWriteByAssignment}
+                                    onChange={(event) => {
+                                        const nextModuleId = String(event.target.value || '').trim();
+                                        if (!nextModuleId || typeof onSelectCatalogModule !== 'function') return;
+                                        onSelectCatalogModule(nextModuleId);
+                                    }}
+                                    style={{ width: '100%', background: controlStrongSurface, border: `1px solid ${cardBorder}`, color: primaryText, borderRadius: '10px', padding: '7px 10px', fontSize: '0.76rem', outline: 'none', opacity: canWriteByAssignment ? 1 : 0.72, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed' }}
+                                >
+                                    {moduleOptions.map((module) => (
+                                        <option key={'catalog_module_' + module.moduleId} value={module.moduleId}>{module.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+                        {chatCatalogReadOnly && (
+                    <div className="catalog-quote-mode-card" style={{ background: infoSurface, border: `1px solid ${infoBorder}`, color: infoText, borderRadius: '11px', padding: '7px 9px', fontSize: '0.72rem', lineHeight: 1.35, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '8px', alignItems: 'center' }}>
+                        <div style={{ fontSize: '0.66rem', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 800, whiteSpace: 'nowrap' }}>
+                            Modo:
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '7px', background: !modoOpciones ? controlStrongSurface : controlSurface, border: `1px solid ${!modoOpciones ? successBorder : cardBorder}`, borderRadius: '10px', padding: '8px 9px', color: !modoOpciones ? successText : primaryText, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontWeight: 800 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: !modoOpciones ? controlStrongSurface : controlSurface, border: `1px solid ${!modoOpciones ? successBorder : cardBorder}`, borderRadius: '10px', padding: '7px 8px', color: !modoOpciones ? successText : primaryText, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontWeight: 800 }}>
                                 <input
                                     type="radio"
                                     name="quote-mode"
@@ -602,7 +630,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                 />
                                 Cotización única
                             </label>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '7px', background: modoOpciones ? controlStrongSurface : controlSurface, border: `1px solid ${modoOpciones ? successBorder : cardBorder}`, borderRadius: '10px', padding: '8px 9px', color: modoOpciones ? successText : primaryText, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontWeight: 800 }}>
+                            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: modoOpciones ? controlStrongSurface : controlSurface, border: `1px solid ${modoOpciones ? successBorder : cardBorder}`, borderRadius: '10px', padding: '7px 8px', color: modoOpciones ? successText : primaryText, cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', fontWeight: 800 }}>
                                 <input
                                     type="radio"
                                     name="quote-mode"
@@ -614,9 +642,11 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                             </label>
                         </div>
                     </div>
+                        )}
+                    </div>
                 )}
                 {(!modoOpciones || safePhase === 'catalog') && (
-                <div className="catalog-toolbar-card" style={{ background: cardAltSurface, border: `1px solid ${cardBorder}`, borderRadius: '11px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                <div className="catalog-toolbar-card" style={{ background: cardAltSurface, border: `1px solid ${cardBorder}`, borderRadius: '11px', padding: '6px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: controlStrongSurface, border: `1px solid ${controlBorder}`, borderRadius: '10px', padding: '0 10px', minWidth: 0 }}>
                             <Search size={15} color="var(--chat-control-text-soft)" />
@@ -626,7 +656,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                 disabled={!canWriteByAssignment}
                                 onChange={e => setCatalogSearch(e.target.value)}
                                 placeholder="Buscar producto o SKU"
-                                style={{ width: '100%', minWidth: 0, background: 'transparent', border: 'none', color: primaryText, borderRadius: '10px', padding: '8px 0', fontSize: '0.78rem', outline: 'none', opacity: canWriteByAssignment ? 1 : 0.72, cursor: canWriteByAssignment ? 'text' : 'not-allowed' }}
+                                style={{ width: '100%', minWidth: 0, background: 'transparent', border: 'none', color: primaryText, borderRadius: '10px', padding: '7px 0', fontSize: '0.76rem', outline: 'none', opacity: canWriteByAssignment ? 1 : 0.72, cursor: canWriteByAssignment ? 'text' : 'not-allowed' }}
                             />
                             {catalogSearch.trim() && (
                                 <button
@@ -645,7 +675,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                             title="Filtros"
                             disabled={!canWriteByAssignment}
                             style={{
-                                height: '36px',
+                                height: '34px',
                                 minWidth: '40px',
                                 borderRadius: '10px',
                                 border: hasCatalogFilters || showCatalogFilters ? `1px solid ${successBorder}` : `1px solid ${cardBorder}`,
@@ -736,7 +766,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                             )}
                         </div>
 
-                        <div style={{ fontSize: '0.7rem', color: secondaryText }}>
+                        <div style={{ fontSize: '0.68rem', color: secondaryText, whiteSpace: 'nowrap' }}>
                             Mostrando {visibleCatalog.length} de {catalog.length} productos
                         </div>
                     </div>
@@ -744,7 +774,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                 )}
             </div>
 
-            <div className="catalog-tab-scroll" style={{ flex: 1, overflowY: 'auto', padding: '8px 8px 10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div className="catalog-tab-scroll" style={{ flex: 1, overflowY: 'auto', padding: '6px 8px 10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {modoOpciones ? (
                     <div className="catalog-options-wizard" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         <div style={{ background: cardSurface, border: `1px solid ${cardBorder}`, borderRadius: '12px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '9px' }}>

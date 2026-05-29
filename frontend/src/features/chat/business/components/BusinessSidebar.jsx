@@ -1092,29 +1092,48 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         return haystack.includes(q);
     });
     const tabs = [
-        ...(aiPanelAvailable ? [{ id: 'ai', icon: <Bot size={15} />, label: 'IA Pro' }] : []),
-        { id: 'coverage', icon: <MapPin size={15} />, label: 'Cobertura' },
-        { id: 'catalog', icon: <Package size={15} />, label: `Catalogo${catalog.length > 0 ? ` (${catalog.length})` : ''}` },
-        { id: 'quotes', icon: <FileText size={15} />, label: 'Cotizaciones' },
-        ...(quickRepliesEnabled ? [{ id: 'quick', icon: <Clock size={15} />, label: 'Rapidas' }] : []),
+        ...(aiPanelAvailable ? [{ id: 'ai', icon: <Bot size={15} />, label: 'IA Pro', tier: 'primary' }] : []),
+        { id: 'catalog', icon: <Package size={15} />, label: 'Catalogo', tier: 'primary' },
+        { id: 'coverage', icon: <MapPin size={15} />, label: 'Cobertura', tier: 'primary' },
+        { id: 'quotes', icon: <FileText size={15} />, label: 'Cotizaciones', tier: 'secondary' },
+        ...(quickRepliesEnabled ? [{ id: 'quick', icon: <Clock size={15} />, label: 'Rapidas', tier: 'secondary' }] : []),
     ];
+    const primaryTabs = tabs.filter(tab => tab.tier === 'primary');
+    const secondaryTabs = tabs.filter(tab => tab.tier === 'secondary');
 
 
     return (
         <div className="business-sidebar business-sidebar-pro">
             {/* Tabs */}
-            <div className="business-tabs">
-                {tabs.map(t => (
-                      <button
-                          key={t.id}
-                          type="button"
-                          onClick={() => { setActiveTab(t.id); setShowCompanyProfile(false); }}
-                          className={`business-tab-btn ${activeTab === t.id ? 'active' : ''}`}
-                      >
-                        <span className="business-tab-icon">{t.icon}</span>
-                        <span className="business-tab-label">{t.label}</span>
-                    </button>
-                ))}
+            <div className="business-tabs-shell">
+                <div className="business-tabs business-tabs--primary">
+                    {primaryTabs.map(t => (
+                          <button
+                              key={t.id}
+                              type="button"
+                              onClick={() => { setActiveTab(t.id); setShowCompanyProfile(false); }}
+                              className={`business-tab-btn business-tab-btn--primary ${activeTab === t.id ? 'active' : ''}`}
+                          >
+                            <span className="business-tab-icon">{t.icon}</span>
+                            <span className="business-tab-label">{t.label}</span>
+                        </button>
+                    ))}
+                </div>
+                {secondaryTabs.length > 0 && (
+                    <div className="business-tabs business-tabs--secondary">
+                        {secondaryTabs.map(t => (
+                              <button
+                                  key={t.id}
+                                  type="button"
+                                  onClick={() => { setActiveTab(t.id); setShowCompanyProfile(false); }}
+                                  className={`business-tab-btn business-tab-btn--secondary ${activeTab === t.id ? 'active' : ''}`}
+                              >
+                                <span className="business-tab-icon">{t.icon}</span>
+                                <span className="business-tab-label">{t.label}</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
             </div>
 
             {!quickRepliesEnabled && activeTab === 'ai' && (
