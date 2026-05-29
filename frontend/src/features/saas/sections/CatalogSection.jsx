@@ -58,6 +58,7 @@ function CatalogSection(props = {}) {
         setSelectedCatalogId,
         tenantCatalogForm = {}
     } = context;
+    const [catalogProductModalOpen, setCatalogProductModalOpen] = React.useState(false);
 
     const lazySectionId = 'catalogs';
     const sectionReloadToken = typeof getReloadToken === 'function' ? getReloadToken(lazySectionId) : 0;
@@ -78,6 +79,20 @@ function CatalogSection(props = {}) {
     } = useCatalogSync({ requestJson });
     const selectedSyncCatalogId = text(selectedTenantCatalog?.catalogId).toUpperCase();
     const isWooCatalogSelected = selectedTenantCatalog?.sourceType === 'woocommerce';
+    const openCatalogProductCreateModal = React.useCallback(() => {
+        openCatalogProductCreate?.();
+        setCatalogProductModalOpen(true);
+    }, [openCatalogProductCreate]);
+
+    const openCatalogProductEditModal = React.useCallback(() => {
+        openCatalogProductEdit?.(selectedCatalogProduct);
+        setCatalogProductModalOpen(true);
+    }, [openCatalogProductEdit, selectedCatalogProduct]);
+
+    const closeCatalogProductModal = React.useCallback(() => {
+        cancelCatalogProductEdit?.();
+        setCatalogProductModalOpen(false);
+    }, [cancelCatalogProductEdit]);
 
     const rows = React.useMemo(() => tenantCatalogItems.map((item) => ({
         id: text(item?.catalogId),
@@ -138,6 +153,7 @@ function CatalogSection(props = {}) {
     }, [canViewCatalog, ensureSectionData, isCatalogSection, loadTenantCatalogs, sectionReloadToken, settingsTenantId]);
 
     const close = React.useCallback(() => {
+        setCatalogProductModalOpen(false);
         if (isProductEditing) {
             cancelCatalogProductEdit?.();
             return;
@@ -161,6 +177,7 @@ function CatalogSection(props = {}) {
         cancelCatalogProductEdit,
         catalogPanelMode,
         isProductEditing,
+        setCatalogProductModalOpen,
         setCatalogPanelMode,
         setCatalogProductPanelMode,
         setSelectedCatalogId,
@@ -356,48 +373,147 @@ function CatalogSection(props = {}) {
         tenantCatalogForm
     ]);
 
-    const renderProductForm = React.useCallback(({ close: requestClose } = {}) => (
-        <div className="saas-admin-related-block">
-            <h4>{catalogProductPanelMode === 'create' ? 'Nuevo producto' : 'Editar producto'}</h4>
-            <div className="saas-admin-form-row">
-                <input value={catalogProductForm.title || ''} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, title: event.target.value }))} placeholder="Titulo" disabled={busy || catalogProductImageUploading} />
-                <input value={catalogProductForm.price || ''} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, price: event.target.value }))} placeholder="Precio" disabled={busy || catalogProductImageUploading} />
-            </div>
-            <div className="saas-admin-form-row">
-                <input value={catalogProductForm.sku || ''} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, sku: event.target.value }))} placeholder="SKU" disabled={busy || catalogProductImageUploading} />
-                <input value={catalogProductForm.imageUrl || ''} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, imageUrl: event.target.value }))} placeholder="URL de imagen" disabled={busy || catalogProductImageUploading} />
-            </div>
-            <textarea value={catalogProductForm.description || ''} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, description: event.target.value }))} placeholder="descripción" disabled={busy || catalogProductImageUploading} />
-            <label className="saas-admin-module-toggle">
-                <input type="checkbox" checked={catalogProductForm.isActive !== false} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, isActive: event.target.checked }))} disabled={busy} />
-                <span>Producto activo</span>
-            </label>
-            {catalogProductForm.imageUrl ? (
-                <div className="saas-admin-preview-strip">
-                    <img src={catalogProductForm.imageUrl} alt={catalogProductForm.title || 'Producto'} className="saas-admin-hero-image" />
+    const renderProductForm = React.useCallback(({ close: requestClose } = {}) => {
+        const productTitle = text(catalogProductForm.title) || 'Producto sin nombre';
+        const productSku = text(catalogProductForm.sku) || 'SKU pendiente';
+        const productPrice = text(catalogProductForm.price);
+        const productDescription = text(catalogProductForm.description) || 'Agrega una descripción breve para presentar beneficios, formato y notas del producto.';
+        const productImageUrl = text(catalogProductForm.imageUrl);
+        const pricePreview = productPrice
+            ? `S/ ${String(productPrice).replace(/^\s*s\/?\s*/i, '')}`
+            : 'Precio pendiente';
+        const regularPricePreview = text(catalogProductForm.regularPrice);
+        const salePricePreview = text(catalogProductForm.salePrice);
+        const stockStatus = text(catalogProductForm.stockStatus) || 'instock';
+        const stockQuantity = text(catalogProductForm.stockQuantity);
+        const brandPreview = text(catalogProductForm.brand) || 'Marca pendiente';
+        const categoriesPreview = text(catalogProductForm.categoriesText) || 'Sin categorías';
+        const productUrl = text(catalogProductForm.url);
+        const statusLabel = catalogProductForm.isActive !== false ? 'Activo' : 'Borrador';
+        const numericRegularPrice = Number.parseFloat(regularPricePreview || productPrice || '0');
+        const numericSalePrice = Number.parseFloat(salePricePreview || productPrice || '0');
+        const discountPct = numericRegularPrice > 0 && numericSalePrice > 0 && numericSalePrice < numericRegularPrice
+            ? Number(((1 - (numericSalePrice / numericRegularPrice)) * 100).toFixed(1))
+            : 0;
+        const stockLabel = stockStatus === 'outofstock'
+            ? 'Sin stock'
+            : stockStatus === 'onbackorder'
+                ? 'Backorder'
+                : 'En stock';
+
+        return (
+            <div className="saas-admin-related-block saas-admin-related-block--modal-form">
+                <div className="saas-admin-pane-header saas-admin-pane-header--modal">
+                    <div>
+                    <h4>{catalogProductPanelMode === 'create' ? 'Nuevo producto' : 'Editar producto'}</h4>
+                    <small>Completa imagen, precio y detalle para este catálogo local.</small>
                 </div>
-            ) : null}
-            <ImageDropInput
-                label={catalogProductImageUploading ? 'Subiendo imagen...' : 'Subir imagen de producto'}
-                disabled={busy || catalogProductImageUploading}
-                onFile={(file) => handleCatalogProductImageUpload?.(file)}
-                helpText="PNG/JPG/WEBP, max 4 MB. Se guarda en archivos del tenant."
-            />
-            {catalogProductImageError ? <div className="saas-admin-alert error">{catalogProductImageError}</div> : null}
+                <button
+                    type="button"
+                    className="saas-btn-cancel saas-admin-modal-close"
+                    disabled={busy || catalogProductImageUploading}
+                    onClick={() => { void requestClose?.(); }}
+                    aria-label="Cerrar formulario de producto"
+                    >
+                        Cerrar
+                    </button>
+                </div>
+                <div className="saas-admin-product-editor-grid">
+                    <div className="saas-admin-product-editor-main">
+                        <div className="saas-admin-form-row">
+                            <input value={catalogProductForm.title || ''} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, title: event.target.value }))} placeholder="Título" disabled={busy || catalogProductImageUploading} />
+                            <input value={catalogProductForm.price || ''} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, price: event.target.value }))} placeholder="Precio final" disabled={busy || catalogProductImageUploading} />
+                        </div>
+                        <div className="saas-admin-form-row">
+                            <input value={catalogProductForm.regularPrice || ''} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, regularPrice: event.target.value }))} placeholder="Precio regular" disabled={busy || catalogProductImageUploading} />
+                            <input value={catalogProductForm.salePrice || ''} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, salePrice: event.target.value }))} placeholder="Precio oferta" disabled={busy || catalogProductImageUploading} />
+                        </div>
+                        <div className="saas-admin-form-row">
+                            <input value={catalogProductForm.sku || ''} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, sku: event.target.value }))} placeholder="SKU" disabled={busy || catalogProductImageUploading} />
+                            <input value={catalogProductForm.brand || ''} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, brand: event.target.value }))} placeholder="Marca" disabled={busy || catalogProductImageUploading} />
+                        </div>
+                        <div className="saas-admin-form-row">
+                            <select value={catalogProductForm.stockStatus || 'instock'} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, stockStatus: event.target.value }))} disabled={busy || catalogProductImageUploading}>
+                                <option value="instock">En stock</option>
+                                <option value="outofstock">Sin stock</option>
+                                <option value="onbackorder">Backorder</option>
+                            </select>
+                            <input value={catalogProductForm.stockQuantity || ''} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, stockQuantity: event.target.value }))} placeholder="Cantidad disponible" disabled={busy || catalogProductImageUploading} />
+                        </div>
+                        <div className="saas-admin-form-row">
+                            <input value={catalogProductForm.categoriesText || ''} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, categoriesText: event.target.value }))} placeholder="Categorías separadas por coma" disabled={busy || catalogProductImageUploading} />
+                            <input value={catalogProductForm.url || ''} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, url: event.target.value }))} placeholder="URL del producto" disabled={busy || catalogProductImageUploading} />
+                        </div>
+                        <div className="saas-admin-form-row">
+                            <input value={catalogProductForm.imageUrl || ''} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, imageUrl: event.target.value }))} placeholder="URL de imagen" disabled={busy || catalogProductImageUploading} />
+                        </div>
+                        <textarea value={catalogProductForm.description || ''} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, description: event.target.value }))} placeholder="Descripción del producto" disabled={busy || catalogProductImageUploading} />
+                        <label className="saas-admin-module-toggle">
+                            <input type="checkbox" checked={catalogProductForm.isActive !== false} onChange={(event) => setCatalogProductForm?.((prev) => ({ ...prev, isActive: event.target.checked }))} disabled={busy} />
+                            <span>Producto activo</span>
+                        </label>
+                        <ImageDropInput
+                            label={catalogProductImageUploading ? 'Subiendo imagen...' : 'Subir imagen de producto'}
+                            disabled={busy || catalogProductImageUploading}
+                            onFile={(file) => handleCatalogProductImageUpload?.(file)}
+                            helpText="PNG/JPG/WEBP, max 4 MB. Se guarda en archivos del tenant."
+                        />
+                        {catalogProductImageError ? <div className="saas-admin-alert error">{catalogProductImageError}</div> : null}
+                    </div>
+
+                    <aside className="saas-admin-product-preview-rail">
+                        <div className="saas-admin-product-preview-rail__label">Preview catálogo</div>
+                        <div className="saas-admin-product-preview-banner">
+                            <div className="saas-admin-product-preview-banner__media">
+                                {productImageUrl ? (
+                                    <img src={productImageUrl} alt={productTitle} className="saas-admin-product-preview-banner__image" />
+                                ) : (
+                                    <div className="saas-admin-product-preview-banner__placeholder">
+                                        <span>Vista previa</span>
+                                        <strong>{productTitle.slice(0, 1).toUpperCase() || 'P'}</strong>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="saas-admin-product-preview-banner__content">
+                                <small>{brandPreview}</small>
+                                <h5>{productTitle}</h5>
+                                <div className="saas-admin-product-preview-banner__meta">
+                                    <strong>{salePricePreview ? `S/ ${salePricePreview}` : pricePreview}</strong>
+                                    {regularPricePreview ? <span className="is-strike">S/ {regularPricePreview}</span> : null}
+                                    {discountPct > 0 ? <em>-{discountPct}%</em> : null}
+                                </div>
+                                <div className="saas-admin-product-preview-banner__chips">
+                                    <span>{productSku}</span>
+                                    <span>{stockLabel}{stockQuantity ? ` · ${stockQuantity}` : ''}</span>
+                                    <span>{statusLabel}</span>
+                                </div>
+                                <p>{productDescription}</p>
+                                <div className="saas-admin-product-preview-banner__foot">
+                                    <span>{categoriesPreview}</span>
+                                    {productUrl ? <a href={productUrl} target="_blank" rel="noreferrer">Ver URL</a> : null}
+                                </div>
+                            </div>
+                        </div>
+                    </aside>
+                </div>
             <div className="saas-admin-form-row saas-admin-form-row--actions">
                 <button type="button" disabled={busy || !canEditCatalog || !text(catalogProductForm.title) || !text(catalogProductForm.price)} onClick={() => {
                     const label = catalogProductPanelMode === 'create' ? 'Producto creado' : 'Producto actualizado';
-                    const action = async () => saveCatalogProduct?.();
+                    const action = async () => {
+                        await saveCatalogProduct?.();
+                        setCatalogProductModalOpen(false);
+                    };
                     return typeof runSectionAction === 'function'
                         ? runSectionAction('save_catalog_product', action, { successMessage: label })
                         : runAction?.(label, action);
                 }}>
                     {catalogProductPanelMode === 'create' ? 'Guardar producto' : 'Actualizar producto'}
                 </button>
-                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { void requestClose?.(); }}>Cancelar</button>
+                <button type="button" className="saas-btn-cancel" disabled={busy || catalogProductImageUploading} onClick={() => { void requestClose?.(); }}>Cancelar</button>
             </div>
-        </div>
-    ), [
+            </div>
+        );
+    }, [
         busy,
         canEditCatalog,
         catalogProductForm,
@@ -405,6 +521,8 @@ function CatalogSection(props = {}) {
         catalogProductImageUploading,
         catalogProductPanelMode,
         handleCatalogProductImageUpload,
+        openCatalogProductCreateModal,
+        openCatalogProductEditModal,
         runAction,
         runSectionAction,
         saveCatalogProduct,
@@ -452,7 +570,7 @@ function CatalogSection(props = {}) {
                             </div>
                             <div className="saas-admin-list-actions saas-admin-list-actions--row">
                                 <button type="button" disabled={busy || loadingCatalogProducts} onClick={() => loadTenantCatalogProducts?.(settingsTenantId, selectedTenantCatalog.catalogId)}>Recargar</button>
-                                {canEditCatalog ? <button type="button" disabled={busy} onClick={openCatalogProductCreate}>Nuevo producto</button> : null}
+                                {canEditCatalog ? <button type="button" disabled={busy} onClick={openCatalogProductCreateModal}>Nuevo producto</button> : null}
                             </div>
                         </div>
                         {loadingCatalogProducts ? <div className="saas-admin-empty-inline">Cargando productos...</div> : null}
@@ -479,7 +597,7 @@ function CatalogSection(props = {}) {
                             <div className="saas-admin-related-block">
                                 {canEditCatalog ? (
                                     <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                                        <button type="button" disabled={busy} onClick={openCatalogProductEdit}>Editar producto</button>
+                                        <button type="button" disabled={busy} onClick={openCatalogProductEditModal}>Editar producto</button>
                                         <button type="button" disabled={busy} onClick={() => deactivateCatalogProduct?.(selectedCatalogProduct.productId)}>Desactivar</button>
                                     </div>
                                 ) : null}
@@ -491,7 +609,6 @@ function CatalogSection(props = {}) {
                                 </div>
                             </div>
                         ) : null}
-                        {isProductEditing ? renderProductForm({ close }) : null}
                     </div>
                 ) : null}
                 {selectedTenantCatalog.sourceType === 'woocommerce' ? (
@@ -574,8 +691,8 @@ function CatalogSection(props = {}) {
         loadTenantCatalogs,
         loadingCatalogProducts,
         openCatalogEdit,
-        openCatalogProductCreate,
-        openCatalogProductEdit,
+        openCatalogProductCreateModal,
+        openCatalogProductEditModal,
         renderCatalogForm,
         renderProductForm,
         requestJson,
@@ -646,7 +763,27 @@ function CatalogSection(props = {}) {
 
     if (!isCatalogSection) return null;
 
+    const productModal = catalogProductModalOpen ? (
+        <div
+            className="saas-template-builder-modal-overlay"
+            onClick={() => {
+                if (!busy && !catalogProductImageUploading) {
+                    closeCatalogProductModal();
+                }
+            }}
+        >
+            <div className="saas-template-builder-modal-shell saas-admin-product-modal-shell" onClick={(event) => event.stopPropagation()}>
+                <div className="saas-template-builder-modal-panel saas-admin-product-modal-panel">
+                    <div className="saas-template-builder-modal-panel__body saas-admin-product-modal-body">
+                        {renderProductForm({ close: closeCatalogProductModal })}
+                    </div>
+                </div>
+            </div>
+        </div>
+    ) : null;
+
     return (
+        <>
         <SaasEntityPage
             id="saas_catalogos"
             sectionKey="saas_catalogos"
@@ -673,6 +810,8 @@ function CatalogSection(props = {}) {
             detailSubtitle={catalogPanelMode === 'create' ? 'Deja el ID vacío para generarlo automáticamente.' : (selectedTenantCatalog?.catalogId || '')}
             detailActions={detailActions}
         />
+        {productModal}
+        </>
     );
 }
 
