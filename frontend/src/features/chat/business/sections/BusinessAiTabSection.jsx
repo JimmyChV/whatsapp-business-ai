@@ -118,6 +118,7 @@ export default function BusinessAiTabSection({
     );
     const effectiveMode = selectedOverrideMode || modulePattyMode;
     const canReleaseChat = isAssignedToMe && effectiveMode === 'autonomous';
+    const reviewOverrideActive = selectedOverrideMode === 'review';
 
     const modeMeta = useMemo(() => {
         if (effectiveMode === 'autonomous') return { label: 'Autonoma', color: '#22c55e' };
@@ -241,28 +242,25 @@ export default function BusinessAiTabSection({
                     <Sparkles size={15} />
                     <span>Patty IA</span>
                 </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 800, color: 'var(--chat-control-text-soft)' }}>
-                    Modo:
-                    <select
-                        value={selectedOverrideMode || ''}
-                        onChange={(event) => updatePattyMode(event.target.value)}
+                {reviewOverrideActive && (
+                    <button
+                        type="button"
+                        onClick={() => updatePattyMode('off')}
                         disabled={pattyModeLoading || pattyModeSaving || !baseChatId}
                         style={{
                             border: '1px solid var(--chat-card-border)',
-                            background: 'var(--chat-control-surface-strong)',
+                            background: 'var(--chat-card-surface)',
                             color: 'var(--text-primary)',
                             borderRadius: '999px',
-                            padding: '6px 9px',
+                            padding: '6px 12px',
                             fontWeight: 800,
-                            outline: 'none'
+                            cursor: pattyModeLoading || pattyModeSaving || !baseChatId ? 'not-allowed' : 'pointer',
+                            opacity: pattyModeLoading || pattyModeSaving || !baseChatId ? 0.75 : 1
                         }}
                     >
-                        <option value="">Modo global</option>
-                        <option value="review">Sugerencias</option>
-                        <option value="autonomous">Autonoma</option>
-                        <option value="off">Desactivada</option>
-                    </select>
-                </label>
+                        Desactivar sugerencias
+                    </button>
+                )}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '0.78rem', color: 'var(--chat-control-text-soft)' }}>
@@ -274,22 +272,47 @@ export default function BusinessAiTabSection({
                         </span>
                     )}
                 </div>
-                {isAssignedToMe && (
+                {!isAssignedToMe && (
+                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--chat-control-text-soft)' }}>
+                        Toma el chat para activar sugerencias
+                    </span>
+                )}
+                {isAssignedToMe && !reviewOverrideActive && (
+                    <button
+                        type="button"
+                        onClick={() => updatePattyMode('review')}
+                        disabled={pattyModeLoading || pattyModeSaving || !baseChatId}
+                        style={{
+                            border: '1px solid var(--saas-accent-primary)',
+                            background: 'var(--saas-accent-primary)',
+                            color: 'white',
+                            borderRadius: '999px',
+                            padding: '7px 12px',
+                            cursor: pattyModeLoading || pattyModeSaving || !baseChatId ? 'not-allowed' : 'pointer',
+                            fontWeight: 900,
+                            fontSize: '0.74rem',
+                            opacity: pattyModeLoading || pattyModeSaving || !baseChatId ? 0.75 : 1
+                        }}
+                    >
+                        Activar sugerencias
+                    </button>
+                )}
+                {isAssignedToMe && canReleaseChat && (
                     <button
                         type="button"
                         onClick={releaseChat}
-                        disabled={pattyModeSaving || !canReleaseChat}
-                        title={canReleaseChat ? 'Dejar chat' : 'Cambia a Autonoma para poder dejar el chat'}
+                        disabled={pattyModeSaving}
+                        title="Dejar chat"
                         style={{
                             border: '1px solid var(--chat-card-border)',
-                            background: canReleaseChat ? 'var(--chat-card-surface)' : 'var(--chat-control-disabled)',
-                            color: canReleaseChat ? 'var(--text-primary)' : 'var(--chat-control-text-soft)',
+                            background: 'var(--chat-card-surface)',
+                            color: 'var(--text-primary)',
                             borderRadius: '999px',
                             padding: '6px 10px',
-                            cursor: canReleaseChat ? 'pointer' : 'not-allowed',
+                            cursor: pattyModeSaving ? 'not-allowed' : 'pointer',
                             fontWeight: 800,
                             fontSize: '0.74rem',
-                            opacity: canReleaseChat ? 1 : 0.75
+                            opacity: pattyModeSaving ? 0.75 : 1
                         }}
                     >
                         Dejar chat
@@ -338,7 +361,37 @@ export default function BusinessAiTabSection({
                     </button>
                 </div>
             )}
-            {!hasPattySuggestion && (
+            {!isAssignedToMe && (
+                <div
+                    style={{
+                        border: '1px dashed var(--chat-card-border)',
+                        background: 'var(--chat-card-surface)',
+                        color: 'var(--chat-control-text-soft)',
+                        borderRadius: '16px',
+                        padding: '18px 14px',
+                        fontSize: '0.82rem',
+                        textAlign: 'center'
+                    }}
+                >
+                    Toma el chat para activar sugerencias.
+                </div>
+            )}
+            {isAssignedToMe && !reviewOverrideActive && (
+                <div
+                    style={{
+                        border: '1px dashed var(--chat-card-border)',
+                        background: 'var(--chat-card-surface)',
+                        color: 'var(--chat-control-text-soft)',
+                        borderRadius: '16px',
+                        padding: '18px 14px',
+                        fontSize: '0.82rem',
+                        textAlign: 'center'
+                    }}
+                >
+                    Activa sugerencias para que Patty empiece a ayudarte en este chat.
+                </div>
+            )}
+            {isAssignedToMe && reviewOverrideActive && !hasPattySuggestion && (
                 <div
                     style={{
                         border: '1px dashed var(--chat-card-border)',
@@ -353,7 +406,7 @@ export default function BusinessAiTabSection({
                     Esperando mensaje del cliente...
                 </div>
             )}
-            {hasPattySuggestion && (
+            {isAssignedToMe && reviewOverrideActive && hasPattySuggestion && (
                 <div
                     style={{
                         padding: '12px',

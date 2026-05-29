@@ -3663,6 +3663,26 @@ async function hasActiveAutomationForStatus(tenantId, moduleId, status = '') {
     }
 }
 
+async function getChatAssignmentState(tenantId, chatId, moduleId) {
+    try {
+        if (!conversationOpsService || typeof conversationOpsService.getChatAssignment !== 'function') {
+            return null;
+        }
+        const assignment = await conversationOpsService.getChatAssignment(tenantId, {
+            chatId: normalizeChatId(chatId),
+            scopeModuleId: lower(moduleId)
+        });
+        if (!assignment || typeof assignment !== 'object') return null;
+        return {
+            assignmentUserId: text(assignment.assigneeUserId || assignment.assignee_user_id || ''),
+            status: lower(assignment.status || '')
+        };
+    } catch (error) {
+        console.warn('[Patty] assignment lookup skipped:', error?.message || error);
+        return null;
+    }
+}
+
 async function getChatPattyMode(tenantId, chatId, moduleId, moduleConfig = null) {
     const state = await getCurrentCommercialState(tenantId, moduleId, chatId);
     if (['autonomous', 'review', 'off'].includes(state.pattyMode)) {
@@ -3674,12 +3694,13 @@ async function getChatPattyMode(tenantId, chatId, moduleId, moduleConfig = null)
     }
     const scheduleState = await resolveScheduleState(tenantId, moduleConfig || {});
     const aiConfig = moduleConfig?.aiConfig || {};
-    const mode = scheduleState.open
+    const fallbackMode = scheduleState.open
         ? lower(aiConfig.withinHoursMode || aiConfig.within_hours_mode || 'off')
         : lower(aiConfig.outsideHoursMode || aiConfig.outside_hours_mode || 'off');
+    const mode = fallbackMode === 'review' ? 'off' : fallbackMode;
     return {
         mode,
-        source: 'module_config',
+        source: fallbackMode === 'review' ? 'module_config_review_blocked' : 'module_config',
         state,
         scheduleState
     };
@@ -5444,6 +5465,19 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
             modeSource: modeState.source
         });
         return;
+    }
+    const assignment = await getChatAssignmentState(cleanTenantId, cleanChatId, cleanModuleId);
+    const isTaken = Boolean(assignment?.assignmentUserId);
+    if (mode === 'review' && !isTaken) {
+        console.log('[Patty] skipped: review requires taken chat', {
+            tenantId: cleanTenantId,
+            moduleId: cleanModuleId,
+            chatId: cleanChatId,
+            mode,
+            modeSource: modeState.source,
+            reason: 'chat_not_taken'
+        });
+        return { skipped: true, reason: 'chat_not_taken' };
     }
 
     const configuredWaitSeconds = resolveWaitSeconds(aiConfig);
