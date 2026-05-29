@@ -371,6 +371,33 @@ function getScheduleHoursForDate(schedule = null, parts = null) {
     return normalizeHours(schedule?.weeklyHours?.[parts.dayKey] || []);
 }
 
+function buildCalendarParts(dateKey = '') {
+    const safeDateKey = normalizeDate(dateKey);
+    if (!safeDateKey) return null;
+    const [year, month, day] = safeDateKey.split('-').map((part) => Number.parseInt(part, 10));
+    if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
+    const utcDate = new Date(Date.UTC(year, month - 1, day));
+    const weekday = DAY_KEYS[utcDate.getUTCDay()] || '';
+    return {
+        date: safeDateKey,
+        month,
+        day,
+        dayKey: weekday,
+        minutes: 0
+    };
+}
+
+function addDaysToDateKey(dateKey = '', days = 0) {
+    const safeDateKey = normalizeDate(dateKey);
+    if (!safeDateKey) return '';
+    const [year, month, day] = safeDateKey.split('-').map((part) => Number.parseInt(part, 10));
+    const utcDate = new Date(Date.UTC(year, month - 1, day + Number(days || 0)));
+    const nextYear = utcDate.getUTCFullYear();
+    const nextMonth = String(utcDate.getUTCMonth() + 1).padStart(2, '0');
+    const nextDay = String(utcDate.getUTCDate()).padStart(2, '0');
+    return `${nextYear}-${nextMonth}-${nextDay}`;
+}
+
 function getRemainingLaboralMinutes(schedule = null, windowExpiresAt = null, now = new Date()) {
     if (!schedule || schedule?.isActive === false) return null;
     const nowDate = now instanceof Date ? now : new Date(now);
@@ -381,22 +408,29 @@ function getRemainingLaboralMinutes(schedule = null, windowExpiresAt = null, now
     const timezone = normalizeTimezone(schedule?.timezone);
     const nowParts = getTimezoneParts(nowDate, timezone);
     const expiresParts = getTimezoneParts(expiresDate, timezone);
-    const todaysHours = getScheduleHoursForDate(schedule, nowParts);
-    if (!todaysHours.length) return 0;
-
-    const expiresToday = expiresParts.date === nowParts.date;
-    const expiryMinuteLimit = expiresToday ? expiresParts.minutes : null;
-
     let totalMinutes = 0;
-    for (const range of todaysHours) {
-        const start = timeToMinutes(range.start);
-        const end = timeToMinutes(range.end);
-        if (start === null || end === null || end <= start) continue;
-        const rangeStart = Math.max(start, nowParts.minutes);
-        const rangeEnd = expiresToday ? Math.min(end, expiryMinuteLimit) : end;
-        if (rangeEnd > rangeStart) {
-            totalMinutes += (rangeEnd - rangeStart);
+    let currentDateKey = nowParts.date;
+
+    while (currentDateKey && currentDateKey <= expiresParts.date) {
+        const dayParts = buildCalendarParts(currentDateKey);
+        if (!dayParts) break;
+        const dayHours = getScheduleHoursForDate(schedule, dayParts);
+        if (dayHours.length) {
+            const dayStartMinute = currentDateKey === nowParts.date ? nowParts.minutes : 0;
+            const dayEndMinute = currentDateKey === expiresParts.date ? expiresParts.minutes : (24 * 60);
+            for (const range of dayHours) {
+                const start = timeToMinutes(range.start);
+                const end = timeToMinutes(range.end);
+                if (start === null || end === null || end <= start) continue;
+                const rangeStart = Math.max(start, dayStartMinute);
+                const rangeEnd = Math.min(end, dayEndMinute);
+                if (rangeEnd > rangeStart) {
+                    totalMinutes += (rangeEnd - rangeStart);
+                }
+            }
         }
+        if (currentDateKey === expiresParts.date) break;
+        currentDateKey = addDaysToDateKey(currentDateKey, 1);
     }
 
     return Math.max(0, totalMinutes);
