@@ -7,6 +7,8 @@ const {
 } = require('../../../config/persistence-runtime');
 const { parseScopedChatId } = require('../../channels/helpers/chat-scope.helpers');
 const customerCatalogsService = require('../../tenant/services/customer-catalogs.service');
+const customerAddressesService = require('../../tenant/services/customer-addresses.service');
+const tenantZoneRulesService = require('../../tenant/services/tenant-zone-rules.service');
 
 const CATALOG = Object.freeze([
     {
@@ -102,12 +104,144 @@ const CATALOG = Object.freeze([
                 source: 'tenant_customers.metadata.whatsapp.contactName',
                 requiresContext: ['customerId'],
                 supportedIn: ['body']
+            },
+            {
+                key: 'erp_id',
+                label: 'Codigo ERP',
+                description: 'Codigo ERP asociado al cliente.',
+                placeholderIndex: 31,
+                exampleValue: 'CLI-000245',
+                source: 'tenant_customers.erp_id',
+                requiresContext: ['customerId'],
+                supportedIn: ['body', 'button']
+            },
+            {
+                key: 'tipo_cliente',
+                label: 'Tipo de cliente',
+                description: 'Tipo comercial del cliente.',
+                placeholderIndex: 32,
+                exampleValue: 'Mayorista',
+                source: 'tenant_customers.customer_type_id -> global_customer_types.label || tenant_customers.profile.type',
+                requiresContext: ['customerId'],
+                supportedIn: ['body']
+            },
+            {
+                key: 'fecha_registro',
+                label: 'Fecha de registro',
+                description: 'Fecha en que se registro el cliente.',
+                placeholderIndex: 33,
+                exampleValue: '29/05/2026',
+                source: 'tenant_customers.created_at',
+                requiresContext: ['customerId'],
+                supportedIn: ['body']
+            }
+        ]
+    },
+    {
+        id: 'direccion',
+        label: 'Direccion',
+        variables: [
+            {
+                key: 'direccion',
+                label: 'Direccion',
+                description: 'Direccion principal del cliente.',
+                placeholderIndex: 34,
+                exampleValue: 'Av. Los Ingenieros 245',
+                source: 'tenant_customer_addresses.street',
+                requiresContext: ['customerId'],
+                supportedIn: ['body']
+            },
+            {
+                key: 'distrito',
+                label: 'Distrito',
+                description: 'Distrito de la direccion principal.',
+                placeholderIndex: 35,
+                exampleValue: 'Rimac',
+                source: 'tenant_customer_addresses.district_name',
+                requiresContext: ['customerId'],
+                supportedIn: ['body']
+            },
+            {
+                key: 'provincia',
+                label: 'Provincia',
+                description: 'Provincia de la direccion principal.',
+                placeholderIndex: 36,
+                exampleValue: 'Lima',
+                source: 'tenant_customer_addresses.province_name',
+                requiresContext: ['customerId'],
+                supportedIn: ['body']
+            },
+            {
+                key: 'departamento',
+                label: 'Departamento',
+                description: 'Departamento de la direccion principal.',
+                placeholderIndex: 37,
+                exampleValue: 'Lima',
+                source: 'tenant_customer_addresses.department_name',
+                requiresContext: ['customerId'],
+                supportedIn: ['body']
+            },
+            {
+                key: 'referencia',
+                label: 'Referencia',
+                description: 'Referencia principal de la direccion.',
+                placeholderIndex: 38,
+                exampleValue: 'Frente al parque',
+                source: 'tenant_customer_addresses.reference',
+                requiresContext: ['customerId'],
+                supportedIn: ['body']
+            },
+            {
+                key: 'ubigeo',
+                label: 'Ubigeo',
+                description: 'Codigo ubigeo de la direccion principal.',
+                placeholderIndex: 39,
+                exampleValue: '150108',
+                source: 'tenant_customer_addresses.metadata.ubigeo || tenant_customer_addresses.district_id',
+                requiresContext: ['customerId'],
+                supportedIn: ['body']
+            }
+        ]
+    },
+    {
+        id: 'zona_envio',
+        label: 'Zona y envio',
+        variables: [
+            {
+                key: 'zona_envio',
+                label: 'Zona de envio',
+                description: 'Zona de envio resuelta para el chat.',
+                placeholderIndex: 40,
+                exampleValue: 'Lima Norte',
+                source: 'tenant_chat_commercial_status.metadata.salesState.location.zoneRuleId -> tenant_zone_rules.name',
+                requiresContext: ['chatId'],
+                supportedIn: ['body']
+            },
+            {
+                key: 'tipo_envio',
+                label: 'Tipo de envio',
+                description: 'Tipo de envio principal configurado para la zona.',
+                placeholderIndex: 41,
+                exampleValue: 'Delivery',
+                source: 'tenant_zone_rules.shipping_options[0].type',
+                requiresContext: ['chatId'],
+                supportedIn: ['body']
+            },
+            {
+                key: 'costo_envio',
+                label: 'Costo de envio',
+                description: 'Costo base de envio segun la zona configurada.',
+                placeholderIndex: 42,
+                exampleValue: 'S/ 12.00',
+                source: 'tenant_zone_rules.shipping_options[0].cost',
+                requiresContext: ['chatId'],
+                supportedIn: ['body']
             }
         ]
     },
     {
         id: 'campana',
-        label: 'Campana',
+        label: 'Fecha',
         variables: [
             {
                 key: 'fecha_inicio',
@@ -423,9 +557,28 @@ async function buildTreatmentsMap() {
     );
 }
 
+async function buildCustomerTypesMap() {
+    const items = await customerCatalogsService.getCustomerTypes().catch(() => []);
+    return new Map(
+        (Array.isArray(items) ? items : []).flatMap((item) => {
+            const id = toText(item?.id);
+            if (!id) return [];
+            return [[id, item]];
+        })
+    );
+}
+
 function resolveTreatmentAbbreviation(treatmentsMap = new Map(), treatmentId = '') {
     const item = treatmentsMap.get(toText(treatmentId));
     return naturalizeUppercaseWords(item?.abbreviation || item?.label || '');
+}
+
+function resolveCustomerTypeLabel(customerTypesMap = new Map(), customer = {}) {
+    const profile = asObject(customer?.profile);
+    const typeId = toText(customer?.customerTypeId || customer?.customer_type_id || profile.customerTypeId || '');
+    const mappedLabel = naturalizeUppercaseWords(customerTypesMap.get(typeId)?.label || '');
+    if (mappedLabel) return mappedLabel;
+    return naturalizeUppercaseWords(profile.type || profile.customerType || '');
 }
 
 function resolveShortContactName(customer = {}, treatmentLabel = '') {
@@ -435,6 +588,97 @@ function resolveShortContactName(customer = {}, treatmentLabel = '') {
     const baseName = contactName || firstName || firstToken(contactName);
     if (!baseName) return null;
     return [naturalizeUppercaseWords(treatmentLabel), baseName].filter(Boolean).join(' ') || null;
+}
+
+function formatDateDdMmYyyy(value = '') {
+    const text = toText(value);
+    if (!text) return null;
+    const parsed = new Date(text);
+    if (!Number.isFinite(parsed.getTime())) return null;
+    const day = String(parsed.getUTCDate()).padStart(2, '0');
+    const month = String(parsed.getUTCMonth() + 1).padStart(2, '0');
+    const year = String(parsed.getUTCFullYear());
+    return `${day}/${month}/${year}`;
+}
+
+function formatSoles(value = null) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return null;
+    if (parsed <= 0) return 'Gratis';
+    return `S/ ${parsed.toFixed(2)}`;
+}
+
+function humanizeSegmentKey(value = '') {
+    const raw = toText(value);
+    if (!raw) return '';
+    return raw
+        .replace(/[_-]+/g, ' ')
+        .toLocaleLowerCase('es-PE')
+        .replace(/(^|[\s/])(\p{L})/gu, (_, prefix, letter) => `${prefix}${letter.toLocaleUpperCase('es-PE')}`);
+}
+
+function pickPrimaryShippingOption(zoneRule = null) {
+    const options = Array.isArray(zoneRule?.shippingOptions || zoneRule?.shipping_options)
+        ? (zoneRule.shippingOptions || zoneRule.shipping_options)
+        : [];
+    return options.find((entry) => entry?.is_active !== false && entry?.isActive !== false) || options[0] || null;
+}
+
+function resolveShippingTypeLabel(primaryShipping = null, segmentKey = '') {
+    const type = toLower(primaryShipping?.type || '');
+    if (type === 'courier') return 'Courier';
+    if (type === 'delivery') return 'Delivery';
+    const normalizedSegment = toLower(segmentKey);
+    if (normalizedSegment.includes('courier')) return 'Courier';
+    if (normalizedSegment.includes('delivery') || normalizedSegment.includes('envio')) return 'Delivery';
+    return '';
+}
+
+async function resolvePrimaryAddress(tenantId = DEFAULT_TENANT_ID, customerId = '') {
+    const cleanCustomerId = toText(customerId);
+    if (!cleanCustomerId) return null;
+    try {
+        const items = await customerAddressesService.listAddresses(tenantId, { customerId: cleanCustomerId });
+        const primary = (Array.isArray(items) ? items : []).find((entry) => entry?.isPrimary === true) || (Array.isArray(items) ? items[0] : null);
+        if (!primary) return null;
+        const metadata = asObject(primary.metadata);
+        return {
+            addressLine: toText(primary.street || metadata.address_line || metadata.addressLine || metadata.address || metadata.line1 || '') || null,
+            district: toText(primary.districtName || primary.district_name || metadata.district || metadata.district_name || '') || null,
+            province: toText(primary.provinceName || primary.province_name || metadata.province || metadata.province_name || '') || null,
+            department: toText(primary.departmentName || primary.department_name || metadata.department || metadata.department_name || '') || null,
+            reference: toText(primary.reference || metadata.reference_text || metadata.referenceText || metadata.reference || '') || null,
+            ubigeo: toText(metadata.ubigeo || metadata.ubigeo_code || metadata.ubigeoCode || primary.districtId || primary.district_id || '') || null
+        };
+    } catch (_) {
+        return null;
+    }
+}
+
+async function resolveZoneContext(tenantId = DEFAULT_TENANT_ID, commercial = null) {
+    const metadata = asObject(commercial?.metadata);
+    const salesState = asObject(metadata.salesState);
+    const location = asObject(salesState.location);
+    const segmentKey = toText(location.segment_key || location.segmentKey || '');
+    const zoneRuleId = toText(location.zoneRuleId || location.zone_rule_id || '');
+    if (!segmentKey && !zoneRuleId) return null;
+    let zoneRule = null;
+    if (zoneRuleId) {
+        try {
+            const rules = await tenantZoneRulesService.listZoneRules(tenantId, { includeInactive: true });
+            zoneRule = (Array.isArray(rules) ? rules : []).find((rule) => toText(rule?.ruleId).toUpperCase() === zoneRuleId.toUpperCase()) || null;
+        } catch (_) {
+            zoneRule = null;
+        }
+    }
+    const primaryShipping = pickPrimaryShippingOption(zoneRule);
+    return {
+        zoneName: toText(zoneRule?.name || '') || humanizeSegmentKey(segmentKey) || null,
+        shippingTypeLabel: resolveShippingTypeLabel(primaryShipping, segmentKey) || null,
+        shippingCostLabel: primaryShipping ? formatSoles(primaryShipping.cost) : null,
+        segmentKey: segmentKey || toText(zoneRule?.segmentKey || zoneRule?.segment_key || '') || null,
+        zoneRuleId: zoneRuleId || toText(zoneRule?.ruleId || zoneRule?.rule_id || '') || null
+    };
 }
 
 async function queryUserDisplayName(userId = '') {
@@ -464,7 +708,8 @@ async function loadCustomerPostgres(tenantId = DEFAULT_TENANT_ID, { customerId =
         if (!cleanCustomerId) return null;
         const result = await queryPostgres(
             `SELECT customer_id, contact_name, phone_e164, email, tags, profile, metadata,
-                    preferred_language, marketing_opt_in_status, treatment_id, first_name, last_name_paternal, last_name_maternal
+                    preferred_language, marketing_opt_in_status, treatment_id, first_name, last_name_paternal, last_name_maternal,
+                    customer_type_id, erp_id, created_at
                FROM tenant_customers
               WHERE tenant_id = $1
                 AND customer_id = $2
@@ -479,7 +724,8 @@ async function loadCustomerPostgres(tenantId = DEFAULT_TENANT_ID, { customerId =
         if (!digits) return null;
         const result = await queryPostgres(
             `SELECT customer_id, contact_name, phone_e164, email, tags, profile, metadata,
-                    preferred_language, marketing_opt_in_status, treatment_id, first_name, last_name_paternal, last_name_maternal
+                    preferred_language, marketing_opt_in_status, treatment_id, first_name, last_name_paternal, last_name_maternal,
+                    customer_type_id, erp_id, created_at
                FROM tenant_customers
               WHERE tenant_id = $1
                 AND phone_e164 IS NOT NULL
@@ -501,6 +747,7 @@ async function loadCustomerPostgres(tenantId = DEFAULT_TENANT_ID, { customerId =
                 ? await queryPostgres(
                     `SELECT customer_id, contact_name, phone_e164, email, tags, profile, metadata
                             , preferred_language, marketing_opt_in_status, treatment_id, first_name, last_name_paternal, last_name_maternal
+                            , customer_type_id, erp_id, created_at
                        FROM tenant_customers
                       WHERE tenant_id = $1
                         AND customer_id = $2
@@ -559,7 +806,7 @@ async function loadPreviewContextFromFile(tenantId = DEFAULT_TENANT_ID, { chatId
         || findByChatAndScope(origins, chat.baseChatId, '')
         || null;
 
-    return {
+    const result = {
         chat,
         customer: customer ? {
             customerId: toText(customer.customerId),
@@ -574,6 +821,9 @@ async function loadPreviewContextFromFile(tenantId = DEFAULT_TENANT_ID, { chatId
             firstName: toText(customer.firstName || customer.first_name || asObject(customer.profile).firstNames) || null,
             lastNamePaternal: toText(customer.lastNamePaternal || customer.last_name_paternal || asObject(customer.profile).lastNamePaternal) || null,
             lastNameMaternal: toText(customer.lastNameMaternal || customer.last_name_maternal || asObject(customer.profile).lastNameMaternal) || null,
+            customerTypeId: toText(customer.customerTypeId || customer.customer_type_id || asObject(customer.profile).customerTypeId) || null,
+            erpId: toText(customer.erpId || customer.erp_id || '') || null,
+            createdAt: toText(customer.createdAt || customer.created_at || '') || null,
             metadata: asObject(customer.metadata),
             whatsappName: toText(asObject(customer.metadata).whatsapp?.contactName || '') || null
         } : null,
@@ -587,7 +837,8 @@ async function loadPreviewContextFromFile(tenantId = DEFAULT_TENANT_ID, { chatId
         commercial: commercial ? {
             status: toLower(commercial.status) || null,
             firstAgentResponseAt: toText(commercial.firstAgentResponseAt || commercial.first_agent_response_at) || null,
-            soldAt: toText(commercial.soldAt || commercial.sold_at) || null
+            soldAt: toText(commercial.soldAt || commercial.sold_at) || null,
+            metadata: asObject(commercial.metadata)
         } : null,
         quote: quote ? {
             quoteId: toText(quote.quoteId || quote.quote_id) || null,
@@ -603,6 +854,9 @@ async function loadPreviewContextFromFile(tenantId = DEFAULT_TENANT_ID, { chatId
         } : null,
         chatMetadataScopeModuleId: null
     };
+    result.address = await resolvePrimaryAddress(tenantId, result.customer?.customerId || customerId);
+    result.zone = await resolveZoneContext(tenantId, result.commercial);
+    return result;
 }
 
 async function loadPreviewContextFromPostgres(tenantId = DEFAULT_TENANT_ID, { chatId = '', customerId = '' } = {}) {
@@ -623,6 +877,9 @@ async function loadPreviewContextFromPostgres(tenantId = DEFAULT_TENANT_ID, { ch
         firstName: toText(customerRow.first_name || customerRow.firstName || asObject(customerRow.profile).firstNames) || null,
         lastNamePaternal: toText(customerRow.last_name_paternal || customerRow.lastNamePaternal || asObject(customerRow.profile).lastNamePaternal) || null,
         lastNameMaternal: toText(customerRow.last_name_maternal || customerRow.lastNameMaternal || asObject(customerRow.profile).lastNameMaternal) || null,
+        customerTypeId: toText(customerRow.customer_type_id || customerRow.customerTypeId || asObject(customerRow.profile).customerTypeId) || null,
+        erpId: toText(customerRow.erp_id || customerRow.erpId || '') || null,
+        createdAt: toText(customerRow.created_at || customerRow.createdAt || '') || null,
         metadata: asObject(customerRow.metadata),
         whatsappName: toText(asObject(customerRow.metadata).whatsapp?.contactName || '') || null
     } : null;
@@ -658,7 +915,7 @@ async function loadPreviewContextFromPostgres(tenantId = DEFAULT_TENANT_ID, { ch
         for (const candidate of candidateChatIds) {
             if (!candidate) continue;
             const result = await queryPostgres(
-                `SELECT status, first_agent_response_at, sold_at
+                `SELECT status, first_agent_response_at, sold_at, metadata
                    FROM tenant_chat_commercial_status
                   WHERE tenant_id = $1
                     AND chat_id = $2
@@ -672,7 +929,8 @@ async function loadPreviewContextFromPostgres(tenantId = DEFAULT_TENANT_ID, { ch
             return {
                 status: toLower(row.status) || null,
                 firstAgentResponseAt: row.first_agent_response_at ? new Date(row.first_agent_response_at).toISOString() : null,
-                soldAt: row.sold_at ? new Date(row.sold_at).toISOString() : null
+                soldAt: row.sold_at ? new Date(row.sold_at).toISOString() : null,
+                metadata: asObject(row.metadata)
             };
         }
         return null;
@@ -749,15 +1007,17 @@ async function loadPreviewContextFromPostgres(tenantId = DEFAULT_TENANT_ID, { ch
         return null;
     };
 
-    const [assignment, commercial, quote, origin, chatMetadataScopeModuleId] = await Promise.all([
+    const [assignment, commercial, quote, origin, chatMetadataScopeModuleId, address] = await Promise.all([
         loadAssignment(),
         loadCommercial(),
         loadLatestQuote(),
         loadOrigin(),
-        loadChatMetadataScope()
+        loadChatMetadataScope(),
+        resolvePrimaryAddress(tenantId, customer?.customerId || customerId)
     ]);
+    const zone = await resolveZoneContext(tenantId, commercial);
 
-    return { chat, customer, assignment, commercial, quote, origin, chatMetadataScopeModuleId };
+    return { chat, customer, assignment, commercial, quote, origin, chatMetadataScopeModuleId, address, zone };
 }
 
 async function loadPreviewContext(tenantId = DEFAULT_TENANT_ID, options = {}) {
@@ -773,10 +1033,13 @@ function buildValueMap(context = {}, helpers = {}) {
     const commercial = context.commercial || null;
     const quote = context.quote || null;
     const origin = context.origin || null;
+    const address = context.address || null;
+    const zone = context.zone || null;
     const quoteSummary = asObject(quote?.summary);
     const treatmentLabel = naturalizeUppercaseWords(helpers?.treatmentLabel || '');
     const shortContactName = resolveShortContactName(customer, treatmentLabel);
     const whatsappName = naturalizeUppercaseWords(customer?.whatsappName || customer?.metadata?.whatsapp?.contactName || '');
+    const customerTypeLabel = naturalizeUppercaseWords(helpers?.customerTypeLabel || '');
 
     return {
         nombre_cliente: naturalizeUppercaseWords(customer?.contactName || customer?.profile?.firstNames || '') || null,
@@ -788,6 +1051,18 @@ function buildValueMap(context = {}, helpers = {}) {
         contacto_cliente: shortContactName || naturalizeUppercaseWords(customer?.contactName || '') || null,
         tratamiento_cliente: treatmentLabel || null,
         nombre_whatsapp_cliente: whatsappName || null,
+        erp_id: customer?.erpId || null,
+        tipo_cliente: customerTypeLabel || null,
+        fecha_registro: formatDateDdMmYyyy(customer?.createdAt) || null,
+        direccion: address?.addressLine || null,
+        distrito: address?.district || null,
+        provincia: address?.province || null,
+        departamento: address?.department || null,
+        referencia: address?.reference || null,
+        ubigeo: address?.ubigeo || null,
+        zona_envio: zone?.zoneName || null,
+        tipo_envio: zone?.shippingTypeLabel || null,
+        costo_envio: zone?.shippingCostLabel || null,
         fecha_inicio: toText(helpers?.validFromLabel || '') || null,
         fecha_fin: toText(helpers?.validToLabel || '') || null,
 
@@ -846,13 +1121,18 @@ async function getCatalog(tenantId = DEFAULT_TENANT_ID) {
 async function getPreview(tenantId = DEFAULT_TENANT_ID, { chatId = '', customerId = '', validFrom = '', validTo = '' } = {}) {
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
     const context = await loadPreviewContext(cleanTenantId, { chatId, customerId });
-    const treatmentsMap = await buildTreatmentsMap();
+    const [treatmentsMap, customerTypesMap] = await Promise.all([
+        buildTreatmentsMap(),
+        buildCustomerTypesMap()
+    ]);
     const treatmentLabel = resolveTreatmentAbbreviation(
         treatmentsMap,
         toText(context?.customer?.treatmentId || context?.customer?.profile?.treatmentId || '')
     );
+    const customerTypeLabel = resolveCustomerTypeLabel(customerTypesMap, context?.customer || {});
     const valueMap = buildValueMap(context, {
         treatmentLabel,
+        customerTypeLabel,
         validFromLabel: formatCampaignDateLabel(validFrom),
         validToLabel: formatCampaignDateLabel(validTo)
     });
