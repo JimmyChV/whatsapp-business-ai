@@ -8130,6 +8130,37 @@ body {
   color: var(--saas-text-primary) !important;
 }
 
+.quick-replies-item {
+  position: relative;
+  overflow: hidden;
+}
+
+.quick-replies-item::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: linear-gradient(180deg, var(--saas-accent-primary), color-mix(in srgb, var(--saas-accent-primary) 70%, #7ac943));
+  opacity: 0.9;
+}
+
+.quick-replies-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 26px color-mix(in srgb, var(--saas-accent-primary) 10%, transparent) !important;
+}
+
+.quick-replies-item-head {
+  min-width: 0;
+}
+
+.quick-replies-item-title {
+  letter-spacing: -0.01em;
+}
+
+.quick-replies-item-preview {
+  padding-right: 2px;
+}
+
 .sidebar-filter-pill-trigger.active,
 .sidebar-filter-pill-trigger.active .sidebar-filter-pill-label,
 .sidebar-filter-pill-trigger.active .sidebar-filter-pill-value,
@@ -8401,6 +8432,18 @@ body {
   background: var(--chat-info-surface) !important;
   border-color: var(--chat-info-border) !important;
   color: var(--chat-info-text) !important;
+}
+
+.chat-draft-banner--quick-reply {
+  background: color-mix(in srgb, #fff3d8 82%, var(--chat-card-surface)) !important;
+  border: 1px solid color-mix(in srgb, #d5a437 58%, var(--chat-card-border)) !important;
+  border-radius: 12px !important;
+  padding: 9px 11px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+  box-shadow: 0 12px 28px color-mix(in srgb, #d5a437 12%, transparent) !important;
 }
 
 .catalog-source-warning {

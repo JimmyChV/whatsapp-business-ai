@@ -458,27 +458,19 @@ const ChatInput = ({
             )}
 
             {!editingMessage?.id && hasDraftQuickReply && (
-                <div style={{
+                <div className="chat-draft-banner chat-draft-banner--quick-reply" style={{
                     position: 'absolute',
                     left: '12px',
                     right: '12px',
                     bottom: '100%',
                     marginBottom: replyingMessage?.id ? '62px' : '8px',
-                    border: '1px solid rgba(0, 168, 132, 0.55)',
-                    background: '#173138',
-                    borderRadius: '10px',
-                    padding: '8px 10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '10px',
                     zIndex: 38
                 }}>
                     <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: '0.72rem', color: '#00d4aa', fontWeight: 700, marginBottom: '2px' }}>
-                            Respuesta rapida cargada{draftQuickReplyLabel ? `: ${draftQuickReplyLabel}` : ''}
+                        <div className="chat-draft-banner__title">
+                            Respuesta rápida preparada{draftQuickReplyLabel ? ` · ${draftQuickReplyLabel}` : ''}
                         </div>
-                        <div style={{ fontSize: '0.78rem', color: '#d4e2e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div className="chat-draft-banner__text" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {draftQuickReplyText || `Adjuntos: ${draftQuickReplyAssets.length}`}
                         </div>
                         {draftQuickReplyPreviewAssets.length > 0 && (
@@ -511,10 +503,14 @@ const ChatInput = ({
                     </div>
                     <button
                         type="button"
-                        onClick={() => onClearQuickReplyDraft && onClearQuickReplyDraft()}
-                        style={{ border: '1px solid rgba(255,255,255,0.18)', background: 'transparent', color: '#d8e3e8', borderRadius: '8px', padding: '4px 10px', fontSize: '0.78rem', cursor: 'pointer' }}
+                        onClick={() => {
+                            setInputText('');
+                            onClearQuickReplyDraft && onClearQuickReplyDraft();
+                        }}
+                        className="chat-draft-banner__action"
+                        style={{ borderRadius: '8px', padding: '4px 10px', fontSize: '0.78rem', cursor: 'pointer' }}
                     >
-                        Limpiar
+                        Descartar
                     </button>
                 </div>
             )}
