@@ -158,6 +158,11 @@ export default function OperationPage({
     handleChatSelect?.(chatId, options);
     setMobilePanel('chat');
   }, [handleChatSelect]);
+  const handleMobileLoadOrderToCart = useCallback((orderPayload) => {
+    if (!activeChatId) return;
+    handleLoadOrderToCart?.(activeChatId, orderPayload);
+    setMobilePanel('tools');
+  }, [activeChatId, handleLoadOrderToCart]);
   const effectiveMobilePanel = activeChatId ? mobilePanel : 'list';
 
   useEffect(() => {
@@ -310,7 +315,7 @@ export default function OperationPage({
               onSendQuickReply={handleSendQuickReply}
               quickReplyDraft={quickReplyDraft}
               onClearQuickReplyDraft={() => setQuickReplyDraft(null)}
-              onLoadOrderToCart={handleLoadOrderToCart}
+              onLoadOrderToCart={handleMobileLoadOrderToCart}
               onStartNewChat={handleStartNewChat}
               onCancelEditMessage={handleCancelEditMessage}
               onCancelReplyMessage={handleCancelReplyMessage}

@@ -574,7 +574,13 @@ const Sidebar = ({
                         <button
                             type="button"
                             className={`sidebar-ribbon-btn ${showLabelPanel || selectedLabelCount > 0 ? 'active' : ''}`}
-                            onClick={() => setShowLabelPanel((v) => !v)}
+                            onClick={() => {
+                                setShowAdvancedFilters(true);
+                                setShowLabelPanel((v) => !v);
+                                setShowWindowFilterMenu(false);
+                                setShowAssigneeFilterMenu(false);
+                                setShowCommercialFilterMenu(false);
+                            }}
                             title="Etiquetas"
                             data-label="Etiquetas"
                         >
@@ -585,6 +591,7 @@ const Sidebar = ({
                             type="button"
                             className={`sidebar-ribbon-btn ${String(filters.windowFilter || 'all') !== 'all' ? 'active' : ''}`}
                             onClick={() => {
+                                setShowAdvancedFilters(true);
                                 setShowWindowFilterMenu((prev) => !prev);
                                 setShowAssigneeFilterMenu(false);
                                 setShowCommercialFilterMenu(false);
@@ -776,6 +783,16 @@ const Sidebar = ({
                                 </div>
                             </div>
                         )}
+                    </div>
+                    <div className={`sidebar-mobile-filter-strip ${hasAnyFilter ? 'is-visible' : ''}`}>
+                        <span className="sidebar-mobile-filter-summary">
+                            {activeFilterChips.length === 1
+                                ? activeFilterChips[0]
+                                : `${activeFilterChips.length} filtros activos`}
+                        </span>
+                        <button type="button" className="sidebar-mobile-filter-clear" onClick={resetFilters}>
+                            Limpiar
+                        </button>
                     </div>
             <div className="chat-list" onClick={() => { if (showMenu) setShowMenu(false); if (showLabelPanel) setShowLabelPanel(false); if (showAssigneeFilterMenu) setShowAssigneeFilterMenu(false); if (showCommercialFilterMenu) setShowCommercialFilterMenu(false); if (showWindowFilterMenu) setShowWindowFilterMenu(false); if (showAdvancedFilters) setShowAdvancedFilters(false); }} onScroll={handleChatListScroll}>
                 {filteredChats.length === 0 && chats.length === 0 && !chatsLoaded ? (

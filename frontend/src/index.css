@@ -10189,6 +10189,10 @@ body {
   box-shadow: 0 10px 20px color-mix(in srgb, var(--saas-accent-primary) 10%, transparent);
 }
 
+.sidebar-mobile-filter-strip {
+  display: none;
+}
+
 /* Mobile operation workspace: late overrides keep desktop untouched */
 @media (max-width: 768px) {
   [data-mobile-panel="tools"] .business-sidebar-panel {
@@ -10224,6 +10228,44 @@ body {
 
   .sidebar-active-filters-row {
     padding-top: 0;
+  }
+
+  .sidebar-mobile-filter-strip {
+    display: none;
+  }
+
+  .sidebar-mobile-filter-strip.is-visible {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0 8px 6px 0;
+    padding: 7px 9px;
+    border: 1px solid color-mix(in srgb, var(--saas-accent-primary) 30%, var(--chat-pill-border));
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--saas-accent-primary) 8%, var(--saas-bg-surface));
+  }
+
+  .sidebar-mobile-filter-summary {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--saas-text-secondary);
+    font-size: 0.74rem;
+    font-weight: 800;
+  }
+
+  .sidebar-mobile-filter-clear {
+    flex-shrink: 0;
+    border: 1px solid color-mix(in srgb, var(--saas-accent-danger) 34%, var(--chat-pill-border));
+    background: color-mix(in srgb, var(--saas-accent-danger) 8%, var(--saas-bg-surface));
+    color: var(--saas-accent-danger);
+    border-radius: 999px;
+    min-height: 30px;
+    padding: 0 10px;
+    font-size: 0.72rem;
+    font-weight: 800;
   }
 
   .sidebar-main-content .chat-list {
