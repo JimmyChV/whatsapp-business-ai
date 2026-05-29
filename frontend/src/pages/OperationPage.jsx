@@ -127,6 +127,7 @@ export default function OperationPage({
 }) {
   const [cartDraftsByChat, setCartDraftsByChat] = useState({});
   const [mobilePanel, setMobilePanel] = useState('list');
+  const [mobileToolRequest, setMobileToolRequest] = useState(null);
   const originalDocumentTitleRef = useRef(typeof document !== 'undefined' ? document.title : 'WhatsApp Business Pro');
   const activeChatDetails = chats.find((c) => c.id === activeChatId) || null;
   const mergedActiveChatDetails = activeChatDetails || clientContact
@@ -162,6 +163,11 @@ export default function OperationPage({
     if (!activeChatId) return;
     if (!orderPayload || typeof orderPayload !== 'object') return;
     handleLoadOrderToCart?.(activeChatId, orderPayload);
+    setMobileToolRequest({
+      tabId: 'cart',
+      source: 'chat-order',
+      token: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    });
     setMobilePanel('tools');
   }, [activeChatId, handleLoadOrderToCart]);
   const effectiveMobilePanel = activeChatId ? mobilePanel : 'list';
@@ -422,6 +428,7 @@ export default function OperationPage({
             onSendQuickReply={handleSendQuickReply}
             onSendCatalogProduct={handleSendCatalogProduct}
             pendingOrderCartLoad={pendingOrderCartLoad}
+            requestedToolTab={mobileToolRequest}
             waCapabilities={waCapabilities}
             openCompanyProfileToken={openCompanyProfileToken}
             waModules={availableWaModules}

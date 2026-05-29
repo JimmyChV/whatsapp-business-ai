@@ -53,7 +53,7 @@ export { ClientProfilePanel };
 
 // =========================================================
 
-const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], messagesRef = null, activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, onSendCatalogProduct = null, waCapabilities = {}, pendingOrderCartLoad = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null, cartDraftsByChat: externalCartDraftsByChat = {}, setCartDraftsByChat: externalSetCartDraftsByChat = null, chatAssignmentState = null, chatCommercialStatusState = null, buildApiHeaders = null, onMobileBackToChat = null, onMobileOpenTools = null }) => {
+const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], messagesRef = null, activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, onSendCatalogProduct = null, waCapabilities = {}, pendingOrderCartLoad = null, requestedToolTab = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null, cartDraftsByChat: externalCartDraftsByChat = {}, setCartDraftsByChat: externalSetCartDraftsByChat = null, chatAssignmentState = null, chatCommercialStatusState = null, buildApiHeaders = null, onMobileBackToChat = null, onMobileOpenTools = null }) => {
     const { notify, confirm } = useUiFeedback();
     const [activeTab, setActiveTab] = useState('ai');
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
@@ -130,6 +130,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         && pendingOrderCartLoad.order
         && typeof pendingOrderCartLoad.order === 'object'
     );
+    const requestedCartTabActive = String(requestedToolTab?.tabId || '') === 'cart';
     const [chatQuotesByChat, setChatQuotesByChat] = useState({});
     const [quoteHistoryExpanded, setQuoteHistoryExpanded] = useState(true);
     const buildInitialQuoteOptionsWizardState = useCallback(() => ({
@@ -416,6 +417,12 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         formatMoney
     });
     useEffect(() => {
+        const requestedTabId = String(requestedToolTab?.tabId || '').trim();
+        if (!requestedTabId) return;
+        setActiveTab(requestedTabId);
+        setShowCompanyProfile(false);
+    }, [requestedToolTab]);
+    useEffect(() => {
         if (!pendingOrderCartLoad || !activeChatId) return;
         if (String(pendingOrderCartLoad.chatId || '') !== String(activeChatId)) return;
         if (!pendingOrderCartLoad.order || typeof pendingOrderCartLoad.order !== 'object') return;
@@ -437,7 +444,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         activeTab,
         quickRepliesEnabled,
         cart,
-        allowEmptyCartTab: pendingCartImportActive,
+        allowEmptyCartTab: pendingCartImportActive || requestedCartTabActive,
         setActiveTab
     });
     useCompanyProfileOverlay({
@@ -1041,7 +1048,6 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             return;
         }
         setCart((previous) => addItemToCartState(previous, item, qtyToAdd));
-        openToolsPanel('cart');
     };
 
     const removeFromCart = (id) => {
