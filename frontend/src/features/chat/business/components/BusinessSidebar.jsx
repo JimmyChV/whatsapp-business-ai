@@ -123,6 +123,13 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const sourceQuote = activeDraft.sourceQuote && typeof activeDraft.sourceQuote === 'object'
         ? activeDraft.sourceQuote
         : null;
+    const pendingCartImportActive = Boolean(
+        pendingOrderCartLoad
+        && activeChatId
+        && String(pendingOrderCartLoad.chatId || '') === String(activeChatId)
+        && pendingOrderCartLoad.order
+        && typeof pendingOrderCartLoad.order === 'object'
+    );
     const [chatQuotesByChat, setChatQuotesByChat] = useState({});
     const [quoteHistoryExpanded, setQuoteHistoryExpanded] = useState(true);
     const buildInitialQuoteOptionsWizardState = useCallback(() => ({
@@ -430,6 +437,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         activeTab,
         quickRepliesEnabled,
         cart,
+        allowEmptyCartTab: pendingCartImportActive,
         setActiveTab
     });
     useCompanyProfileOverlay({

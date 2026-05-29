@@ -6,6 +6,7 @@ export const useBusinessSidebarUiSync = ({
     activeTab = 'ai',
     quickRepliesEnabled = false,
     cart = [],
+    allowEmptyCartTab = false,
     setActiveTab
 } = {}) => {
     useEffect(() => {
@@ -20,8 +21,8 @@ export const useBusinessSidebarUiSync = ({
 
     useEffect(() => {
         if (activeTab === 'quotes') return;
-        if (activeTab === 'cart' && cart.length === 0) {
+        if (activeTab === 'cart' && cart.length === 0 && !allowEmptyCartTab) {
             setActiveTab('catalog');
         }
-    }, [activeTab, cart.length, setActiveTab]);
+    }, [activeTab, allowEmptyCartTab, cart.length, setActiveTab]);
 };
