@@ -98,6 +98,11 @@ function createSocketChatListService({
 
     const enrichWithWindowData = async (item = null, tenantId = 'default', scopeModuleId = '') => {
         if (!item || typeof item !== 'object') return item;
+        console.log('[Window] enriching', {
+            chatId: item?.id || item?.chatId || null,
+            tenantId,
+            scopeModuleId
+        });
         const resolvedTenantId = String(tenantId || 'default').trim() || 'default';
         const resolvedScopeModuleId = normalizeScopedModuleId(
             scopeModuleId
@@ -818,6 +823,10 @@ function createSocketChatListService({
                     }
                 }
 
+                console.log('[Window] enriching page', {
+                    count: Array.isArray(items) ? items.length : 0,
+                    tenantId
+                });
                 items = await Promise.all(
                     items.map((item) => enrichWithWindowData(item, tenantId, activeScopeModuleId || ''))
                 );
