@@ -135,12 +135,6 @@ export function useSaasSessionActions({
         password,
         headers: buildApiHeaders({ includeJson: true })
       });
-      console.log('[Login] respuesta del servidor', {
-        requiresOtp: payload?.requiresOtp,
-        deviceId: payload?.deviceId,
-        hasAccessToken: !!payload?.accessToken,
-        keys: Object.keys(payload || {})
-      });
       if (payload?.requiresOtp) {
         const expiresInSec = Number(payload?.expiresInSec || 600) || 600;
         const nextPendingDeviceAuth = {
@@ -154,11 +148,6 @@ export function useSaasSessionActions({
         setOtpCode('');
         setOtpResendAvailableAt(Date.now() + 60000);
         setDeviceAuthStep('otp');
-        console.log('[Login] deviceAuthStep seteado a otp', {
-          deviceAuthStep,
-          pendingDeviceAuth,
-          nextPendingDeviceAuth
-        });
         setSaasAuthNotice(`Enviamos un codigo de 6 digitos a ${String(payload?.email || email).trim()}. Expira en ${Math.ceil(expiresInSec / 60)} minutos.`);
         setLoginPassword('');
         return;
@@ -174,8 +163,6 @@ export function useSaasSessionActions({
     finalizeAuthenticatedSession,
     loginEmail,
     loginPassword,
-    deviceAuthStep,
-    pendingDeviceAuth,
     recoveryStep,
     setLoginPassword,
     setRecoveryError,
