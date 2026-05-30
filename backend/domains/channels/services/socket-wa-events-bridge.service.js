@@ -787,7 +787,8 @@ function createSocketWaEventsBridgeService({
                                 chatId: relatedChatIdBase,
                                 scopeModuleId: cleanScopeModuleId,
                                 senderName,
-                                preview
+                                preview,
+                                iconUrl: String(effectiveModuleContext?.imageUrl || effectiveModuleContext?.logoUrl || '').trim() || null
                             }).catch((error) => {
                                 console.warn('[Push] inbound notification warning:', String(error?.message || error));
                             });

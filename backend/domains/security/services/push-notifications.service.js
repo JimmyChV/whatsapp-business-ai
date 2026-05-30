@@ -275,6 +275,7 @@ async function sendInboundMessageNotification({
     scopeModuleId,
     senderName,
     preview,
+    iconUrl,
 } = {}) {
     const cleanTenantId = text(tenantId);
     const cleanChatId = text(chatId);
@@ -294,6 +295,7 @@ async function sendInboundMessageNotification({
         body: truncate(preview || 'Tienes un nuevo mensaje.', 100),
         chatId: cleanChatId,
         url: `/?chat=${encodeURIComponent(cleanChatId)}`,
+        icon: text(iconUrl) || undefined,
     };
     return sendToUsers(recipients, cleanTenantId, payload);
 }

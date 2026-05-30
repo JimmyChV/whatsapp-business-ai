@@ -53,7 +53,7 @@ self.addEventListener('push', (event) => {
       data.title || 'Nuevo mensaje',
       {
         body: data.body || '',
-        icon: '/icons/icon-192.png',
+        icon: data.icon || '/icons/icon-192.png',
         badge: '/icons/icon-192.png',
         tag: data.chatId || 'message',
         data: {
