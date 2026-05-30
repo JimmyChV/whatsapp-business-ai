@@ -16,6 +16,7 @@ const { resolveRuntimeFlags, createCorsOriginChecker } = require('./config/runti
 const {
     authService,
     authRecoveryService,
+    deviceAuthService,
     accessPolicyService,
     planLimitsService,
     planLimitsStoreService,
@@ -220,6 +221,37 @@ app.use(async (req, res, next) => {
         req.tenantContext = tenantService.DEFAULT_TENANT;
         res.setHeader('X-Tenant-Id', String(tenantService.DEFAULT_TENANT?.id || 'default'));
         next();
+    }
+});
+
+function parseCookieHeader(header = '') {
+    return String(header || '').split(';').reduce((acc, part) => {
+        const index = part.indexOf('=');
+        if (index <= 0) return acc;
+        const key = decodeURIComponent(part.slice(0, index).trim());
+        const value = decodeURIComponent(part.slice(index + 1).trim());
+        if (key) acc[key] = value;
+        return acc;
+    }, {});
+}
+
+app.use(async (req, res, next) => {
+    try {
+        const authContext = req.authContext || { isAuthenticated: false, user: null };
+        if (!authService.isAuthEnabled() || !authContext.isAuthenticated || !authContext.user) return next();
+        const deviceId = String(parseCookieHeader(req.headers?.cookie || '').saas_device_id || '').trim();
+        if (!deviceId) return next();
+        const revoked = await deviceAuthService.isDeviceRevoked(deviceId);
+        if (revoked) {
+            return res.status(401).json({ ok: false, error: 'device_revoked' });
+        }
+        await deviceAuthService.updateLastSeen(deviceId, {
+            ipAddress: String(req.ip || '').trim()
+        }).catch(() => null);
+        return next();
+    } catch (error) {
+        logger.warn('[Auth] device middleware failed: ' + String(error?.message || error));
+        return next();
     }
 });
 

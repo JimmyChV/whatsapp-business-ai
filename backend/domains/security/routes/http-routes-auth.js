@@ -2,6 +2,7 @@
     app,
     isProduction,
     authService,
+    deviceAuthService,
     authRecoveryService,
     auditLogService,
     tenantService,
@@ -15,7 +16,9 @@
     const mapPublicTenant = typeof toPublicTenant === 'function'
         ? toPublicTenant
         : (tenant) => tenant;
+    const resolvedDeviceAuthService = deviceAuthService || require('../services/device-auth.service');
     const refreshCookieName = 'saas_refresh_token';
+    const deviceCookieName = 'saas_device_id';
 
     function parseCookies(req = {}) {
         const header = String(req.headers?.cookie || '').trim();
@@ -32,6 +35,21 @@
 
     function getRefreshTokenFromRequest(req = {}) {
         return String(parseCookies(req)[refreshCookieName] || '').trim();
+    }
+
+    function getDeviceIdFromRequest(req = {}) {
+        return String(parseCookies(req)[deviceCookieName] || '').trim();
+    }
+
+    function setDeviceCookie(res, deviceId = '') {
+        const cleanDeviceId = String(deviceId || '').trim();
+        if (!cleanDeviceId) return;
+        res.cookie(deviceCookieName, cleanDeviceId, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 365 * 24 * 60 * 60 * 1000
+        });
     }
 
     function setRefreshCookie(res, refreshToken = '', session = {}) {
@@ -61,6 +79,16 @@
         return safeSession;
     }
 
+    function buildDeviceContext(req = {}, deviceId = '') {
+        const userAgent = String(req.headers?.['user-agent'] || '').trim();
+        return {
+            deviceId: String(deviceId || '').trim(),
+            userAgent,
+            deviceType: resolvedDeviceAuthService.detectDeviceType(userAgent),
+            ipAddress: String(req.ip || req.headers?.['x-forwarded-for'] || '').split(',')[0].trim()
+        };
+    }
+
     app.post('/api/auth/login', async (req, res) => {
         const email = String(req.body?.email || '').trim().toLowerCase();
         const tenantId = String(req.body?.tenantId || '').trim() || null;
@@ -68,7 +96,38 @@
 
         try {
             const password = String(req.body?.password || '');
-            const session = await authService.login({ email, password, tenantId, tenantSlug });
+            const deviceId = getDeviceIdFromRequest(req) || resolvedDeviceAuthService.generateDeviceId();
+            setDeviceCookie(res, deviceId);
+            const session = await authService.login({
+                email,
+                password,
+                tenantId,
+                tenantSlug,
+                deviceContext: buildDeviceContext(req, deviceId)
+            });
+            if (session?.requiresOtp) {
+                await auditLogService.writeAuditLog(tenantId || req?.tenantContext?.id || 'default', {
+                    userId: null,
+                    userEmail: email,
+                    role: 'seller',
+                    action: 'auth.login.otp_required',
+                    resourceType: 'auth_device',
+                    resourceId: session.deviceId || deviceId,
+                    source: 'api',
+                    ip: String(req.ip || ''),
+                    payload: { tenantId, tenantSlug, deviceType: session.deviceType || null }
+                });
+                return res.json({
+                    ok: true,
+                    requiresOtp: true,
+                    deviceId: session.deviceId || deviceId,
+                    deviceType: session.deviceType || null,
+                    email: session.email || email,
+                    expiresInSec: session.expiresInSec || 600,
+                    message: 'OTP enviado',
+                    ...(session.debugCode ? { debugCode: session.debugCode } : {})
+                });
+            }
             setRefreshCookie(res, session?.refreshToken, session);
             await auditLogService.writeAuditLog(session?.user?.tenantId || req?.tenantContext?.id || 'default', {
                 userId: session?.user?.id || null,
@@ -97,6 +156,75 @@
                 payload: { tenantId, tenantSlug, reason: message }
             });
             return res.status(status).json({ ok: false, error: message });
+        }
+    });
+
+    app.post('/api/auth/verify-otp', async (req, res) => {
+        const deviceId = String(req.body?.deviceId || getDeviceIdFromRequest(req) || '').trim();
+        const code = String(req.body?.code || '').trim();
+        const deviceName = String(req.body?.deviceName || '').trim();
+
+        if (!deviceId || !code) {
+            return res.status(400).json({ ok: false, error: 'deviceId y codigo son requeridos.' });
+        }
+
+        try {
+            const verified = await resolvedDeviceAuthService.verifyOtp(deviceId, code);
+            const approvedDevice = await resolvedDeviceAuthService.approveDevice(deviceId, deviceName, 'otp');
+            setDeviceCookie(res, deviceId);
+            const session = await authService.issueSessionForDevice({
+                userId: verified.userId,
+                tenantId: verified.tenantId
+            });
+            setRefreshCookie(res, session?.refreshToken, session);
+
+            await resolvedDeviceAuthService.notifyTenantOwnersDeviceApproved({
+                tenantId: verified.tenantId,
+                device: approvedDevice || verified.device,
+                user: session.user
+            }).catch(() => null);
+
+            await auditLogService.writeAuditLog(session?.user?.tenantId || verified.tenantId || 'default', {
+                userId: session?.user?.id || verified.userId || null,
+                userEmail: session?.user?.email || null,
+                role: session?.user?.role || 'seller',
+                action: 'auth.device.otp_verified',
+                resourceType: 'auth_device',
+                resourceId: deviceId,
+                source: 'api',
+                ip: String(req.ip || ''),
+                payload: { deviceName: approvedDevice?.deviceName || deviceName || null }
+            });
+
+            return res.json({ ok: true, ...stripRefreshToken(session) });
+        } catch (error) {
+            const reason = String(error?.message || 'otp_invalid');
+            const status = /too_many|invalid|expired|required|not_found/i.test(reason) ? 400 : 500;
+            return res.status(status).json({ ok: false, error: reason });
+        }
+    });
+
+    app.post('/api/auth/resend-otp', async (req, res) => {
+        const deviceId = String(req.body?.deviceId || getDeviceIdFromRequest(req) || '').trim();
+        if (!deviceId) {
+            return res.status(400).json({ ok: false, error: 'deviceId es requerido.' });
+        }
+
+        try {
+            const result = await resolvedDeviceAuthService.resendOtp({
+                deviceId,
+                ipAddress: String(req.ip || '').trim()
+            });
+            return res.json({
+                ok: true,
+                message: 'OTP reenviado',
+                expiresInSec: result?.expiresInSec || 600,
+                ...(result?.debugCode ? { debugCode: result.debugCode } : {})
+            });
+        } catch (error) {
+            const reason = String(error?.message || 'No se pudo reenviar OTP.');
+            const status = /limited|not_found/i.test(reason) ? 429 : 400;
+            return res.status(status).json({ ok: false, error: reason });
         }
     });
 

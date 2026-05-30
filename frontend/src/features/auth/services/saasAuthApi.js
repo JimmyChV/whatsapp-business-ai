@@ -71,6 +71,24 @@ export async function logoutSaas({ accessToken, headers = {} }) {
   return assertOk(result, 'No se pudo cerrar sesion.');
 }
 
+export async function verifySaasDeviceOtp({ deviceId, code, deviceName, headers = {} }) {
+  const result = await requestJson('/api/auth/verify-otp', {
+    method: 'POST',
+    headers,
+    body: { deviceId, code, deviceName }
+  });
+  return assertOk(result, 'No se pudo verificar el dispositivo.');
+}
+
+export async function resendSaasDeviceOtp({ deviceId, headers = {} }) {
+  const result = await requestJson('/api/auth/resend-otp', {
+    method: 'POST',
+    headers,
+    body: { deviceId }
+  });
+  return assertOk(result, 'No se pudo reenviar el codigo.');
+}
+
 export async function switchSaasTenant({ targetTenantId, headers = {} }) {
   const result = await requestJson('/api/auth/switch-tenant', {
     method: 'POST',

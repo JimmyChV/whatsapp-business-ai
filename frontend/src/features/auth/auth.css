@@ -382,6 +382,13 @@
   padding: 8px 10px;
 }
 
+.saas-login-otp-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 @media (max-width: 639px) {
   .login-screen.login-screen--saas {
     padding: 0;

@@ -1,5 +1,6 @@
 ﻿const crypto = require('crypto');
 const authSessionService = require('./auth-session.service');
+const deviceAuthService = require('./device-auth.service');
 const tenantService = require('../../tenant/services/tenant-core.service');
 const saasControlService = require('../../tenant/services/tenant-control.service');
 const accessPolicyService = require('./access-policy.service');
@@ -563,7 +564,7 @@ async function issueSessionForScopedUser(user = {}) {
     };
 }
 
-async function login({ email = '', password = '', tenantId = '', tenantSlug = '' } = {}) {
+async function login({ email = '', password = '', tenantId = '', tenantSlug = '', deviceContext = null } = {}) {
     if (!isAuthEnabled()) {
         throw new Error('Autenticacion SaaS deshabilitada. Activa SAAS_AUTH_ENABLED=true.');
     }
@@ -600,6 +601,46 @@ async function login({ email = '', password = '', tenantId = '', tenantSlug = ''
     }
 
     const scoped = resolveScopedUser(target, requestedTenantId || target.tenantId);
+    if (deviceContext?.deviceId) {
+        const deviceGate = await deviceAuthService.ensureDeviceApprovedForLogin({
+            user: scoped,
+            deviceContext
+        });
+        if (deviceGate?.requiresOtp) {
+            return {
+                requiresOtp: true,
+                deviceId: deviceGate.deviceId,
+                deviceType: deviceGate.deviceType,
+                email: deviceGate.email,
+                expiresInSec: deviceGate.expiresInSec,
+                debugCode: deviceGate.debugCode
+            };
+        }
+    }
+    return issueSessionForScopedUser(scoped);
+}
+
+async function issueSessionForDevice({ userId = '', tenantId = '' } = {}) {
+    if (!isAuthEnabled()) {
+        throw new Error('Autenticacion SaaS deshabilitada.');
+    }
+
+    if (!getAuthSecret()) {
+        throw new Error('Falta SAAS_AUTH_SECRET para generar tokens de acceso.');
+    }
+
+    await saasControlService.ensureLoaded();
+    const cleanUserId = String(userId || '').trim();
+    const cleanTenantId = normalizeTenantId(tenantId);
+    const userRecord = findUserRecord({ userId: cleanUserId });
+    if (!userRecord) {
+        throw new Error('No se encontro el usuario del dispositivo.');
+    }
+    if (!hasTenantMembership(userRecord, cleanTenantId)) {
+        throw new Error('Usuario sin acceso al tenant del dispositivo.');
+    }
+
+    const scoped = resolveScopedUser(userRecord, cleanTenantId);
     return issueSessionForScopedUser(scoped);
 }
 
@@ -844,6 +885,7 @@ module.exports = {
     isAuthEnabled,
     login,
     refreshSession,
+    issueSessionForDevice,
     switchTenantSession,
     logoutSession,
     verifyAccessToken,

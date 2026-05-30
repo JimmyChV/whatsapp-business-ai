@@ -595,6 +595,17 @@ function App() {
     handleSaasLogin: sessionActionExports.handleSaasLogin,
     handleSaasLogout: sessionActionExports.handleSaasLogout,
     handleSwitchTenant: sessionActionExports.handleSwitchTenant,
+    deviceAuthStep: sessionActionExports.deviceAuthStep,
+    pendingDeviceAuth: sessionActionExports.pendingDeviceAuth,
+    otpCode: sessionActionExports.otpCode,
+    setOtpCode: sessionActionExports.setOtpCode,
+    deviceName: sessionActionExports.deviceName,
+    setDeviceName: sessionActionExports.setDeviceName,
+    otpResendAvailableAt: sessionActionExports.otpResendAvailableAt,
+    handleOtpBack: sessionActionExports.handleOtpBack,
+    handleOtpContinue: sessionActionExports.handleOtpContinue,
+    handleVerifyDeviceOtp: sessionActionExports.handleVerifyDeviceOtp,
+    handleResendDeviceOtp: sessionActionExports.handleResendDeviceOtp,
     recoveryStep: recoveryExports.recoveryStep,
     recoveryBusy: recoveryExports.recoveryBusy,
     recoveryError: recoveryExports.recoveryError,
@@ -735,4 +746,3 @@ function App() {
 }
 
 export default App;
-

@@ -27,6 +27,17 @@ function SaasLoginScreen({
   showRecoveryPassword,
   setShowRecoveryPassword,
   handleSaasLogin,
+  deviceAuthStep = 'credentials',
+  pendingDeviceAuth = null,
+  otpCode = '',
+  setOtpCode,
+  deviceName = '',
+  setDeviceName,
+  otpResendAvailableAt = 0,
+  handleOtpBack,
+  handleOtpContinue,
+  handleVerifyDeviceOtp,
+  handleResendDeviceOtp,
   openRecoveryFlow,
   handleRecoveryRequest,
   handleRecoveryVerify,
@@ -61,7 +72,90 @@ function SaasLoginScreen({
               <p>Tu empresa se asigna automáticamente según tus permisos.</p>
             </div>
 
-            {recoveryStep === 'idle' ? (
+            {recoveryStep === 'idle' && deviceAuthStep === 'otp' ? (
+              <div className='saas-recovery-box saas-recovery-box--split'>
+                <div className='saas-recovery-head'>
+                  <strong>Verifica tu dispositivo</strong>
+                  <small>Enviamos un codigo de 6 digitos a {pendingDeviceAuth?.email || loginEmail}.</small>
+                </div>
+
+                {saasAuthError && <div className='saas-login-error'>{saasAuthError}</div>}
+                {saasAuthNotice && <div className='saas-login-notice'>{saasAuthNotice}</div>}
+                {pendingDeviceAuth?.debugCode && (
+                  <div className='saas-login-debug'>
+                    Codigo debug local: <strong>{pendingDeviceAuth.debugCode}</strong>
+                  </div>
+                )}
+
+                <div className='saas-recovery-form'>
+                  <label className='saas-login-field saas-login-field--split'>
+                    <span>Codigo de verificacion</span>
+                    <div className='saas-login-input-shell'>
+                      <input
+                        type='text'
+                        inputMode='numeric'
+                        value={otpCode}
+                        onChange={(event) => setOtpCode?.(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder='000000'
+                        autoComplete='one-time-code'
+                        disabled={saasAuthBusy}
+                      />
+                    </div>
+                  </label>
+                  <button type='button' onClick={handleOtpContinue} disabled={saasAuthBusy} className='saas-login-submit saas-login-submit--split'>
+                    Continuar
+                  </button>
+                  <div className='saas-login-otp-actions'>
+                    <button type='button' className='saas-login-link' onClick={handleOtpBack} disabled={saasAuthBusy}>
+                      Volver
+                    </button>
+                    <button
+                      type='button'
+                      className='saas-login-link'
+                      onClick={handleResendDeviceOtp}
+                      disabled={saasAuthBusy || Date.now() < Number(otpResendAvailableAt || 0)}
+                    >
+                      Reenviar codigo
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : recoveryStep === 'idle' && deviceAuthStep === 'device_name' ? (
+              <div className='saas-recovery-box saas-recovery-box--split'>
+                <div className='saas-recovery-head'>
+                  <strong>Dispositivo verificado</strong>
+                  <small>Dale un nombre para identificarlo facilmente en el panel.</small>
+                </div>
+
+                {saasAuthError && <div className='saas-login-error'>{saasAuthError}</div>}
+
+                <div className='saas-recovery-form'>
+                  <label className='saas-login-field saas-login-field--split'>
+                    <span>Nombre del dispositivo</span>
+                    <div className='saas-login-input-shell'>
+                      <input
+                        type='text'
+                        value={deviceName}
+                        onChange={(event) => setDeviceName?.(event.target.value)}
+                        placeholder='Ej: Celular Zenny, PC Oficina'
+                        disabled={saasAuthBusy}
+                      />
+                    </div>
+                  </label>
+                  <button type='button' onClick={handleVerifyDeviceOtp} disabled={saasAuthBusy} className='saas-login-submit saas-login-submit--split'>
+                    {saasAuthBusy ? 'Guardando...' : 'Guardar y entrar'}
+                  </button>
+                  <button
+                    type='button'
+                    className='saas-login-link saas-login-link--inline'
+                    onClick={handleVerifyDeviceOtp}
+                    disabled={saasAuthBusy}
+                  >
+                    Omitir
+                  </button>
+                </div>
+              </div>
+            ) : recoveryStep === 'idle' ? (
               <>
                 <label className='saas-login-field saas-login-field--split'>
                   <span>Usuario o correo</span>
