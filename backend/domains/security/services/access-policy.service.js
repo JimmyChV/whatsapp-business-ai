@@ -48,7 +48,11 @@ const PERMISSIONS = Object.freeze({
     TENANT_CHAT_ASSIGNMENTS_MANAGE: 'tenant.chat_assignments.manage',
     TENANT_ASSIGNMENT_RULES_READ: 'tenant.assignment_rules.read',
     TENANT_ASSIGNMENT_RULES_MANAGE: 'tenant.assignment_rules.manage',
-    TENANT_KPIS_READ: 'tenant.kpis.read'
+    TENANT_KPIS_READ: 'tenant.kpis.read',
+    DEVICES_VIEW_OWN: 'devices:view_own',
+    DEVICES_REVOKE_OWN: 'devices:revoke_own',
+    DEVICES_VIEW_ALL: 'devices:view_all',
+    DEVICES_REVOKE_ALL: 'devices:revoke_all'
 });
 
 const PERMISSION_LABELS = Object.freeze({
@@ -98,7 +102,11 @@ const PERMISSION_LABELS = Object.freeze({
     [PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_MANAGE]: 'Gestionar asignaciones de chat',
     [PERMISSIONS.TENANT_ASSIGNMENT_RULES_READ]: 'Ver reglas de asignacion',
     [PERMISSIONS.TENANT_ASSIGNMENT_RULES_MANAGE]: 'Gestionar reglas de asignacion',
-    [PERMISSIONS.TENANT_KPIS_READ]: 'Ver KPIs operativos'
+    [PERMISSIONS.TENANT_KPIS_READ]: 'Ver KPIs operativos',
+    [PERMISSIONS.DEVICES_VIEW_OWN]: 'Ver mis dispositivos',
+    [PERMISSIONS.DEVICES_REVOKE_OWN]: 'Revocar mis dispositivos',
+    [PERMISSIONS.DEVICES_VIEW_ALL]: 'Ver dispositivos de usuarios',
+    [PERMISSIONS.DEVICES_REVOKE_ALL]: 'Revocar dispositivos de usuarios'
 });
 
 const ROLE_LABELS = Object.freeze({
@@ -252,7 +260,11 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
             PERMISSIONS.TENANT_ASSIGNMENT_RULES_READ,
             PERMISSIONS.TENANT_ASSIGNMENT_RULES_MANAGE,
             PERMISSIONS.TENANT_KPIS_READ,
-            PERMISSIONS.TENANT_ASSETS_UPLOAD
+            PERMISSIONS.TENANT_ASSETS_UPLOAD,
+            PERMISSIONS.DEVICES_VIEW_OWN,
+            PERMISSIONS.DEVICES_REVOKE_OWN,
+            PERMISSIONS.DEVICES_VIEW_ALL,
+            PERMISSIONS.DEVICES_REVOKE_ALL
         ],
         optional: [
             PERMISSIONS.TENANT_INTEGRATIONS_READ,
@@ -304,7 +316,10 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
             PERMISSIONS.TENANT_ASSIGNMENT_RULES_READ,
             PERMISSIONS.TENANT_ASSIGNMENT_RULES_MANAGE,
             PERMISSIONS.TENANT_KPIS_READ,
-            PERMISSIONS.TENANT_ASSETS_UPLOAD
+            PERMISSIONS.TENANT_ASSETS_UPLOAD,
+            PERMISSIONS.DEVICES_VIEW_OWN,
+            PERMISSIONS.DEVICES_REVOKE_OWN,
+            PERMISSIONS.DEVICES_VIEW_ALL
         ],
         optional: [
             PERMISSIONS.TENANT_SETTINGS_MANAGE,
@@ -340,7 +355,9 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
             PERMISSIONS.TENANT_CHAT_OPERATE,
             PERMISSIONS.TENANT_CONVERSATION_EVENTS_READ,
             PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_READ,
-            PERMISSIONS.TENANT_ASSIGNMENT_RULES_READ
+            PERMISSIONS.TENANT_ASSIGNMENT_RULES_READ,
+            PERMISSIONS.DEVICES_VIEW_OWN,
+            PERMISSIONS.DEVICES_REVOKE_OWN
         ],
         optional: [
             PERMISSIONS.TENANT_CUSTOMERS_MANAGE,
@@ -373,7 +390,9 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
             PERMISSIONS.TENANT_SCHEDULES_MANAGE,
             PERMISSIONS.TENANT_COMMERCIAL_INTELLIGENCE_MANAGE,
             PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_MANAGE,
-            PERMISSIONS.TENANT_ASSIGNMENT_RULES_MANAGE
+            PERMISSIONS.TENANT_ASSIGNMENT_RULES_MANAGE,
+            PERMISSIONS.DEVICES_VIEW_ALL,
+            PERMISSIONS.DEVICES_REVOKE_ALL
         ],
         active: true
     }
@@ -463,6 +482,20 @@ function normalizeRolePermissionBuckets({
     if (String(role || '').trim().toLowerCase() === 'owner') {
         requiredSet.add(PERMISSIONS.TENANT_CHAT_OPERATE);
         requiredSet.add(PERMISSIONS.TENANT_USERS_MANAGE);
+    }
+    const normalizedRole = String(role || '').trim().toLowerCase();
+    if (normalizedRole === 'owner') {
+        requiredSet.add(PERMISSIONS.DEVICES_VIEW_OWN);
+        requiredSet.add(PERMISSIONS.DEVICES_REVOKE_OWN);
+        requiredSet.add(PERMISSIONS.DEVICES_VIEW_ALL);
+        requiredSet.add(PERMISSIONS.DEVICES_REVOKE_ALL);
+    } else if (normalizedRole === 'admin') {
+        requiredSet.add(PERMISSIONS.DEVICES_VIEW_OWN);
+        requiredSet.add(PERMISSIONS.DEVICES_REVOKE_OWN);
+        requiredSet.add(PERMISSIONS.DEVICES_VIEW_ALL);
+    } else if (normalizedRole === 'seller') {
+        requiredSet.add(PERMISSIONS.DEVICES_VIEW_OWN);
+        requiredSet.add(PERMISSIONS.DEVICES_REVOKE_OWN);
     }
 
     const normalizedRequired = normalizePermissionList(Array.from(requiredSet));

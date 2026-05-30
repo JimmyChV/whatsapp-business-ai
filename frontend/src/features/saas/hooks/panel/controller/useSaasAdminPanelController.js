@@ -64,6 +64,10 @@ import {
     PERMISSION_TENANT_SETTINGS_READ,
     PERMISSION_TENANT_USERS_READ,
     PERMISSION_TENANT_USERS_MANAGE,
+    PERMISSION_DEVICES_VIEW_OWN,
+    PERMISSION_DEVICES_REVOKE_OWN,
+    PERMISSION_DEVICES_VIEW_ALL,
+    PERMISSION_DEVICES_REVOKE_ALL,
     PLAN_FEATURE_KEYS,
     PLAN_LIMIT_KEYS,
     PLAN_OPTIONS,
@@ -275,7 +279,11 @@ export default function useSaasAdminPanelController({
             PERMISSION_TENANT_ASSIGNMENT_RULES_MANAGE,
             PERMISSION_TENANT_KPIS_READ,
             PERMISSION_TENANT_INTEGRATIONS_READ,
-            PERMISSION_TENANT_INTEGRATIONS_MANAGE
+            PERMISSION_TENANT_INTEGRATIONS_MANAGE,
+            PERMISSION_DEVICES_VIEW_OWN,
+            PERMISSION_DEVICES_REVOKE_OWN,
+            PERMISSION_DEVICES_VIEW_ALL,
+            PERMISSION_DEVICES_REVOKE_ALL
         }
     });
 
@@ -323,6 +331,10 @@ export default function useSaasAdminPanelController({
         canOperateChat,
         canManageAssignments,
         canManageAssignmentRules,
+        canViewOwnDevices,
+        canRevokeOwnDevices,
+        canViewAllDevices,
+        canRevokeAllDevices,
         canEditCatalog,
         requiresTenantSelection,
         canActorManageRoleChanges,

@@ -6,7 +6,8 @@
     authRecoveryService,
     auditLogService,
     tenantService,
-    toPublicTenant
+    toPublicTenant,
+    accessPolicyService
 } = {}) {
     if (!app) throw new Error('registerSecurityAuthHttpRoutes requiere app.');
     if (!authService) throw new Error('registerSecurityAuthHttpRoutes requiere authService.');
@@ -17,6 +18,7 @@
         ? toPublicTenant
         : (tenant) => tenant;
     const resolvedDeviceAuthService = deviceAuthService || require('../services/device-auth.service');
+    const resolvedAccessPolicyService = accessPolicyService || require('../services/access-policy.service');
     const refreshCookieName = 'saas_refresh_token';
     const deviceCookieName = 'saas_device_id';
 
@@ -101,10 +103,20 @@
     }
 
     function canManageUserDevices(req = {}) {
+        return hasDevicePermission(req, resolvedAccessPolicyService.PERMISSIONS.DEVICES_VIEW_ALL);
+    }
+
+    function canRevokeAnyUserDevice(req = {}) {
+        return hasDevicePermission(req, resolvedAccessPolicyService.PERMISSIONS.DEVICES_REVOKE_ALL);
+    }
+
+    function hasDevicePermission(req = {}, permission = '') {
         const user = getAuthenticatedUser(req);
         if (!user) return false;
-        const role = String(user.role || '').trim().toLowerCase();
-        return Boolean(user.isSuperAdmin === true || role === 'owner');
+        if (user.isSuperAdmin === true) return true;
+        const key = String(permission || '').trim();
+        const permissions = Array.isArray(user.permissions) ? user.permissions : [];
+        return permissions.map((entry) => String(entry || '').trim()).includes(key);
     }
 
     app.post('/api/auth/login', async (req, res) => {
@@ -490,6 +502,9 @@
         if (!userId) {
             return res.status(401).json({ ok: false, error: 'No autenticado.' });
         }
+        if (!hasDevicePermission(req, resolvedAccessPolicyService.PERMISSIONS.DEVICES_VIEW_OWN)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
 
         try {
             const devices = await resolvedDeviceAuthService.listDevicesForUser(userId, {
@@ -510,6 +525,9 @@
         }
         if (!deviceId || !deviceName) {
             return res.status(400).json({ ok: false, error: 'deviceId y deviceName son requeridos.' });
+        }
+        if (!hasDevicePermission(req, resolvedAccessPolicyService.PERMISSIONS.DEVICES_VIEW_OWN)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
         }
 
         try {
@@ -542,13 +560,16 @@
         if (!deviceId) {
             return res.status(400).json({ ok: false, error: 'deviceId es requerido.' });
         }
+        if (!hasDevicePermission(req, resolvedAccessPolicyService.PERMISSIONS.DEVICES_REVOKE_OWN)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
 
         try {
             const device = await resolvedDeviceAuthService.revokeDevice({
                 actorUserId: userId,
                 deviceId,
                 currentDeviceId: getDeviceIdFromRequest(req),
-                allowAny: canManageUserDevices(req)
+                allowAny: canRevokeAnyUserDevice(req)
             });
             await auditLogService.writeAuditLog(device?.tenantId || req?.tenantContext?.id || req?.authContext?.user?.tenantId || 'default', {
                 userId,
@@ -585,6 +606,45 @@
             return res.json({ ok: true, devices });
         } catch (error) {
             return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron listar dispositivos.') });
+        }
+    });
+
+    app.delete('/api/admin/devices/:deviceId', async (req, res) => {
+        const userId = getAuthenticatedUserId(req);
+        const deviceId = String(req.params?.deviceId || '').trim();
+        if (!userId) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+        if (!deviceId) {
+            return res.status(400).json({ ok: false, error: 'deviceId es requerido.' });
+        }
+        if (!canRevokeAnyUserDevice(req)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const device = await resolvedDeviceAuthService.revokeDevice({
+                actorUserId: userId,
+                deviceId,
+                currentDeviceId: getDeviceIdFromRequest(req),
+                allowAny: true
+            });
+            await auditLogService.writeAuditLog(device?.tenantId || req?.tenantContext?.id || req?.authContext?.user?.tenantId || 'default', {
+                userId,
+                userEmail: req?.authContext?.user?.email || null,
+                role: req?.authContext?.user?.role || 'seller',
+                action: 'auth.device.admin_revoke',
+                resourceType: 'auth_device',
+                resourceId: deviceId,
+                source: 'api',
+                ip: String(req.ip || ''),
+                payload: { targetUserId: device?.userId || null }
+            });
+            return res.json({ ok: true, device });
+        } catch (error) {
+            const reason = String(error?.message || 'No se pudo revocar el dispositivo.');
+            const status = /current|not_found/i.test(reason) ? 400 : 500;
+            return res.status(status).json({ ok: false, error: reason });
         }
     });
 

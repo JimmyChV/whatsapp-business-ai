@@ -148,6 +148,7 @@ function registerHttpRoutes({
         authRecoveryService,
         auditLogService,
         tenantService,
+        accessPolicyService,
         toPublicTenant
     });
 

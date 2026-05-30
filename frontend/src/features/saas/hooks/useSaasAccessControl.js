@@ -52,7 +52,11 @@ export default function useSaasAccessControl({
         PERMISSION_TENANT_ASSIGNMENT_RULES_MANAGE,
         PERMISSION_TENANT_KPIS_READ,
         PERMISSION_TENANT_INTEGRATIONS_READ,
-        PERMISSION_TENANT_INTEGRATIONS_MANAGE
+        PERMISSION_TENANT_INTEGRATIONS_MANAGE,
+        PERMISSION_DEVICES_VIEW_OWN,
+        PERMISSION_DEVICES_REVOKE_OWN,
+        PERMISSION_DEVICES_VIEW_ALL,
+        PERMISSION_DEVICES_REVOKE_ALL
     } = permissionKeys;
 
     const normalizedRole = String(userRole || '').trim().toLowerCase();
@@ -94,6 +98,10 @@ export default function useSaasAccessControl({
     const roleBasedCanManageAutomations = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanViewSchedules = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanManageSchedules = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanViewOwnDevices = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || normalizedRole === 'seller' || noRoleContext);
+    const roleBasedCanRevokeOwnDevices = roleBasedCanViewOwnDevices;
+    const roleBasedCanViewAllDevices = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanRevokeAllDevices = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || noRoleContext);
 
     const actorRoleForPolicy = effectiveIsSuperAdmin ? 'superadmin' : (normalizedRole || 'seller');
     const actorRolePriority = getRolePriority(actorRoleForPolicy);
@@ -263,6 +271,18 @@ export default function useSaasAccessControl({
     const canManageAssignmentRules = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_ASSIGNMENT_RULES_MANAGE])
         : Boolean(roleBasedCanManageTenantSettings || roleBasedCanManageUsers);
+    const canViewOwnDevices = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_DEVICES_VIEW_OWN])
+        : roleBasedCanViewOwnDevices;
+    const canRevokeOwnDevices = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_DEVICES_REVOKE_OWN])
+        : roleBasedCanRevokeOwnDevices;
+    const canViewAllDevices = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_DEVICES_VIEW_ALL])
+        : roleBasedCanViewAllDevices;
+    const canRevokeAllDevices = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_DEVICES_REVOKE_ALL])
+        : roleBasedCanRevokeAllDevices;
 
     const canEditCatalog = canManageCatalog;
     const requiresTenantSelection = Boolean(effectiveIsSuperAdmin);
@@ -423,6 +443,10 @@ export default function useSaasAccessControl({
         canOperateChat,
         canManageAssignments,
         canManageAssignmentRules,
+        canViewOwnDevices,
+        canRevokeOwnDevices,
+        canViewAllDevices,
+        canRevokeAllDevices,
         canEditCatalog,
         requiresTenantSelection,
         canActorManageRoleChanges,

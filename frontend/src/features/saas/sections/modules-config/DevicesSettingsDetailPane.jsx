@@ -52,11 +52,12 @@ function DeviceRow({
     onSaveName,
     onRevoke,
     formatDateTimeLabel,
-    allowRename = true
+    allowRename = true,
+    allowRevoke = true
 }) {
     const isEditing = editingId === device.deviceId;
     const displayName = toText(device.deviceName) || formatDeviceType(device.deviceType);
-    const canRevoke = !busy && !device.current && !device.revokedAt;
+    const canRevoke = allowRevoke && !busy && !device.current && !device.revokedAt;
     return (
         <article className={`saas-device-row ${device.current ? 'is-current' : ''}`.trim()}>
             <div className="saas-device-row__main">
@@ -146,7 +147,10 @@ export default function DevicesSettingsDetailPane({
     formatDateTimeLabel,
     currentUser,
     isSuperAdmin,
-    userRole
+    userRole,
+    canViewAllDevices = false,
+    canRevokeOwnDevices = true,
+    canRevokeAllDevices = false
 }) {
     const [devices, setDevices] = React.useState([]);
     const [adminUserId, setAdminUserId] = React.useState('');
@@ -158,7 +162,7 @@ export default function DevicesSettingsDetailPane({
     const [draftName, setDraftName] = React.useState('');
     const [busy, setBusy] = React.useState(false);
 
-    const canAdminDevices = Boolean(isSuperAdmin || toText(userRole).toLowerCase() === 'owner' || currentUser?.isSuperAdmin === true);
+    const canAdminDevices = Boolean(canViewAllDevices || isSuperAdmin || currentUser?.isSuperAdmin === true || toText(userRole).toLowerCase() === 'owner');
 
     const loadDevices = React.useCallback(async () => {
         if (typeof requestJson !== 'function') return;
@@ -266,6 +270,7 @@ export default function DevicesSettingsDetailPane({
                         onRevoke={revoke}
                         formatDateTimeLabel={formatDateTimeLabel}
                         allowRename={true}
+                        allowRevoke={canRevokeOwnDevices}
                     />
                 )}
             </div>
@@ -273,7 +278,7 @@ export default function DevicesSettingsDetailPane({
             {canAdminDevices ? (
                 <div className="saas-admin-related-block saas-device-panel">
                     <h4>Revision administrativa</h4>
-                    <small>Owner y superadmin pueden consultar dispositivos de un usuario especifico.</small>
+                    <small>Usuarios autorizados pueden consultar dispositivos de otros usuarios.</small>
                     <div className="saas-admin-form-row saas-device-admin-search">
                         <input
                             value={adminUserId}
@@ -300,6 +305,7 @@ export default function DevicesSettingsDetailPane({
                             onRevoke={revoke}
                             formatDateTimeLabel={formatDateTimeLabel}
                             allowRename={false}
+                            allowRevoke={canRevokeAllDevices || isSuperAdmin || currentUser?.isSuperAdmin === true}
                         />
                     )}
                 </div>

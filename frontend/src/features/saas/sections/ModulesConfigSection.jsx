@@ -31,6 +31,10 @@ function ModulesConfigSection(props = {}) {
     canEditModules,
     canViewModules = canEditModules,
     canViewTenantSettings = true,
+    canViewOwnDevices = true,
+    canRevokeOwnDevices = true,
+    canViewAllDevices = false,
+    canRevokeAllDevices = false,
     ensureSectionData = null,
     isLoading = null,
     getError = null,
@@ -94,7 +98,7 @@ function ModulesConfigSection(props = {}) {
                 defaultLabel: 'Sí',
                 assignedUsers: '-',
                 updatedAt: formatDateTimeLabel?.(tenantSettings?.updatedAt) || '-'
-            }, {
+            }, canViewOwnDevices ? {
                 id: CONFIG_KEYS.AUTH_DEVICES,
                 name: 'Mis dispositivos',
                 phone: 'Sesion segura',
@@ -103,7 +107,7 @@ function ModulesConfigSection(props = {}) {
                 defaultLabel: 'No',
                 assignedUsers: '-',
                 updatedAt: '-'
-            }, {
+            } : null, {
                 id: CONFIG_KEYS.SMTP_EMAIL,
                 name: 'Correo',
                 phone: 'SMTP por tenant',
@@ -121,7 +125,7 @@ function ModulesConfigSection(props = {}) {
                 defaultLabel: 'No',
                 assignedUsers: '-',
                 updatedAt: '-'
-            }];
+            }].filter(Boolean);
         }
         return (Array.isArray(waModules) ? waModules : []).map((module) => ({
             id: module?.moduleId || module?.id || module?.code,
@@ -134,7 +138,7 @@ function ModulesConfigSection(props = {}) {
             updatedAt: formatDateTimeLabel?.(module?.updatedAt) || '-',
             raw: module
         }));
-    }, [MODULE_KEYS, formatDateTimeLabel, isGeneralConfigSection, tenantSettings, waModules]);
+    }, [MODULE_KEYS, canViewOwnDevices, formatDateTimeLabel, isGeneralConfigSection, tenantSettings, waModules]);
 
     const columns = React.useMemo(() => [
         { key: 'name', label: 'Nombre', width: '32%', minWidth: '240px', sortable: true },
@@ -230,15 +234,20 @@ function ModulesConfigSection(props = {}) {
                 MODULE_KEYS={MODULE_KEYS}
             />
 
-            <DevicesSettingsDetailPane
-                isGeneralConfigSection={isGeneralConfigSection}
-                selectedConfigKey={selectedConfigKey}
-                requestJson={requestJson}
-                formatDateTimeLabel={formatDateTimeLabel}
-                currentUser={currentUser}
-                isSuperAdmin={isSuperAdmin}
-                userRole={userRole}
-            />
+            {canViewOwnDevices ? (
+                <DevicesSettingsDetailPane
+                    isGeneralConfigSection={isGeneralConfigSection}
+                    selectedConfigKey={selectedConfigKey}
+                    requestJson={requestJson}
+                    formatDateTimeLabel={formatDateTimeLabel}
+                    currentUser={currentUser}
+                    isSuperAdmin={isSuperAdmin}
+                    userRole={userRole}
+                    canRevokeOwnDevices={canRevokeOwnDevices}
+                    canViewAllDevices={canViewAllDevices}
+                    canRevokeAllDevices={canRevokeAllDevices}
+                />
+            ) : null}
 
             <SmtpSettingsDetailPane
                 settingsTenantId={settingsTenantId}
@@ -309,6 +318,10 @@ function ModulesConfigSection(props = {}) {
         buildInitials,
         busy,
         canEditModules,
+        canRevokeAllDevices,
+        canRevokeOwnDevices,
+        canViewAllDevices,
+        canViewOwnDevices,
         clearConfigSelection,
         currentUser,
         formatDateTimeLabel,
@@ -395,7 +408,7 @@ function ModulesConfigSection(props = {}) {
             selectedId={selectedEntityId}
             onSelect={(row) => {
                 if (isGeneralConfigSection) {
-                    if (row?.id === CONFIG_KEYS.AUTH_DEVICES) {
+                    if (row?.id === CONFIG_KEYS.AUTH_DEVICES && canViewOwnDevices) {
                         setSelectedConfigKey?.(CONFIG_KEYS.AUTH_DEVICES);
                     } else if (row?.id === CONFIG_KEYS.SMTP_EMAIL) {
                         setSelectedConfigKey?.(CONFIG_KEYS.SMTP_EMAIL);
@@ -425,7 +438,7 @@ function ModulesConfigSection(props = {}) {
                 isGeneralConfigSection
                     ? { label: 'Configuración general', onClick: openConfigSettingsView, disabled: busy || !settingsTenantId }
                     : null,
-                isGeneralConfigSection
+                isGeneralConfigSection && canViewOwnDevices
                     ? { label: 'Mis dispositivos', onClick: () => setSelectedConfigKey?.(CONFIG_KEYS.AUTH_DEVICES), disabled: busy }
                     : null,
                 isGeneralConfigSection

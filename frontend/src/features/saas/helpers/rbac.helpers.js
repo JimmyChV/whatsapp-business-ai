@@ -100,6 +100,10 @@ export const PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE = 'tenant.chat_assignment
 export const PERMISSION_TENANT_ASSIGNMENT_RULES_READ = 'tenant.assignment_rules.read';
 export const PERMISSION_TENANT_ASSIGNMENT_RULES_MANAGE = 'tenant.assignment_rules.manage';
 export const PERMISSION_TENANT_KPIS_READ = 'tenant.kpis.read';
+export const PERMISSION_DEVICES_VIEW_OWN = 'devices:view_own';
+export const PERMISSION_DEVICES_REVOKE_OWN = 'devices:revoke_own';
+export const PERMISSION_DEVICES_VIEW_ALL = 'devices:view_all';
+export const PERMISSION_DEVICES_REVOKE_ALL = 'devices:revoke_all';
 
 export function sanitizeMemberships(memberships = []) {
     return (Array.isArray(memberships) ? memberships : [])

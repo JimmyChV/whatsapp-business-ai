@@ -45,7 +45,11 @@ export const PERMISSION_DESCRIPTIONS = Object.freeze({
     'tenant.users.read': 'Ver usuarios del tenant y sus accesos.',
     'tenant.users.manage': 'Crear, editar y desactivar usuarios del tenant.',
     'tenant.users.owner.assign': 'Asignar usuarios con rol owner.',
-    'tenant.overview.read': 'Ver resumen general del tenant.'
+    'tenant.overview.read': 'Ver resumen general del tenant.',
+    'devices:view_own': 'Ver los dispositivos autorizados de tu cuenta.',
+    'devices:revoke_own': 'Revocar sesiones de tus propios dispositivos.',
+    'devices:view_all': 'Ver dispositivos autorizados de otros usuarios.',
+    'devices:revoke_all': 'Revocar dispositivos autorizados de otros usuarios.'
 });
 
 export const PERMISSION_GROUPS = Object.freeze([
@@ -124,7 +128,11 @@ export const PERMISSION_GROUPS = Object.freeze([
             'tenant.assets.upload',
             'tenant.users.read',
             'tenant.users.manage',
-            'tenant.users.owner.assign'
+            'tenant.users.owner.assign',
+            'devices:view_own',
+            'devices:revoke_own',
+            'devices:view_all',
+            'devices:revoke_all'
         ]
     }
 ]);
