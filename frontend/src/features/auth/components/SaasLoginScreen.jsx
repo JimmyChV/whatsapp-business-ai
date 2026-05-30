@@ -44,6 +44,12 @@ function SaasLoginScreen({
   handleRecoveryReset,
   resetRecoveryFlow
 }) {
+  console.log('[Login] render', {
+    deviceAuthStep,
+    recoveryStep,
+    showingOtp: recoveryStep === 'idle' && deviceAuthStep === 'otp'
+  });
+
   return (
     <div className='login-screen login-screen--saas'>
       <div className='saas-login-shell fade-in'>
