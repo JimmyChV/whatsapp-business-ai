@@ -4,6 +4,7 @@ async function requestJson(path, { method = 'GET', headers = {}, body } = {}) {
   const response = await fetch(`${API_URL}${path}`, {
     method,
     headers,
+    credentials: 'include',
     ...(body !== undefined ? { body: JSON.stringify(body) } : {})
   });
   const payload = await response.json().catch(() => ({}));
@@ -61,20 +62,20 @@ export async function resetSaasRecovery({ email, resetToken, newPassword, header
   return assertOk(result, 'No se pudo actualizar la contrasena.');
 }
 
-export async function logoutSaas({ accessToken, refreshToken, headers = {} }) {
+export async function logoutSaas({ accessToken, headers = {} }) {
   const result = await requestJson('/api/auth/logout', {
     method: 'POST',
     headers,
-    body: { accessToken, refreshToken }
+    body: { accessToken }
   });
   return assertOk(result, 'No se pudo cerrar sesion.');
 }
 
-export async function switchSaasTenant({ targetTenantId, refreshToken, headers = {} }) {
+export async function switchSaasTenant({ targetTenantId, headers = {} }) {
   const result = await requestJson('/api/auth/switch-tenant', {
     method: 'POST',
     headers,
-    body: { targetTenantId, refreshToken }
+    body: { targetTenantId }
   });
   return assertOk(result, 'No se pudo cambiar de empresa.');
 }

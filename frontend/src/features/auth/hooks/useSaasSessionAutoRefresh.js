@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 
 export default function useSaasSessionAutoRefresh({
   authEnabled = false,
-  refreshToken = '',
   accessExpiresAtUnix = 0,
   saasSessionRef,
   refreshSaasSession,
@@ -11,7 +10,6 @@ export default function useSaasSessionAutoRefresh({
 }) {
   useEffect(() => {
     if (!authEnabled) return;
-    if (!refreshToken) return;
     if (!Number.isFinite(Number(accessExpiresAtUnix)) || Number(accessExpiresAtUnix) <= 0) return;
 
     let cancelled = false;
@@ -42,7 +40,6 @@ export default function useSaasSessionAutoRefresh({
     accessExpiresAtUnix,
     authEnabled,
     refreshSaasSession,
-    refreshToken,
     saasSessionRef,
     setSaasAuthError,
     setSaasSession

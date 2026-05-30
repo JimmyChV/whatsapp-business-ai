@@ -104,7 +104,6 @@ export default function useAppRuntimeSessionController({
 
   useSaasSessionAutoRefresh({
     authEnabled: Boolean(saasRuntime?.authEnabled),
-    refreshToken: String(saasSession?.refreshToken || ''),
     accessExpiresAtUnix: Number(saasSession?.accessExpiresAtUnix || 0),
     saasSessionRef,
     refreshSaasSession: apiSessionExports.refreshSaasSession,

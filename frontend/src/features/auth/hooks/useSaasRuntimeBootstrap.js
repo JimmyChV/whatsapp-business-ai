@@ -54,9 +54,9 @@ export default function useSaasRuntimeBootstrap({
       if (authEnabled) {
         if (runtimeAuthed && existing?.accessToken) {
           nextSession = { ...existing, user: runtimePayload.authContext.user };
-        } else if (existing?.refreshToken) {
+        } else {
           try {
-            const refreshed = await refreshSaasSession(existing.refreshToken);
+            const refreshed = await refreshSaasSession();
             nextSession = refreshed;
             runtimeResult = await fetchRuntime(String(refreshed?.accessToken || ''));
             runtimePayload = runtimeResult.payload || runtimePayload;
@@ -66,8 +66,6 @@ export default function useSaasRuntimeBootstrap({
           } catch (_error) {
             nextSession = null;
           }
-        } else {
-          nextSession = null;
         }
       }
 

@@ -46,8 +46,7 @@ export default function useSaasApiSessionHelpers({
 
   const normalizeSaasSessionPayload = useCallback((payload = {}, previousSession = null) => {
     const accessToken = String(payload?.accessToken || '').trim();
-    const refreshToken = String(payload?.refreshToken || '').trim() || String(previousSession?.refreshToken || '').trim();
-    if (!accessToken || !refreshToken) return null;
+    if (!accessToken) return null;
 
     const now = Math.floor(Date.now() / 1000);
     const accessExpiresIn = Number(payload?.expiresInSec || 0);
@@ -58,7 +57,6 @@ export default function useSaasApiSessionHelpers({
 
     return {
       accessToken,
-      refreshToken,
       tokenType: String(payload?.tokenType || previousSession?.tokenType || 'Bearer').trim() || 'Bearer',
       accessExpiresAtUnix,
       refreshExpiresAtUnix,
@@ -68,15 +66,14 @@ export default function useSaasApiSessionHelpers({
     };
   }, []);
 
-  const refreshSaasSession = useCallback(async (refreshTokenOverride = '') => {
+  const refreshSaasSession = useCallback(async () => {
     const current = saasSessionRef.current;
-    const refreshToken = String(refreshTokenOverride || current?.refreshToken || '').trim();
-    if (!refreshToken) throw new Error('No hay refresh token disponible.');
 
     const response = await fetch(`${apiUrl}/api/auth/refresh`, {
       method: 'POST',
+      credentials: 'include',
       headers: buildApiHeaders({ includeJson: true, tokenOverride: String(current?.accessToken || '').trim() }),
-      body: JSON.stringify({ refreshToken })
+      body: JSON.stringify({})
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload?.ok) {

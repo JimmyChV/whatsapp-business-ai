@@ -15,6 +15,51 @@
     const mapPublicTenant = typeof toPublicTenant === 'function'
         ? toPublicTenant
         : (tenant) => tenant;
+    const refreshCookieName = 'saas_refresh_token';
+
+    function parseCookies(req = {}) {
+        const header = String(req.headers?.cookie || '').trim();
+        if (!header) return {};
+        return header.split(';').reduce((acc, part) => {
+            const index = part.indexOf('=');
+            if (index <= 0) return acc;
+            const key = decodeURIComponent(part.slice(0, index).trim());
+            const value = decodeURIComponent(part.slice(index + 1).trim());
+            if (key) acc[key] = value;
+            return acc;
+        }, {});
+    }
+
+    function getRefreshTokenFromRequest(req = {}) {
+        return String(parseCookies(req)[refreshCookieName] || '').trim();
+    }
+
+    function setRefreshCookie(res, refreshToken = '', session = {}) {
+        const token = String(refreshToken || '').trim();
+        if (!token) return;
+        const maxAge = Number(session?.refreshExpiresInSec || 0) > 0
+            ? Number(session.refreshExpiresInSec) * 1000
+            : 30 * 24 * 60 * 60 * 1000;
+        res.cookie(refreshCookieName, token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge
+        });
+    }
+
+    function clearRefreshCookie(res) {
+        res.clearCookie(refreshCookieName, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict'
+        });
+    }
+
+    function stripRefreshToken(session = {}) {
+        const { refreshToken: _refreshToken, ...safeSession } = session || {};
+        return safeSession;
+    }
 
     app.post('/api/auth/login', async (req, res) => {
         const email = String(req.body?.email || '').trim().toLowerCase();
@@ -24,6 +69,7 @@
         try {
             const password = String(req.body?.password || '');
             const session = await authService.login({ email, password, tenantId, tenantSlug });
+            setRefreshCookie(res, session?.refreshToken, session);
             await auditLogService.writeAuditLog(session?.user?.tenantId || req?.tenantContext?.id || 'default', {
                 userId: session?.user?.id || null,
                 userEmail: session?.user?.email || email,
@@ -35,7 +81,7 @@
                 ip: String(req.ip || ''),
                 payload: { tenantId: session?.user?.tenantId || tenantId || null, tenantSlug }
             });
-            return res.json({ ok: true, ...session });
+            return res.json({ ok: true, ...stripRefreshToken(session) });
         } catch (error) {
             const message = String(error?.message || 'No se pudo iniciar sesion.');
             const status = message.toLowerCase().includes('inval') ? 401 : 400;
@@ -180,12 +226,13 @@
 
     app.post('/api/auth/refresh', async (req, res) => {
         try {
-            const refreshToken = String(req.body?.refreshToken || '').trim();
+            const refreshToken = getRefreshTokenFromRequest(req);
             if (!refreshToken) {
-                return res.status(400).json({ ok: false, error: 'refreshToken es requerido.' });
+                return res.status(401).json({ ok: false, error: 'refresh token requerido.' });
             }
 
             const session = await authService.refreshSession({ refreshToken });
+            setRefreshCookie(res, session?.refreshToken, session);
             await auditLogService.writeAuditLog(session?.user?.tenantId || req?.tenantContext?.id || 'default', {
                 userId: session?.user?.id || null,
                 userEmail: session?.user?.email || null,
@@ -198,7 +245,7 @@
                 payload: {}
             });
 
-            return res.json({ ok: true, ...session });
+            return res.json({ ok: true, ...stripRefreshToken(session) });
         } catch (error) {
             const message = String(error?.message || 'No se pudo renovar sesion.');
             return res.status(401).json({ ok: false, error: message });
@@ -213,7 +260,7 @@
             }
 
             const accessToken = String(authService.getTokenFromRequest(req) || req.body?.accessToken || '').trim();
-            const refreshToken = String(req.body?.refreshToken || '').trim();
+            const refreshToken = getRefreshTokenFromRequest(req);
             const targetTenantId = String(req.body?.targetTenantId || '').trim();
 
             if (!targetTenantId) {
@@ -225,6 +272,7 @@
                 refreshToken,
                 targetTenantId
             });
+            setRefreshCookie(res, session?.refreshToken, session);
 
             await auditLogService.writeAuditLog(targetTenantId, {
                 userId: session?.user?.id || authContext?.user?.userId || null,
@@ -241,7 +289,7 @@
                 }
             });
 
-            return res.json({ ok: true, ...session });
+            return res.json({ ok: true, ...stripRefreshToken(session) });
         } catch (error) {
             const message = String(error?.message || 'No se pudo cambiar de empresa.');
             const status = /acceso|requerido|invalida|expirada/i.test(message) ? 400 : 500;
@@ -253,7 +301,7 @@
         try {
             const accessTokenFromRequest = authService.getTokenFromRequest(req);
             const accessToken = String(req.body?.accessToken || accessTokenFromRequest || '').trim();
-            const refreshToken = String(req.body?.refreshToken || '').trim();
+            const refreshToken = getRefreshTokenFromRequest(req);
 
             if (!accessToken && !refreshToken) {
                 return res.status(400).json({ ok: false, error: 'Debes enviar access token o refresh token.' });
@@ -268,6 +316,7 @@
             if (!result.ok) {
                 return res.status(400).json({ ok: false, error: 'No se pudo cerrar la sesion (tokens invalidos o expirados).' });
             }
+            clearRefreshCookie(res);
 
             await auditLogService.writeAuditLog(result?.user?.tenantId || req?.tenantContext?.id || 'default', {
                 userId: result?.user?.id || null,

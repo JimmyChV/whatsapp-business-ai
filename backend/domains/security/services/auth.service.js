@@ -306,8 +306,8 @@ function isAuthEnabled() {
 }
 
 function getTokenTtlSec() {
-    const parsed = Number(process.env.SAAS_TOKEN_TTL_SEC || 8 * 60 * 60);
-    if (!Number.isFinite(parsed) || parsed <= 60) return 8 * 60 * 60;
+    const parsed = Number(process.env.SAAS_TOKEN_TTL_SEC || 900);
+    if (!Number.isFinite(parsed) || parsed <= 60) return 900;
     return Math.floor(parsed);
 }
 

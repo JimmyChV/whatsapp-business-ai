@@ -146,10 +146,9 @@ export function useSaasSessionActions({
     if (!confirmed) return;
     const current = saasSessionRef.current;
     try {
-      if (current?.accessToken || current?.refreshToken) {
+      if (current?.accessToken) {
         await logoutSaas({
           accessToken: String(current?.accessToken || ''),
-          refreshToken: String(current?.refreshToken || ''),
           headers: buildApiHeaders({
             includeJson: true,
             tokenOverride: String(current?.accessToken || '')
@@ -194,7 +193,7 @@ export function useSaasSessionActions({
   const handleSwitchTenant = useCallback(async (nextTenantId = '') => {
     if (!saasRuntimeRef.current?.authEnabled) return;
     const current = saasSessionRef.current;
-    if (!current?.accessToken || !current?.refreshToken) return;
+    if (!current?.accessToken) return;
 
     const targetTenantId = String(nextTenantId || '').trim();
     const currentTenantId = String(current?.user?.tenantId || saasRuntimeRef.current?.tenant?.id || '').trim();
@@ -206,7 +205,6 @@ export function useSaasSessionActions({
     try {
       const payload = await switchSaasTenant({
         targetTenantId,
-        refreshToken: String(current?.refreshToken || ''),
         headers: buildApiHeaders({
           includeJson: true,
           tokenOverride: String(current?.accessToken || ''),
