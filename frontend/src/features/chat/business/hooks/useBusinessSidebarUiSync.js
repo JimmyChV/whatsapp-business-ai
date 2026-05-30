@@ -6,8 +6,8 @@ export const useBusinessSidebarUiSync = ({
     activeTab = 'ai',
     quickRepliesEnabled = false,
     cart = [],
-    allowEmptyCartTab = false,
-    isImportingCart = null,
+    cartOpenReason = null,
+    setCartOpenReason = null,
     setActiveTab
 } = {}) => {
     useEffect(() => {
@@ -22,13 +22,16 @@ export const useBusinessSidebarUiSync = ({
 
     useEffect(() => {
         if (activeTab === 'quotes') return;
+        const keepEmptyCartOpen = ['import', 'quote-history'].includes(String(cartOpenReason || ''));
         if (
             activeTab === 'cart'
             && cart.length === 0
-            && !allowEmptyCartTab
-            && !isImportingCart?.current
+            && !keepEmptyCartOpen
         ) {
+            if (typeof setCartOpenReason === 'function') {
+                setCartOpenReason(null);
+            }
             setActiveTab('catalog');
         }
-    }, [activeTab, allowEmptyCartTab, cart.length, isImportingCart, setActiveTab]);
+    }, [activeTab, cart.length, cartOpenReason, setActiveTab, setCartOpenReason]);
 };

@@ -706,13 +706,14 @@ const MessageBubble = ({
                         <button
                             onClick={() => {
                                 if (typeof onLoadOrderToCart !== 'function') return;
+                                const quoteProductsForCart = orderItems.length > 0 ? orderItems : quoteItemsFromBody;
                                 const orderForCart = actionOrder && typeof actionOrder === 'object'
                                     ? (isQuotePayload
                                         ? {
                                             ...actionOrder,
                                             products: Array.isArray(actionOrder?.products) && actionOrder.products.length > 0
                                                 ? actionOrder.products
-                                                : orderItems,
+                                                : quoteProductsForCart,
                                             sourceType: 'quote',
                                             quoteId: String(actionOrder?.quoteId || actionOrder?.rawPreview?.quoteId || '').trim() || null,
                                             quoteNumber: Number.isFinite(quoteNumber) && quoteNumber > 0 ? Math.trunc(quoteNumber) : null,
@@ -728,10 +729,10 @@ const MessageBubble = ({
                                                     revisionNumber: Number.isFinite(revisionNumber) && revisionNumber > 0 ? Math.trunc(revisionNumber) : null,
                                                     products: Array.isArray(actionOrder?.rawPreview?.products) && actionOrder.rawPreview.products.length > 0
                                                         ? actionOrder.rawPreview.products
-                                                        : orderItems,
+                                                        : quoteProductsForCart,
                                                     quoteSummary: actionOrder?.rawPreview?.quoteSummary || quoteSummaryRaw || null
                                                 }
-                                                : { type: 'quote', sourceType: 'quote', products: orderItems, quoteSummary: quoteSummaryRaw || null }
+                                                : { type: 'quote', sourceType: 'quote', products: quoteProductsForCart, quoteSummary: quoteSummaryRaw || null }
                                         }
                                         : {
                                             ...actionOrder,

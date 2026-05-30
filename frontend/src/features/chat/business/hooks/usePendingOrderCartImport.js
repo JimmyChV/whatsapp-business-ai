@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import {
     normalizeCatalogItem,
     normalizeSkuKey,
@@ -12,6 +12,7 @@ export const usePendingOrderCartImport = ({
     pendingOrderCartLoad = null,
     activeChatId = '',
     catalog = [],
+    quoteHistory = [],
     lastImportedOrderRef,
     setCart,
     setShowOrderAdjustments,
@@ -22,11 +23,10 @@ export const usePendingOrderCartImport = ({
     setGlobalDiscountValue,
     setDeliveryType,
     setDeliveryAmount,
+    setCartOpenReason = null,
     updateDraft = null,
     formatMoney
 } = {}) => {
-    const isImportingRef = useRef(false);
-
     useEffect(() => {
         if (!pendingOrderCartLoad || !activeChatId) return;
         if (String(pendingOrderCartLoad.chatId || '') !== String(activeChatId)) return;
@@ -34,10 +34,20 @@ export const usePendingOrderCartImport = ({
         const token = String(pendingOrderCartLoad.token || pendingOrderCartLoad.order?.orderId || '');
         const dedupeKey = `${activeChatId}:${token}`;
         if (token && lastImportedOrderRef?.current === dedupeKey) return;
-        if (token && lastImportedOrderRef) lastImportedOrderRef.current = dedupeKey;
 
-        isImportingRef.current = true;
-        try {
+        const openImportedCart = () => {
+            if (typeof setCartOpenReason === 'function') {
+                setCartOpenReason('import');
+            }
+            if (typeof setActiveTab === 'function') {
+                setActiveTab('cart', { cartOpenReason: 'import' });
+            }
+        };
+
+        if (typeof setCartOpenReason === 'function') {
+            setCartOpenReason('import');
+        }
+
         const applyDraftPatch = (patchOrFn) => {
             if (typeof updateDraft !== 'function') return false;
             updateDraft(patchOrFn);
@@ -74,6 +84,38 @@ export const usePendingOrderCartImport = ({
             || ''
         ).toLowerCase();
         const isQuoteImport = orderType.includes('quote');
+        const orderQuoteId = String(order?.quoteId || order?.rawPreview?.quoteId || '').trim();
+        const orderQuoteNumber = Number(order?.quoteNumber ?? order?.quote_number ?? order?.rawPreview?.quoteNumber ?? order?.rawPreview?.quote_number ?? 0) || null;
+        const orderRevisionNumber = Number(order?.revisionNumber ?? order?.revision_number ?? order?.rawPreview?.revisionNumber ?? order?.rawPreview?.revision_number ?? 0) || null;
+        const orderQuoteMessageId = String(
+            order?.sourceQuoteMessageId
+            || order?.source_quote_message_id
+            || order?.rawPreview?.sourceQuoteMessageId
+            || pendingOrderCartLoad?.messageId
+            || ''
+        ).trim();
+        const matchedQuote = isQuoteImport && Array.isArray(quoteHistory)
+            ? quoteHistory.find((quote) => {
+                const quoteId = String(quote?.quoteId || quote?.quote_id || '').trim();
+                const messageId = String(quote?.messageId || quote?.message_id || '').trim();
+                const quoteNumber = Number(quote?.quoteNumber ?? quote?.quote_number ?? 0) || null;
+                const revisionNumber = Number(quote?.revisionNumber ?? quote?.revision_number ?? 0) || null;
+                if (orderQuoteId && quoteId && orderQuoteId === quoteId) return true;
+                if (orderQuoteMessageId && messageId && orderQuoteMessageId === messageId) return true;
+                if (orderQuoteNumber && quoteNumber && orderQuoteNumber === quoteNumber) {
+                    return !orderRevisionNumber || !revisionNumber || orderRevisionNumber === revisionNumber;
+                }
+                return false;
+            })
+            : null;
+        const matchedQuoteItems = [
+            matchedQuote?.itemsJson,
+            matchedQuote?.items_json,
+            matchedQuote?.items
+        ].find((items) => Array.isArray(items) && items.length > 0) || [];
+        const matchedQuoteSummary = matchedQuote?.summaryJson && typeof matchedQuote.summaryJson === 'object'
+            ? matchedQuote.summaryJson
+            : (matchedQuote?.summary && typeof matchedQuote.summary === 'object' ? matchedQuote.summary : null);
         const sourceOrderId = String(
             order?.rawPreview?.token
             || order?.rawPreview?.orderId
@@ -97,16 +139,10 @@ export const usePendingOrderCartImport = ({
             applyDraftPatch({
                 sourceOrder: null,
                 sourceQuote: {
-                    quoteId: String(order?.quoteId || order?.rawPreview?.quoteId || '').trim() || null,
-                    quoteNumber: Number(order?.quoteNumber ?? order?.quote_number ?? order?.rawPreview?.quoteNumber ?? order?.rawPreview?.quote_number ?? 0) || null,
-                    revisionNumber: Number(order?.revisionNumber ?? order?.revision_number ?? order?.rawPreview?.revisionNumber ?? order?.rawPreview?.revision_number ?? 0) || null,
-                    messageId: String(
-                        order?.sourceQuoteMessageId
-                        || order?.source_quote_message_id
-                        || order?.rawPreview?.sourceQuoteMessageId
-                        || pendingOrderCartLoad?.messageId
-                        || ''
-                    ).trim() || null
+                    quoteId: orderQuoteId || String(matchedQuote?.quoteId || matchedQuote?.quote_id || '').trim() || null,
+                    quoteNumber: orderQuoteNumber || Number(matchedQuote?.quoteNumber ?? matchedQuote?.quote_number ?? 0) || null,
+                    revisionNumber: orderRevisionNumber || Number(matchedQuote?.revisionNumber ?? matchedQuote?.revision_number ?? 0) || null,
+                    messageId: orderQuoteMessageId || String(matchedQuote?.messageId || matchedQuote?.message_id || '').trim() || null
                 },
                 sourceType: 'quote'
             });
@@ -116,49 +152,50 @@ export const usePendingOrderCartImport = ({
         const isProductImport = orderType.includes('product') && !String(order?.orderId || '').trim();
         const quoteSummary = order?.rawPreview?.quoteSummary && typeof order.rawPreview.quoteSummary === 'object'
             ? order.rawPreview.quoteSummary
-            : null;
-        const sourceItems = [
+            : matchedQuoteSummary;
+        const firstArray = (...candidates) => candidates.find((items) => Array.isArray(items) && items.length > 0) || [];
+        const rawSourceItems = firstArray(
             order.products,
             order.rawPreview?.products,
             order.items,
-            order.rawPreview?.items
-        ].find((items) => Array.isArray(items) && items.length > 0) || [];
+            order.rawPreview?.items,
+            order.lineItems,
+            order.line_items,
+            order.rawPreview?.lineItems,
+            order.rawPreview?.line_items,
+            order.rawPreview?.order?.products,
+            order.rawPreview?.order?.items,
+            order.payload?.products,
+            order.payload?.items,
+            matchedQuoteItems
+        );
+        const sourceItems = rawSourceItems
+            .map((line, idx) => {
+                if (line && typeof line === 'object') return line;
+                const text = String(line || '').trim();
+                return text ? { name: text, quantity: 1, sourceIndex: idx } : null;
+            })
+            .filter(Boolean);
         const titleFallbackItems = sourceItems.length === 0
-            ? parseOrderTitleItems(order?.rawPreview?.title || order?.rawPreview?.orderTitle || '')
+            ? firstArray(
+                parseOrderTitleItems(order?.rawPreview?.title || order?.rawPreview?.orderTitle || ''),
+                parseOrderTitleItems(order?.rawPreview?.body || order?.body || order?.text || ''),
+                parseOrderTitleItems(order?.rawPreview?.text || '')
+            )
             : [];
         const itemsToImport = sourceItems.length > 0 ? sourceItems : titleFallbackItems;
         const usedTitleFallback = sourceItems.length === 0 && titleFallbackItems.length > 0;
 
         if (itemsToImport.length === 0) {
-            const reportedCountRaw = parseMoney(order?.rawPreview?.itemCount ?? 1, 1);
-            const reportedCount = Math.max(1, Math.round(Number.isFinite(reportedCountRaw) ? reportedCountRaw : 1));
-            const subtotalValue = Math.max(0, parseMoney(order?.subtotal ?? 0, 0));
-            const unitValue = reportedCount > 0 ? (subtotalValue / reportedCount) : subtotalValue;
-
-            const fallbackCart = [{
-                id: `meta_order_unknown_${String(order?.orderId || token || Date.now())}`,
-                title: 'Pedido WhatsApp (detalle no disponible)',
-                price: Math.max(0, unitValue).toFixed(2),
-                regularPrice: Math.max(0, unitValue).toFixed(2),
-                salePrice: null,
-                discountPct: 0,
-                description: 'Meta/WhatsApp no devolvio lineas del pedido en esta sesion. Puedes aplicar descuento y delivery.',
-                imageUrl: null,
-                source: 'meta_order',
-                sku: null,
-                stockStatus: null,
-                qty: reportedCount,
-                lineDiscountEnabled: false,
-                lineDiscountType: 'percent',
-                lineDiscountValue: 0
-            }];
-
-            applyCartChange(fallbackCart, { showOrderAdjustments: true });
-            setActiveTab('cart');
+            applyDraftPatch({ cart: [], sourceOrder: null, sourceQuote: null, sourceType: null });
             setOrderImportStatus({
                 level: 'warn',
-                text: `Pedido cargado sin detalle de productos (items reportados: ${reportedCount}). Usa subtotal S/ ${formatMoney(subtotalValue)} y aplica ajustes.`
+                text: 'No se pudo cargar el detalle de esta cotización'
             });
+            setActiveTab('catalog');
+            if (typeof setCartOpenReason === 'function') {
+                setCartOpenReason(null);
+            }
             return;
         }
 
@@ -182,9 +219,29 @@ export const usePendingOrderCartImport = ({
         itemsToImport.forEach((line, idx) => {
             if (!line || typeof line !== 'object') return;
 
-            const rawSku = String(line.sku || line.retailer_id || line.product_retailer_id || '').trim();
+            const rawSku = String(
+                line.sku
+                || line.SKU
+                || line.retailer_id
+                || line.retailerId
+                || line.product_retailer_id
+                || line.productRetailerId
+                || line.product?.sku
+                || line.item?.sku
+                || ''
+            ).trim();
             const skuKey = normalizeSkuKey(rawSku);
-            const rawName = String(line.name || line.title || '').trim();
+            const rawName = String(
+                line.name
+                || line.title
+                || line.productName
+                || line.product_name
+                || line.product?.name
+                || line.product?.title
+                || line.item?.name
+                || line.item?.title
+                || ''
+            ).trim();
             const nameKey = normalizeTextKey(rawName);
 
             let matched = null;
@@ -203,13 +260,13 @@ export const usePendingOrderCartImport = ({
                 if (matched) matchedByName += 1;
             }
 
-            const qtyRaw = parseMoney(line.quantity ?? line.qty ?? 1, 1);
+            const qtyRaw = parseMoney(line.quantity ?? line.qty ?? line.count ?? line.amount ?? 1, 1);
             const qty = isProductImport
                 ? 1
                 : Math.max(1, Math.round(Number.isFinite(qtyRaw) ? qtyRaw : 1));
-            const linePrice = parseMoney(line.price ?? line.unitPrice ?? 0, 0);
-            const lineTotal = parseMoney(line.lineTotal ?? line.total ?? 0, 0);
-            const lineSubtotal = parseMoney(line.lineSubtotal ?? line.subtotal ?? (qty * linePrice), 0);
+            const linePrice = parseMoney(line.price ?? line.unitPrice ?? line.unit_price ?? line.itemPrice ?? line.item_price ?? 0, 0);
+            const lineTotal = parseMoney(line.lineTotal ?? line.line_total ?? line.total ?? line.totalPrice ?? line.total_price ?? 0, 0);
+            const lineSubtotal = parseMoney(line.lineSubtotal ?? line.line_subtotal ?? line.subtotal ?? line.subtotalPrice ?? line.subtotal_price ?? (qty * linePrice), 0);
             const lineDiscountAmount = Math.max(0, parseMoney(line.lineDiscountAmount ?? 0, 0));
             const rawLineDiscountType = String(line.lineDiscountType || line.discountType || '').trim().toLowerCase();
             const lineDiscountType = rawLineDiscountType === 'amount' ? 'amount' : 'percent';
@@ -282,10 +339,15 @@ export const usePendingOrderCartImport = ({
 
         const importedCart = Array.from(merged.values());
         if (importedCart.length === 0) {
+            applyDraftPatch({ cart: [], sourceOrder: null, sourceQuote: null, sourceType: null });
             setOrderImportStatus({
                 level: 'warn',
-                text: 'Pedido recibido, pero no se pudo convertir a items del carrito.'
+                text: 'No se pudo cargar el detalle de esta cotización'
             });
+            setActiveTab('catalog');
+            if (typeof setCartOpenReason === 'function') {
+                setCartOpenReason(null);
+            }
             return;
         }
 
@@ -331,7 +393,10 @@ export const usePendingOrderCartImport = ({
         } else {
             applyCartChange(importedCart, { showOrderAdjustments: true });
         }
-        setActiveTab('cart');
+        if (token && lastImportedOrderRef) {
+            lastImportedOrderRef.current = dedupeKey;
+        }
+        openImportedCart();
 
         let quoteDiscountAmount = 0;
         let importedLineDiscountTotal = 0;
@@ -410,13 +475,11 @@ export const usePendingOrderCartImport = ({
             level: fallbackLines > 0 ? 'warn' : 'ok',
             text: `${statusBits.join(' | ')}${subtotalLabel}`
         });
-        } finally {
-            isImportingRef.current = false;
-        }
     }, [
         pendingOrderCartLoad,
         activeChatId,
         catalog,
+        quoteHistory,
         lastImportedOrderRef,
         setCart,
         setShowOrderAdjustments,
@@ -427,11 +490,10 @@ export const usePendingOrderCartImport = ({
         setGlobalDiscountValue,
         setDeliveryType,
         setDeliveryAmount,
+        setCartOpenReason,
         updateDraft,
         formatMoney
     ]);
-
-    return { isImportingCart: isImportingRef };
 };
 
 

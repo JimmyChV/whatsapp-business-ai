@@ -162,12 +162,7 @@ export default function OperationPage({
   const handleMobileLoadOrderToCart = useCallback((orderPayload) => {
     if (!activeChatId) return;
     if (!orderPayload || typeof orderPayload !== 'object') return;
-    handleLoadOrderToCart?.(activeChatId, orderPayload);
-    setMobileToolRequest({
-      tabId: 'cart',
-      source: 'chat-order',
-      token: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    });
+    handleLoadOrderToCart?.(orderPayload);
     setMobilePanel('tools');
   }, [activeChatId, handleLoadOrderToCart]);
   const effectiveMobilePanel = activeChatId ? mobilePanel : 'list';

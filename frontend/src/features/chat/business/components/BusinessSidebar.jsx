@@ -56,11 +56,18 @@ export { ClientProfilePanel };
 const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], messagesRef = null, activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, onSendCatalogProduct = null, waCapabilities = {}, pendingOrderCartLoad = null, requestedToolTab = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null, cartDraftsByChat: externalCartDraftsByChat = {}, setCartDraftsByChat: externalSetCartDraftsByChat = null, chatAssignmentState = null, chatCommercialStatusState = null, buildApiHeaders = null, onMobileBackToChat = null, onMobileOpenTools = null }) => {
     const { notify, confirm } = useUiFeedback();
     const [activeTab, setActiveTab] = useState('ai');
+    const [cartOpenReason, setCartOpenReason] = useState(null);
     const [showCompanyProfile, setShowCompanyProfile] = useState(false);
     const [pattySuggestion, setPattySuggestion] = useState(null);
     const companyProfileRef = useRef(null);
     const liveMessagesRef = useRef([]);
-    const openToolsPanel = useCallback((tabId) => {
+    const openToolsPanel = useCallback((tabId, options = {}) => {
+        const reason = String(options?.cartOpenReason || '').trim();
+        if (tabId === 'cart') {
+            setCartOpenReason(reason || 'manual');
+        } else if (tabId && tabId !== 'cart') {
+            setCartOpenReason(null);
+        }
         if (tabId) setActiveTab(tabId);
         setShowCompanyProfile(false);
         onMobileOpenTools?.();
@@ -123,20 +130,6 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const sourceQuote = activeDraft.sourceQuote && typeof activeDraft.sourceQuote === 'object'
         ? activeDraft.sourceQuote
         : null;
-    const isEditingQuoteCart = Boolean(sourceQuote?.quoteId);
-    const pendingCartImportKey = useMemo(() => {
-        if (!pendingOrderCartLoad || !activeChatId) return '';
-        if (String(pendingOrderCartLoad.chatId || '') !== String(activeChatId)) return '';
-        if (!pendingOrderCartLoad.order || typeof pendingOrderCartLoad.order !== 'object') return '';
-        return [
-            activeChatId,
-            pendingOrderCartLoad.token,
-            pendingOrderCartLoad.order?.orderId,
-            pendingOrderCartLoad.order?.quoteId,
-            pendingOrderCartLoad.order?.sourceQuoteMessageId,
-            pendingOrderCartLoad.messageId
-        ].filter(Boolean).join(':');
-    }, [activeChatId, pendingOrderCartLoad]);
     const [chatQuotesByChat, setChatQuotesByChat] = useState({});
     const [quoteHistoryExpanded, setQuoteHistoryExpanded] = useState(true);
     const buildInitialQuoteOptionsWizardState = useCallback(() => ({
@@ -165,7 +158,6 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const [quickSearch, setQuickSearch] = useState('');
     const [orderImportStatus, setOrderImportStatus] = useState(null);
     const lastImportedOrderRef = useRef('');
-    const lastOpenedCartImportRef = useRef('');
     const tenantScopeRef = useRef(String(tenantScopeKey || 'default').trim() || 'default');
     const canWriteByAssignment = typeof chatAssignmentState?.isAssignedToMe === 'function'
         ? chatAssignmentState.isAssignedToMe(activeChatId)
@@ -405,10 +397,11 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setAiScopeLoading,
         setAiThreadMessages
     });
-    const { isImportingCart } = usePendingOrderCartImport({
+    usePendingOrderCartImport({
         pendingOrderCartLoad,
         activeChatId,
         catalog,
+        quoteHistory,
         lastImportedOrderRef,
         setCart,
         setShowOrderAdjustments,
@@ -419,29 +412,29 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setGlobalDiscountValue,
         setDeliveryType,
         setDeliveryAmount,
+        setCartOpenReason,
         updateDraft,
         formatMoney
     });
     useEffect(() => {
         const requestedTabId = String(requestedToolTab?.tabId || '').trim();
         if (!requestedTabId) return;
+        if (requestedTabId === 'cart') {
+            setCartOpenReason('import');
+        } else {
+            setCartOpenReason(null);
+        }
         setActiveTab(requestedTabId);
         setShowCompanyProfile(false);
     }, [requestedToolTab]);
-    useEffect(() => {
-        if (!pendingCartImportKey) return;
-        if (lastOpenedCartImportRef.current === pendingCartImportKey) return;
-        lastOpenedCartImportRef.current = pendingCartImportKey;
-        openToolsPanel('cart');
-    }, [openToolsPanel, pendingCartImportKey]);
     useBusinessSidebarUiSync({
         aiEndRef,
         aiMessages,
         activeTab,
         quickRepliesEnabled,
         cart,
-        allowEmptyCartTab: false,
-        isImportingCart,
+        cartOpenReason,
+        setCartOpenReason,
         setActiveTab
     });
     useCompanyProfileOverlay({
@@ -793,13 +786,32 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             level: 'ok',
             text: 'Nueva cotizacion lista. Agrega productos desde el catalogo.'
         });
+        setCartOpenReason(null);
         openToolsPanel('catalog');
     }, [canWriteByAssignment, notifyAssignmentLock, openToolsPanel, setCart, updateDraft]);
 
     const handleLoadQuoteToCart = useCallback((quote = {}) => {
         const normalized = normalizeQuoteHistoryItem(quote);
         if (!normalized) return;
-        const quoteItems = Array.isArray(normalized.itemsJson) ? normalized.itemsJson : [];
+        const quoteItems = [
+            normalized?.itemsJson,
+            normalized?.items_json,
+            quote?.itemsJson,
+            quote?.items_json,
+            quote?.items
+        ].find((items) => Array.isArray(items) && items.length > 0) || [];
+        if (quoteItems.length === 0) {
+            console.warn('[BusinessSidebar] quote cart load without items', {
+                quoteId: normalized?.quoteId || quote?.quoteId || quote?.quote_id || null,
+                quoteNumber: normalized?.quoteNumber || quote?.quoteNumber || quote?.quote_number || null,
+                keys: quote && typeof quote === 'object' ? Object.keys(quote) : []
+            });
+            setOrderImportStatus({
+                level: 'warn',
+                text: 'No se pudo cargar el detalle de esta cotización'
+            });
+            return;
+        }
         const importedCart = quoteItems.map((item, index) => {
             const qty = Math.max(1, Number(item?.qty ?? item?.quantity ?? 1) || 1);
             const unitPrice = Math.max(0, Number(item?.unitPrice ?? item?.price ?? 0) || 0);
@@ -853,7 +865,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             level: 'ok',
             text: `Cotizacion ${normalized.quoteNumber || ''}${normalized.revisionNumber > 1 ? ` (Rev. ${normalized.revisionNumber})` : ''} cargada para editar.`.replace(/\s+/g, ' ').trim()
         });
-        openToolsPanel('cart');
+        openToolsPanel('cart', { cartOpenReason: 'quote-history' });
     }, [normalizeQuoteHistoryItem, openToolsPanel, updateDraft]);
 
     const sendQuoteToChat = async () => {
@@ -918,6 +930,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         socket.emit('send_structured_quote', payload);
         setCart([]);
         updateDraft({ sourceOrder: null, sourceQuote: null, sourceType: null });
+        setCartOpenReason(null);
         returnToChatPanel();
     };
 
@@ -1056,7 +1069,13 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             notifyWindowLock();
             return;
         }
-        setCart((previous) => removeItemFromCartState(previous, id));
+        setCart((previous) => {
+            const next = removeItemFromCartState(previous, id);
+            if (!Array.isArray(next) || next.length === 0) {
+                setCartOpenReason(null);
+            }
+            return next;
+        });
     };
 
     const updateQty = (id, delta) => {
@@ -1140,9 +1159,12 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         const haystack = `${item?.label || ''} ${item?.text || ''}`.toLowerCase();
         return haystack.includes(q);
     });
+    const showCartTab = activeTab === 'cart' || ['import', 'manual', 'quote-history'].includes(String(cartOpenReason || ''));
     const tabs = [
         ...(aiPanelAvailable ? [{ id: 'ai', icon: <Bot size={15} />, label: 'IA Pro', tier: 'primary' }] : []),
-        { id: 'catalog', icon: <Package size={15} />, label: 'Catalogo', tier: 'primary' },
+        showCartTab
+            ? { id: 'cart', icon: <ShoppingCart size={15} />, label: 'Carrito', tier: 'primary' }
+            : { id: 'catalog', icon: <Package size={15} />, label: 'Catalogo', tier: 'primary' },
         { id: 'coverage', icon: <MapPin size={15} />, label: 'Cobertura', tier: 'primary' },
         { id: 'quotes', icon: <FileText size={15} />, label: 'Cotizaciones', tier: 'secondary' },
         ...(quickRepliesEnabled ? [{ id: 'quick', icon: <Clock size={15} />, label: 'Rapidas', tier: 'secondary' }] : []),
@@ -1280,7 +1302,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                         });
                     }
                     returnToChatPanel();
-                }} canWriteByAssignment={canUseMessageTools} quoteOptionsWizard={quoteOptionsWizard} onQuoteOptionsWizardChange={updateQuoteOptionsWizard} onResetQuoteOptionsWizard={resetQuoteOptionsWizard} onOpenCart={() => openToolsPanel('cart')} />
+                }} canWriteByAssignment={canUseMessageTools} quoteOptionsWizard={quoteOptionsWizard} onQuoteOptionsWizardChange={updateQuoteOptionsWizard} onResetQuoteOptionsWizard={resetQuoteOptionsWizard} onOpenCart={() => openToolsPanel('cart', { cartOpenReason: 'manual' })} />
             )}
 
             {activeTab === 'coverage' && (
@@ -1306,12 +1328,6 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     orderImportStatus={orderImportStatus}
                     sourceOrder={sourceOrder}
                     sourceQuote={sourceQuote}
-                    quoteHistory={quoteHistory}
-                    quoteHistoryExpanded={quoteHistoryExpanded}
-                    setQuoteHistoryExpanded={setQuoteHistoryExpanded}
-                    onLoadQuoteToCart={handleLoadQuoteToCart}
-                    onStartNewQuote={handleStartNewQuote}
-                    quoteOptionsModeActive={quoteOptionsModeActive}
                     getLineBreakdown={getLineBreakdown}
                     removeFromCart={removeFromCart}
                     updateQty={updateQty}
@@ -1341,7 +1357,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     cartTotal={cartTotal}
                     sendQuoteToChat={sendQuoteToChat}
                     canWriteByAssignment={canUseMessageTools}
-                    showQuoteHistory={!isEditingQuoteCart}
+                    onBackToCatalog={() => openToolsPanel('catalog')}
                 />
             )}
 
