@@ -312,6 +312,29 @@ function getTokenTtlSec() {
     return Math.floor(parsed);
 }
 
+function normalizeDeviceType(value = '') {
+    const type = String(value || '').trim().toLowerCase();
+    if (['mobile', 'desktop', 'tablet'].includes(type)) return type;
+    return 'desktop';
+}
+
+function getTokenTtlSecForDevice(deviceType = '') {
+    const normalized = normalizeDeviceType(deviceType);
+    const envKey = normalized === 'mobile'
+        ? 'SAAS_MOBILE_TOKEN_TTL_SEC'
+        : normalized === 'tablet'
+            ? 'SAAS_TABLET_TOKEN_TTL_SEC'
+            : 'SAAS_DESKTOP_TOKEN_TTL_SEC';
+    const fallback = normalized === 'mobile'
+        ? 365 * 24 * 60 * 60
+        : normalized === 'tablet'
+            ? 8 * 60 * 60
+            : 3 * 60 * 60;
+    const parsed = Number(process.env[envKey] || fallback);
+    if (!Number.isFinite(parsed) || parsed <= 60) return fallback;
+    return Math.floor(parsed);
+}
+
 function buildAccessToken(payload = {}) {
     const headerPart = toBase64Url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
     const payloadPart = toBase64Url(JSON.stringify(payload));
@@ -517,15 +540,18 @@ function getAllowedTenantsForUser(user = {}, tenants = []) {
     return safeTenants.filter((tenant) => String(tenant?.id || '').trim() === fallbackTenantId);
 }
 
-function buildAccessSessionForUser(user = {}) {
+function buildAccessSessionForUser(user = {}, options = {}) {
     const now = nowEpochSeconds();
-    const ttl = getTokenTtlSec();
+    const hasDeviceType = String(options?.deviceType || user?.deviceType || '').trim().length > 0;
+    const deviceType = normalizeDeviceType(options?.deviceType || user?.deviceType || '');
+    const ttl = hasDeviceType ? getTokenTtlSecForDevice(deviceType) : getTokenTtlSec();
     const payload = {
         sub: String(user.id || '').trim(),
         email: String(user.email || '').trim().toLowerCase(),
         tenantId: String(user.tenantId || 'default').trim(),
         role: normalizeRole(user.role),
         name: String(user.name || '').trim() || null,
+        deviceType,
         iat: now,
         exp: now + ttl,
         jti: randomTokenId('jti')
@@ -540,9 +566,9 @@ function buildAccessSessionForUser(user = {}) {
     };
 }
 
-async function issueSessionForScopedUser(user = {}) {
+async function issueSessionForScopedUser(user = {}, options = {}) {
     const scoped = resolveScopedUser(user, user?.tenantId);
-    const accessSession = buildAccessSessionForUser(scoped);
+    const accessSession = buildAccessSessionForUser(scoped, options);
     const refresh = await authSessionService.issueRefreshSession({
         tenantId: scoped.tenantId,
         user: {
@@ -560,6 +586,7 @@ async function issueSessionForScopedUser(user = {}) {
         refreshToken: refresh.refreshToken,
         refreshExpiresInSec: refresh.expiresInSec,
         refreshExpiresAtUnix: refresh.expiresAtUnix,
+        deviceType: accessSession.payload.deviceType,
         user: sanitizeUser(scoped)
     };
 }
@@ -617,10 +644,12 @@ async function login({ email = '', password = '', tenantId = '', tenantSlug = ''
             };
         }
     }
-    return issueSessionForScopedUser(scoped);
+    return issueSessionForScopedUser(scoped, {
+        deviceType: deviceContext?.deviceType || deviceContext?.device_type || ''
+    });
 }
 
-async function issueSessionForDevice({ userId = '', tenantId = '' } = {}) {
+async function issueSessionForDevice({ userId = '', tenantId = '', deviceId = '' } = {}) {
     if (!isAuthEnabled()) {
         throw new Error('Autenticacion SaaS deshabilitada.');
     }
@@ -640,11 +669,18 @@ async function issueSessionForDevice({ userId = '', tenantId = '' } = {}) {
         throw new Error('Usuario sin acceso al tenant del dispositivo.');
     }
 
+    let deviceType = '';
+    const cleanDeviceId = String(deviceId || '').trim();
+    if (cleanDeviceId) {
+        const device = await deviceAuthService.getDeviceSession(cleanDeviceId).catch(() => null);
+        deviceType = String(device?.deviceType || '').trim();
+    }
+
     const scoped = resolveScopedUser(userRecord, cleanTenantId);
-    return issueSessionForScopedUser(scoped);
+    return issueSessionForScopedUser(scoped, { deviceType });
 }
 
-async function refreshSession({ refreshToken = '' } = {}) {
+async function refreshSession({ refreshToken = '', deviceId = '' } = {}) {
     if (!isAuthEnabled()) {
         throw new Error('Autenticacion SaaS deshabilitada.');
     }
@@ -676,7 +712,13 @@ async function refreshSession({ refreshToken = '' } = {}) {
             memberships: [{ tenantId: rotated.tenantId, role: normalizeRole(rotated.role) }]
         }, rotated.tenantId);
 
-    const accessSession = buildAccessSessionForUser(scopedUser);
+    let deviceType = '';
+    const cleanDeviceId = String(deviceId || '').trim();
+    if (cleanDeviceId) {
+        const device = await deviceAuthService.getDeviceSession(cleanDeviceId).catch(() => null);
+        deviceType = String(device?.deviceType || '').trim();
+    }
+    const accessSession = buildAccessSessionForUser(scopedUser, { deviceType });
 
     return {
         accessToken: accessSession.accessToken,
@@ -685,11 +727,12 @@ async function refreshSession({ refreshToken = '' } = {}) {
         refreshToken: rotated.refreshToken,
         refreshExpiresInSec: rotated.refreshExpiresInSec,
         refreshExpiresAtUnix: rotated.refreshExpiresAtUnix,
+        deviceType: accessSession.payload.deviceType,
         user: sanitizeUser(scopedUser)
     };
 }
 
-async function switchTenantSession({ accessToken = '', refreshToken = '', targetTenantId = '' } = {}) {
+async function switchTenantSession({ accessToken = '', refreshToken = '', targetTenantId = '', deviceId = '' } = {}) {
     if (!isAuthEnabled()) {
         throw new Error('Autenticacion SaaS deshabilitada.');
     }
@@ -715,7 +758,7 @@ async function switchTenantSession({ accessToken = '', refreshToken = '', target
     }
 
     if (normalizeTenantId(auth.tenantId) === cleanTargetTenantId) {
-        return refreshSession({ refreshToken: String(refreshToken || '').trim() });
+        return refreshSession({ refreshToken: String(refreshToken || '').trim(), deviceId });
     }
 
     const userRecord = findUserRecord({ userId: auth.userId, email: auth.email });
@@ -747,7 +790,7 @@ async function switchTenantSession({ accessToken = '', refreshToken = '', target
     }
 
     const scoped = resolveScopedUser(userRecord, cleanTargetTenantId);
-    return issueSessionForScopedUser(scoped);
+    return issueSessionForScopedUser(scoped, { deviceType: auth.deviceType });
 }
 
 function getTokenFromRequest(req = {}) {
@@ -768,6 +811,7 @@ function verifyAccessToken(token = '') {
         tenantId: String(payload.tenantId || 'default').trim(),
         role: normalizeRole(payload.role),
         name: String(payload.name || '').trim() || null,
+        deviceType: normalizeDeviceType(payload.deviceType),
         exp: Number(payload.exp || 0),
         iat: Number(payload.iat || 0),
         jti: String(payload.jti || '').trim() || null

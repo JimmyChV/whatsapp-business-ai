@@ -60,6 +60,7 @@ export default function useSaasApiSessionHelpers({
       tokenType: String(payload?.tokenType || previousSession?.tokenType || 'Bearer').trim() || 'Bearer',
       accessExpiresAtUnix,
       refreshExpiresAtUnix,
+      deviceType: String(payload?.deviceType || previousSession?.deviceType || '').trim(),
       user: payload?.user && typeof payload.user === 'object'
         ? payload.user
         : (previousSession?.user && typeof previousSession.user === 'object' ? previousSession.user : null)

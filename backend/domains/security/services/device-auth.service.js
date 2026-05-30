@@ -69,6 +69,7 @@ function normalizeDeviceRow(row = null) {
         approvedBy: text(row.approved_by || row.approvedBy),
         revokedAt: row.revoked_at || row.revokedAt || null,
         lastSeenAt: row.last_seen_at || row.lastSeenAt || null,
+        lastActivityAt: row.last_activity_at || row.lastActivityAt || null,
         createdAt: row.created_at || row.createdAt || null,
         userEmail: lower(row.user_email || row.userEmail),
         userName: text(row.user_name || row.userName)
@@ -263,7 +264,8 @@ async function upsertPendingDevice({ user = {}, deviceContext = {} } = {}) {
                     is_approved = FALSE,
                     approved_at = NULL,
                     approved_by = NULL,
-                    last_seen_at = NOW()
+                    last_seen_at = NOW(),
+                    last_activity_at = NOW()
               WHERE device_id = $1`,
             [
                 context.deviceId,
@@ -280,10 +282,10 @@ async function upsertPendingDevice({ user = {}, deviceContext = {} } = {}) {
     await queryPostgres(
         `INSERT INTO auth_device_sessions (
             device_id, user_id, tenant_id, device_name, device_type,
-            user_agent, ip_address, is_approved, last_seen_at, created_at
+            user_agent, ip_address, is_approved, last_seen_at, last_activity_at, created_at
         ) VALUES (
             $1, $2, $3, NULL, $4,
-            $5, $6, FALSE, NOW(), NOW()
+            $5, $6, FALSE, NOW(), NOW(), NOW()
         )`,
         [
             context.deviceId,
@@ -474,7 +476,8 @@ async function approveDevice(deviceId = '', deviceName = '', approvedBy = 'otp')
                 approved_at = NOW(),
                 approved_by = $2,
                 device_name = $3,
-                last_seen_at = NOW()
+                last_seen_at = NOW(),
+                last_activity_at = NOW()
           WHERE device_id = $1
           RETURNING *`,
         [cleanDeviceId, text(approvedBy) || 'otp', safeName]
@@ -565,6 +568,40 @@ async function updateLastSeen(deviceId = '', { force = false, ipAddress = '' } =
     return { ok: true };
 }
 
+async function updateLastActivity(deviceId = '', { ipAddress = '' } = {}) {
+    const cleanDeviceId = text(deviceId);
+    if (!cleanDeviceId || !isPostgresAvailable()) return { skipped: true };
+    const { rows } = await queryPostgres(
+        `UPDATE auth_device_sessions
+            SET last_activity_at = NOW(),
+                last_seen_at = NOW(),
+                ip_address = COALESCE(NULLIF($2, ''), ip_address)
+          WHERE device_id = $1
+            AND revoked_at IS NULL
+          RETURNING *`,
+        [cleanDeviceId, text(ipAddress)]
+    );
+    const device = normalizeDeviceRow(rows?.[0] || null);
+    if (!device) throw new Error('device_revoked');
+    return { ok: true, device };
+}
+
+async function revokeInactiveDesktopSessions({ inactiveHours = 3 } = {}) {
+    if (!isPostgresAvailable()) return { skipped: true, updated: 0 };
+    const hours = Number(inactiveHours);
+    const safeHours = Number.isFinite(hours) && hours > 0 ? hours : 3;
+    const { rowCount } = await queryPostgres(
+        `UPDATE auth_device_sessions
+            SET revoked_at = NOW(),
+                revoked_by = 'inactivity'
+          WHERE device_type = 'desktop'
+            AND revoked_at IS NULL
+            AND COALESCE(last_activity_at, last_seen_at, created_at) < NOW() - ($1 * INTERVAL '1 hour')`,
+        [safeHours]
+    );
+    return { ok: true, updated: Number(rowCount || 0) };
+}
+
 module.exports = {
     generateDeviceId,
     detectDeviceType,
@@ -575,6 +612,8 @@ module.exports = {
     notifyTenantOwnersDeviceApproved,
     isDeviceRevoked,
     updateLastSeen,
+    updateLastActivity,
+    revokeInactiveDesktopSessions,
     getDeviceSession,
     listDevicesForUser,
     listDevicesForAdminUser,

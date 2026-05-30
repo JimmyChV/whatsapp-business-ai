@@ -204,7 +204,8 @@
             setDeviceCookie(res, deviceId);
             const session = await authService.issueSessionForDevice({
                 userId: verified.userId,
-                tenantId: verified.tenantId
+                tenantId: verified.tenantId,
+                deviceId
             });
             setRefreshCookie(res, session?.refreshToken, session);
 
@@ -388,8 +389,12 @@
             if (!refreshToken) {
                 return res.status(401).json({ ok: false, error: 'refresh token requerido.' });
             }
+            const deviceId = getDeviceIdFromRequest(req);
+            if (deviceId && await resolvedDeviceAuthService.isDeviceRevoked(deviceId)) {
+                return res.status(401).json({ ok: false, error: 'device_revoked' });
+            }
 
-            const session = await authService.refreshSession({ refreshToken });
+            const session = await authService.refreshSession({ refreshToken, deviceId });
             setRefreshCookie(res, session?.refreshToken, session);
             await auditLogService.writeAuditLog(session?.user?.tenantId || req?.tenantContext?.id || 'default', {
                 userId: session?.user?.id || null,
@@ -410,6 +415,30 @@
         }
     });
 
+    app.patch('/api/auth/session/activity', async (req, res) => {
+        try {
+            const authContext = req.authContext || { isAuthenticated: false, user: null };
+            if (authService.isAuthEnabled() && (!authContext.isAuthenticated || !authContext.user)) {
+                return res.status(401).json({ ok: false, error: 'No autenticado.' });
+            }
+            const deviceId = getDeviceIdFromRequest(req);
+            if (!deviceId) {
+                return res.status(400).json({ ok: false, error: 'device_id requerido.' });
+            }
+            if (await resolvedDeviceAuthService.isDeviceRevoked(deviceId)) {
+                return res.status(401).json({ ok: false, error: 'device_revoked' });
+            }
+            await resolvedDeviceAuthService.updateLastActivity(deviceId, {
+                ipAddress: String(req.ip || '').trim()
+            });
+            return res.json({ ok: true });
+        } catch (error) {
+            const message = String(error?.message || 'No se pudo actualizar actividad.');
+            const status = /revoked|device/i.test(message) ? 401 : 500;
+            return res.status(status).json({ ok: false, error: message });
+        }
+    });
+
     app.post('/api/auth/switch-tenant', async (req, res) => {
         try {
             const authContext = req.authContext || { isAuthenticated: false, user: null };
@@ -419,6 +448,7 @@
 
             const accessToken = String(authService.getTokenFromRequest(req) || req.body?.accessToken || '').trim();
             const refreshToken = getRefreshTokenFromRequest(req);
+            const deviceId = getDeviceIdFromRequest(req);
             const targetTenantId = String(req.body?.targetTenantId || '').trim();
 
             if (!targetTenantId) {
@@ -428,7 +458,8 @@
             const session = await authService.switchTenantSession({
                 accessToken,
                 refreshToken,
-                targetTenantId
+                targetTenantId,
+                deviceId
             });
             setRefreshCookie(res, session?.refreshToken, session);
 

@@ -1,6 +1,7 @@
 import { useSaasRecoveryFlow } from '../../features/auth/hooks/useSaasRecoveryFlow';
 import useSaasRuntimeBootstrap from '../../features/auth/hooks/useSaasRuntimeBootstrap';
 import useSaasSessionAutoRefresh from '../../features/auth/hooks/useSaasSessionAutoRefresh';
+import useSessionActivityPing from '../../features/auth/hooks/useSessionActivityPing';
 import { useSaasSessionActions } from '../../features/auth/hooks/useSaasSessionActions';
 import useSaasApiSessionHelpers from '../../features/auth/hooks/useSaasApiSessionHelpers';
 import { useSaasPanelVisibilityController } from '../../features/saas/hooks';
@@ -107,6 +108,15 @@ export default function useAppRuntimeSessionController({
     accessExpiresAtUnix: Number(saasSession?.accessExpiresAtUnix || 0),
     saasSessionRef,
     refreshSaasSession: apiSessionExports.refreshSaasSession,
+    setSaasSession,
+    setSaasAuthError
+  });
+
+  useSessionActivityPing({
+    apiUrl,
+    authEnabled: Boolean(saasRuntime?.authEnabled && saasSession?.accessToken),
+    saasSessionRef,
+    buildApiHeaders: apiSessionExports.buildApiHeaders,
     setSaasSession,
     setSaasAuthError
   });

@@ -255,6 +255,19 @@ app.use(async (req, res, next) => {
     }
 });
 
+const desktopSessionCleanupIntervalMs = Math.max(
+    60 * 1000,
+    Number(process.env.SAAS_DESKTOP_SESSION_CLEANUP_INTERVAL_MS || 30 * 60 * 1000) || 30 * 60 * 1000
+);
+const desktopSessionCleanupTimer = setInterval(() => {
+    deviceAuthService.revokeInactiveDesktopSessions({ inactiveHours: 3 }).catch((error) => {
+        logger.warn('[Auth] desktop session cleanup failed: ' + String(error?.message || error));
+    });
+}, desktopSessionCleanupIntervalMs);
+if (typeof desktopSessionCleanupTimer.unref === 'function') {
+    desktopSessionCleanupTimer.unref();
+}
+
 if (httpRateLimitEnabled) {
     app.use('/api', (req, res, next) => {
         const key = String(req.ip || 'unknown') + ':' + req.method + ':' + req.path;
