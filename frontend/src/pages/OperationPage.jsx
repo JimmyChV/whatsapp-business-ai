@@ -128,6 +128,7 @@ export default function OperationPage({
   const [cartDraftsByChat, setCartDraftsByChat] = useState({});
   const [mobilePanel, setMobilePanel] = useState('list');
   const [mobileToolRequest, setMobileToolRequest] = useState(null);
+  const mobilePanelRef = useRef('list');
   const originalDocumentTitleRef = useRef(typeof document !== 'undefined' ? document.title : 'WhatsApp Business Pro');
   const activeChatDetails = chats.find((c) => c.id === activeChatId) || null;
   const mergedActiveChatDetails = activeChatDetails || clientContact
@@ -155,17 +156,45 @@ export default function OperationPage({
     ? 'app-container app-container--operation operation-page'
     : 'app-container operation-page';
 
+  const isMobileViewport = useCallback(() => (
+    typeof window !== 'undefined' && window.innerWidth <= 768
+  ), []);
+
+  const setMobilePanelWithHistory = useCallback((panel) => {
+    mobilePanelRef.current = panel;
+    setMobilePanel(panel);
+    if (!isMobileViewport()) return;
+    if (panel === 'list') return;
+    if (window.history.state?.mobilePanel === panel) return;
+    window.history.pushState({ mobilePanel: panel }, '');
+  }, [isMobileViewport]);
+
   const handleMobileChatSelect = useCallback((chatId, options) => {
     handleChatSelect?.(chatId, options);
-    setMobilePanel('chat');
-  }, [handleChatSelect]);
+    setMobilePanelWithHistory('chat');
+  }, [handleChatSelect, setMobilePanelWithHistory]);
   const handleMobileLoadOrderToCart = useCallback((orderPayload) => {
     if (!activeChatId) return;
     if (!orderPayload || typeof orderPayload !== 'object') return;
     handleLoadOrderToCart?.(orderPayload);
-    setMobilePanel('tools');
-  }, [activeChatId, handleLoadOrderToCart]);
+    setMobilePanelWithHistory('tools');
+  }, [activeChatId, handleLoadOrderToCart, setMobilePanelWithHistory]);
   const effectiveMobilePanel = activeChatId ? mobilePanel : 'list';
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handlePop = (event) => {
+      if (!isMobileViewport()) return;
+      const panel = event.state?.mobilePanel;
+      const nextPanel = panel === 'chat' || panel === 'tools' ? panel : 'list';
+      mobilePanelRef.current = nextPanel;
+      setMobilePanel(nextPanel);
+    };
+
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, [isMobileViewport]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -192,7 +221,7 @@ export default function OperationPage({
       if (String(targetTenantId) !== String(tenantScopeId || '').trim()) return;
 
       handleChatSelect?.(targetChatId, { clearSearch: true });
-      setMobilePanel('chat');
+      setMobilePanelWithHistory('chat');
       setToasts((prev) => (Array.isArray(prev) ? prev : []).filter((toast) => String(toast?.chatId || '') !== targetChatId));
       clearChatNotificationOpenRequest();
     };
@@ -214,7 +243,7 @@ export default function OperationPage({
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener(CHAT_NOTIFICATION_OPEN_EVENT, handleCustomOpenEvent);
     };
-  }, [handleChatSelect, setToasts, tenantScopeId]);
+  }, [handleChatSelect, setMobilePanelWithHistory, setToasts, tenantScopeId]);
 
   return (
     <div className={appContainerClassName} data-mobile-panel={effectiveMobilePanel}>
@@ -330,8 +359,8 @@ export default function OperationPage({
               waModules={availableWaModules}
               chatAssignmentState={chatAssignmentState}
               chatCommercialStatusState={chatCommercialStatusState}
-              onMobileBack={() => setMobilePanel('list')}
-              onMobileOpenTools={() => setMobilePanel('tools')}
+              onMobileBack={() => setMobilePanelWithHistory('list')}
+              onMobileOpenTools={() => setMobilePanelWithHistory('tools')}
             />
 
             {showClientProfile && (
@@ -385,7 +414,7 @@ export default function OperationPage({
                 className="in-app-toast"
                 onClick={() => {
                   handleChatSelect(toast.chatId, { clearSearch: true });
-                  setMobilePanel('chat');
+                  setMobilePanelWithHistory('chat');
                   setToasts((prev) => prev.filter((t) => t.id !== toast.id));
                 }}
               >
@@ -439,8 +468,8 @@ export default function OperationPage({
             chatAssignmentState={chatAssignmentState}
             chatCommercialStatusState={chatCommercialStatusState}
             buildApiHeaders={buildApiHeaders}
-            onMobileBackToChat={() => setMobilePanel('chat')}
-            onMobileOpenTools={() => setMobilePanel('tools')}
+            onMobileBackToChat={() => setMobilePanelWithHistory('chat')}
+            onMobileOpenTools={() => setMobilePanelWithHistory('tools')}
           />
         </div>
       )}
