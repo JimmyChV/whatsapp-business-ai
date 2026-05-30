@@ -165,6 +165,10 @@ const ChatWindow = ({
     const headerLabels = Array.isArray(activeChatDetails?.labels) ? activeChatDetails.labels : [];
     const visibleHeaderLabels = headerLabels.slice(0, 3);
     const hiddenHeaderLabelsCount = Math.max(0, headerLabels.length - visibleHeaderLabels.length);
+    const activeAdOrigin = activeChatDetails?.adOrigin && typeof activeChatDetails.adOrigin === 'object'
+        ? activeChatDetails.adOrigin
+        : null;
+    const activeAdOriginName = String(activeAdOrigin?.adName || '').trim();
     const conversationWindowOpen = activeChatDetails?.windowOpen !== false;
     const pendingJumpMessageIdRef = useRef('');
 
@@ -240,6 +244,15 @@ const ChatWindow = ({
                     <div className="chat-header-title-row chat-header-title-row--clean">
                         <h3 className="chat-header-name" title={headerDisplayName}>{headerDisplayName}</h3>
                     </div>
+                    {activeAdOrigin && (
+                        <span
+                            className="chat-ad-origin-badge"
+                            title={activeAdOriginName || 'Anuncio Meta'}
+                        >
+                            <span aria-hidden="true">📢</span>
+                            <span>{activeAdOriginName || 'Anuncio Meta'}</span>
+                        </span>
+                    )}
                     <div className="chat-header-info-row">
                         {headerLocation && (
                             <span className="chat-header-location-chip" title={headerLocation}>

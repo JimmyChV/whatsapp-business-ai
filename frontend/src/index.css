@@ -5554,6 +5554,38 @@ body {
   animation: pulse 1.8s ease-in-out infinite;
 }
 
+.chat-ad-origin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--chat-warning-border);
+  background: var(--chat-warning-bg);
+  color: var(--chat-warning-text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-ad-origin-badge > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-ad-origin-badge--sidebar {
+  max-width: 100%;
+  font-size: 10.5px;
+  padding: 3px 8px;
+  flex: 1 1 100%;
+}
+
 .chat-inline-label-dot {
   width: 9px;
   height: 9px;

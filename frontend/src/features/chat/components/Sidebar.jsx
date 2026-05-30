@@ -891,6 +891,8 @@ const Sidebar = ({
                         const hasInteraction = Number(chat?.timestamp || 0) > 0;
                         const lastMessage = safeLastMessage || (hasInteraction ? 'Adjunto o evento sin vista previa' : 'Haz clic para chatear');
                         const labels = Array.isArray(chat?.labels) ? chat.labels : [];
+                        const adOrigin = chat?.adOrigin && typeof chat.adOrigin === 'object' ? chat.adOrigin : null;
+                        const adOriginName = String(adOrigin?.adName || '').trim();
                         return (
                             <div
                                 key={chat.id}
@@ -959,6 +961,15 @@ const Sidebar = ({
                                                 >
                                                     <Clock3 size={11} />
                                                     <span>{chatWindowStatus.label}</span>
+                                                </span>
+                                            )}
+                                            {adOrigin && (
+                                                <span
+                                                    className="chat-ad-origin-badge chat-ad-origin-badge--sidebar"
+                                                    title={`Anuncio: ${adOriginName || 'Anuncio Meta'}`}
+                                                >
+                                                    <span aria-hidden="true">📢</span>
+                                                    <span>Anuncio: {adOriginName || 'Anuncio Meta'}</span>
                                                 </span>
                                             )}
                                         </div>

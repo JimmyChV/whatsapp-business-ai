@@ -159,10 +159,83 @@ function createSocketChatListService({
         return enrichedItem;
     };
 
+    const enrichWithAdOrigin = async (item = null, tenantId = 'default', scopeModuleId = '') => {
+        if (!item || typeof item !== 'object') return item;
+        const resolvedTenantId = String(tenantId || 'default').trim() || 'default';
+        const resolvedScopeModuleId = normalizeScopedModuleId(
+            scopeModuleId
+            || item?.scopeModuleId
+            || item?.lastMessageModuleId
+            || ''
+        );
+        const baseChatId = resolveBaseChatIdFromSummary(item);
+        if (!baseChatId) return item;
+
+        try {
+            const { rows } = await queryPostgres(
+                `SELECT origin_type,
+                        referral_source_id,
+                        referral_headline,
+                        referral_source_type,
+                        ctwa_clid
+                   FROM tenant_chat_origins
+                  WHERE tenant_id = $1
+                    AND chat_id = $2
+                    AND ($3 = '' OR scope_module_id = $3 OR scope_module_id = '')
+               ORDER BY CASE WHEN scope_module_id = $3 THEN 0 ELSE 1 END,
+                        created_at DESC
+                  LIMIT 1`,
+                [resolvedTenantId, baseChatId, resolvedScopeModuleId || '']
+            );
+            const origin = rows?.[0] || null;
+            if (!origin || String(origin.origin_type || '').trim().toLowerCase() !== 'meta_ad') {
+                return item;
+            }
+
+            let adName = '';
+            const sourceId = String(origin.referral_source_id || '').trim();
+            if (sourceId) {
+                try {
+                    const adResult = await queryPostgres(
+                        `SELECT object_name
+                           FROM tenant_meta_ads_structure
+                          WHERE tenant_id = $1
+                            AND object_id = $2
+                            AND object_type = 'ad'
+                          LIMIT 1`,
+                        [resolvedTenantId, sourceId]
+                    );
+                    adName = String(adResult?.rows?.[0]?.object_name || '').trim();
+                } catch (_) {
+                    adName = '';
+                }
+            }
+
+            const fallbackName = String(origin.referral_headline || '').trim() || 'Anuncio Meta';
+            return {
+                ...item,
+                adOrigin: {
+                    type: 'meta_ad',
+                    adName: adName || fallbackName,
+                    sourceId: sourceId || null,
+                    sourceType: String(origin.referral_source_type || '').trim() || null,
+                    ctwaClid: String(origin.ctwa_clid || '').trim() || null
+                }
+            };
+        } catch (_) {
+            return item;
+        }
+    };
+
+    const enrichWithChatListData = async (item = null, tenantId = 'default', scopeModuleId = '') => {
+        const withWindowData = await enrichWithWindowData(item, tenantId, scopeModuleId);
+        return enrichWithAdOrigin(withWindowData, tenantId, scopeModuleId);
+    };
+
     const enrichChatPageWithWindowData = async (page = null, tenantId = 'default', scopeModuleId = '') => {
         const safePage = page && typeof page === 'object' ? page : {};
         const rawItems = Array.isArray(safePage.items) ? safePage.items : [];
-        const items = await Promise.all(rawItems.map((item) => enrichWithWindowData(item, tenantId, scopeModuleId)));
+        const items = await Promise.all(rawItems.map((item) => enrichWithChatListData(item, tenantId, scopeModuleId)));
         return {
             ...safePage,
             items
@@ -837,7 +910,7 @@ function createSocketChatListService({
                     tenantId
                 });
                 items = await Promise.all(
-                    items.map((item) => enrichWithWindowData(item, tenantId, activeScopeModuleId || ''))
+                    items.map((item) => enrichWithChatListData(item, tenantId, activeScopeModuleId || ''))
                 );
 
                 const nextOffset = offset + items.length;
@@ -871,7 +944,10 @@ function createSocketChatListService({
                         for (const chat of pendingMetaChats) {
                             try {
                                 const summary = await toChatSummary(chat, { includeHeavyMeta: true, ...summaryScopeOptions });
-                                if (summary) socket.emit('chat_updated', summary);
+                                if (summary) {
+                                    const enrichedSummary = await enrichWithChatListData(summary, tenantId, activeScopeModuleId || '');
+                                    socket.emit('chat_updated', enrichedSummary);
+                                }
                             } catch (_) { }
                         }
                     });
