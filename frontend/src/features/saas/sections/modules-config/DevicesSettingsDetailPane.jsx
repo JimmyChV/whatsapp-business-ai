@@ -190,7 +190,7 @@ export default function DevicesSettingsDetailPane({
         try {
             await requestJson(`/api/auth/devices/${encodeURIComponent(deviceId)}`, {
                 method: 'PATCH',
-                body: JSON.stringify({ deviceName: draftName })
+                body: { deviceName: draftName }
             });
             setEditingId('');
             setDraftName('');
