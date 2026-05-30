@@ -215,6 +215,12 @@ function registerTenantAdminConfigCatalogHttpRoutes({
     app.post('/api/tenant/smtp/test', async (req, res) => {
         const tenantId = getRequestTenantId(req);
         const to = text(req?.authContext?.user?.email || req?.body?.to);
+        console.log('[SMTP Test] iniciando prueba', {
+            tenantId,
+            to,
+            hasGlobalSmtp: !!process.env.SMTP_HOST,
+            smtpHost: process.env.SMTP_HOST
+        });
         if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
         if (!to) return res.status(400).json({ ok: false, error: 'El usuario actual no tiene correo para la prueba.' });
         if (!ensureTenantIntegrationsManage(req, tenantId, { isTenantAllowedForUser, hasPermission, accessPolicyService })) {
@@ -228,9 +234,12 @@ function registerTenantAdminConfigCatalogHttpRoutes({
                 text: 'Este es un correo de prueba enviado desde la configuracion SMTP del panel.',
                 html: '<p>Este es un correo de prueba enviado desde la configuracion SMTP del panel.</p>'
             });
+            console.log('[SMTP Test] resultado', { ok: true, error: null });
             return res.json({ ok: true, message: 'Correo enviado correctamente.' });
         } catch (error) {
-            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo enviar el correo de prueba.') });
+            const errorMessage = String(error?.message || 'No se pudo enviar el correo de prueba.');
+            console.log('[SMTP Test] resultado', { ok: false, error: errorMessage });
+            return res.status(400).json({ ok: false, error: errorMessage });
         }
     });
 

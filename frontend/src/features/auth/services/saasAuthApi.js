@@ -1,11 +1,12 @@
 import { API_URL } from '../../../config/runtime';
 
 async function requestJson(path, { method = 'GET', headers = {}, body } = {}) {
+  const requestBody = typeof body === 'string' ? body : JSON.stringify(body);
   const response = await fetch(`${API_URL}${path}`, {
     method,
     headers,
     credentials: 'include',
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {})
+    ...(body !== undefined ? { body: requestBody } : {})
   });
   const payload = await response.json().catch(() => ({}));
   return { response, payload };
