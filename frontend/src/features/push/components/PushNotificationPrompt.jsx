@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { API_URL } from '../../../config/runtime';
 
@@ -29,14 +29,21 @@ function urlBase64ToUint8Array(base64String = '') {
 }
 
 async function subscribeToPush({ buildApiHeaders, vapidPublicKey }) {
+  console.log('[Push] iniciando suscripción');
   const registration = await navigator.serviceWorker.ready;
+  console.log('[Push] SW ready:', registration.scope);
+
   let subscription = await registration.pushManager.getSubscription();
+  console.log('[Push] suscripción existente:', !!subscription);
+
   if (!subscription) {
     subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
     });
   }
+  console.log('[Push] subscription:', subscription);
+  console.log('[Push] endpoint:', subscription?.endpoint?.slice(0, 50));
 
   const response = await fetch(`${API_URL}/api/push/subscribe`, {
     method: 'POST',
@@ -51,6 +58,8 @@ async function subscribeToPush({ buildApiHeaders, vapidPublicKey }) {
     }),
   });
   const payload = await response.json().catch(() => ({}));
+  console.log('[Push] resultado API:', payload);
+
   if (!response.ok || payload?.ok === false) {
     throw new Error(payload?.error || 'No se pudo activar notificaciones.');
   }
@@ -61,7 +70,20 @@ function PushNotificationPrompt({ isAuthenticated, buildApiHeaders }) {
   const [visible, setVisible] = useState(false);
   const [status, setStatus] = useState('idle');
   const [message, setMessage] = useState('');
+  const autoSubscribeAttemptedRef = useRef(false);
   const vapidPublicKey = useMemo(() => String(import.meta.env.VITE_VAPID_PUBLIC_KEY || '').trim(), []);
+
+  useEffect(() => {
+    if (autoSubscribeAttemptedRef.current) return;
+    if (!isAuthenticated || !vapidPublicKey) return;
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    if (Notification.permission !== 'granted') return;
+
+    autoSubscribeAttemptedRef.current = true;
+    subscribeToPush({ buildApiHeaders, vapidPublicKey }).catch((error) => {
+      console.error('[Push] auto-subscribe error:', error);
+    });
+  }, [buildApiHeaders, isAuthenticated, vapidPublicKey]);
 
   useEffect(() => {
     if (!isAuthenticated || !vapidPublicKey) return;
@@ -82,6 +104,7 @@ function PushNotificationPrompt({ isAuthenticated, buildApiHeaders }) {
       setStatus('busy');
       setMessage('');
       const permission = await Notification.requestPermission();
+      console.log('[Push] permiso:', permission);
       if (permission !== 'granted') {
         setStatus('denied');
         setMessage('Puedes activarlas luego desde la configuracion del navegador.');
