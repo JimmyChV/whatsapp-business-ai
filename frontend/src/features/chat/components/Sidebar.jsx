@@ -249,6 +249,9 @@ const Sidebar = ({
         const selected = WINDOW_FILTER_OPTIONS.find((entry) => String(entry?.value || '') === String(filters.windowFilter || 'all'));
         return selected?.label || 'Todas';
     }, [filters.windowFilter]);
+    const directMobileFilterPopoverClass = showLabelPanel
+        ? ' sidebar-filter-content--label-popover'
+        : (showWindowFilterMenu ? ' sidebar-filter-content--window-popover' : '');
 
     const currentTenantId = String(activeTenantId || '').trim();
     const sortedTenantOptions = Array.isArray(tenantOptions)
@@ -609,7 +612,7 @@ const Sidebar = ({
                         </button>
                     </div>
                     <div className="sidebar-main-column">
-                        <div className={`sidebar-filter-content ${showAdvancedFilters ? 'is-open' : ''}`}>
+                        <div className={`sidebar-filter-content ${showAdvancedFilters ? 'is-open' : ''}${directMobileFilterPopoverClass}`}>
                         <div className="sidebar-filter-header-row">
                             <span className="sidebar-filter-title">Filtros avanzados</span>
                             {hasAnyFilter && (
@@ -627,7 +630,7 @@ const Sidebar = ({
                         </div>
                             <div className="sidebar-filter-pill-toolbar">
                                 {assignmentsLoaded && (
-                                    <div className="sidebar-filter-pill-dropdown" ref={assigneeMenuRef}>
+                                    <div className="sidebar-filter-pill-dropdown sidebar-filter-pill-dropdown--assignee" ref={assigneeMenuRef}>
                                         <button
                                             type="button"
                                             className={`sidebar-filter-pill-trigger ${filters.assigneeUserId ? 'active' : ''}`}
@@ -686,7 +689,7 @@ const Sidebar = ({
                                     </div>
                                 )}
                                 {statusesLoaded && (
-                                    <div className="sidebar-filter-pill-dropdown" ref={commercialMenuRef}>
+                                    <div className="sidebar-filter-pill-dropdown sidebar-filter-pill-dropdown--commercial" ref={commercialMenuRef}>
                                         <button
                                             type="button"
                                             className={`sidebar-filter-pill-trigger ${String(filters.commercialStatus || 'all') !== 'all' ? 'active' : ''}`}
@@ -722,7 +725,7 @@ const Sidebar = ({
                                         )}
                                     </div>
                                 )}
-                                <div className="sidebar-filter-pill-dropdown" ref={windowMenuRef}>
+                                <div className="sidebar-filter-pill-dropdown sidebar-filter-pill-dropdown--window" ref={windowMenuRef}>
                                     <button
                                         type="button"
                                         className={`sidebar-filter-pill-trigger ${String(filters.windowFilter || 'all') !== 'all' ? 'active' : ''}`}

@@ -10226,6 +10226,46 @@ body {
     gap: 8px;
   }
 
+  .sidebar-filter-content.sidebar-filter-content--label-popover,
+  .sidebar-filter-content.sidebar-filter-content--window-popover {
+    top: 60px;
+    padding: 8px;
+    max-height: min(58dvh, 360px);
+  }
+
+  .sidebar-filter-content.sidebar-filter-content--label-popover .sidebar-filter-header-row,
+  .sidebar-filter-content.sidebar-filter-content--label-popover .sidebar-filter-pill-toolbar,
+  .sidebar-filter-content.sidebar-filter-content--label-popover .sidebar-active-filters-row,
+  .sidebar-filter-content.sidebar-filter-content--window-popover .sidebar-filter-header-row,
+  .sidebar-filter-content.sidebar-filter-content--window-popover .sidebar-active-filters-row {
+    display: none;
+  }
+
+  .sidebar-filter-content.sidebar-filter-content--window-popover .sidebar-filter-pill-toolbar {
+    display: block;
+  }
+
+  .sidebar-filter-content.sidebar-filter-content--window-popover .sidebar-filter-pill-dropdown {
+    display: none;
+  }
+
+  .sidebar-filter-content.sidebar-filter-content--window-popover .sidebar-filter-pill-dropdown--window {
+    display: block;
+  }
+
+  .sidebar-filter-content.sidebar-filter-content--window-popover .sidebar-filter-pill-trigger {
+    display: none;
+  }
+
+  .sidebar-filter-content.sidebar-filter-content--window-popover .sidebar-filter-pill-menu {
+    position: static;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    max-height: min(46dvh, 280px);
+    box-shadow: none;
+  }
+
   .sidebar-filter-pill-toolbar {
     grid-template-columns: 1fr;
     gap: 8px;
@@ -10245,14 +10285,21 @@ body {
   }
 
   .sidebar-label-dropdown {
-    left: 0;
-    right: 0;
     z-index: 140;
     width: 100%;
     max-height: min(46dvh, 280px);
     overflow: hidden;
     background: var(--saas-bg-surface);
     box-shadow: 0 18px 36px color-mix(in srgb, var(--saas-bg-base) 22%, transparent);
+  }
+
+  .sidebar-filter-content.sidebar-filter-content--label-popover .sidebar-label-dropdown {
+    position: static;
+    left: auto;
+    right: auto;
+    width: 100%;
+    max-height: min(52dvh, 320px);
+    box-shadow: none;
   }
 
   .sidebar-label-list {
