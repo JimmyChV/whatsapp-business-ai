@@ -20,6 +20,7 @@ import {
 } from './app/hooks';
 import { appSocketSingleton } from './app/hooks/useAppSocketChatController';
 import AppRuntimeGate from './app/components/AppRuntimeGate';
+import PushNotificationPrompt from './features/push/components/PushNotificationPrompt';
 
 import './index.css';
 
@@ -742,7 +743,15 @@ function App() {
 
   // Render: Main App
   // --------------------------------------------------------------
-  return appContent;
+  return (
+    <>
+      {appContent}
+      <PushNotificationPrompt
+        isAuthenticated={isSaasAuthenticated}
+        buildApiHeaders={apiSessionExports.buildApiHeaders}
+      />
+    </>
+  );
 }
 
 export default App;

@@ -22,7 +22,9 @@ const {
     planLimitsStoreService,
     auditLogService,
     registerSecurityAuthHttpRoutes,
-    registerSecurityAccessControlHttpRoutes
+    registerSecurityAccessControlHttpRoutes,
+    pushNotificationService,
+    registerSecurityPushHttpRoutes
 } = require('./domains/security');
 const {
     tenantService,
@@ -465,6 +467,7 @@ registerHttpRoutes({
     registerTenantRuntimePublicHttpRoutes,
     registerSecurityAuthHttpRoutes,
     registerSecurityAccessControlHttpRoutes,
+    registerSecurityPushHttpRoutes,
     registerTenantAssetsUploadHttpRoutes,
     registerTenantAdminTenantsUsersHttpRoutes,
     registerTenantWaModuleAdminHttpRoutes,
@@ -480,6 +483,7 @@ registerHttpRoutes({
     registerCloudWebhookHttpRoutes,
     isProduction,
     authRecoveryService,
+    pushNotificationService,
     auditLogService,
     toPublicTenant,
     saasControlService,

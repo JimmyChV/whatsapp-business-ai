@@ -7,6 +7,7 @@
     auditLogService: require('./audit-log.service'),
     authSessionService: require('./auth-session.service'),
     deviceAuthService: require('./device-auth.service'),
+    pushNotificationService: require('./push-notifications.service'),
     passwordHashService: require('./password-hash.service'),
     emailService: require('./email.service'),
     metaConfigCryptoService: require('./meta-config-crypto.service')

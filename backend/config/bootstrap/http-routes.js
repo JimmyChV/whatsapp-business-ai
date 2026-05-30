@@ -10,6 +10,7 @@ function registerHttpRoutes({
     registerTenantRuntimePublicHttpRoutes,
     registerSecurityAuthHttpRoutes,
     registerSecurityAccessControlHttpRoutes,
+    registerSecurityPushHttpRoutes,
     registerTenantAssetsUploadHttpRoutes,
     registerTenantAdminTenantsUsersHttpRoutes,
     registerTenantWaModuleAdminHttpRoutes,
@@ -25,6 +26,7 @@ function registerHttpRoutes({
     registerCloudWebhookHttpRoutes,
     isProduction,
     authRecoveryService,
+    pushNotificationService,
     auditLogService,
     toPublicTenant,
     saasControlService,
@@ -165,6 +167,14 @@ function registerHttpRoutes({
         filterAdminOverviewByScope,
         sanitizeObjectPayload
     });
+
+    if (typeof registerSecurityPushHttpRoutes === 'function') {
+        registerSecurityPushHttpRoutes({
+            app,
+            authService,
+            pushNotificationService
+        });
+    }
 
     registerTenantAssetsUploadHttpRoutes({
         app,

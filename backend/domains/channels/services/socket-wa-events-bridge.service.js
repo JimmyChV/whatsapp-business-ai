@@ -9,6 +9,7 @@ const {
 } = require('../../operations/services');
 const catalogManagerService = require('../../tenant/services/catalog-manager.service');
 const quotesService = require('../../tenant/services/quotes.service');
+const pushNotificationServiceFallback = require('../../security/services/push-notifications.service');
 const pattyService = require('./patty.service');
 
 function createSocketWaEventsBridgeService({
@@ -47,7 +48,8 @@ function createSocketWaEventsBridgeService({
     extractOrderInfo,
     extractLocationInfo,
     customerModuleContextsService = customerModuleContextsServiceFallback,
-    customerConsentService = customerConsentServiceFallback
+    customerConsentService = customerConsentServiceFallback,
+    pushNotificationService = pushNotificationServiceFallback
 } = {}) {
     const extractPhoneCandidatesFromChatId = (chatId = '') => {
         const clean = String(chatId || '').trim();
@@ -762,6 +764,35 @@ function createSocketWaEventsBridgeService({
                             }
                         } catch (_) {
                             // silent: inbound processing should not fail by assignment lifecycle issues
+                        }
+
+                        try {
+                            const preview = String(
+                                msg?.body
+                                || msg?._data?.body
+                                || inboundMessagePayload?.body
+                                || inboundMessagePayload?.text
+                                || (msg?.hasMedia ? 'Adjunto recibido' : 'Nuevo mensaje')
+                            ).trim();
+                            const senderName = String(
+                                senderMeta?.pushName
+                                || senderMeta?.name
+                                || msg?._data?.notifyName
+                                || msg?._data?.sender?.pushname
+                                || relatedChatIdBase.split('@')[0]
+                                || ''
+                            ).trim();
+                            pushNotificationService?.sendInboundMessageNotification?.({
+                                tenantId: historyTenantId,
+                                chatId: relatedChatIdBase,
+                                scopeModuleId: cleanScopeModuleId,
+                                senderName,
+                                preview
+                            }).catch((error) => {
+                                console.warn('[Push] inbound notification warning:', String(error?.message || error));
+                            });
+                        } catch (_) {
+                            // silent: push notifications must never block inbound processing
                         }
                     }
 
