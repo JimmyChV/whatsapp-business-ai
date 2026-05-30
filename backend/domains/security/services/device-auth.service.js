@@ -296,13 +296,6 @@ async function sendOtpEmail({ user = {}, device = {}, code = '', ipAddress = '' 
     const recipient = safeUser.email;
     if (!recipient) throw new Error('Correo del usuario requerido para enviar OTP.');
 
-    if (!emailService.isEmailConfigured()) {
-        if (isProduction()) {
-            throw new Error('SMTP no configurado para enviar OTP.');
-        }
-        return { skipped: 'smtp_not_configured' };
-    }
-
     const deviceType = text(device.deviceType || device.device_type) || 'desktop';
     const ip = text(ipAddress || device.ipAddress || device.ip_address) || 'IP no disponible';
     const subject = 'Codigo de verificacion - Panel de control';
@@ -324,7 +317,7 @@ async function sendOtpEmail({ user = {}, device = {}, code = '', ipAddress = '' 
         <p>Valido por ${OTP_TTL_MINUTES} minutos.</p>
         <p>Si no fuiste tu, ignora este mensaje.</p>
     `;
-    return emailService.sendEmail({ to: recipient, subject, text: textBody, html: htmlBody });
+    return emailService.sendEmailForTenant(safeUser.tenantId, { to: recipient, subject, text: textBody, html: htmlBody });
 }
 
 async function ensureDeviceApprovedForLogin({ user = {}, deviceContext = {} } = {}) {
@@ -451,7 +444,7 @@ async function resendOtp({ deviceId = '', ipAddress = '' } = {}) {
 }
 
 async function notifyTenantOwnersDeviceApproved({ tenantId = '', device = {}, user = {} } = {}) {
-    if (!isPostgresAvailable() || !emailService.isEmailConfigured()) return { skipped: true };
+    if (!isPostgresAvailable()) return { skipped: true };
     const cleanTenantId = text(tenantId);
     if (!cleanTenantId) return { skipped: true };
     const { rows } = await queryPostgres(
@@ -474,7 +467,7 @@ async function notifyTenantOwnersDeviceApproved({ tenantId = '', device = {}, us
         `Dispositivo: ${text(device.deviceName || device.device_name) || text(device.deviceType || device.device_type) || 'Sin nombre'}`,
         `IP: ${text(device.ipAddress || device.ip_address) || 'No disponible'}`
     ].join('\n');
-    await Promise.allSettled(recipients.map((to) => emailService.sendEmail({ to, subject, text: body })));
+    await Promise.allSettled(recipients.map((to) => emailService.sendEmailForTenant(cleanTenantId, { to, subject, text: body })));
     return { ok: true, count: recipients.length };
 }
 

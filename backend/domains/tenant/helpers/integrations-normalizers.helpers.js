@@ -49,6 +49,16 @@ const DEFAULT_INTEGRATIONS = Object.freeze({
         adAccountId: null,
         accessToken: null
     },
+    smtp: {
+        host: null,
+        port: 587,
+        user: null,
+        pass: null,
+        from: null,
+        security: 'tls',
+        secure: false,
+        tlsRejectUnauthorized: false
+    },
     updatedAt: null
 });
 
@@ -167,6 +177,12 @@ function normalizeColor(value = '', fallback = '#12d2a6') {
     return fallback;
 }
 
+function normalizeSmtpSecurity(value = '', secureValue = false) {
+    const text = String(value || '').trim().toLowerCase();
+    if (['ssl', 'tls', 'none'].includes(text)) return text;
+    return secureValue === true ? 'ssl' : 'tls';
+}
+
 function normalizeSecretForStorage(value, fallback = null) {
     if (value === undefined) return fallback;
     if (value === null) return null;
@@ -199,6 +215,7 @@ module.exports = {
     createStableAssistantId,
     normalizeFloatInRange,
     normalizeColor,
+    normalizeSmtpSecurity,
     normalizeSecretForStorage,
     resolveSecretPlain
 };

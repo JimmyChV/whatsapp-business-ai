@@ -24,6 +24,7 @@ const {
     createStableAssistantId,
     normalizeFloatInRange,
     normalizeColor,
+    normalizeSmtpSecurity,
     normalizeSecretForStorage,
     resolveSecretPlain
 } = require('../helpers/integrations-normalizers.helpers');
@@ -290,6 +291,8 @@ function normalizeIntegrationsForStorage(input = {}, existing = {}) {
     const currentGeo = isPlainObject(current.geo) ? current.geo : {};
     const sourceMetaAds = isPlainObject(source.metaAds) ? source.metaAds : {};
     const currentMetaAds = isPlainObject(current.metaAds) ? current.metaAds : {};
+    const sourceSmtp = isPlainObject(source.smtp) ? source.smtp : {};
+    const currentSmtp = isPlainObject(current.smtp) ? current.smtp : {};
 
     const catalogMode = normalizeCatalogMode(
         sourceCatalog.mode ?? source.catalogMode,
@@ -375,6 +378,18 @@ function normalizeIntegrationsForStorage(input = {}, existing = {}) {
         hasSourceMetaAdsAccessToken ? sourceMetaAds.accessToken : undefined,
         normalizeText(currentMetaAds.accessToken)
     );
+    const hasSourceSmtpPass = Object.prototype.hasOwnProperty.call(sourceSmtp, 'pass')
+        || Object.prototype.hasOwnProperty.call(sourceSmtp, 'password')
+        || Object.prototype.hasOwnProperty.call(sourceSmtp, 'smtpPass');
+    const smtpSecurity = normalizeSmtpSecurity(
+        sourceSmtp.security ?? currentSmtp.security,
+        sourceSmtp.secure ?? currentSmtp.secure
+    );
+    const smtpSecure = smtpSecurity === 'ssl';
+    const smtpPass = normalizeSecretForStorage(
+        hasSourceSmtpPass ? (sourceSmtp.pass ?? sourceSmtp.password ?? sourceSmtp.smtpPass) : undefined,
+        normalizeText(currentSmtp.pass)
+    );
 
     return {
         catalog: {
@@ -409,6 +424,19 @@ function normalizeIntegrationsForStorage(input = {}, existing = {}) {
             adAccountId: normalizeText(sourceMetaAds.adAccountId ?? currentMetaAds.adAccountId),
             accessToken: metaAdsAccessToken
         },
+        smtp: {
+            host: normalizeText(sourceSmtp.host ?? currentSmtp.host),
+            port: normalizePositiveInteger(sourceSmtp.port ?? currentSmtp.port, 587, { min: 1, max: 65535 }),
+            user: normalizeText(sourceSmtp.user ?? currentSmtp.user),
+            pass: smtpPass,
+            from: normalizeText(sourceSmtp.from ?? currentSmtp.from),
+            security: smtpSecurity,
+            secure: smtpSecure,
+            tlsRejectUnauthorized: toBool(
+                sourceSmtp.tlsRejectUnauthorized ?? currentSmtp.tlsRejectUnauthorized,
+                false
+            )
+        },
         updatedAt: normalizeText(source.updatedAt ?? current.updatedAt)
     };
 }
@@ -419,12 +447,14 @@ function toPublicConfig(stored = {}) {
     const ai = config.ai;
     const geo = config.geo || {};
     const metaAds = config.metaAds || {};
+    const smtp = config.smtp || {};
 
     const wooKeyPlain = resolveSecretPlain(woo.consumerKey);
     const wooSecretPlain = resolveSecretPlain(woo.consumerSecret);
     const aiKeyPlain = resolveSecretPlain(ai.openaiApiKey);
     const googleMapsKeyPlain = resolveSecretPlain(geo.googleMapsApiKey);
     const metaAdsAccessTokenPlain = resolveSecretPlain(metaAds.accessToken) || normalizeText(metaAds.accessToken);
+    const smtpPassPlain = resolveSecretPlain(smtp.pass);
 
     const assistantItems = (Array.isArray(ai.assistants) ? ai.assistants : [])
         .map((entry) => toPublicAssistantRecord(entry))
@@ -469,6 +499,18 @@ function toPublicConfig(stored = {}) {
             hasAccessToken: Boolean(metaAds.accessToken),
             accessTokenMasked: metaAdsAccessTokenPlain ? maskSecret(metaAdsAccessTokenPlain) : null
         },
+        smtp: {
+            host: normalizeText(smtp.host),
+            port: normalizePositiveInteger(smtp.port, 587, { min: 1, max: 65535 }),
+            user: normalizeText(smtp.user),
+            from: normalizeText(smtp.from),
+            security: normalizeSmtpSecurity(smtp.security, smtp.secure),
+            secure: smtp.secure === true,
+            tlsRejectUnauthorized: smtp.tlsRejectUnauthorized === true,
+            hasPass: Boolean(smtp.pass),
+            passMasked: smtpPassPlain ? maskSecret(smtpPassPlain) : null,
+            isConfigured: Boolean(normalizeText(smtp.host) && normalizeText(smtp.from))
+        },
         updatedAt: config.updatedAt || null
     };
 }
@@ -479,6 +521,7 @@ function toRuntimeConfig(stored = {}) {
     const ai = config.ai;
     const geo = config.geo || {};
     const metaAds = config.metaAds || {};
+    const smtp = config.smtp || {};
 
     const assistants = (Array.isArray(ai.assistants) ? ai.assistants : [])
         .map((entry) => toRuntimeAssistantRecord(entry))
@@ -517,6 +560,16 @@ function toRuntimeConfig(stored = {}) {
             businessId: normalizeText(metaAds.businessId),
             adAccountId: normalizeText(metaAds.adAccountId),
             accessToken: resolveSecretPlain(metaAds.accessToken) || normalizeText(metaAds.accessToken)
+        },
+        smtp: {
+            host: normalizeText(smtp.host),
+            port: normalizePositiveInteger(smtp.port, 587, { min: 1, max: 65535 }),
+            user: normalizeText(smtp.user),
+            pass: resolveSecretPlain(smtp.pass),
+            from: normalizeText(smtp.from),
+            security: normalizeSmtpSecurity(smtp.security, smtp.secure),
+            secure: smtp.secure === true,
+            tlsRejectUnauthorized: smtp.tlsRejectUnauthorized === true
         },
         updatedAt: config.updatedAt || null
     };
@@ -568,7 +621,8 @@ async function saveToPostgres(tenantId = DEFAULT_TENANT_ID, stored = {}) {
         ai: clean.ai,
         appearance: clean.appearance,
         geo: clean.geo,
-        metaAds: clean.metaAds
+        metaAds: clean.metaAds,
+        smtp: clean.smtp
     };
     await ensurePostgresSchema();
     await queryPostgres(

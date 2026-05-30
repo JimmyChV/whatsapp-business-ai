@@ -464,6 +464,15 @@
   background: color-mix(in srgb, var(--saas-accent-warning) 13%, var(--saas-bg-elevated));
 }
 
+.saas-admin-success-inline {
+  border: 1px solid color-mix(in srgb, var(--saas-accent-success, var(--saas-accent-primary)) 45%, var(--saas-border-color));
+  border-radius: var(--saas-radius-lg);
+  background: color-mix(in srgb, var(--saas-accent-success, var(--saas-accent-primary)) 10%, var(--saas-bg-elevated));
+  color: var(--saas-accent-success, var(--saas-accent-primary));
+  font-weight: 800;
+  padding: 10px 12px;
+}
+
 .saas-admin-permission-body small {
   color: var(--saas-text-secondary);
   font-size: 0.74rem;

@@ -3,10 +3,12 @@ import { SaasEntityPage } from '../components/layout';
 import DevicesSettingsDetailPane from './modules-config/DevicesSettingsDetailPane';
 import GeneralSettingsDetailPane from './modules-config/GeneralSettingsDetailPane';
 import ModulesConfigModuleDetailPane from './modules-config/ModulesConfigModuleDetailPane';
+import SmtpSettingsDetailPane from './modules-config/SmtpSettingsDetailPane';
 
 const CONFIG_KEYS = {
     TENANT_SETTINGS: 'tenant_settings',
-    AUTH_DEVICES: 'auth_devices'
+    AUTH_DEVICES: 'auth_devices',
+    SMTP_EMAIL: 'smtp_email'
 };
 
 function ModulesConfigSection(props = {}) {
@@ -96,6 +98,15 @@ function ModulesConfigSection(props = {}) {
                 phone: 'Sesion segura',
                 status: 'Activa',
                 channel: 'Seguridad',
+                defaultLabel: 'No',
+                assignedUsers: '-',
+                updatedAt: '-'
+            }, {
+                id: CONFIG_KEYS.SMTP_EMAIL,
+                name: 'Correo',
+                phone: 'SMTP por tenant',
+                status: 'Configurable',
+                channel: 'Email',
                 defaultLabel: 'No',
                 assignedUsers: '-',
                 updatedAt: '-'
@@ -216,6 +227,13 @@ function ModulesConfigSection(props = {}) {
                 currentUser={currentUser}
                 isSuperAdmin={isSuperAdmin}
                 userRole={userRole}
+            />
+
+            <SmtpSettingsDetailPane
+                settingsTenantId={settingsTenantId}
+                isGeneralConfigSection={isGeneralConfigSection}
+                selectedConfigKey={selectedConfigKey}
+                requestJson={requestJson}
             />
 
             <ModulesConfigModuleDetailPane
@@ -361,6 +379,8 @@ function ModulesConfigSection(props = {}) {
                 if (isGeneralConfigSection) {
                     if (row?.id === CONFIG_KEYS.AUTH_DEVICES) {
                         setSelectedConfigKey?.(CONFIG_KEYS.AUTH_DEVICES);
+                    } else if (row?.id === CONFIG_KEYS.SMTP_EMAIL) {
+                        setSelectedConfigKey?.(CONFIG_KEYS.SMTP_EMAIL);
                     } else {
                         openConfigSettingsView?.();
                     }
@@ -387,6 +407,9 @@ function ModulesConfigSection(props = {}) {
                     : null,
                 isGeneralConfigSection
                     ? { label: 'Mis dispositivos', onClick: () => setSelectedConfigKey?.(CONFIG_KEYS.AUTH_DEVICES), disabled: busy }
+                    : null,
+                isGeneralConfigSection
+                    ? { label: 'Correo', onClick: () => setSelectedConfigKey?.(CONFIG_KEYS.SMTP_EMAIL), disabled: busy || !settingsTenantId }
                     : null
             ].filter(Boolean)}
             detailTitle={isModulesSection

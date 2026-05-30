@@ -251,7 +251,7 @@ async function requestPasswordRecovery({ email = '', requestIp = '', requestId =
             '</div>'
         ].join('');
 
-        await emailService.sendEmail({
+        await emailService.sendEmailForTenant(store.challengesByEmail[cleanEmail]?.tenantId, {
             to: cleanEmail,
             subject,
             text,

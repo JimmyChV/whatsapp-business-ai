@@ -1,5 +1,45 @@
 ﻿const catalogSyncService = require('../services/catalog-sync.service');
 
+const emailService = require('../../security/services/email.service');
+
+function text(value = '') {
+    return String(value || '').trim();
+}
+
+function getRequestTenantId(req) {
+    return text(req?.tenantContext?.id || req?.headers?.['x-tenant-id'] || req?.query?.tenantId || req?.body?.tenantId);
+}
+
+function sanitizeTenantSmtpPayload(payload = {}) {
+    const source = payload?.smtp && typeof payload.smtp === 'object' ? payload.smtp : payload;
+    const security = text(source.security || 'tls').toLowerCase();
+    const port = Number(source.port || 587);
+    const clean = {
+        host: text(source.host),
+        port: Number.isFinite(port) ? Math.max(1, Math.min(65535, Math.floor(port))) : 587,
+        user: text(source.user),
+        from: text(source.from),
+        security: ['tls', 'ssl', 'none'].includes(security) ? security : 'tls',
+        tlsRejectUnauthorized: source.tlsRejectUnauthorized === true
+    };
+    const pass = text(source.pass || source.password);
+    if (pass) clean.pass = pass;
+    return clean;
+}
+
+function ensureTenantIntegrationsRead(req, tenantId, { isTenantAllowedForUser, hasAnyPermission, accessPolicyService }) {
+    return isTenantAllowedForUser(req, tenantId)
+        && hasAnyPermission(req, [
+            accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_READ,
+            accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE
+        ]);
+}
+
+function ensureTenantIntegrationsManage(req, tenantId, { isTenantAllowedForUser, hasPermission, accessPolicyService }) {
+    return isTenantAllowedForUser(req, tenantId)
+        && hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE);
+}
+
 function defaultSanitizeCatalogProductPayload(payload = {}, { allowPartial = false } = {}) {
     const source = payload && typeof payload === 'object' ? payload : {};
     const categories = Array.isArray(source.categories)
@@ -138,6 +178,59 @@ function registerTenantAdminConfigCatalogHttpRoutes({
             return res.json({ ok: true, tenantId, integrations });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar integraciones del tenant.') });
+        }
+    });
+
+    app.get('/api/tenant/smtp', async (req, res) => {
+        const tenantId = getRequestTenantId(req);
+        if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+        if (!ensureTenantIntegrationsRead(req, tenantId, { isTenantAllowedForUser, hasAnyPermission, accessPolicyService })) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const integrations = await tenantIntegrationsService.getTenantIntegrations(tenantId);
+            return res.json({ ok: true, tenantId, smtp: integrations?.smtp || {} });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar la configuracion de correo.') });
+        }
+    });
+
+    app.put('/api/tenant/smtp', async (req, res) => {
+        const tenantId = getRequestTenantId(req);
+        if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+        if (!ensureTenantIntegrationsManage(req, tenantId, { isTenantAllowedForUser, hasPermission, accessPolicyService })) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const patch = { smtp: sanitizeTenantSmtpPayload(req.body) };
+            const integrations = await tenantIntegrationsService.updateTenantIntegrations(tenantId, patch);
+            return res.json({ ok: true, tenantId, smtp: integrations?.smtp || {} });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar la configuracion de correo.') });
+        }
+    });
+
+    app.post('/api/tenant/smtp/test', async (req, res) => {
+        const tenantId = getRequestTenantId(req);
+        const to = text(req?.authContext?.user?.email || req?.body?.to);
+        if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+        if (!to) return res.status(400).json({ ok: false, error: 'El usuario actual no tiene correo para la prueba.' });
+        if (!ensureTenantIntegrationsManage(req, tenantId, { isTenantAllowedForUser, hasPermission, accessPolicyService })) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            await emailService.sendEmailForTenant(tenantId, {
+                to,
+                subject: 'Prueba de correo SMTP',
+                text: 'Este es un correo de prueba enviado desde la configuracion SMTP del panel.',
+                html: '<p>Este es un correo de prueba enviado desde la configuracion SMTP del panel.</p>'
+            });
+            return res.json({ ok: true, message: 'Correo enviado correctamente.' });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo enviar el correo de prueba.') });
         }
     });
 
