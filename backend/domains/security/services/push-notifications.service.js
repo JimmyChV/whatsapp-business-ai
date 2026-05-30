@@ -21,6 +21,31 @@ function truncate(value = '', max = 100) {
     return clean.slice(0, max - 1).trimEnd() + '…';
 }
 
+function phoneDigits(value = '') {
+    return text(value).replace(/[^\d]/g, '');
+}
+
+function formatPhoneFallback(value = '') {
+    const digits = phoneDigits(value);
+    if (!digits) return text(value);
+    if (digits.startsWith('51') && digits.length > 9) return digits.slice(2);
+    return digits;
+}
+
+function resolveCustomerName(row = {}, chatId = '') {
+    const profile = row?.profile && typeof row.profile === 'object' ? row.profile : {};
+    const firstLast = [
+        text(row?.first_name || profile.firstName || profile.first_name || profile.firstNames),
+        text(row?.last_name_paternal || profile.lastNamePaternal || profile.last_name_paternal),
+    ].filter(Boolean).join(' ').trim();
+
+    return text(row?.contact_name)
+        || text(profile.displayName || profile.display_name || profile.name || profile.fullName)
+        || firstLast
+        || text(row?.chat_display_name)
+        || formatPhoneFallback(row?.chat_phone || chatId);
+}
+
 function ensureVapidConfigured() {
     if (vapidConfigured) return true;
     const publicKey = text(process.env.VAPID_PUBLIC_KEY);
@@ -206,6 +231,44 @@ async function listUsersForUnassignedChat(tenantId = '') {
     return (result.rows || []).map((row) => text(row.user_id)).filter(Boolean);
 }
 
+async function resolveSenderNameFromCustomer(tenantId = '', chatId = '') {
+    const cleanTenantId = text(tenantId);
+    const cleanChatId = text(chatId);
+    if (!cleanTenantId || !cleanChatId || getStorageDriver() !== 'postgres') {
+        return formatPhoneFallback(cleanChatId.split('@')[0] || cleanChatId);
+    }
+
+    try {
+        const result = await queryPostgres(
+            `SELECT
+                    tc.contact_name,
+                    tc.first_name,
+                    tc.last_name_paternal,
+                    tc.profile,
+                    ch.display_name AS chat_display_name,
+                    ch.phone AS chat_phone
+               FROM tenant_chats ch
+               LEFT JOIN tenant_customers tc
+                 ON tc.tenant_id = ch.tenant_id
+                AND (
+                    regexp_replace(COALESCE(tc.phone_e164, ''), '\\D', '', 'g')
+                        = regexp_replace(COALESCE(ch.phone, ''), '\\D', '', 'g')
+                    OR regexp_replace(COALESCE(tc.phone_alt, ''), '\\D', '', 'g')
+                        = regexp_replace(COALESCE(ch.phone, ''), '\\D', '', 'g')
+                )
+              WHERE ch.tenant_id = $1
+                AND ch.chat_id = $2
+              ORDER BY tc.updated_at DESC NULLS LAST
+              LIMIT 1`,
+            [cleanTenantId, cleanChatId]
+        );
+        return resolveCustomerName(result.rows?.[0] || {}, cleanChatId);
+    } catch (error) {
+        console.warn('[Push] customer name resolution warning:', String(error?.message || error));
+        return formatPhoneFallback(cleanChatId.split('@')[0] || cleanChatId);
+    }
+}
+
 async function sendInboundMessageNotification({
     tenantId,
     chatId,
@@ -222,7 +285,10 @@ async function sendInboundMessageNotification({
         ? [assignedUserId]
         : await listUsersForUnassignedChat(cleanTenantId);
 
-    const titleName = text(senderName) || cleanChatId.split('@')[0] || 'cliente';
+    const titleName = await resolveSenderNameFromCustomer(cleanTenantId, cleanChatId)
+        || text(senderName)
+        || formatPhoneFallback(cleanChatId.split('@')[0])
+        || 'cliente';
     const payload = {
         title: `Nuevo mensaje de ${titleName}`,
         body: truncate(preview || 'Tienes un nuevo mensaje.', 100),
@@ -240,4 +306,5 @@ module.exports = {
     sendToUsers,
     sendInboundMessageNotification,
     listUsersForUnassignedChat,
+    resolveSenderNameFromCustomer,
 };
