@@ -10226,6 +10226,10 @@ body {
     gap: 8px;
   }
 
+  .sidebar-filter-content.is-open:not(.sidebar-filter-content--advanced-popover):not(.sidebar-filter-content--label-popover):not(.sidebar-filter-content--window-popover) {
+    display: none;
+  }
+
   .sidebar-filter-content.sidebar-filter-content--label-popover,
   .sidebar-filter-content.sidebar-filter-content--window-popover {
     top: 60px;

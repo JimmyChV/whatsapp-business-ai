@@ -109,6 +109,7 @@ const Sidebar = ({
     const [windowTick, setWindowTick] = React.useState(() => Date.now());
     const [globalCommercialStatusOptions, setGlobalCommercialStatusOptions] = React.useState([{ value: 'all', label: 'Todos' }]);
     const [showAdvancedFilters, setShowAdvancedFilters] = React.useState(false);
+    const [mobileFilterMode, setMobileFilterMode] = React.useState(null);
     const {
         filters,
         updateFilters,
@@ -178,6 +179,7 @@ const Sidebar = ({
         if (typeof window === 'undefined') return;
         if (!window.matchMedia?.('(max-width: 768px)')?.matches) return;
         setShowAdvancedFilters(false);
+        setMobileFilterMode(null);
     }, []);
     const assigneeMenuRef = React.useRef(null);
     const commercialMenuRef = React.useRef(null);
@@ -205,14 +207,16 @@ const Sidebar = ({
             }
             if (windowMenuRef.current && !windowMenuRef.current.contains(target)) {
                 setShowWindowFilterMenu(false);
+                if (mobileFilterMode === 'window') closeMobileAdvancedFilters();
             }
             if (labelPanelRef.current && !labelPanelRef.current.contains(target) && !target.closest('.sidebar-ribbon-btn[data-label="Etiquetas"]')) {
                 setShowLabelPanel(false);
+                if (mobileFilterMode === 'label') closeMobileAdvancedFilters();
             }
         };
         document.addEventListener('pointerdown', handlePointerDown);
         return () => document.removeEventListener('pointerdown', handlePointerDown);
-    }, []);
+    }, [closeMobileAdvancedFilters, mobileFilterMode, setShowLabelPanel]);
 
     React.useEffect(() => {
         const handleKeyDown = (event) => {
@@ -222,6 +226,8 @@ const Sidebar = ({
             setShowCommercialFilterMenu(false);
             setShowWindowFilterMenu(false);
             setShowMenu(false);
+            setShowAdvancedFilters(false);
+            setMobileFilterMode(null);
         };
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
@@ -249,9 +255,9 @@ const Sidebar = ({
         const selected = WINDOW_FILTER_OPTIONS.find((entry) => String(entry?.value || '') === String(filters.windowFilter || 'all'));
         return selected?.label || 'Todas';
     }, [filters.windowFilter]);
-    const directMobileFilterPopoverClass = showLabelPanel
-        ? ' sidebar-filter-content--label-popover'
-        : (showWindowFilterMenu ? ' sidebar-filter-content--window-popover' : '');
+    const mobileFilterPopoverClass = mobileFilterMode
+        ? ` sidebar-filter-content--${mobileFilterMode}-popover`
+        : '';
 
     const currentTenantId = String(activeTenantId || '').trim();
     const sortedTenantOptions = Array.isArray(tenantOptions)
@@ -506,7 +512,15 @@ const Sidebar = ({
                         <button
                             type="button"
                             className={`sidebar-ribbon-btn ${showAdvancedFilters || hasAnyFilter ? 'active' : ''}`}
-                            onClick={() => setShowAdvancedFilters((prev) => !prev)}
+                            onClick={() => {
+                                const shouldClose = showAdvancedFilters && mobileFilterMode === 'advanced';
+                                setShowAdvancedFilters(!shouldClose);
+                                setMobileFilterMode(shouldClose ? null : 'advanced');
+                                setShowLabelPanel(false);
+                                setShowWindowFilterMenu(false);
+                                setShowAssigneeFilterMenu(false);
+                                setShowCommercialFilterMenu(false);
+                            }}
                             title="Todos"
                             data-label="Filtros"
                         >
@@ -583,8 +597,12 @@ const Sidebar = ({
                             type="button"
                             className={`sidebar-ribbon-btn ${showLabelPanel || selectedLabelCount > 0 ? 'active' : ''}`}
                             onClick={() => {
-                                setShowAdvancedFilters(true);
-                                setShowLabelPanel((v) => !v);
+                                setShowLabelPanel((prev) => {
+                                    const next = !prev;
+                                    setShowAdvancedFilters(next);
+                                    setMobileFilterMode(next ? 'label' : null);
+                                    return next;
+                                });
                                 setShowWindowFilterMenu(false);
                                 setShowAssigneeFilterMenu(false);
                                 setShowCommercialFilterMenu(false);
@@ -599,8 +617,12 @@ const Sidebar = ({
                             type="button"
                             className={`sidebar-ribbon-btn ${String(filters.windowFilter || 'all') !== 'all' ? 'active' : ''}`}
                             onClick={() => {
-                                setShowAdvancedFilters(true);
-                                setShowWindowFilterMenu((prev) => !prev);
+                                setShowWindowFilterMenu((prev) => {
+                                    const next = !prev;
+                                    setShowAdvancedFilters(next);
+                                    setMobileFilterMode(next ? 'window' : null);
+                                    return next;
+                                });
                                 setShowAssigneeFilterMenu(false);
                                 setShowCommercialFilterMenu(false);
                                 setShowLabelPanel(false);
@@ -612,7 +634,7 @@ const Sidebar = ({
                         </button>
                     </div>
                     <div className="sidebar-main-column">
-                        <div className={`sidebar-filter-content ${showAdvancedFilters ? 'is-open' : ''}${directMobileFilterPopoverClass}`}>
+                        <div className={`sidebar-filter-content ${showAdvancedFilters ? 'is-open' : ''}${mobileFilterPopoverClass}`}>
                         <div className="sidebar-filter-header-row">
                             <span className="sidebar-filter-title">Filtros avanzados</span>
                             {hasAnyFilter && (
@@ -823,12 +845,15 @@ const Sidebar = ({
                             onClick={() => {
                                 resetFilters();
                                 setShowAdvancedFilters(false);
+                                setMobileFilterMode(null);
+                                setShowLabelPanel(false);
+                                setShowWindowFilterMenu(false);
                             }}
                         >
                             Limpiar
                         </button>
                     </div>
-            <div className="chat-list" onClick={() => { if (showMenu) setShowMenu(false); if (showLabelPanel) setShowLabelPanel(false); if (showAssigneeFilterMenu) setShowAssigneeFilterMenu(false); if (showCommercialFilterMenu) setShowCommercialFilterMenu(false); if (showWindowFilterMenu) setShowWindowFilterMenu(false); if (showAdvancedFilters) setShowAdvancedFilters(false); }} onScroll={handleChatListScroll}>
+            <div className="chat-list" onClick={() => { if (showMenu) setShowMenu(false); if (showLabelPanel) setShowLabelPanel(false); if (showAssigneeFilterMenu) setShowAssigneeFilterMenu(false); if (showCommercialFilterMenu) setShowCommercialFilterMenu(false); if (showWindowFilterMenu) setShowWindowFilterMenu(false); if (showAdvancedFilters) setShowAdvancedFilters(false); if (mobileFilterMode) setMobileFilterMode(null); }} onScroll={handleChatListScroll}>
                 {filteredChats.length === 0 && chats.length === 0 && !chatsLoaded ? (
                     [1, 2, 3, 4, 5].map((i) => (
                         <div key={i} className="chat-item chat-item-modern">
