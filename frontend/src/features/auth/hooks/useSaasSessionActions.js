@@ -141,6 +141,7 @@ export function useSaasSessionActions({
           deviceId: String(payload?.deviceId || '').trim(),
           email: String(payload?.email || email).trim(),
           deviceType: String(payload?.deviceType || '').trim(),
+          otpDelivery: String(payload?.otpDelivery || '').trim(),
           debugCode: payload?.debugCode || ''
         };
         setPendingDeviceAuth(nextPendingDeviceAuth);
@@ -148,7 +149,7 @@ export function useSaasSessionActions({
         setOtpCode('');
         setOtpResendAvailableAt(Date.now() + 60000);
         setDeviceAuthStep('otp');
-        setSaasAuthNotice(`Enviamos un codigo de 6 digitos a ${String(payload?.email || email).trim()}. Expira en ${Math.ceil(expiresInSec / 60)} minutos.`);
+        setSaasAuthNotice(`Enviamos un codigo de 6 digitos a los autorizadores de acceso. Expira en ${Math.ceil(expiresInSec / 60)} minutos.`);
         setLoginPassword('');
         return;
       }
@@ -247,7 +248,7 @@ export function useSaasSessionActions({
         debugCode: payload?.debugCode || prev?.debugCode || ''
       }));
       setOtpResendAvailableAt(Date.now() + 60000);
-      setSaasAuthNotice('Codigo reenviado. Revisa tu correo.');
+      setSaasAuthNotice('Codigo reenviado a los autorizadores de acceso.');
     } catch (error) {
       setSaasAuthError(String(error?.message || 'No se pudo reenviar el codigo.'));
     } finally {

@@ -84,6 +84,51 @@ function normalizeUser(user = {}) {
     };
 }
 
+function normalizeAuthorizerRow(row = null) {
+    if (!row || typeof row !== 'object') return null;
+    return {
+        id: row.id,
+        tenantId: text(row.tenant_id || row.tenantId),
+        userId: text(row.user_id || row.userId),
+        email: lower(row.email),
+        name: text(row.name),
+        isActive: row.is_active !== false && row.isActive !== false,
+        createdAt: row.created_at || row.createdAt || null
+    };
+}
+
+async function getDeviceAuthorizers(tenantId = '') {
+    const cleanTenantId = text(tenantId);
+    if (!cleanTenantId || !isPostgresAvailable()) return [];
+    const { rows } = await queryPostgres(
+        `SELECT id, tenant_id, user_id, email, name, is_active, created_at
+           FROM tenant_device_authorizers
+          WHERE tenant_id = $1
+            AND is_active = TRUE
+          ORDER BY created_at ASC NULLS LAST, id ASC`,
+        [cleanTenantId]
+    );
+    return (rows || []).map(normalizeAuthorizerRow).filter((item) => item?.email);
+}
+
+async function getTenantOwnerEmail(tenantId = '') {
+    const cleanTenantId = text(tenantId);
+    if (!cleanTenantId || !isPostgresAvailable()) return '';
+    const { rows } = await queryPostgres(
+        `SELECT u.email
+           FROM memberships m
+           JOIN users u ON u.user_id = m.user_id
+          WHERE m.tenant_id = $1
+            AND m.role = 'owner'
+            AND m.is_active = TRUE
+            AND u.is_active = TRUE
+          ORDER BY u.created_at ASC NULLS LAST
+          LIMIT 1`,
+        [cleanTenantId]
+    );
+    return lower(rows?.[0]?.email);
+}
+
 async function getDeviceSession(deviceId = '') {
     const cleanDeviceId = text(deviceId);
     if (!cleanDeviceId || !isPostgresAvailable()) return null;
@@ -293,31 +338,55 @@ async function generateOtp(userId = '', deviceId = '') {
 
 async function sendOtpEmail({ user = {}, device = {}, code = '', ipAddress = '' } = {}) {
     const safeUser = normalizeUser(user);
-    const recipient = safeUser.email;
-    if (!recipient) throw new Error('Correo del usuario requerido para enviar OTP.');
+    const tenantId = safeUser.tenantId || text(device.tenantId || device.tenant_id);
+    if (!tenantId) throw new Error('Tenant requerido para enviar OTP.');
+
+    const authorizers = await getDeviceAuthorizers(tenantId);
+    const ownerEmail = authorizers.length > 0 ? '' : await getTenantOwnerEmail(tenantId);
+    const recipients = Array.from(new Set(
+        (authorizers.length > 0 ? authorizers.map((item) => item.email) : [ownerEmail])
+            .map(lower)
+            .filter(Boolean)
+    ));
+    if (!recipients.length) {
+        throw new Error('No hay autorizadores ni owner para enviar el codigo OTP.');
+    }
 
     const deviceType = text(device.deviceType || device.device_type) || 'desktop';
     const ip = text(ipAddress || device.ipAddress || device.ip_address) || 'IP no disponible';
-    const subject = 'Codigo de verificacion - Panel de control';
+    const userName = safeUser.name || safeUser.email || safeUser.id || 'Usuario';
+    const subject = 'Nuevo dispositivo requiere autorizacion';
     const textBody = [
-        `Hola ${safeUser.name || safeUser.email},`,
-        '',
-        'Se detecto un acceso desde un nuevo dispositivo:',
+        `El usuario ${userName} esta intentando acceder desde un nuevo dispositivo.`,
         `Dispositivo: ${deviceType} · ${ip}`,
-        `Codigo de verificacion: ${code}`,
-        `Valido por ${OTP_TTL_MINUTES} minutos.`,
+        `Codigo OTP: ${code}`,
         '',
-        'Si no fuiste tu, ignora este mensaje.'
+        'El autorizador debe compartir este codigo con el usuario para que pueda ingresar.',
+        `Valido por ${OTP_TTL_MINUTES} minutos.`
     ].join('\n');
     const htmlBody = `
-        <p>Hola ${safeUser.name || safeUser.email},</p>
-        <p>Se detecto un acceso desde un nuevo dispositivo:</p>
+        <p>El usuario <strong>${userName}</strong> esta intentando acceder desde un nuevo dispositivo.</p>
         <p><strong>Dispositivo:</strong> ${deviceType} &middot; ${ip}</p>
-        <p style="font-size:24px;letter-spacing:4px;"><strong>${code}</strong></p>
+        <p><strong>Codigo OTP:</strong>
+          <span style="font-size:24px;font-weight:bold;letter-spacing:4px">${code}</span>
+        </p>
+        <p>El autorizador debe compartir este codigo con el usuario para que pueda ingresar.</p>
         <p>Valido por ${OTP_TTL_MINUTES} minutos.</p>
-        <p>Si no fuiste tu, ignora este mensaje.</p>
     `;
-    return emailService.sendEmailForTenant(safeUser.tenantId, { to: recipient, subject, text: textBody, html: htmlBody });
+    const results = await Promise.allSettled(recipients.map((to) => emailService.sendEmailForTenant(tenantId, {
+        to,
+        subject,
+        text: textBody,
+        html: htmlBody
+    })));
+    const successful = results.filter((result) => result.status === 'fulfilled');
+    if (!successful.length) {
+        const reason = results.find((result) => result.status === 'rejected')?.reason;
+        throw reason instanceof Error ? reason : new Error(String(reason || 'No se pudo enviar el codigo OTP.'));
+    }
+    const skipped = successful.find((result) => result.value?.skipped)?.value;
+    if (skipped) return { ...skipped, recipients: recipients.length };
+    return { ok: true, recipients: recipients.length };
 }
 
 async function ensureDeviceApprovedForLogin({ user = {}, deviceContext = {} } = {}) {
@@ -343,6 +412,7 @@ async function ensureDeviceApprovedForLogin({ user = {}, deviceContext = {} } = 
         deviceId: context.deviceId,
         deviceType: context.deviceType,
         email: safeUser.email,
+        otpDelivery: 'authorizers',
         expiresInSec: otp.expiresInSec,
         debugCode: !isProduction() && emailResult?.skipped ? otp.code : undefined
     };
@@ -439,6 +509,7 @@ async function resendOtp({ deviceId = '', ipAddress = '' } = {}) {
     return {
         ok: true,
         expiresInSec: otp.expiresInSec,
+        otpDelivery: 'authorizers',
         debugCode: !isProduction() && emailResult?.skipped ? otp.code : undefined
     };
 }

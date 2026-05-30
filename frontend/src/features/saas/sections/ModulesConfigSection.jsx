@@ -1,5 +1,6 @@
 import React from 'react';
 import { SaasEntityPage } from '../components/layout';
+import DeviceAuthorizersSettingsDetailPane from './modules-config/DeviceAuthorizersSettingsDetailPane';
 import DevicesSettingsDetailPane from './modules-config/DevicesSettingsDetailPane';
 import GeneralSettingsDetailPane from './modules-config/GeneralSettingsDetailPane';
 import ModulesConfigModuleDetailPane from './modules-config/ModulesConfigModuleDetailPane';
@@ -8,7 +9,8 @@ import SmtpSettingsDetailPane from './modules-config/SmtpSettingsDetailPane';
 const CONFIG_KEYS = {
     TENANT_SETTINGS: 'tenant_settings',
     AUTH_DEVICES: 'auth_devices',
-    SMTP_EMAIL: 'smtp_email'
+    SMTP_EMAIL: 'smtp_email',
+    DEVICE_AUTHORIZERS: 'device_authorizers'
 };
 
 function ModulesConfigSection(props = {}) {
@@ -107,6 +109,15 @@ function ModulesConfigSection(props = {}) {
                 phone: 'SMTP por tenant',
                 status: 'Configurable',
                 channel: 'Email',
+                defaultLabel: 'No',
+                assignedUsers: '-',
+                updatedAt: '-'
+            }, {
+                id: CONFIG_KEYS.DEVICE_AUTHORIZERS,
+                name: 'Autorizadores de acceso',
+                phone: 'OTP por tenant',
+                status: 'Configurable',
+                channel: 'Seguridad',
                 defaultLabel: 'No',
                 assignedUsers: '-',
                 updatedAt: '-'
@@ -230,6 +241,13 @@ function ModulesConfigSection(props = {}) {
             />
 
             <SmtpSettingsDetailPane
+                settingsTenantId={settingsTenantId}
+                isGeneralConfigSection={isGeneralConfigSection}
+                selectedConfigKey={selectedConfigKey}
+                requestJson={requestJson}
+            />
+
+            <DeviceAuthorizersSettingsDetailPane
                 settingsTenantId={settingsTenantId}
                 isGeneralConfigSection={isGeneralConfigSection}
                 selectedConfigKey={selectedConfigKey}
@@ -381,6 +399,8 @@ function ModulesConfigSection(props = {}) {
                         setSelectedConfigKey?.(CONFIG_KEYS.AUTH_DEVICES);
                     } else if (row?.id === CONFIG_KEYS.SMTP_EMAIL) {
                         setSelectedConfigKey?.(CONFIG_KEYS.SMTP_EMAIL);
+                    } else if (row?.id === CONFIG_KEYS.DEVICE_AUTHORIZERS) {
+                        setSelectedConfigKey?.(CONFIG_KEYS.DEVICE_AUTHORIZERS);
                     } else {
                         openConfigSettingsView?.();
                     }
@@ -410,6 +430,9 @@ function ModulesConfigSection(props = {}) {
                     : null,
                 isGeneralConfigSection
                     ? { label: 'Correo', onClick: () => setSelectedConfigKey?.(CONFIG_KEYS.SMTP_EMAIL), disabled: busy || !settingsTenantId }
+                    : null,
+                isGeneralConfigSection
+                    ? { label: 'Autorizadores', onClick: () => setSelectedConfigKey?.(CONFIG_KEYS.DEVICE_AUTHORIZERS), disabled: busy || !settingsTenantId }
                     : null
             ].filter(Boolean)}
             detailTitle={isModulesSection

@@ -1,9 +1,21 @@
 ﻿const catalogSyncService = require('../services/catalog-sync.service');
 
 const emailService = require('../../security/services/email.service');
+const {
+    getStorageDriver,
+    queryPostgres
+} = require('../../../config/persistence-runtime');
 
 function text(value = '') {
     return String(value || '').trim();
+}
+
+function lower(value = '') {
+    return text(value).toLowerCase();
+}
+
+function isPostgresAvailable() {
+    return getStorageDriver() === 'postgres';
 }
 
 function getRequestTenantId(req) {
@@ -38,6 +50,55 @@ function ensureTenantIntegrationsRead(req, tenantId, { isTenantAllowedForUser, h
 function ensureTenantIntegrationsManage(req, tenantId, { isTenantAllowedForUser, hasPermission, accessPolicyService }) {
     return isTenantAllowedForUser(req, tenantId)
         && hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE);
+}
+
+function isValidEmail(value = '') {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(lower(value));
+}
+
+function normalizeDeviceAuthorizer(row = null) {
+    if (!row || typeof row !== 'object') return null;
+    return {
+        id: row.id,
+        tenantId: text(row.tenant_id || row.tenantId),
+        userId: text(row.user_id || row.userId),
+        email: lower(row.email),
+        name: text(row.name),
+        isActive: row.is_active !== false && row.isActive !== false,
+        createdAt: row.created_at || row.createdAt || null
+    };
+}
+
+async function listTenantDeviceAuthorizers(tenantId = '') {
+    const cleanTenantId = text(tenantId);
+    if (!cleanTenantId || !isPostgresAvailable()) return [];
+    const { rows } = await queryPostgres(
+        `SELECT id, tenant_id, user_id, email, name, is_active, created_at
+           FROM tenant_device_authorizers
+          WHERE tenant_id = $1
+            AND is_active = TRUE
+          ORDER BY created_at ASC NULLS LAST, id ASC`,
+        [cleanTenantId]
+    );
+    return (rows || []).map(normalizeDeviceAuthorizer).filter((item) => item?.email);
+}
+
+async function getTenantOwnerEmail(tenantId = '') {
+    const cleanTenantId = text(tenantId);
+    if (!cleanTenantId || !isPostgresAvailable()) return '';
+    const { rows } = await queryPostgres(
+        `SELECT u.email
+           FROM memberships m
+           JOIN users u ON u.user_id = m.user_id
+          WHERE m.tenant_id = $1
+            AND m.role = 'owner'
+            AND m.is_active = TRUE
+            AND u.is_active = TRUE
+          ORDER BY u.created_at ASC NULLS LAST
+          LIMIT 1`,
+        [cleanTenantId]
+    );
+    return lower(rows?.[0]?.email);
 }
 
 function defaultSanitizeCatalogProductPayload(payload = {}, { allowPartial = false } = {}) {
@@ -240,6 +301,92 @@ function registerTenantAdminConfigCatalogHttpRoutes({
             const errorMessage = String(error?.message || 'No se pudo enviar el correo de prueba.');
             console.log('[SMTP Test] resultado', { ok: false, error: errorMessage });
             return res.status(400).json({ ok: false, error: errorMessage });
+        }
+    });
+
+    app.get('/api/tenant/device-authorizers', async (req, res) => {
+        const tenantId = getRequestTenantId(req);
+        if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+        if (!ensureTenantIntegrationsRead(req, tenantId, { isTenantAllowedForUser, hasAnyPermission, accessPolicyService })) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const items = await listTenantDeviceAuthorizers(tenantId);
+            return res.json({ ok: true, tenantId, items, limit: 5 });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar autorizadores.') });
+        }
+    });
+
+    app.post('/api/tenant/device-authorizers', async (req, res) => {
+        const tenantId = getRequestTenantId(req);
+        if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+        if (!ensureTenantIntegrationsManage(req, tenantId, { isTenantAllowedForUser, hasPermission, accessPolicyService })) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+        if (!isPostgresAvailable()) return res.status(503).json({ ok: false, error: 'Base de datos no disponible.' });
+
+        try {
+            const email = lower(req?.body?.email);
+            const name = text(req?.body?.name);
+            if (!isValidEmail(email)) return res.status(400).json({ ok: false, error: 'Email invalido.' });
+
+            const current = await listTenantDeviceAuthorizers(tenantId);
+            const alreadyActive = current.some((item) => item.email === email);
+            if (!alreadyActive && current.length >= 5) {
+                return res.status(400).json({ ok: false, error: 'Maximo 5 autorizadores por tenant.' });
+            }
+
+            const { rows } = await queryPostgres(
+                `INSERT INTO tenant_device_authorizers (
+                    tenant_id, email, name, is_active, created_at
+                ) VALUES (
+                    $1, $2, $3, TRUE, NOW()
+                )
+                ON CONFLICT (tenant_id, email)
+                DO UPDATE SET
+                    name = EXCLUDED.name,
+                    is_active = TRUE
+                RETURNING id, tenant_id, user_id, email, name, is_active, created_at`,
+                [tenantId, email, name]
+            );
+            const items = await listTenantDeviceAuthorizers(tenantId);
+            return res.json({ ok: true, tenantId, item: normalizeDeviceAuthorizer(rows?.[0] || null), items, limit: 5 });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar autorizador.') });
+        }
+    });
+
+    app.delete('/api/tenant/device-authorizers/:id', async (req, res) => {
+        const tenantId = getRequestTenantId(req);
+        const id = Number.parseInt(String(req.params?.id || ''), 10);
+        if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+        if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: 'Autorizador invalido.' });
+        if (!ensureTenantIntegrationsManage(req, tenantId, { isTenantAllowedForUser, hasPermission, accessPolicyService })) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+        if (!isPostgresAvailable()) return res.status(503).json({ ok: false, error: 'Base de datos no disponible.' });
+
+        try {
+            const current = await listTenantDeviceAuthorizers(tenantId);
+            const isDeletingLast = current.length <= 1 && current.some((item) => Number(item.id) === id);
+            const ownerEmail = isDeletingLast ? await getTenantOwnerEmail(tenantId) : '';
+            if (isDeletingLast && !ownerEmail) {
+                return res.status(400).json({ ok: false, error: 'No se puede eliminar el unico autorizador sin owner fallback.' });
+            }
+
+            await queryPostgres(
+                `UPDATE tenant_device_authorizers
+                    SET is_active = FALSE
+                  WHERE tenant_id = $1
+                    AND id = $2`,
+                [tenantId, id]
+            );
+            const items = await listTenantDeviceAuthorizers(tenantId);
+            return res.json({ ok: true, tenantId, items, limit: 5 });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo eliminar autorizador.') });
         }
     });
 

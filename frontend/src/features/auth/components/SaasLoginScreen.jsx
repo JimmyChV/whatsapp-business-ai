@@ -76,7 +76,7 @@ function SaasLoginScreen({
               <div className='saas-recovery-box saas-recovery-box--split'>
                 <div className='saas-recovery-head'>
                   <strong>Verifica tu dispositivo</strong>
-                  <small>Enviamos un codigo de 6 digitos a {pendingDeviceAuth?.email || loginEmail}.</small>
+                  <small>Enviamos un codigo de 6 digitos a los autorizadores de acceso de tu empresa.</small>
                 </div>
 
                 {saasAuthError && <div className='saas-login-error'>{saasAuthError}</div>}
