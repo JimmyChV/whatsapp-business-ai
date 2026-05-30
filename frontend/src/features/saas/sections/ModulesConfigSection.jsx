@@ -1,13 +1,22 @@
 import React from 'react';
 import { SaasEntityPage } from '../components/layout';
+import DevicesSettingsDetailPane from './modules-config/DevicesSettingsDetailPane';
 import GeneralSettingsDetailPane from './modules-config/GeneralSettingsDetailPane';
 import ModulesConfigModuleDetailPane from './modules-config/ModulesConfigModuleDetailPane';
+
+const CONFIG_KEYS = {
+    TENANT_SETTINGS: 'tenant_settings',
+    AUTH_DEVICES: 'auth_devices'
+};
 
 function ModulesConfigSection(props = {}) {
     const context = props.context && typeof props.context === 'object' ? props.context : props;
     const {
     isGeneralConfigSection,
     isModulesSection,
+    isSuperAdmin,
+    currentUser,
+    userRole,
     settingsTenantId,
     loadTenantSettings,
     loadWaModules,
@@ -25,6 +34,7 @@ function ModulesConfigSection(props = {}) {
     forceReload = null,
     openConfigModuleCreate,
     openConfigSettingsView,
+    setSelectedConfigKey,
     clearConfigSelection,
     tenantSettings,
     MODULE_KEYS,
@@ -72,7 +82,7 @@ function ModulesConfigSection(props = {}) {
     const rows = React.useMemo(() => {
         if (isGeneralConfigSection) {
             return [{
-                id: MODULE_KEYS?.GENERAL || 'general',
+                id: CONFIG_KEYS.TENANT_SETTINGS,
                 name: 'Configuración general',
                 phone: tenantSettings?.contactPhone || '-',
                 status: tenantSettings?.enabled === false ? 'Inactiva' : 'Activa',
@@ -80,6 +90,15 @@ function ModulesConfigSection(props = {}) {
                 defaultLabel: 'Sí',
                 assignedUsers: '-',
                 updatedAt: formatDateTimeLabel?.(tenantSettings?.updatedAt) || '-'
+            }, {
+                id: CONFIG_KEYS.AUTH_DEVICES,
+                name: 'Mis dispositivos',
+                phone: 'Sesion segura',
+                status: 'Activa',
+                channel: 'Seguridad',
+                defaultLabel: 'No',
+                assignedUsers: '-',
+                updatedAt: '-'
             }];
         }
         return (Array.isArray(waModules) ? waModules : []).map((module) => ({
@@ -189,6 +208,16 @@ function ModulesConfigSection(props = {}) {
                 MODULE_KEYS={MODULE_KEYS}
             />
 
+            <DevicesSettingsDetailPane
+                isGeneralConfigSection={isGeneralConfigSection}
+                selectedConfigKey={selectedConfigKey}
+                requestJson={requestJson}
+                formatDateTimeLabel={formatDateTimeLabel}
+                currentUser={currentUser}
+                isSuperAdmin={isSuperAdmin}
+                userRole={userRole}
+            />
+
             <ModulesConfigModuleDetailPane
                 context={{
                     settingsTenantId,
@@ -245,10 +274,12 @@ function ModulesConfigSection(props = {}) {
         busy,
         canEditModules,
         clearConfigSelection,
+        currentUser,
         formatDateTimeLabel,
         handleFormImageUpload,
         handleOpenOperation,
         isGeneralConfigSection,
+        isSuperAdmin,
         isModulesSection,
         moduleQuickReplyLibraryDraft,
         moduleUserPickerId,
@@ -271,6 +302,7 @@ function ModulesConfigSection(props = {}) {
         toggleCatalogForModule,
         toggleQuickReplyLibraryForModuleDraft,
         toggleWaModuleActive,
+        userRole,
         usersForSettingsTenant,
         waModuleForm,
         waModulePanelMode
@@ -326,7 +358,13 @@ function ModulesConfigSection(props = {}) {
             columns={columns}
             selectedId={selectedEntityId}
             onSelect={(row) => {
-                if (isGeneralConfigSection) openConfigSettingsView?.();
+                if (isGeneralConfigSection) {
+                    if (row?.id === CONFIG_KEYS.AUTH_DEVICES) {
+                        setSelectedConfigKey?.(CONFIG_KEYS.AUTH_DEVICES);
+                    } else {
+                        openConfigSettingsView?.();
+                    }
+                }
                 else openConfigModuleView?.(row?.id);
             }}
             onClose={clearConfigSelection}
@@ -346,6 +384,9 @@ function ModulesConfigSection(props = {}) {
                     : null,
                 isGeneralConfigSection
                     ? { label: 'Configuración general', onClick: openConfigSettingsView, disabled: busy || !settingsTenantId }
+                    : null,
+                isGeneralConfigSection
+                    ? { label: 'Mis dispositivos', onClick: () => setSelectedConfigKey?.(CONFIG_KEYS.AUTH_DEVICES), disabled: busy }
                     : null
             ].filter(Boolean)}
             detailTitle={isModulesSection

@@ -69,7 +69,9 @@ function normalizeDeviceRow(row = null) {
         approvedBy: text(row.approved_by || row.approvedBy),
         revokedAt: row.revoked_at || row.revokedAt || null,
         lastSeenAt: row.last_seen_at || row.lastSeenAt || null,
-        createdAt: row.created_at || row.createdAt || null
+        createdAt: row.created_at || row.createdAt || null,
+        userEmail: lower(row.user_email || row.userEmail),
+        userName: text(row.user_name || row.userName)
     };
 }
 
@@ -93,6 +95,79 @@ async function getDeviceSession(deviceId = '') {
         [cleanDeviceId]
     );
     return normalizeDeviceRow(rows?.[0] || null);
+}
+
+function withCurrentDevice(device = null, currentDeviceId = '') {
+    if (!device) return null;
+    const cleanCurrentId = text(currentDeviceId);
+    return {
+        ...device,
+        current: Boolean(cleanCurrentId && device.deviceId === cleanCurrentId)
+    };
+}
+
+async function listDevicesForUser(userId = '', { currentDeviceId = '' } = {}) {
+    const cleanUserId = text(userId);
+    if (!cleanUserId || !isPostgresAvailable()) return [];
+    const { rows } = await queryPostgres(
+        `SELECT d.*, u.email AS user_email, u.display_name AS user_name
+           FROM auth_device_sessions d
+           LEFT JOIN users u ON u.user_id = d.user_id
+          WHERE d.user_id = $1
+          ORDER BY COALESCE(d.last_seen_at, d.created_at) DESC NULLS LAST,
+                   d.created_at DESC NULLS LAST`,
+        [cleanUserId]
+    );
+    return (rows || []).map((row) => withCurrentDevice(normalizeDeviceRow(row), currentDeviceId)).filter(Boolean);
+}
+
+async function listDevicesForAdminUser(userId = '', { currentDeviceId = '' } = {}) {
+    return listDevicesForUser(userId, { currentDeviceId });
+}
+
+async function renameDevice({ userId = '', deviceId = '', deviceName = '' } = {}) {
+    const cleanUserId = text(userId);
+    const cleanDeviceId = text(deviceId);
+    const cleanName = text(deviceName);
+    if (!cleanUserId || !cleanDeviceId) throw new Error('device_not_found');
+    if (!cleanName) throw new Error('device_name_required');
+    if (!isPostgresAvailable()) throw new Error('device_store_unavailable');
+
+    const { rows } = await queryPostgres(
+        `UPDATE auth_device_sessions
+            SET device_name = $3
+          WHERE device_id = $1
+            AND user_id = $2
+          RETURNING *`,
+        [cleanDeviceId, cleanUserId, cleanName]
+    );
+    const device = normalizeDeviceRow(rows?.[0] || null);
+    if (!device) throw new Error('device_not_found');
+    return device;
+}
+
+async function revokeDevice({ actorUserId = '', deviceId = '', currentDeviceId = '', allowAny = false } = {}) {
+    const cleanActorId = text(actorUserId);
+    const cleanDeviceId = text(deviceId);
+    const cleanCurrentId = text(currentDeviceId);
+    if (!cleanActorId || !cleanDeviceId) throw new Error('device_not_found');
+    if (cleanCurrentId && cleanDeviceId === cleanCurrentId) {
+        throw new Error('cannot_revoke_current_device');
+    }
+    if (!isPostgresAvailable()) throw new Error('device_store_unavailable');
+
+    const { rows } = await queryPostgres(
+        `UPDATE auth_device_sessions
+            SET revoked_at = COALESCE(revoked_at, NOW()),
+                revoked_by = $2
+          WHERE device_id = $1
+            AND ($3::boolean = TRUE OR user_id = $2)
+          RETURNING *`,
+        [cleanDeviceId, cleanActorId, Boolean(allowAny)]
+    );
+    const device = normalizeDeviceRow(rows?.[0] || null);
+    if (!device) throw new Error('device_not_found');
+    return withCurrentDevice(device, currentDeviceId);
 }
 
 async function findDeviceWithUser(deviceId = '') {
@@ -436,5 +511,9 @@ module.exports = {
     notifyTenantOwnersDeviceApproved,
     isDeviceRevoked,
     updateLastSeen,
-    getDeviceSession
+    getDeviceSession,
+    listDevicesForUser,
+    listDevicesForAdminUser,
+    renameDevice,
+    revokeDevice
 };

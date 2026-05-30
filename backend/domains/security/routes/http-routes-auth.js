@@ -89,6 +89,24 @@
         };
     }
 
+    function getAuthenticatedUser(req = {}) {
+        const authContext = req.authContext || { isAuthenticated: false, user: null };
+        if (!authContext.isAuthenticated || !authContext.user) return null;
+        return authContext.user;
+    }
+
+    function getAuthenticatedUserId(req = {}) {
+        const user = getAuthenticatedUser(req);
+        return String(user?.userId || user?.id || '').trim();
+    }
+
+    function canManageUserDevices(req = {}) {
+        const user = getAuthenticatedUser(req);
+        if (!user) return false;
+        const role = String(user.role || '').trim().toLowerCase();
+        return Boolean(user.isSuperAdmin === true || role === 'owner');
+    }
+
     app.post('/api/auth/login', async (req, res) => {
         const email = String(req.body?.email || '').trim().toLowerCase();
         const tenantId = String(req.body?.tenantId || '').trim() || null;
@@ -464,6 +482,109 @@
             return res.json({ ok: true, ...result });
         } catch (error) {
             return res.status(500).json({ ok: false, error: 'No se pudo cerrar sesion.' });
+        }
+    });
+
+    app.get('/api/auth/devices', async (req, res) => {
+        const userId = getAuthenticatedUserId(req);
+        if (!userId) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
+        try {
+            const devices = await resolvedDeviceAuthService.listDevicesForUser(userId, {
+                currentDeviceId: getDeviceIdFromRequest(req)
+            });
+            return res.json({ ok: true, devices });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron listar dispositivos.') });
+        }
+    });
+
+    app.patch('/api/auth/devices/:deviceId', async (req, res) => {
+        const userId = getAuthenticatedUserId(req);
+        const deviceId = String(req.params?.deviceId || '').trim();
+        const deviceName = String(req.body?.deviceName || '').trim();
+        if (!userId) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+        if (!deviceId || !deviceName) {
+            return res.status(400).json({ ok: false, error: 'deviceId y deviceName son requeridos.' });
+        }
+
+        try {
+            const device = await resolvedDeviceAuthService.renameDevice({ userId, deviceId, deviceName });
+            await auditLogService.writeAuditLog(req?.tenantContext?.id || req?.authContext?.user?.tenantId || 'default', {
+                userId,
+                userEmail: req?.authContext?.user?.email || null,
+                role: req?.authContext?.user?.role || 'seller',
+                action: 'auth.device.rename',
+                resourceType: 'auth_device',
+                resourceId: deviceId,
+                source: 'api',
+                ip: String(req.ip || ''),
+                payload: { deviceName }
+            });
+            return res.json({ ok: true, device });
+        } catch (error) {
+            const reason = String(error?.message || 'No se pudo actualizar el dispositivo.');
+            const status = /required|not_found/i.test(reason) ? 400 : 500;
+            return res.status(status).json({ ok: false, error: reason });
+        }
+    });
+
+    app.delete('/api/auth/devices/:deviceId', async (req, res) => {
+        const userId = getAuthenticatedUserId(req);
+        const deviceId = String(req.params?.deviceId || '').trim();
+        if (!userId) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+        if (!deviceId) {
+            return res.status(400).json({ ok: false, error: 'deviceId es requerido.' });
+        }
+
+        try {
+            const device = await resolvedDeviceAuthService.revokeDevice({
+                actorUserId: userId,
+                deviceId,
+                currentDeviceId: getDeviceIdFromRequest(req),
+                allowAny: canManageUserDevices(req)
+            });
+            await auditLogService.writeAuditLog(device?.tenantId || req?.tenantContext?.id || req?.authContext?.user?.tenantId || 'default', {
+                userId,
+                userEmail: req?.authContext?.user?.email || null,
+                role: req?.authContext?.user?.role || 'seller',
+                action: 'auth.device.revoke',
+                resourceType: 'auth_device',
+                resourceId: deviceId,
+                source: 'api',
+                ip: String(req.ip || ''),
+                payload: { targetUserId: device?.userId || null }
+            });
+            return res.json({ ok: true, device });
+        } catch (error) {
+            const reason = String(error?.message || 'No se pudo revocar el dispositivo.');
+            const status = /current|not_found/i.test(reason) ? 400 : 500;
+            return res.status(status).json({ ok: false, error: reason });
+        }
+    });
+
+    app.get('/api/admin/users/:userId/devices', async (req, res) => {
+        if (!canManageUserDevices(req)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+        const targetUserId = String(req.params?.userId || '').trim();
+        if (!targetUserId) {
+            return res.status(400).json({ ok: false, error: 'userId es requerido.' });
+        }
+
+        try {
+            const devices = await resolvedDeviceAuthService.listDevicesForAdminUser(targetUserId, {
+                currentDeviceId: getDeviceIdFromRequest(req)
+            });
+            return res.json({ ok: true, devices });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron listar dispositivos.') });
         }
     });
 
