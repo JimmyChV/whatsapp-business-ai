@@ -8,6 +8,9 @@ import {
   readChatNotificationOpenRequest
 } from '../features/chat/core/helpers/notificationWorkspace.helpers';
 
+const LAST_ACTIVE_CHAT_ID_KEY = 'lastActiveChatId';
+const LAST_ACTIVE_CHAT_TENANT_KEY = 'lastActiveChatTenantId';
+
 export default function OperationPage({
   forceOperationLaunch,
   socket,
@@ -129,6 +132,7 @@ export default function OperationPage({
   const [mobilePanel, setMobilePanel] = useState('list');
   const [mobileToolRequest, setMobileToolRequest] = useState(null);
   const mobilePanelRef = useRef('list');
+  const restoredLastChatRef = useRef(false);
   const originalDocumentTitleRef = useRef(typeof document !== 'undefined' ? document.title : 'WhatsApp Business Pro');
   const activeChatDetails = chats.find((c) => c.id === activeChatId) || null;
   const mergedActiveChatDetails = activeChatDetails || clientContact
@@ -209,6 +213,33 @@ export default function OperationPage({
   }, [toasts]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const cleanActiveChatId = String(activeChatId || '').trim();
+    if (!cleanActiveChatId) return;
+    try {
+      window.sessionStorage.setItem(LAST_ACTIVE_CHAT_ID_KEY, cleanActiveChatId);
+      window.sessionStorage.setItem(LAST_ACTIVE_CHAT_TENANT_KEY, String(tenantScopeId || '').trim());
+    } catch (_) {
+      // Session restore is a convenience; ignore storage failures.
+    }
+  }, [activeChatId, tenantScopeId]);
+
+  useEffect(() => {
+    if (restoredLastChatRef.current || activeChatId || !tenantScopeId) return;
+    if (readChatNotificationOpenRequest()) return;
+    restoredLastChatRef.current = true;
+    try {
+      const lastChatId = String(window.sessionStorage.getItem(LAST_ACTIVE_CHAT_ID_KEY) || '').trim();
+      const lastTenantId = String(window.sessionStorage.getItem(LAST_ACTIVE_CHAT_TENANT_KEY) || '').trim();
+      if (!lastChatId || (lastTenantId && lastTenantId !== String(tenantScopeId || '').trim())) return;
+      handleChatSelect?.(lastChatId, { clearSearch: false });
+      setMobilePanelWithHistory('chat');
+    } catch (_) {
+      // Keep app boot resilient if sessionStorage is unavailable.
+    }
+  }, [activeChatId, handleChatSelect, setMobilePanelWithHistory, tenantScopeId]);
+
+  useEffect(() => {
     if (typeof window === 'undefined') return undefined;
 
     const resolveNotificationChatId = (chatId = '', moduleId = '') => {
@@ -238,9 +269,17 @@ export default function OperationPage({
       if (!targetTenantId || !targetChatId) return;
       if (String(targetTenantId) !== String(tenantScopeId || '').trim()) return;
 
-      handleChatSelect?.(resolveNotificationChatId(targetChatId, targetModuleId), { clearSearch: true });
+      const resolvedChatId = resolveNotificationChatId(targetChatId, targetModuleId);
+      handleChatSelect?.(resolvedChatId, { clearSearch: true });
+      setMobileToolRequest(null);
       setMobilePanelWithHistory('chat');
       setToasts((prev) => (Array.isArray(prev) ? prev : []).filter((toast) => String(toast?.chatId || '') !== targetChatId));
+      if (pendingRequest?.focusInput) {
+        window.setTimeout(() => {
+          const input = document.querySelector('.conversation-pane-shell .message-input');
+          if (input && typeof input.focus === 'function') input.focus();
+        }, 350);
+      }
       clearChatNotificationOpenRequest();
     };
 

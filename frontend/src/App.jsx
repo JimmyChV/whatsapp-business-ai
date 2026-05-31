@@ -243,7 +243,8 @@ function App() {
         tenantId: String(payload?.tenantId || tenantScopeId || '').trim(),
         chatId,
         moduleId: String(payload?.moduleId || '').trim().toLowerCase(),
-        source: String(payload?.source || 'push_notification').trim()
+        source: String(payload?.source || 'push_notification').trim(),
+        focusInput: payload?.focusInput === true || String(payload?.focus || '').trim().toLowerCase() === 'input'
       });
     };
 
@@ -262,11 +263,13 @@ function App() {
           chatId,
           tenantId: params.get('tenantId') || tenantScopeId,
           moduleId: params.get('moduleId') || '',
-          source: 'push_url'
+          source: 'push_url',
+          focusInput: String(params.get('focus') || '').trim().toLowerCase() === 'input'
         });
         params.delete('chat');
         params.delete('tenantId');
         params.delete('moduleId');
+        params.delete('focus');
         const nextSearch = params.toString();
         const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash || ''}`;
         window.history.replaceState(window.history.state, '', nextUrl);

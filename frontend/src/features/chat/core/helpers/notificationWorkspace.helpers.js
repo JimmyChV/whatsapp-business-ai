@@ -8,6 +8,7 @@ const normalizeRequest = (request = null) => {
   const moduleId = String(request?.moduleId || '').trim().toLowerCase();
   const source = String(request?.source || 'notification').trim().toLowerCase() || 'notification';
   const requestedAt = Number(request?.requestedAt || Date.now());
+  const focusInput = request?.focusInput === true || String(request?.focus || '').trim().toLowerCase() === 'input';
 
   if (!tenantId || !chatId) return null;
 
@@ -16,6 +17,7 @@ const normalizeRequest = (request = null) => {
     chatId,
     moduleId,
     source,
+    focusInput,
     requestedAt: Number.isFinite(requestedAt) ? requestedAt : Date.now()
   };
 };

@@ -332,6 +332,7 @@ async function sendInboundMessageNotification({
         moduleId: text(scopeModuleId).toLowerCase(),
         url: `/?chat=${encodeURIComponent(cleanChatId)}&tenantId=${encodeURIComponent(cleanTenantId)}&moduleId=${encodeURIComponent(text(scopeModuleId).toLowerCase())}`,
         icon,
+        badge: DEFAULT_PUSH_ICON_URL,
     };
     return sendToUsers(recipients, cleanTenantId, payload);
 }

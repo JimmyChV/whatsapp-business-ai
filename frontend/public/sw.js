@@ -48,6 +48,19 @@ function networkFirst(request, fallbackPath = '/index.html') {
   )));
 }
 
+function appShellNetworkFirst(request) {
+  return fetch(request).then((response) => {
+    if (response && response.status === 200) {
+      const clone = response.clone();
+      caches.open(CACHE_NAME).then((cache) => {
+        cache.put('/index.html', clone);
+        cache.put(request, response.clone());
+      });
+    }
+    return response;
+  }).catch(() => caches.match('/index.html'));
+}
+
 function cacheFirstWithBackgroundUpdate(request) {
   return caches.match(request).then((cached) => {
     const update = fetch(request).then((response) => {
@@ -71,7 +84,7 @@ self.addEventListener('fetch', (event) => {
   if (isApiOrSocketRequest(url)) return;
 
   if (isAppShellRequest(request, url)) {
-    event.respondWith(networkFirst(request));
+    event.respondWith(appShellNetworkFirst(request));
     return;
   }
 
@@ -99,7 +112,7 @@ self.addEventListener('push', (event) => {
       {
         body: data.body || '',
         icon: data.icon || 'https://wa.lavitat.pe/icons/icon-192.png',
-        badge: '/icons/icon-192.png',
+        badge: data.badge || 'https://wa.lavitat.pe/icons/icon-192.png',
         tag: data.chatId || 'message',
         data: {
           url: data.url || '/',
@@ -110,14 +123,32 @@ self.addEventListener('push', (event) => {
         vibrate: [300, 100, 300, 100, 300],
         requireInteraction: false,
         renotify: true,
-        silent: false
+        silent: false,
+        actions: [
+          { action: 'reply', title: 'Responder' },
+          { action: 'view', title: 'Ver chat' }
+        ]
       }
     )
   );
 });
 
+function withFocusParam(url = '/', shouldFocusInput = false) {
+  if (!shouldFocusInput) return url || '/';
+  try {
+    const parsed = new URL(url || '/', self.location.origin);
+    parsed.searchParams.set('focus', 'input');
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch (_) {
+    return '/?focus=input';
+  }
+}
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  const data = event.notification.data || {};
+  const shouldFocusInput = event.action === 'reply';
+  const targetUrl = withFocusParam(data.url || '/', shouldFocusInput);
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
@@ -125,14 +156,15 @@ self.addEventListener('notificationclick', (event) => {
           client.focus();
           client.postMessage({
             type: 'NOTIFICATION_CLICK',
-            chatId: event.notification.data?.chatId || '',
-            tenantId: event.notification.data?.tenantId || '',
-            moduleId: event.notification.data?.moduleId || ''
+            chatId: data.chatId || '',
+            tenantId: data.tenantId || '',
+            moduleId: data.moduleId || '',
+            focusInput: shouldFocusInput
           });
           return;
         }
       }
-      return clients.openWindow(event.notification.data?.url || '/');
+      return clients.openWindow(targetUrl);
     })
   );
 });
