@@ -8,6 +8,7 @@ import {
     replaceMessageByClientTempId,
     upsertMessageById
 } from '../helpers/messageCache.helpers';
+import { saveMessages as saveCachedMessages } from '../services/chatLocalCache.service';
 import { mergeTemplateMessageContent } from '../helpers/templateMessages.helpers';
 
 function toTitleCaseChatText(value = '') {
@@ -502,7 +503,9 @@ export default function useSocketChatConversationEvents({
 
             setChats((prev) => {
                 if (pageOffset <= 0) {
-                    return dedupeChats(hydrated).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                    const cachedVisibleChats = (Array.isArray(prev) ? prev : [])
+                        .filter((chat) => chatMatchesQuery(chat, chatSearchRef.current) && chatMatchesFilters(chat, chatFiltersRef.current));
+                    return dedupeChats([...cachedVisibleChats, ...hydrated]).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
                 }
                 return dedupeChats([...prev, ...hydrated]).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
             });
@@ -777,7 +780,8 @@ export default function useSocketChatConversationEvents({
             setMessages(mergeHistoryMessages);
             const activeChatId = String(activeChatIdRef.current || '').trim();
             if (activeChatId) {
-                patchCachedMessages(messagesCacheRef, activeChatId, mergeHistoryMessages);
+                const cachedHistoryMessages = patchCachedMessages(messagesCacheRef, activeChatId, mergeHistoryMessages);
+                saveCachedMessages(activeChatId, cachedHistoryMessages);
             }
             const nextWindowOpen = Boolean(data?.windowOpen);
             const nextWindowExpiresAt = String(data?.windowExpiresAt || '').trim() || null;
@@ -1357,7 +1361,7 @@ export default function useSocketChatConversationEvents({
                 });
             }
 
-            patchCachedMessages(messagesCacheRef, relatedChatId, (prev) => {
+            const cachedRealtimeMessages = patchCachedMessages(messagesCacheRef, relatedChatId, (prev) => {
                 const incomingId = String(reconciledIncoming?.id || '').trim();
                 if (!incomingId) return prev;
                 if (replacementClientTempId) {
@@ -1369,6 +1373,7 @@ export default function useSocketChatConversationEvents({
                 const mergedIncoming = mergeRealtimeSenderAttribution(existing, reconciledIncoming);
                 return upsertMessageById(prev, mergeTemplateMessageContent(existing, mergedIncoming));
             });
+            saveCachedMessages(relatedChatId, cachedRealtimeMessages);
 
             syncActiveMessages(relatedChatId, (prev) => {
                 const normalizedIncoming = {

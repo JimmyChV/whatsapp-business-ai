@@ -6,6 +6,7 @@ export function buildOperationPageProps(input = {}) {
     handleFileChange: input.handleFileChange,
     chats: input.chats,
     chatsLoaded: input.chatsLoaded,
+    isCacheLoaded: input.isCacheLoaded,
     activeChatId: input.activeChatId,
     handleChatSelect: input.handleChatSelect,
     myProfile: input.myProfile,

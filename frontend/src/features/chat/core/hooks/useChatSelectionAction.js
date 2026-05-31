@@ -1,4 +1,5 @@
-import { getCachedMessages } from '../helpers/messageCache.helpers';
+import { getCachedMessages, writeCachedMessages } from '../helpers/messageCache.helpers';
+import { getMessages as getStoredMessages } from '../services/chatLocalCache.service';
 
 export default function useChatSelectionAction({
   chatsRef,
@@ -107,6 +108,12 @@ export default function useChatSelectionAction({
     prevMessagesMetaRef.current = { count: 0, lastId: '' };
     const cachedMessages = getCachedMessages(messagesCacheRef, resolvedChatId);
     setMessages(Array.isArray(cachedMessages) ? cachedMessages : []);
+    getStoredMessages(resolvedChatId).then((storedMessages) => {
+      if (!Array.isArray(storedMessages) || storedMessages.length === 0) return;
+      if (String(activeChatIdRef.current || '') !== resolvedChatId) return;
+      writeCachedMessages(messagesCacheRef, resolvedChatId, storedMessages);
+      setMessages(storedMessages);
+    });
     setEditingMessage(null);
     setReplyingMessage(null);
     setShowClientProfile(false);

@@ -3,7 +3,10 @@ const DB_VERSION = 1;
 const CHAT_STORE = 'chats';
 const MESSAGE_STORE = 'messages';
 const META_STORE = 'meta';
-const MAX_MESSAGES_PER_CHAT = 50;
+const MAX_MESSAGES_PER_CHAT = 200;
+const CHAT_TTL_DAYS = 30;
+const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const LAST_CLEANUP_META_KEY = 'lastCleanup';
 let _cryptoKey = null;
 
 function getIndexedDb() {
@@ -210,10 +213,100 @@ export async function openDB() {
 export async function init(accessToken = '') {
   try {
     _cryptoKey = await deriveKey(accessToken);
+    await cleanExpiredChatsIfNeeded();
     return Boolean(_cryptoKey);
   } catch (_error) {
     _cryptoKey = null;
     return false;
+  }
+}
+
+async function getAllChatsRaw() {
+  try {
+    const db = await openDB();
+    if (!db) return [];
+    const tx = db.transaction(CHAT_STORE, 'readonly');
+    const store = tx.objectStore(CHAT_STORE);
+    const records = await requestToPromise(store.getAll());
+    db.close();
+    return Array.isArray(records) ? records : [];
+  } catch (_error) {
+    return [];
+  }
+}
+
+async function deleteChat(chatId = '') {
+  const safeChatId = String(chatId || '').trim();
+  if (!safeChatId) return false;
+
+  try {
+    const db = await openDB();
+    if (!db) return false;
+    const tx = db.transaction(CHAT_STORE, 'readwrite');
+    const done = transactionDone(tx);
+    tx.objectStore(CHAT_STORE).delete(safeChatId);
+    await done;
+    db.close();
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function deleteMessagesByChatId(chatId = '') {
+  const safeChatId = String(chatId || '').trim();
+  const keyRange = getKeyRange();
+  if (!safeChatId || !keyRange) return false;
+
+  try {
+    const db = await openDB();
+    if (!db) return false;
+    const readTx = db.transaction(MESSAGE_STORE, 'readonly');
+    const index = readTx.objectStore(MESSAGE_STORE).index('chatId');
+    const records = await requestToPromise(index.getAll(keyRange.only(safeChatId)));
+    const messageIds = (Array.isArray(records) ? records : [])
+      .map((message) => String(message?.messageId || '').trim())
+      .filter(Boolean);
+
+    if (messageIds.length > 0) {
+      const writeTx = db.transaction(MESSAGE_STORE, 'readwrite');
+      const done = transactionDone(writeTx);
+      const store = writeTx.objectStore(MESSAGE_STORE);
+      messageIds.forEach((messageId) => store.delete(messageId));
+      await done;
+    }
+
+    db.close();
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function cleanExpiredChats() {
+  const oldestAllowedAt = Date.now() - (CHAT_TTL_DAYS * 24 * 60 * 60 * 1000);
+  const allChats = await getAllChatsRaw();
+  const expiredChats = allChats.filter((chat) => {
+    const cachedAt = Number(chat?.cachedAt || 0) || Date.parse(String(chat?.cachedAt || ''));
+    return Number.isFinite(cachedAt) && cachedAt > 0 && cachedAt < oldestAllowedAt;
+  });
+
+  for (const chat of expiredChats) {
+    const chatId = String(chat?.id || '').trim();
+    if (!chatId) continue;
+    await deleteChat(chatId);
+    await deleteMessagesByChatId(chatId);
+  }
+}
+
+async function cleanExpiredChatsIfNeeded() {
+  try {
+    const lastCleanupAt = Number(await getMeta(LAST_CLEANUP_META_KEY) || 0) || 0;
+    if (lastCleanupAt && Date.now() - lastCleanupAt < CLEANUP_INTERVAL_MS) return;
+    await cleanExpiredChats();
+    await saveMeta(LAST_CLEANUP_META_KEY, Date.now());
+  } catch (_error) {
+    // Cache cleanup is best-effort and should never block app boot.
   }
 }
 

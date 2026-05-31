@@ -1,5 +1,13 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { normalizeChatFilters } from '../helpers/appChat.helpers';
+import {
+  getChats as getCachedChats,
+  init as initChatLocalCache,
+  saveChats as saveCachedChats,
+  saveMessages as saveCachedMessages,
+  saveMeta as saveCacheMeta,
+  getMeta as getCacheMeta
+} from '../services/chatLocalCache.service';
 
 const DEFAULT_CHAT_FILTERS = {
   labelTokens: [],
@@ -26,6 +34,7 @@ export default function useOperationWorkspaceState({
   const [chatsTotal, setChatsTotal] = useState(0);
   const [chatsHasMore, setChatsHasMore] = useState(true);
   const [isLoadingMoreChats, setIsLoadingMoreChats] = useState(false);
+  const [isCacheLoaded, setIsCacheLoaded] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState('');
   const [chatFilters, setChatFilters] = useState(DEFAULT_CHAT_FILTERS);
   const [activeChatId, setActiveChatId] = useState(null);
@@ -128,6 +137,56 @@ export default function useOperationWorkspaceState({
   const businessDataRequestDebounceRef = useRef({ key: '', at: 0 });
   const quickRepliesRequestRef = useRef({ key: '', at: 0 });
 
+  useEffect(() => {
+    let cancelled = false;
+    const accessToken = String(saasSession?.accessToken || '').trim();
+    const safeTenantId = String(tenantScopeId || '').trim() || 'default';
+
+    (async () => {
+      if (!accessToken) {
+        if (!cancelled) setIsCacheLoaded(true);
+        return;
+      }
+
+      await initChatLocalCache(accessToken);
+      const cachedTenantId = String(await getCacheMeta('tenantId') || '').trim();
+      if (cachedTenantId && cachedTenantId !== safeTenantId) {
+        if (!cancelled) setIsCacheLoaded(true);
+        return;
+      }
+
+      const cachedChats = await getCachedChats();
+      if (cancelled) return;
+      const tenantChats = cachedChats.filter((chat) => {
+        const cacheTenantId = String(chat?.cacheTenantId || '').trim();
+        return !cacheTenantId || cacheTenantId === safeTenantId;
+      });
+      if (tenantChats.length > 0) {
+        setChats(tenantChats);
+        setChatsLoaded(true);
+        setChatsTotal((prev) => Math.max(Number(prev || 0), tenantChats.length));
+      }
+      setIsCacheLoaded(true);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [saasSession?.accessToken, tenantScopeId]);
+
+  useEffect(() => {
+    if (!isCacheLoaded || !Array.isArray(chats) || chats.length === 0) return;
+    const safeTenantId = String(tenantScopeId || '').trim() || 'default';
+    saveCacheMeta('tenantId', safeTenantId);
+    saveCachedChats(chats.map((chat) => ({ ...chat, cacheTenantId: safeTenantId })));
+  }, [chats, isCacheLoaded, tenantScopeId]);
+
+  useEffect(() => {
+    const safeActiveChatId = String(activeChatId || '').trim();
+    if (!isCacheLoaded || !safeActiveChatId || !Array.isArray(messages) || messages.length === 0) return;
+    saveCachedMessages(safeActiveChatId, messages);
+  }, [activeChatId, isCacheLoaded, messages]);
+
   return {
     chats,
     setChats,
@@ -139,6 +198,8 @@ export default function useOperationWorkspaceState({
     setChatsHasMore,
     isLoadingMoreChats,
     setIsLoadingMoreChats,
+    isCacheLoaded,
+    setIsCacheLoaded,
     chatSearchQuery,
     setChatSearchQuery,
     chatFilters,

@@ -8,6 +8,7 @@ import {
   verifySaasDeviceOtp
 } from '../services/saasAuthApi';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
+import { clearAll as clearChatLocalCache } from '../../chat/core/services/chatLocalCache.service';
 
 export function useSaasSessionActions({
   recoveryStep,
@@ -286,6 +287,7 @@ export function useSaasSessionActions({
     } catch (_error) {
       // best effort
     }
+    await clearChatLocalCache();
     setSaasSession(null);
     setSelectedTransport('');
     setShowSaasAdminPanel(false);

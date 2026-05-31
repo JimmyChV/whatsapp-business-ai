@@ -2101,7 +2101,8 @@ body {
 }
 
 .chat-mobile-nav-btn,
-.business-mobile-header {
+.business-mobile-header,
+.operation-sync-indicator {
   display: none;
 }
 
@@ -2116,6 +2117,27 @@ body {
     margin: 0;
     border-radius: 0;
     padding-bottom: 0;
+  }
+
+  .operation-sync-indicator {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    z-index: 20;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: calc(100vw - 24px);
+    border: 1px solid color-mix(in srgb, var(--saas-accent-success) 28%, var(--wa-border));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--saas-accent-success) 10%, var(--wa-panel));
+    color: color-mix(in srgb, var(--saas-accent-success) 70%, var(--saas-text-primary));
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+    padding: 5px 10px;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    pointer-events: none;
   }
 
   .chat-sidebar-panel,

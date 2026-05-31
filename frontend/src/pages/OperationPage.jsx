@@ -18,6 +18,7 @@ export default function OperationPage({
   handleFileChange,
   chats,
   chatsLoaded,
+  isCacheLoaded,
   activeChatId,
   handleChatSelect,
   myProfile,
@@ -320,6 +321,11 @@ export default function OperationPage({
         onChange={handleFileChange}
         accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
       />
+      {isCacheLoaded && (!socket?.connected || !chatsLoaded) ? (
+        <div className="operation-sync-indicator" aria-live="polite">
+          Sincronizando...
+        </div>
+      ) : null}
 
       <div className="chat-sidebar-panel">
         <Sidebar

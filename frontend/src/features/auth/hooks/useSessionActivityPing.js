@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { clearAll as clearChatLocalCache } from '../../chat/core/services/chatLocalCache.service';
 
 const ACTIVITY_EVENTS = ['mousemove', 'keydown', 'click', 'touchstart'];
 const ACTIVITY_DEBOUNCE_MS = 5 * 60 * 1000;
@@ -38,6 +39,7 @@ export default function useSessionActivityPing({
         const payload = await response.json().catch(() => ({}));
         if (cancelled) return;
         if (response.status === 401 && String(payload?.error || '').trim() === 'device_revoked') {
+          await clearChatLocalCache();
           setSaasSession(null);
           setSaasAuthError('Sesion cerrada por inactividad');
         }

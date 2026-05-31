@@ -21,6 +21,7 @@ export function resolveAppRuntimeGate({
 } = {}) {
   if (!saasRuntimeLoaded) return APP_RUNTIME_GATES.RUNTIME_BOOTSTRAP;
   if (saasAuthEnabled && !isSaasAuthenticated) return APP_RUNTIME_GATES.AUTH_LOGIN;
+  if (allowOfflineOperation) return APP_RUNTIME_GATES.MAIN;
   if (!isConnected && !allowOfflineOperation) return APP_RUNTIME_GATES.SOCKET_CONNECTING;
   if (!selectedTransport) {
     if (canManageSaas && !forceOperationLaunch) return APP_RUNTIME_GATES.SAAS_PANEL;
