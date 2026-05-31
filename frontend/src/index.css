@@ -173,7 +173,7 @@ body {
   font-family: var(--saas-font-family);
   background-color: var(--app-background);
   color: var(--text-primary);
-  height: 100vh;
+  height: calc(var(--real-vh, 1vh) * 100);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -187,7 +187,7 @@ body {
 
 .app-container {
   display: flex;
-  height: 100vh;
+  height: calc(var(--real-vh, 1vh) * 100);
   width: 100vw;
   background-color: var(--app-background);
   overflow: hidden;
@@ -843,7 +843,7 @@ body {
 
 .app-container {
   width: 100vw;
-  height: 100vh;
+  height: calc(var(--real-vh, 1vh) * 100);
   max-width: none;
   max-height: none;
   margin: 0;
@@ -1329,6 +1329,15 @@ body {
   color: #4b5563;
   font-size: 13px;
   line-height: 1.35;
+}
+
+.push-prompt__hint {
+  margin-top: 8px !important;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(29, 158, 117, 0.08);
+  color: #335047 !important;
+  font-size: 12px !important;
 }
 
 .push-prompt__message {
@@ -2100,10 +2109,10 @@ body {
   .operation-page {
     position: relative;
     overflow: hidden;
-    height: 100dvh;
+    height: calc(var(--real-vh, 1vh) * 100);
     width: 100vw;
     max-width: 100vw;
-    max-height: 100dvh;
+    max-height: calc(var(--real-vh, 1vh) * 100);
     margin: 0;
     border-radius: 0;
     padding-bottom: 0;
@@ -2180,7 +2189,7 @@ body {
   }
 
   [data-mobile-panel="tools"] .business-sidebar-panel {
-    transform: translateX(100%);
+    transform: translateX(0);
   }
 
   .sidebar.sidebar-pro,
@@ -4040,12 +4049,12 @@ body {
 
 #root {
   width: 100vw;
-  height: 100vh;
+  height: calc(var(--real-vh, 1vh) * 100);
 }
 
 .app-container {
   width: 100vw !important;
-  height: 100vh !important;
+  height: calc(var(--real-vh, 1vh) * 100) !important;
   margin: 0 !important;
   border-radius: 0 !important;
   border: none !important;
@@ -4897,8 +4906,8 @@ body {
 .app-container--operation {
   width: 100vw;
   max-width: 100vw;
-  height: 100vh;
-  max-height: 100vh;
+  height: calc(var(--real-vh, 1vh) * 100);
+  max-height: calc(var(--real-vh, 1vh) * 100);
 }
 
 /* Sidebar filter rail (WhatsApp-like) */

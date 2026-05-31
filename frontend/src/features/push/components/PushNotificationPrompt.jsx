@@ -107,7 +107,7 @@ function PushNotificationPrompt({ isAuthenticated, buildApiHeaders }) {
       console.log('[Push] permiso:', permission);
       if (permission !== 'granted') {
         setStatus('denied');
-        setMessage('Puedes activarlas luego desde la configuracion del navegador.');
+        setMessage('Puedes activarlas luego desde la configuracion del navegador. En Android, activa tambien "Mostrar como emergente" en Ajustes > Apps > Chrome o esta PWA > Notificaciones.');
         window.localStorage.setItem(PROMPT_DISMISSED_KEY, '1');
         return;
       }
@@ -130,6 +130,7 @@ function PushNotificationPrompt({ isAuthenticated, buildApiHeaders }) {
       <div className="push-prompt__content">
         <h3>Activa las notificaciones</h3>
         <p>Recibe alertas de mensajes nuevos aunque la app este en segundo plano, como WhatsApp.</p>
+        <p className="push-prompt__hint">En algunos Android, para verlas flotantes debes permitir "Mostrar como emergente" en los ajustes de notificaciones de Chrome o de esta app.</p>
         {message ? <p className={`push-prompt__message push-prompt__message--${status}`}>{message}</p> : null}
         <div className="push-prompt__actions">
           <button type="button" className="push-prompt__primary" onClick={handleActivate} disabled={status === 'busy'}>

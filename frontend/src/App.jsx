@@ -21,6 +21,7 @@ import {
 import { appSocketSingleton } from './app/hooks/useAppSocketChatController';
 import AppRuntimeGate from './app/components/AppRuntimeGate';
 import PushNotificationPrompt from './features/push/components/PushNotificationPrompt';
+import { queueChatNotificationOpenRequest } from './features/chat/core/helpers/notificationWorkspace.helpers';
 
 import './index.css';
 
@@ -210,6 +211,74 @@ function App() {
       resetWorkspaceStateRef.current(...args);
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return undefined;
+
+    const setRealViewportHeight = () => {
+      document.documentElement.style.setProperty('--real-vh', `${window.innerHeight * 0.01}px`);
+    };
+
+    setRealViewportHeight();
+    window.addEventListener('resize', setRealViewportHeight);
+    window.addEventListener('orientationchange', setRealViewportHeight);
+    window.addEventListener('pageshow', setRealViewportHeight);
+    document.addEventListener('visibilitychange', setRealViewportHeight);
+
+    return () => {
+      window.removeEventListener('resize', setRealViewportHeight);
+      window.removeEventListener('orientationchange', setRealViewportHeight);
+      window.removeEventListener('pageshow', setRealViewportHeight);
+      document.removeEventListener('visibilitychange', setRealViewportHeight);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const queueChatOpen = (payload = {}) => {
+      const chatId = String(payload?.chatId || '').trim();
+      if (!chatId) return;
+      queueChatNotificationOpenRequest({
+        tenantId: String(payload?.tenantId || tenantScopeId || '').trim(),
+        chatId,
+        moduleId: String(payload?.moduleId || '').trim().toLowerCase(),
+        source: String(payload?.source || 'push_notification').trim()
+      });
+    };
+
+    const handleServiceWorkerMessage = (event) => {
+      if (event?.data?.type !== 'NOTIFICATION_CLICK') return;
+      queueChatOpen(event.data);
+    };
+
+    navigator.serviceWorker?.addEventListener?.('message', handleServiceWorkerMessage);
+
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      const chatId = String(params.get('chat') || '').trim();
+      if (chatId) {
+        queueChatOpen({
+          chatId,
+          tenantId: params.get('tenantId') || tenantScopeId,
+          moduleId: params.get('moduleId') || '',
+          source: 'push_url'
+        });
+        params.delete('chat');
+        params.delete('tenantId');
+        params.delete('moduleId');
+        const nextSearch = params.toString();
+        const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash || ''}`;
+        window.history.replaceState(window.history.state, '', nextUrl);
+      }
+    } catch (_) {
+      // keep notification navigation best-effort
+    }
+
+    return () => {
+      navigator.serviceWorker?.removeEventListener?.('message', handleServiceWorkerMessage);
+    };
+  }, [tenantScopeId]);
 
   // --------------------------------------------------------------
   // Notifications

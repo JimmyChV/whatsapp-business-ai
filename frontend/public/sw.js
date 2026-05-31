@@ -103,9 +103,11 @@ self.addEventListener('push', (event) => {
         tag: data.chatId || 'message',
         data: {
           url: data.url || '/',
-          chatId: data.chatId || ''
+          chatId: data.chatId || '',
+          tenantId: data.tenantId || '',
+          moduleId: data.moduleId || ''
         },
-        vibrate: [200, 100, 200],
+        vibrate: [300, 100, 300, 100, 300],
         requireInteraction: false,
         renotify: true,
         silent: false
@@ -123,7 +125,9 @@ self.addEventListener('notificationclick', (event) => {
           client.focus();
           client.postMessage({
             type: 'NOTIFICATION_CLICK',
-            chatId: event.notification.data?.chatId || ''
+            chatId: event.notification.data?.chatId || '',
+            tenantId: event.notification.data?.tenantId || '',
+            moduleId: event.notification.data?.moduleId || ''
           });
           return;
         }

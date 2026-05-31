@@ -328,7 +328,9 @@ async function sendInboundMessageNotification({
         title: `Nuevo mensaje de ${titleName}`,
         body: truncate(preview || 'Tienes un nuevo mensaje.', 100),
         chatId: cleanChatId,
-        url: `/?chat=${encodeURIComponent(cleanChatId)}`,
+        tenantId: cleanTenantId,
+        moduleId: text(scopeModuleId).toLowerCase(),
+        url: `/?chat=${encodeURIComponent(cleanChatId)}&tenantId=${encodeURIComponent(cleanTenantId)}&moduleId=${encodeURIComponent(text(scopeModuleId).toLowerCase())}`,
         icon,
     };
     return sendToUsers(recipients, cleanTenantId, payload);

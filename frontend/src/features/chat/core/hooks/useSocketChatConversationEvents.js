@@ -1437,6 +1437,11 @@ export default function useSocketChatConversationEvents({
                 }
                 return [...prev, mergeTemplateMessageContent(null, normalizedIncoming)];
             });
+
+            if (!msg?.fromMe && chatIdsReferSameScope(relatedChatId, String(activeChatIdRef.current || ''))) {
+                shouldInstantScrollRef.current = true;
+                socket.emit('mark_chat_read', relatedChatId);
+            }
         });
 
         socket.on('quote_sent', (event = {}) => {

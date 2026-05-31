@@ -211,16 +211,34 @@ export default function OperationPage({
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
 
+    const resolveNotificationChatId = (chatId = '', moduleId = '') => {
+      const cleanChatId = String(chatId || '').trim();
+      const cleanModuleId = String(moduleId || '').trim().toLowerCase();
+      if (!cleanChatId) return '';
+      const baseChatId = cleanChatId.split('::mod::')[0];
+      const exactMatch = chats.find((chat) => String(chat?.id || '').trim() === cleanChatId);
+      if (exactMatch?.id) return exactMatch.id;
+      const scopedMatch = chats.find((chat) => {
+        const entryId = String(chat?.id || '').trim();
+        const entryBase = String(chat?.baseChatId || entryId.split('::mod::')[0] || '').trim();
+        const entryModule = String(chat?.scopeModuleId || chat?.lastMessageModuleId || '').trim().toLowerCase();
+        if (entryBase !== baseChatId) return false;
+        return !cleanModuleId || entryModule === cleanModuleId;
+      });
+      return scopedMatch?.id || cleanChatId;
+    };
+
     const handlePendingChatOpen = (request = null) => {
       const pendingRequest = request && typeof request === 'object'
         ? request
         : readChatNotificationOpenRequest();
       const targetTenantId = String(pendingRequest?.tenantId || '').trim();
       const targetChatId = String(pendingRequest?.chatId || '').trim();
+      const targetModuleId = String(pendingRequest?.moduleId || '').trim().toLowerCase();
       if (!targetTenantId || !targetChatId) return;
       if (String(targetTenantId) !== String(tenantScopeId || '').trim()) return;
 
-      handleChatSelect?.(targetChatId, { clearSearch: true });
+      handleChatSelect?.(resolveNotificationChatId(targetChatId, targetModuleId), { clearSearch: true });
       setMobilePanelWithHistory('chat');
       setToasts((prev) => (Array.isArray(prev) ? prev : []).filter((toast) => String(toast?.chatId || '') !== targetChatId));
       clearChatNotificationOpenRequest();
@@ -243,7 +261,7 @@ export default function OperationPage({
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener(CHAT_NOTIFICATION_OPEN_EVENT, handleCustomOpenEvent);
     };
-  }, [handleChatSelect, setMobilePanelWithHistory, setToasts, tenantScopeId]);
+  }, [chats, handleChatSelect, setMobilePanelWithHistory, setToasts, tenantScopeId]);
 
   return (
     <div className={appContainerClassName} data-mobile-panel={effectiveMobilePanel}>
