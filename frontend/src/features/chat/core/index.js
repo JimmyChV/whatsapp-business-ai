@@ -1,4 +1,5 @@
 export { createSocketClient } from './services/socketClient';
+export * as chatLocalCache from './services/chatLocalCache.service';
 
 export { useNewChatDialog } from './hooks/useNewChatDialog';
 export { useMessagesAutoScroll } from './hooks/useMessagesAutoScroll';

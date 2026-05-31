@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { init as initChatLocalCache } from '../services/chatLocalCache.service';
 
 export function useChatRuntimeSyncEffects({
   activeChatId,
@@ -79,6 +80,10 @@ export function useChatRuntimeSyncEffects({
   useEffect(() => {
     saasSessionRef.current = saasSession;
     persistSaasSession(saasSession);
+    const accessToken = String(saasSession?.accessToken || '').trim();
+    if (accessToken) {
+      initChatLocalCache(accessToken);
+    }
   }, [saasSession, saasSessionRef, persistSaasSession]);
 
   useEffect(() => {
