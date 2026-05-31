@@ -276,7 +276,7 @@ function App() {
 
     try {
       const params = new URLSearchParams(window.location.search || '');
-      const chatId = String(params.get('chat') || '').trim();
+      const chatId = String(params.get('chat') || params.get('chatId') || '').trim();
       if (chatId) {
         queueChatOpen({
           chatId,
@@ -286,6 +286,7 @@ function App() {
           focusInput: String(params.get('focus') || '').trim().toLowerCase() === 'input'
         });
         params.delete('chat');
+        params.delete('chatId');
         params.delete('tenantId');
         params.delete('moduleId');
         params.delete('focus');

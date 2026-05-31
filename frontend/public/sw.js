@@ -129,14 +129,24 @@ self.addEventListener('push', (event) => {
   );
 });
 
-function withFocusParam(url = '/', shouldFocusInput = false) {
-  if (!shouldFocusInput) return url || '/';
+function withNotificationParams(url = '/', data = {}, shouldFocusInput = false) {
   try {
     const parsed = new URL(url || '/', self.location.origin);
-    parsed.searchParams.set('focus', 'input');
+    const chatId = String(data?.chatId || '').trim();
+    const tenantId = String(data?.tenantId || '').trim();
+    const moduleId = String(data?.moduleId || '').trim();
+    if (chatId) {
+      parsed.searchParams.set('chat', chatId);
+      parsed.searchParams.set('chatId', chatId);
+    }
+    if (tenantId) parsed.searchParams.set('tenantId', tenantId);
+    if (moduleId) parsed.searchParams.set('moduleId', moduleId);
+    if (shouldFocusInput) parsed.searchParams.set('focus', 'input');
     return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   } catch (_) {
-    return '/?focus=input';
+    const chatId = encodeURIComponent(String(data?.chatId || '').trim());
+    const focusParam = shouldFocusInput ? '&focus=input' : '';
+    return chatId ? `/?chatId=${chatId}${focusParam}` : `/${shouldFocusInput ? '?focus=input' : ''}`;
   }
 }
 
@@ -144,7 +154,7 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const data = event.notification.data || {};
   const shouldFocusInput = event.action === 'reply';
-  const targetUrl = withFocusParam(data.url || '/', shouldFocusInput);
+  const targetUrl = withNotificationParams(data.url || '/', data, shouldFocusInput);
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
