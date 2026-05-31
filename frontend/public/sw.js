@@ -1,11 +1,17 @@
-const CACHE_NAME = 'wa-saas-v1';
-const APP_SHELL = ['/', '/index.html'];
+const CACHE_NAME = 'wa-saas-v2';
+const APP_SHELL = [
+  '/',
+  '/index.html',
+  '/manifest.json',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png'
+];
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
   );
-  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -14,29 +20,68 @@ self.addEventListener('activate', (event) => {
       keys
         .filter((key) => key !== CACHE_NAME)
         .map((key) => caches.delete(key))
-    ))
+    )).then(() => clients.claim())
   );
-  self.clients.claim();
 });
+
+function isApiOrSocketRequest(url) {
+  return url.pathname.startsWith('/api/') || url.pathname.startsWith('/socket.io/');
+}
+
+function isAppShellRequest(request, url) {
+  return request.mode === 'navigate' || url.pathname === '/' || url.pathname === '/index.html';
+}
+
+function isFingerprintedAsset(url) {
+  return /^\/assets\/.+-[A-Za-z0-9_-]{6,}\.(js|css)$/.test(url.pathname);
+}
+
+function networkFirst(request, fallbackPath = '/index.html') {
+  return fetch(request).then((response) => {
+    if (response && response.status === 200) {
+      const clone = response.clone();
+      caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+    }
+    return response;
+  }).catch(() => caches.match(request).then((cached) => (
+    cached || caches.match(fallbackPath)
+  )));
+}
+
+function cacheFirstWithBackgroundUpdate(request) {
+  return caches.match(request).then((cached) => {
+    const update = fetch(request).then((response) => {
+      if (response && response.status === 200) {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+      }
+      return response;
+    }).catch(() => null);
+
+    return cached || update;
+  });
+}
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
-  if (request.url.includes('/api/')) return;
+
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return;
+  if (isApiOrSocketRequest(url)) return;
+
+  if (isAppShellRequest(request, url)) {
+    event.respondWith(networkFirst(request));
+    return;
+  }
+
+  if (isFingerprintedAsset(url)) {
+    event.respondWith(cacheFirstWithBackgroundUpdate(request));
+    return;
+  }
 
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
-        if (!response || response.status !== 200) return response;
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-        return response;
-      }).catch(() => {
-        if (request.mode === 'navigate') return caches.match('/index.html');
-        return Response.error();
-      });
-    })
+    caches.match(request).then((cached) => cached || fetch(request))
   );
 });
 
@@ -53,7 +98,7 @@ self.addEventListener('push', (event) => {
       data.title || 'Nuevo mensaje',
       {
         body: data.body || '',
-        icon: data.icon || '/icons/icon-192.png',
+        icon: data.icon || 'https://wa.lavitat.pe/icons/icon-192.png',
         badge: '/icons/icon-192.png',
         tag: data.chatId || 'message',
         data: {
@@ -61,7 +106,9 @@ self.addEventListener('push', (event) => {
           chatId: data.chatId || ''
         },
         vibrate: [200, 100, 200],
-        requireInteraction: false
+        requireInteraction: false,
+        renotify: true,
+        silent: false
       }
     )
   );

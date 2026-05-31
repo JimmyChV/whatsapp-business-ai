@@ -2,6 +2,8 @@ const webPush = require('web-push');
 const { getStorageDriver, queryPostgres } = require('../../../config/persistence-runtime');
 
 const VALID_ROLES_FOR_UNASSIGNED = ['seller', 'admin', 'owner'];
+const DEFAULT_PUSH_ICON_URL = 'https://wa.lavitat.pe/icons/icon-192.png';
+const PRODUCTION_APP_ORIGIN = 'https://wa.lavitat.pe';
 
 let vapidConfigured = false;
 
@@ -44,6 +46,14 @@ function resolveCustomerName(row = {}, chatId = '') {
         || firstLast
         || text(row?.chat_display_name)
         || formatPhoneFallback(row?.chat_phone || chatId);
+}
+
+function resolveAbsoluteIconUrl(value = '') {
+    const clean = text(value);
+    if (!clean) return '';
+    if (/^https?:\/\//i.test(clean)) return clean;
+    if (clean.startsWith('/')) return `${PRODUCTION_APP_ORIGIN}${clean}`;
+    return '';
 }
 
 function ensureVapidConfigured() {
@@ -269,6 +279,29 @@ async function resolveSenderNameFromCustomer(tenantId = '', chatId = '') {
     }
 }
 
+async function resolvePushIconUrl(tenantId = '', providedIconUrl = '') {
+    const provided = resolveAbsoluteIconUrl(providedIconUrl);
+    if (provided) return provided;
+
+    const cleanTenantId = text(tenantId);
+    if (!cleanTenantId || getStorageDriver() !== 'postgres') return DEFAULT_PUSH_ICON_URL;
+
+    try {
+        const result = await queryPostgres(
+            `SELECT image_url
+               FROM wa_modules
+              WHERE tenant_id = $1
+                AND is_default = TRUE
+              LIMIT 1`,
+            [cleanTenantId]
+        );
+        return resolveAbsoluteIconUrl(result.rows?.[0]?.image_url) || DEFAULT_PUSH_ICON_URL;
+    } catch (error) {
+        console.warn('[Push] module icon resolution warning:', String(error?.message || error));
+        return DEFAULT_PUSH_ICON_URL;
+    }
+}
+
 async function sendInboundMessageNotification({
     tenantId,
     chatId,
@@ -290,12 +323,13 @@ async function sendInboundMessageNotification({
         || text(senderName)
         || formatPhoneFallback(cleanChatId.split('@')[0])
         || 'cliente';
+    const icon = await resolvePushIconUrl(cleanTenantId, iconUrl);
     const payload = {
         title: `Nuevo mensaje de ${titleName}`,
         body: truncate(preview || 'Tienes un nuevo mensaje.', 100),
         chatId: cleanChatId,
         url: `/?chat=${encodeURIComponent(cleanChatId)}`,
-        icon: text(iconUrl) || undefined,
+        icon,
     };
     return sendToUsers(recipients, cleanTenantId, payload);
 }
@@ -309,4 +343,5 @@ module.exports = {
     sendInboundMessageNotification,
     listUsersForUnassignedChat,
     resolveSenderNameFromCustomer,
+    resolvePushIconUrl,
 };
