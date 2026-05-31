@@ -1,4 +1,4 @@
-import { lazy, useEffect, useRef, useCallback } from 'react';
+import { lazy, useEffect, useRef, useCallback, useState } from 'react';
 
 import { API_URL } from './config/runtime';
 import { persistSaasSession } from './features/auth/helpers/saasSessionStorage';
@@ -26,6 +26,11 @@ import { queueChatNotificationOpenRequest } from './features/chat/core/helpers/n
 import './index.css';
 
 const SaasPanelPage = lazy(() => import('./pages/SaasPanelPage'));
+
+const isMobileOperationViewport = () => (
+  typeof window !== 'undefined'
+  && window.matchMedia?.('(max-width: 768px)')?.matches
+);
 
 function App() {
   const {
@@ -71,6 +76,17 @@ function App() {
     requestedLaunchSource,
     tenantScopeId
   } = useAppSessionTransportState();
+  const [forceMobileOperation, setForceMobileOperation] = useState(() => isMobileOperationViewport());
+  const effectiveForceOperationLaunch = forceOperationLaunch || forceMobileOperation;
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const query = window.matchMedia('(max-width: 768px)');
+    const updateMobileOperationMode = () => setForceMobileOperation(query.matches);
+    updateMobileOperationMode();
+    query.addEventListener?.('change', updateMobileOperationMode);
+    return () => query.removeEventListener?.('change', updateMobileOperationMode);
+  }, []);
 
   const {
     chats,
@@ -199,7 +215,7 @@ function App() {
     selectedTransport,
     saasSession,
     saasRuntime,
-    forceOperationLaunch,
+    forceOperationLaunch: effectiveForceOperationLaunch,
     requestedWaModuleFromUrl,
     requestedWaTenantFromUrl,
     tenantScopeId
@@ -319,7 +335,7 @@ function App() {
     setLoginPassword,
     setSaasAuthNotice,
     setForceOperationLaunchBypass,
-    forceOperationLaunch,
+    forceOperationLaunch: effectiveForceOperationLaunch,
     requestedWaTenantFromUrl,
     tenantScopeId
   };
@@ -412,7 +428,7 @@ function App() {
     persistSaasSession,
     saasRuntime,
     saasRuntimeRef,
-    forceOperationLaunch,
+    forceOperationLaunch: effectiveForceOperationLaunch,
     forceOperationLaunchRef,
     waRuntime,
     showClientProfile,
@@ -655,7 +671,7 @@ function App() {
     requestedWaTenantFromUrl,
     requestedLaunchSource,
     requestedWaSectionFromUrl,
-    forceOperationLaunch,
+    forceOperationLaunch: effectiveForceOperationLaunch,
     transportError,
     waModuleError,
     saasRuntime,
@@ -796,7 +812,7 @@ function App() {
     isConnected,
     selectedTransport,
     canManageSaas,
-    forceOperationLaunch,
+    forceOperationLaunch: effectiveForceOperationLaunch,
     isClientReady
   });
 

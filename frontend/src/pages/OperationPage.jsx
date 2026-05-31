@@ -344,7 +344,7 @@ export default function OperationPage({
           waModules={availableWaModules}
           chatAssignmentState={chatAssignmentState}
           chatCommercialStatusState={chatCommercialStatusState}
-          showBackToPanel={Boolean(forceOperationLaunch && canManageSaas)}
+          showBackToPanel={Boolean(forceOperationLaunch && canManageSaas && !isMobileViewport())}
           onBackToPanel={() => handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId })}
         />
       </div>
