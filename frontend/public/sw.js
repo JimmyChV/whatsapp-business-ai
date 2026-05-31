@@ -36,29 +36,25 @@ function isFingerprintedAsset(url) {
   return /^\/assets\/.+-[A-Za-z0-9_-]{6,}\.(js|css)$/.test(url.pathname);
 }
 
-function networkFirst(request, fallbackPath = '/index.html') {
+function updateAppShellCache(request) {
   return fetch(request).then((response) => {
     if (response && response.status === 200) {
-      const clone = response.clone();
-      caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-    }
-    return response;
-  }).catch(() => caches.match(request).then((cached) => (
-    cached || caches.match(fallbackPath)
-  )));
-}
-
-function appShellNetworkFirst(request) {
-  return fetch(request).then((response) => {
-    if (response && response.status === 200) {
-      const clone = response.clone();
+      const indexClone = response.clone();
+      const requestClone = response.clone();
       caches.open(CACHE_NAME).then((cache) => {
-        cache.put('/index.html', clone);
-        cache.put(request, response.clone());
+        cache.put('/index.html', indexClone);
+        cache.put(request, requestClone);
       });
     }
     return response;
-  }).catch(() => caches.match('/index.html'));
+  }).catch(() => null);
+}
+
+function appShellCacheFirst(request) {
+  return caches.match('/index.html').then((cached) => {
+    const update = updateAppShellCache(request);
+    return cached || update.then((response) => response || caches.match('/index.html'));
+  });
 }
 
 function cacheFirstWithBackgroundUpdate(request) {
@@ -84,7 +80,7 @@ self.addEventListener('fetch', (event) => {
   if (isApiOrSocketRequest(url)) return;
 
   if (isAppShellRequest(request, url)) {
-    event.respondWith(appShellNetworkFirst(request));
+    event.respondWith(appShellCacheFirst(request));
     return;
   }
 

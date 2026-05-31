@@ -78,6 +78,7 @@ function App() {
   } = useAppSessionTransportState();
   const [forceMobileOperation, setForceMobileOperation] = useState(() => isMobileOperationViewport());
   const effectiveForceOperationLaunch = forceOperationLaunch || forceMobileOperation;
+  const foregroundSyncRef = useRef(0);
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
@@ -500,6 +501,43 @@ function App() {
     callbacksBlock,
     handleChatSelectRef
   });
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return undefined;
+
+    const handleForegroundSync = async () => {
+      if (document.visibilityState === 'hidden') return;
+      const now = Date.now();
+      if (foregroundSyncRef.current && now - foregroundSyncRef.current < 5000) return;
+      foregroundSyncRef.current = now;
+
+      try {
+        if (socket && !socket.connected && typeof socket.connect === 'function') {
+          socket.connect();
+        }
+
+        const expiresAt = Number(saasSessionRef.current?.accessExpiresAtUnix || 0) || 0;
+        const nowUnix = Math.floor(Date.now() / 1000);
+        if (expiresAt && expiresAt - nowUnix <= 120) {
+          await apiSessionExports.refreshSaasSession?.();
+        }
+
+        requestChatsPage?.({ reset: true });
+      } catch (_) {
+        // Foreground resume should never block the cached UI.
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleForegroundSync);
+    window.addEventListener('pageshow', handleForegroundSync);
+    window.addEventListener('focus', handleForegroundSync);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleForegroundSync);
+      window.removeEventListener('pageshow', handleForegroundSync);
+      window.removeEventListener('focus', handleForegroundSync);
+    };
+  }, [apiSessionExports.refreshSaasSession, requestChatsPage, saasSessionRef, socket]);
 
   // --------------------------------------------------------------
   // Apply AI suggestion to input
