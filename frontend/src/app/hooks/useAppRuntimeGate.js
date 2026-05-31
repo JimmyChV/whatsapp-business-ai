@@ -7,6 +7,7 @@ export default function useAppRuntimeGate(input = {}) {
     input?.saasAuthEnabled,
     input?.isSaasAuthenticated,
     input?.isConnected,
+    input?.allowOfflineOperation,
     input?.selectedTransport,
     input?.canManageSaas,
     input?.forceOperationLaunch,

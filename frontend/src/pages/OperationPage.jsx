@@ -132,6 +132,7 @@ export default function OperationPage({
   const [mobilePanel, setMobilePanel] = useState('list');
   const [mobileToolRequest, setMobileToolRequest] = useState(null);
   const mobilePanelRef = useRef('list');
+  const pendingMobilePanelRef = useRef(null);
   const restoredLastChatRef = useRef(false);
   const originalDocumentTitleRef = useRef(typeof document !== 'undefined' ? document.title : 'WhatsApp Business Pro');
   const activeChatDetails = chats.find((c) => c.id === activeChatId) || null;
@@ -184,6 +185,13 @@ export default function OperationPage({
     setMobilePanelWithHistory('tools');
   }, [activeChatId, handleLoadOrderToCart, setMobilePanelWithHistory]);
   const effectiveMobilePanel = activeChatId ? mobilePanel : 'list';
+
+  useEffect(() => {
+    const pendingPanel = pendingMobilePanelRef.current;
+    if (!pendingPanel) return;
+    pendingMobilePanelRef.current = null;
+    setMobilePanelWithHistory(pendingPanel);
+  });
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -270,6 +278,7 @@ export default function OperationPage({
       if (String(targetTenantId) !== String(tenantScopeId || '').trim()) return;
 
       const resolvedChatId = resolveNotificationChatId(targetChatId, targetModuleId);
+      pendingMobilePanelRef.current = 'chat';
       handleChatSelect?.(resolvedChatId, { clearSearch: true });
       setMobileToolRequest(null);
       setMobilePanelWithHistory('chat');

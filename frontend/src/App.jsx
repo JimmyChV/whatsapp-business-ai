@@ -810,6 +810,7 @@ function App() {
     saasAuthEnabled,
     isSaasAuthenticated,
     isConnected,
+    allowOfflineOperation: forceMobileOperation,
     selectedTransport,
     canManageSaas,
     forceOperationLaunch: effectiveForceOperationLaunch,
