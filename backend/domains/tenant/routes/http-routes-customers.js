@@ -541,6 +541,10 @@ function registerTenantCustomerHttpRoutes({
             const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
             const runtimeConfig = await tenantIntegrationsService.getTenantIntegrations(tenantId, { runtime: true });
             const geo = runtimeConfig?.geo && typeof runtimeConfig.geo === 'object' ? runtimeConfig.geo : {};
+            // SEGURIDAD: esta key debe estar restringida en Google Cloud Console por:
+            // - HTTP referrers: https://wa.lavitat.pe/*
+            // - APIs: Maps JavaScript API, Places API, Directions API, Distance Matrix API
+            // Si no esta restringida, cualquiera puede usarla y generar costos en la cuenta de Google.
             const apiKey = String(
                 geo.googleMapsApiKey
                 || geo.googleMapsFrontendApiKey

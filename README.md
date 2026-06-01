@@ -70,6 +70,13 @@ Plataforma SaaS para operacion comercial omnicanal con enfoque en WhatsApp Cloud
 - Smoke/load scripts para validacion operativa.
 - Pilot KPI y closeout fase operativa.
 
+## Seguridad operativa
+
+- Antes de desplegar, revisar [SECURITY_CHECKLIST.md](SECURITY_CHECKLIST.md).
+- La key frontend de Google Maps debe estar restringida en Google Cloud Console por HTTP referrer (`https://wa.lavitat.pe/*`) y solo a Maps JavaScript API, Places API, Directions API y Distance Matrix API.
+- En produccion `ALLOWED_ORIGINS` debe estar configurado explicitamente cuando se usan cookies/credenciales.
+- Los webhooks Meta Cloud API deben validar `x-hub-signature-256` con `appSecret` configurado por modulo.
+
 ## Arquitectura (resumen)
 
 ### Backend (`/backend`)
