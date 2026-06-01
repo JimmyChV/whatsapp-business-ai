@@ -168,6 +168,20 @@ export function useSaasSessionActions({
         setLoginPassword('');
         return;
       }
+      if (payload?.requiresDeviceReauthorization) {
+        setPendingDeviceAuth({
+          deviceId: String(payload?.deviceId || '').trim(),
+          email: String(payload?.email || email).trim(),
+          deviceType: String(payload?.deviceType || '').trim(),
+          requiresReauthorization: true
+        });
+        setDeviceAuthStep('credentials');
+        setSaasAuthError(
+          String(payload?.message || 'Este dispositivo fue revocado. Comunicate con un administrador para solicitar nueva autorizacion.')
+        );
+        setLoginPassword('');
+        return;
+      }
       await finalizeAuthenticatedSession(payload, email);
     } catch (error) {
       if (Number(error?.status || 0) === 429 || String(error?.code || '') === 'too_many_attempts') {
@@ -177,7 +191,12 @@ export function useSaasSessionActions({
         setSaasAuthError('Demasiados intentos fallidos. Por seguridad, espera 15 minutos antes de intentar de nuevo.');
         return;
       }
-      setSaasAuthError(String(error?.message || 'No se pudo iniciar sesion.'));
+      const reason = String(error?.message || '');
+      setSaasAuthError(
+        reason === 'device_revoked'
+          ? 'Este dispositivo fue revocado. Comunicate con un administrador para solicitar nueva autorizacion.'
+          : String(reason || 'No se pudo iniciar sesion.')
+      );
     } finally {
       setSaasAuthBusy(false);
     }

@@ -220,11 +220,22 @@
                 return res.json({
                     ok: true,
                     requiresOtp: true,
+                    reauthorization: Boolean(session.reauthorization),
                     deviceId: session.deviceId || deviceId,
                     deviceType: session.deviceType || null,
                     email: session.email || email,
                     expiresInSec: session.expiresInSec || 600,
                     message: 'OTP enviado'
+                });
+            }
+            if (session?.requiresDeviceReauthorization) {
+                return res.json({
+                    ok: true,
+                    requiresDeviceReauthorization: true,
+                    deviceId: session.deviceId || deviceId,
+                    deviceType: session.deviceType || null,
+                    email: session.email || email,
+                    message: session.message || 'Este dispositivo fue revocado. Comunicate con un administrador para solicitar nueva autorizacion.'
                 });
             }
             setRefreshCookie(res, session?.refreshToken, session);
@@ -272,7 +283,8 @@
 
         try {
             const verified = await resolvedDeviceAuthService.verifyOtp(deviceId, code);
-            const approvedDevice = await resolvedDeviceAuthService.approveDevice(deviceId, deviceName, 'otp');
+            const wasRevoked = Boolean(verified?.device?.revokedAt);
+            const approvedDevice = await resolvedDeviceAuthService.approveDevice(deviceId, deviceName, wasRevoked ? 'otp_reauth' : 'otp');
             setDeviceCookie(res, deviceId);
             const session = await authService.issueSessionForDevice({
                 userId: verified.userId,
@@ -691,6 +703,49 @@
         }
     });
 
+    app.post('/api/auth/devices/:deviceId/request-reauthorization', async (req, res) => {
+        const userId = getAuthenticatedUserId(req);
+        const deviceId = String(req.params?.deviceId || '').trim();
+        if (!userId) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+        if (!deviceId) {
+            return res.status(400).json({ ok: false, error: 'deviceId es requerido.' });
+        }
+        if (!hasDevicePermission(req, resolvedAccessPolicyService.PERMISSIONS.DEVICES_REVOKE_OWN)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const result = await resolvedDeviceAuthService.requestDeviceReauthorization({
+                actorUserId: userId,
+                deviceId,
+                ipAddress: String(req.ip || '').trim(),
+                allowAny: canRevokeAnyUserDevice(req)
+            });
+            await auditLogService.writeAuditLog(result?.device?.tenantId || req?.tenantContext?.id || req?.authContext?.user?.tenantId || 'default', {
+                userId,
+                userEmail: req?.authContext?.user?.email || null,
+                role: req?.authContext?.user?.role || 'seller',
+                action: 'auth.device.reauthorization_requested',
+                resourceType: 'auth_device',
+                resourceId: deviceId,
+                source: 'api',
+                ip: String(req.ip || ''),
+                payload: { targetUserId: result?.device?.userId || null }
+            });
+            return res.json({
+                ok: true,
+                message: 'OTP enviado a los autorizadores de acceso.',
+                expiresInSec: result?.expiresInSec || 600
+            });
+        } catch (error) {
+            const reason = String(error?.message || 'No se pudo solicitar reautorizacion.');
+            const status = /not_found|not_revoked|required/i.test(reason) ? 400 : 500;
+            return res.status(status).json({ ok: false, error: reason });
+        }
+    });
+
     app.get('/api/admin/users/:userId/devices', async (req, res) => {
         if (!canManageUserDevices(req)) {
             return res.status(403).json({ ok: false, error: 'No autorizado.' });
@@ -745,6 +800,49 @@
         } catch (error) {
             const reason = String(error?.message || 'No se pudo revocar el dispositivo.');
             const status = /current|not_found/i.test(reason) ? 400 : 500;
+            return res.status(status).json({ ok: false, error: reason });
+        }
+    });
+
+    app.post('/api/admin/devices/:deviceId/request-reauthorization', async (req, res) => {
+        const userId = getAuthenticatedUserId(req);
+        const deviceId = String(req.params?.deviceId || '').trim();
+        if (!userId) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+        if (!deviceId) {
+            return res.status(400).json({ ok: false, error: 'deviceId es requerido.' });
+        }
+        if (!canRevokeAnyUserDevice(req)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const result = await resolvedDeviceAuthService.requestDeviceReauthorization({
+                actorUserId: userId,
+                deviceId,
+                ipAddress: String(req.ip || '').trim(),
+                allowAny: true
+            });
+            await auditLogService.writeAuditLog(result?.device?.tenantId || req?.tenantContext?.id || req?.authContext?.user?.tenantId || 'default', {
+                userId,
+                userEmail: req?.authContext?.user?.email || null,
+                role: req?.authContext?.user?.role || 'seller',
+                action: 'auth.device.admin_reauthorization_requested',
+                resourceType: 'auth_device',
+                resourceId: deviceId,
+                source: 'api',
+                ip: String(req.ip || ''),
+                payload: { targetUserId: result?.device?.userId || null }
+            });
+            return res.json({
+                ok: true,
+                message: 'OTP enviado a los autorizadores de acceso.',
+                expiresInSec: result?.expiresInSec || 600
+            });
+        } catch (error) {
+            const reason = String(error?.message || 'No se pudo solicitar reautorizacion.');
+            const status = /not_found|not_revoked|required/i.test(reason) ? 400 : 500;
             return res.status(status).json({ ok: false, error: reason });
         }
     });

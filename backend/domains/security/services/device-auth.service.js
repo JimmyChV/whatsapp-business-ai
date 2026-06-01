@@ -64,6 +64,7 @@ function normalizeDeviceRow(row = null) {
         approvedAt: row.approved_at || row.approvedAt || null,
         approvedBy: text(row.approved_by || row.approvedBy),
         revokedAt: row.revoked_at || row.revokedAt || null,
+        revokedBy: text(row.revoked_by || row.revokedBy),
         lastSeenAt: row.last_seen_at || row.lastSeenAt || null,
         lastActivityAt: row.last_activity_at || row.lastActivityAt || null,
         createdAt: row.created_at || row.createdAt || null,
@@ -239,9 +240,18 @@ async function upsertPendingDevice({ user = {}, deviceContext = {} } = {}) {
     const context = normalizeDeviceContext(deviceContext);
     if (!safeUser.id || !context.deviceId) return null;
 
-    const existing = await getDeviceSession(context.deviceId);
+    let existing = await getDeviceSession(context.deviceId);
+    if (existing?.revokedAt && existing.revokedBy === 'inactivity') {
+        await restoreInactivityRevocation(context.deviceId);
+        existing = await getDeviceSession(context.deviceId);
+    }
     if (existing?.revokedAt) {
-        throw new Error('device_revoked');
+        return {
+            approved: false,
+            requiresReauthorization: true,
+            hasActiveOtp: await hasActiveOtp(context.deviceId),
+            device: existing
+        };
     }
 
     if (existing && existing.userId === safeUser.id && existing.isApproved) {
@@ -334,7 +344,23 @@ async function generateOtp(userId = '', deviceId = '') {
     };
 }
 
-async function sendOtpEmail({ user = {}, device = {}, code = '', ipAddress = '' } = {}) {
+async function hasActiveOtp(deviceId = '') {
+    const cleanDeviceId = text(deviceId);
+    if (!cleanDeviceId || !isPostgresAvailable()) return false;
+    const { rows } = await queryPostgres(
+        `SELECT otp_id
+           FROM auth_otp_codes
+          WHERE device_id = $1
+            AND used_at IS NULL
+            AND expires_at > NOW()
+          ORDER BY created_at DESC
+          LIMIT 1`,
+        [cleanDeviceId]
+    );
+    return Boolean(rows?.[0]?.otp_id);
+}
+
+async function sendOtpEmail({ user = {}, device = {}, code = '', ipAddress = '', reauthorization = false } = {}) {
     const safeUser = normalizeUser(user);
     const tenantId = safeUser.tenantId || text(device.tenantId || device.tenant_id);
     if (!tenantId) throw new Error('Tenant requerido para enviar OTP.');
@@ -353,9 +379,13 @@ async function sendOtpEmail({ user = {}, device = {}, code = '', ipAddress = '' 
     const deviceType = text(device.deviceType || device.device_type) || 'desktop';
     const ip = text(ipAddress || device.ipAddress || device.ip_address) || 'IP no disponible';
     const userName = safeUser.name || safeUser.email || safeUser.id || 'Usuario';
-    const subject = 'Nuevo dispositivo requiere autorizacion';
+    const subject = reauthorization
+        ? 'Dispositivo revocado requiere nueva autorizacion'
+        : 'Nuevo dispositivo requiere autorizacion';
     const textBody = [
-        `El usuario ${userName} esta intentando acceder desde un nuevo dispositivo.`,
+        reauthorization
+            ? `El usuario ${userName} solicita reautorizar un dispositivo revocado.`
+            : `El usuario ${userName} esta intentando acceder desde un nuevo dispositivo.`,
         `Dispositivo: ${deviceType} · ${ip}`,
         `Codigo OTP: ${code}`,
         '',
@@ -363,7 +393,7 @@ async function sendOtpEmail({ user = {}, device = {}, code = '', ipAddress = '' 
         `Valido por ${OTP_TTL_MINUTES} minutos.`
     ].join('\n');
     const htmlBody = `
-        <p>El usuario <strong>${userName}</strong> esta intentando acceder desde un nuevo dispositivo.</p>
+        <p>El usuario <strong>${userName}</strong> ${reauthorization ? 'solicita reautorizar un dispositivo revocado.' : 'esta intentando acceder desde un nuevo dispositivo.'}</p>
         <p><strong>Dispositivo:</strong> ${deviceType} &middot; ${ip}</p>
         <p><strong>Codigo OTP:</strong>
           <span style="font-size:24px;font-weight:bold;letter-spacing:4px">${code}</span>
@@ -395,6 +425,28 @@ async function ensureDeviceApprovedForLogin({ user = {}, deviceContext = {} } = 
     const safeUser = normalizeUser(user);
     const status = await upsertPendingDevice({ user: safeUser, deviceContext: context });
     if (status?.approved) return { approved: true, device: status.device };
+    if (status?.requiresReauthorization) {
+        if (status.hasActiveOtp) {
+            return {
+                approved: false,
+                requiresOtp: true,
+                reauthorization: true,
+                deviceId: context.deviceId,
+                deviceType: context.deviceType,
+                email: safeUser.email,
+                otpDelivery: 'authorizers',
+                expiresInSec: OTP_TTL_MINUTES * 60
+            };
+        }
+        return {
+            approved: false,
+            requiresDeviceReauthorization: true,
+            deviceId: context.deviceId,
+            deviceType: context.deviceType,
+            email: safeUser.email,
+            message: 'Este dispositivo fue revocado. Comunicate con un administrador para solicitar nueva autorizacion.'
+        };
+    }
 
     const otp = await generateOtp(safeUser.id, context.deviceId);
     const device = status?.device || await getDeviceSession(context.deviceId);
@@ -471,6 +523,8 @@ async function approveDevice(deviceId = '', deviceName = '', approvedBy = 'otp')
                 approved_at = NOW(),
                 approved_by = $2,
                 device_name = $3,
+                revoked_at = NULL,
+                revoked_by = NULL,
                 last_seen_at = NOW(),
                 last_activity_at = NOW()
           WHERE device_id = $1
@@ -496,13 +550,17 @@ async function resendOtp({ deviceId = '', ipAddress = '' } = {}) {
     }
 
     const device = await findDeviceWithUser(cleanDeviceId);
-    if (!device || device.revokedAt) throw new Error('device_not_found');
+    if (!device) throw new Error('device_not_found');
+    if (device.revokedAt && !(await hasActiveOtp(cleanDeviceId))) {
+        throw new Error('device_reauthorization_required');
+    }
     const otp = await generateOtp(device.userId, cleanDeviceId);
     await sendOtpEmail({
         user: { id: device.userId, email: device.userEmail, name: device.userName, tenantId: device.tenantId },
         device,
         code: otp.code,
-        ipAddress
+        ipAddress,
+        reauthorization: Boolean(device.revokedAt)
     });
     return {
         ok: true,
@@ -541,7 +599,53 @@ async function notifyTenantOwnersDeviceApproved({ tenantId = '', device = {}, us
 
 async function isDeviceRevoked(deviceId = '') {
     const device = await getDeviceSession(deviceId);
+    if (device?.revokedAt && device.revokedBy === 'inactivity') {
+        await restoreInactivityRevocation(deviceId);
+        return false;
+    }
     return Boolean(device?.revokedAt);
+}
+
+async function restoreInactivityRevocation(deviceId = '') {
+    const cleanDeviceId = text(deviceId);
+    if (!cleanDeviceId || !isPostgresAvailable()) return { skipped: true };
+    await queryPostgres(
+        `UPDATE auth_device_sessions
+            SET revoked_at = NULL,
+                revoked_by = NULL,
+                last_seen_at = NOW()
+          WHERE device_id = $1
+            AND revoked_by = 'inactivity'`,
+        [cleanDeviceId]
+    );
+    return { ok: true };
+}
+
+async function requestDeviceReauthorization({ actorUserId = '', deviceId = '', ipAddress = '', allowAny = false } = {}) {
+    const cleanActorId = text(actorUserId);
+    const cleanDeviceId = text(deviceId);
+    if (!cleanActorId || !cleanDeviceId) throw new Error('device_not_found');
+    if (!isPostgresAvailable()) throw new Error('device_store_unavailable');
+
+    const device = await findDeviceWithUser(cleanDeviceId);
+    if (!device) throw new Error('device_not_found');
+    if (!allowAny && device.userId !== cleanActorId) throw new Error('device_not_found');
+    if (!device.revokedAt) throw new Error('device_not_revoked');
+
+    const otp = await generateOtp(device.userId, cleanDeviceId);
+    await sendOtpEmail({
+        user: { id: device.userId, email: device.userEmail, name: device.userName, tenantId: device.tenantId },
+        device,
+        code: otp.code,
+        ipAddress,
+        reauthorization: true
+    });
+    return {
+        ok: true,
+        device,
+        expiresInSec: otp.expiresInSec,
+        otpDelivery: 'authorizers'
+    };
 }
 
 async function updateLastSeen(deviceId = '', { force = false, ipAddress = '' } = {}) {
@@ -581,19 +685,11 @@ async function updateLastActivity(deviceId = '', { ipAddress = '' } = {}) {
 }
 
 async function revokeInactiveDesktopSessions({ inactiveHours = 3 } = {}) {
-    if (!isPostgresAvailable()) return { skipped: true, updated: 0 };
-    const hours = Number(inactiveHours);
-    const safeHours = Number.isFinite(hours) && hours > 0 ? hours : 3;
-    const { rowCount } = await queryPostgres(
-        `UPDATE auth_device_sessions
-            SET revoked_at = NOW(),
-                revoked_by = 'inactivity'
-          WHERE device_type = 'desktop'
-            AND revoked_at IS NULL
-            AND COALESCE(last_activity_at, last_seen_at, created_at) < NOW() - ($1 * INTERVAL '1 hour')`,
-        [safeHours]
-    );
-    return { ok: true, updated: Number(rowCount || 0) };
+    return {
+        skipped: true,
+        updated: 0,
+        reason: 'device_approval_is_permanent'
+    };
 }
 
 module.exports = {
@@ -608,6 +704,7 @@ module.exports = {
     updateLastSeen,
     updateLastActivity,
     revokeInactiveDesktopSessions,
+    requestDeviceReauthorization,
     getDeviceSession,
     listDevicesForUser,
     listDevicesForAdminUser,

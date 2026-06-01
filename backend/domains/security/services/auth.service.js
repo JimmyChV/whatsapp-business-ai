@@ -636,10 +636,20 @@ async function login({ email = '', password = '', tenantId = '', tenantSlug = ''
         if (deviceGate?.requiresOtp) {
             return {
                 requiresOtp: true,
+                reauthorization: Boolean(deviceGate.reauthorization),
                 deviceId: deviceGate.deviceId,
                 deviceType: deviceGate.deviceType,
                 email: deviceGate.email,
                 expiresInSec: deviceGate.expiresInSec
+            };
+        }
+        if (deviceGate?.requiresDeviceReauthorization) {
+            return {
+                requiresDeviceReauthorization: true,
+                deviceId: deviceGate.deviceId,
+                deviceType: deviceGate.deviceType,
+                email: deviceGate.email,
+                message: deviceGate.message || 'Este dispositivo fue revocado. Comunicate con un administrador para solicitar nueva autorizacion.'
             };
         }
     }

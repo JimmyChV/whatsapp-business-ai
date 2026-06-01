@@ -41,7 +41,7 @@ export default function useSessionActivityPing({
         if (response.status === 401 && String(payload?.error || '').trim() === 'device_revoked') {
           await clearChatLocalCache();
           setSaasSession(null);
-          setSaasAuthError('Sesion cerrada por inactividad');
+          setSaasAuthError('Este dispositivo fue revocado. Comunicate con un administrador para solicitar nueva autorizacion.');
         }
       } catch (_) {
         // Activity pings should never interrupt normal app usage.

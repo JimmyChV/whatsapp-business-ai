@@ -51,13 +51,16 @@ function DeviceRow({
     setDraftName,
     onSaveName,
     onRevoke,
+    onReauthorize,
     formatDateTimeLabel,
     allowRename = true,
-    allowRevoke = true
+    allowRevoke = true,
+    allowReauthorize = false
 }) {
     const isEditing = editingId === device.deviceId;
     const displayName = toText(device.deviceName) || formatDeviceType(device.deviceType);
     const canRevoke = allowRevoke && !busy && !device.current && !device.revokedAt;
+    const canReauthorize = allowReauthorize && !busy && Boolean(device.revokedAt);
     return (
         <article className={`saas-device-row ${device.current ? 'is-current' : ''}`.trim()}>
             <div className="saas-device-row__main">
@@ -121,6 +124,17 @@ function DeviceRow({
                 >
                     Revocar
                 </button>
+                {device.revokedAt ? (
+                    <button
+                        type="button"
+                        className="saas-btn-cancel"
+                        disabled={!canReauthorize}
+                        onClick={() => onReauthorize?.(device.deviceId)}
+                        title="Envia un OTP a los autorizadores para aprobar nuevamente este dispositivo."
+                    >
+                        Reautorizar con OTP
+                    </button>
+                ) : null}
             </div>
         </article>
     );
@@ -161,6 +175,7 @@ export default function DevicesSettingsDetailPane({
     const [editingId, setEditingId] = React.useState('');
     const [draftName, setDraftName] = React.useState('');
     const [busy, setBusy] = React.useState(false);
+    const [notice, setNotice] = React.useState('');
 
     const canAdminDevices = Boolean(canViewAllDevices || isSuperAdmin || currentUser?.isSuperAdmin === true || toText(userRole).toLowerCase() === 'owner');
 
@@ -168,6 +183,7 @@ export default function DevicesSettingsDetailPane({
         if (typeof requestJson !== 'function') return;
         setLoading(true);
         setError('');
+        setNotice('');
         try {
             const payload = await requestJson('/api/auth/devices', { method: 'GET' });
             setDevices(Array.isArray(payload?.devices) ? payload.devices : []);
@@ -187,6 +203,7 @@ export default function DevicesSettingsDetailPane({
         if (typeof requestJson !== 'function') return;
         setBusy(true);
         setError('');
+        setNotice('');
         try {
             await requestJson(`/api/auth/devices/${encodeURIComponent(deviceId)}`, {
                 method: 'PATCH',
@@ -206,6 +223,7 @@ export default function DevicesSettingsDetailPane({
         if (typeof requestJson !== 'function') return;
         setBusy(true);
         setError('');
+        setNotice('');
         try {
             await requestJson(`/api/auth/devices/${encodeURIComponent(deviceId)}`, { method: 'DELETE' });
             await loadDevices();
@@ -215,6 +233,29 @@ export default function DevicesSettingsDetailPane({
             }
         } catch (err) {
             setError(String(err?.message || err || 'No se pudo revocar el dispositivo.'));
+        } finally {
+            setBusy(false);
+        }
+    }, [adminDevices.length, adminUserId, loadDevices, requestJson]);
+
+    const reauthorize = React.useCallback(async (deviceId, mode = 'own') => {
+        if (typeof requestJson !== 'function') return;
+        setBusy(true);
+        setError('');
+        setNotice('');
+        try {
+            const endpoint = mode === 'admin'
+                ? `/api/admin/devices/${encodeURIComponent(deviceId)}/request-reauthorization`
+                : `/api/auth/devices/${encodeURIComponent(deviceId)}/request-reauthorization`;
+            const payload = await requestJson(endpoint, { method: 'POST' });
+            setNotice(String(payload?.message || 'OTP enviado a los autorizadores de acceso.'));
+            await loadDevices();
+            if (adminUserId && adminDevices.length) {
+                const refreshed = await requestJson(`/api/admin/users/${encodeURIComponent(adminUserId)}/devices`, { method: 'GET' });
+                setAdminDevices(Array.isArray(refreshed?.devices) ? refreshed.devices : []);
+            }
+        } catch (err) {
+            setError(String(err?.message || err || 'No se pudo solicitar reautorizacion.'));
         } finally {
             setBusy(false);
         }
@@ -253,6 +294,7 @@ export default function DevicesSettingsDetailPane({
             </div>
 
             {error ? <div className="saas-admin-error-inline">{error}</div> : null}
+            {notice ? <div className="saas-admin-success-inline">{notice}</div> : null}
 
             <div className="saas-admin-related-block saas-device-panel">
                 <h4>Dispositivos de mi cuenta</h4>
@@ -268,9 +310,11 @@ export default function DevicesSettingsDetailPane({
                         setDraftName={setDraftName}
                         onSaveName={saveName}
                         onRevoke={revoke}
+                        onReauthorize={(deviceId) => reauthorize(deviceId, 'own')}
                         formatDateTimeLabel={formatDateTimeLabel}
                         allowRename={true}
                         allowRevoke={canRevokeOwnDevices}
+                        allowReauthorize={canRevokeOwnDevices || canRevokeAllDevices || isSuperAdmin || currentUser?.isSuperAdmin === true}
                     />
                 )}
             </div>
@@ -303,9 +347,11 @@ export default function DevicesSettingsDetailPane({
                             setDraftName={setDraftName}
                             onSaveName={saveName}
                             onRevoke={revoke}
+                            onReauthorize={(deviceId) => reauthorize(deviceId, 'admin')}
                             formatDateTimeLabel={formatDateTimeLabel}
                             allowRename={false}
                             allowRevoke={canRevokeAllDevices || isSuperAdmin || currentUser?.isSuperAdmin === true}
+                            allowReauthorize={canRevokeAllDevices || isSuperAdmin || currentUser?.isSuperAdmin === true}
                         />
                     )}
                 </div>
