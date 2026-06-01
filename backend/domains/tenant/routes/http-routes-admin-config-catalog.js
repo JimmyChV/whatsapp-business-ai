@@ -39,6 +39,32 @@ function sanitizeTenantSmtpPayload(payload = {}) {
     return clean;
 }
 
+const ALLOWED_METADATA_KEYS = [
+    'brand',
+    'unit',
+    'weight',
+    'dimensions',
+    'tags',
+    'notes',
+    'supplier',
+    'barcode'
+];
+const MAX_METADATA_SIZE = 5000;
+
+function sanitizeProductMetadata(raw = {}) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const size = Buffer.byteLength(JSON.stringify(raw), 'utf8');
+    if (size > MAX_METADATA_SIZE) {
+        throw new Error('Metadata demasiado grande.');
+    }
+
+    return Object.fromEntries(
+        Object.entries(raw)
+            .filter(([key]) => ALLOWED_METADATA_KEYS.includes(String(key || '').trim()))
+            .map(([key, value]) => [key, String(value ?? '').slice(0, 500)])
+    );
+}
+
 function ensureTenantIntegrationsRead(req, tenantId, { isTenantAllowedForUser, hasAnyPermission, accessPolicyService }) {
     return isTenantAllowedForUser(req, tenantId)
         && hasAnyPermission(req, [
@@ -628,7 +654,7 @@ function registerTenantAdminConfigCatalogHttpRoutes({
                 catalogId,
                 moduleId: moduleId || undefined,
                 metadata: {
-                    ...(req.body?.metadata && typeof req.body.metadata === 'object' ? req.body.metadata : {}),
+                    ...sanitizeProductMetadata(req.body?.metadata),
                     isActive: payload.isActive !== false
                 }
             }, {
@@ -654,7 +680,7 @@ function registerTenantAdminConfigCatalogHttpRoutes({
         try {
             const updates = sanitizeProductPayload(req.body, { allowPartial: true });
             const moduleId = String(updates.moduleId || req.body?.moduleId || '').trim().toLowerCase();
-            const metadataPatch = req.body?.metadata && typeof req.body.metadata === 'object' ? { ...req.body.metadata } : {};
+            const metadataPatch = sanitizeProductMetadata(req.body?.metadata);
             if (Object.prototype.hasOwnProperty.call(updates, 'isActive')) {
                 metadataPatch.isActive = updates.isActive !== false;
                 delete updates.isActive;
@@ -692,7 +718,7 @@ function registerTenantAdminConfigCatalogHttpRoutes({
                 catalogId,
                 stockStatus: 'outofstock',
                 metadata: {
-                    ...(req.body?.metadata && typeof req.body.metadata === 'object' ? req.body.metadata : {}),
+                    ...sanitizeProductMetadata(req.body?.metadata),
                     isActive: false
                 }
             }, { tenantId, catalogId });

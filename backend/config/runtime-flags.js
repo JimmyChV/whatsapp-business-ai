@@ -20,6 +20,10 @@ function resolveRuntimeFlags({ env = process.env, parseCsvEnv } = {}) {
     const opsApiToken = String(env.OPS_API_TOKEN || '').trim();
     const opsReadyRequireWa = parseBooleanEnv(env.OPS_READY_REQUIRE_WA, false);
 
+    if (isProduction && allowedOrigins.length === 0) {
+        throw new Error('CORS: ALLOWED_ORIGINS no configurado, el servidor no puede iniciar en produccion sin origins explicitos cuando credentials=true.');
+    }
+
     return {
         isProduction,
         allowedOrigins,

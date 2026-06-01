@@ -19,10 +19,6 @@ function lower(value = '') {
     return text(value).toLowerCase();
 }
 
-function isProduction() {
-    return String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
-}
-
 function isPostgresAvailable() {
     return getStorageDriver() === 'postgres';
 }
@@ -402,7 +398,7 @@ async function ensureDeviceApprovedForLogin({ user = {}, deviceContext = {} } = 
 
     const otp = await generateOtp(safeUser.id, context.deviceId);
     const device = status?.device || await getDeviceSession(context.deviceId);
-    const emailResult = await sendOtpEmail({
+    await sendOtpEmail({
         user: safeUser,
         device,
         code: otp.code,
@@ -415,8 +411,7 @@ async function ensureDeviceApprovedForLogin({ user = {}, deviceContext = {} } = 
         deviceType: context.deviceType,
         email: safeUser.email,
         otpDelivery: 'authorizers',
-        expiresInSec: otp.expiresInSec,
-        debugCode: !isProduction() && emailResult?.skipped ? otp.code : undefined
+        expiresInSec: otp.expiresInSec
     };
 }
 
@@ -503,7 +498,7 @@ async function resendOtp({ deviceId = '', ipAddress = '' } = {}) {
     const device = await findDeviceWithUser(cleanDeviceId);
     if (!device || device.revokedAt) throw new Error('device_not_found');
     const otp = await generateOtp(device.userId, cleanDeviceId);
-    const emailResult = await sendOtpEmail({
+    await sendOtpEmail({
         user: { id: device.userId, email: device.userEmail, name: device.userName, tenantId: device.tenantId },
         device,
         code: otp.code,
@@ -512,8 +507,7 @@ async function resendOtp({ deviceId = '', ipAddress = '' } = {}) {
     return {
         ok: true,
         expiresInSec: otp.expiresInSec,
-        otpDelivery: 'authorizers',
-        debugCode: !isProduction() && emailResult?.skipped ? otp.code : undefined
+        otpDelivery: 'authorizers'
     };
 }
 

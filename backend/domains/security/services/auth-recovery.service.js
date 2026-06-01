@@ -9,7 +9,6 @@ const {
 } = require('../../../config/persistence-runtime');
 
 const STORE_FILE = 'auth_recovery_store.json';
-const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
 
 function parseBooleanEnv(value, defaultValue = false) {
     const raw = String(value ?? '').trim().toLowerCase();
@@ -32,7 +31,7 @@ const RECOVERY_MAX_REQUESTS_PER_WINDOW = parseNumberEnv(process.env.AUTH_RECOVER
 const RECOVERY_REQUEST_WINDOW_SEC = parseNumberEnv(process.env.AUTH_RECOVERY_REQUEST_WINDOW_SEC, 3600, 60, 86400);
 const RECOVERY_MAX_VERIFY_ATTEMPTS = parseNumberEnv(process.env.AUTH_RECOVERY_MAX_VERIFY_ATTEMPTS, 5, 2, 15);
 const RECOVERY_CODE_LENGTH = parseNumberEnv(process.env.AUTH_RECOVERY_CODE_LENGTH, 6, 6, 8);
-const ALLOW_DEBUG_CODE = parseBooleanEnv(process.env.AUTH_RECOVERY_DEBUG_CODE, !isProduction);
+const ALLOW_DEBUG_CODE = parseBooleanEnv(process.env.ALLOW_AUTH_DEBUG, false);
 
 function nowEpochSeconds() {
     return Math.floor(Date.now() / 1000);
@@ -231,7 +230,6 @@ async function requestPasswordRecovery({ email = '', requestIp = '', requestId =
     await saveStore(store);
 
     let delivery = 'email';
-    let debugCode = null;
     try {
         const subject = 'Codigo de seguridad para recuperar tu acceso';
         const text = [
@@ -260,7 +258,7 @@ async function requestPasswordRecovery({ email = '', requestIp = '', requestId =
     } catch (error) {
         delivery = 'accepted';
         if (ALLOW_DEBUG_CODE) {
-            debugCode = code;
+            console.log('[AuthRecovery] debug recovery code generated for', maskEmail(cleanEmail), code);
         }
     }
 
@@ -269,8 +267,7 @@ async function requestPasswordRecovery({ email = '', requestIp = '', requestId =
         accepted: true,
         maskedEmail: maskEmail(cleanEmail),
         expiresInSec: RECOVERY_CODE_TTL_SEC,
-        delivery,
-        debugCode
+        delivery
     };
 }
 

@@ -224,8 +224,7 @@
                     deviceType: session.deviceType || null,
                     email: session.email || email,
                     expiresInSec: session.expiresInSec || 600,
-                    message: 'OTP enviado',
-                    ...(session.debugCode ? { debugCode: session.debugCode } : {})
+                    message: 'OTP enviado'
                 });
             }
             setRefreshCookie(res, session?.refreshToken, session);
@@ -322,8 +321,7 @@
             return res.json({
                 ok: true,
                 message: 'OTP reenviado',
-                expiresInSec: result?.expiresInSec || 600,
-                ...(result?.debugCode ? { debugCode: result.debugCode } : {})
+                expiresInSec: result?.expiresInSec || 600
             });
         } catch (error) {
             const reason = String(error?.message || 'No se pudo reenviar OTP.');
@@ -365,7 +363,6 @@
             };
             if (result?.maskedEmail) responsePayload.maskedEmail = result.maskedEmail;
             if (result?.expiresInSec) responsePayload.expiresInSec = result.expiresInSec;
-            if (!isProduction && result?.debugCode) responsePayload.debugCode = result.debugCode;
 
             return res.json(responsePayload);
         } catch (error) {

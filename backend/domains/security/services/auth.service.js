@@ -639,8 +639,7 @@ async function login({ email = '', password = '', tenantId = '', tenantSlug = ''
                 deviceId: deviceGate.deviceId,
                 deviceType: deviceGate.deviceType,
                 email: deviceGate.email,
-                expiresInSec: deviceGate.expiresInSec,
-                debugCode: deviceGate.debugCode
+                expiresInSec: deviceGate.expiresInSec
             };
         }
     }
