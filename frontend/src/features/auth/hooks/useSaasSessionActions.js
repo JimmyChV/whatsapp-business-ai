@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   fetchSaasMe,
   loginSaas,
@@ -46,6 +46,15 @@ export function useSaasSessionActions({
   const [otpCode, setOtpCode] = useState('');
   const [deviceName, setDeviceName] = useState('');
   const [otpResendAvailableAt, setOtpResendAvailableAt] = useState(0);
+  const [loginLockedUntil, setLoginLockedUntil] = useState(0);
+  const [, setLoginLockTick] = useState(0);
+  const loginRetryRemainingSec = Math.max(0, Math.ceil((Number(loginLockedUntil || 0) - Date.now()) / 1000));
+
+  useEffect(() => {
+    if (!loginLockedUntil || loginRetryRemainingSec <= 0) return undefined;
+    const timer = window.setInterval(() => setLoginLockTick((value) => value + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [loginLockedUntil, loginRetryRemainingSec]);
 
   const finalizeAuthenticatedSession = useCallback(async (payload = {}, fallbackEmail = '') => {
     const session = normalizeSaasSessionPayload(payload, null);
@@ -119,6 +128,11 @@ export function useSaasSessionActions({
     const email = String(loginEmail || '').trim().toLowerCase();
     const password = String(loginPassword || '');
 
+    if (loginRetryRemainingSec > 0) {
+      setSaasAuthError('Demasiados intentos fallidos. Por seguridad, espera 15 minutos antes de intentar de nuevo.');
+      return;
+    }
+
     if (!email || !password) {
       setSaasAuthError('Ingresa correo y contrasena para continuar.');
       return;
@@ -156,6 +170,13 @@ export function useSaasSessionActions({
       }
       await finalizeAuthenticatedSession(payload, email);
     } catch (error) {
+      if (Number(error?.status || 0) === 429 || String(error?.code || '') === 'too_many_attempts') {
+        const retryAfterSec = Number(error?.retryAfter || 900) || 900;
+        setLoginLockedUntil(Date.now() + retryAfterSec * 1000);
+        setLoginLockTick((value) => value + 1);
+        setSaasAuthError('Demasiados intentos fallidos. Por seguridad, espera 15 minutos antes de intentar de nuevo.');
+        return;
+      }
       setSaasAuthError(String(error?.message || 'No se pudo iniciar sesion.'));
     } finally {
       setSaasAuthBusy(false);
@@ -165,6 +186,7 @@ export function useSaasSessionActions({
     finalizeAuthenticatedSession,
     loginEmail,
     loginPassword,
+    loginRetryRemainingSec,
     recoveryStep,
     setLoginPassword,
     setRecoveryError,
@@ -394,6 +416,7 @@ export function useSaasSessionActions({
     handleSwitchTenant,
     deviceAuthStep,
     pendingDeviceAuth,
+    loginRetryRemainingSec,
     otpCode,
     setOtpCode,
     deviceName,

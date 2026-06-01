@@ -42,6 +42,7 @@ export default function useAppPagePropsComposer({
     handleSaasLogin: sessionBlock.handleSaasLogin,
     deviceAuthStep: sessionBlock.deviceAuthStep,
     pendingDeviceAuth: sessionBlock.pendingDeviceAuth,
+    loginRetryRemainingSec: sessionBlock.loginRetryRemainingSec,
     otpCode: sessionBlock.otpCode,
     setOtpCode: sessionBlock.setOtpCode,
     deviceName: sessionBlock.deviceName,

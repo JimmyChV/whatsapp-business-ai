@@ -14,7 +14,12 @@ async function requestJson(path, { method = 'GET', headers = {}, body } = {}) {
 
 function assertOk({ response, payload }, fallbackMessage) {
   if (!response.ok || payload?.ok === false) {
-    throw new Error(String(payload?.error || fallbackMessage));
+    const error = new Error(String(payload?.message || payload?.error || fallbackMessage));
+    error.status = response.status;
+    error.code = String(payload?.error || '');
+    error.retryAfter = Number(payload?.retryAfter || response.headers?.get?.('Retry-After') || 0);
+    error.payload = payload;
+    throw error;
   }
   return payload;
 }

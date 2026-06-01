@@ -2,6 +2,7 @@
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -126,6 +127,21 @@ const {
 const app = express();
 app.disable('x-powered-by');
 const JSON_BODY_LIMIT_MB = Math.max(12, Math.min(256, Number(process.env.API_JSON_BODY_LIMIT_MB || 80) || 80));
+const globalHttpRateLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { ok: false, error: 'rate_limit', message: 'Demasiadas solicitudes' },
+    skip: (req) => String(req.path || '').startsWith('/socket.io')
+});
+const authHttpRateLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { ok: false, error: 'rate_limit_auth', message: 'Demasiadas solicitudes de autenticación' }
+});
 
 const {
     uploadsRoot: UPLOADS_ROOT,
@@ -147,6 +163,9 @@ const {
     tenantService,
     planLimitsService
 });
+
+app.use(globalHttpRateLimiter);
+app.use('/api/auth', authHttpRateLimiter);
 
 app.use('/uploads', express.static(UPLOADS_ROOT, {
     fallthrough: true,

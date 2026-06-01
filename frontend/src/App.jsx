@@ -730,6 +730,7 @@ function App() {
     handleSwitchTenant: sessionActions.handleSwitchTenant,
     deviceAuthStep: sessionActions.deviceAuthStep,
     pendingDeviceAuth: sessionActions.pendingDeviceAuth,
+    loginRetryRemainingSec: sessionActions.loginRetryRemainingSec,
     otpCode: sessionActions.otpCode,
     setOtpCode: sessionActions.setOtpCode,
     deviceName: sessionActions.deviceName,

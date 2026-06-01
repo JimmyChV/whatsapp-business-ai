@@ -19,8 +19,12 @@
         : (tenant) => tenant;
     const resolvedDeviceAuthService = deviceAuthService || require('../services/device-auth.service');
     const resolvedAccessPolicyService = accessPolicyService || require('../services/access-policy.service');
+    const { queryPostgres } = require('../../../config/persistence-runtime');
     const refreshCookieName = 'saas_refresh_token';
     const deviceCookieName = 'saas_device_id';
+    const loginAttemptWindowMinutes = 15;
+    const loginAttemptMaxFailures = 5;
+    const loginAttemptRetryAfterSec = loginAttemptWindowMinutes * 60;
 
     function parseCookies(req = {}) {
         const header = String(req.headers?.cookie || '').trim();
@@ -41,6 +45,59 @@
 
     function getDeviceIdFromRequest(req = {}) {
         return String(parseCookies(req)[deviceCookieName] || '').trim();
+    }
+
+    function getClientIp(req = {}) {
+        return String(req.headers?.['x-forwarded-for'] || req.ip || '')
+            .split(',')[0]
+            .trim();
+    }
+
+    function getLoginIdentifier(email = '', req = {}) {
+        return String(email || getClientIp(req) || 'unknown').trim().toLowerCase();
+    }
+
+    async function countRecentFailedLoginAttempts(identifier = '') {
+        const cleanIdentifier = String(identifier || '').trim().toLowerCase();
+        if (!cleanIdentifier) return 0;
+        try {
+            const result = await queryPostgres(`
+                SELECT COUNT(*)::int AS count
+                FROM auth_login_attempts
+                WHERE identifier = $1
+                  AND success = false
+                  AND attempt_at > NOW() - INTERVAL '${loginAttemptWindowMinutes} minutes'
+            `, [cleanIdentifier]);
+            return Number(result.rows?.[0]?.count || 0);
+        } catch (error) {
+            console.warn('[Auth] login attempt check failed:', String(error?.message || error));
+            return 0;
+        }
+    }
+
+    async function recordLoginAttempt({ identifier = '', tenantId = null, success = false, ipAddress = '' } = {}) {
+        const cleanIdentifier = String(identifier || '').trim().toLowerCase();
+        if (!cleanIdentifier) return;
+        try {
+            await queryPostgres(`
+                INSERT INTO auth_login_attempts (identifier, tenant_id, success, ip_address)
+                VALUES ($1, $2, $3, $4)
+            `, [cleanIdentifier, tenantId || null, Boolean(success), String(ipAddress || '').trim() || null]);
+            if (success) {
+                await queryPostgres(`
+                    DELETE FROM auth_login_attempts
+                    WHERE identifier = $1
+                      AND success = false
+                      AND attempt_at > NOW() - INTERVAL '${loginAttemptWindowMinutes} minutes'
+                `, [cleanIdentifier]);
+            }
+        } catch (error) {
+            console.warn('[Auth] login attempt record failed:', String(error?.message || error));
+        }
+    }
+
+    function isCredentialFailure(message = '') {
+        return /credenciales|sin acceso|invalid/i.test(String(message || ''));
     }
 
     function setDeviceCookie(res, deviceId = '') {
@@ -123,8 +180,20 @@
         const email = String(req.body?.email || '').trim().toLowerCase();
         const tenantId = String(req.body?.tenantId || '').trim() || null;
         const tenantSlug = String(req.body?.tenantSlug || '').trim() || null;
+        const ipAddress = getClientIp(req);
+        const loginIdentifier = getLoginIdentifier(email, req);
 
         try {
+            const failedAttempts = await countRecentFailedLoginAttempts(loginIdentifier);
+            if (failedAttempts >= loginAttemptMaxFailures) {
+                res.setHeader('Retry-After', String(loginAttemptRetryAfterSec));
+                return res.status(429).json({
+                    ok: false,
+                    error: 'too_many_attempts',
+                    message: 'Demasiados intentos. Espera 15 minutos.',
+                    retryAfter: loginAttemptRetryAfterSec
+                });
+            }
             const password = String(req.body?.password || '');
             const deviceId = getDeviceIdFromRequest(req) || resolvedDeviceAuthService.generateDeviceId();
             setDeviceCookie(res, deviceId);
@@ -135,6 +204,7 @@
                 tenantSlug,
                 deviceContext: buildDeviceContext(req, deviceId)
             });
+            await recordLoginAttempt({ identifier: loginIdentifier, tenantId, success: true, ipAddress });
             if (session?.requiresOtp) {
                 await auditLogService.writeAuditLog(tenantId || req?.tenantContext?.id || 'default', {
                     userId: null,
@@ -174,6 +244,9 @@
         } catch (error) {
             const message = String(error?.message || 'No se pudo iniciar sesion.');
             const status = message.toLowerCase().includes('inval') ? 401 : 400;
+            if (isCredentialFailure(message)) {
+                await recordLoginAttempt({ identifier: loginIdentifier, tenantId, success: false, ipAddress });
+            }
             await auditLogService.writeAuditLog(tenantId || req?.tenantContext?.id || 'default', {
                 userId: null,
                 userEmail: email,

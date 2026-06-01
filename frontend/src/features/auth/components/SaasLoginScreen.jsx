@@ -29,6 +29,7 @@ function SaasLoginScreen({
   handleSaasLogin,
   deviceAuthStep = 'credentials',
   pendingDeviceAuth = null,
+  loginRetryRemainingSec = 0,
   otpCode = '',
   setOtpCode,
   deviceName = '',
@@ -44,6 +45,14 @@ function SaasLoginScreen({
   handleRecoveryReset,
   resetRecoveryFlow
 }) {
+  const formatRetryCountdown = (seconds = 0) => {
+    const safeSeconds = Math.max(0, Number(seconds || 0));
+    const minutes = Math.floor(safeSeconds / 60);
+    const remainder = safeSeconds % 60;
+    return `${minutes}:${String(remainder).padStart(2, '0')}`;
+  };
+  const isLoginLocked = Number(loginRetryRemainingSec || 0) > 0;
+
   return (
     <div className='login-screen login-screen--saas'>
       <div className='saas-login-shell fade-in'>
@@ -210,14 +219,19 @@ function SaasLoginScreen({
                 </div>
 
                 {saasAuthError && <div className='saas-login-error'>{saasAuthError}</div>}
+                {isLoginLocked && (
+                  <div className='saas-login-notice'>
+                    Podras intentar en {formatRetryCountdown(loginRetryRemainingSec)}.
+                  </div>
+                )}
                 {saasAuthNotice && <div className='saas-login-notice'>{saasAuthNotice}</div>}
 
                 <button
                   type='submit'
-                  disabled={saasAuthBusy || recoveryBusy}
+                  disabled={saasAuthBusy || recoveryBusy || isLoginLocked}
                   className='saas-login-submit saas-login-submit--split'
                 >
-                  {saasAuthBusy ? 'Ingresando...' : 'Ingresar'}
+                  {isLoginLocked ? `Intentar en ${formatRetryCountdown(loginRetryRemainingSec)}` : (saasAuthBusy ? 'Ingresando...' : 'Ingresar')}
                 </button>
 
                 <div className='saas-login-legal'>
