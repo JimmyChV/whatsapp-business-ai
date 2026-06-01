@@ -30,9 +30,7 @@ export default function useChatSelectionAction({
   setQuickReplyDraft,
   setChats,
   chatIdsReferSameScope,
-  canMarkChatAsRead,
-  chatAssignmentState,
-  saasSession
+  canMarkChatAsRead
 } = {}) {
   const emitQuickRepliesRequest = (moduleId = '') => {
     const cleanModuleId = String(moduleId || '').trim().toLowerCase();
@@ -126,13 +124,6 @@ export default function useChatSelectionAction({
     const readGuardCanMark = typeof canMarkChatAsRead === 'function'
       ? canMarkChatAsRead(resolvedChatId)
       : false;
-    console.log('[ReadGuard] desktop check', {
-      chatId: resolvedChatId,
-      canMark: typeof canMarkChatAsRead === 'function' ? readGuardCanMark : 'no fn',
-      assignment: chatAssignmentState?.getAssignment?.(resolvedChatId),
-      isAssignedToMe: chatAssignmentState?.isAssignedToMe?.(resolvedChatId),
-      currentUserId: saasSession?.user?.userId || saasSession?.user?.id
-    });
     if (readGuardCanMark) {
       socket.emit('mark_chat_read', resolvedChatId);
     }

@@ -284,9 +284,7 @@ export default function useAppOperationHandlers({
     setQuickReplyDraft,
     setChats,
     chatIdsReferSameScope,
-    canMarkChatAsRead,
-    chatAssignmentState,
-    saasSession: saasSessionRef?.current || null
+    canMarkChatAsRead
   });
 
   useEffect(() => {
