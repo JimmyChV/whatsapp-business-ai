@@ -241,6 +241,61 @@ async function listUsersForUnassignedChat(tenantId = '') {
     return (result.rows || []).map((row) => text(row.user_id)).filter(Boolean);
 }
 
+function normalizeUserIdList(value = []) {
+    if (Array.isArray(value)) return value.map(text).filter(Boolean);
+    if (typeof value === 'string') {
+        const clean = value.trim();
+        if (!clean) return [];
+        try {
+            const parsed = JSON.parse(clean);
+            if (Array.isArray(parsed)) return parsed.map(text).filter(Boolean);
+        } catch (_) {
+            // Fall back to comma-separated values for legacy/manual configs.
+        }
+        if (clean.startsWith('{') && clean.endsWith('}')) {
+            return clean.slice(1, -1).split(',').map((item) => text(item).replace(/^"|"$/g, '')).filter(Boolean);
+        }
+        return clean.split(',').map(text).filter(Boolean);
+    }
+    return [];
+}
+
+async function getModuleRecipients(tenantId = '', moduleId = '', assignedUserId = '') {
+    const cleanTenantId = text(tenantId);
+    const cleanModuleId = text(moduleId).toLowerCase();
+    const cleanAssignedUserId = text(assignedUserId);
+    if (!cleanTenantId || getStorageDriver() !== 'postgres') {
+        return cleanAssignedUserId ? [cleanAssignedUserId] : [];
+    }
+
+    let userIds = [];
+    if (cleanModuleId) {
+        try {
+            const moduleResult = await queryPostgres(
+                `SELECT assigned_user_ids
+                   FROM wa_modules
+                  WHERE tenant_id = $1
+                    AND LOWER(module_id) = LOWER($2)
+                  LIMIT 1`,
+                [cleanTenantId, cleanModuleId]
+            );
+            userIds = normalizeUserIdList(moduleResult.rows?.[0]?.assigned_user_ids);
+        } catch (error) {
+            console.warn('[Push] module recipients lookup warning:', String(error?.message || error));
+        }
+    }
+
+    if (userIds.length === 0) {
+        userIds = await listUsersForUnassignedChat(cleanTenantId);
+    }
+
+    if (cleanAssignedUserId && !userIds.includes(cleanAssignedUserId)) {
+        userIds.push(cleanAssignedUserId);
+    }
+
+    return [...new Set(userIds.map(text).filter(Boolean))];
+}
+
 async function resolveSenderNameFromCustomer(tenantId = '', chatId = '') {
     const cleanTenantId = text(tenantId);
     const cleanChatId = text(chatId);
@@ -315,9 +370,7 @@ async function sendInboundMessageNotification({
     if (!cleanTenantId || !cleanChatId) return { ok: false, skipped: true, reason: 'missing_chat' };
 
     const assignedUserId = await getAssignedUserId(cleanTenantId, cleanChatId, scopeModuleId);
-    const recipients = assignedUserId
-        ? [assignedUserId]
-        : await listUsersForUnassignedChat(cleanTenantId);
+    const recipients = await getModuleRecipients(cleanTenantId, scopeModuleId, assignedUserId);
 
     const titleName = await resolveSenderNameFromCustomer(cleanTenantId, cleanChatId)
         || text(senderName)
@@ -345,6 +398,7 @@ module.exports = {
     sendToUsers,
     sendInboundMessageNotification,
     listUsersForUnassignedChat,
+    getModuleRecipients,
     resolveSenderNameFromCustomer,
     resolvePushIconUrl,
 };

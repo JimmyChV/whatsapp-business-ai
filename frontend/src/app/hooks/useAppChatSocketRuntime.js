@@ -311,6 +311,23 @@ export default function useAppChatSocketRuntime({
     setActiveChatId
   });
 
+  const chatAssignmentState = useChatAssignmentState({
+    socket,
+    activeChatId,
+    normalizeChatScopedId,
+    chatIdsReferSameScope,
+    currentUserId: String(saasSession?.user?.userId || saasSession?.user?.id || '').trim()
+  });
+
+  const canMarkChatAsRead = (chatId = '') => {
+    const user = saasSession?.user || {};
+    const role = String(user?.role || '').trim().toLowerCase();
+    if (user?.isSuperAdmin || role === 'owner' || role === 'admin' || role === 'superadmin') return true;
+    return typeof chatAssignmentState?.isAssignedToMe === 'function'
+      ? chatAssignmentState.isAssignedToMe(chatId)
+      : false;
+  };
+
   useSocketChatConversationEvents({
     socket,
     chatSearchRef,
@@ -362,15 +379,8 @@ export default function useAppChatSocketRuntime({
     setClientContact,
     isInternalIdentifier,
     setToasts,
-    tenantScopeId: activeTenantId
-  });
-
-  const chatAssignmentState = useChatAssignmentState({
-    socket,
-    activeChatId,
-    normalizeChatScopedId,
-    chatIdsReferSameScope,
-    currentUserId: String(saasSession?.user?.userId || saasSession?.user?.id || '').trim()
+    tenantScopeId: activeTenantId,
+    canMarkChatAsRead
   });
 
   const chatCommercialStatusState = useChatCommercialStatusState({

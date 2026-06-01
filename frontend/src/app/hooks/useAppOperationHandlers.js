@@ -161,7 +161,10 @@ export default function useAppOperationHandlers({
     waModulesRef,
     selectedCatalogModuleIdRef,
     selectedCatalogIdRef,
-    fileInputRef
+    fileInputRef,
+    chatAssignmentState,
+    currentUserRole = '',
+    isSuperAdmin = false
   } = workspaceStateBlock;
 
   const { buildApiHeaders } = navigationHelpersBlock;
@@ -209,6 +212,16 @@ export default function useAppOperationHandlers({
     activeChatIdRef,
     chats
   });
+
+  const canMarkChatAsRead = useCallback((chatId = '') => {
+    const safeRole = String(currentUserRole || '').trim().toLowerCase();
+    if (isSuperAdmin || safeRole === 'owner' || safeRole === 'admin' || safeRole === 'superadmin') {
+      return true;
+    }
+    return typeof chatAssignmentState?.isAssignedToMe === 'function'
+      ? chatAssignmentState.isAssignedToMe(chatId)
+      : false;
+  }, [chatAssignmentState, currentUserRole, isSuperAdmin]);
 
   const requestAiSuggestion = useCallback((customPromptArg) => {
     requestAiSuggestionForChat({
@@ -276,7 +289,8 @@ export default function useAppOperationHandlers({
     setClientContact,
     setQuickReplyDraft,
     setChats,
-    chatIdsReferSameScope
+    chatIdsReferSameScope,
+    canMarkChatAsRead
   });
 
   useEffect(() => {

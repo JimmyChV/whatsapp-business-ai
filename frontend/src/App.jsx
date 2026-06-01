@@ -667,7 +667,10 @@ function App() {
     selectedWaModuleRef,
     waModulesRef,
     selectedCatalogModuleIdRef,
-    selectedCatalogIdRef
+    selectedCatalogIdRef,
+    chatAssignmentState,
+    currentUserRole: saasUserRole,
+    isSuperAdmin: Boolean(saasSession?.user?.isSuperAdmin)
   };
 
   const navigationHelpersBlock = {

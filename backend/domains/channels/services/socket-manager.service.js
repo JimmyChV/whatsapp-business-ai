@@ -1907,6 +1907,26 @@ class SocketManager {
                     const scopedTarget = resolveScopedChatTarget(requestedChatId, selectedScopeModuleId);
                     const safeChatId = String(scopedTarget.baseChatId || '').trim();
                     if (!safeChatId) return;
+                    const actorUserId = String(authContext?.userId || authContext?.user?.userId || authContext?.user?.id || '').trim();
+                    const memberships = Array.isArray(authContext?.memberships)
+                        ? authContext.memberships
+                        : (Array.isArray(authContext?.user?.memberships) ? authContext.user.memberships : []);
+                    const tenantMembership = memberships.find((entry) => String(entry?.tenantId || entry?.tenant_id || '').trim() === tenantId) || memberships[0] || null;
+                    const actorRole = String(authContext?.role || authContext?.user?.role || tenantMembership?.role || '').trim().toLowerCase();
+                    const isManager = Boolean(
+                        authContext?.isSuperAdmin
+                        || authContext?.user?.isSuperAdmin
+                        || ['owner', 'admin', 'superadmin'].includes(actorRole)
+                    );
+                    let isAssignedToActor = false;
+                    if (actorUserId) {
+                        const assignment = await conversationOpsService.getChatAssignment(tenantId, {
+                            chatId: safeChatId,
+                            scopeModuleId: selectedScopeModuleId
+                        });
+                        isAssignedToActor = String(assignment?.assigneeUserId || '').trim() === actorUserId;
+                    }
+                    if (!isManager && !isAssignedToActor) return;
                     await waClient.markAsRead(safeChatId);
                 } catch (e) { }
             });

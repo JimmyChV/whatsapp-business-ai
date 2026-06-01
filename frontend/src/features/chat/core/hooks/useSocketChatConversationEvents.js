@@ -153,12 +153,14 @@ export default function useSocketChatConversationEvents({
     setClientContact,
     isInternalIdentifier,
     setToasts,
-    tenantScopeId = ''
+    tenantScopeId = '',
+    canMarkChatAsRead
 }) {
     const { notify } = useUiFeedback();
     const recentInboundNotificationsRef = useRef(new Map());
     const windowFocusedRef = useRef(true);
     const pageVisibleRef = useRef(true);
+    const canMarkChatAsReadRef = useRef(canMarkChatAsRead);
     const desktopNotificationSummaryRef = useRef({
         totalMessages: 0,
         chats: new Map(),
@@ -167,6 +169,17 @@ export default function useSocketChatConversationEvents({
         latestTitle: '',
         latestPreview: ''
     });
+
+    useEffect(() => {
+        canMarkChatAsReadRef.current = canMarkChatAsRead;
+    }, [canMarkChatAsRead]);
+
+    const emitMarkChatRead = (chatId = '') => {
+        if (typeof canMarkChatAsReadRef.current !== 'function') return;
+        if (!canMarkChatAsReadRef.current(chatId)) return;
+        socket.emit('mark_chat_read', chatId);
+    };
+
     useEffect(() => {
         const syncWindowAttentionState = () => {
             try {
@@ -674,7 +687,7 @@ export default function useSocketChatConversationEvents({
             if (resolvedChatId && !chatIdsReferSameScope(resolvedChatId, active)) {
                 activeChatIdRef.current = resolvedChatId;
                 setActiveChatId(resolvedChatId);
-                socket.emit('mark_chat_read', resolvedChatId);
+                emitMarkChatRead(resolvedChatId);
                 socket.emit('get_contact_info', resolvedChatId);
             }
 
@@ -1277,6 +1290,10 @@ export default function useSocketChatConversationEvents({
                 const parsedCanonicalId = parseScopedChatId(canonicalId);
                 const canonicalScopeModuleId = String(parsedCanonicalId?.scopeModuleId || incomingScopeModuleId || existing?.scopeModuleId || existing?.lastMessageModuleId || '').trim().toLowerCase() || null;
                 const baseChatId = String(parsedCanonicalId?.baseChatId || existing?.baseChatId || relatedChatId).trim() || null;
+                const isActiveChat = chatIdsReferSameScope(canonicalId, String(activeChatIdRef.current || ''));
+                const shouldMarkActiveChatRead = isActiveChat
+                    && typeof canMarkChatAsReadRef.current === 'function'
+                    && canMarkChatAsReadRef.current(canonicalId);
                 const nextChat = {
                     ...(existing || { id: canonicalId, baseChatId, scopeModuleId: canonicalScopeModuleId, name: safeName, phone: isLikelyPhoneDigits(fallbackDigits) ? fallbackDigits : null, subtitle: null, labels: [] }),
                     id: canonicalId,
@@ -1292,7 +1309,7 @@ export default function useSocketChatConversationEvents({
                     lastMessageFromMe: !!msg.fromMe,
                     ack: msg.ack || 0,
                     isMyContact: existing?.isMyContact === true,
-                    unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (chatIdsReferSameScope(canonicalId, String(activeChatIdRef.current || '')) ? 0 : (existing?.unreadCount || 0) + 1),
+                    unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (shouldMarkActiveChatRead ? 0 : (existing?.unreadCount || 0) + 1),
                     windowOpen: msg.fromMe ? existing?.windowOpen : true,
                     windowExpiresAt: msg.fromMe ? (existing?.windowExpiresAt || null) : relatedWindowExpiresAt,
                     lastMessageModuleId: String(msg?.sentViaModuleId || canonicalScopeModuleId || existing?.lastMessageModuleId || '').trim().toLowerCase() || null,
@@ -1445,7 +1462,7 @@ export default function useSocketChatConversationEvents({
 
             if (!msg?.fromMe && chatIdsReferSameScope(relatedChatId, String(activeChatIdRef.current || ''))) {
                 shouldInstantScrollRef.current = true;
-                socket.emit('mark_chat_read', relatedChatId);
+                emitMarkChatRead(relatedChatId);
             }
         });
 

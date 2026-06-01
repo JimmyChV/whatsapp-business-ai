@@ -3494,11 +3494,22 @@ async function maybeHandlePattyLogisticsDecision({
         intent: decision.intent,
         zoneRuleId: decision.zone?.ruleId || null
     });
+    await markPattyAutonomousChatRead(chatId);
     return true;
 }
 
 function ensureTextArray(value = []) {
     return (Array.isArray(value) ? value : [value]).map(text).filter(Boolean);
+}
+
+async function markPattyAutonomousChatRead(chatId = '') {
+    const cleanChatId = normalizeChatId(chatId);
+    if (!cleanChatId) return;
+    try {
+        await waClient.markAsRead(cleanChatId);
+    } catch (error) {
+        console.warn('[Patty] autonomous mark read skipped:', error?.message || error);
+    }
 }
 
 async function getCustomerContext(tenantId, moduleId, chatId) {
@@ -5698,6 +5709,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                     chatId: cleanChatId,
                     source: prebuiltContext.deterministicSource || 'patty_deterministic_delivery_payment'
                 });
+                await markPattyAutonomousChatRead(cleanChatId);
                 return;
             }
             const result = await generatePattySuggestion(cleanTenantId, cleanModuleId, cleanChatId, prebuiltContext);
@@ -5832,6 +5844,7 @@ async function tryPattyIntervention(tenantId, moduleId, chatId, socketEmitter, o
                 messageCount: messages.length,
                 hasQuoteRequest: Boolean(result.quoteRequest)
             });
+            await markPattyAutonomousChatRead(cleanChatId);
         } catch (error) {
             if (pattyChatDebounce.get(debounceKey) === timer) {
                 pattyChatDebounce.delete(debounceKey);
