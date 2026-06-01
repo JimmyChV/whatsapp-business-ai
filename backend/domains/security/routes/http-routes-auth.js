@@ -213,6 +213,39 @@
         return String(user?.role || 'seller').trim().toLowerCase() || 'seller';
     }
 
+    function getActorDisplayName(req = {}) {
+        const user = getAuthenticatedUser(req);
+        return cleanText(user?.displayName || user?.name || user?.email || user?.userId || user?.id || 'Administrador', 140);
+    }
+
+    function getDeviceDisplayNameForAudit(device = {}) {
+        return cleanText(device?.deviceName || device?.deviceType || device?.deviceId || 'Dispositivo', 140);
+    }
+
+    function buildDeviceRevocationAuditPayload(device = {}, actorUserId = '', req = {}) {
+        const deviceName = getDeviceDisplayNameForAudit(device);
+        const cleanActorId = String(actorUserId || '').trim();
+        const ownerId = String(device?.userId || '').trim();
+        if (cleanActorId && ownerId && cleanActorId === ownerId) {
+            return { revokedBy: 'self', deviceName };
+        }
+        return {
+            revokedBy: 'admin',
+            adminName: getActorDisplayName(req),
+            deviceName,
+            deviceOwner: cleanText(device?.userName || device?.userEmail || device?.userId || '', 160) || null
+        };
+    }
+
+    function buildDeviceReauthAuditPayload(device = {}, req = {}) {
+        return {
+            adminName: getActorDisplayName(req),
+            deviceName: getDeviceDisplayNameForAudit(device),
+            deviceOwner: cleanText(device?.userName || device?.userEmail || device?.userId || '', 160) || null,
+            targetUserId: device?.userId || null
+        };
+    }
+
     function toPublicProfile(row = {}, fallbackUser = {}) {
         const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
         const displayName = cleanText(row?.display_name || fallbackUser?.name || fallbackUser?.email || 'Usuario', 140);
@@ -484,22 +517,27 @@
             });
             setRefreshCookie(res, session?.refreshToken, session);
 
-            await resolvedDeviceAuthService.notifyTenantOwnersDeviceApproved({
-                tenantId: verified.tenantId,
-                device: approvedDevice || verified.device,
-                user: session.user
-            }).catch(() => null);
+            if (!wasRevoked) {
+                await resolvedDeviceAuthService.notifyTenantOwnersDeviceApproved({
+                    tenantId: verified.tenantId,
+                    device: approvedDevice || verified.device,
+                    user: session.user
+                }).catch(() => null);
+            }
 
             await auditLogService.writeAuditLog(session?.user?.tenantId || verified.tenantId || 'default', {
                 userId: session?.user?.id || verified.userId || null,
                 userEmail: session?.user?.email || null,
                 role: session?.user?.role || 'seller',
-                action: 'auth.device.otp_verified',
+                action: wasRevoked ? 'auth.device.reauthorized' : 'auth.device.otp_verified',
                 resourceType: 'auth_device',
                 resourceId: deviceId,
                 source: 'api',
                 ip: String(req.ip || ''),
-                payload: { deviceName: approvedDevice?.deviceName || deviceName || null }
+                payload: {
+                    deviceName: approvedDevice?.deviceName || deviceName || null,
+                    reauthorized: wasRevoked
+                }
             });
 
             return res.json({ ok: true, ...stripRefreshToken(session) });
@@ -1086,12 +1124,12 @@
                 userId,
                 userEmail: req?.authContext?.user?.email || null,
                 role: req?.authContext?.user?.role || 'seller',
-                action: 'auth.device.revoke',
+                action: 'auth.device.revoked',
                 resourceType: 'auth_device',
                 resourceId: deviceId,
                 source: 'api',
                 ip: String(req.ip || ''),
-                payload: { targetUserId: device?.userId || null }
+                payload: buildDeviceRevocationAuditPayload(device, userId, req)
             });
             return res.json({ ok: true, device });
         } catch (error) {
@@ -1125,12 +1163,12 @@
                 userId,
                 userEmail: req?.authContext?.user?.email || null,
                 role: req?.authContext?.user?.role || 'seller',
-                action: 'auth.device.reauthorization_requested',
+                action: 'auth.device.reauth_requested',
                 resourceType: 'auth_device',
                 resourceId: deviceId,
                 source: 'api',
                 ip: String(req.ip || ''),
-                payload: { targetUserId: result?.device?.userId || null }
+                payload: buildDeviceReauthAuditPayload(result?.device, req)
             });
             return res.json({
                 ok: true,
@@ -1187,12 +1225,12 @@
                 userId,
                 userEmail: req?.authContext?.user?.email || null,
                 role: req?.authContext?.user?.role || 'seller',
-                action: 'auth.device.admin_revoke',
+                action: 'auth.device.revoked',
                 resourceType: 'auth_device',
                 resourceId: deviceId,
                 source: 'api',
                 ip: String(req.ip || ''),
-                payload: { targetUserId: device?.userId || null }
+                payload: buildDeviceRevocationAuditPayload(device, userId, req)
             });
             return res.json({ ok: true, device });
         } catch (error) {
@@ -1226,12 +1264,12 @@
                 userId,
                 userEmail: req?.authContext?.user?.email || null,
                 role: req?.authContext?.user?.role || 'seller',
-                action: 'auth.device.admin_reauthorization_requested',
+                action: 'auth.device.reauth_requested',
                 resourceType: 'auth_device',
                 resourceId: deviceId,
                 source: 'api',
                 ip: String(req.ip || ''),
-                payload: { targetUserId: result?.device?.userId || null }
+                payload: buildDeviceReauthAuditPayload(result?.device, req)
             });
             return res.json({
                 ok: true,

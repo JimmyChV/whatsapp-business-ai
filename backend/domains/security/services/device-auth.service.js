@@ -127,6 +127,150 @@ async function getTenantOwnerEmail(tenantId = '') {
     return lower(rows?.[0]?.email);
 }
 
+async function getTenantAuthorizerEmails(tenantId = '') {
+    const authorizers = await getDeviceAuthorizers(tenantId);
+    const ownerEmail = authorizers.length > 0 ? '' : await getTenantOwnerEmail(tenantId);
+    return Array.from(new Set(
+        (authorizers.length > 0 ? authorizers.map((item) => item.email) : [ownerEmail])
+            .map(lower)
+            .filter(Boolean)
+    ));
+}
+
+async function getUserIdentity(userId = '') {
+    const cleanUserId = text(userId);
+    if (!cleanUserId || !isPostgresAvailable()) return null;
+    const { rows } = await queryPostgres(
+        `SELECT user_id, email, display_name
+           FROM users
+          WHERE user_id = $1
+          LIMIT 1`,
+        [cleanUserId]
+    );
+    const row = rows?.[0] || null;
+    if (!row) return null;
+    return {
+        userId: text(row.user_id),
+        email: lower(row.email),
+        name: text(row.display_name || row.email || row.user_id)
+    };
+}
+
+function getDeviceDisplayName(device = {}) {
+    return text(device.deviceName || device.device_name)
+        || text(device.deviceType || device.device_type)
+        || 'Dispositivo';
+}
+
+function formatEmailDate(value = new Date()) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return new Date().toISOString();
+    return date.toLocaleString('es-PE', { timeZone: 'America/Lima' });
+}
+
+async function sendDeviceEmail({ tenantId = '', to = '', subject = '', text: textBody = '', html = '' } = {}) {
+    const cleanTo = lower(to);
+    const cleanTenantId = text(tenantId);
+    if (!cleanTo || !cleanTenantId) return { skipped: true };
+    return emailService.sendEmailForTenant(cleanTenantId, {
+        to: cleanTo,
+        subject,
+        text: textBody,
+        html: html || textBody.replace(/\n/g, '<br/>')
+    }).catch((error) => {
+        console.warn('[DeviceAuth] email failed:', String(error?.message || error));
+        return { skipped: true, error: String(error?.message || error) };
+    });
+}
+
+async function notifyDeviceRevoked({ device = {}, actorUserId = '', ipAddress = '' } = {}) {
+    const cleanTenantId = text(device.tenantId);
+    const owner = {
+        userId: text(device.userId),
+        email: lower(device.userEmail),
+        name: text(device.userName || device.userEmail || device.userId)
+    };
+    const actor = await getUserIdentity(actorUserId) || { userId: text(actorUserId), name: text(actorUserId), email: '' };
+    const deviceName = getDeviceDisplayName(device);
+    const date = formatEmailDate();
+    const ip = text(ipAddress || device.ipAddress) || 'IP no disponible';
+    const revokedBySelf = owner.userId && owner.userId === actor.userId;
+
+    if (owner.email) {
+        const subject = revokedBySelf ? 'Dispositivo revocado' : 'Tu dispositivo fue revocado';
+        const lines = revokedBySelf
+            ? [
+                `Hola ${owner.name},`,
+                `Tu dispositivo '${deviceName}' fue revocado por ti mismo.`,
+                `Fecha: ${date} - IP: ${ip}`,
+                'Si no reconoces esta accion, contacta al administrador inmediatamente.'
+            ]
+            : [
+                `Hola ${owner.name},`,
+                `Tu dispositivo '${deviceName}' fue revocado por ${actor.name || 'un administrador'}.`,
+                `Fecha: ${date}`,
+                'Si tienes dudas, contacta a tu administrador.'
+            ];
+        await sendDeviceEmail({
+            tenantId: cleanTenantId,
+            to: owner.email,
+            subject,
+            text: lines.join('\n')
+        });
+    }
+
+    if (revokedBySelf) return { ok: true, notifiedAuthorizers: false };
+
+    const authorizers = await getTenantAuthorizerEmails(cleanTenantId);
+    const body = [
+        `${actor.name || 'Un administrador'} revoco el dispositivo '${deviceName}' perteneciente a ${owner.name || owner.email || owner.userId}.`,
+        `Fecha: ${date}`
+    ].join('\n');
+    await Promise.allSettled(authorizers
+        .filter((email) => email !== owner.email)
+        .map((to) => sendDeviceEmail({
+            tenantId: cleanTenantId,
+            to,
+            subject: 'Aviso: dispositivo revocado por admin',
+            text: body
+        })));
+    return { ok: true, notifiedAuthorizers: true };
+}
+
+async function notifyDeviceReauthorized({ device = {} } = {}) {
+    const cleanTenantId = text(device.tenantId);
+    const owner = {
+        email: lower(device.userEmail),
+        name: text(device.userName || device.userEmail || device.userId)
+    };
+    const deviceName = getDeviceDisplayName(device);
+
+    if (owner.email) {
+        await sendDeviceEmail({
+            tenantId: cleanTenantId,
+            to: owner.email,
+            subject: 'Tu dispositivo fue reautorizado',
+            text: [
+                `Hola ${owner.name},`,
+                `Tu dispositivo '${deviceName}' fue reautorizado exitosamente.`,
+                'Ya puedes usarlo para ingresar.'
+            ].join('\n')
+        });
+    }
+
+    const authorizers = await getTenantAuthorizerEmails(cleanTenantId);
+    const body = `El dispositivo '${deviceName}' de ${owner.name || owner.email} fue reautorizado exitosamente.`;
+    await Promise.allSettled(authorizers
+        .filter((email) => email !== owner.email)
+        .map((to) => sendDeviceEmail({
+            tenantId: cleanTenantId,
+            to,
+            subject: 'Aviso: dispositivo reautorizado',
+            text: body
+        })));
+    return { ok: true };
+}
+
 async function getDeviceSession(deviceId = '') {
     const cleanDeviceId = text(deviceId);
     if (!cleanDeviceId || !isPostgresAvailable()) return null;
@@ -199,6 +343,7 @@ async function revokeDevice({ actorUserId = '', deviceId = '', currentDeviceId =
     }
     if (!isPostgresAvailable()) throw new Error('device_store_unavailable');
 
+    const previousDevice = await findDeviceWithUser(cleanDeviceId);
     const { rows } = await queryPostgres(
         `UPDATE auth_device_sessions
             SET revoked_at = COALESCE(revoked_at, NOW()),
@@ -210,7 +355,14 @@ async function revokeDevice({ actorUserId = '', deviceId = '', currentDeviceId =
     );
     const device = normalizeDeviceRow(rows?.[0] || null);
     if (!device) throw new Error('device_not_found');
-    return withCurrentDevice(device, currentDeviceId);
+    const enrichedDevice = {
+        ...(previousDevice || {}),
+        ...device,
+        userEmail: previousDevice?.userEmail || device.userEmail,
+        userName: previousDevice?.userName || device.userName
+    };
+    await notifyDeviceRevoked({ device: enrichedDevice, actorUserId: cleanActorId, ipAddress: enrichedDevice.ipAddress });
+    return withCurrentDevice(enrichedDevice, currentDeviceId);
 }
 
 async function findDeviceWithUser(deviceId = '') {
@@ -360,18 +512,12 @@ async function hasActiveOtp(deviceId = '') {
     return Boolean(rows?.[0]?.otp_id);
 }
 
-async function sendOtpEmail({ user = {}, device = {}, code = '', ipAddress = '', reauthorization = false } = {}) {
+async function sendOtpEmail({ user = {}, device = {}, code = '', ipAddress = '', reauthorization = false, actor = null } = {}) {
     const safeUser = normalizeUser(user);
     const tenantId = safeUser.tenantId || text(device.tenantId || device.tenant_id);
     if (!tenantId) throw new Error('Tenant requerido para enviar OTP.');
 
-    const authorizers = await getDeviceAuthorizers(tenantId);
-    const ownerEmail = authorizers.length > 0 ? '' : await getTenantOwnerEmail(tenantId);
-    const recipients = Array.from(new Set(
-        (authorizers.length > 0 ? authorizers.map((item) => item.email) : [ownerEmail])
-            .map(lower)
-            .filter(Boolean)
-    ));
+    const recipients = await getTenantAuthorizerEmails(tenantId);
     if (!recipients.length) {
         throw new Error('No hay autorizadores ni owner para enviar el codigo OTP.');
     }
@@ -379,10 +525,10 @@ async function sendOtpEmail({ user = {}, device = {}, code = '', ipAddress = '',
     const deviceType = text(device.deviceType || device.device_type) || 'desktop';
     const ip = text(ipAddress || device.ipAddress || device.ip_address) || 'IP no disponible';
     const userName = safeUser.name || safeUser.email || safeUser.id || 'Usuario';
-    const subject = reauthorization
-        ? 'Dispositivo revocado requiere nueva autorizacion'
-        : 'Nuevo dispositivo requiere autorizacion';
-    const textBody = [
+    const deviceName = getDeviceDisplayName(device);
+    const actorName = text(actor?.name || actor?.email || actor?.userId);
+    const subject = reauthorization ? 'Codigo OTP para reautorizar dispositivo' : 'Nuevo dispositivo requiere autorizacion';
+    let textBody = [
         reauthorization
             ? `El usuario ${userName} solicita reautorizar un dispositivo revocado.`
             : `El usuario ${userName} esta intentando acceder desde un nuevo dispositivo.`,
@@ -392,7 +538,7 @@ async function sendOtpEmail({ user = {}, device = {}, code = '', ipAddress = '',
         'El autorizador debe compartir este codigo con el usuario para que pueda ingresar.',
         `Valido por ${OTP_TTL_MINUTES} minutos.`
     ].join('\n');
-    const htmlBody = `
+    let htmlBody = `
         <p>El usuario <strong>${userName}</strong> ${reauthorization ? 'solicita reautorizar un dispositivo revocado.' : 'esta intentando acceder desde un nuevo dispositivo.'}</p>
         <p><strong>Dispositivo:</strong> ${deviceType} &middot; ${ip}</p>
         <p><strong>Codigo OTP:</strong>
@@ -401,6 +547,22 @@ async function sendOtpEmail({ user = {}, device = {}, code = '', ipAddress = '',
         <p>El autorizador debe compartir este codigo con el usuario para que pueda ingresar.</p>
         <p>Valido por ${OTP_TTL_MINUTES} minutos.</p>
     `;
+    if (reauthorization) {
+        textBody = [
+            `${actorName || 'Un administrador'} solicito reautorizar el dispositivo '${deviceName}' de ${userName}.`,
+            `Codigo OTP: ${code}`,
+            `Valido por ${OTP_TTL_MINUTES} minutos.`,
+            `Comparte este codigo con ${userName} para que pueda ingresar.`
+        ].join('\n');
+        htmlBody = `
+            <p><strong>${actorName || 'Un administrador'}</strong> solicito reautorizar el dispositivo <strong>${deviceName}</strong> de <strong>${userName}</strong>.</p>
+            <p><strong>Codigo OTP:</strong>
+              <span style="font-size:24px;font-weight:bold;letter-spacing:4px">${code}</span>
+            </p>
+            <p>Valido por ${OTP_TTL_MINUTES} minutos.</p>
+            <p>Comparte este codigo con ${userName} para que pueda ingresar.</p>
+        `;
+    }
     const results = await Promise.allSettled(recipients.map((to) => emailService.sendEmailForTenant(tenantId, {
         to,
         subject,
@@ -517,6 +679,7 @@ async function approveDevice(deviceId = '', deviceName = '', approvedBy = 'otp')
     const cleanDeviceId = text(deviceId);
     if (!cleanDeviceId || !isPostgresAvailable()) return null;
     const safeName = text(deviceName) || 'Dispositivo verificado';
+    const wasReauthorization = text(approvedBy) === 'otp_reauth';
     const { rows } = await queryPostgres(
         `UPDATE auth_device_sessions
             SET is_approved = TRUE,
@@ -531,7 +694,13 @@ async function approveDevice(deviceId = '', deviceName = '', approvedBy = 'otp')
           RETURNING *`,
         [cleanDeviceId, text(approvedBy) || 'otp', safeName]
     );
-    return normalizeDeviceRow(rows?.[0] || null);
+    const device = normalizeDeviceRow(rows?.[0] || null);
+    if (!device) return null;
+    const enrichedDevice = await findDeviceWithUser(cleanDeviceId) || device;
+    if (wasReauthorization) {
+        await notifyDeviceReauthorized({ device: enrichedDevice });
+    }
+    return enrichedDevice;
 }
 
 async function resendOtp({ deviceId = '', ipAddress = '' } = {}) {
@@ -632,13 +801,15 @@ async function requestDeviceReauthorization({ actorUserId = '', deviceId = '', i
     if (!allowAny && device.userId !== cleanActorId) throw new Error('device_not_found');
     if (!device.revokedAt) throw new Error('device_not_revoked');
 
+    const actor = await getUserIdentity(cleanActorId);
     const otp = await generateOtp(device.userId, cleanDeviceId);
     await sendOtpEmail({
         user: { id: device.userId, email: device.userEmail, name: device.userName, tenantId: device.tenantId },
         device,
         code: otp.code,
         ipAddress,
-        reauthorization: true
+        reauthorization: true,
+        actor
     });
     return {
         ok: true,
