@@ -184,7 +184,9 @@ export default function useOperationWorkspaceState({
   useEffect(() => {
     const safeActiveChatId = String(activeChatId || '').trim();
     if (!isCacheLoaded || !safeActiveChatId || !Array.isArray(messages) || messages.length === 0) return;
-    saveCachedMessages(safeActiveChatId, messages);
+    const realMessages = messages.filter((message) => !message?.optimistic);
+    if (realMessages.length === 0) return;
+    saveCachedMessages(safeActiveChatId, realMessages);
   }, [activeChatId, isCacheLoaded, messages]);
 
   return {

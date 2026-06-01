@@ -681,40 +681,42 @@ export default function useChatMessageActions({
       const primaryAsset = draftMediaAssets[0] || null;
       const primaryMimeType = String(draftQuickReply.mediaMimeType || primaryAsset?.mimeType || '').trim().toLowerCase();
       const primaryFileName = String(draftQuickReply.mediaFileName || primaryAsset?.fileName || '').trim();
-      let quickReplyClientTempId = null;
-      if (draftMediaAssets.length > 0) {
-        const optimisticQuickReplyMessage = insertOptimisticOutgoing({
-          chatId: activeChatId,
-          body: outboundText || primaryFileName || 'Adjunto',
-          hasMedia: true,
-          type: resolveOptimisticMediaType(primaryMimeType, primaryFileName),
-          mimetype: primaryMimeType || null,
-          filename: primaryFileName || null,
-          mediaUrl: String(draftQuickReply.mediaUrl || primaryAsset?.url || '').trim() || null,
-          quotedMessage,
-          retryPayload: {
-            eventName: 'send_quick_reply',
-            payload: {
-              quickReplyId: draftQuickReply.id || undefined,
-              quickReply: {
-                id: draftQuickReply.id || undefined,
-                label: draftQuickReply.label || undefined,
-                text: outboundText,
-                mediaAssets: draftMediaAssets,
-                mediaUrl: String(draftQuickReply.mediaUrl || primaryAsset?.url || '').trim() || null,
-                mediaMimeType: primaryMimeType || null,
-                mediaFileName: primaryFileName || null
-              },
-              to: activeChatId,
-              toPhone,
-              quotedMessageId
-            }
-          }
-        });
-        quickReplyClientTempId = String(optimisticQuickReplyMessage?.clientTempId || '').trim() || null;
-        if (quickReplyClientTempId && optimisticQuickReplyMessage?.retryPayload?.payload) {
-          optimisticQuickReplyMessage.retryPayload.payload.clientTempId = quickReplyClientTempId;
+      const quickReplyRetryPayload = {
+        eventName: 'send_quick_reply',
+        payload: {
+          quickReplyId: draftQuickReply.id || undefined,
+          quickReply: {
+            id: draftQuickReply.id || undefined,
+            label: draftQuickReply.label || undefined,
+            text: outboundText,
+            mediaAssets: draftMediaAssets,
+            mediaUrl: String(draftQuickReply.mediaUrl || primaryAsset?.url || '').trim() || null,
+            mediaMimeType: primaryMimeType || null,
+            mediaFileName: primaryFileName || null
+          },
+          to: activeChatId,
+          toPhone,
+          quotedMessageId
         }
+      };
+      const optimisticQuickReplyMessage = insertOptimisticOutgoing({
+        chatId: activeChatId,
+        body: outboundText || primaryFileName || 'Adjunto',
+        hasMedia: draftMediaAssets.length > 0,
+        type: draftMediaAssets.length > 0
+          ? resolveOptimisticMediaType(primaryMimeType, primaryFileName)
+          : 'chat',
+        mimetype: draftMediaAssets.length > 0 ? (primaryMimeType || null) : null,
+        filename: draftMediaAssets.length > 0 ? (primaryFileName || null) : null,
+        mediaUrl: draftMediaAssets.length > 0
+          ? (String(draftQuickReply.mediaUrl || primaryAsset?.url || '').trim() || null)
+          : null,
+        quotedMessage,
+        retryPayload: quickReplyRetryPayload
+      });
+      const quickReplyClientTempId = String(optimisticQuickReplyMessage?.clientTempId || '').trim() || null;
+      if (quickReplyClientTempId) {
+        quickReplyRetryPayload.payload.clientTempId = quickReplyClientTempId;
       }
       socket.emit('send_quick_reply', {
         quickReplyId: draftQuickReply.id || undefined,
@@ -750,7 +752,7 @@ export default function useChatMessageActions({
         quotedMessageId,
         quotedMessage
       };
-      insertOptimisticOutgoing({
+      const optimisticMediaMessage = insertOptimisticOutgoing({
         chatId: activeChatId,
         body: String(inputText || '').trim() || String(attachment.filename || '').trim() || 'Adjunto',
         hasMedia: true,
@@ -764,6 +766,8 @@ export default function useChatMessageActions({
           payload: sendPayload
         }
       });
+      const mediaClientTempId = String(optimisticMediaMessage?.clientTempId || '').trim();
+      if (mediaClientTempId) sendPayload.clientTempId = mediaClientTempId;
       socket.emit('send_media_message', sendPayload);
       removeAttachment();
     } else {
@@ -774,7 +778,7 @@ export default function useChatMessageActions({
         quotedMessageId,
         quotedMessage
       };
-      insertOptimisticOutgoing({
+      const optimisticTextMessage = insertOptimisticOutgoing({
         chatId: activeChatId,
         body: inputText,
         quotedMessage,
@@ -783,6 +787,8 @@ export default function useChatMessageActions({
           payload: sendPayload
         }
       });
+      const textClientTempId = String(optimisticTextMessage?.clientTempId || '').trim();
+      if (textClientTempId) sendPayload.clientTempId = textClientTempId;
       socket.emit('send_message', sendPayload);
     }
     setInputText('');

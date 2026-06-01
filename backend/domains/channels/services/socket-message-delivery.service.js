@@ -301,7 +301,7 @@ function createSocketMessageDeliveryService({
                  scopedChatId: buildScopedChatId(targetChatId, scopeModuleId || '')
              };
          };
-         socket.on('send_message', async ({ to, toPhone, body, quotedMessageId, quotedMessage }) => {
+         socket.on('send_message', async ({ to, toPhone, body, quotedMessageId, quotedMessage, clientTempId }) => {
              if (!guardRateLimit(socket, 'send_message')) return;
              if (!transportOrchestrator.ensureTransportReady(socket, { action: 'enviar mensajes', errorEvent: 'error' })) return;
              try {
@@ -361,6 +361,10 @@ function createSocketMessageDeliveryService({
                      });
                  }
                  if (!sentMessage) return;
+                 const safeClientTempId = String(clientTempId || '').trim();
+                 if (safeClientTempId && sentMessage && typeof sentMessage === 'object') {
+                     sentMessage.clientTempId = safeClientTempId;
+                 }
                    const sentMessageId = getSerializedMessageId(sentMessage);
                  if (sentMessageId && agentMeta) {
                      rememberOutgoingAgentMeta(sentMessageId, agentMeta);
@@ -454,7 +458,7 @@ function createSocketMessageDeliveryService({
              if (!guardRateLimit(socket, 'send_media_message')) return;
              if (!transportOrchestrator.ensureTransportReady(socket, { action: 'enviar adjuntos', errorEvent: 'error' })) return;
              try {
-                 const { to, toPhone, body, mediaData, mediaUrl, mimetype, filename, isPtt, quotedMessageId, quotedMessage } = data || {};
+                 const { to, toPhone, body, mediaData, mediaUrl, mimetype, filename, isPtt, quotedMessageId, quotedMessage, clientTempId } = data || {};
                  if (isPtt) {
                      socket.emit('error', 'El envio de notas de voz esta deshabilitado temporalmente.');
                      return;
@@ -505,6 +509,10 @@ function createSocketMessageDeliveryService({
                      }
                  );
                  if (!sentMessage) return;
+                 const safeClientTempId = String(clientTempId || '').trim();
+                 if (safeClientTempId && sentMessage && typeof sentMessage === 'object') {
+                     sentMessage.clientTempId = safeClientTempId;
+                 }
                  const sentMessageId = getSerializedMessageId(sentMessage);
                  if (sentMessageId && agentMeta) {
                      rememberOutgoingAgentMeta(sentMessageId, agentMeta);

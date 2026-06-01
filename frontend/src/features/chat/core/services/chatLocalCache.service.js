@@ -379,6 +379,7 @@ async function pruneMessagesForChat(db, chatId) {
 export async function saveMessages(chatId = '', messages = []) {
   const safeChatId = String(chatId || '').trim();
   const safeMessages = (Array.isArray(messages) ? messages : [])
+    .filter((message) => !message?.optimistic)
     .map((message) => normalizeMessage(safeChatId, message))
     .filter(Boolean);
   if (!safeChatId || safeMessages.length === 0) return [];

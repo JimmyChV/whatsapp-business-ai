@@ -381,6 +381,41 @@ export default function useSocketChatConversationEvents({
             .replace(/\s+/g, ' ')
             .trim()
             .toLowerCase();
+        const findOptimisticMessageClientTempId = (messages = [], incomingMessage = {}, incomingChatId = '') => {
+            const safeMessages = Array.isArray(messages) ? messages : [];
+            const normalizedIncomingBody = normalizeComparableBody(incomingMessage?.body || '');
+            const incomingTimestamp = Number(incomingMessage?.timestamp || 0) || 0;
+            const incomingHasMedia = Boolean(incomingMessage?.hasMedia);
+            const safeIncomingChatId = String(incomingChatId || incomingMessage?.chatId || '').trim();
+
+            for (let index = safeMessages.length - 1; index >= 0; index -= 1) {
+                const message = safeMessages[index];
+                if (!message || typeof message !== 'object') continue;
+                if (!message.optimistic || !message.fromMe) continue;
+
+                const messageChatId = String(message?.chatId || '').trim();
+                if (messageChatId && safeIncomingChatId && !chatIdsReferSameScope(messageChatId, safeIncomingChatId)) continue;
+
+                const messageTimestamp = Number(message?.timestamp || 0) || 0;
+                if (incomingTimestamp && messageTimestamp && Math.abs(incomingTimestamp - messageTimestamp) > 30) continue;
+
+                const normalizedMessageBody = normalizeComparableBody(message?.body || '');
+                const sameBody = normalizedIncomingBody === normalizedMessageBody;
+                const bodyContained = Boolean(
+                    normalizedIncomingBody
+                    && normalizedMessageBody
+                    && (
+                        normalizedIncomingBody.includes(normalizedMessageBody)
+                        || normalizedMessageBody.includes(normalizedIncomingBody)
+                    )
+                );
+                const sameMediaKind = Boolean(message?.hasMedia) === incomingHasMedia;
+                if (!sameMediaKind || (!sameBody && !bodyContained)) continue;
+
+                return String(message?.clientTempId || message?.id || '').trim() || null;
+            }
+            return null;
+        };
         const consumePendingOutgoing = (chatId, incomingMessage = {}) => {
             const safeChatId = String(chatId || '').trim();
             const pendingByChat = pendingOutgoingByChatRef?.current instanceof Map
@@ -1381,10 +1416,16 @@ export default function useSocketChatConversationEvents({
             const cachedRealtimeMessages = patchCachedMessages(messagesCacheRef, relatedChatId, (prev) => {
                 const incomingId = String(reconciledIncoming?.id || '').trim();
                 if (!incomingId) return prev;
-                if (replacementClientTempId) {
-                    const existing = (Array.isArray(prev) ? prev : []).find((message) => String(message?.clientTempId || '').trim() === replacementClientTempId);
-                    const mergedIncoming = mergeRealtimeSenderAttribution(existing, reconciledIncoming);
-                    return replaceMessageByClientTempId(prev, replacementClientTempId, mergeTemplateMessageContent(existing, mergedIncoming));
+                const localReplacementClientTempId = replacementClientTempId
+                    || findOptimisticMessageClientTempId(prev, reconciledIncoming, relatedChatId);
+                if (localReplacementClientTempId) {
+                    const existing = (Array.isArray(prev) ? prev : []).find((message) => String(message?.clientTempId || message?.id || '').trim() === localReplacementClientTempId);
+                    const incomingWithClientTempId = {
+                        ...reconciledIncoming,
+                        clientTempId: localReplacementClientTempId
+                    };
+                    const mergedIncoming = mergeRealtimeSenderAttribution(existing, incomingWithClientTempId);
+                    return replaceMessageByClientTempId(prev, localReplacementClientTempId, mergeTemplateMessageContent(existing, mergedIncoming));
                 }
                 const existing = (Array.isArray(prev) ? prev : []).find((message) => String(message?.id || '').trim() === incomingId);
                 const mergedIncoming = mergeRealtimeSenderAttribution(existing, reconciledIncoming);
@@ -1452,10 +1493,16 @@ export default function useSocketChatConversationEvents({
                     }
                 }
 
-                if (replacementClientTempId) {
-                    const existing = prev.find((message) => String(message?.clientTempId || '').trim() === replacementClientTempId);
-                    const mergedIncoming = mergeRealtimeSenderAttribution(existing, normalizedIncoming);
-                    return replaceMessageByClientTempId(prev, replacementClientTempId, mergeTemplateMessageContent(existing, mergedIncoming));
+                const localReplacementClientTempId = replacementClientTempId
+                    || findOptimisticMessageClientTempId(prev, normalizedIncoming, relatedChatId);
+                if (localReplacementClientTempId) {
+                    const existing = prev.find((message) => String(message?.clientTempId || message?.id || '').trim() === localReplacementClientTempId);
+                    const incomingWithClientTempId = {
+                        ...normalizedIncoming,
+                        clientTempId: localReplacementClientTempId
+                    };
+                    const mergedIncoming = mergeRealtimeSenderAttribution(existing, incomingWithClientTempId);
+                    return replaceMessageByClientTempId(prev, localReplacementClientTempId, mergeTemplateMessageContent(existing, mergedIncoming));
                 }
                 return [...prev, mergeTemplateMessageContent(null, normalizedIncoming)];
             });
