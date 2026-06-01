@@ -13,7 +13,7 @@ function hasAuditReadAccess(req = {}, authService) {
     const authContext = req.authContext || { isAuthenticated: false, user: null };
     if (!authContext.isAuthenticated || !authContext.user) return false;
     const role = String(authContext.user.role || '').trim().toLowerCase();
-    return role === 'owner' || role === 'admin';
+    return authContext.user.isSuperAdmin === true || role === 'owner';
 }
 
 function isAllowedProfilePhotoHost(hostname = '') {
@@ -169,7 +169,14 @@ function registerOperationsUtilityHttpRoutes({
             const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
             const limit = Number(req.query.limit || 100);
             const offset = Number(req.query.offset || 0);
-            const items = await auditLogService.listAuditLogs(tenant?.id || 'default', { limit, offset });
+            const items = await auditLogService.listAuditLogs(tenant?.id || 'default', {
+                limit,
+                offset,
+                userId: String(req.query.userId || '').trim(),
+                action: String(req.query.action || '').trim(),
+                from: String(req.query.from || '').trim(),
+                to: String(req.query.to || '').trim()
+            });
             return res.json({ ok: true, tenant, items });
         } catch (error) {
             return res.status(500).json({ ok: false, error: 'No se pudo cargar la auditoria.' });

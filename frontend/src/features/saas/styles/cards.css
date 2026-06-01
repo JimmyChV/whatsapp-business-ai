@@ -1507,6 +1507,90 @@ button.saas-admin-related-row small::after {
   align-items: stretch;
 }
 
+.saas-audit-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.saas-audit-filters {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.2fr) minmax(150px, 1.2fr) minmax(120px, 0.8fr) minmax(120px, 0.8fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.saas-audit-list {
+  display: grid;
+  gap: 8px;
+}
+
+.saas-audit-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(230px, 1.2fr) minmax(220px, 1fr);
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--saas-border-color);
+  border-radius: 14px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--saas-surface-elevated, #fff) 94%, transparent);
+}
+
+.saas-audit-row__time,
+.saas-audit-row__main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.saas-audit-row__time span,
+.saas-audit-row__main small,
+.saas-audit-row__payload {
+  color: var(--saas-text-secondary, #6b7280);
+  font-size: 12px;
+}
+
+.saas-audit-row__main strong,
+.saas-audit-row__payload {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saas-audit-action {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 800;
+  border: 1px solid var(--saas-border-color);
+}
+
+.saas-audit-action--success {
+  background: color-mix(in srgb, var(--saas-accent-primary, #1d9e75) 13%, transparent);
+  color: var(--saas-accent-primary, #1d9e75);
+}
+
+.saas-audit-action--danger {
+  background: color-mix(in srgb, #dc2626 12%, transparent);
+  color: #b91c1c;
+}
+
+.saas-audit-action--info {
+  background: color-mix(in srgb, #2563eb 10%, transparent);
+  color: #1d4ed8;
+}
+
+.saas-audit-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  color: var(--saas-text-secondary, #6b7280);
+  font-size: 12px;
+}
+
 @media (max-width: 720px) {
   .saas-device-row {
     align-items: stretch;
@@ -1518,6 +1602,19 @@ button.saas-admin-related-row small::after {
   }
 
   .saas-device-row__actions button {
+    flex: 1 1 auto;
+  }
+
+  .saas-audit-filters,
+  .saas-audit-row {
+    grid-template-columns: 1fr;
+  }
+
+  .saas-audit-pagination {
+    justify-content: stretch;
+  }
+
+  .saas-audit-pagination button {
     flex: 1 1 auto;
   }
 }

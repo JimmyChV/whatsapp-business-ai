@@ -1965,10 +1965,11 @@ function registerOperationsHttpRoutes({
                 userId: actorUserId,
                 userEmail: req?.authContext?.user?.email || null,
                 role: req?.authContext?.user?.role || null,
-                action: 'campaign.create',
+                action: 'campaign.created',
                 resourceType: 'campaign',
                 resourceId: String(created?.campaignId || ''),
                 source: 'http',
+                ip: String(req.ip || ''),
                 payload: {
                     moduleId: created?.moduleId || null,
                     templateName: created?.templateName || null,
@@ -2170,6 +2171,21 @@ function registerOperationsHttpRoutes({
                 actorUserId
             });
 
+            await auditLogService.writeAuditLog(tenantId, {
+                userId: actorUserId,
+                userEmail: req?.authContext?.user?.email || null,
+                role: req?.authContext?.user?.role || null,
+                action: 'campaign.sent',
+                resourceType: 'campaign',
+                resourceId: campaignId,
+                source: 'http',
+                ip: String(req.ip || ''),
+                payload: {
+                    status: campaign?.status || null,
+                    mode: 'start'
+                }
+            });
+
             return res.json({ ok: true, tenantId, campaign });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo iniciar la campana.') });
@@ -2194,6 +2210,23 @@ function registerOperationsHttpRoutes({
                 campaignId,
                 blockIndex,
                 actorUserId: resolveActorUserId(req)
+            });
+
+            await auditLogService.writeAuditLog(tenantId, {
+                userId: resolveActorUserId(req),
+                userEmail: req?.authContext?.user?.email || null,
+                role: req?.authContext?.user?.role || null,
+                action: 'campaign.sent',
+                resourceType: 'campaign',
+                resourceId: campaignId,
+                source: 'http',
+                ip: String(req.ip || ''),
+                payload: {
+                    blockIndex,
+                    queued: result?.queued || 0,
+                    recipients: result?.recipients || 0,
+                    mode: 'block'
+                }
             });
 
             return res.json({ ok: true, tenantId, campaignId, ...result });

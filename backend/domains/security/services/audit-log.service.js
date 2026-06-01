@@ -43,6 +43,56 @@ function missingRelation(error) {
     return String(error?.code || '').trim() === '42P01';
 }
 
+function normalizeDateFilter(value = '') {
+    const text = toText(value);
+    if (!text) return null;
+    const date = new Date(text);
+    if (Number.isNaN(date.getTime())) return null;
+    return date;
+}
+
+function buildPostgresFilters(cleanTenant, filters = {}) {
+    const clauses = ['tenant_id = $1'];
+    const params = [cleanTenant];
+    const userId = toText(filters.userId);
+    const action = toText(filters.action);
+    const fromDate = normalizeDateFilter(filters.from);
+    const toDate = normalizeDateFilter(filters.to);
+
+    if (userId) {
+        params.push(userId);
+        clauses.push(`user_id = $${params.length}`);
+    }
+    if (action) {
+        params.push(action);
+        clauses.push(`action = $${params.length}`);
+    }
+    if (fromDate) {
+        params.push(fromDate.toISOString());
+        clauses.push(`created_at >= $${params.length}`);
+    }
+    if (toDate) {
+        params.push(toDate.toISOString());
+        clauses.push(`created_at <= $${params.length}`);
+    }
+
+    return { clauses, params };
+}
+
+function matchesFileFilters(item = {}, filters = {}) {
+    const userId = toText(filters.userId);
+    const action = toText(filters.action);
+    const fromDate = normalizeDateFilter(filters.from);
+    const toDate = normalizeDateFilter(filters.to);
+    const createdAt = normalizeDateFilter(item.createdAt);
+
+    if (userId && toText(item.userId) !== userId) return false;
+    if (action && toText(item.action) !== action) return false;
+    if (fromDate && (!createdAt || createdAt < fromDate)) return false;
+    if (toDate && (!createdAt || createdAt > toDate)) return false;
+    return true;
+}
+
 async function writeAuditLog(tenantId = DEFAULT_TENANT_ID, entry = {}) {
     const cleanTenant = resolveTenantId(tenantId);
     const record = {
@@ -56,7 +106,7 @@ async function writeAuditLog(tenantId = DEFAULT_TENANT_ID, entry = {}) {
         resourceId: toText(entry.resourceId),
         source: toText(entry.source, 'api'),
         socketId: toText(entry.socketId),
-        ip: toText(entry.ip),
+        ip: toText(entry.ip || entry.ipAddress),
         payload: toSafePayload(entry.payload),
         createdAt: toText(entry.createdAt, nowIso())
     };
@@ -65,9 +115,9 @@ async function writeAuditLog(tenantId = DEFAULT_TENANT_ID, entry = {}) {
         try {
             const { rows } = await queryPostgres(
                 `INSERT INTO audit_logs (
-                    tenant_id, user_id, action, resource_type, resource_id, payload, created_at
+                    tenant_id, user_id, action, resource_type, resource_id, payload, ip_address, user_agent, created_at
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6::jsonb, NOW()
+                    $1, $2, $3, $4, $5, $6::jsonb, $7, $8, NOW()
                 )
                 RETURNING id, created_at`,
                 [
@@ -83,7 +133,9 @@ async function writeAuditLog(tenantId = DEFAULT_TENANT_ID, entry = {}) {
                         role: record.role,
                         ip: record.ip,
                         data: record.payload
-                    })
+                    }),
+                    record.ip,
+                    toText(entry.userAgent)
                 ]
             );
 
@@ -109,21 +161,51 @@ async function writeAuditLog(tenantId = DEFAULT_TENANT_ID, entry = {}) {
     return { ...record, driver: 'file' };
 }
 
-async function listAuditLogs(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0 } = {}) {
+async function logAction({
+    tenantId = DEFAULT_TENANT_ID,
+    userId = null,
+    action = 'unknown_action',
+    entityType = null,
+    entityId = null,
+    oldValue = null,
+    newValue = null,
+    ipAddress = null,
+    userAgent = null
+} = {}) {
+    return writeAuditLog(tenantId, {
+        userId,
+        action,
+        resourceType: entityType,
+        resourceId: entityId,
+        ipAddress,
+        userAgent,
+        payload: {
+            oldValue: oldValue || null,
+            newValue: newValue || null
+        }
+    });
+}
+
+async function listAuditLogs(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0, userId = '', action = '', from = '', to = '' } = {}) {
     const cleanTenant = resolveTenantId(tenantId);
     const safeLimit = Math.min(500, Math.max(1, Number(limit) || 100));
     const safeOffset = Math.max(0, Number(offset) || 0);
+    const filters = { userId, action, from, to };
 
     if (getStorageDriver() === 'postgres') {
         try {
+            const { clauses, params } = buildPostgresFilters(cleanTenant, filters);
+            params.push(safeLimit, safeOffset);
+            const limitIndex = params.length - 1;
+            const offsetIndex = params.length;
             const { rows } = await queryPostgres(
                 `SELECT id, tenant_id, user_id, action, resource_type, resource_id, payload, created_at
                    FROM audit_logs
-                  WHERE tenant_id = $1
+                  WHERE ${clauses.join(' AND ')}
                   ORDER BY created_at DESC
-                  LIMIT $2
-                 OFFSET $3`,
-                [cleanTenant, safeLimit, safeOffset]
+                  LIMIT $${limitIndex}
+                 OFFSET $${offsetIndex}`,
+                params
             );
 
             return (rows || []).map((row) => {
@@ -154,11 +236,12 @@ async function listAuditLogs(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset
         defaultValue: []
     });
     const items = Array.isArray(current) ? current : [];
-    return items.slice(safeOffset, safeOffset + safeLimit);
+    return items.filter((item) => matchesFileFilters(item, filters)).slice(safeOffset, safeOffset + safeLimit);
 }
 
 module.exports = {
     writeAuditLog,
+    logAction,
     listAuditLogs
 };
 

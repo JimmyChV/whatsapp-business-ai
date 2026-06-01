@@ -1,5 +1,6 @@
 import React from 'react';
 import { SaasEntityPage } from '../components/layout';
+import AuditSettingsDetailPane from './modules-config/AuditSettingsDetailPane';
 import DeviceAuthorizersSettingsDetailPane from './modules-config/DeviceAuthorizersSettingsDetailPane';
 import DevicesSettingsDetailPane from './modules-config/DevicesSettingsDetailPane';
 import GeneralSettingsDetailPane from './modules-config/GeneralSettingsDetailPane';
@@ -10,7 +11,8 @@ const CONFIG_KEYS = {
     TENANT_SETTINGS: 'tenant_settings',
     AUTH_DEVICES: 'auth_devices',
     SMTP_EMAIL: 'smtp_email',
-    DEVICE_AUTHORIZERS: 'device_authorizers'
+    DEVICE_AUTHORIZERS: 'device_authorizers',
+    AUDIT_LOGS: 'audit_logs'
 };
 
 function ModulesConfigSection(props = {}) {
@@ -86,6 +88,7 @@ function ModulesConfigSection(props = {}) {
     const sectionReloadToken = typeof getReloadToken === 'function' ? getReloadToken(lazySectionId) : 0;
     const sectionLoading = typeof isLoading === 'function' && isLoading(lazySectionId);
     const sectionError = typeof getError === 'function' ? getError(lazySectionId) : '';
+    const canViewAuditLogs = Boolean(isSuperAdmin || currentUser?.isSuperAdmin === true || String(userRole || currentUser?.role || '').trim().toLowerCase() === 'owner');
 
     const rows = React.useMemo(() => {
         if (isGeneralConfigSection) {
@@ -125,7 +128,16 @@ function ModulesConfigSection(props = {}) {
                 defaultLabel: 'No',
                 assignedUsers: '-',
                 updatedAt: '-'
-            }].filter(Boolean);
+            }, canViewAuditLogs ? {
+                id: CONFIG_KEYS.AUDIT_LOGS,
+                name: 'Auditoria',
+                phone: 'Eventos de seguridad',
+                status: 'Solo lectura',
+                channel: 'Seguridad',
+                defaultLabel: 'No',
+                assignedUsers: '-',
+                updatedAt: '-'
+            } : null].filter(Boolean);
         }
         return (Array.isArray(waModules) ? waModules : []).map((module) => ({
             id: module?.moduleId || module?.id || module?.code,
@@ -138,7 +150,7 @@ function ModulesConfigSection(props = {}) {
             updatedAt: formatDateTimeLabel?.(module?.updatedAt) || '-',
             raw: module
         }));
-    }, [MODULE_KEYS, canViewOwnDevices, formatDateTimeLabel, isGeneralConfigSection, tenantSettings, waModules]);
+    }, [MODULE_KEYS, canViewAuditLogs, canViewOwnDevices, formatDateTimeLabel, isGeneralConfigSection, tenantSettings, waModules]);
 
     const columns = React.useMemo(() => [
         { key: 'name', label: 'Nombre', width: '32%', minWidth: '240px', sortable: true },
@@ -263,6 +275,17 @@ function ModulesConfigSection(props = {}) {
                 requestJson={requestJson}
             />
 
+            <AuditSettingsDetailPane
+                settingsTenantId={settingsTenantId}
+                isGeneralConfigSection={isGeneralConfigSection}
+                selectedConfigKey={selectedConfigKey}
+                requestJson={requestJson}
+                formatDateTimeLabel={formatDateTimeLabel}
+                currentUser={currentUser}
+                isSuperAdmin={isSuperAdmin}
+                userRole={userRole}
+            />
+
             <ModulesConfigModuleDetailPane
                 context={{
                     settingsTenantId,
@@ -321,6 +344,7 @@ function ModulesConfigSection(props = {}) {
         canRevokeAllDevices,
         canRevokeOwnDevices,
         canViewAllDevices,
+        canViewAuditLogs,
         canViewOwnDevices,
         clearConfigSelection,
         currentUser,
@@ -414,6 +438,8 @@ function ModulesConfigSection(props = {}) {
                         setSelectedConfigKey?.(CONFIG_KEYS.SMTP_EMAIL);
                     } else if (row?.id === CONFIG_KEYS.DEVICE_AUTHORIZERS) {
                         setSelectedConfigKey?.(CONFIG_KEYS.DEVICE_AUTHORIZERS);
+                    } else if (row?.id === CONFIG_KEYS.AUDIT_LOGS && canViewAuditLogs) {
+                        setSelectedConfigKey?.(CONFIG_KEYS.AUDIT_LOGS);
                     } else {
                         openConfigSettingsView?.();
                     }
@@ -446,6 +472,9 @@ function ModulesConfigSection(props = {}) {
                     : null,
                 isGeneralConfigSection
                     ? { label: 'Autorizadores', onClick: () => setSelectedConfigKey?.(CONFIG_KEYS.DEVICE_AUTHORIZERS), disabled: busy || !settingsTenantId }
+                    : null,
+                isGeneralConfigSection && canViewAuditLogs
+                    ? { label: 'Auditoria', onClick: () => setSelectedConfigKey?.(CONFIG_KEYS.AUDIT_LOGS), disabled: busy || !settingsTenantId }
                     : null
             ].filter(Boolean)}
             detailTitle={isModulesSection
