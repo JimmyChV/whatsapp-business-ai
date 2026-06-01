@@ -1,4 +1,5 @@
 import React from 'react';
+import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 
 const DEVICE_TYPE_LABELS = {
     mobile: 'Movil',
@@ -34,6 +35,17 @@ function getInitials(name = '', email = '') {
     const parts = source.split(/\s+/).filter(Boolean);
     if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
     return source.slice(0, 2).toUpperCase();
+}
+
+function avatarColor(name = '', email = '') {
+    const palette = ['#1D9E75', '#2563eb', '#d97706', '#7c3aed', '#0891b2', '#be123c'];
+    const source = toText(name) || toText(email) || 'Usuario';
+    let hash = 0;
+    for (let index = 0; index < source.length; index += 1) {
+        hash = ((hash << 5) - hash) + source.charCodeAt(index);
+        hash |= 0;
+    }
+    return palette[Math.abs(hash) % palette.length];
 }
 
 function roleLabel(role = '') {
@@ -135,7 +147,7 @@ function DeviceRow({
                         type="button"
                         className="danger"
                         disabled={!canRevoke}
-                        onClick={() => onRevoke(device.deviceId, mode)}
+                        onClick={() => onRevoke(device, mode)}
                         title={device.current ? 'No puedes revocar este dispositivo desde si mismo.' : ''}
                     >
                         Revocar
@@ -178,7 +190,10 @@ function UserDeviceGroup({
     return (
         <section className="saas-device-user-group">
             <header className="saas-device-user-group__header">
-                <div className="saas-device-user-avatar">
+                <div
+                    className="saas-device-user-avatar"
+                    style={user?.avatarUrl ? undefined : { background: avatarColor(user?.displayName, user?.email), color: '#fff' }}
+                >
                     {user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <span>{getInitials(user?.displayName, user?.email)}</span>}
                 </div>
                 <div>
@@ -230,6 +245,7 @@ export default function DevicesSettingsDetailPane({
     canViewAllDevices = false,
     canRevokeAllDevices = false
 }) {
+    const { confirm } = useUiFeedback();
     const [teamUsers, setTeamUsers] = React.useState([]);
     const [loading, setLoading] = React.useState(false);
     const [error, setError] = React.useState('');
@@ -302,8 +318,24 @@ export default function DevicesSettingsDetailPane({
         }
     }, [draftName, loadTeamDevices, requestJson]);
 
-    const revoke = React.useCallback(async (deviceId, mode = 'admin') => {
+    const revoke = React.useCallback(async (device, mode = 'admin') => {
         if (typeof requestJson !== 'function') return;
+        const deviceId = toText(device?.deviceId || device);
+        if (!deviceId) return;
+        const owner = teamUsers.find((user) => Array.isArray(user?.devices)
+            && user.devices.some((item) => toText(item?.deviceId) === deviceId));
+        const deviceName = toText(device?.deviceName) || formatDeviceType(device?.deviceType);
+        const ownerName = toText(owner?.displayName || owner?.email) || 'este usuario';
+        const confirmed = await confirm({
+            title: mode === 'admin' ? 'Revocar dispositivo de usuario' : 'Revocar dispositivo',
+            message: mode === 'admin'
+                ? `¿Revocar "${deviceName}" de ${ownerName}? Ese usuario perderá acceso y recibirá un email de notificación.`
+                : `¿Revocar "${deviceName}"? Perderás acceso desde ese dispositivo. Necesitarás un nuevo código OTP para volver a usarlo.`,
+            confirmText: 'Revocar',
+            cancelText: 'Cancelar',
+            tone: 'danger'
+        });
+        if (!confirmed) return;
         setBusy(true);
         setError('');
         setNotice('');
@@ -318,7 +350,7 @@ export default function DevicesSettingsDetailPane({
         } finally {
             setBusy(false);
         }
-    }, [loadTeamDevices, requestJson]);
+    }, [confirm, loadTeamDevices, requestJson, teamUsers]);
 
     const reauthorize = React.useCallback(async (deviceId, mode = 'admin') => {
         if (typeof requestJson !== 'function') return;

@@ -1,6 +1,25 @@
 import '../auth.css';
 import { Check, Eye, EyeOff, Lock, Mail } from 'lucide-react';
 
+function isDeviceRevokedError(message = '') {
+  const clean = String(message || '').toLowerCase();
+  return clean.includes('device_revoked') || clean.includes('dispositivo fue revocado');
+}
+
+function LoginErrorMessage({ message }) {
+  if (!message) return null;
+  if (isDeviceRevokedError(message)) {
+    return (
+      <div className='saas-login-revoked-card' role='alert'>
+        <strong>Dispositivo revocado</strong>
+        <p>Este dispositivo fue revocado. Comunícate con tu administrador para solicitar nueva autorización.</p>
+        <small>Si eres el administrador, ve a Configuración → Dispositivos → Reautorizar con OTP.</small>
+      </div>
+    );
+  }
+  return <div className='saas-login-error'>{message}</div>;
+}
+
 function SaasLoginScreen({
   loginEmail,
   setLoginEmail,
@@ -88,7 +107,7 @@ function SaasLoginScreen({
                   <small>Enviamos un codigo de 6 digitos a los autorizadores de acceso de tu empresa.</small>
                 </div>
 
-                {saasAuthError && <div className='saas-login-error'>{saasAuthError}</div>}
+                <LoginErrorMessage message={saasAuthError} />
                 {saasAuthNotice && <div className='saas-login-notice'>{saasAuthNotice}</div>}
                 {pendingDeviceAuth?.debugCode && (
                   <div className='saas-login-debug'>
@@ -136,7 +155,7 @@ function SaasLoginScreen({
                   <small>Dale un nombre para identificarlo facilmente en el panel.</small>
                 </div>
 
-                {saasAuthError && <div className='saas-login-error'>{saasAuthError}</div>}
+                <LoginErrorMessage message={saasAuthError} />
 
                 <div className='saas-recovery-form'>
                   <label className='saas-login-field saas-login-field--split'>
@@ -218,7 +237,7 @@ function SaasLoginScreen({
                   </button>
                 </div>
 
-                {saasAuthError && <div className='saas-login-error'>{saasAuthError}</div>}
+                <LoginErrorMessage message={saasAuthError} />
                 {isLoginLocked && (
                   <div className='saas-login-notice'>
                     Podras intentar en {formatRetryCountdown(loginRetryRemainingSec)}.

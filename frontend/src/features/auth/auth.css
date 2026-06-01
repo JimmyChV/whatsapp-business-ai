@@ -288,6 +288,32 @@
   font-size: 0.84rem;
 }
 
+.saas-login-revoked-card {
+  display: grid;
+  gap: 6px;
+  border-radius: 16px;
+  border: 1px solid #f5b8b8;
+  background: linear-gradient(135deg, #fff7f7, #fff);
+  color: #7f1d1d;
+  padding: 14px 16px;
+  box-shadow: 0 14px 34px rgba(127, 29, 29, 0.08);
+}
+
+.saas-login-revoked-card strong {
+  font-size: 0.96rem;
+}
+
+.saas-login-revoked-card p,
+.saas-login-revoked-card small {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.saas-login-revoked-card small {
+  color: #9f3a3a;
+  font-weight: 700;
+}
+
 .saas-login-notice {
   border-radius: 12px;
   border: 1px solid #bfe6d8;

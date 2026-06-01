@@ -5,6 +5,17 @@ import SaasPanelExitBlockModal from '../SaasPanelExitBlockModal';
 
 const normalizeThemeMode = (value = '') => (String(value || '').trim().toLowerCase() === 'light' ? 'light' : 'dark');
 
+function avatarColor(name = '', email = '') {
+    const palette = ['#1D9E75', '#2563eb', '#d97706', '#7c3aed', '#0891b2', '#be123c'];
+    const source = String(name || email || 'Usuario');
+    let hash = 0;
+    for (let index = 0; index < source.length; index += 1) {
+        hash = ((hash << 5) - hash) + source.charCodeAt(index);
+        hash |= 0;
+    }
+    return palette[Math.abs(hash) % palette.length];
+}
+
 const normalizeActivityActions = (savingActions) => {
     if (!(savingActions instanceof Map)) return [];
     return Array.from(savingActions.entries())
@@ -83,7 +94,10 @@ export default function SaasPanelHeader({
     };
 
     const renderAvatarNode = () => (
-        <div className="saas-admin-header-profile-avatar">
+        <div
+            className="saas-admin-header-profile-avatar"
+            style={currentUserAvatarUrl ? undefined : { background: avatarColor(currentUserDisplayName, currentUserEmail), color: '#fff' }}
+        >
             {currentUserAvatarUrl
                 ? <img src={currentUserAvatarUrl} alt={currentUserDisplayName} />
                 : <span>{typeof buildInitials === 'function' ? buildInitials(currentUserDisplayName) : 'U'}</span>}

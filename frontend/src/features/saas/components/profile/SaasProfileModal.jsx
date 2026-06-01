@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Camera, Check, Eye, EyeOff, Laptop, LogOut, MonitorSmartphone, Phone, Save, Shield, Smartphone, X } from 'lucide-react';
+import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 
 const PASSWORD_RULES = [
     { key: 'length', label: 'Mínimo 8 caracteres' },
@@ -79,6 +80,7 @@ export default function SaasProfileModal({
     onClose,
     onLogoutAllDone
 }) {
+    const { confirm } = useUiFeedback();
     const [profile, setProfile] = useState(null);
     const [devices, setDevices] = useState([]);
     const [activeSection, setActiveSection] = useState(initialSection === 'devices' ? 'devices' : 'profile');
@@ -206,7 +208,14 @@ export default function SaasProfileModal({
     const handleRevokeDevice = async (deviceId) => {
         const device = devices.find((item) => String(item.deviceId || '') === String(deviceId || ''));
         if (!device || device.isCurrent) return;
-        if (!window.confirm(`¿Revocar "${device.deviceName || 'este dispositivo'}"?`)) return;
+        const confirmed = await confirm({
+            title: 'Revocar dispositivo',
+            message: `¿Revocar "${device.deviceName || 'este dispositivo'}"? Perderás acceso desde ese dispositivo. Necesitarás un nuevo código OTP para volver a usarlo.`,
+            confirmText: 'Revocar',
+            cancelText: 'Cancelar',
+            tone: 'danger'
+        });
+        if (!confirmed) return;
         setSaving(true);
         setError('');
         setStatus('');
@@ -222,7 +231,14 @@ export default function SaasProfileModal({
     };
 
     const handleLogoutAllDevices = async () => {
-        if (!window.confirm('¿Cerrar sesión en todos los dispositivos? Tendrás que iniciar sesión nuevamente.')) return;
+        const confirmed = await confirm({
+            title: 'Cerrar sesión en todos',
+            message: 'Se cerrará el acceso en todos tus dispositivos. Tendrás que iniciar sesión nuevamente por seguridad.',
+            confirmText: 'Cerrar sesiones',
+            cancelText: 'Cancelar',
+            tone: 'danger'
+        });
+        if (!confirmed) return;
         setSaving(true);
         setError('');
         setStatus('');
