@@ -3626,26 +3626,53 @@ async function getCurrentCommercialStatus(tenantId, moduleId, chatId) {
 
 async function getCurrentCommercialState(tenantId, moduleId, chatId) {
     try {
-        const { rows } = await pgQuery(
-            `SELECT status, last_transition_at, patty_mode, patty_mode_until, patty_taken_by
-               FROM tenant_chat_commercial_status
-              WHERE tenant_id = $1
-                AND chat_id = $2
-                AND (scope_module_id IS NULL OR scope_module_id = '' OR LOWER(scope_module_id) = LOWER($3))
-              ORDER BY updated_at DESC NULLS LAST
-              LIMIT 1`,
-            [tenantId, normalizeChatId(chatId), lower(moduleId)]
-        );
+        const cleanModuleId = lower(moduleId);
+        const cleanChatId = normalizeChatId(chatId);
+        let rows = [];
+        let stateSource = 'module_scope';
+
+        if (cleanModuleId) {
+            const scopedResult = await pgQuery(
+                `SELECT status, scope_module_id, last_transition_at, patty_mode, patty_mode_until, patty_taken_by
+                   FROM tenant_chat_commercial_status
+                  WHERE tenant_id = $1
+                    AND chat_id = $2
+                    AND LOWER(scope_module_id) = LOWER($3)
+                  ORDER BY updated_at DESC NULLS LAST
+                  LIMIT 1`,
+                [tenantId, cleanChatId, cleanModuleId]
+            );
+            rows = scopedResult?.rows || [];
+        }
+
+        if (!rows.length) {
+            const globalResult = await pgQuery(
+                `SELECT status, scope_module_id, last_transition_at, patty_mode, patty_mode_until, patty_taken_by
+                   FROM tenant_chat_commercial_status
+                  WHERE tenant_id = $1
+                    AND chat_id = $2
+                    AND (scope_module_id IS NULL OR scope_module_id = '')
+                  ORDER BY updated_at DESC NULLS LAST
+                  LIMIT 1`,
+                [tenantId, cleanChatId]
+            );
+            rows = globalResult?.rows || [];
+            stateSource = 'global_scope';
+        }
+
+        const row = rows?.[0] || {};
         return {
-            status: lower(rows?.[0]?.status),
-            lastTransitionAt: rows?.[0]?.last_transition_at || null,
-            pattyMode: lower(rows?.[0]?.patty_mode),
-            pattyModeUntil: rows?.[0]?.patty_mode_until || null,
-            pattyTakenBy: text(rows?.[0]?.patty_taken_by)
+            status: lower(row.status),
+            scopeModuleId: lower(row.scope_module_id),
+            stateSource,
+            lastTransitionAt: row.last_transition_at || null,
+            pattyMode: lower(row.patty_mode),
+            pattyModeUntil: row.patty_mode_until || null,
+            pattyTakenBy: text(row.patty_taken_by)
         };
     } catch (error) {
         console.warn('[Patty] commercial status lookup skipped:', error?.message || error);
-        return { status: '', lastTransitionAt: null };
+        return { status: '', scopeModuleId: '', stateSource: '', lastTransitionAt: null };
     }
 }
 
@@ -3696,10 +3723,13 @@ async function getChatAssignmentState(tenantId, chatId, moduleId) {
 
 async function getChatPattyMode(tenantId, chatId, moduleId, moduleConfig = null) {
     const state = await getCurrentCommercialState(tenantId, moduleId, chatId);
-    if (['autonomous', 'review', 'off'].includes(state.pattyMode)) {
+    const allowedOverrideModes = state.stateSource === 'global_scope'
+        ? ['autonomous', 'off']
+        : ['autonomous', 'review', 'off'];
+    if (allowedOverrideModes.includes(state.pattyMode)) {
         return {
             mode: state.pattyMode,
-            source: 'chat_override',
+            source: state.stateSource === 'global_scope' ? 'chat_global_override' : 'chat_override',
             state
         };
     }

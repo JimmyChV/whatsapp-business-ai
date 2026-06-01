@@ -96,7 +96,7 @@ export default function BusinessAiTabSection({
         ?? activeAiConfig?.scheduleOpen
         ?? null;
     const hasScheduleSignal = typeof scheduleOpenValue === 'boolean';
-    const modulePattyMode = firstPattyMode(
+    const rawModulePattyMode = firstPattyMode(
         pattyModePayload?.effectiveMode,
         pattyModePayload?.modulePattyMode,
         pattyModePayload?.globalMode,
@@ -112,10 +112,21 @@ export default function BusinessAiTabSection({
         globalWithinMode,
         'off'
     );
+    const modulePattyMode = rawModulePattyMode === 'review' ? 'off' : rawModulePattyMode;
+    const commercialStatusScopeModuleId = String(
+        activeChatCommercialStatus?.scopeModuleId || activeChatCommercialStatus?.scope_module_id || ''
+    ).trim().toLowerCase();
+    const commercialStatusMode = normalizePattyMode(
+        activeChatCommercialStatus?.pattyMode || activeChatCommercialStatus?.patty_mode || ''
+    );
+    const commercialStatusOverrideMode = commercialStatusMode === 'review'
+        && (!commercialStatusScopeModuleId || commercialStatusScopeModuleId !== scopeModuleId)
+        ? ''
+        : commercialStatusMode;
     const selectedOverrideMode = firstPattyMode(
         pattyModePayload
             ? (pattyModePayload.mode || '')
-            : (activeChatCommercialStatus?.pattyMode || activeChatCommercialStatus?.patty_mode || '')
+            : commercialStatusOverrideMode
     );
     const effectiveMode = selectedOverrideMode || modulePattyMode;
     const canReleaseChat = isAssignedToMe && effectiveMode === 'autonomous';
@@ -303,7 +314,7 @@ export default function BusinessAiTabSection({
                         Toma el chat para activar sugerencias
                     </span>
                 )}
-                {isAssignedToMe && !reviewOverrideActive && (
+                {isAssignedToMe && effectiveMode !== 'review' && (
                     <button
                         type="button"
                         onClick={() => updatePattyMode('review')}
@@ -402,7 +413,7 @@ export default function BusinessAiTabSection({
                     Toma el chat para activar sugerencias.
                 </div>
             )}
-            {isAssignedToMe && !reviewOverrideActive && (
+            {isAssignedToMe && effectiveMode !== 'review' && (
                 <div
                     style={{
                         border: '1px dashed var(--chat-card-border)',
