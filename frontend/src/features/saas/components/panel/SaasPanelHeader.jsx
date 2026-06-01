@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { MessageCircle, Moon, Sun, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, LogOut, MessageCircle, Moon, Smartphone, Sun, User, X } from 'lucide-react';
 import SaasPanelActivityIndicator from '../SaasPanelActivityIndicator';
 import SaasPanelExitBlockModal from '../SaasPanelExitBlockModal';
 
@@ -26,8 +26,13 @@ export default function SaasPanelHeader({
     onOpenOperation,
     currentUserAvatarUrl = '',
     currentUserDisplayName = 'Usuario',
+    currentUserEmail = '',
     currentUserRoleLabel = 'Sin rol',
+    currentUserTenantLabel = '',
     buildInitials,
+    onOpenProfile,
+    onOpenDevices,
+    onLogout,
     closeLabel = 'Cerrar sesión',
     themeMode = 'dark',
     onThemeChange = null,
@@ -41,6 +46,8 @@ export default function SaasPanelHeader({
 
     const [activeThemeMode, setActiveThemeMode] = useState(() => normalizeThemeMode(themeMode));
     const [exitBlockOpen, setExitBlockOpen] = useState(false);
+    const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+    const profileMenuRef = useRef(null);
 
     useEffect(() => {
         setActiveThemeMode(normalizeThemeMode(themeMode));
@@ -57,13 +64,31 @@ export default function SaasPanelHeader({
         if (!hasPendingSaves) setExitBlockOpen(false);
     }, [hasPendingSaves]);
 
+    useEffect(() => {
+        if (!profileMenuOpen) return undefined;
+        const handlePointerDown = (event) => {
+            if (profileMenuRef.current?.contains(event.target)) return;
+            setProfileMenuOpen(false);
+        };
+        document.addEventListener('pointerdown', handlePointerDown);
+        return () => document.removeEventListener('pointerdown', handlePointerDown);
+    }, [profileMenuOpen]);
+
     const handleCloseClick = () => {
         if (hasPendingSaves) {
             setExitBlockOpen(true);
             return;
         }
-        onClose?.();
+        (onLogout || onClose)?.();
     };
+
+    const renderAvatarNode = () => (
+        <div className="saas-admin-header-profile-avatar">
+            {currentUserAvatarUrl
+                ? <img src={currentUserAvatarUrl} alt={currentUserDisplayName} />
+                : <span>{typeof buildInitials === 'function' ? buildInitials(currentUserDisplayName) : 'U'}</span>}
+        </div>
+    );
 
     return (
         <div className="saas-admin-header">
@@ -155,16 +180,45 @@ export default function SaasPanelHeader({
                                 : <><Moon size={14} strokeWidth={2} /><span className="saas-admin-theme-toggle__button-label">Oscuro</span></>}
                         </button>
                     </div>
-                    <div className="saas-admin-header-profile" role="status" aria-label="Usuario en sesion">
-                        <div className="saas-admin-header-profile-avatar">
-                            {currentUserAvatarUrl
-                                ? <img src={currentUserAvatarUrl} alt={currentUserDisplayName} />
-                                : <span>{typeof buildInitials === 'function' ? buildInitials(currentUserDisplayName) : 'U'}</span>}
-                        </div>
-                        <div className="saas-admin-header-profile-meta">
-                            <strong>{currentUserDisplayName}</strong>
-                            <small>{currentUserRoleLabel}</small>
-                        </div>
+                    <div className="saas-admin-header-profile-wrap" ref={profileMenuRef}>
+                        <button
+                            type="button"
+                            className="saas-admin-header-profile"
+                            aria-label="Abrir menu de perfil"
+                            aria-haspopup="menu"
+                            aria-expanded={profileMenuOpen}
+                            onClick={() => setProfileMenuOpen((open) => !open)}
+                        >
+                            {renderAvatarNode()}
+                            <div className="saas-admin-header-profile-meta">
+                                <strong>{currentUserDisplayName}</strong>
+                                <small>{currentUserRoleLabel}</small>
+                            </div>
+                            <ChevronDown size={14} strokeWidth={2} />
+                        </button>
+                        {profileMenuOpen ? (
+                            <div className="saas-admin-profile-menu" role="menu">
+                                <div className="saas-admin-profile-menu__identity">
+                                    {renderAvatarNode()}
+                                    <div>
+                                        <strong>{currentUserDisplayName}</strong>
+                                        <span>{currentUserEmail || '-'}</span>
+                                        <small>{currentUserRoleLabel} · {currentUserTenantLabel || '-'}</small>
+                                    </div>
+                                </div>
+                                <div className="saas-admin-profile-menu__divider" />
+                                <button type="button" role="menuitem" onClick={() => { setProfileMenuOpen(false); onOpenProfile?.(); }}>
+                                    <User size={16} /> Mi perfil
+                                </button>
+                                <button type="button" role="menuitem" onClick={() => { setProfileMenuOpen(false); onOpenDevices?.(); }}>
+                                    <Smartphone size={16} /> Mis dispositivos
+                                </button>
+                                <div className="saas-admin-profile-menu__divider" />
+                                <button type="button" role="menuitem" className="is-danger" onClick={() => { setProfileMenuOpen(false); handleCloseClick(); }}>
+                                    <LogOut size={16} /> Cerrar sesión
+                                </button>
+                            </div>
+                        ) : null}
                     </div>
                     <button
                         type="button"

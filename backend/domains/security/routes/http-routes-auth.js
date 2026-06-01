@@ -20,11 +20,30 @@
     const resolvedDeviceAuthService = deviceAuthService || require('../services/device-auth.service');
     const resolvedAccessPolicyService = accessPolicyService || require('../services/access-policy.service');
     const { queryPostgres } = require('../../../config/persistence-runtime');
+    const fs = require('fs');
+    const path = require('path');
+    const crypto = require('crypto');
+    const multer = require('multer');
+    const passwordHashService = require('../services/password-hash.service');
+    const authSessionService = require('../services/auth-session.service');
+    const emailService = require('../services/email.service');
     const refreshCookieName = 'saas_refresh_token';
     const deviceCookieName = 'saas_device_id';
     const loginAttemptWindowMinutes = 15;
     const loginAttemptMaxFailures = 5;
     const loginAttemptRetryAfterSec = loginAttemptWindowMinutes * 60;
+    const avatarUpload = multer({
+        storage: multer.memoryStorage(),
+        limits: { fileSize: 2 * 1024 * 1024 },
+        fileFilter: (req, file, cb) => {
+            const mime = String(file?.mimetype || '').trim().toLowerCase();
+            if (['image/jpeg', 'image/png', 'image/webp'].includes(mime)) {
+                cb(null, true);
+                return;
+            }
+            cb(new Error('avatar_invalid_type'));
+        }
+    });
 
     function parseCookies(req = {}) {
         const header = String(req.headers?.cookie || '').trim();
@@ -174,6 +193,178 @@
         const key = String(permission || '').trim();
         const permissions = Array.isArray(user.permissions) ? user.permissions : [];
         return permissions.map((entry) => String(entry || '').trim()).includes(key);
+    }
+
+    function cleanText(value = '', max = 160) {
+        return String(value ?? '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, max);
+    }
+
+    function getCurrentTenantId(req = {}) {
+        const user = getAuthenticatedUser(req);
+        return String(user?.tenantId || req?.tenantContext?.id || 'default').trim() || 'default';
+    }
+
+    function getCurrentUserRole(req = {}) {
+        const user = getAuthenticatedUser(req);
+        if (user?.isSuperAdmin === true) return 'superadmin';
+        return String(user?.role || 'seller').trim().toLowerCase() || 'seller';
+    }
+
+    function toPublicProfile(row = {}, fallbackUser = {}) {
+        const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+        const displayName = cleanText(row?.display_name || fallbackUser?.name || fallbackUser?.email || 'Usuario', 140);
+        return {
+            userId: String(row?.user_id || fallbackUser?.userId || fallbackUser?.id || '').trim(),
+            email: String(row?.email || fallbackUser?.email || '').trim(),
+            displayName,
+            role: String(row?.role || fallbackUser?.role || 'seller').trim().toLowerCase(),
+            tenantName: String(row?.tenant_name || fallbackUser?.tenantName || '').trim(),
+            avatarUrl: String(row?.avatar_url || fallbackUser?.avatarUrl || '').trim(),
+            phone: cleanText(metadata.phone || metadata.phoneNumber || '', 40),
+            createdAt: row?.created_at ? new Date(row.created_at).toISOString() : null
+        };
+    }
+
+    async function fetchUserProfile(req = {}) {
+        const user = getAuthenticatedUser(req);
+        const userId = String(user?.userId || user?.id || '').trim();
+        const tenantId = getCurrentTenantId(req);
+        if (!userId) throw new Error('No autenticado.');
+        const { rows } = await queryPostgres(
+            `SELECT u.user_id, u.email, u.display_name, u.avatar_url, u.metadata, u.created_at,
+                    m.role, t.name AS tenant_name
+               FROM users u
+               LEFT JOIN memberships m
+                 ON m.user_id = u.user_id
+                AND m.tenant_id = $2
+                AND m.is_active = true
+               LEFT JOIN tenants t
+                 ON t.tenant_id = $2
+              WHERE u.user_id = $1
+              LIMIT 1`,
+            [userId, tenantId]
+        );
+        if (!rows?.[0]) throw new Error('Usuario no encontrado.');
+        return toPublicProfile(rows[0], user);
+    }
+
+    async function getUserPasswordHash(userId = '') {
+        const { rows } = await queryPostgres(
+            `SELECT user_id, email, display_name, password_hash
+               FROM users
+              WHERE user_id = $1
+              LIMIT 1`,
+            [String(userId || '').trim()]
+        );
+        return rows?.[0] || null;
+    }
+
+    function validateNewPassword(currentPassword = '', newPassword = '', confirmPassword = '') {
+        const password = String(newPassword || '');
+        const errors = [];
+        if (password.length < 8) errors.push('min_length');
+        if (!/\d/.test(password)) errors.push('number');
+        if (!/[A-Z]/.test(password)) errors.push('uppercase');
+        if (confirmPassword && password !== String(confirmPassword || '')) errors.push('match');
+        if (String(currentPassword || '') && password === String(currentPassword || '')) errors.push('different');
+        return errors;
+    }
+
+    function getAvatarExtension(mime = '') {
+        const clean = String(mime || '').trim().toLowerCase();
+        if (clean === 'image/png') return 'png';
+        if (clean === 'image/webp') return 'webp';
+        return 'jpg';
+    }
+
+    function getUploadsRoot() {
+        return path.resolve(String(process.env.SAAS_UPLOADS_DIR || path.join(__dirname, '../../../..', 'uploads')));
+    }
+
+    async function saveAvatarFile(userId = '', file = null) {
+        if (!file?.buffer?.length) throw new Error('avatar_required');
+        const extension = getAvatarExtension(file.mimetype);
+        const fileName = `${String(userId || 'user').replace(/[^a-zA-Z0-9_-]/g, '')}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${extension}`;
+        const avatarsDir = path.join(getUploadsRoot(), 'avatars');
+        await fs.promises.mkdir(avatarsDir, { recursive: true });
+        await fs.promises.writeFile(path.join(avatarsDir, fileName), file.buffer);
+        return `/uploads/avatars/${fileName}`;
+    }
+
+    async function getPasswordNoticeRecipients(tenantId = '') {
+        const recipients = new Set();
+        try {
+            const authorizers = await queryPostgres(
+                `SELECT email
+                   FROM tenant_device_authorizers
+                  WHERE tenant_id = $1
+                    AND is_active = true
+                  ORDER BY created_at ASC
+                  LIMIT 5`,
+                [tenantId]
+            );
+            for (const row of authorizers.rows || []) {
+                const email = String(row?.email || '').trim().toLowerCase();
+                if (email) recipients.add(email);
+            }
+        } catch (_) {}
+
+        if (recipients.size === 0) {
+            try {
+                const owners = await queryPostgres(
+                    `SELECT u.email
+                       FROM memberships m
+                       JOIN users u ON u.user_id = m.user_id
+                      WHERE m.tenant_id = $1
+                        AND m.role = 'owner'
+                        AND m.is_active = true
+                        AND u.is_active = true`,
+                    [tenantId]
+                );
+                for (const row of owners.rows || []) {
+                    const email = String(row?.email || '').trim().toLowerCase();
+                    if (email) recipients.add(email);
+                }
+            } catch (_) {}
+        }
+        return Array.from(recipients);
+    }
+
+    async function sendPasswordChangedEmails({ tenantId, profile, req, notifyAuthorizers = false } = {}) {
+        const ip = getClientIp(req);
+        const changedAt = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
+        await emailService.sendEmailForTenant(tenantId, {
+            to: profile.email,
+            subject: 'Tu contraseña fue cambiada - Panel WhatsApp SaaS',
+            text: `Hola ${profile.displayName},\n\nTu contraseña fue cambiada exitosamente.\nFecha: ${changedAt}\nIP: ${ip}\n\nSi no fuiste tú, contacta al administrador inmediatamente.`,
+            html: `
+                <p>Hola <strong>${profile.displayName}</strong>,</p>
+                <p>Tu contraseña fue cambiada exitosamente.</p>
+                <p><strong>Fecha:</strong> ${changedAt}<br/><strong>IP:</strong> ${ip}</p>
+                <p>Si no fuiste tú, contacta al administrador inmediatamente.</p>
+            `
+        }).catch((error) => {
+            console.warn('[Auth] password changed email failed:', String(error?.message || error));
+        });
+
+        if (!notifyAuthorizers) return;
+        const recipients = await getPasswordNoticeRecipients(tenantId);
+        for (const email of recipients.filter((entry) => entry !== String(profile.email || '').trim().toLowerCase())) {
+            await emailService.sendEmailForTenant(tenantId, {
+                to: email,
+                subject: 'Aviso: un usuario cambió su contraseña',
+                text: `Aviso: ${profile.displayName} (${profile.email}) cambió su contraseña.\nFecha: ${changedAt}\nIP: ${ip}`,
+                html: `
+                    <p>Aviso: <strong>${profile.displayName}</strong> (${profile.email}) cambió su contraseña.</p>
+                    <p><strong>Fecha:</strong> ${changedAt}<br/><strong>IP:</strong> ${ip}</p>
+                `
+            }).catch((error) => {
+                console.warn('[Auth] authorizer password notice failed:', String(error?.message || error));
+            });
+        }
     }
 
     app.post('/api/auth/login', async (req, res) => {
@@ -607,6 +798,213 @@
             return res.json({ ok: true, ...result });
         } catch (error) {
             return res.status(500).json({ ok: false, error: 'No se pudo cerrar sesion.' });
+        }
+    });
+
+    app.get('/api/auth/profile', async (req, res) => {
+        const userId = getAuthenticatedUserId(req);
+        if (!userId) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
+        try {
+            const profile = await fetchUserProfile(req);
+            return res.json({ ok: true, profile });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar el perfil.') });
+        }
+    });
+
+    app.patch('/api/auth/profile', async (req, res) => {
+        const userId = getAuthenticatedUserId(req);
+        if (!userId) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
+        const displayName = cleanText(req.body?.displayName, 140);
+        const phone = cleanText(req.body?.phone, 40);
+        if (!displayName) {
+            return res.status(400).json({ ok: false, error: 'Nombre para mostrar requerido.' });
+        }
+
+        try {
+            await queryPostgres(
+                `UPDATE users
+                    SET display_name = $2,
+                        metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{phone}', to_jsonb($3::text), true),
+                        updated_at = NOW()
+                  WHERE user_id = $1`,
+                [userId, displayName, phone]
+            );
+
+            const profile = await fetchUserProfile(req);
+            await auditLogService.writeAuditLog(getCurrentTenantId(req), {
+                userId,
+                userEmail: profile.email,
+                role: getCurrentUserRole(req),
+                action: 'auth.profile.updated',
+                resourceType: 'auth_profile',
+                resourceId: userId,
+                source: 'api',
+                ip: String(req.ip || ''),
+                payload: { displayName, hasPhone: Boolean(phone) }
+            });
+            return res.json({ ok: true, profile });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo actualizar el perfil.') });
+        }
+    });
+
+    app.post('/api/auth/profile/avatar', avatarUpload.single('avatar'), async (req, res) => {
+        const userId = getAuthenticatedUserId(req);
+        if (!userId) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+        if (!req.file) {
+            return res.status(400).json({ ok: false, error: 'Imagen requerida.' });
+        }
+
+        try {
+            const avatarUrl = await saveAvatarFile(userId, req.file);
+            await queryPostgres(
+                `UPDATE users
+                    SET avatar_url = $2,
+                        updated_at = NOW()
+                  WHERE user_id = $1`,
+                [userId, avatarUrl]
+            );
+            const profile = await fetchUserProfile(req);
+            await auditLogService.writeAuditLog(getCurrentTenantId(req), {
+                userId,
+                userEmail: profile.email,
+                role: getCurrentUserRole(req),
+                action: 'auth.profile.avatar_updated',
+                resourceType: 'auth_profile',
+                resourceId: userId,
+                source: 'api',
+                ip: String(req.ip || ''),
+                payload: { avatarUrl }
+            });
+            return res.json({ ok: true, avatarUrl, profile });
+        } catch (error) {
+            const reason = String(error?.message || 'No se pudo subir la foto.');
+            const status = /avatar_invalid_type|required|file too large/i.test(reason) ? 400 : 500;
+            return res.status(status).json({ ok: false, error: reason });
+        }
+    });
+
+    app.post('/api/auth/change-password', async (req, res) => {
+        const userId = getAuthenticatedUserId(req);
+        if (!userId) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
+        const currentPassword = String(req.body?.currentPassword || '');
+        const newPassword = String(req.body?.newPassword || '');
+        const confirmPassword = String(req.body?.confirmPassword || newPassword || '');
+        const validationErrors = validateNewPassword(currentPassword, newPassword, confirmPassword);
+        if (validationErrors.length > 0) {
+            return res.status(400).json({ ok: false, error: 'password_policy_failed', details: validationErrors });
+        }
+
+        try {
+            const profile = await fetchUserProfile(req);
+            const userRecord = await getUserPasswordHash(userId);
+            if (!userRecord || !passwordHashService.verifyPassword(currentPassword, userRecord.password_hash)) {
+                return res.status(400).json({ ok: false, error: 'invalid_current_password' });
+            }
+
+            const nextHash = passwordHashService.hashPassword(newPassword);
+            await queryPostgres(
+                `UPDATE users
+                    SET password_hash = $2,
+                        updated_at = NOW()
+                  WHERE user_id = $1`,
+                [userId, nextHash]
+            );
+
+            const revokedSessions = await authSessionService.revokeUserRefreshSessionsExcept({
+                userId,
+                email: profile.email,
+                currentRefreshToken: getRefreshTokenFromRequest(req),
+                reason: 'password_changed'
+            });
+
+            const isOwnerOrSuperAdmin = req?.authContext?.user?.isSuperAdmin === true || String(profile.role || '').toLowerCase() === 'owner';
+            await sendPasswordChangedEmails({
+                tenantId: getCurrentTenantId(req),
+                profile,
+                req,
+                notifyAuthorizers: !isOwnerOrSuperAdmin
+            });
+
+            await auditLogService.writeAuditLog(getCurrentTenantId(req), {
+                userId,
+                userEmail: profile.email,
+                role: getCurrentUserRole(req),
+                action: 'auth.password.changed',
+                resourceType: 'auth_profile',
+                resourceId: userId,
+                source: 'api',
+                ip: String(req.ip || ''),
+                payload: { revokedSessions: Number(revokedSessions?.updated || 0) || 0 }
+            });
+
+            return res.json({
+                ok: true,
+                message: 'Contraseña cambiada correctamente.',
+                revokedSessions: Number(revokedSessions?.updated || 0) || 0
+            });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cambiar la contraseña.') });
+        }
+    });
+
+    app.post('/api/auth/logout-all-devices', async (req, res) => {
+        const userId = getAuthenticatedUserId(req);
+        if (!userId) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
+        try {
+            const profile = await fetchUserProfile(req);
+            const revokedSessions = await authSessionService.revokeUserRefreshSessionsGlobally({
+                userId,
+                email: profile.email,
+                reason: 'logout_all_devices'
+            });
+            const { rowCount } = await queryPostgres(
+                `UPDATE auth_device_sessions
+                    SET revoked_at = NOW(),
+                        revoked_by = $2
+                  WHERE user_id = $1
+                    AND revoked_at IS NULL
+                    AND device_id <> $3`,
+                [userId, userId, getDeviceIdFromRequest(req)]
+            );
+
+            clearRefreshCookie(res);
+            await auditLogService.writeAuditLog(getCurrentTenantId(req), {
+                userId,
+                userEmail: profile.email,
+                role: getCurrentUserRole(req),
+                action: 'auth.logout.all_devices',
+                resourceType: 'auth_profile',
+                resourceId: userId,
+                source: 'api',
+                ip: String(req.ip || ''),
+                payload: {
+                    revokedSessions: Number(revokedSessions?.updated || 0) || 0,
+                    revokedDevices: Number(rowCount || 0) || 0
+                }
+            });
+            return res.json({
+                ok: true,
+                revokedSessions: Number(revokedSessions?.updated || 0) || 0,
+                revokedDevices: Number(rowCount || 0) || 0
+            });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cerrar sesiones.') });
         }
     });
 

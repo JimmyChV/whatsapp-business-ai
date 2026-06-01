@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
     SaasPanelConfigAndGovernanceSections,
     SaasPanelEntitySections,
@@ -5,6 +6,7 @@ import {
     SaasPanelNoAccess,
     SaasPanelOpsAndAutomationSections
 } from './panel';
+import SaasProfileModal from './profile/SaasProfileModal';
 import '../saas.css';
 import useSaasAdminPanelController from '../hooks/panel/controller/useSaasAdminPanelController';
 
@@ -28,12 +30,14 @@ const GRID_SECTION_IDS = new Set([
 ]);
 
 export default function SaasAdminPanel(props) {
+    const [profileModalSection, setProfileModalSection] = useState(null);
     const {
         isOpen,
         canManageSaas,
         selectedSectionId,
         sharedHeaderProps,
         frameProps,
+        profilePanelProps,
         entitySectionsContext,
         opsAndAutomationSectionsContext,
         configAndGovernanceSectionsContext
@@ -45,8 +49,17 @@ export default function SaasAdminPanel(props) {
         return <SaasPanelNoAccess {...sharedHeaderProps} />;
     }
 
+    const enhancedFrameProps = {
+        ...frameProps,
+        onOpenProfile: () => setProfileModalSection('profile'),
+        onOpenDevices: () => setProfileModalSection('devices'),
+        onLogout: profilePanelProps?.onLogout,
+        currentUserEmail: profilePanelProps?.currentUserEmail,
+        currentUserTenantLabel: profilePanelProps?.activeTenantLabel
+    };
+
     return (
-        <SaasPanelFrame {...frameProps}>
+        <SaasPanelFrame {...enhancedFrameProps}>
             <SaasPanelEntitySections context={entitySectionsContext} />
             {GRID_SECTION_IDS.has(selectedSectionId) && (
                 <div className="saas-admin-grid">
@@ -54,6 +67,14 @@ export default function SaasAdminPanel(props) {
                     <SaasPanelConfigAndGovernanceSections context={configAndGovernanceSectionsContext} />
                 </div>
             )}
+            {profileModalSection ? (
+                <SaasProfileModal
+                    initialSection={profileModalSection}
+                    requestJson={profilePanelProps?.requestJson}
+                    onClose={() => setProfileModalSection(null)}
+                    onLogoutAllDone={profilePanelProps?.onLogout}
+                />
+            ) : null}
         </SaasPanelFrame>
     );
 }

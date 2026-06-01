@@ -1448,6 +1448,15 @@ export default function useSaasAdminPanelController({
         selectedSectionId,
         sharedHeaderProps,
         frameProps,
+        profilePanelProps: {
+            requestJson,
+            currentUserEmail: tenantDerived.currentUserEmail,
+            currentUserDisplayName: tenantDerived.currentUserDisplayName,
+            currentUserAvatarUrl: tenantDerived.currentUserAvatarUrl,
+            currentUserRoleLabel: tenantDerived.currentUserRoleLabel,
+            activeTenantLabel: tenantDerived.activeTenantLabel,
+            onLogout: frameNavigationController.handlePanelClose
+        },
         entitySectionsContext,
         opsAndAutomationSectionsContext,
         configAndGovernanceSectionsContext

@@ -11,8 +11,13 @@ export default function SaasPanelFrame({
     onOpenOperation,
     currentUserAvatarUrl = '',
     currentUserDisplayName = 'Usuario',
+    currentUserEmail = '',
     currentUserRoleLabel = 'Sin rol',
+    currentUserTenantLabel = '',
     buildInitials,
+    onOpenProfile,
+    onOpenDevices,
+    onLogout,
     closeLabel = 'Cerrar sesión',
     themeMode = 'dark',
     onThemeChange = null,
@@ -48,8 +53,13 @@ export default function SaasPanelFrame({
                     onOpenOperation={onOpenOperation}
                     currentUserAvatarUrl={currentUserAvatarUrl}
                     currentUserDisplayName={currentUserDisplayName}
+                    currentUserEmail={currentUserEmail}
                     currentUserRoleLabel={currentUserRoleLabel}
+                    currentUserTenantLabel={currentUserTenantLabel}
                     buildInitials={buildInitials}
+                    onOpenProfile={onOpenProfile}
+                    onOpenDevices={onOpenDevices}
+                    onLogout={onLogout}
                     closeLabel={closeLabel}
                     themeMode={themeMode}
                     onThemeChange={onThemeChange}
