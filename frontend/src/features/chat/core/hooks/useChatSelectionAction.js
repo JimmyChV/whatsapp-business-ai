@@ -30,7 +30,9 @@ export default function useChatSelectionAction({
   setQuickReplyDraft,
   setChats,
   chatIdsReferSameScope,
-  canMarkChatAsRead
+  canMarkChatAsRead,
+  chatAssignmentState,
+  saasSession
 } = {}) {
   const emitQuickRepliesRequest = (moduleId = '') => {
     const cleanModuleId = String(moduleId || '').trim().toLowerCase();
@@ -121,11 +123,21 @@ export default function useChatSelectionAction({
     setClientContact(null);
     setQuickReplyDraft(null);
     socket.emit('get_chat_history', resolvedChatId);
-    if (typeof canMarkChatAsRead === 'function' && canMarkChatAsRead(resolvedChatId)) {
+    const readGuardCanMark = typeof canMarkChatAsRead === 'function'
+      ? canMarkChatAsRead(resolvedChatId)
+      : false;
+    console.log('[ReadGuard] desktop check', {
+      chatId: resolvedChatId,
+      canMark: typeof canMarkChatAsRead === 'function' ? readGuardCanMark : 'no fn',
+      assignment: chatAssignmentState?.getAssignment?.(resolvedChatId),
+      isAssignedToMe: chatAssignmentState?.isAssignedToMe?.(resolvedChatId),
+      currentUserId: saasSession?.user?.userId || saasSession?.user?.id
+    });
+    if (readGuardCanMark) {
       socket.emit('mark_chat_read', resolvedChatId);
     }
     socket.emit('get_contact_info', resolvedChatId);
-    if (typeof canMarkChatAsRead === 'function' && canMarkChatAsRead(resolvedChatId)) {
+    if (readGuardCanMark) {
       setChats((prev) => prev.map((c) => chatIdsReferSameScope(String(c?.id || ''), resolvedChatId) ? { ...c, unreadCount: 0 } : c));
     }
   };
