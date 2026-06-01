@@ -1,6 +1,6 @@
 import { lazy, useEffect, useRef, useCallback, useState } from 'react';
 
-import { API_URL } from './config/runtime';
+import { API_URL, SOCKET_AUTH_TOKEN } from './config/runtime';
 import { persistSaasSession } from './features/auth/helpers/saasSessionStorage';
 import {
   useOperationWorkspaceState,
@@ -31,6 +31,39 @@ const isMobileOperationViewport = () => (
   typeof window !== 'undefined'
   && window.matchMedia?.('(max-width: 768px)')?.matches
 );
+
+function readAccessExpiryUnix(session = {}) {
+  const storedExpiry = Number(session?.accessExpiresAtUnix || 0);
+  if (Number.isFinite(storedExpiry) && storedExpiry > 0) return storedExpiry;
+  const token = String(session?.accessToken || '').trim();
+  const payload = token.split('.')[1] || '';
+  if (!payload || typeof window === 'undefined') return 0;
+  try {
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=');
+    const parsed = JSON.parse(window.atob(padded));
+    return Number(parsed?.exp || 0) || 0;
+  } catch (_) {
+    return 0;
+  }
+}
+
+function buildSocketAuthFromSession({
+  session = {},
+  runtime = {},
+  selectedModule = {},
+  socketAuthToken = ''
+} = {}) {
+  const accessToken = String(session?.accessToken || '').trim();
+  const tenantId = String(session?.user?.tenantId || runtime?.tenant?.id || '').trim();
+  const selectedModuleId = String(selectedModule?.moduleId || '').trim();
+  const auth = {};
+  if (socketAuthToken) auth.token = socketAuthToken;
+  if (accessToken) auth.accessToken = accessToken;
+  if (tenantId) auth.tenantId = tenantId;
+  if (selectedModuleId) auth.waModuleId = selectedModuleId;
+  return auth;
+}
 
 function App() {
   const {
@@ -381,6 +414,13 @@ function App() {
     recoveryExports,
     sessionRuntimeBlock: appSessionRuntimeBlock
   } = useAppRuntimeSessionController(sessionControllerInput);
+  const handleSocketAuthFailure = useCallback(() => {
+    setIsConnected(false);
+    setIsClientReady(false);
+    setSaasSession(null);
+    setSaasAuthError('Sesion expirada. Inicia sesion nuevamente.');
+  }, [setIsClientReady, setIsConnected, setSaasAuthError, setSaasSession]);
+
   const runtimeBlock = {
     saasRuntime,
     saasSession,
@@ -389,7 +429,9 @@ function App() {
     setIsClientReady,
     setIsSwitchingTransport,
     setTransportError,
-    tenantScopeId
+    tenantScopeId,
+    refreshSaasSession: apiSessionExports.refreshSaasSession,
+    onSocketAuthFailure: handleSocketAuthFailure
   };
 
   const businessScopeBlock = {
@@ -513,14 +555,31 @@ function App() {
       foregroundSyncRef.current = now;
 
       try {
-        if (socket && !socket.connected && typeof socket.connect === 'function') {
-          socket.connect();
+        const runtime = saasRuntimeRef.current || {};
+        let sessionForSocket = saasSessionRef.current || {};
+        const authRequired = Boolean(runtime?.authEnabled);
+        const expiresAt = readAccessExpiryUnix(sessionForSocket);
+        const nowUnix = Math.floor(Date.now() / 1000);
+        const shouldRefresh = authRequired && (
+          !String(sessionForSocket?.accessToken || '').trim()
+          || !expiresAt
+          || expiresAt - nowUnix <= 120
+        );
+
+        if (shouldRefresh) {
+          sessionForSocket = await apiSessionExports.refreshSaasSession?.() || saasSessionRef.current || {};
         }
 
-        const expiresAt = Number(saasSessionRef.current?.accessExpiresAtUnix || 0) || 0;
-        const nowUnix = Math.floor(Date.now() / 1000);
-        if (expiresAt && expiresAt - nowUnix <= 120) {
-          await apiSessionExports.refreshSaasSession?.();
+        if (socket && !socket.connected && typeof socket.connect === 'function') {
+          const auth = buildSocketAuthFromSession({
+            session: sessionForSocket,
+            runtime,
+            selectedModule: selectedWaModuleRef.current,
+            socketAuthToken: SOCKET_AUTH_TOKEN
+          });
+          if (authRequired && !auth.accessToken) return;
+          socket.auth = Object.keys(auth).length > 0 ? auth : undefined;
+          socket.connect();
         }
 
         requestChatsPage?.({ reset: true });
@@ -538,7 +597,7 @@ function App() {
       window.removeEventListener('pageshow', handleForegroundSync);
       window.removeEventListener('focus', handleForegroundSync);
     };
-  }, [apiSessionExports.refreshSaasSession, requestChatsPage, saasSessionRef, socket]);
+  }, [apiSessionExports.refreshSaasSession, requestChatsPage, saasRuntimeRef, saasSessionRef, selectedWaModuleRef, socket]);
 
   // --------------------------------------------------------------
   // Apply AI suggestion to input

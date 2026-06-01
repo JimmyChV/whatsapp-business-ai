@@ -32,9 +32,12 @@ export default function useAppSocketChatController({
     socket: appSocketSingleton,
     saasRuntime: runtimeBlock.saasRuntime,
     saasSession: runtimeBlock.saasSession,
+    saasSessionRef: chatRuntimeBlock.saasSessionRef,
     selectedWaModuleRef: chatRuntimeBlock.selectedWaModuleRef,
     selectedWaModuleId: chatRuntimeBlock.selectedWaModule?.moduleId,
     socketAuthToken: SOCKET_AUTH_TOKEN,
+    refreshSaasSession: runtimeBlock.refreshSaasSession,
+    onSocketAuthFailure: runtimeBlock.onSocketAuthFailure,
     setIsConnected: runtimeBlock.setIsConnected,
     setIsClientReady: runtimeBlock.setIsClientReady
   });
