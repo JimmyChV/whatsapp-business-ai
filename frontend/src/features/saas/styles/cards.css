@@ -1507,6 +1507,82 @@ button.saas-admin-related-row small::after {
   align-items: stretch;
 }
 
+.saas-device-team-toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(220px, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.saas-device-team-toolbar h4,
+.saas-device-user-group h4 {
+  margin: 0;
+}
+
+.saas-device-team-toolbar small,
+.saas-device-user-group small,
+.saas-muted-copy {
+  color: var(--saas-text-secondary, #6b7280);
+}
+
+.saas-device-team-toolbar input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--saas-border-color);
+  border-radius: 14px;
+  padding: 0 14px;
+  background: var(--saas-bg-surface, #fff);
+  color: var(--saas-text-primary, #111827);
+}
+
+.saas-device-team-list {
+  display: grid;
+  gap: 16px;
+}
+
+.saas-device-user-group {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--saas-border-subtle, rgba(17, 24, 39, 0.12));
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--saas-bg-surface, #fff) 96%, transparent);
+}
+
+.saas-device-user-group__header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--saas-border-subtle, rgba(17, 24, 39, 0.1));
+}
+
+.saas-device-user-avatar {
+  width: 42px;
+  height: 42px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--saas-accent-primary, #1d9e75) 14%, transparent);
+  color: var(--saas-accent-primary, #1d9e75);
+  font-weight: 900;
+}
+
+.saas-device-user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.saas-device-user-group__summary {
+  justify-self: end;
+  color: var(--saas-text-secondary, #6b7280);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .saas-audit-panel {
   display: grid;
   gap: 12px;
@@ -1603,6 +1679,15 @@ button.saas-admin-related-row small::after {
 
   .saas-device-row__actions button {
     flex: 1 1 auto;
+  }
+
+  .saas-device-team-toolbar,
+  .saas-device-user-group__header {
+    grid-template-columns: 1fr;
+  }
+
+  .saas-device-user-group__summary {
+    justify-self: start;
   }
 
   .saas-audit-filters,

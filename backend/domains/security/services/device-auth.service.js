@@ -312,7 +312,71 @@ async function listDevicesForAdminUser(userId = '', { currentDeviceId = '' } = {
     return listDevicesForUser(userId, { currentDeviceId });
 }
 
-async function renameDevice({ userId = '', deviceId = '', deviceName = '' } = {}) {
+async function listDevicesGroupedByTenant(tenantId = '', { currentDeviceId = '' } = {}) {
+    const cleanTenantId = text(tenantId);
+    if (!cleanTenantId || !isPostgresAvailable()) return [];
+    const { rows } = await queryPostgres(
+        `SELECT u.user_id,
+                u.email,
+                u.display_name,
+                u.avatar_url,
+                m.role,
+                d.device_id,
+                d.tenant_id AS device_tenant_id,
+                d.device_name,
+                d.device_type,
+                d.user_agent,
+                d.ip_address,
+                d.is_approved,
+                d.approved_at,
+                d.approved_by,
+                d.revoked_at,
+                d.revoked_by,
+                d.last_seen_at,
+                d.last_activity_at,
+                d.created_at AS device_created_at
+           FROM memberships m
+           JOIN users u ON u.user_id = m.user_id
+           LEFT JOIN auth_device_sessions d
+             ON d.user_id = u.user_id
+            AND d.tenant_id = m.tenant_id
+          WHERE m.tenant_id = $1
+            AND m.is_active = TRUE
+            AND u.is_active = TRUE
+            AND m.role IN ('owner','admin','seller')
+          ORDER BY LOWER(COALESCE(u.display_name, u.email, u.user_id)) ASC,
+                   COALESCE(d.last_seen_at, d.created_at) DESC NULLS LAST,
+                   d.created_at DESC NULLS LAST`,
+        [cleanTenantId]
+    );
+
+    const grouped = new Map();
+    for (const row of rows || []) {
+        const userId = text(row.user_id);
+        if (!grouped.has(userId)) {
+            grouped.set(userId, {
+                userId,
+                displayName: text(row.display_name || row.email || row.user_id),
+                email: lower(row.email),
+                role: text(row.role || 'seller'),
+                avatarUrl: text(row.avatar_url),
+                devices: []
+            });
+        }
+        if (row.device_id) {
+            grouped.get(userId).devices.push(withCurrentDevice(normalizeDeviceRow({
+                ...row,
+                tenant_id: row.device_tenant_id || cleanTenantId,
+                created_at: row.device_created_at,
+                user_email: row.email,
+                user_name: row.display_name
+            }), currentDeviceId));
+        }
+    }
+    return Array.from(grouped.values());
+}
+
+async function renameDevice({ userId = '', deviceId = '', deviceName = '', allowAny = false } = {}) {
     const cleanUserId = text(userId);
     const cleanDeviceId = text(deviceId);
     const cleanName = text(deviceName);
@@ -324,9 +388,9 @@ async function renameDevice({ userId = '', deviceId = '', deviceName = '' } = {}
         `UPDATE auth_device_sessions
             SET device_name = $3
           WHERE device_id = $1
-            AND user_id = $2
+            AND ($4::boolean = TRUE OR user_id = $2)
           RETURNING *`,
-        [cleanDeviceId, cleanUserId, cleanName]
+        [cleanDeviceId, cleanUserId, cleanName, Boolean(allowAny)]
     );
     const device = normalizeDeviceRow(rows?.[0] || null);
     if (!device) throw new Error('device_not_found');
@@ -879,6 +943,7 @@ module.exports = {
     getDeviceSession,
     listDevicesForUser,
     listDevicesForAdminUser,
+    listDevicesGroupedByTenant,
     renameDevice,
     revokeDevice
 };

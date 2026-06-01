@@ -29,6 +29,20 @@ function formatDate(value, formatDateTimeLabel) {
     });
 }
 
+function getInitials(name = '', email = '') {
+    const source = toText(name) || toText(email) || 'U';
+    const parts = source.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    return source.slice(0, 2).toUpperCase();
+}
+
+function roleLabel(role = '') {
+    const clean = toText(role).toLowerCase();
+    if (clean === 'owner') return 'Owner';
+    if (clean === 'admin') return 'Admin';
+    return 'Seller';
+}
+
 function DeviceStatusBadge({ device }) {
     if (device?.revokedAt) {
         return <span className="saas-device-badge saas-device-badge--danger">Revocado</span>;
@@ -55,7 +69,8 @@ function DeviceRow({
     formatDateTimeLabel,
     allowRename = true,
     allowRevoke = true,
-    allowReauthorize = false
+    allowReauthorize = false,
+    mode = 'own'
 }) {
     const isEditing = editingId === device.deviceId;
     const displayName = toText(device.deviceName) || formatDeviceType(device.deviceType);
@@ -94,9 +109,9 @@ function DeviceRow({
                         <span>{device.ipAddress || 'IP no disponible'}</span>
                         <span>Ultima vez: {formatDate(device.lastSeenAt || device.createdAt, formatDateTimeLabel)}</span>
                     </div>
-                    {device.userEmail ? (
+                    {device.revokedAt ? (
                         <small className="saas-device-row__owner">
-                            {device.userName ? `${device.userName} - ` : ''}{device.userEmail}
+                            Revocado: {formatDate(device.revokedAt, formatDateTimeLabel)}
                         </small>
                     ) : null}
                 </div>
@@ -106,7 +121,7 @@ function DeviceRow({
                     <button
                         type="button"
                         className="saas-btn-cancel"
-                        disabled={busy || Boolean(device.revokedAt)}
+                        disabled={busy}
                         onClick={() => {
                             setDraftName(displayName);
                             setEditingId(device.deviceId);
@@ -115,21 +130,23 @@ function DeviceRow({
                         Renombrar
                     </button>
                 ) : null}
-                <button
-                    type="button"
-                    className="danger"
-                    disabled={!canRevoke}
-                    onClick={() => onRevoke(device.deviceId)}
-                    title={device.current ? 'No puedes revocar este dispositivo desde si mismo.' : ''}
-                >
-                    Revocar
-                </button>
+                {!device.revokedAt ? (
+                    <button
+                        type="button"
+                        className="danger"
+                        disabled={!canRevoke}
+                        onClick={() => onRevoke(device.deviceId, mode)}
+                        title={device.current ? 'No puedes revocar este dispositivo desde si mismo.' : ''}
+                    >
+                        Revocar
+                    </button>
+                ) : null}
                 {device.revokedAt ? (
                     <button
                         type="button"
                         className="saas-btn-cancel"
                         disabled={!canReauthorize}
-                        onClick={() => onReauthorize?.(device.deviceId)}
+                        onClick={() => onReauthorize?.(device.deviceId, mode)}
                         title="Envia un OTP a los autorizadores para aprobar nuevamente este dispositivo."
                     >
                         Reautorizar con OTP
@@ -140,17 +157,65 @@ function DeviceRow({
     );
 }
 
-function DevicesList(props) {
-    const { devices = [], emptyText = 'No hay dispositivos para mostrar.' } = props;
-    if (!devices.length) {
-        return <div className="saas-admin-empty-inline">{emptyText}</div>;
-    }
+function UserDeviceGroup({
+    user,
+    busy,
+    editingId,
+    draftName,
+    setEditingId,
+    setDraftName,
+    onSaveName,
+    onRevoke,
+    onReauthorize,
+    formatDateTimeLabel,
+    allowRename,
+    allowRevoke,
+    allowReauthorize
+}) {
+    const devices = Array.isArray(user?.devices) ? user.devices : [];
+    const activeCount = devices.filter((device) => !device.revokedAt).length;
+    const revokedCount = devices.filter((device) => device.revokedAt).length;
     return (
-        <div className="saas-device-list">
-            {devices.map((device) => (
-                <DeviceRow key={device.deviceId} device={device} {...props} />
-            ))}
-        </div>
+        <section className="saas-device-user-group">
+            <header className="saas-device-user-group__header">
+                <div className="saas-device-user-avatar">
+                    {user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <span>{getInitials(user?.displayName, user?.email)}</span>}
+                </div>
+                <div>
+                    <h4>{user?.displayName || user?.email || 'Usuario'}</h4>
+                    <small>{roleLabel(user?.role)} · {user?.email || 'Sin email'}</small>
+                </div>
+                <div className="saas-device-user-group__summary">
+                    {activeCount} activos
+                    {revokedCount ? ` · ${revokedCount} revocados` : ''}
+                </div>
+            </header>
+            {devices.length ? (
+                <div className="saas-device-list">
+                    {devices.map((device) => (
+                        <DeviceRow
+                            key={device.deviceId}
+                            device={device}
+                            busy={busy}
+                            editingId={editingId}
+                            draftName={draftName}
+                            setEditingId={setEditingId}
+                            setDraftName={setDraftName}
+                            onSaveName={onSaveName}
+                            onRevoke={onRevoke}
+                            onReauthorize={onReauthorize}
+                            formatDateTimeLabel={formatDateTimeLabel}
+                            allowRename={allowRename}
+                            allowRevoke={allowRevoke}
+                            allowReauthorize={allowReauthorize}
+                            mode="admin"
+                        />
+                    ))}
+                </div>
+            ) : (
+                <div className="saas-admin-empty-inline">Este usuario aun no tiene dispositivos registrados.</div>
+            )}
+        </section>
     );
 }
 
@@ -163,41 +228,59 @@ export default function DevicesSettingsDetailPane({
     isSuperAdmin,
     userRole,
     canViewAllDevices = false,
-    canRevokeOwnDevices = true,
     canRevokeAllDevices = false
 }) {
-    const [devices, setDevices] = React.useState([]);
-    const [adminUserId, setAdminUserId] = React.useState('');
-    const [adminDevices, setAdminDevices] = React.useState([]);
+    const [teamUsers, setTeamUsers] = React.useState([]);
     const [loading, setLoading] = React.useState(false);
-    const [adminLoading, setAdminLoading] = React.useState(false);
     const [error, setError] = React.useState('');
     const [editingId, setEditingId] = React.useState('');
     const [draftName, setDraftName] = React.useState('');
     const [busy, setBusy] = React.useState(false);
     const [notice, setNotice] = React.useState('');
+    const [search, setSearch] = React.useState('');
 
     const canAdminDevices = Boolean(canViewAllDevices || isSuperAdmin || currentUser?.isSuperAdmin === true || toText(userRole).toLowerCase() === 'owner');
+    const canRevokeTeamDevices = Boolean(canRevokeAllDevices || isSuperAdmin || currentUser?.isSuperAdmin === true);
 
-    const loadDevices = React.useCallback(async () => {
-        if (typeof requestJson !== 'function') return;
+    const loadTeamDevices = React.useCallback(async () => {
+        if (typeof requestJson !== 'function' || !canAdminDevices) return;
         setLoading(true);
         setError('');
         setNotice('');
         try {
-            const payload = await requestJson('/api/auth/devices', { method: 'GET' });
-            setDevices(Array.isArray(payload?.devices) ? payload.devices : []);
+            const payload = await requestJson('/api/admin/devices/all', { method: 'GET' });
+            setTeamUsers(Array.isArray(payload?.users) ? payload.users : []);
         } catch (err) {
-            setError(String(err?.message || err || 'No se pudieron cargar los dispositivos.'));
+            setError(String(err?.message || err || 'No se pudieron cargar los dispositivos del equipo.'));
         } finally {
             setLoading(false);
         }
-    }, [requestJson]);
+    }, [canAdminDevices, requestJson]);
 
     React.useEffect(() => {
         if (!(isGeneralConfigSection && selectedConfigKey === 'auth_devices')) return;
-        void loadDevices();
-    }, [isGeneralConfigSection, loadDevices, selectedConfigKey]);
+        void loadTeamDevices();
+    }, [isGeneralConfigSection, loadTeamDevices, selectedConfigKey]);
+
+    const filteredUsers = React.useMemo(() => {
+        const term = toText(search).toLowerCase();
+        if (!term) return teamUsers;
+        return teamUsers
+            .map((user) => {
+                const haystack = [
+                    user?.displayName,
+                    user?.email,
+                    user?.role,
+                    ...(Array.isArray(user?.devices) ? user.devices.flatMap((device) => [
+                        device?.deviceName,
+                        device?.deviceType,
+                        device?.ipAddress
+                    ]) : [])
+                ].map((value) => toText(value).toLowerCase()).join(' ');
+                return haystack.includes(term) ? user : null;
+            })
+            .filter(Boolean);
+    }, [search, teamUsers]);
 
     const saveName = React.useCallback(async (deviceId) => {
         if (typeof requestJson !== 'function') return;
@@ -211,34 +294,33 @@ export default function DevicesSettingsDetailPane({
             });
             setEditingId('');
             setDraftName('');
-            await loadDevices();
+            await loadTeamDevices();
         } catch (err) {
             setError(String(err?.message || err || 'No se pudo renombrar el dispositivo.'));
         } finally {
             setBusy(false);
         }
-    }, [draftName, loadDevices, requestJson]);
+    }, [draftName, loadTeamDevices, requestJson]);
 
-    const revoke = React.useCallback(async (deviceId) => {
+    const revoke = React.useCallback(async (deviceId, mode = 'admin') => {
         if (typeof requestJson !== 'function') return;
         setBusy(true);
         setError('');
         setNotice('');
         try {
-            await requestJson(`/api/auth/devices/${encodeURIComponent(deviceId)}`, { method: 'DELETE' });
-            await loadDevices();
-            if (adminUserId && adminDevices.length) {
-                const payload = await requestJson(`/api/admin/users/${encodeURIComponent(adminUserId)}/devices`, { method: 'GET' });
-                setAdminDevices(Array.isArray(payload?.devices) ? payload.devices : []);
-            }
+            const endpoint = mode === 'admin'
+                ? `/api/admin/devices/${encodeURIComponent(deviceId)}`
+                : `/api/auth/devices/${encodeURIComponent(deviceId)}`;
+            await requestJson(endpoint, { method: 'DELETE' });
+            await loadTeamDevices();
         } catch (err) {
             setError(String(err?.message || err || 'No se pudo revocar el dispositivo.'));
         } finally {
             setBusy(false);
         }
-    }, [adminDevices.length, adminUserId, loadDevices, requestJson]);
+    }, [loadTeamDevices, requestJson]);
 
-    const reauthorize = React.useCallback(async (deviceId, mode = 'own') => {
+    const reauthorize = React.useCallback(async (deviceId, mode = 'admin') => {
         if (typeof requestJson !== 'function') return;
         setBusy(true);
         setError('');
@@ -249,45 +331,46 @@ export default function DevicesSettingsDetailPane({
                 : `/api/auth/devices/${encodeURIComponent(deviceId)}/request-reauthorization`;
             const payload = await requestJson(endpoint, { method: 'POST' });
             setNotice(String(payload?.message || 'OTP enviado a los autorizadores de acceso.'));
-            await loadDevices();
-            if (adminUserId && adminDevices.length) {
-                const refreshed = await requestJson(`/api/admin/users/${encodeURIComponent(adminUserId)}/devices`, { method: 'GET' });
-                setAdminDevices(Array.isArray(refreshed?.devices) ? refreshed.devices : []);
-            }
+            await loadTeamDevices();
         } catch (err) {
             setError(String(err?.message || err || 'No se pudo solicitar reautorizacion.'));
         } finally {
             setBusy(false);
         }
-    }, [adminDevices.length, adminUserId, loadDevices, requestJson]);
-
-    const loadAdminDevices = React.useCallback(async () => {
-        if (typeof requestJson !== 'function' || !toText(adminUserId)) return;
-        setAdminLoading(true);
-        setError('');
-        try {
-            const payload = await requestJson(`/api/admin/users/${encodeURIComponent(adminUserId)}/devices`, { method: 'GET' });
-            setAdminDevices(Array.isArray(payload?.devices) ? payload.devices : []);
-        } catch (err) {
-            setError(String(err?.message || err || 'No se pudieron cargar los dispositivos del usuario.'));
-        } finally {
-            setAdminLoading(false);
-        }
-    }, [adminUserId, requestJson]);
+    }, [loadTeamDevices, requestJson]);
 
     if (!(isGeneralConfigSection && selectedConfigKey === 'auth_devices')) {
         return null;
+    }
+
+    if (!canAdminDevices) {
+        return (
+            <>
+                <div className="saas-admin-pane-header">
+                    <div>
+                        <h3>Mis dispositivos</h3>
+                        <small>Gestiona tus dispositivos desde el perfil personal.</small>
+                    </div>
+                </div>
+                <div className="saas-admin-related-block saas-device-panel">
+                    <h4>Dispositivos personales</h4>
+                    <p className="saas-muted-copy">
+                        Para gestionar tus dispositivos, ve a Mi perfil {'->'} Mis dispositivos.
+                    </p>
+                </div>
+            </>
+        );
     }
 
     return (
         <>
             <div className="saas-admin-pane-header">
                 <div>
-                    <h3>Mis dispositivos</h3>
-                    <small>Administra los equipos que pueden mantener sesion en el panel.</small>
+                    <h3>Dispositivos del equipo</h3>
+                    <small>Gestiona los dispositivos autorizados de todos los usuarios de tu empresa.</small>
                 </div>
                 <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                    <button type="button" disabled={loading || busy} onClick={loadDevices}>
+                    <button type="button" disabled={loading || busy} onClick={loadTeamDevices}>
                         Recargar
                     </button>
                 </div>
@@ -297,65 +380,46 @@ export default function DevicesSettingsDetailPane({
             {notice ? <div className="saas-admin-success-inline">{notice}</div> : null}
 
             <div className="saas-admin-related-block saas-device-panel">
-                <h4>Dispositivos de mi cuenta</h4>
+                <div className="saas-device-team-toolbar">
+                    <div>
+                        <h4>Dispositivos del equipo</h4>
+                        <small>{teamUsers.length} usuarios encontrados</small>
+                    </div>
+                    <input
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                        placeholder="Buscar usuario, email, dispositivo o IP..."
+                        disabled={loading || busy}
+                    />
+                </div>
+
                 {loading ? (
                     <div className="saas-admin-empty-inline">Cargando dispositivos...</div>
+                ) : filteredUsers.length ? (
+                    <div className="saas-device-team-list">
+                        {filteredUsers.map((user) => (
+                            <UserDeviceGroup
+                                key={user.userId}
+                                user={user}
+                                busy={busy}
+                                editingId={editingId}
+                                draftName={draftName}
+                                setEditingId={setEditingId}
+                                setDraftName={setDraftName}
+                                onSaveName={saveName}
+                                onRevoke={revoke}
+                                onReauthorize={reauthorize}
+                                formatDateTimeLabel={formatDateTimeLabel}
+                                allowRename={true}
+                                allowRevoke={canRevokeTeamDevices}
+                                allowReauthorize={canRevokeTeamDevices}
+                            />
+                        ))}
+                    </div>
                 ) : (
-                    <DevicesList
-                        devices={devices}
-                        busy={busy}
-                        editingId={editingId}
-                        draftName={draftName}
-                        setEditingId={setEditingId}
-                        setDraftName={setDraftName}
-                        onSaveName={saveName}
-                        onRevoke={revoke}
-                        onReauthorize={(deviceId) => reauthorize(deviceId, 'own')}
-                        formatDateTimeLabel={formatDateTimeLabel}
-                        allowRename={true}
-                        allowRevoke={canRevokeOwnDevices}
-                        allowReauthorize={canRevokeOwnDevices || canRevokeAllDevices || isSuperAdmin || currentUser?.isSuperAdmin === true}
-                    />
+                    <div className="saas-admin-empty-inline">No hay dispositivos que coincidan con la busqueda.</div>
                 )}
             </div>
-
-            {canAdminDevices ? (
-                <div className="saas-admin-related-block saas-device-panel">
-                    <h4>Revision administrativa</h4>
-                    <small>Usuarios autorizados pueden consultar dispositivos de otros usuarios.</small>
-                    <div className="saas-admin-form-row saas-device-admin-search">
-                        <input
-                            value={adminUserId}
-                            onChange={(event) => setAdminUserId(event.target.value)}
-                            placeholder="user_id del usuario"
-                            disabled={adminLoading || busy}
-                        />
-                        <button type="button" disabled={adminLoading || busy || !toText(adminUserId)} onClick={loadAdminDevices}>
-                            Buscar
-                        </button>
-                    </div>
-                    {adminLoading ? (
-                        <div className="saas-admin-empty-inline">Cargando dispositivos...</div>
-                    ) : (
-                        <DevicesList
-                            devices={adminDevices}
-                            emptyText="Busca un usuario para revisar sus dispositivos."
-                            busy={busy}
-                            editingId={editingId}
-                            draftName={draftName}
-                            setEditingId={setEditingId}
-                            setDraftName={setDraftName}
-                            onSaveName={saveName}
-                            onRevoke={revoke}
-                            onReauthorize={(deviceId) => reauthorize(deviceId, 'admin')}
-                            formatDateTimeLabel={formatDateTimeLabel}
-                            allowRename={false}
-                            allowRevoke={canRevokeAllDevices || isSuperAdmin || currentUser?.isSuperAdmin === true}
-                            allowReauthorize={canRevokeAllDevices || isSuperAdmin || currentUser?.isSuperAdmin === true}
-                        />
-                    )}
-                </div>
-            ) : null}
         </>
     );
 }

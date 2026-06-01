@@ -1051,7 +1051,7 @@
         if (!userId) {
             return res.status(401).json({ ok: false, error: 'No autenticado.' });
         }
-        if (!hasDevicePermission(req, resolvedAccessPolicyService.PERMISSIONS.DEVICES_VIEW_OWN)) {
+        if (!hasDevicePermission(req, resolvedAccessPolicyService.PERMISSIONS.DEVICES_VIEW_OWN) && !canManageUserDevices(req)) {
             return res.status(403).json({ ok: false, error: 'No autorizado.' });
         }
 
@@ -1080,7 +1080,12 @@
         }
 
         try {
-            const device = await resolvedDeviceAuthService.renameDevice({ userId, deviceId, deviceName });
+            const device = await resolvedDeviceAuthService.renameDevice({
+                userId,
+                deviceId,
+                deviceName,
+                allowAny: canManageUserDevices(req)
+            });
             await auditLogService.writeAuditLog(req?.tenantContext?.id || req?.authContext?.user?.tenantId || 'default', {
                 userId,
                 userEmail: req?.authContext?.user?.email || null,
@@ -1196,6 +1201,21 @@
                 currentDeviceId: getDeviceIdFromRequest(req)
             });
             return res.json({ ok: true, devices });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron listar dispositivos.') });
+        }
+    });
+
+    app.get('/api/admin/devices/all', async (req, res) => {
+        if (!canManageUserDevices(req)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+        const tenantId = getCurrentTenantId(req);
+        try {
+            const users = await resolvedDeviceAuthService.listDevicesGroupedByTenant(tenantId, {
+                currentDeviceId: getDeviceIdFromRequest(req)
+            });
+            return res.json({ ok: true, users });
         } catch (error) {
             return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron listar dispositivos.') });
         }

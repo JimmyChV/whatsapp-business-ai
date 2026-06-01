@@ -103,7 +103,7 @@ function ModulesConfigSection(props = {}) {
                 updatedAt: formatDateTimeLabel?.(tenantSettings?.updatedAt) || '-'
             }, canViewOwnDevices ? {
                 id: CONFIG_KEYS.AUTH_DEVICES,
-                name: 'Mis dispositivos',
+                name: canViewAllDevices ? 'Dispositivos' : 'Mis dispositivos',
                 phone: 'Sesion segura',
                 status: 'Activa',
                 channel: 'Seguridad',
@@ -465,7 +465,7 @@ function ModulesConfigSection(props = {}) {
                     ? { label: 'Configuración general', onClick: openConfigSettingsView, disabled: busy || !settingsTenantId }
                     : null,
                 isGeneralConfigSection && canViewOwnDevices
-                    ? { label: 'Mis dispositivos', onClick: () => setSelectedConfigKey?.(CONFIG_KEYS.AUTH_DEVICES), disabled: busy }
+                    ? { label: canViewAllDevices ? 'Dispositivos' : 'Mis dispositivos', onClick: () => setSelectedConfigKey?.(CONFIG_KEYS.AUTH_DEVICES), disabled: busy }
                     : null,
                 isGeneralConfigSection
                     ? { label: 'Correo', onClick: () => setSelectedConfigKey?.(CONFIG_KEYS.SMTP_EMAIL), disabled: busy || !settingsTenantId }
