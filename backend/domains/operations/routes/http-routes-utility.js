@@ -184,6 +184,10 @@ function registerOperationsUtilityHttpRoutes({
     });
 
     app.get('/api/wa/runtime', (req, res) => {
+        if (!hasTenantHistoryReadAccess(req, authService)) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
         const runtime = typeof waClient.getRuntimeInfo === 'function'
             ? waClient.getRuntimeInfo()
             : { requestedTransport: 'idle', activeTransport: 'idle' };
@@ -201,6 +205,10 @@ function registerOperationsUtilityHttpRoutes({
     });
 
     app.get('/api/profile-photo', async (req, res) => {
+        if (!hasTenantHistoryReadAccess(req, authService)) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
         const rawUrl = String(req.query.url || '').trim();
         if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) {
             return res.status(400).json({ error: 'URL de foto invalida. Usa http(s).' });
@@ -270,6 +278,10 @@ function registerOperationsUtilityHttpRoutes({
     });
 
     app.get('/api/link-preview', async (req, res) => {
+        if (!hasTenantHistoryReadAccess(req, authService)) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
         const url = String(req.query.url || '').trim();
         if (!url || !/^https?:\/\//i.test(url)) {
             return res.status(400).json({ error: 'URL invalida. Usa http(s).' });
@@ -336,6 +348,10 @@ function registerOperationsUtilityHttpRoutes({
     });
 
     app.get('/api/map-resolve', async (req, res) => {
+        if (!hasTenantHistoryReadAccess(req, authService)) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
         const rawUrl = String(req.query.url || '').trim();
         if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) {
             return res.status(400).json({ ok: false, error: 'URL de mapa invalida.' });
@@ -397,6 +413,10 @@ function registerOperationsUtilityHttpRoutes({
     });
 
     app.get('/api/map-suggest', async (req, res) => {
+        if (!hasTenantHistoryReadAccess(req, authService)) {
+            return res.status(401).json({ ok: false, error: 'No autenticado.' });
+        }
+
         const query = String(req.query.q || '').trim();
         if (query.length < 2) {
             return res.json({ ok: true, items: [] });

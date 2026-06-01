@@ -108,6 +108,7 @@ async function getWebhookCloudRegistry({
 }
 
 function validateMetaWebhookSignature(req, registryItems = []) {
+    const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
     const registry = Array.isArray(registryItems) ? registryItems : [];
     const payload = req?.body && typeof req.body === 'object' ? req.body : {};
     const phoneNumberId = extractWebhookPhoneNumberId(payload);
@@ -123,7 +124,9 @@ function validateMetaWebhookSignature(req, registryItems = []) {
         if (selectedOnly.length > 0) scoped = selectedOnly;
     }
 
-    const requiresSignature = scoped.filter((item) => (item?.cloudConfig?.enforceSignature !== false));
+    const requiresSignature = isProduction
+        ? scoped
+        : scoped.filter((item) => (item?.cloudConfig?.enforceSignature !== false));
     if (requiresSignature.length === 0) {
         return { ok: true, skipped: true, reason: 'signature_not_required' };
     }
@@ -135,7 +138,8 @@ function validateMetaWebhookSignature(req, registryItems = []) {
     ));
 
     if (secrets.length === 0) {
-        return { ok: true, skipped: true, reason: 'no_app_secret_configured' };
+        console.warn('[Webhook] CRITICO: appSecret no configurado para validar webhook Meta.');
+        return { ok: false, reason: 'no_app_secret' };
     }
 
     const incoming = String(req.get('x-hub-signature-256') || '').trim();
