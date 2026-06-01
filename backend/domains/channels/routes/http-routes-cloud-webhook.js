@@ -1,4 +1,11 @@
 ﻿const crypto = require('crypto');
+const {
+    getStorageDriver,
+    queryPostgres
+} = require('../../../config/persistence-runtime');
+const {
+    decryptSecretFully
+} = require('../../security/services/meta-config-crypto.service');
 
 const CLOUD_WEBHOOK_DEBUG = String(process.env.CLOUD_WEBHOOK_DEBUG || 'true').trim().toLowerCase() !== 'false';
 const WEBHOOK_CONFIG_CACHE_TTL_MS = Math.max(3000, Number(process.env.WEBHOOK_CONFIG_CACHE_TTL_MS || 15000));
@@ -40,6 +47,93 @@ function extractWebhookPhoneNumberId(payload = {}) {
     return '';
 }
 
+function isPlainObject(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function pickSecretValue(value) {
+    const plain = decryptSecretFully(value);
+    return String(plain || '').trim();
+}
+
+function pickModuleScopedSecret(source = {}, moduleId = '') {
+    if (!isPlainObject(source) || !moduleId) return '';
+    const cleanModuleId = String(moduleId || '').trim();
+    const direct = source[cleanModuleId];
+    if (isPlainObject(direct)) {
+        return pickTenantIntegrationSecret(direct, '');
+    }
+
+    const candidates = [
+        source.modules,
+        source.waModules,
+        source.cloudModules,
+        source.cloudConfigByModule
+    ];
+
+    for (const candidate of candidates) {
+        if (Array.isArray(candidate)) {
+            const match = candidate.find((entry) => {
+                const entryModuleId = String(entry?.moduleId || entry?.module_id || entry?.id || '').trim();
+                return entryModuleId === cleanModuleId;
+            });
+            if (match) {
+                const secret = pickTenantIntegrationSecret(match, '');
+                if (secret) return secret;
+            }
+        } else if (isPlainObject(candidate)) {
+            const secret = pickModuleScopedSecret(candidate, cleanModuleId);
+            if (secret) return secret;
+        }
+    }
+
+    return '';
+}
+
+function pickTenantIntegrationSecret(config = {}, moduleId = '') {
+    if (!isPlainObject(config)) return '';
+
+    const sources = [
+        config.cloudConfig,
+        config.metaCloud,
+        config.metaAds,
+        config.metaAds?.cloudConfig,
+        config.meta?.cloudConfig,
+        config.whatsappCloud,
+        config.whatsappCloud?.cloudConfig
+    ];
+
+    for (const source of sources) {
+        if (!isPlainObject(source)) continue;
+        const secret = pickSecretValue(source.appSecret || source.app_secret);
+        if (secret) return secret;
+    }
+
+    const scopedSecret = pickModuleScopedSecret(config, moduleId);
+    if (scopedSecret) return scopedSecret;
+
+    return pickSecretValue(config.appSecret || config.app_secret);
+}
+
+async function resolveTenantIntegrationAppSecret(tenantId = '', moduleId = '') {
+    const cleanTenantId = String(tenantId || '').trim();
+    if (!cleanTenantId || getStorageDriver() !== 'postgres') return '';
+
+    try {
+        const result = await queryPostgres(
+            `SELECT config_json
+               FROM tenant_integrations
+              WHERE tenant_id = $1
+              LIMIT 1`,
+            [cleanTenantId]
+        );
+        return pickTenantIntegrationSecret(result.rows?.[0]?.config_json, moduleId);
+    } catch (error) {
+        console.warn('[Webhook] No se pudo leer appSecret desde tenant_integrations: ' + String(error?.message || error));
+        return '';
+    }
+}
+
 async function getWebhookCloudRegistry({
     saasControlService,
     waModuleService,
@@ -77,7 +171,9 @@ async function getWebhookCloudRegistry({
             const moduleId = String(module?.moduleId || '').trim();
             const verifyToken = String(runtimeCloud?.verifyToken || '').trim();
             const phoneNumberId = String(runtimeCloud?.phoneNumberId || '').trim();
-            const appSecret = String(runtimeCloud?.appSecret || '').trim();
+            const tenantIntegrationAppSecret = await resolveTenantIntegrationAppSecret(tenantId, moduleId);
+            const moduleMetadataAppSecret = String(runtimeCloud?.appSecret || '').trim();
+            const appSecret = tenantIntegrationAppSecret || moduleMetadataAppSecret;
             const appId = String(runtimeCloud?.appId || '').trim();
             const systemUserToken = String(runtimeCloud?.systemUserToken || '').trim();
             if (!moduleId) continue;
@@ -92,6 +188,7 @@ async function getWebhookCloudRegistry({
                 verifyToken,
                 phoneNumberId,
                 appSecret,
+                appSecretSource: tenantIntegrationAppSecret ? 'tenant_integrations' : (moduleMetadataAppSecret ? 'module_metadata' : null),
                 appId,
                 systemUserToken,
                 cloudConfig: runtimeCloud

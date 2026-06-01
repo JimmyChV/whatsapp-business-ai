@@ -378,6 +378,12 @@ function normalizeIntegrationsForStorage(input = {}, existing = {}) {
         hasSourceMetaAdsAccessToken ? sourceMetaAds.accessToken : undefined,
         normalizeText(currentMetaAds.accessToken)
     );
+    const hasSourceMetaAdsAppSecret = Object.prototype.hasOwnProperty.call(sourceMetaAds, 'appSecret')
+        || Object.prototype.hasOwnProperty.call(sourceMetaAds, 'app_secret');
+    const metaAdsAppSecret = normalizeSecretForStorage(
+        hasSourceMetaAdsAppSecret ? (sourceMetaAds.appSecret ?? sourceMetaAds.app_secret) : undefined,
+        normalizeText(currentMetaAds.appSecret ?? currentMetaAds.app_secret)
+    );
     const hasSourceSmtpPass = Object.prototype.hasOwnProperty.call(sourceSmtp, 'pass')
         || Object.prototype.hasOwnProperty.call(sourceSmtp, 'password')
         || Object.prototype.hasOwnProperty.call(sourceSmtp, 'smtpPass');
@@ -422,7 +428,8 @@ function normalizeIntegrationsForStorage(input = {}, existing = {}) {
         metaAds: {
             businessId: normalizeText(sourceMetaAds.businessId ?? currentMetaAds.businessId),
             adAccountId: normalizeText(sourceMetaAds.adAccountId ?? currentMetaAds.adAccountId),
-            accessToken: metaAdsAccessToken
+            accessToken: metaAdsAccessToken,
+            appSecret: metaAdsAppSecret
         },
         smtp: {
             host: normalizeText(sourceSmtp.host ?? currentSmtp.host),
@@ -454,6 +461,7 @@ function toPublicConfig(stored = {}) {
     const aiKeyPlain = resolveSecretPlain(ai.openaiApiKey);
     const googleMapsKeyPlain = resolveSecretPlain(geo.googleMapsApiKey);
     const metaAdsAccessTokenPlain = resolveSecretPlain(metaAds.accessToken) || normalizeText(metaAds.accessToken);
+    const metaAdsAppSecretPlain = resolveSecretPlain(metaAds.appSecret) || normalizeText(metaAds.appSecret);
     const smtpPassPlain = resolveSecretPlain(smtp.pass);
 
     const assistantItems = (Array.isArray(ai.assistants) ? ai.assistants : [])
@@ -497,7 +505,9 @@ function toPublicConfig(stored = {}) {
             businessId: normalizeText(metaAds.businessId),
             adAccountId: normalizeText(metaAds.adAccountId),
             hasAccessToken: Boolean(metaAds.accessToken),
-            accessTokenMasked: metaAdsAccessTokenPlain ? maskSecret(metaAdsAccessTokenPlain) : null
+            accessTokenMasked: metaAdsAccessTokenPlain ? maskSecret(metaAdsAccessTokenPlain) : null,
+            hasAppSecret: Boolean(metaAds.appSecret),
+            appSecretMasked: metaAdsAppSecretPlain ? maskSecret(metaAdsAppSecretPlain) : null
         },
         smtp: {
             host: normalizeText(smtp.host),
@@ -559,7 +569,8 @@ function toRuntimeConfig(stored = {}) {
         metaAds: {
             businessId: normalizeText(metaAds.businessId),
             adAccountId: normalizeText(metaAds.adAccountId),
-            accessToken: resolveSecretPlain(metaAds.accessToken) || normalizeText(metaAds.accessToken)
+            accessToken: resolveSecretPlain(metaAds.accessToken) || normalizeText(metaAds.accessToken),
+            appSecret: resolveSecretPlain(metaAds.appSecret) || normalizeText(metaAds.appSecret)
         },
         smtp: {
             host: normalizeText(smtp.host),
