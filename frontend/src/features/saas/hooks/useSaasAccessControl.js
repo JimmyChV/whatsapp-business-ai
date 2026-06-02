@@ -138,186 +138,170 @@ export default function useSaasAccessControl({
         return source.some((key) => actorPermissionSet.has(String(key || '').trim()));
     }, [actorPermissionSet, effectiveIsSuperAdmin]);
 
-    const canManageTenants = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_PLATFORM_TENANTS_MANAGE])
-        : roleBasedCanManageTenants;
-    const canManageUsers = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_USERS_MANAGE])
-        : roleBasedCanManageUsers;
-    const canViewUsers = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_USERS_READ, PERMISSION_TENANT_USERS_MANAGE])
-        : roleBasedCanViewUsers;
-    const canManageTenantSettings = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_SETTINGS_MANAGE])
-        : roleBasedCanManageTenantSettings;
-    const canViewTenantSettings = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_SETTINGS_READ, PERMISSION_TENANT_SETTINGS_MANAGE])
-        : roleBasedCanManageTenantSettings;
-    const canViewCatalog = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_CATALOGS_READ, PERMISSION_TENANT_CATALOGS_MANAGE])
-        : roleBasedCanViewCatalog;
-    const canManageCatalog = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_CATALOGS_MANAGE])
-        : roleBasedCanManageCatalog;
-    const canManageRoles = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_PLATFORM_TENANTS_MANAGE, PERMISSION_PLATFORM_PLANS_MANAGE])
-        : roleBasedCanManageRoles;
-    const canViewSuperAdminSections = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_PLATFORM_OVERVIEW_READ, PERMISSION_PLATFORM_TENANTS_MANAGE, PERMISSION_PLATFORM_PLANS_MANAGE])
-        : roleBasedCanViewSuperAdminSections;
+    const resolvePermissionFlag = useCallback((keys = [], roleFallback = false) => {
+        if (!hasPermissionContext) return Boolean(roleFallback);
+        return Boolean(roleFallback || hasAnyActorPermission(keys));
+    }, [hasAnyActorPermission, hasPermissionContext]);
+
+    const canManageTenants = resolvePermissionFlag([PERMISSION_PLATFORM_TENANTS_MANAGE], roleBasedCanManageTenants);
+    const canManageUsers = resolvePermissionFlag([PERMISSION_TENANT_USERS_MANAGE], roleBasedCanManageUsers);
+    const canViewUsers = resolvePermissionFlag(
+        [PERMISSION_TENANT_USERS_READ, PERMISSION_TENANT_USERS_MANAGE],
+        roleBasedCanViewUsers
+    );
+    const canManageTenantSettings = resolvePermissionFlag([PERMISSION_TENANT_SETTINGS_MANAGE], roleBasedCanManageTenantSettings);
+    const canViewTenantSettings = resolvePermissionFlag(
+        [PERMISSION_TENANT_SETTINGS_READ, PERMISSION_TENANT_SETTINGS_MANAGE],
+        roleBasedCanManageTenantSettings
+    );
+    const canViewCatalog = resolvePermissionFlag(
+        [PERMISSION_TENANT_CATALOGS_READ, PERMISSION_TENANT_CATALOGS_MANAGE],
+        roleBasedCanViewCatalog
+    );
+    const canManageCatalog = resolvePermissionFlag([PERMISSION_TENANT_CATALOGS_MANAGE], roleBasedCanManageCatalog);
+    const canManageRoles = resolvePermissionFlag(
+        [PERMISSION_PLATFORM_TENANTS_MANAGE, PERMISSION_PLATFORM_PLANS_MANAGE],
+        roleBasedCanManageRoles
+    );
+    const canViewSuperAdminSections = resolvePermissionFlag(
+        [PERMISSION_PLATFORM_OVERVIEW_READ, PERMISSION_PLATFORM_TENANTS_MANAGE, PERMISSION_PLATFORM_PLANS_MANAGE],
+        roleBasedCanViewSuperAdminSections
+    );
     const canEditTenantSettings = canManageTenantSettings;
-    const canEditModules = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_MODULES_MANAGE])
-        : roleBasedCanEditModules;
-    const canViewModules = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_MODULES_READ, PERMISSION_TENANT_MODULES_MANAGE])
-        : roleBasedCanEditModules;
-    const canManageQuickReplies = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_QUICK_REPLIES_MANAGE])
-        : roleBasedCanManageQuickReplies;
-    const canViewQuickReplies = hasPermissionContext
-        ? hasAnyActorPermission([
+    const canEditModules = resolvePermissionFlag([PERMISSION_TENANT_MODULES_MANAGE], roleBasedCanEditModules);
+    const canViewModules = resolvePermissionFlag(
+        [PERMISSION_TENANT_MODULES_READ, PERMISSION_TENANT_MODULES_MANAGE],
+        roleBasedCanEditModules
+    );
+    const canManageQuickReplies = resolvePermissionFlag([PERMISSION_TENANT_QUICK_REPLIES_MANAGE], roleBasedCanManageQuickReplies);
+    const canViewQuickReplies = resolvePermissionFlag([
             PERMISSION_TENANT_QUICK_REPLIES_READ,
             PERMISSION_TENANT_QUICK_REPLIES_MANAGE,
             PERMISSION_TENANT_MODULES_READ,
             PERMISSION_TENANT_MODULES_MANAGE
-        ])
-        : roleBasedCanManageQuickReplies;
-    const canManageLabels = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_LABELS_MANAGE])
-        : roleBasedCanManageLabels;
-    const canViewLabels = hasPermissionContext
-        ? hasAnyActorPermission([
+        ],
+        roleBasedCanManageQuickReplies
+    );
+    const canManageLabels = resolvePermissionFlag([PERMISSION_TENANT_LABELS_MANAGE], roleBasedCanManageLabels);
+    const canViewLabels = resolvePermissionFlag([
             PERMISSION_TENANT_LABELS_READ,
             PERMISSION_TENANT_LABELS_MANAGE,
             PERMISSION_TENANT_MODULES_READ,
             PERMISSION_TENANT_MODULES_MANAGE
-        ])
-        : roleBasedCanManageLabels;
-    const canManageZones = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_ZONES_MANAGE])
-        : roleBasedCanManageZones;
-    const canViewZones = hasPermissionContext
-        ? hasAnyActorPermission([
+        ],
+        roleBasedCanManageLabels
+    );
+    const canManageZones = resolvePermissionFlag([PERMISSION_TENANT_ZONES_MANAGE], roleBasedCanManageZones);
+    const canViewZones = resolvePermissionFlag([
             PERMISSION_TENANT_ZONES_READ,
             PERMISSION_TENANT_ZONES_MANAGE
-        ])
-        : roleBasedCanManageZones;
-    const canViewAi = hasPermissionContext
-        ? hasAnyActorPermission([
+        ],
+        roleBasedCanManageZones
+    );
+    const canViewAi = resolvePermissionFlag([
             PERMISSION_TENANT_AI_READ,
             PERMISSION_TENANT_AI_MANAGE,
             PERMISSION_TENANT_INTEGRATIONS_READ,
             PERMISSION_TENANT_INTEGRATIONS_MANAGE
-        ])
-        : roleBasedCanViewAi;
-    const canManageAi = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_AI_MANAGE, PERMISSION_TENANT_INTEGRATIONS_MANAGE])
-        : roleBasedCanManageAi;
-    const canViewCommercialIntelligence = hasPermissionContext
-        ? hasAnyActorPermission([
+        ],
+        roleBasedCanViewAi
+    );
+    const canManageAi = resolvePermissionFlag(
+        [PERMISSION_TENANT_AI_MANAGE, PERMISSION_TENANT_INTEGRATIONS_MANAGE],
+        roleBasedCanManageAi
+    );
+    const canViewCommercialIntelligence = resolvePermissionFlag([
             PERMISSION_TENANT_COMMERCIAL_INTELLIGENCE_READ,
             PERMISSION_TENANT_COMMERCIAL_INTELLIGENCE_MANAGE
-        ])
-        : roleBasedCanViewCommercialIntelligence;
-    const canManageCommercialIntelligence = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_COMMERCIAL_INTELLIGENCE_MANAGE])
-        : roleBasedCanManageCommercialIntelligence;
-    const canViewCampaigns = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_CAMPAIGNS_READ, PERMISSION_TENANT_CAMPAIGNS_MANAGE])
-        : roleBasedCanViewCampaigns;
-    const canManageCampaigns = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_CAMPAIGNS_MANAGE])
-        : roleBasedCanManageCampaigns;
-    const canViewMetaAds = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_META_ADS_READ, PERMISSION_TENANT_META_ADS_MANAGE])
-        : roleBasedCanViewMetaAds;
-    const canManageMetaAds = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_META_ADS_MANAGE])
-        : roleBasedCanManageMetaAds;
-    const canViewMetaTemplates = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_META_TEMPLATES_READ, PERMISSION_TENANT_META_TEMPLATES_MANAGE])
-        : roleBasedCanViewMetaTemplates;
-    const canManageMetaTemplates = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_META_TEMPLATES_MANAGE])
-        : roleBasedCanManageMetaTemplates;
-    const canViewAutomations = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_AUTOMATIONS_READ, PERMISSION_TENANT_AUTOMATIONS_MANAGE])
-        : roleBasedCanViewAutomations;
-    const canManageAutomations = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_AUTOMATIONS_MANAGE])
-        : roleBasedCanManageAutomations;
-    const canViewSchedules = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_SCHEDULES_READ, PERMISSION_TENANT_SCHEDULES_MANAGE])
-        : roleBasedCanViewSchedules;
-    const canManageSchedules = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_SCHEDULES_MANAGE])
-        : roleBasedCanManageSchedules;
-    const canViewAuditLogs = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_AUDIT_READ])
-        : roleBasedCanViewAuditLogs;
-    const canViewEmailTemplates = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_EMAIL_TEMPLATES_READ, PERMISSION_TENANT_EMAIL_TEMPLATES_MANAGE])
-        : roleBasedCanViewEmailTemplates;
-    const canManageEmailTemplates = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_EMAIL_TEMPLATES_MANAGE])
-        : roleBasedCanManageEmailTemplates;
-    const canViewBrand = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_BRAND_READ, PERMISSION_TENANT_BRAND_MANAGE])
-        : roleBasedCanViewBrand;
-    const canManageBrand = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_BRAND_MANAGE])
-        : roleBasedCanManageBrand;
-    const canManageOwnProfile = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_PROFILE_MANAGE])
-        : roleBasedCanManageOwnProfile;
-    const canAssignAutonomousPatty = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_CHAT_ASSIGN_AUTONOMOUS])
-        : roleBasedCanAssignAutonomousPatty;
-    const canViewCustomers = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_CUSTOMERS_READ, PERMISSION_TENANT_CUSTOMERS_MANAGE])
-        : roleBasedCanManageCustomers;
-    const canManageCustomers = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_CUSTOMERS_MANAGE])
-        : roleBasedCanManageCustomers;
-    const canSelectCustomersForCampaigns = hasPermissionContext
-        ? hasAnyActorPermission([
+        ],
+        roleBasedCanViewCommercialIntelligence
+    );
+    const canManageCommercialIntelligence = resolvePermissionFlag(
+        [PERMISSION_TENANT_COMMERCIAL_INTELLIGENCE_MANAGE],
+        roleBasedCanManageCommercialIntelligence
+    );
+    const canViewCampaigns = resolvePermissionFlag(
+        [PERMISSION_TENANT_CAMPAIGNS_READ, PERMISSION_TENANT_CAMPAIGNS_MANAGE],
+        roleBasedCanViewCampaigns
+    );
+    const canManageCampaigns = resolvePermissionFlag([PERMISSION_TENANT_CAMPAIGNS_MANAGE], roleBasedCanManageCampaigns);
+    const canViewMetaAds = resolvePermissionFlag(
+        [PERMISSION_TENANT_META_ADS_READ, PERMISSION_TENANT_META_ADS_MANAGE],
+        roleBasedCanViewMetaAds
+    );
+    const canManageMetaAds = resolvePermissionFlag([PERMISSION_TENANT_META_ADS_MANAGE], roleBasedCanManageMetaAds);
+    const canViewMetaTemplates = resolvePermissionFlag(
+        [PERMISSION_TENANT_META_TEMPLATES_READ, PERMISSION_TENANT_META_TEMPLATES_MANAGE],
+        roleBasedCanViewMetaTemplates
+    );
+    const canManageMetaTemplates = resolvePermissionFlag([PERMISSION_TENANT_META_TEMPLATES_MANAGE], roleBasedCanManageMetaTemplates);
+    const canViewAutomations = resolvePermissionFlag(
+        [PERMISSION_TENANT_AUTOMATIONS_READ, PERMISSION_TENANT_AUTOMATIONS_MANAGE],
+        roleBasedCanViewAutomations
+    );
+    const canManageAutomations = resolvePermissionFlag([PERMISSION_TENANT_AUTOMATIONS_MANAGE], roleBasedCanManageAutomations);
+    const canViewSchedules = resolvePermissionFlag(
+        [PERMISSION_TENANT_SCHEDULES_READ, PERMISSION_TENANT_SCHEDULES_MANAGE],
+        roleBasedCanViewSchedules
+    );
+    const canManageSchedules = resolvePermissionFlag([PERMISSION_TENANT_SCHEDULES_MANAGE], roleBasedCanManageSchedules);
+    const canViewAuditLogs = resolvePermissionFlag([PERMISSION_TENANT_AUDIT_READ], roleBasedCanViewAuditLogs);
+    const canViewEmailTemplates = resolvePermissionFlag(
+        [PERMISSION_TENANT_EMAIL_TEMPLATES_READ, PERMISSION_TENANT_EMAIL_TEMPLATES_MANAGE],
+        roleBasedCanViewEmailTemplates
+    );
+    const canManageEmailTemplates = resolvePermissionFlag(
+        [PERMISSION_TENANT_EMAIL_TEMPLATES_MANAGE],
+        roleBasedCanManageEmailTemplates
+    );
+    const canViewBrand = resolvePermissionFlag(
+        [PERMISSION_TENANT_BRAND_READ, PERMISSION_TENANT_BRAND_MANAGE],
+        roleBasedCanViewBrand
+    );
+    const canManageBrand = resolvePermissionFlag([PERMISSION_TENANT_BRAND_MANAGE], roleBasedCanManageBrand);
+    const canManageOwnProfile = resolvePermissionFlag([PERMISSION_TENANT_PROFILE_MANAGE], roleBasedCanManageOwnProfile);
+    const canAssignAutonomousPatty = resolvePermissionFlag(
+        [PERMISSION_TENANT_CHAT_ASSIGN_AUTONOMOUS],
+        roleBasedCanAssignAutonomousPatty
+    );
+    const canViewCustomers = resolvePermissionFlag(
+        [PERMISSION_TENANT_CUSTOMERS_READ, PERMISSION_TENANT_CUSTOMERS_MANAGE],
+        roleBasedCanManageCustomers
+    );
+    const canManageCustomers = resolvePermissionFlag([PERMISSION_TENANT_CUSTOMERS_MANAGE], roleBasedCanManageCustomers);
+    const canSelectCustomersForCampaigns = resolvePermissionFlag([
             PERMISSION_TENANT_CAMPAIGNS_READ,
             PERMISSION_TENANT_CAMPAIGNS_MANAGE,
             PERMISSION_TENANT_CUSTOMERS_MANAGE
-        ])
-        : Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || roleBasedCanManageCustomers);
-    const canViewOperations = hasPermissionContext
-        ? hasAnyActorPermission([
+        ],
+        Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || roleBasedCanManageCustomers)
+    );
+    const canViewOperations = resolvePermissionFlag([
             PERMISSION_TENANT_CHAT_OPERATE,
             PERMISSION_TENANT_KPIS_READ,
             PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ,
             PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE,
             PERMISSION_TENANT_ASSIGNMENT_RULES_READ,
             PERMISSION_TENANT_ASSIGNMENT_RULES_MANAGE
-        ])
-        : Boolean(roleBasedCanManageTenantSettings || roleBasedCanManageUsers);
-    const canOperateChat = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_CHAT_OPERATE, PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ, PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE])
-        : Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || normalizedRole === 'seller' || noRoleContext);
-    const canManageAssignments = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE])
-        : Boolean(roleBasedCanManageTenantSettings || roleBasedCanManageUsers);
-    const canManageAssignmentRules = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_TENANT_ASSIGNMENT_RULES_MANAGE])
-        : Boolean(roleBasedCanManageTenantSettings || roleBasedCanManageUsers);
-    const canViewOwnDevices = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_DEVICES_VIEW_OWN])
-        : roleBasedCanViewOwnDevices;
-    const canRevokeOwnDevices = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_DEVICES_REVOKE_OWN])
-        : roleBasedCanRevokeOwnDevices;
-    const canViewAllDevices = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_DEVICES_VIEW_ALL])
-        : roleBasedCanViewAllDevices;
-    const canRevokeAllDevices = hasPermissionContext
-        ? hasAnyActorPermission([PERMISSION_DEVICES_REVOKE_ALL])
-        : roleBasedCanRevokeAllDevices;
+        ],
+        Boolean(roleBasedCanManageTenantSettings || roleBasedCanManageUsers)
+    );
+    const canOperateChat = resolvePermissionFlag(
+        [PERMISSION_TENANT_CHAT_OPERATE, PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ, PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE],
+        Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || normalizedRole === 'seller' || noRoleContext)
+    );
+    const canManageAssignments = resolvePermissionFlag(
+        [PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE],
+        Boolean(roleBasedCanManageTenantSettings || roleBasedCanManageUsers)
+    );
+    const canManageAssignmentRules = resolvePermissionFlag(
+        [PERMISSION_TENANT_ASSIGNMENT_RULES_MANAGE],
+        Boolean(roleBasedCanManageTenantSettings || roleBasedCanManageUsers)
+    );
+    const canViewOwnDevices = resolvePermissionFlag([PERMISSION_DEVICES_VIEW_OWN], roleBasedCanViewOwnDevices);
+    const canRevokeOwnDevices = resolvePermissionFlag([PERMISSION_DEVICES_REVOKE_OWN], roleBasedCanRevokeOwnDevices);
+    const canViewAllDevices = resolvePermissionFlag([PERMISSION_DEVICES_VIEW_ALL], roleBasedCanViewAllDevices);
+    const canRevokeAllDevices = resolvePermissionFlag([PERMISSION_DEVICES_REVOKE_ALL], roleBasedCanRevokeAllDevices);
 
     const canEditCatalog = canManageCatalog;
     const requiresTenantSelection = Boolean(effectiveIsSuperAdmin);
@@ -340,9 +324,15 @@ export default function useSaasAccessControl({
                 .map((entry) => String(entry || '').trim().toLowerCase())
                 .filter((entry) => Boolean(entry))
             : [];
-        const merged = fromCatalog.length > 0 ? fromCatalog : defaultRoleOptions;
-        return merged.length > 0 ? merged : ['seller'];
-    }, [accessCatalog?.actor?.assignableRoles, defaultRoleOptions]);
+        const merged = new Set(fromCatalog.length > 0 ? fromCatalog : defaultRoleOptions);
+        if (effectiveIsSuperAdmin || noRoleContext) {
+            [...baseRoleOptions, 'owner', 'admin', 'seller']
+                .map((entry) => String(entry || '').trim().toLowerCase())
+                .filter(Boolean)
+                .forEach((role) => merged.add(role));
+        }
+        return merged.size > 0 ? Array.from(merged) : ['seller'];
+    }, [accessCatalog?.actor?.assignableRoles, baseRoleOptions, defaultRoleOptions, effectiveIsSuperAdmin, noRoleContext]);
 
     const canEditOptionalAccess = Boolean(
         accessCatalog?.actor?.canEditOptionalAccess
