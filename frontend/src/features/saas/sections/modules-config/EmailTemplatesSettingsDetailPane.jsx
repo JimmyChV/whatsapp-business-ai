@@ -221,7 +221,6 @@ export default function EmailTemplatesSettingsDetailPane({
     requestJson,
     canViewEmailTemplates = false,
     canManageEmailTemplates = false,
-    canViewBrand = false,
     canManageBrand = false
 }) {
     const [templates, setTemplates] = React.useState([]);
@@ -230,6 +229,8 @@ export default function EmailTemplatesSettingsDetailPane({
     const [busy, setBusy] = React.useState(false);
     const [message, setMessage] = React.useState('');
     const [error, setError] = React.useState('');
+    const [brandError, setBrandError] = React.useState('');
+    const [brandUnavailable, setBrandUnavailable] = React.useState(false);
     const [selectedTemplate, setSelectedTemplate] = React.useState(null);
     const [draft, setDraft] = React.useState({ subject: '', bodyHtml: '' });
     const [previewHtml, setPreviewHtml] = React.useState('');
@@ -242,28 +243,32 @@ export default function EmailTemplatesSettingsDetailPane({
         if (!isVisible || typeof requestJson !== 'function') return;
         setLoading(true);
         setError('');
+        setBrandError('');
+        setBrandUnavailable(false);
         setMessage('');
         try {
-            const [templatesPayload, brandPayload] = await Promise.all([
-                requestJson('/api/tenant/email-templates', {
-                    method: 'GET',
-                    tenantIdOverride: settingsTenantId
-                }),
-                canViewBrand
-                    ? requestJson('/api/tenant/email-brand', {
-                        method: 'GET',
-                        tenantIdOverride: settingsTenantId
-                    })
-                    : Promise.resolve({ brand: EMPTY_BRAND })
-            ]);
+            const templatesPayload = await requestJson('/api/tenant/email-templates', {
+                method: 'GET',
+                tenantIdOverride: settingsTenantId
+            });
             setTemplates(Array.isArray(templatesPayload?.items) ? templatesPayload.items : []);
-            setBrand(normalizeBrand(brandPayload?.brand || {}));
         } catch (err) {
             setError(String(err?.message || err || 'No se pudieron cargar plantillas de correo.'));
+        }
+
+        try {
+            const brandPayload = await requestJson('/api/tenant/email-brand', {
+                method: 'GET',
+                tenantIdOverride: settingsTenantId
+            });
+            setBrand(normalizeBrand(brandPayload?.brand || {}));
+        } catch (err) {
+            setBrandUnavailable(true);
+            setBrandError(String(err?.message || err || 'No se pudo cargar identidad de marca.'));
         } finally {
             setLoading(false);
         }
-    }, [canViewBrand, isVisible, requestJson, settingsTenantId]);
+    }, [isVisible, requestJson, settingsTenantId]);
 
     React.useEffect(() => {
         void loadData();
@@ -275,6 +280,7 @@ export default function EmailTemplatesSettingsDetailPane({
 
     const uploadLogo = React.useCallback(async (file) => {
         if (!file || typeof requestJson !== 'function') return;
+        if (brandUnavailable) return;
         setBusy(true);
         setError('');
         setMessage('');
@@ -296,6 +302,7 @@ export default function EmailTemplatesSettingsDetailPane({
 
     const saveBrand = React.useCallback(async () => {
         if (typeof requestJson !== 'function') return;
+        if (brandUnavailable) return;
         setBusy(true);
         setError('');
         setMessage('');
@@ -440,7 +447,7 @@ export default function EmailTemplatesSettingsDetailPane({
             {error ? <div className="saas-admin-error-inline">{error}</div> : null}
             {message ? <div className="saas-admin-success-inline">{message}</div> : null}
 
-            <section className={`saas-admin-related-block saas-email-brand-card ${!canViewBrand ? 'is-locked' : ''}`.trim()}>
+            <section className={`saas-admin-related-block saas-email-brand-card ${brandUnavailable ? 'is-locked' : ''}`.trim()}>
                 <div className="saas-email-brand-hero">
                     <div className="saas-email-brand-hero__content">
                         <span className="saas-email-kicker">Identidad de marca</span>
@@ -455,9 +462,9 @@ export default function EmailTemplatesSettingsDetailPane({
                     </div>
                 </div>
 
-                {!canViewBrand ? (
+                {brandUnavailable ? (
                     <div className="saas-admin-empty-inline">
-                        No tienes permiso para ver identidad de marca. Solicita el permiso tenant.brand.read.
+                        {brandError || 'No se pudo cargar identidad de marca. La seccion seguira visible para que no pierdas contexto.'}
                     </div>
                 ) : (
                     <>

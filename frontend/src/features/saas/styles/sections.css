@@ -11602,6 +11602,7 @@ textarea:focus {
 .saas-email-brand-card {
   overflow: hidden;
   position: relative;
+  min-height: 230px;
   padding: 0;
   border-color: color-mix(in srgb, var(--saas-accent-primary) 34%, var(--saas-border-color));
   background:
@@ -11612,6 +11613,7 @@ textarea:focus {
 
 .saas-email-brand-card.is-locked {
   border-style: dashed;
+  min-height: 160px;
   opacity: 0.92;
 }
 

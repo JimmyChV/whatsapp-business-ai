@@ -401,7 +401,7 @@ function renderTemplate(template = {}, variables = {}, brandInput = {}) {
     const body = replaceVariables(template.bodyHtml || '', merged);
     const color = normalizeColor(merged.color_marca || brand.brandColor);
     const logo = text(brand.logoUrl)
-        ? `<img src="${escapeHtml(brand.logoUrl)}" alt="${escapeHtml(brand.companyName)}" style="max-height:54px;max-width:180px;object-fit:contain;" />`
+        ? `<img src="${escapeHtml(brand.logoUrl)}" alt="${escapeHtml(brand.companyName)}" width="148" style="display:block;width:148px;max-width:148px;height:auto;max-height:64px;border:0;outline:none;text-decoration:none;object-fit:contain;" />`
         : `<div style="width:54px;height:54px;border-radius:16px;background:${color};color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;">WA</div>`;
     const website = text(brand.websiteUrl || merged.website);
     const websiteHtml = website
