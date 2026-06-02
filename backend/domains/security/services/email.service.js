@@ -145,13 +145,29 @@ async function getTenantEmailConfig(tenantId = '') {
     }
 }
 
+async function renderTenantTemplateIfNeeded(tenantId = '', args = {}) {
+    const templateKey = String(args?.templateKey || args?.template_key || '').trim();
+    if (!templateKey) return args;
+    const emailTemplatesService = require('./email-templates.service');
+    const template = await emailTemplatesService.getTemplate(tenantId, templateKey);
+    const brand = await emailTemplatesService.getBrand(tenantId);
+    const rendered = emailTemplatesService.renderTemplate(template, args.variables || {}, brand);
+    return {
+        ...args,
+        subject: rendered.subject || args.subject,
+        text: args.text || rendered.text,
+        html: rendered.html
+    };
+}
+
 async function sendEmailForTenant(tenantId = '', args = {}) {
     const cleanTenantId = String(tenantId || '').trim();
+    const emailArgs = await renderTenantTemplateIfNeeded(cleanTenantId, args);
     const tenantConfig = await getTenantEmailConfig(cleanTenantId);
 
     if (tenantConfig && isEmailConfigured(tenantConfig)) {
         try {
-            return await sendEmailWithConfig(tenantConfig, args);
+            return await sendEmailWithConfig(tenantConfig, emailArgs);
         } catch (error) {
             console.warn('[Email] tenant SMTP failed, falling back to global SMTP', {
                 tenantId: cleanTenantId || null,
@@ -164,7 +180,7 @@ async function sendEmailForTenant(tenantId = '', args = {}) {
     if (!isEmailConfigured(getEmailConfig()) && !isProduction()) {
         return { skipped: 'smtp_not_configured' };
     }
-    return sendEmail(args);
+    return sendEmail(emailArgs);
 }
 
 module.exports = {

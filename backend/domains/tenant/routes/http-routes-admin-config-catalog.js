@@ -1,6 +1,7 @@
 ﻿const catalogSyncService = require('../services/catalog-sync.service');
 
 const emailService = require('../../security/services/email.service');
+const emailTemplatesService = require('../../security/services/email-templates.service');
 const {
     getStorageDriver,
     queryPostgres
@@ -76,6 +77,32 @@ function ensureTenantIntegrationsRead(req, tenantId, { isTenantAllowedForUser, h
 function ensureTenantIntegrationsManage(req, tenantId, { isTenantAllowedForUser, hasPermission, accessPolicyService }) {
     return isTenantAllowedForUser(req, tenantId)
         && hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_INTEGRATIONS_MANAGE);
+}
+
+function ensureEmailTemplatesRead(req, tenantId, { isTenantAllowedForUser, hasAnyPermission, accessPolicyService }) {
+    return isTenantAllowedForUser(req, tenantId)
+        && hasAnyPermission(req, [
+            accessPolicyService.PERMISSIONS.TENANT_EMAIL_TEMPLATES_READ,
+            accessPolicyService.PERMISSIONS.TENANT_EMAIL_TEMPLATES_MANAGE
+        ]);
+}
+
+function ensureEmailTemplatesManage(req, tenantId, { isTenantAllowedForUser, hasPermission, accessPolicyService }) {
+    return isTenantAllowedForUser(req, tenantId)
+        && hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_EMAIL_TEMPLATES_MANAGE);
+}
+
+function ensureBrandRead(req, tenantId, { isTenantAllowedForUser, hasAnyPermission, accessPolicyService }) {
+    return isTenantAllowedForUser(req, tenantId)
+        && hasAnyPermission(req, [
+            accessPolicyService.PERMISSIONS.TENANT_BRAND_READ,
+            accessPolicyService.PERMISSIONS.TENANT_BRAND_MANAGE
+        ]);
+}
+
+function ensureBrandManage(req, tenantId, { isTenantAllowedForUser, hasPermission, accessPolicyService }) {
+    return isTenantAllowedForUser(req, tenantId)
+        && hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_BRAND_MANAGE);
 }
 
 function isValidEmail(value = '') {
@@ -327,6 +354,158 @@ function registerTenantAdminConfigCatalogHttpRoutes({
             const errorMessage = String(error?.message || 'No se pudo enviar el correo de prueba.');
             console.log('[SMTP Test] resultado', { ok: false, error: errorMessage });
             return res.status(400).json({ ok: false, error: errorMessage });
+        }
+    });
+
+    app.get('/api/tenant/email-templates', async (req, res) => {
+        const tenantId = getRequestTenantId(req);
+        if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+        if (!ensureEmailTemplatesRead(req, tenantId, { isTenantAllowedForUser, hasAnyPermission, accessPolicyService })) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const items = await emailTemplatesService.listTemplates(tenantId);
+            return res.json({ ok: true, tenantId, items });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar plantillas de correo.') });
+        }
+    });
+
+    app.get('/api/tenant/email-templates/:key', async (req, res) => {
+        const tenantId = getRequestTenantId(req);
+        const templateKey = text(req.params?.key);
+        if (!tenantId || !templateKey) return res.status(400).json({ ok: false, error: 'tenantId/templateKey invalido.' });
+        if (!ensureEmailTemplatesRead(req, tenantId, { isTenantAllowedForUser, hasAnyPermission, accessPolicyService })) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const item = await emailTemplatesService.getTemplate(tenantId, templateKey);
+            return res.json({ ok: true, tenantId, item });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo cargar la plantilla.') });
+        }
+    });
+
+    app.put('/api/tenant/email-templates/:key', async (req, res) => {
+        const tenantId = getRequestTenantId(req);
+        const templateKey = text(req.params?.key);
+        if (!tenantId || !templateKey) return res.status(400).json({ ok: false, error: 'tenantId/templateKey invalido.' });
+        if (!ensureEmailTemplatesManage(req, tenantId, { isTenantAllowedForUser, hasPermission, accessPolicyService })) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const userId = text(req?.authContext?.user?.userId || req?.authContext?.user?.id);
+            const item = await emailTemplatesService.saveTemplate(tenantId, templateKey, req.body || {}, userId);
+            return res.json({ ok: true, tenantId, item });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar la plantilla.') });
+        }
+    });
+
+    app.delete('/api/tenant/email-templates/:key', async (req, res) => {
+        const tenantId = getRequestTenantId(req);
+        const templateKey = text(req.params?.key);
+        if (!tenantId || !templateKey) return res.status(400).json({ ok: false, error: 'tenantId/templateKey invalido.' });
+        if (!ensureEmailTemplatesManage(req, tenantId, { isTenantAllowedForUser, hasPermission, accessPolicyService })) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const item = await emailTemplatesService.resetTemplate(tenantId, templateKey);
+            return res.json({ ok: true, tenantId, item });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo restaurar la plantilla.') });
+        }
+    });
+
+    app.post('/api/tenant/email-templates/:key/preview', async (req, res) => {
+        const tenantId = getRequestTenantId(req);
+        const templateKey = text(req.params?.key);
+        if (!tenantId || !templateKey) return res.status(400).json({ ok: false, error: 'tenantId/templateKey invalido.' });
+        if (!ensureEmailTemplatesRead(req, tenantId, { isTenantAllowedForUser, hasAnyPermission, accessPolicyService })) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const template = req.body?.subject || req.body?.bodyHtml
+                ? (() => {
+                    const draft = { ...(emailTemplatesService.TEMPLATE_DEFINITIONS[templateKey] || {}) };
+                    const subject = text(req.body.subject);
+                    const bodyHtml = text(req.body.bodyHtml || req.body.body_html);
+                    return {
+                        ...draft,
+                        subject: subject || draft.subject,
+                        bodyHtml: bodyHtml || draft.bodyHtml
+                    };
+                })()
+                : await emailTemplatesService.getTemplate(tenantId, templateKey);
+            const brand = await emailTemplatesService.getBrand(tenantId);
+            const variables = {
+                ...emailTemplatesService.getSampleVariables(templateKey),
+                ...(req.body?.variables && typeof req.body.variables === 'object' ? req.body.variables : {})
+            };
+            const rendered = emailTemplatesService.renderTemplate(template, variables, brand);
+            return res.json({ ok: true, tenantId, templateKey, ...rendered });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo generar vista previa.') });
+        }
+    });
+
+    app.post('/api/tenant/email-templates/:key/test', async (req, res) => {
+        const tenantId = getRequestTenantId(req);
+        const templateKey = text(req.params?.key);
+        const to = text(req?.authContext?.user?.email || req?.body?.to);
+        if (!tenantId || !templateKey) return res.status(400).json({ ok: false, error: 'tenantId/templateKey invalido.' });
+        if (!to) return res.status(400).json({ ok: false, error: 'El usuario actual no tiene correo para la prueba.' });
+        if (!ensureEmailTemplatesManage(req, tenantId, { isTenantAllowedForUser, hasPermission, accessPolicyService })) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            await emailService.sendEmailForTenant(tenantId, {
+                to,
+                templateKey,
+                variables: {
+                    ...emailTemplatesService.getSampleVariables(templateKey),
+                    ...(req.body?.variables && typeof req.body.variables === 'object' ? req.body.variables : {})
+                }
+            });
+            return res.json({ ok: true, message: 'Correo de prueba enviado correctamente.' });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo enviar correo de prueba.') });
+        }
+    });
+
+    app.get('/api/tenant/email-brand', async (req, res) => {
+        const tenantId = getRequestTenantId(req);
+        if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+        if (!ensureBrandRead(req, tenantId, { isTenantAllowedForUser, hasAnyPermission, accessPolicyService })) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const brand = await emailTemplatesService.getBrand(tenantId);
+            return res.json({ ok: true, tenantId, brand });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar identidad de marca.') });
+        }
+    });
+
+    app.put('/api/tenant/email-brand', async (req, res) => {
+        const tenantId = getRequestTenantId(req);
+        if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+        if (!ensureBrandManage(req, tenantId, { isTenantAllowedForUser, hasPermission, accessPolicyService })) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const brand = await emailTemplatesService.upsertBrand(tenantId, req.body || {});
+            return res.json({ ok: true, tenantId, brand });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar identidad de marca.') });
         }
     });
 

@@ -168,7 +168,7 @@ function formatEmailDate(value = new Date()) {
     return date.toLocaleString('es-PE', { timeZone: 'America/Lima' });
 }
 
-async function sendDeviceEmail({ tenantId = '', to = '', subject = '', text: textBody = '', html = '' } = {}) {
+async function sendDeviceEmail({ tenantId = '', to = '', subject = '', text: textBody = '', html = '', templateKey = '', variables = {} } = {}) {
     const cleanTo = lower(to);
     const cleanTenantId = text(tenantId);
     if (!cleanTo || !cleanTenantId) return { skipped: true };
@@ -176,7 +176,9 @@ async function sendDeviceEmail({ tenantId = '', to = '', subject = '', text: tex
         to: cleanTo,
         subject,
         text: textBody,
-        html: html || textBody.replace(/\n/g, '<br/>')
+        html: html || textBody.replace(/\n/g, '<br/>'),
+        templateKey,
+        variables
     }).catch((error) => {
         console.warn('[DeviceAuth] email failed:', String(error?.message || error));
         return { skipped: true, error: String(error?.message || error) };
@@ -215,7 +217,15 @@ async function notifyDeviceRevoked({ device = {}, actorUserId = '', ipAddress = 
             tenantId: cleanTenantId,
             to: owner.email,
             subject,
-            text: lines.join('\n')
+            text: lines.join('\n'),
+            templateKey: revokedBySelf ? 'device_revoked_self' : 'device_revoked_admin',
+            variables: {
+                nombre: owner.name,
+                dispositivo: deviceName,
+                revocado_por: revokedBySelf ? owner.name : (actor.name || 'Administrador'),
+                fecha: date,
+                ip
+            }
         });
     }
 
@@ -232,7 +242,14 @@ async function notifyDeviceRevoked({ device = {}, actorUserId = '', ipAddress = 
             tenantId: cleanTenantId,
             to,
             subject: 'Aviso: dispositivo revocado por admin',
-            text: body
+            text: body,
+            templateKey: 'device_revoked_admin',
+            variables: {
+                nombre: owner.name || owner.email || owner.userId,
+                dispositivo: deviceName,
+                revocado_por: actor.name || 'Administrador',
+                fecha: date
+            }
         })));
     return { ok: true, notifiedAuthorizers: true };
 }
@@ -254,7 +271,13 @@ async function notifyDeviceReauthorized({ device = {} } = {}) {
                 `Hola ${owner.name},`,
                 `Tu dispositivo '${deviceName}' fue reautorizado exitosamente.`,
                 'Ya puedes usarlo para ingresar.'
-            ].join('\n')
+            ].join('\n'),
+            templateKey: 'device_reauthorized',
+            variables: {
+                nombre: owner.name,
+                dispositivo: deviceName,
+                fecha: formatEmailDate()
+            }
         });
     }
 
@@ -266,7 +289,13 @@ async function notifyDeviceReauthorized({ device = {} } = {}) {
             tenantId: cleanTenantId,
             to,
             subject: 'Aviso: dispositivo reautorizado',
-            text: body
+            text: body,
+            templateKey: 'device_reauthorized',
+            variables: {
+                nombre: owner.name || owner.email,
+                dispositivo: deviceName,
+                fecha: formatEmailDate()
+            }
         })));
     return { ok: true };
 }
@@ -631,7 +660,18 @@ async function sendOtpEmail({ user = {}, device = {}, code = '', ipAddress = '',
         to,
         subject,
         text: textBody,
-        html: htmlBody
+        html: htmlBody,
+        templateKey: reauthorization ? 'device_reauth_otp' : 'otp_device_verify',
+        variables: {
+            nombre: to,
+            nombre_destinatario: to,
+            usuario_solicitante: actorName || userName,
+            codigo_otp: code,
+            dispositivo: deviceName,
+            ip,
+            fecha: formatEmailDate(),
+            expiracion: `${OTP_TTL_MINUTES} minutos`
+        }
     })));
     const successful = results.filter((result) => result.status === 'fulfilled');
     if (!successful.length) {
@@ -826,7 +866,18 @@ async function notifyTenantOwnersDeviceApproved({ tenantId = '', device = {}, us
         `Dispositivo: ${text(device.deviceName || device.device_name) || text(device.deviceType || device.device_type) || 'Sin nombre'}`,
         `IP: ${text(device.ipAddress || device.ip_address) || 'No disponible'}`
     ].join('\n');
-    await Promise.allSettled(recipients.map((to) => emailService.sendEmailForTenant(cleanTenantId, { to, subject, text: body })));
+    await Promise.allSettled(recipients.map((to) => emailService.sendEmailForTenant(cleanTenantId, {
+        to,
+        subject,
+        text: body,
+        templateKey: 'device_approved',
+        variables: {
+            nombre: text(user.email || user.userEmail),
+            dispositivo: text(device.deviceName || device.device_name) || text(device.deviceType || device.device_type) || 'Sin nombre',
+            ip: text(device.ipAddress || device.ip_address) || 'No disponible',
+            fecha: formatEmailDate()
+        }
+    })));
     return { ok: true, count: recipients.length };
 }
 

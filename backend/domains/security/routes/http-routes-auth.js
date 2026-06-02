@@ -400,7 +400,13 @@
                 <p>Tu contraseña fue cambiada exitosamente.</p>
                 <p><strong>Fecha:</strong> ${changedAt}<br/><strong>IP:</strong> ${ip}</p>
                 <p>Si no fuiste tú, contacta al administrador inmediatamente.</p>
-            `
+            `,
+            templateKey: 'password_changed',
+            variables: {
+                nombre: profile.displayName,
+                fecha: changedAt,
+                ip
+            }
         }).catch((error) => {
             console.warn('[Auth] password changed email failed:', String(error?.message || error));
         });
@@ -415,7 +421,13 @@
                 html: `
                     <p>Aviso: <strong>${profile.displayName}</strong> (${profile.email}) cambió su contraseña.</p>
                     <p><strong>Fecha:</strong> ${changedAt}<br/><strong>IP:</strong> ${ip}</p>
-                `
+                `,
+                templateKey: 'password_changed',
+                variables: {
+                    nombre: `${profile.displayName} (${profile.email})`,
+                    fecha: changedAt,
+                    ip
+                }
             }).catch((error) => {
                 console.warn('[Auth] authorizer password notice failed:', String(error?.message || error));
             });

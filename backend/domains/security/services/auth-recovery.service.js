@@ -253,7 +253,16 @@ async function requestPasswordRecovery({ email = '', requestIp = '', requestId =
             to: cleanEmail,
             subject,
             text,
-            html
+            html,
+            templateKey: 'password_recovery',
+            variables: {
+                nombre: cleanEmail,
+                link_reset: code,
+                codigo_otp: code,
+                fecha: new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' }),
+                ip: requestIp || 'IP no disponible',
+                expiracion: `${Math.floor(RECOVERY_CODE_TTL_SEC / 60)} minutos`
+            }
         });
     } catch (error) {
         delivery = 'accepted';
