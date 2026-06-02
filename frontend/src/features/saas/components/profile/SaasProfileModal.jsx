@@ -55,7 +55,7 @@ function normalizeDeviceType(type = '') {
     return 'Desktop';
 }
 
-function PasswordField({ label, value, onChange, visible, onToggle, autoComplete }) {
+function PasswordField({ label, description, value, onChange, visible, onToggle, autoComplete }) {
     return (
         <label className="saas-profile-field">
             <span>{label}</span>
@@ -70,6 +70,7 @@ function PasswordField({ label, value, onChange, visible, onToggle, autoComplete
                     {visible ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
             </div>
+            {description ? <small className="saas-profile-field-help">{description}</small> : null}
         </label>
     );
 }
@@ -133,6 +134,16 @@ export default function SaasProfileModal({
             match: Boolean(next) && next === String(passwordDraft.confirmPassword || '')
         };
     }, [passwordDraft.newPassword, passwordDraft.confirmPassword]);
+    const passwordRuleStates = useMemo(() => {
+        const hasStartedTyping = String(passwordDraft.newPassword || '').length > 0;
+        const hasStartedConfirm = String(passwordDraft.confirmPassword || '').length > 0;
+        return {
+            length: !hasStartedTyping ? 'neutral' : (passwordChecks.length ? 'ok' : 'failed'),
+            number: !hasStartedTyping ? 'neutral' : (passwordChecks.number ? 'ok' : 'failed'),
+            uppercase: !hasStartedTyping ? 'neutral' : (passwordChecks.uppercase ? 'ok' : 'failed'),
+            match: !hasStartedConfirm ? 'neutral' : (passwordChecks.match ? 'ok' : 'failed')
+        };
+    }, [passwordChecks, passwordDraft.confirmPassword, passwordDraft.newPassword]);
 
     const canChangePassword = Boolean(passwordDraft.currentPassword)
         && Object.values(passwordChecks).every(Boolean)
@@ -348,6 +359,7 @@ export default function SaasProfileModal({
                                     <h4>Seguridad</h4>
                                     <PasswordField
                                         label="Contraseña actual"
+                                        description="Ingresa tu contraseña actual para confirmar tu identidad."
                                         value={passwordDraft.currentPassword}
                                         onChange={(value) => setPasswordDraft((prev) => ({ ...prev, currentPassword: value }))}
                                         visible={visiblePasswords.current}
@@ -356,6 +368,7 @@ export default function SaasProfileModal({
                                     />
                                     <PasswordField
                                         label="Nueva contraseña"
+                                        description="Elige una contraseña segura que no hayas usado antes."
                                         value={passwordDraft.newPassword}
                                         onChange={(value) => setPasswordDraft((prev) => ({ ...prev, newPassword: value }))}
                                         visible={visiblePasswords.next}
@@ -363,7 +376,8 @@ export default function SaasProfileModal({
                                         autoComplete="new-password"
                                     />
                                     <PasswordField
-                                        label="Confirmar"
+                                        label="Confirmar nueva contraseña"
+                                        description="Escribe nuevamente la nueva contraseña para verificar que sea correcta."
                                         value={passwordDraft.confirmPassword}
                                         onChange={(value) => setPasswordDraft((prev) => ({ ...prev, confirmPassword: value }))}
                                         visible={visiblePasswords.confirm}
@@ -372,8 +386,10 @@ export default function SaasProfileModal({
                                     />
                                     <div className="saas-profile-password-rules">
                                         {PASSWORD_RULES.map((rule) => (
-                                            <span key={rule.key} className={passwordChecks[rule.key] ? 'is-ok' : 'is-pending'}>
-                                                {passwordChecks[rule.key] ? <Check size={13} /> : <X size={13} />}
+                                            <span key={rule.key} className={`is-${passwordRuleStates[rule.key] || 'neutral'}`}>
+                                                {passwordRuleStates[rule.key] === 'neutral'
+                                                    ? <em aria-hidden="true">○</em>
+                                                    : (passwordChecks[rule.key] ? <Check size={13} /> : <X size={13} />)}
                                                 {rule.label}
                                             </span>
                                         ))}
@@ -396,21 +412,27 @@ export default function SaasProfileModal({
                                                     {deviceIcon(device.deviceType)}
                                                 </div>
                                                 <div>
-                                                    <strong>{device.deviceName || normalizeDeviceType(device.deviceType)}</strong>
+                                                    <strong className="saas-profile-device-title">
+                                                        {device.deviceName || normalizeDeviceType(device.deviceType)}
+                                                        {device.isCurrent ? <span className="saas-device-badge saas-device-badge--current">Este dispositivo</span> : null}
+                                                    </strong>
                                                     <span>
-                                                        {device.isCurrent ? 'Este dispositivo · ' : ''}
                                                         {normalizeDeviceType(device.deviceType)} · Última vez: {formatDate(device.lastSeenAt)}
                                                     </span>
                                                     <small>{device.ipAddress || 'IP no registrada'}</small>
                                                 </div>
-                                                <button
-                                                    type="button"
-                                                    className="saas-btn saas-header-btn saas-header-btn--secondary"
-                                                    disabled={saving || device.isCurrent}
-                                                    onClick={() => handleRevokeDevice(device.deviceId)}
-                                                >
-                                                    Revocar
-                                                </button>
+                                                {device.isCurrent ? (
+                                                    <span className="saas-profile-current-device-text">Dispositivo actual</span>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        className="saas-btn saas-header-btn saas-header-btn--secondary"
+                                                        disabled={saving}
+                                                        onClick={() => handleRevokeDevice(device.deviceId)}
+                                                    >
+                                                        Revocar
+                                                    </button>
+                                                )}
                                             </article>
                                         ))}
                                     </div>

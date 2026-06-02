@@ -673,7 +673,7 @@
   inset: 0;
   z-index: 120;
   padding: clamp(12px, 3vw, 32px);
-  background: rgba(15, 23, 42, 0.28);
+  background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(6px);
   display: grid;
   place-items: center;
@@ -901,6 +901,14 @@
   color: var(--saas-text-secondary);
 }
 
+.saas-profile-field-help {
+  margin-top: -2px;
+  color: var(--saas-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
 .saas-profile-password-rules {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -917,14 +925,26 @@
   font-size: 0.86rem;
 }
 
+.saas-profile-password-rules em {
+  font-style: normal;
+  font-size: 14px;
+  line-height: 1;
+}
+
 .saas-profile-password-rules .is-ok {
   color: #08784f;
   background: rgba(29, 158, 117, 0.12);
 }
 
+.saas-profile-password-rules .is-failed,
 .saas-profile-password-rules .is-pending {
   color: #b42318;
   background: rgba(220, 38, 38, 0.08);
+}
+
+.saas-profile-password-rules .is-neutral {
+  color: var(--saas-text-secondary);
+  background: color-mix(in srgb, var(--saas-bg-input) 86%, #94a3b8 14%);
 }
 
 .saas-profile-alert {
@@ -982,9 +1002,23 @@
   gap: 3px;
 }
 
+.saas-profile-device-title {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .saas-profile-device span,
 .saas-profile-device small {
   color: var(--saas-text-secondary);
+}
+
+.saas-profile-current-device-text {
+  justify-self: end;
+  color: var(--saas-text-secondary);
+  font-size: 0.84rem;
+  font-weight: 800;
 }
 
 .saas-profile-session-box {
