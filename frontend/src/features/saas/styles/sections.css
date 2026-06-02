@@ -11913,16 +11913,124 @@ textarea:focus {
   border: 1px dashed var(--saas-border-color);
   border-radius: 16px;
   padding: 12px;
+  display: grid;
+  gap: 12px;
+  background: color-mix(in srgb, var(--saas-bg-elevated) 72%, #fff);
 }
 
-.saas-email-variable-list,
+.saas-email-variable-panel__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.saas-email-variable-groups {
+  display: grid;
+  gap: 12px;
+}
+
+.saas-email-variable-group {
+  display: grid;
+  gap: 8px;
+}
+
+.saas-email-variable-group__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--saas-border-color);
+  border-radius: 14px;
+  background: var(--saas-bg-surface);
+}
+
+.saas-email-variable-group__title span {
+  font-weight: 900;
+  color: var(--saas-text-primary);
+}
+
+.saas-email-variable-group__title small {
+  font-size: 0.72rem;
+}
+
+.saas-email-variable-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.saas-email-variable-card {
+  display: grid;
+  grid-template-columns: minmax(132px, 0.58fr) minmax(0, 1fr) 38px;
+  align-items: center;
+  gap: 10px;
+  padding: 9px;
+  border: 1px solid var(--saas-border-color);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--saas-bg-surface) 94%, #fff);
+}
+
+.saas-email-variable-token {
+  min-height: 30px;
+  width: 100%;
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: 0.76rem;
+  color: var(--saas-text-primary);
+  background: color-mix(in srgb, var(--saas-bg-muted) 72%, #fff);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.saas-email-variable-card__body {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.saas-email-variable-card__body strong {
+  color: var(--saas-text-primary);
+  font-size: 0.88rem;
+}
+
+.saas-email-variable-card__body small,
+.saas-email-variable-card__body em,
+.saas-email-variable-card__body span {
+  min-width: 0;
+  color: var(--saas-text-secondary);
+  font-size: 0.74rem;
+  line-height: 1.25;
+}
+
+.saas-email-variable-card__body em {
+  font-style: normal;
+  color: color-mix(in srgb, var(--saas-text-secondary) 82%, var(--saas-success));
+}
+
+.saas-email-variable-add {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border-color: color-mix(in srgb, var(--saas-success) 30%, var(--saas-border-color));
+  color: var(--saas-success);
+  background: color-mix(in srgb, var(--saas-success) 12%, #fff);
+  font-weight: 900;
+}
+
 .saas-email-variable-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
 }
 
-.saas-email-variable-list button,
+.saas-email-variable-actions span {
+  font-size: 0.78rem;
+  font-weight: 900;
+  color: var(--saas-text-secondary);
+}
+
 .saas-email-variable-actions button {
   min-height: 32px;
   border-radius: 999px;
@@ -11957,6 +12065,14 @@ textarea:focus {
   .saas-email-brand-grid,
   .saas-email-editor__grid {
     grid-template-columns: 1fr;
+  }
+
+  .saas-email-variable-card {
+    grid-template-columns: 1fr 38px;
+  }
+
+  .saas-email-variable-token {
+    grid-column: 1 / -1;
   }
 
   .saas-email-template-card {

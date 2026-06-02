@@ -18,6 +18,125 @@ function insertAtCursor(source = '', insert = '', start = 0, end = 0) {
     return `${source.slice(0, safeStart)}${insert}${source.slice(safeEnd)}`;
 }
 
+const VARIABLE_GROUP_ORDER = [
+    'Marca del tenant',
+    'Autorizador',
+    'Destinatario',
+    'Usuario y dispositivo',
+    'Seguridad',
+    'Datos del sistema'
+];
+
+const VARIABLE_FALLBACK_META = {
+    empresa: {
+        group: 'Marca del tenant',
+        label: 'Empresa',
+        description: 'Nombre comercial que aparece en el correo.',
+        source: 'Identidad de marca del tenant'
+    },
+    plataforma: {
+        group: 'Marca del tenant',
+        label: 'Plataforma',
+        description: 'Nombre del producto o panel que envia el correo.',
+        source: 'Valor del sistema'
+    },
+    'año': {
+        group: 'Marca del tenant',
+        label: 'Año actual',
+        description: 'Año usado en el footer legal del correo.',
+        source: 'Fecha actual del servidor'
+    },
+    color_marca: {
+        group: 'Marca del tenant',
+        label: 'Color de marca',
+        description: 'Color principal usado en el correo.',
+        source: 'Identidad de marca del tenant'
+    },
+    website: {
+        group: 'Marca del tenant',
+        label: 'Sitio web',
+        description: 'URL corporativa del footer.',
+        source: 'Identidad de marca del tenant'
+    },
+    nombre: {
+        group: 'Destinatario',
+        label: 'Nombre del destinatario',
+        description: 'Persona que recibe este correo. Puede variar segun la plantilla.',
+        source: 'Usuario, owner o autorizador del flujo'
+    },
+    nombre_destinatario: {
+        group: 'Autorizador',
+        label: 'Autorizador destinatario',
+        description: 'Persona autorizada que recibe el codigo.',
+        source: 'Autorizadores del tenant u owner'
+    },
+    usuario_solicitante: {
+        group: 'Usuario y dispositivo',
+        label: 'Usuario solicitante',
+        description: 'Usuario que intenta entrar o pide reautorizar.',
+        source: 'Usuario autenticado que dispara el flujo'
+    },
+    codigo_otp: {
+        group: 'Seguridad',
+        label: 'Codigo OTP',
+        description: 'Codigo temporal de 6 digitos.',
+        source: 'Generado por el flujo de seguridad'
+    },
+    dispositivo: {
+        group: 'Usuario y dispositivo',
+        label: 'Dispositivo',
+        description: 'Nombre o tipo del dispositivo involucrado.',
+        source: 'Sesion de dispositivo'
+    },
+    ip: {
+        group: 'Seguridad',
+        label: 'IP de acceso',
+        description: 'IP desde donde se hizo la accion.',
+        source: 'Request HTTP'
+    },
+    fecha: {
+        group: 'Seguridad',
+        label: 'Fecha del evento',
+        description: 'Momento en que ocurrio la accion.',
+        source: 'Servidor'
+    },
+    expiracion: {
+        group: 'Seguridad',
+        label: 'Expiracion',
+        description: 'Tiempo de validez del codigo o enlace.',
+        source: 'Configuracion del flujo'
+    }
+};
+
+function normalizeVariable(variable = {}) {
+    const key = text(variable.key);
+    const fallback = VARIABLE_FALLBACK_META[key] || {};
+    return {
+        key,
+        group: variable.group || fallback.group || 'Datos del sistema',
+        label: variable.label || fallback.label || key,
+        description: variable.description || fallback.description || 'Valor disponible para esta plantilla.',
+        source: variable.source || fallback.source || 'Flujo que envia el correo',
+        example: variable.example || ''
+    };
+}
+
+function groupVariables(variables = []) {
+    const groups = new Map();
+    variables.map(normalizeVariable).forEach((variable) => {
+        if (!variable.key) return;
+        if (!groups.has(variable.group)) groups.set(variable.group, []);
+        groups.get(variable.group).push(variable);
+    });
+    return Array.from(groups.entries())
+        .map(([group, items]) => ({ group, items }))
+        .sort((a, b) => {
+            const aIndex = VARIABLE_GROUP_ORDER.indexOf(a.group);
+            const bIndex = VARIABLE_GROUP_ORDER.indexOf(b.group);
+            return (aIndex === -1 ? 99 : aIndex) - (bIndex === -1 ? 99 : bIndex);
+        });
+}
+
 function TemplateCard({ item, selected, canManage, onEdit, onPreview }) {
     return (
         <article className={`saas-email-template-card ${selected ? 'is-selected' : ''}`.trim()}>
@@ -62,6 +181,7 @@ function TemplateEditorModal({
     const textareaRef = React.useRef(null);
     const subjectRef = React.useRef(null);
     const variables = Array.isArray(template?.variables) ? template.variables : [];
+    const groupedVariables = React.useMemo(() => groupVariables(variables), [variables]);
 
     const insertVariable = React.useCallback((variableKey) => {
         const token = `{{${variableKey}}}`;
@@ -130,34 +250,70 @@ function TemplateEditorModal({
                         </label>
 
                         <div className="saas-email-variable-panel">
-                            <div>
-                                <strong>Variables disponibles</strong>
-                                <small>Click en una variable para insertarla en el cuerpo.</small>
+                            <div className="saas-email-variable-panel__header">
+                                <div>
+                                    <strong>Variables disponibles</strong>
+                                    <small>Ordenadas por origen. Click en + para insertarla en el cuerpo.</small>
+                                </div>
                             </div>
-                            <div className="saas-email-variable-list">
-                                {variables.map((variable) => (
-                                    <button
-                                        key={variable.key}
-                                        type="button"
-                                        disabled={!canManage}
-                                        onClick={() => insertVariable(variable.key)}
-                                        title={variable.description || variable.key}
-                                    >
-                                        {`{{${variable.key}}}`}
-                                    </button>
+
+                            <div className="saas-email-variable-groups">
+                                {groupedVariables.map(({ group, items }) => (
+                                    <section key={group} className="saas-email-variable-group">
+                                        <div className="saas-email-variable-group__title">
+                                            <span>{group}</span>
+                                            <small>{items.length} variables</small>
+                                        </div>
+                                        <div className="saas-email-variable-grid">
+                                            {items.map((variable) => (
+                                                <article key={variable.key} className="saas-email-variable-card">
+                                                    <button
+                                                        type="button"
+                                                        className="saas-email-variable-token"
+                                                        disabled={!canManage}
+                                                        onClick={() => insertVariable(variable.key)}
+                                                        title={`Insertar {{${variable.key}}}`}
+                                                    >
+                                                        {`{{${variable.key}}}`}
+                                                    </button>
+                                                    <div className="saas-email-variable-card__body">
+                                                        <strong>{variable.label}</strong>
+                                                        <small>{variable.description}</small>
+                                                        <em>Origen: {variable.source}</em>
+                                                        {variable.example ? <span>Ejemplo: {variable.example}</span> : null}
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        className="saas-email-variable-add"
+                                                        disabled={!canManage}
+                                                        onClick={() => insertVariable(variable.key)}
+                                                        aria-label={`Insertar {{${variable.key}}}`}
+                                                    >
+                                                        +
+                                                    </button>
+                                                </article>
+                                            ))}
+                                        </div>
+                                    </section>
                                 ))}
                             </div>
+
                             <div className="saas-email-variable-actions">
-                                {variables.slice(0, 6).map((variable) => (
-                                    <button
-                                        key={`subject_${variable.key}`}
-                                        type="button"
-                                        disabled={!canManage}
-                                        onClick={() => insertSubjectVariable(variable.key)}
-                                    >
-                                        + asunto {`{{${variable.key}}}`}
-                                    </button>
-                                ))}
+                                <span>Insertar en asunto</span>
+                                {variables.slice(0, 6).map((variable) => {
+                                    const normalized = normalizeVariable(variable);
+                                    return (
+                                        <button
+                                            key={`subject_${variable.key}`}
+                                            type="button"
+                                            disabled={!canManage}
+                                            onClick={() => insertSubjectVariable(variable.key)}
+                                            title={normalized.label}
+                                        >
+                                            + {`{{${variable.key}}}`}
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
                     </section>
