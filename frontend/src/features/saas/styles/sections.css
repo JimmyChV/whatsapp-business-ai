@@ -11601,6 +11601,59 @@ textarea:focus {
 
 .saas-email-brand-card {
   overflow: hidden;
+  position: relative;
+  padding: 0;
+  border-color: color-mix(in srgb, var(--saas-accent-primary) 34%, var(--saas-border-color));
+  background:
+    radial-gradient(circle at 14% 18%, color-mix(in srgb, var(--saas-accent-primary) 14%, transparent), transparent 30%),
+    linear-gradient(135deg, color-mix(in srgb, var(--saas-bg-surface) 92%, var(--saas-accent-primary)), var(--saas-bg-surface));
+  box-shadow: 0 22px 48px rgba(15, 23, 42, 0.08);
+}
+
+.saas-email-brand-card.is-locked {
+  border-style: dashed;
+  opacity: 0.92;
+}
+
+.saas-email-brand-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  padding: 18px 20px;
+  border-bottom: 1px solid color-mix(in srgb, var(--saas-accent-primary) 22%, var(--saas-border-color));
+}
+
+.saas-email-brand-hero__content {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.saas-email-kicker {
+  width: fit-content;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--saas-accent-primary) 14%, var(--saas-bg-surface));
+  color: var(--saas-accent-primary);
+  border: 1px solid color-mix(in srgb, var(--saas-accent-primary) 30%, var(--saas-border-color));
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.saas-email-brand-hero h4 {
+  margin: 0;
+  color: var(--saas-text-primary);
+  font-size: clamp(1.1rem, 1vw + 0.9rem, 1.45rem);
+  line-height: 1.15;
+}
+
+.saas-email-brand-hero small {
+  max-width: 720px;
+  color: var(--saas-text-secondary);
+  line-height: 1.45;
 }
 
 .saas-email-brand-card__head,
@@ -11621,6 +11674,10 @@ textarea:focus {
   min-width: 0;
 }
 
+.saas-email-brand-card__head {
+  padding: 14px 20px 0;
+}
+
 .saas-email-brand-preview {
   width: 70px;
   height: 70px;
@@ -11636,6 +11693,14 @@ textarea:focus {
   font-weight: 900;
 }
 
+.saas-email-brand-preview--hero {
+  width: 96px;
+  height: 96px;
+  border-radius: 28px;
+  font-size: 1.25rem;
+  flex: 0 0 auto;
+}
+
 .saas-email-brand-preview img {
   width: 100%;
   height: 100%;
@@ -11647,6 +11712,7 @@ textarea:focus {
   grid-template-columns: minmax(220px, 280px) 1fr;
   gap: 16px;
   align-items: start;
+  padding: 14px 20px 20px;
 }
 
 .saas-email-brand-upload,

@@ -440,15 +440,31 @@ export default function EmailTemplatesSettingsDetailPane({
             {error ? <div className="saas-admin-error-inline">{error}</div> : null}
             {message ? <div className="saas-admin-success-inline">{message}</div> : null}
 
-            {canViewBrand ? (
-                <section className="saas-admin-related-block saas-email-brand-card">
+            <section className={`saas-admin-related-block saas-email-brand-card ${!canViewBrand ? 'is-locked' : ''}`.trim()}>
+                <div className="saas-email-brand-hero">
+                    <div className="saas-email-brand-hero__content">
+                        <span className="saas-email-kicker">Identidad de marca</span>
+                        <h4>Personaliza como se ven tus correos corporativos</h4>
+                        <small>
+                            Define logo, color, empresa, footer y website para que OTP, seguridad y recuperacion
+                            salgan con la identidad correcta del tenant.
+                        </small>
+                    </div>
+                    <div className="saas-email-brand-preview saas-email-brand-preview--hero" style={{ '--brand-color': brand.brandColor || '#1D9E75' }}>
+                        {brand.logoUrl ? <img src={brand.logoUrl} alt={brand.companyName || 'Logo'} /> : <span>WA</span>}
+                    </div>
+                </div>
+
+                {!canViewBrand ? (
+                    <div className="saas-admin-empty-inline">
+                        No tienes permiso para ver identidad de marca. Solicita el permiso tenant.brand.read.
+                    </div>
+                ) : (
+                    <>
                     <div className="saas-email-brand-card__head">
                         <div>
-                            <h4>Identidad de marca</h4>
-                            <small>Asi se veran tus correos corporativos.</small>
-                        </div>
-                        <div className="saas-email-brand-preview" style={{ '--brand-color': brand.brandColor || '#1D9E75' }}>
-                            {brand.logoUrl ? <img src={brand.logoUrl} alt={brand.companyName || 'Logo'} /> : <span>WA</span>}
+                            <strong>Configuracion de marca</strong>
+                            <small>Ajusta los datos visibles en el layout base del correo.</small>
                         </div>
                     </div>
 
@@ -528,8 +544,9 @@ export default function EmailTemplatesSettingsDetailPane({
                             ) : null}
                         </div>
                     </div>
-                </section>
-            ) : null}
+                    </>
+                )}
+            </section>
 
             <section className="saas-admin-related-block saas-email-templates-list">
                 <div className="saas-admin-pane-header">
