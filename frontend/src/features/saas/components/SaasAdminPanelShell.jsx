@@ -40,6 +40,7 @@ export default function SaasAdminPanelShell({
   onOpenWhatsAppOperation,
   buildApiHeaders,
   refreshCurrentUserPermissions,
+  handleSwitchTenant,
   activeTenantId,
   canManageSaas,
   userRole,
@@ -117,6 +118,7 @@ export default function SaasAdminPanelShell({
             onOpenWhatsAppOperation={onOpenWhatsAppOperation}
             buildApiHeaders={buildApiHeaders}
             refreshCurrentUserPermissions={refreshCurrentUserPermissions}
+            handleSwitchTenant={handleSwitchTenant}
             activeTenantId={activeTenantId}
             canManageSaas={canManageSaas}
             userRole={userRole}

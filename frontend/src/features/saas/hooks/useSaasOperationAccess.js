@@ -10,8 +10,10 @@ export default function useSaasOperationAccess({
     onOpenWhatsAppOperation
 } = {}) {
     const operationTenantId = useMemo(() => {
-        if (requiresTenantSelection) return String(settingsTenantId || '').trim();
-        return String(tenantScopeId || settingsTenantId || activeTenantId || '').trim();
+        const selectedTenant = String(settingsTenantId || '').trim();
+        if (selectedTenant) return selectedTenant;
+        if (requiresTenantSelection) return '';
+        return String(tenantScopeId || activeTenantId || '').trim();
     }, [activeTenantId, requiresTenantSelection, settingsTenantId, tenantScopeId]);
 
     const hasActiveModuleForOperation = useMemo(() => Boolean(
@@ -24,6 +26,7 @@ export default function useSaasOperationAccess({
         typeof onOpenWhatsAppOperation === 'function'
         && canOperateChat
         && operationTenantId
+        && operationTenantId !== 'default'
     ), [canOperateChat, onOpenWhatsAppOperation, operationTenantId]);
 
     return {

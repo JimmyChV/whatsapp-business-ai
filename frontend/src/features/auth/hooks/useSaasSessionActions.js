@@ -368,6 +368,11 @@ export function useSaasSessionActions({
 
     const targetTenantId = String(nextTenantId || '').trim();
     const currentTenantId = String(current?.user?.tenantId || saasRuntimeRef.current?.tenant?.id || '').trim();
+    if (targetTenantId === 'default') {
+      const error = new Error('Default no es un tenant operativo. Selecciona una empresa real.');
+      setTenantSwitchError(error.message);
+      throw error;
+    }
     if (!targetTenantId || targetTenantId === currentTenantId) return;
 
     setTenantSwitchError('');
@@ -404,11 +409,14 @@ export function useSaasSessionActions({
       setWaModules([]);
       setSelectedWaModule(null);
       setWaModuleError('');
+      await clearChatLocalCache();
       if (socket.connected) socket.disconnect();
       setIsConnected(false);
       resetWorkspaceState();
+      return nextSession;
     } catch (error) {
       setTenantSwitchError(String(error?.message || 'No se pudo cambiar de empresa.'));
+      throw error;
     } finally {
       setTenantSwitchBusy(false);
     }

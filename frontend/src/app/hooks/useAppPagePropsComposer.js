@@ -81,6 +81,7 @@ export default function useAppPagePropsComposer({
       onOpenWhatsAppOperation: handlersBlock.handleOpenWhatsAppOperation,
       buildApiHeaders: sessionBlock.buildApiHeaders,
       refreshCurrentUserPermissions: sessionBlock.refreshCurrentUserPermissions,
+      handleSwitchTenant: sessionBlock.handleSwitchTenant,
       activeTenantId: sessionBlock.tenantScopeId,
       canManageSaas: sessionBlock.canManageSaas,
       userRole: sessionBlock.saasUserRole,

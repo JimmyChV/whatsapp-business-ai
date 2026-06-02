@@ -150,6 +150,7 @@ export default function useSaasPanelActionContexts(input = {}) {
             actions: {
                 requestJson: c.requestJson,
                 onOpenWhatsAppOperation: c.onOpenWhatsAppOperation,
+                handleSwitchTenant: c.handleSwitchTenant,
                 operationTenantId: operationAccess.operationTenantId,
                 tenantScopeId: c.tenantScopeId,
                 activeTenantId: c.activeTenantId,

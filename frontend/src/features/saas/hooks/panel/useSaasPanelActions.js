@@ -4,6 +4,7 @@ import { uploadImageAsset } from '../../helpers';
 export default function useSaasPanelActions({
     requestJson,
     onOpenWhatsAppOperation,
+    handleSwitchTenant,
     operationTenantId = '',
     tenantScopeId = '',
     activeTenantId = '',
@@ -39,11 +40,31 @@ export default function useSaasPanelActions({
         }
     }, [setBusy, setError]);
 
-    const handleOpenOperation = useCallback(() => {
+    const handleOpenOperation = useCallback(async () => {
         if (typeof onOpenWhatsAppOperation !== 'function') return;
         const cleanTenantId = String(operationTenantId || tenantScopeId || activeTenantId || '').trim();
-        onOpenWhatsAppOperation('', { tenantId: cleanTenantId || undefined });
-    }, [activeTenantId, onOpenWhatsAppOperation, operationTenantId, tenantScopeId]);
+        const currentTenantId = String(activeTenantId || tenantScopeId || '').trim();
+        if (!cleanTenantId || cleanTenantId === 'default') {
+            setError('Default no es un tenant operativo. Selecciona una empresa real.');
+            return;
+        }
+
+        setError('');
+        setBusy(true);
+        try {
+            if (cleanTenantId !== currentTenantId) {
+                if (typeof handleSwitchTenant !== 'function') {
+                    throw new Error('No se pudo cambiar de empresa antes de abrir el chat.');
+                }
+                await handleSwitchTenant(cleanTenantId);
+            }
+            onOpenWhatsAppOperation('', { tenantId: cleanTenantId });
+        } catch (err) {
+            setError(String(err?.message || err || 'No tienes acceso a esa empresa.'));
+        } finally {
+            setBusy(false);
+        }
+    }, [activeTenantId, handleSwitchTenant, onOpenWhatsAppOperation, operationTenantId, setBusy, setError, tenantScopeId]);
 
     const handleFormImageUpload = useCallback(async ({ file, scope, tenantId, onUploaded }) => {
         if (!file) return;
