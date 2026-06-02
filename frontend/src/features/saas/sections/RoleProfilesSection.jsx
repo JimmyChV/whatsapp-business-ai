@@ -5,12 +5,6 @@ import {
     buildPermissionMatrixGroups
 } from '../helpers/permissionMatrix.helpers';
 
-const ROLE_DISPLAY_LABELS = Object.freeze({
-    seller: 'Vendedor',
-    admin: 'Administrador',
-    owner: 'Owner'
-});
-
 const OPTIONAL_PERMISSION_CATEGORIES = Object.freeze([
     {
         id: 'customers',
@@ -90,7 +84,9 @@ const OPTIONAL_PERMISSION_CATEGORIES = Object.freeze([
 
 function getRoleDisplayLabel(role = '', fallback = '') {
     const cleanRole = String(role || '').trim().toLowerCase();
-    return ROLE_DISPLAY_LABELS[cleanRole] || String(fallback || cleanRole || 'Rol');
+    const cleanFallback = String(fallback || '').trim();
+    if (cleanFallback && cleanFallback.toLowerCase() !== cleanRole) return cleanFallback;
+    return cleanFallback || cleanRole || 'Rol';
 }
 
 function PermissionList({ title, permissions = [], permissionLabelMap }) {
@@ -186,6 +182,7 @@ function RoleProfilesSection(props = {}) {
         permissionLabelMap,
         rolePermissionOptions = [],
         roleForm = {},
+        setRoleForm,
         toggleRolePermission,
         saveRoleProfile,
         cancelRoleEdit,
@@ -315,6 +312,30 @@ function RoleProfilesSection(props = {}) {
 
         return (
             <>
+                <div className="saas-admin-related-block">
+                    <h4>Nombre visible del rol</h4>
+                    <div className="saas-admin-empty-inline">
+                        Este nombre se muestra en Usuarios y en el panel. El codigo interno se mantiene estable para no romper permisos ni sesiones.
+                    </div>
+                    <div className="saas-admin-form-row">
+                        <label className="saas-admin-field">
+                            <span>Nombre visible</span>
+                            <input
+                                value={roleForm.label || ''}
+                                onChange={(event) => setRoleForm?.((prev) => ({ ...prev, label: event.target.value }))}
+                                placeholder={roleLabel}
+                                disabled={busy}
+                            />
+                            <small>Ejemplo: Dueno de negocio, Administrador, Ventas.</small>
+                        </label>
+                        <label className="saas-admin-field">
+                            <span>Codigo interno</span>
+                            <input value={roleCode || '-'} disabled />
+                            <small>No se edita: este codigo mantiene la compatibilidad del sistema.</small>
+                        </label>
+                    </div>
+                </div>
+
                 <div className="saas-admin-detail-grid">
                     <div className="saas-admin-detail-field"><span>ROL</span><strong>{roleLabel}</strong></div>
                     <div className="saas-admin-detail-field"><span>Codigo</span><strong>{roleCode || '-'}</strong></div>
@@ -385,10 +406,10 @@ function RoleProfilesSection(props = {}) {
 
                 <div className="saas-admin-form-row saas-admin-form-row--actions">
                     <button type="button" disabled={busy || !roleCode} onClick={saveRoleProfile}>
-                        Guardar permisos
+                        Guardar rol
                     </button>
                     <button type="button" className="saas-btn-cancel" disabled={busy} onClick={() => { void requestClose?.(); }}>
-                        Volver
+                        Cancelar
                     </button>
                 </div>
             </>
@@ -405,13 +426,26 @@ function RoleProfilesSection(props = {}) {
         selectedRoleKey,
         selectedRoleProfile?.label,
         selectedRoleProfile?.role,
+        setRoleForm,
         toggleRolePermission
     ]);
 
     const detailActions = React.useMemo(() => {
+        if (rolePanelMode === 'edit' && selectedRoleProfile && canManageRoles) {
+            return (
+                <>
+                    <button type="button" disabled={busy || !String(roleForm?.role || selectedRoleKey || '').trim()} onClick={saveRoleProfile}>
+                        Guardar rol
+                    </button>
+                    <button type="button" className="saas-btn-cancel" disabled={busy} onClick={cancelRoleEdit}>
+                        Cancelar
+                    </button>
+                </>
+            );
+        }
         if (rolePanelMode !== 'view' || !selectedRoleProfile || !canManageRoles) return null;
         return <button type="button" disabled={busy} onClick={openRoleEdit}>Editar</button>;
-    }, [busy, canManageRoles, openRoleEdit, rolePanelMode, selectedRoleProfile]);
+    }, [busy, canManageRoles, cancelRoleEdit, openRoleEdit, roleForm?.role, rolePanelMode, saveRoleProfile, selectedRoleKey, selectedRoleProfile]);
 
     if (!isRolesSection) return null;
 
@@ -442,7 +476,7 @@ function RoleProfilesSection(props = {}) {
             ]}
             filters={filters}
             detailTitle={isEditing ? `Editando rol: ${detailRoleLabel}` : detailRoleLabel}
-            detailSubtitle={isEditing ? 'Edita solo permisos opcionales. Los permisos base no se pueden quitar.' : 'Permisos base y opcionales por rol.'}
+            detailSubtitle={isEditing ? 'Edita el nombre visible y los permisos opcionales. El codigo interno y los permisos base no se pueden quitar.' : 'Permisos base y opcionales por rol.'}
             detailActions={detailActions}
         />
     );

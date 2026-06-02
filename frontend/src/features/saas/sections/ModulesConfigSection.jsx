@@ -43,6 +43,7 @@ function ModulesConfigSection(props = {}) {
     canManageEmailTemplates = false,
     canViewBrand = false,
     canManageBrand = false,
+    roleLabelMap = new Map(),
     ensureSectionData = null,
     isLoading = null,
     getError = null,
@@ -277,6 +278,7 @@ function ModulesConfigSection(props = {}) {
                     canRevokeOwnDevices={canRevokeOwnDevices}
                     canViewAllDevices={canViewAllDevices}
                     canRevokeAllDevices={canRevokeAllDevices}
+                    roleLabelMap={roleLabelMap}
                 />
             ) : null}
 
@@ -397,6 +399,7 @@ function ModulesConfigSection(props = {}) {
         openConfigModuleEdit,
         openConfigModuleView,
         requestJson,
+        roleLabelMap,
         sanitizeAiAssistantCode,
         saveWaModule,
         selectedConfigKey,

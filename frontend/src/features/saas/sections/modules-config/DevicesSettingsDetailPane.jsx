@@ -48,11 +48,9 @@ function avatarColor(name = '', email = '') {
     return palette[Math.abs(hash) % palette.length];
 }
 
-function roleLabel(role = '') {
+function roleLabel(role = '', roleLabelMap = new Map()) {
     const clean = toText(role).toLowerCase();
-    if (clean === 'owner') return 'Owner';
-    if (clean === 'admin') return 'Admin';
-    return 'Seller';
+    return roleLabelMap?.get?.(clean) || clean || 'Rol';
 }
 
 function DeviceStatusBadge({ device }) {
@@ -182,7 +180,8 @@ function UserDeviceGroup({
     formatDateTimeLabel,
     allowRename,
     allowRevoke,
-    allowReauthorize
+    allowReauthorize,
+    roleLabelMap = new Map()
 }) {
     const devices = Array.isArray(user?.devices) ? user.devices : [];
     const activeCount = devices.filter((device) => !device.revokedAt).length;
@@ -198,7 +197,7 @@ function UserDeviceGroup({
                 </div>
                 <div>
                     <h4>{user?.displayName || user?.email || 'Usuario'}</h4>
-                    <small>{roleLabel(user?.role)} · {user?.email || 'Sin email'}</small>
+                    <small>{roleLabel(user?.role, roleLabelMap)} · {user?.email || 'Sin email'}</small>
                 </div>
                 <div className="saas-device-user-group__summary">
                     {activeCount} activos
@@ -240,7 +239,8 @@ export default function DevicesSettingsDetailPane({
     requestJson,
     formatDateTimeLabel,
     canViewAllDevices = false,
-    canRevokeAllDevices = false
+    canRevokeAllDevices = false,
+    roleLabelMap = new Map()
 }) {
     const { confirm } = useUiFeedback();
     const [teamUsers, setTeamUsers] = React.useState([]);
@@ -442,6 +442,7 @@ export default function DevicesSettingsDetailPane({
                                 allowRename={true}
                                 allowRevoke={canRevokeTeamDevices}
                                 allowReauthorize={canRevokeTeamDevices}
+                                roleLabelMap={roleLabelMap}
                             />
                         ))}
                     </div>

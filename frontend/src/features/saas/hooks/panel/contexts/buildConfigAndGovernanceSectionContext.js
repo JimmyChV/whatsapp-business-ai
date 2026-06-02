@@ -11,6 +11,7 @@ export default function buildConfigAndGovernanceSectionContext(c) {
         isSuperAdmin: c.isSuperAdmin,
         currentUser: c.currentUser,
         userRole: c.userRole,
+        roleLabelMap: c.roleLabelMap,
         settingsTenantId: c.settingsTenantId,
         loadTenantSettings: c.loadTenantSettings,
         loadWaModules: c.loadWaModules,
