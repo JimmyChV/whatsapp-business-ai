@@ -3,6 +3,7 @@ import { SaasEntityPage } from '../components/layout';
 import AuditSettingsDetailPane from './modules-config/AuditSettingsDetailPane';
 import DeviceAuthorizersSettingsDetailPane from './modules-config/DeviceAuthorizersSettingsDetailPane';
 import DevicesSettingsDetailPane from './modules-config/DevicesSettingsDetailPane';
+import EmailBrandSettingsDetailPane from './modules-config/EmailBrandSettingsDetailPane';
 import EmailTemplatesSettingsDetailPane from './modules-config/EmailTemplatesSettingsDetailPane';
 import GeneralSettingsDetailPane from './modules-config/GeneralSettingsDetailPane';
 import ModulesConfigModuleDetailPane from './modules-config/ModulesConfigModuleDetailPane';
@@ -12,6 +13,7 @@ const CONFIG_KEYS = {
     TENANT_SETTINGS: 'tenant_settings',
     AUTH_DEVICES: 'auth_devices',
     SMTP_EMAIL: 'smtp_email',
+    EMAIL_BRAND: 'email_brand',
     EMAIL_TEMPLATES: 'email_templates',
     DEVICE_AUTHORIZERS: 'device_authorizers',
     AUDIT_LOGS: 'audit_logs'
@@ -124,8 +126,17 @@ function ModulesConfigSection(props = {}) {
             }, canViewEmailTemplates ? {
                 id: CONFIG_KEYS.EMAIL_TEMPLATES,
                 name: 'Plantillas de correo',
-                phone: 'Branding y contenido',
+                phone: 'Contenido transaccional',
                 status: canManageEmailTemplates ? 'Editable' : 'Solo lectura',
+                channel: 'Email',
+                defaultLabel: 'No',
+                assignedUsers: '-',
+                updatedAt: '-'
+            } : null, canViewBrand ? {
+                id: CONFIG_KEYS.EMAIL_BRAND,
+                name: 'Identidad de marca',
+                phone: 'Logo y apariencia',
+                status: canManageBrand ? 'Editable' : 'Solo lectura',
                 channel: 'Email',
                 defaultLabel: 'No',
                 assignedUsers: '-',
@@ -161,7 +172,7 @@ function ModulesConfigSection(props = {}) {
             updatedAt: formatDateTimeLabel?.(module?.updatedAt) || '-',
             raw: module
         }));
-    }, [MODULE_KEYS, canManageEmailTemplates, canViewAuditLogs, canViewEmailTemplates, canViewOwnDevices, formatDateTimeLabel, isGeneralConfigSection, tenantSettings, waModules]);
+    }, [MODULE_KEYS, canManageBrand, canManageEmailTemplates, canViewAuditLogs, canViewBrand, canViewEmailTemplates, canViewOwnDevices, formatDateTimeLabel, isGeneralConfigSection, tenantSettings, waModules]);
 
     const columns = React.useMemo(() => [
         { key: 'name', label: 'Nombre', width: '32%', minWidth: '240px', sortable: true },
@@ -283,6 +294,13 @@ function ModulesConfigSection(props = {}) {
                 requestJson={requestJson}
                 canViewEmailTemplates={canViewEmailTemplates}
                 canManageEmailTemplates={canManageEmailTemplates}
+            />
+
+            <EmailBrandSettingsDetailPane
+                settingsTenantId={settingsTenantId}
+                isGeneralConfigSection={isGeneralConfigSection}
+                selectedConfigKey={selectedConfigKey}
+                requestJson={requestJson}
                 canViewBrand={canViewBrand}
                 canManageBrand={canManageBrand}
             />
@@ -456,6 +474,8 @@ function ModulesConfigSection(props = {}) {
                         setSelectedConfigKey?.(CONFIG_KEYS.SMTP_EMAIL);
                     } else if (row?.id === CONFIG_KEYS.EMAIL_TEMPLATES && canViewEmailTemplates) {
                         setSelectedConfigKey?.(CONFIG_KEYS.EMAIL_TEMPLATES);
+                    } else if (row?.id === CONFIG_KEYS.EMAIL_BRAND && canViewBrand) {
+                        setSelectedConfigKey?.(CONFIG_KEYS.EMAIL_BRAND);
                     } else if (row?.id === CONFIG_KEYS.DEVICE_AUTHORIZERS) {
                         setSelectedConfigKey?.(CONFIG_KEYS.DEVICE_AUTHORIZERS);
                     } else if (row?.id === CONFIG_KEYS.AUDIT_LOGS && canViewAuditLogs) {
@@ -492,6 +512,9 @@ function ModulesConfigSection(props = {}) {
                     : null,
                 isGeneralConfigSection && canViewEmailTemplates
                     ? { label: 'Plantillas de correo', onClick: () => setSelectedConfigKey?.(CONFIG_KEYS.EMAIL_TEMPLATES), disabled: busy || !settingsTenantId }
+                    : null,
+                isGeneralConfigSection && canViewBrand
+                    ? { label: 'Identidad de marca', onClick: () => setSelectedConfigKey?.(CONFIG_KEYS.EMAIL_BRAND), disabled: busy || !settingsTenantId }
                     : null,
                 isGeneralConfigSection
                     ? { label: 'Autorizadores', onClick: () => setSelectedConfigKey?.(CONFIG_KEYS.DEVICE_AUTHORIZERS), disabled: busy || !settingsTenantId }

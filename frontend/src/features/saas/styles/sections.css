@@ -11620,6 +11620,14 @@ textarea:focus {
   opacity: 0.92;
 }
 
+.saas-email-brand-card--standalone {
+  max-height: none;
+}
+
+.saas-email-brand-card--standalone .saas-email-brand-card__body {
+  overflow: visible;
+}
+
 .saas-email-brand-hero {
   flex: 0 0 auto;
   display: grid;
