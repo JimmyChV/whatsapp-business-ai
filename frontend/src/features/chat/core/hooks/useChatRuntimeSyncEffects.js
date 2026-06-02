@@ -81,8 +81,9 @@ export function useChatRuntimeSyncEffects({
     saasSessionRef.current = saasSession;
     persistSaasSession(saasSession);
     const accessToken = String(saasSession?.accessToken || '').trim();
-    if (accessToken) {
-      initChatLocalCache(accessToken);
+    const tenantId = String(saasSession?.user?.tenantId || '').trim();
+    if (accessToken && tenantId && tenantId !== 'default') {
+      initChatLocalCache(accessToken, tenantId);
     }
   }, [saasSession, saasSessionRef, persistSaasSession]);
 

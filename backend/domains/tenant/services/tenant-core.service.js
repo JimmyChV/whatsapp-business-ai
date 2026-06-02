@@ -126,18 +126,21 @@ function resolveTenant({ tenantId = '', tenantSlug = '', authContext = null } = 
     const bySlug = findTenantBySlug(tenantSlug);
     if (bySlug) return bySlug;
 
-    return DEFAULT_TENANT;
+    console.warn('[TenantCore] No se encontro tenant valido — retornando null');
+    return null;
 }
 
 function resolveTenantForRequest(req = {}, authContext = null) {
-    const tenantId = req?.headers?.['x-tenant-id'] || req?.query?.tenantId || req?.body?.tenantId || '';
-    const tenantSlug = req?.headers?.['x-tenant-slug'] || req?.query?.tenantSlug || req?.body?.tenantSlug || '';
+    const hasAuthTenant = Boolean(String(authContext?.tenantId || '').trim());
+    const tenantId = hasAuthTenant ? '' : (req?.headers?.['x-tenant-id'] || req?.query?.tenantId || req?.body?.tenantId || '');
+    const tenantSlug = hasAuthTenant ? '' : (req?.headers?.['x-tenant-slug'] || req?.query?.tenantSlug || req?.body?.tenantSlug || '');
     return resolveTenant({ tenantId, tenantSlug, authContext });
 }
 
 function resolveTenantForSocket(socket = {}, authContext = null) {
-    const tenantId = socket?.handshake?.auth?.tenantId || socket?.handshake?.query?.tenantId || '';
-    const tenantSlug = socket?.handshake?.auth?.tenantSlug || socket?.handshake?.query?.tenantSlug || '';
+    const hasAuthTenant = Boolean(String(authContext?.tenantId || '').trim());
+    const tenantId = hasAuthTenant ? '' : (socket?.handshake?.auth?.tenantId || socket?.handshake?.query?.tenantId || '');
+    const tenantSlug = hasAuthTenant ? '' : (socket?.handshake?.auth?.tenantSlug || socket?.handshake?.query?.tenantSlug || '');
     return resolveTenant({ tenantId, tenantSlug, authContext });
 }
 

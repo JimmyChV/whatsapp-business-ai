@@ -6,6 +6,7 @@
     writeTenantJsonFile,
     queryPostgres
 } = require('../../../config/persistence-runtime');
+const { assertValidTenant } = require('../../tenant/helpers/tenant-guard.helpers');
 
 const HISTORY_FILE = 'message_history.json';
 let postgresMessageColumnsReadyPromise = null;
@@ -271,6 +272,7 @@ function upsertMessageInMemory(store, record) {
 }
 
 async function upsertChatPostgres(tenantId, chatPatch = {}, fallbackMessage = null) {
+    assertValidTenant(tenantId, 'message-history.upsertChatPostgres');
     const safeChatId = toSafeString(chatPatch?.id);
     if (!safeChatId) return;
 
@@ -316,6 +318,7 @@ async function upsertChatPostgres(tenantId, chatPatch = {}, fallbackMessage = nu
 }
 
 async function upsertMessagePostgres(tenantId, record, { schemaEnsured = false } = {}) {
+    assertValidTenant(tenantId, 'message-history.upsertMessagePostgres');
     try {
         await ensurePostgresMessageColumns();
         await queryPostgres(
@@ -395,6 +398,7 @@ async function upsertMessage(tenantId = DEFAULT_TENANT_ID, input = {}) {
     if (!isHistoryEnabled()) return { ok: false, skipped: 'disabled' };
 
     const cleanTenant = resolveTenantId(tenantId);
+    assertValidTenant(cleanTenant, 'message-history.upsertMessage');
     const record = normalizeMessageRecord(input);
     if (!record) return { ok: false, skipped: 'invalid_record' };
 
@@ -420,6 +424,7 @@ async function updateChatState(tenantId = DEFAULT_TENANT_ID, {
     if (!isHistoryEnabled()) return { ok: false, skipped: 'disabled' };
 
     const cleanTenant = resolveTenantId(tenantId);
+    assertValidTenant(cleanTenant, 'message-history.updateChatState');
     const safeChatId = toSafeString(chatId);
     if (!safeChatId) return { ok: false, skipped: 'invalid_chat_id' };
 
@@ -505,6 +510,7 @@ async function updateMessageAck(tenantId = DEFAULT_TENANT_ID, { messageId, chatI
     if (!isHistoryEnabled()) return { ok: false, skipped: 'disabled' };
 
     const cleanTenant = resolveTenantId(tenantId);
+    assertValidTenant(cleanTenant, 'message-history.updateMessageAck');
     const safeId = toSafeString(messageId);
     if (!safeId) return { ok: false, skipped: 'invalid_message_id' };
     const safeAck = toSafeNumber(ack, null);
@@ -549,6 +555,7 @@ async function updateMessageEdit(tenantId = DEFAULT_TENANT_ID, { messageId, chat
     if (!isHistoryEnabled()) return { ok: false, skipped: 'disabled' };
 
     const cleanTenant = resolveTenantId(tenantId);
+    assertValidTenant(cleanTenant, 'message-history.updateMessageEdit');
     const safeId = toSafeString(messageId);
     if (!safeId) return { ok: false, skipped: 'invalid_message_id' };
 
@@ -601,6 +608,7 @@ async function updateMessageReactions(tenantId = DEFAULT_TENANT_ID, {
     if (!isHistoryEnabled()) return { ok: false, skipped: 'disabled' };
 
     const cleanTenant = resolveTenantId(tenantId);
+    assertValidTenant(cleanTenant, 'message-history.updateMessageReactions');
     const safeId = toSafeString(messageId);
     if (!safeId) return { ok: false, skipped: 'invalid_message_id' };
     const normalizedReactions = normalizeReactionList(reactions);

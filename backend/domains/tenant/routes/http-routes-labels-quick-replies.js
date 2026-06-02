@@ -22,7 +22,14 @@
     }
 
     function resolveTenantId(req) {
-        return String(req?.tenantContext?.id || req?.query?.tenantId || req?.body?.tenantId || 'default').trim() || 'default';
+        const tenantId = String(req?.authContext?.user?.tenantId || req?.tenantContext?.id || '').trim();
+        return tenantId && tenantId !== 'default' ? tenantId : null;
+    }
+
+    function ensureTenantResolved(req, res) {
+        if (resolveTenantId(req)) return true;
+        res.status(400).json({ ok: false, error: 'tenant_not_resolved' });
+        return false;
     }
 
     function resolveUserId(req) {
@@ -39,6 +46,7 @@
         const sectionKey = resolveUiSectionKey(req);
         try {
             if (!ensureAuthenticated(req, res)) return;
+            if (!ensureTenantResolved(req, res)) return;
             const item = await saasUserUiPreferencesService.getPreference({
                 tenantId: resolveTenantId(req),
                 userId: resolveUserId(req),
@@ -64,6 +72,7 @@
         const sectionKey = resolveUiSectionKey(req);
         try {
             if (!ensureAuthenticated(req, res)) return;
+            if (!ensureTenantResolved(req, res)) return;
             const item = await saasUserUiPreferencesService.savePreference({
                 tenantId: resolveTenantId(req),
                 userId: resolveUserId(req),

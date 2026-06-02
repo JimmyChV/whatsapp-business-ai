@@ -6,6 +6,13 @@ function ensureAuthenticated(req, res, authService) {
     return true;
 }
 
+function resolveRequestTenant(req) {
+    const tenant = req?.tenantContext || null;
+    const tenantId = String(req?.authContext?.user?.tenantId || tenant?.id || '').trim();
+    if (!tenantId || tenantId === 'default') return null;
+    return tenant && tenant.id === tenantId ? tenant : { id: tenantId };
+}
+
 function registerTenantRuntimeSettingsHttpRoutes({
     app,
     authService,
@@ -46,8 +53,9 @@ function registerTenantRuntimeSettingsHttpRoutes({
     app.get('/api/tenant/settings', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
-            const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
-            const tenantId = String(tenant?.id || 'default').trim() || 'default';
+            const tenant = resolveRequestTenant(req);
+            if (!tenant) return res.status(400).json({ ok: false, error: 'tenant_not_resolved' });
+            const tenantId = String(tenant.id).trim();
             if (!isTenantAllowedForUser(req, tenantId)
                 || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_SETTINGS_READ)) {
                 return res.status(403).json({ ok: false, error: 'No autorizado.' });
@@ -67,8 +75,9 @@ function registerTenantRuntimeSettingsHttpRoutes({
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
 
-            const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
-            const tenantId = String(tenant?.id || 'default').trim() || 'default';
+            const tenant = resolveRequestTenant(req);
+            if (!tenant) return res.status(400).json({ ok: false, error: 'tenant_not_resolved' });
+            const tenantId = String(tenant.id).trim();
             if (!isTenantAllowedForUser(req, tenantId)
                 || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_SETTINGS_MANAGE)) {
                 return res.status(403).json({ ok: false, error: 'No tienes permisos para editar configuracion de empresa.' });

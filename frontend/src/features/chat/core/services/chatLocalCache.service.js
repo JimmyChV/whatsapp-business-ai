@@ -8,6 +8,7 @@ const CHAT_TTL_DAYS = 30;
 const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const LAST_CLEANUP_META_KEY = 'lastCleanup';
 let _cryptoKey = null;
+let _activeTenantId = null;
 
 function getIndexedDb() {
   if (typeof window === 'undefined') return null;
@@ -125,12 +126,14 @@ function toTimestamp(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function normalizeChat(chat = {}) {
+function normalizeChat(chat = {}, tenantId = _activeTenantId) {
   const id = String(chat?.id || chat?.chatId || '').trim();
   if (!id) return null;
+  const safeTenantId = String(chat?.tenantId || chat?.tenant_id || chat?.cacheTenantId || tenantId || '').trim();
   return {
     ...chat,
     id,
+    tenantId: safeTenantId,
     name: String(chat?.name || ''),
     phone: String(chat?.phone || ''),
     subtitle: String(chat?.subtitle || ''),
@@ -144,16 +147,18 @@ function normalizeChat(chat = {}) {
   };
 }
 
-function normalizeMessage(chatId, message = {}) {
+function normalizeMessage(chatId, message = {}, tenantId = _activeTenantId) {
   const messageId = String(message?.messageId || message?.id || message?.clientTempId || '').trim();
   const safeChatId = String(chatId || message?.chatId || '').trim();
   if (!messageId || !safeChatId) return null;
+  const safeTenantId = String(message?.tenantId || message?.tenant_id || message?.cacheTenantId || tenantId || '').trim();
   const timestamp = toTimestamp(message?.timestamp || message?.createdAt || message?.created_at);
   return {
     ...message,
     messageId,
     id: String(message?.id || messageId),
     chatId: safeChatId,
+    tenantId: safeTenantId,
     body: String(message?.body || message?.text || ''),
     fromMe: Boolean(message?.fromMe ?? message?.from_me),
     messageType: String(message?.messageType || message?.type || message?.message_type || 'chat'),
@@ -210,15 +215,27 @@ export async function openDB() {
   }
 }
 
-export async function init(accessToken = '') {
+export async function init(accessToken = '', tenantId = '') {
   try {
     _cryptoKey = await deriveKey(accessToken);
+    _activeTenantId = String(tenantId || '').trim() || null;
+    if (_activeTenantId) {
+      await saveMeta('activeTenantId', _activeTenantId);
+    }
     await cleanExpiredChatsIfNeeded();
     return Boolean(_cryptoKey);
   } catch (_error) {
     _cryptoKey = null;
+    _activeTenantId = null;
     return false;
   }
+}
+
+async function getActiveTenantId() {
+  if (_activeTenantId) return _activeTenantId;
+  const tenantId = String(await getMeta('activeTenantId') || '').trim();
+  _activeTenantId = tenantId || null;
+  return _activeTenantId;
 }
 
 async function getAllChatsRaw() {
@@ -311,12 +328,17 @@ async function cleanExpiredChatsIfNeeded() {
 }
 
 export async function saveChats(chats = []) {
-  const safeChats = (Array.isArray(chats) ? chats : []).map(normalizeChat).filter(Boolean);
+  const activeTenantId = await getActiveTenantId();
+  if (!activeTenantId) return [];
+  const safeChats = (Array.isArray(chats) ? chats : [])
+    .map((chat) => normalizeChat(chat, activeTenantId))
+    .filter((chat) => chat?.tenantId === activeTenantId);
   if (safeChats.length === 0) return [];
 
   try {
     const records = await Promise.all(safeChats.map((chat) => maybeEncryptRecord(chat, {
       id: chat.id,
+      tenantId: chat.tenantId,
       timestamp: chat.timestamp,
       cachedAt: chat.cachedAt
     })));
@@ -336,6 +358,8 @@ export async function saveChats(chats = []) {
 
 export async function getChats() {
   try {
+    const activeTenantId = await getActiveTenantId();
+    if (!activeTenantId) return [];
     const db = await openDB();
     if (!db) return [];
     const tx = db.transaction(CHAT_STORE, 'readonly');
@@ -347,7 +371,9 @@ export async function getChats() {
       await clearAll();
       return [];
     }
-    return chats.sort((a, b) => Number(b?.timestamp || 0) - Number(a?.timestamp || 0));
+    return chats
+      .filter((chat) => String(chat?.tenantId || '').trim() === activeTenantId)
+      .sort((a, b) => Number(b?.timestamp || 0) - Number(a?.timestamp || 0));
   } catch (_error) {
     return [];
   }
@@ -378,16 +404,19 @@ async function pruneMessagesForChat(db, chatId) {
 
 export async function saveMessages(chatId = '', messages = []) {
   const safeChatId = String(chatId || '').trim();
+  const activeTenantId = await getActiveTenantId();
+  if (!activeTenantId) return [];
   const safeMessages = (Array.isArray(messages) ? messages : [])
     .filter((message) => !message?.optimistic)
-    .map((message) => normalizeMessage(safeChatId, message))
-    .filter(Boolean);
+    .map((message) => normalizeMessage(safeChatId, message, activeTenantId))
+    .filter((message) => message?.tenantId === activeTenantId);
   if (!safeChatId || safeMessages.length === 0) return [];
 
   try {
     const records = await Promise.all(safeMessages.map((message) => maybeEncryptRecord(message, {
       messageId: message.messageId,
       chatId: message.chatId,
+      tenantId: message.tenantId,
       createdAt: message.createdAt,
       timestamp: message.timestamp,
       cachedAt: message.cachedAt
@@ -412,6 +441,8 @@ export async function getMessages(chatId = '') {
   if (!safeChatId) return [];
 
   try {
+    const activeTenantId = await getActiveTenantId();
+    if (!activeTenantId) return [];
     const db = await openDB();
     const keyRange = getKeyRange();
     if (!db || !keyRange) return [];
@@ -426,6 +457,7 @@ export async function getMessages(chatId = '') {
       return [];
     }
     return messages
+      .filter((message) => String(message?.tenantId || '').trim() === activeTenantId)
       .sort((a, b) => Number(a?.timestamp || a?.createdAt || 0) - Number(b?.timestamp || b?.createdAt || 0));
   } catch (_error) {
     return [];
@@ -475,6 +507,7 @@ export async function getMeta(key = '') {
 
 export async function clearAll() {
   _cryptoKey = null;
+  _activeTenantId = null;
   try {
     const db = await openDB();
     if (!db) return false;

@@ -418,14 +418,20 @@ function registerCloudWebhookHttpRoutes({
             const runtimeApplied = applyWebhookRuntimeConfigFromPayload(payload, registry, waClient);
             if (runtimeApplied?.matched && typeof socketManager?.setActiveRuntimeContext === 'function') {
                 const matched = runtimeApplied.matched || {};
-                socketManager.setActiveRuntimeContext({
-                    tenantId: String(matched?.tenantId || 'default').trim() || 'default',
-                    moduleId: String(matched?.moduleId || 'default').trim().toLowerCase() || 'default',
-                    moduleName: String(matched?.moduleName || '').trim() || null,
-                    modulePhone: String(matched?.modulePhone || matched?.cloudConfig?.displayPhoneNumber || '').trim() || null,
-                    channelType: String(matched?.channelType || 'whatsapp').trim().toLowerCase() || 'whatsapp',
-                    transportMode: 'cloud'
-                });
+                const matchedTenantId = String(matched?.tenantId || '').trim();
+                const matchedModuleId = String(matched?.moduleId || '').trim().toLowerCase();
+                if (!matchedTenantId || matchedTenantId === 'default' || !matchedModuleId || matchedModuleId === 'default') {
+                    appLogger.warn('[WA][Cloud] webhook matched invalid tenant/module; runtime context was not changed.');
+                } else {
+                    socketManager.setActiveRuntimeContext({
+                        tenantId: matchedTenantId,
+                        moduleId: matchedModuleId,
+                        moduleName: String(matched?.moduleName || '').trim() || null,
+                        modulePhone: String(matched?.modulePhone || matched?.cloudConfig?.displayPhoneNumber || '').trim() || null,
+                        channelType: String(matched?.channelType || 'whatsapp').trim().toLowerCase() || 'whatsapp',
+                        transportMode: 'cloud'
+                    });
+                }
             }
 
             const templateEvents = extractTemplateWebhookEvents(payload);

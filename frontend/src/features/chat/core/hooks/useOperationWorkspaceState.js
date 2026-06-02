@@ -6,7 +6,8 @@ import {
   saveChats as saveCachedChats,
   saveMessages as saveCachedMessages,
   saveMeta as saveCacheMeta,
-  getMeta as getCacheMeta
+  getMeta as getCacheMeta,
+  clearAll as clearChatLocalCache
 } from '../services/chatLocalCache.service';
 
 const DEFAULT_CHAT_FILTERS = {
@@ -140,17 +141,19 @@ export default function useOperationWorkspaceState({
   useEffect(() => {
     let cancelled = false;
     const accessToken = String(saasSession?.accessToken || '').trim();
-    const safeTenantId = String(tenantScopeId || '').trim() || 'default';
+    const safeTenantId = String(tenantScopeId || '').trim();
 
     (async () => {
-      if (!accessToken) {
+      if (!accessToken || !safeTenantId || safeTenantId === 'default') {
         if (!cancelled) setIsCacheLoaded(true);
         return;
       }
 
-      await initChatLocalCache(accessToken);
-      const cachedTenantId = String(await getCacheMeta('tenantId') || '').trim();
+      await initChatLocalCache(accessToken, safeTenantId);
+      const cachedTenantId = String(await getCacheMeta('activeTenantId') || '').trim();
       if (cachedTenantId && cachedTenantId !== safeTenantId) {
+        await clearChatLocalCache();
+        await initChatLocalCache(accessToken, safeTenantId);
         if (!cancelled) setIsCacheLoaded(true);
         return;
       }
@@ -158,8 +161,8 @@ export default function useOperationWorkspaceState({
       const cachedChats = await getCachedChats();
       if (cancelled) return;
       const tenantChats = cachedChats.filter((chat) => {
-        const cacheTenantId = String(chat?.cacheTenantId || '').trim();
-        return !cacheTenantId || cacheTenantId === safeTenantId;
+        const cacheTenantId = String(chat?.tenantId || chat?.cacheTenantId || '').trim();
+        return cacheTenantId === safeTenantId;
       });
       if (tenantChats.length > 0) {
         setChats(tenantChats);
@@ -176,9 +179,10 @@ export default function useOperationWorkspaceState({
 
   useEffect(() => {
     if (!isCacheLoaded || !Array.isArray(chats) || chats.length === 0) return;
-    const safeTenantId = String(tenantScopeId || '').trim() || 'default';
-    saveCacheMeta('tenantId', safeTenantId);
-    saveCachedChats(chats.map((chat) => ({ ...chat, cacheTenantId: safeTenantId })));
+    const safeTenantId = String(tenantScopeId || '').trim();
+    if (!safeTenantId || safeTenantId === 'default') return;
+    saveCacheMeta('activeTenantId', safeTenantId);
+    saveCachedChats(chats.map((chat) => ({ ...chat, tenantId: safeTenantId, cacheTenantId: safeTenantId })));
   }, [chats, isCacheLoaded, tenantScopeId]);
 
   useEffect(() => {
@@ -186,8 +190,10 @@ export default function useOperationWorkspaceState({
     if (!isCacheLoaded || !safeActiveChatId || !Array.isArray(messages) || messages.length === 0) return;
     const realMessages = messages.filter((message) => !message?.optimistic);
     if (realMessages.length === 0) return;
-    saveCachedMessages(safeActiveChatId, realMessages);
-  }, [activeChatId, isCacheLoaded, messages]);
+    const safeTenantId = String(tenantScopeId || '').trim();
+    if (!safeTenantId || safeTenantId === 'default') return;
+    saveCachedMessages(safeActiveChatId, realMessages.map((message) => ({ ...message, tenantId: safeTenantId })));
+  }, [activeChatId, isCacheLoaded, messages, tenantScopeId]);
 
   return {
     chats,

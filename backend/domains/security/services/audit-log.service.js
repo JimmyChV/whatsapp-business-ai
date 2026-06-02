@@ -52,8 +52,9 @@ function normalizeDateFilter(value = '') {
 }
 
 function buildPostgresFilters(cleanTenant, filters = {}) {
-    const clauses = ['tenant_id = $1'];
-    const params = [cleanTenant];
+    const isGlobalScope = !cleanTenant || cleanTenant === DEFAULT_TENANT_ID;
+    const clauses = [isGlobalScope ? '(tenant_id IS NULL OR tenant_id = $1)' : 'tenant_id = $1'];
+    const params = [isGlobalScope ? DEFAULT_TENANT_ID : cleanTenant];
     const userId = toText(filters.userId);
     const action = toText(filters.action);
     const fromDate = normalizeDateFilter(filters.from);

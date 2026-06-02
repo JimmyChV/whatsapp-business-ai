@@ -11,6 +11,7 @@ const catalogManagerService = require('../../tenant/services/catalog-manager.ser
 const quotesService = require('../../tenant/services/quotes.service');
 const pushNotificationServiceFallback = require('../../security/services/push-notifications.service');
 const pattyService = require('./patty.service');
+const { isValidOperationalTenant, warnInvalidTenant } = require('../../tenant/helpers/tenant-guard.helpers');
 
 function createSocketWaEventsBridgeService({
     waClient,
@@ -303,7 +304,7 @@ function createSocketWaEventsBridgeService({
     } = {}) => {
         const cleanTenantId = String(tenantId || '').trim();
         const cleanPhone = String(phone || '').trim();
-        if (!cleanTenantId || !cleanPhone || getStorageDriver() !== 'postgres') return Promise.resolve();
+        if (!isValidOperationalTenant(cleanTenantId) || !cleanPhone || getStorageDriver() !== 'postgres') return Promise.resolve();
         const mappedStatus = mapMetaDeliveryErrorToPhoneStatus(errorCode);
         const normalizedErrorCode = Number.isFinite(Number(errorCode)) ? Number(errorCode) : null;
         return queryPostgres(
@@ -325,7 +326,7 @@ function createSocketWaEventsBridgeService({
     } = {}) => {
         const cleanTenantId = String(tenantId || '').trim();
         const cleanPhone = String(phone || '').trim();
-        if (!cleanTenantId || !cleanPhone || getStorageDriver() !== 'postgres') return Promise.resolve();
+        if (!isValidOperationalTenant(cleanTenantId) || !cleanPhone || getStorageDriver() !== 'postgres') return Promise.resolve();
         return queryPostgres(
             `UPDATE tenant_customers
              SET phone_status = 'valid',
@@ -396,6 +397,10 @@ function createSocketWaEventsBridgeService({
             if (isStatusOrSystemMessage(msg)) return;
 
             const historyTenantId = resolveHistoryTenantId();
+            if (!isValidOperationalTenant(historyTenantId)) {
+                warnInvalidTenant(historyTenantId, 'socket-wa-events-bridge.message');
+                return;
+            }
             const runtimeModuleContext = resolveHistoryModuleContext();
             const relatedChatIdBase = String(msg?.fromMe ? msg?.to : msg?.from || '').trim();
             const messageId = getSerializedMessageId(msg);
@@ -984,6 +989,11 @@ function createSocketWaEventsBridgeService({
 
         waClient.on('message_edit', async ({ message, newBody, prevBody }) => {
             if (!message || isStatusOrSystemMessage(message)) return;
+            const historyTenantId = resolveHistoryTenantId();
+            if (!isValidOperationalTenant(historyTenantId)) {
+                warnInvalidTenant(historyTenantId, 'socket-wa-events-bridge.message_edit');
+                return;
+            }
             const chatId = message.fromMe ? message.to : message.from;
 
             const messageId = getSerializedMessageId(message);
@@ -996,7 +1006,7 @@ function createSocketWaEventsBridgeService({
 
             const editedAtMs = Number(message?.latestEditSenderTimestampMs || message?._data?.latestEditSenderTimestampMs || 0);
             const editedAt = editedAtMs > 0 ? Math.floor(editedAtMs / 1000) : Math.floor(Date.now() / 1000);
-            await persistMessageEdit(resolveHistoryTenantId(), {
+            await persistMessageEdit(historyTenantId, {
                 messageId,
                 chatId,
                 body: String(newBody ?? message.body ?? ''),
@@ -1022,7 +1032,7 @@ function createSocketWaEventsBridgeService({
                 const runtimeModuleContext = resolveHistoryModuleContext();
                 const summary = await toChatSummary(refreshedChat, {
                     includeHeavyMeta: false,
-                    tenantId: resolveHistoryTenantId(),
+                    tenantId: historyTenantId,
                     scopeModuleId: String(runtimeModuleContext?.moduleId || '').trim().toLowerCase() || '',
                     scopeModuleName: String(runtimeModuleContext?.name || '').trim() || null,
                     scopeModuleImageUrl: String(runtimeModuleContext?.imageUrl || runtimeModuleContext?.logoUrl || '').trim() || null,
@@ -1034,6 +1044,11 @@ function createSocketWaEventsBridgeService({
         });
 
         waClient.on('message_ack', async ({ message, ack, errors, status, recipientId }) => {
+            const historyTenantId = resolveHistoryTenantId();
+            if (!isValidOperationalTenant(historyTenantId)) {
+                warnInvalidTenant(historyTenantId, 'socket-wa-events-bridge.message_ack');
+                return;
+            }
             const messageId = getSerializedMessageId(message);
             const baseChatId = String(message?.to || message?.from || '').trim();
             const isFromMe = Boolean(message?.fromMe);
@@ -1051,7 +1066,7 @@ function createSocketWaEventsBridgeService({
                     message: String(primaryError?.message || primaryError?.details || '').trim() || 'Meta rechazo la entrega del mensaje.'
                 }
                 : null;
-            await persistMessageAck(resolveHistoryTenantId(), {
+            await persistMessageAck(historyTenantId, {
                 messageId,
                 chatId: baseChatId,
                 ack
@@ -1084,7 +1099,7 @@ function createSocketWaEventsBridgeService({
                 });
             }
 
-            const tenantId = String(resolveHistoryTenantId() || '').trim();
+            const tenantId = String(historyTenantId || '').trim();
             const recipientPhoneDigits = String(recipientId || '').replace(/^\+/, '').trim();
             const recipientPhone = recipientPhoneDigits ? `+${recipientPhoneDigits}` : '';
             if (statusValue === 'failed' && recipientPhone) {
@@ -1107,6 +1122,11 @@ function createSocketWaEventsBridgeService({
         });
 
         waClient.on('message_reaction', ({ messageId, emoji, senderId, chatId, timestamp }) => {
+            const historyTenantId = resolveHistoryTenantId();
+            if (!isValidOperationalTenant(historyTenantId)) {
+                warnInvalidTenant(historyTenantId, 'socket-wa-events-bridge.message_reaction');
+                return;
+            }
             const cleanMessageId = String(messageId || '').trim();
             const cleanEmoji = String(emoji || '').trim();
             if (!cleanMessageId || !cleanEmoji) return;
@@ -1126,7 +1146,7 @@ function createSocketWaEventsBridgeService({
                 timestamp: Number(timestamp || 0) || Math.floor(Date.now() / 1000)
             });
 
-            persistMessageReaction?.(resolveHistoryTenantId(), {
+            persistMessageReaction?.(historyTenantId, {
                 messageId: cleanMessageId,
                 chatId: baseChatId || null,
                 emoji: cleanEmoji,

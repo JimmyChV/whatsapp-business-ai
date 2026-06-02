@@ -24,6 +24,7 @@ const {
     buildTemplatePreviewText,
     buildTemplateRealtimeComponents
 } = require('../../channels/helpers/template-render.helpers');
+const { assertValidTenant } = require('../../tenant/helpers/tenant-guard.helpers');
 
 const STORE_FILE = 'chat_commercial_status.json';
 const DEFAULT_LIMIT = 60;
@@ -180,9 +181,10 @@ function nowIso() {
 }
 
 function resolveTenantId(input = null) {
-    if (typeof input === 'string') return normalizeTenantId(input || DEFAULT_TENANT_ID);
-    if (input && typeof input === 'object') return normalizeTenantId(input.tenantId || DEFAULT_TENANT_ID);
-    return DEFAULT_TENANT_ID;
+    const rawTenantId = typeof input === 'string'
+        ? input
+        : (input && typeof input === 'object' ? input.tenantId : '');
+    return assertValidTenant(normalizeTenantId(rawTenantId || ''), 'chat-commercial-status.resolveTenantId');
 }
 
 function toText(value = '') {

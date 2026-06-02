@@ -7,6 +7,7 @@ const {
     writeTenantJsonFile,
     queryPostgres
 } = require('../../../config/persistence-runtime');
+const { assertValidTenant } = require('../helpers/tenant-guard.helpers');
 const {
     toText,
     toIsoText,
@@ -728,6 +729,7 @@ async function listCustomerIds(tenantId = DEFAULT_TENANT_ID) {
 async function upsertCustomerPostgres(tenantId = DEFAULT_TENANT_ID, payload = {}, { allowPhoneMerge = true } = {}) {
     await ensurePostgresSchema();
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    assertValidTenant(cleanTenantId, 'customers.upsertCustomerPostgres');
     const customerIdInput = normalizeCustomerIdCandidate(payload?.customerId || payload?.id || '');
     const phoneInput = normalizePhone(payload?.phoneE164 || payload?.phone || payload?.telefono || '');
 
@@ -825,6 +827,7 @@ async function upsertCustomerPostgres(tenantId = DEFAULT_TENANT_ID, payload = {}
 
 async function upsertCustomerFile(tenantId = DEFAULT_TENANT_ID, payload = {}, { allowPhoneMerge = true } = {}) {
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    assertValidTenant(cleanTenantId, 'customers.upsertCustomerFile');
     const parsed = await readTenantJsonFile(CUSTOMERS_FILE, {
         tenantId: cleanTenantId,
         defaultValue: { items: [] }
@@ -860,6 +863,7 @@ async function upsertCustomerFile(tenantId = DEFAULT_TENANT_ID, payload = {}, { 
 
 async function upsertCustomer(tenantId = DEFAULT_TENANT_ID, payload = {}, options = {}) {
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    assertValidTenant(cleanTenantId, 'customers.upsertCustomer');
     const result = getStorageDriver() === 'postgres'
         ? await upsertCustomerPostgres(cleanTenantId, payload, options)
         : await upsertCustomerFile(cleanTenantId, payload, options);
@@ -909,12 +913,14 @@ async function getCustomerByPhoneWithAddresses(
 }
 
 async function updateCustomer(tenantId = DEFAULT_TENANT_ID, customerId = '', patch = {}) {
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    assertValidTenant(cleanTenantId, 'customers.updateCustomer');
     const rawCustomerId = toText(customerId || '');
     const cleanCustomerId = normalizeCustomerIdCandidate(rawCustomerId);
     const lookupCustomerId = cleanCustomerId || rawCustomerId;
     if (!lookupCustomerId) throw new Error('customerId invalido.');
 
-    const existing = await findCustomer(tenantId, { customerId: lookupCustomerId });
+    const existing = await findCustomer(cleanTenantId, { customerId: lookupCustomerId });
     if (!existing) throw new Error('Cliente no encontrado.');
 
     const resolvedCustomerId = toText(existing?.customerId || lookupCustomerId);
@@ -923,7 +929,7 @@ async function updateCustomer(tenantId = DEFAULT_TENANT_ID, customerId = '', pat
 
     const sourcePatch = patch && typeof patch === 'object' ? patch : {};
     if (resolvedCleanCustomerId) {
-        return upsertCustomer(tenantId, {
+        return upsertCustomer(cleanTenantId, {
             ...existing,
             ...sourcePatch,
             customerId: resolvedCleanCustomerId
@@ -994,7 +1000,6 @@ async function updateCustomer(tenantId = DEFAULT_TENANT_ID, customerId = '', pat
         notes: updatedLegacy.notes
     });
 
-    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
     if (getStorageDriver() === 'postgres') {
         await ensurePostgresSchema();
         const result = await queryPostgres(

@@ -6,8 +6,8 @@ function createSocketRuntimeContextStore({
 } = {}) {
     const state = {
         runtimeContext: {
-            tenantId: String(initialRuntimeContext?.tenantId || 'default').trim() || 'default',
-            moduleId: String(initialRuntimeContext?.moduleId || 'default').trim().toLowerCase() || 'default',
+            tenantId: String(initialRuntimeContext?.tenantId || '').trim() || null,
+            moduleId: String(initialRuntimeContext?.moduleId || '').trim().toLowerCase() || null,
             moduleName: initialRuntimeContext?.moduleName || null,
             modulePhone: initialRuntimeContext?.modulePhone || null,
             channelType: initialRuntimeContext?.channelType || null,
@@ -38,14 +38,16 @@ function createSocketRuntimeContextStore({
         return state[key];
     };
 
-    const getTenantRoom = (tenantId = 'default') => {
-        const cleanTenant = String(tenantId || 'default').trim() || 'default';
+    const getTenantRoom = (tenantId = '') => {
+        const cleanTenant = String(tenantId || '').trim();
+        if (!cleanTenant) return 'tenant:unresolved';
         return 'tenant:' + cleanTenant;
     };
 
-    const getTenantModuleRoom = (tenantId = 'default', moduleId = 'default') => {
-        const cleanTenant = String(tenantId || 'default').trim() || 'default';
-        const cleanModule = String(moduleId || 'default').trim().toLowerCase() || 'default';
+    const getTenantModuleRoom = (tenantId = '', moduleId = '') => {
+        const cleanTenant = String(tenantId || '').trim();
+        const cleanModule = String(moduleId || '').trim().toLowerCase();
+        if (!cleanTenant || !cleanModule) return 'tenant:unresolved:module:unresolved';
         return 'tenant:' + cleanTenant + ':module:' + cleanModule;
     };
 
@@ -54,7 +56,13 @@ function createSocketRuntimeContextStore({
             ? state.runtimeContext
             : null;
 
-        if (preferRuntimeContext && context?.tenantId && context?.moduleId) {
+        if (
+            preferRuntimeContext
+            && context?.tenantId
+            && context?.moduleId
+            && context.tenantId !== 'default'
+            && context.moduleId !== 'default'
+        ) {
             return { tenantId: context.tenantId, moduleId: context.moduleId };
         }
 

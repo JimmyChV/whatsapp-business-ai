@@ -312,6 +312,11 @@ export default function OperationPage({
     };
   }, [chats, handleChatSelect, setMobilePanelWithHistory, setToasts, tenantScopeId]);
 
+  const activeOperationalTenantId = String(tenantScopeId || '').trim();
+  const hasOperationalTenant = Boolean(activeOperationalTenantId && activeOperationalTenantId !== 'default');
+  const visibleChats = hasOperationalTenant ? chats : [];
+  const visibleWaModules = hasOperationalTenant ? availableWaModules : [];
+
   return (
     <div className={appContainerClassName} data-mobile-panel={effectiveMobilePanel}>
       <input
@@ -329,7 +334,7 @@ export default function OperationPage({
 
       <div className="chat-sidebar-panel">
         <Sidebar
-          chats={chats}
+          chats={visibleChats}
           chatsLoaded={chatsLoaded}
           activeChatId={activeChatId}
           onChatSelect={handleMobileChatSelect}
@@ -356,7 +361,7 @@ export default function OperationPage({
           onSaasLogout={handleSaasLogout}
           canManageSaas={canManageSaas}
           onOpenSaasAdmin={() => handleOpenSaasAdminWorkspace({ tenantId: tenantScopeId })}
-          waModules={availableWaModules}
+          waModules={visibleWaModules}
           chatAssignmentState={chatAssignmentState}
           chatCommercialStatusState={chatCommercialStatusState}
           showBackToPanel={Boolean(forceOperationLaunch && canManageSaas && !isMobileViewport())}
@@ -365,7 +370,26 @@ export default function OperationPage({
       </div>
 
       <div className="main-workspace">
-        {activeChatId ? (
+        {!hasOperationalTenant ? (
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: '#222e35',
+            }}
+          >
+            <div className="conversation-empty-card">
+              <div className="conversation-empty-icon">WA</div>
+              <h1 className="conversation-empty-title">Selecciona una empresa</h1>
+              <p className="conversation-empty-text">
+                Selecciona una empresa desde el panel para acceder al chat operativo.
+              </p>
+            </div>
+          </div>
+        ) : activeChatId ? (
           <div className="conversation-pane-shell">
             <ChatWindow
               activeChatDetails={mergedActiveChatDetails}
@@ -428,7 +452,7 @@ export default function OperationPage({
               activeTenantId={tenantScopeId}
               currentUserRole={saasUserRole}
               canEditMessages={waCapabilities.messageEdit}
-              waModules={availableWaModules}
+              waModules={visibleWaModules}
               chatAssignmentState={chatAssignmentState}
               chatCommercialStatusState={chatCommercialStatusState}
               onMobileBack={() => setMobilePanelWithHistory('list')}
@@ -507,7 +531,7 @@ export default function OperationPage({
 
       </div>
 
-      {activeChatId && (
+      {hasOperationalTenant && activeChatId && (
         <div className="business-sidebar-panel">
           <BusinessSidebar
             tenantScopeKey={tenantScopeId}
@@ -527,7 +551,7 @@ export default function OperationPage({
             requestedToolTab={mobileToolRequest}
             waCapabilities={waCapabilities}
             openCompanyProfileToken={openCompanyProfileToken}
-            waModules={availableWaModules}
+            waModules={visibleWaModules}
             selectedCatalogModuleId={selectedCatalogModuleId}
             selectedCatalogId={activeCatalogId}
             activeModuleId={String(activeChatDetails?.scopeModuleId || selectedWaModule?.moduleId || '').trim().toLowerCase()}

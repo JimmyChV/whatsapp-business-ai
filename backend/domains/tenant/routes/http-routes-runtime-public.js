@@ -38,15 +38,15 @@ function registerTenantRuntimePublicHttpRoutes({
         const exposeTenantData = !authEnabled || isAuthenticated;
         const runtimeTenants = exposeTenantData ? allowedTenants : [];
 
-        const requestedTenantId = String(req?.tenantContext?.id || '').trim();
-        const fallbackTenant = req.tenantContext || tenantService.DEFAULT_TENANT;
+        const requestedTenantId = String(authContext?.user?.tenantId || req?.tenantContext?.id || '').trim();
+        const hasOperationalTenant = Boolean(requestedTenantId && requestedTenantId !== 'default');
         const effectiveTenant = exposeTenantData
-            ? (runtimeTenants.find((tenant) => String(tenant?.id || '').trim() === requestedTenantId)
-                || runtimeTenants[0]
-                || fallbackTenant)
-            : fallbackTenant;
+            ? (hasOperationalTenant
+                ? runtimeTenants.find((tenant) => String(tenant?.id || '').trim() === requestedTenantId) || null
+                : null)
+            : null;
 
-        const tenantId = String(effectiveTenant?.id || 'default');
+        const tenantId = String(effectiveTenant?.id || '').trim();
         const authUser = authContext?.user && typeof authContext.user === 'object' ? authContext.user : null;
         const runtimeUserId = String(authUser?.userId || authUser?.id || '').trim();
 
@@ -54,7 +54,7 @@ function registerTenantRuntimePublicHttpRoutes({
         let waModules = [];
         let selectedWaModule = null;
 
-        if (exposeTenantData) {
+        if (exposeTenantData && tenantId) {
             tenantSettings = await tenantSettingsService.getTenantSettings(tenantId);
             waModules = await waModuleService.listModules(tenantId, {
                 includeInactive: false,

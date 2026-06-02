@@ -16,6 +16,11 @@ function hasAuditReadAccess(req = {}, authService) {
     return authContext.user.isSuperAdmin === true || role === 'owner';
 }
 
+function resolveOperationalTenant(req = {}) {
+    const tenantId = String(req?.authContext?.user?.tenantId || req?.tenantContext?.id || '').trim();
+    return tenantId && tenantId !== 'default' ? tenantId : null;
+}
+
 function isAllowedProfilePhotoHost(hostname = '') {
     const host = String(hostname || '').trim().toLowerCase();
     if (!host) return false;
@@ -124,11 +129,14 @@ function registerOperationsUtilityHttpRoutes({
                 return res.status(401).json({ ok: false, error: 'No autenticado.' });
             }
 
-            const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
+            const tenantId = resolveOperationalTenant(req);
+            if (!tenantId) {
+                return res.status(400).json({ ok: false, error: 'tenant_not_resolved' });
+            }
             const limit = Number(req.query.limit || 100);
             const offset = Number(req.query.offset || 0);
-            const rows = await messageHistoryService.listChats(tenant?.id || 'default', { limit, offset });
-            return res.json({ ok: true, tenant, items: rows });
+            const rows = await messageHistoryService.listChats(tenantId, { limit, offset });
+            return res.json({ ok: true, tenant: { id: tenantId }, items: rows });
         } catch (error) {
             return res.status(500).json({ ok: false, error: 'No se pudo cargar historial de chats.' });
         }
@@ -140,7 +148,6 @@ function registerOperationsUtilityHttpRoutes({
                 return res.status(401).json({ ok: false, error: 'No autenticado.' });
             }
 
-            const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
             const chatId = String(req.query.chatId || '').trim();
             if (!chatId) {
                 return res.status(400).json({ ok: false, error: 'chatId es requerido.' });
@@ -148,13 +155,18 @@ function registerOperationsUtilityHttpRoutes({
 
             const limit = Number(req.query.limit || 200);
             const beforeTimestamp = req.query.beforeTimestamp ? Number(req.query.beforeTimestamp) : null;
-            const rows = await messageHistoryService.listMessages(tenant?.id || 'default', {
+            const tenantId = resolveOperationalTenant(req);
+            if (!tenantId) {
+                return res.status(400).json({ ok: false, error: 'tenant_not_resolved' });
+            }
+
+            const rows = await messageHistoryService.listMessages(tenantId, {
                 chatId,
                 limit,
                 beforeTimestamp
             });
 
-            return res.json({ ok: true, tenant, chatId, items: rows });
+            return res.json({ ok: true, tenant: { id: tenantId }, chatId, items: rows });
         } catch (error) {
             return res.status(500).json({ ok: false, error: 'No se pudo cargar historial de mensajes.' });
         }
@@ -166,10 +178,11 @@ function registerOperationsUtilityHttpRoutes({
                 return res.status(403).json({ ok: false, error: 'No tienes permisos para ver auditoria.' });
             }
 
-            const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
+            const tenantId = String(req?.authContext?.user?.tenantId || req?.tenantContext?.id || '').trim();
+            const auditTenantId = tenantId && tenantId !== 'default' ? tenantId : null;
             const limit = Number(req.query.limit || 100);
             const offset = Number(req.query.offset || 0);
-            const items = await auditLogService.listAuditLogs(tenant?.id || 'default', {
+            const items = await auditLogService.listAuditLogs(auditTenantId, {
                 limit,
                 offset,
                 userId: String(req.query.userId || '').trim(),
@@ -177,7 +190,7 @@ function registerOperationsUtilityHttpRoutes({
                 from: String(req.query.from || '').trim(),
                 to: String(req.query.to || '').trim()
             });
-            return res.json({ ok: true, tenant, items });
+            return res.json({ ok: true, tenant: auditTenantId ? { id: auditTenantId } : null, items });
         } catch (error) {
             return res.status(500).json({ ok: false, error: 'No se pudo cargar la auditoria.' });
         }

@@ -10,17 +10,34 @@ function createModuleTransportEnsurer({
     setActiveRuntimeContext = () => {},
     authzAudit = null
 } = {}) {
+    const resolveEffectiveTenantId = (selectedModule = null) => {
+        const candidate = String(
+            selectedModule?.tenantId
+            || selectedModule?.tenant_id
+            || selectedModule?.tenant
+            || tenantId
+            || ''
+        ).trim();
+        if (!candidate || candidate === 'default') {
+            console.warn('[TenantGuard] tenantId invalido en transport ensurer; operacion cancelada');
+            return null;
+        }
+        return candidate;
+    };
+
     const applyCloudConfigForModule = async (selectedModule = null) => {
         if (!selectedModule || typeof selectedModule !== 'object') return null;
         if (String(selectedModule?.transportMode || '').trim().toLowerCase() !== 'cloud') return null;
         if (typeof waModuleService.resolveModuleCloudConfig !== 'function') return null;
         if (typeof waClient.setCloudRuntimeConfig !== 'function') return null;
+        const effectiveTenantId = resolveEffectiveTenantId(selectedModule);
+        if (!effectiveTenantId) return null;
 
         let moduleForRuntime = selectedModule;
         try {
             const moduleId = String(selectedModule?.moduleId || '').trim();
             if (moduleId && typeof waModuleService.getModuleRuntime === 'function') {
-                const runtimeModule = await waModuleService.getModuleRuntime(tenantId, moduleId);
+                const runtimeModule = await waModuleService.getModuleRuntime(effectiveTenantId, moduleId);
                 if (runtimeModule) moduleForRuntime = runtimeModule;
             }
         } catch (_) {
@@ -29,7 +46,7 @@ function createModuleTransportEnsurer({
 
         const runtimeCloudConfig = {
             ...(waModuleService.resolveModuleCloudConfig(moduleForRuntime) || {}),
-            tenantId
+            tenantId: effectiveTenantId
         };
         waClient.setCloudRuntimeConfig(runtimeCloudConfig || {});
         return runtimeCloudConfig || null;
@@ -38,6 +55,8 @@ function createModuleTransportEnsurer({
     const ensureTransportForSelectedModule = async (selectedModule = null) => {
         const moduleTransport = String(selectedModule?.transportMode || '').trim().toLowerCase();
         if (moduleTransport !== 'cloud') return null;
+        const effectiveTenantId = resolveEffectiveTenantId(selectedModule);
+        if (!effectiveTenantId) return null;
         await applyCloudConfigForModule(selectedModule);
 
         let runtime = getWaRuntime();
@@ -54,8 +73,8 @@ function createModuleTransportEnsurer({
             }
 
             setActiveRuntimeContext({
-                tenantId,
-                moduleId: selectedModule?.moduleId || 'default',
+                tenantId: effectiveTenantId,
+                moduleId: selectedModule?.moduleId || null,
                 moduleName: selectedModule?.name || null,
                 modulePhone: selectedModule?.phoneNumber || null,
                 channelType: selectedModule?.channelType || null,
@@ -81,8 +100,8 @@ function createModuleTransportEnsurer({
         }
 
         setActiveRuntimeContext({
-            tenantId,
-            moduleId: selectedModule?.moduleId || 'default',
+            tenantId: effectiveTenantId,
+            moduleId: selectedModule?.moduleId || null,
             moduleName: selectedModule?.name || null,
             modulePhone: selectedModule?.phoneNumber || null,
             channelType: selectedModule?.channelType || null,

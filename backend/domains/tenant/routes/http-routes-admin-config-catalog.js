@@ -20,7 +20,8 @@ function isPostgresAvailable() {
 }
 
 function getRequestTenantId(req) {
-    return text(req?.tenantContext?.id || req?.headers?.['x-tenant-id'] || req?.query?.tenantId || req?.body?.tenantId);
+    const tenantId = text(req?.authContext?.user?.tenantId || req?.tenantContext?.id);
+    return tenantId && tenantId !== 'default' ? tenantId : null;
 }
 
 function sanitizeTenantSmtpPayload(payload = {}) {

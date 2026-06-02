@@ -1,9 +1,22 @@
-﻿function ensureAuthenticated(req, res, authService) {
+function ensureAuthenticated(req, res, authService) {
     if (authService.isAuthEnabled() && !req?.authContext?.isAuthenticated) {
         res.status(401).json({ ok: false, error: 'No autenticado.' });
         return false;
     }
     return true;
+}
+
+function resolveTenantIdFromRequest(req) {
+    const tenantId = String(req?.authContext?.user?.tenantId || req?.tenantContext?.id || '').trim();
+    return tenantId && tenantId !== 'default' ? tenantId : null;
+}
+
+function requireTenantId(req) {
+    const tenantId = resolveTenantIdFromRequest(req);
+    if (tenantId) return tenantId;
+    const error = new Error('tenant_not_resolved');
+    error.statusCode = 400;
+    throw error;
 }
 
 const multer = require('multer');
@@ -377,7 +390,7 @@ function registerTenantCustomerHttpRoutes({
             if (!ensureAuthenticated(req, res, authService)) return;
             if (!hasCustomersReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
 
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const query = String(req.query?.q || req.query?.query || '').trim();
             const moduleId = String(req.query?.moduleId || '').trim();
             const limit = Number(req.query?.limit || 50);
@@ -402,7 +415,7 @@ function registerTenantCustomerHttpRoutes({
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
 
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const query = String(req.query?.q || req.query?.query || '').trim();
             const includeInactive = String(req.query?.includeInactive || '').trim().toLowerCase() !== 'false';
             const limit = Number(req.query?.limit || 24);
@@ -423,7 +436,7 @@ function registerTenantCustomerHttpRoutes({
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
             if (!hasZonesReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const includeInactive = String(req.query?.includeInactive || '').trim().toLowerCase() === 'true';
             const items = await tenantZoneRulesService.listZoneRules(tenantId, { includeInactive });
             return res.json({ ok: true, tenantId, items });
@@ -436,7 +449,7 @@ function registerTenantCustomerHttpRoutes({
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
             if (!hasZonesManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const payload = req.body && typeof req.body === 'object' ? req.body : {};
             const item = await tenantZoneRulesService.saveZoneRule(tenantId, payload);
             return res.status(201).json({ ok: true, tenantId, item });
@@ -449,7 +462,7 @@ function registerTenantCustomerHttpRoutes({
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
             if (!hasZonesManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const ruleId = String(req.params?.ruleId || '').trim();
             const payload = req.body && typeof req.body === 'object' ? req.body : {};
             const item = await tenantZoneRulesService.saveZoneRule(tenantId, { ...payload, ruleId });
@@ -463,7 +476,7 @@ function registerTenantCustomerHttpRoutes({
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
             if (!hasZonesManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const ruleId = String(req.params?.ruleId || '').trim();
             const result = await tenantZoneRulesService.deleteZoneRule(tenantId, ruleId);
             return res.json({ ok: true, tenantId, ...result });
@@ -476,7 +489,7 @@ function registerTenantCustomerHttpRoutes({
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
             if (!hasZonesManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const result = await tenantZoneRulesService.recalculateZonesForTenant(tenantId);
             return res.json({ ok: true, tenantId, ...result });
         } catch (error) {
@@ -488,7 +501,7 @@ function registerTenantCustomerHttpRoutes({
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
             if (!hasZonesManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const payload = req.body && typeof req.body === 'object' ? req.body : {};
             const catalogId = String(payload.catalogId || req.query?.catalogId || '').trim();
             const result = await wooZonesSyncService.syncZonesFromWooCommerce(tenantId, catalogId);
@@ -502,7 +515,7 @@ function registerTenantCustomerHttpRoutes({
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
             if (!hasZonesManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const result = await logisticsAgenciesSyncService.syncAgenciesFromWordPress(tenantId);
             return res.json({ ok: true, tenantId, synced: Number(result?.synced || 0), source: result?.source || null });
         } catch (error) {
@@ -514,7 +527,7 @@ function registerTenantCustomerHttpRoutes({
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
             if (!hasCoverageResolveAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const payload = req.body && typeof req.body === 'object' ? req.body : {};
             const textValue = String(payload.text || payload.query || '').trim();
             let lat = payload.lat ?? payload.latitude;
@@ -544,7 +557,7 @@ function registerTenantCustomerHttpRoutes({
             if (!hasCoverageResolveAccess(req)) {
                 return res.status(403).json({ ok: false, error: 'No autorizado.' });
             }
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const runtimeConfig = await tenantIntegrationsService.getTenantIntegrations(tenantId, { runtime: true });
             const geo = runtimeConfig?.geo && typeof runtimeConfig.geo === 'object' ? runtimeConfig.geo : {};
             // SEGURIDAD: esta key debe estar restringida en Google Cloud Console por:
@@ -567,7 +580,7 @@ function registerTenantCustomerHttpRoutes({
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
             if (!hasCoverageResolveAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const payload = req.body && typeof req.body === 'object' ? req.body : {};
             const textValue = String(payload.text || payload.query || payload.lastMessage || '').trim();
             let lat = payload.lat ?? payload.latitude;
@@ -615,7 +628,7 @@ function registerTenantCustomerHttpRoutes({
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
             if (!hasLabelsReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const customerId = String(req.query?.customerId || '').trim();
             const source = String(req.query?.source || '').trim().toLowerCase();
             const items = await tenantZoneRulesService.listCustomerLabels(tenantId, { customerId, source });
@@ -630,7 +643,7 @@ function registerTenantCustomerHttpRoutes({
             if (!ensureAuthenticated(req, res, authService)) return;
             if (!hasCustomersReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
 
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const phoneE164 = String(req.params?.phoneE164 || '').trim();
             if (!phoneE164) {
                 return res.status(400).json({ ok: false, error: 'phoneE164 invalido.' });
@@ -658,7 +671,7 @@ function registerTenantCustomerHttpRoutes({
     app.get('/api/tenant/customers/:customerId/identities', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const customerId = String(req.params?.customerId || '').trim();
             if (!customerId) return res.status(400).json({ ok: false, error: 'customerId invalido.' });
 
@@ -684,7 +697,7 @@ function registerTenantCustomerHttpRoutes({
     app.get('/api/tenant/customers/:customerId/channel-events', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const customerId = String(req.params?.customerId || '').trim();
             if (!customerId) return res.status(400).json({ ok: false, error: 'customerId invalido.' });
 
@@ -713,7 +726,7 @@ function registerTenantCustomerHttpRoutes({
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
             if (!hasCustomersReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const customerId = String(req.params?.customerId || '').trim();
             if (!customerId) return res.status(400).json({ ok: false, error: 'customerId invalido.' });
             const items = await customerAddressesService.listAddresses(tenantId, { customerId });
@@ -729,7 +742,7 @@ function registerTenantCustomerHttpRoutes({
             if (!hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_MANAGE)) {
                 return res.status(403).json({ ok: false, error: 'No autorizado.' });
             }
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const customerId = String(req.params?.customerId || '').trim();
             if (!customerId) return res.status(400).json({ ok: false, error: 'customerId invalido.' });
             const payload = req.body && typeof req.body === 'object' ? req.body : {};
@@ -746,7 +759,7 @@ function registerTenantCustomerHttpRoutes({
             if (!hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_MANAGE)) {
                 return res.status(403).json({ ok: false, error: 'No autorizado.' });
             }
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const customerId = String(req.params?.customerId || '').trim();
             const addressId = String(req.params?.addressId || '').trim();
             if (!customerId || !addressId) return res.status(400).json({ ok: false, error: 'customerId/addressId invalido.' });
@@ -764,7 +777,7 @@ function registerTenantCustomerHttpRoutes({
             if (!hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_MANAGE)) {
                 return res.status(403).json({ ok: false, error: 'No autorizado.' });
             }
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const customerId = String(req.params?.customerId || '').trim();
             const addressId = String(req.params?.addressId || '').trim();
             if (!customerId || !addressId) return res.status(400).json({ ok: false, error: 'customerId/addressId invalido.' });
@@ -781,7 +794,7 @@ function registerTenantCustomerHttpRoutes({
             if (!hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_MANAGE)) {
                 return res.status(403).json({ ok: false, error: 'No autorizado.' });
             }
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const customerId = String(req.params?.customerId || '').trim();
             const addressId = String(req.params?.addressId || '').trim();
             if (!customerId || !addressId) return res.status(400).json({ ok: false, error: 'customerId/addressId invalido.' });
@@ -848,7 +861,7 @@ function registerTenantCustomerHttpRoutes({
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
 
-            const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
+            const tenantId = requireTenantId(req);
             const userId = String(req?.authContext?.user?.userId || req?.authContext?.user?.id || '').trim();
             const items = await waModuleService.listModules(tenantId, { includeInactive: false, userId });
             const selected = await waModuleService.getSelectedModule(tenantId, { userId });

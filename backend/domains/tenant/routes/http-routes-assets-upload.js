@@ -26,8 +26,15 @@
             if (!canUploadGenericAssets && !canUploadQuickReplyAssets) {
                 return res.status(403).json({ ok: false, error: 'No autorizado para subir archivos.' });
             }
-            const requestedTenantId = String(body.tenantId || req?.tenantContext?.id || 'default').trim() || 'default';
-            const tenantId = sanitizeStorageSegment(requestedTenantId, 'default');
+            const requestedTenantId = String(
+                req?.authContext?.user?.isSuperAdmin
+                    ? (body.tenantId || req?.authContext?.user?.tenantId || req?.tenantContext?.id || '')
+                    : (req?.authContext?.user?.tenantId || req?.tenantContext?.id || '')
+            ).trim();
+            if (!requestedTenantId || requestedTenantId === 'default') {
+                return res.status(400).json({ ok: false, error: 'tenant_not_resolved' });
+            }
+            const tenantId = sanitizeStorageSegment(requestedTenantId, requestedTenantId);
 
             if (!req?.authContext?.user?.isSuperAdmin && !isTenantAllowedForUser(req, requestedTenantId)) {
                 return res.status(403).json({ ok: false, error: 'No tienes acceso a ese tenant para subir archivos.' });

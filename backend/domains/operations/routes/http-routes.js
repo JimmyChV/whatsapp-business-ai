@@ -26,7 +26,8 @@ function ensureAuthenticated(req, res, authService) {
 }
 
 function resolveTenantIdFromContext(req) {
-    return String(req?.tenantContext?.id || 'default').trim() || 'default';
+    const tenantId = String(req?.authContext?.user?.tenantId || req?.tenantContext?.id || '').trim();
+    return tenantId && tenantId !== 'default' ? tenantId : null;
 }
 
 function resolveActorUserId(req) {
@@ -432,7 +433,7 @@ function registerOperationsHttpRoutes({
         : {};
     const getTemplateVariablesCatalog = typeof templateVariablesApi.getCatalog === 'function'
         ? templateVariablesApi.getCatalog.bind(templateVariablesApi)
-        : async () => ({ tenantId: 'default', generatedAt: null, categories: [], variables: [] });
+        : async () => ({ tenantId: null, generatedAt: null, categories: [], variables: [] });
     const getTemplateVariablesPreview = typeof templateVariablesApi.getPreview === 'function'
         ? templateVariablesApi.getPreview.bind(templateVariablesApi)
         : async (tenantId) => ({ tenantId, generatedAt: null, context: { chatId: null, customerId: null }, categories: [], variables: [] });

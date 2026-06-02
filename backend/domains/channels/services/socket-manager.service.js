@@ -23,6 +23,7 @@ const conversationOpsService = require('../../operations/services/conversation-o
 const chatCommercialStatusService = require('../../operations/services/chat-commercial-status.service');
 const campaignsService = require('../../operations/services/campaigns.service');
 const metaTemplatesService = require('../../operations/services/meta-templates.service');
+const { isValidOperationalTenant, warnInvalidTenant } = require('../../tenant/helpers/tenant-guard.helpers');
 const templateVariablesService = require('../../operations/services/template-variables.service');
 const customerConsentService = require('../../operations/services/customer-consent.service');
 const chatOriginService = require('../../operations/services/chat-origin.service');
@@ -285,8 +286,8 @@ class SocketManager {
         this.runtimeStore = createSocketRuntimeContextStore({
             io,
             initialRuntimeContext: {
-                tenantId: 'default',
-                moduleId: 'default',
+                tenantId: null,
+                moduleId: null,
                 transportMode: 'idle',
                 updatedAt: Date.now()
             },
@@ -623,6 +624,10 @@ class SocketManager {
 
     async isFeatureEnabledForTenant(tenantId = 'default', featureKey = '') {
         const cleanTenantId = String(tenantId || 'default').trim() || 'default';
+        if (!isValidOperationalTenant(cleanTenantId)) {
+            warnInvalidTenant(cleanTenantId, 'isFeatureEnabledForTenant');
+            return false;
+        }
         const tenant = tenantService.findTenantById(cleanTenantId) || tenantService.DEFAULT_TENANT;
         const tenantSettings = await tenantSettingsService.getTenantSettings(cleanTenantId);
         return planLimitsService.isFeatureEnabledForTenant(featureKey, tenant, tenantSettings);
@@ -630,6 +635,11 @@ class SocketManager {
 
     async reserveAiQuota(tenantId = 'default', { socket = null } = {}) {
         const cleanTenantId = String(tenantId || 'default').trim() || 'default';
+        if (!isValidOperationalTenant(cleanTenantId)) {
+            warnInvalidTenant(cleanTenantId, 'reserveAiQuota');
+            if (socket) socket.emit('ai_error', 'Selecciona una empresa antes de usar IA.');
+            return { ok: false, reason: 'tenant_not_resolved' };
+        }
         const tenant = tenantService.findTenantById(cleanTenantId) || tenantService.DEFAULT_TENANT;
         const tenantSettings = await tenantSettingsService.getTenantSettings(cleanTenantId);
 
@@ -670,6 +680,10 @@ class SocketManager {
         source = 'socket'
     } = {}) {
         const cleanTenantId = String(tenantId || 'default').trim() || 'default';
+        if (!isValidOperationalTenant(cleanTenantId)) {
+            warnInvalidTenant(cleanTenantId, 'emitCommercialStatusUpdated');
+            return;
+        }
         const cleanChatId = String(chatId || result?.status?.chatId || '').trim();
         if (!cleanChatId) return;
         const status = result?.status && typeof result.status === 'object' ? result.status : null;
@@ -708,6 +722,10 @@ class SocketManager {
         source = 'cloud_webhook'
     } = {}) {
         const cleanTenantId = String(tenantId || 'default').trim() || 'default';
+        if (!isValidOperationalTenant(cleanTenantId)) {
+            warnInvalidTenant(cleanTenantId, 'emitMetaTemplateStatusUpdated');
+            return;
+        }
         const cleanScopeModuleId = String(scopeModuleId || event?.scopeModuleId || '').trim().toLowerCase();
         const normalizedEvent = event && typeof event === 'object' ? event : null;
         if (!normalizedEvent) return;
@@ -737,8 +755,8 @@ class SocketManager {
         transportMode = 'idle'
     } = {}) {
         return this.runtimeStore.set('runtimeContext', {
-            tenantId: String(tenantId || 'default').trim() || 'default',
-            moduleId: String(moduleId || 'default').trim().toLowerCase() || 'default',
+            tenantId: String(tenantId || '').trim() || null,
+            moduleId: String(moduleId || '').trim().toLowerCase() || null,
             moduleName: String(moduleName || '').trim() || null,
             modulePhone: coerceHumanPhone(modulePhone || '') || null,
             channelType: String(channelType || '').trim().toLowerCase() || null,
@@ -767,6 +785,10 @@ class SocketManager {
     } = {}) {
         try {
             if (!msg) return;
+            if (!isValidOperationalTenant(tenantId)) {
+                warnInvalidTenant(tenantId, 'socket-manager.persistMessageHistory');
+                return;
+            }
             const messageId = getSerializedMessageId(msg);
             const chatId = String(msg?.fromMe ? msg?.to : msg?.from || '').trim();
             if (!messageId || !chatId) return;
@@ -875,6 +897,10 @@ class SocketManager {
         editedAtUnix
     } = {}) {
         try {
+            if (!isValidOperationalTenant(tenantId)) {
+                warnInvalidTenant(tenantId, 'socket-manager.persistMessageEdit');
+                return;
+            }
             await messageHistoryService.updateMessageEdit(tenantId, {
                 messageId,
                 chatId,
@@ -892,6 +918,10 @@ class SocketManager {
         ack
     } = {}) {
         try {
+            if (!isValidOperationalTenant(tenantId)) {
+                warnInvalidTenant(tenantId, 'socket-manager.persistMessageAck');
+                return;
+            }
             await messageHistoryService.updateMessageAck(tenantId, {
                 messageId,
                 chatId,
@@ -910,6 +940,10 @@ class SocketManager {
         timestamp
     } = {}) {
         try {
+            if (!isValidOperationalTenant(tenantId)) {
+                warnInvalidTenant(tenantId, 'socket-manager.persistMessageReaction');
+                return;
+            }
             const safeMessageId = String(messageId || '').trim();
             const safeChatId = String(chatId || '').trim();
             const safeEmoji = String(emoji || '').trim();
@@ -950,16 +984,27 @@ class SocketManager {
     resolveHistoryTenantId() {
         try {
             const runtimeTarget = this.resolveRuntimeEventTarget();
-            if (runtimeTarget?.tenantId) return runtimeTarget.tenantId;
+            if (isValidOperationalTenant(runtimeTarget?.tenantId)) return runtimeTarget.tenantId;
             const socketsMap = this.io?.sockets?.sockets;
             const entries = socketsMap ? Array.from(socketsMap.values()) : [];
-            if (!entries.length) return 'default';
-            const tenants = new Set(entries.map((socket) => String(socket?.data?.tenantId || 'default').trim() || 'default'));
-            if (tenants.size === 1) return Array.from(tenants)[0] || 'default';
+            if (!entries.length) {
+                warnInvalidTenant(null, 'socket-manager.resolveHistoryTenantId:no_sockets');
+                return null;
+            }
+            const tenants = new Set(
+                entries
+                    .map((socket) => String(socket?.data?.tenantId || '').trim())
+                    .filter((tenantId) => isValidOperationalTenant(tenantId))
+            );
+            if (tenants.size === 1) return Array.from(tenants)[0] || null;
             const runtimeContext = this.runtimeStore.get('runtimeContext', {});
-            return String(runtimeContext?.tenantId || 'default').trim() || 'default';
+            const tenantId = String(runtimeContext?.tenantId || '').trim();
+            if (isValidOperationalTenant(tenantId)) return tenantId;
+            warnInvalidTenant(tenantId, 'socket-manager.resolveHistoryTenantId:ambiguous');
+            return null;
         } catch (error) {
-            return 'default';
+            warnInvalidTenant(null, 'socket-manager.resolveHistoryTenantId:error');
+            return null;
         }
     }
 
@@ -1111,6 +1156,7 @@ class SocketManager {
 
     async enrichHistoryChatSummary(tenantId, summary = {}) {
         const safeTenantId = String(tenantId || 'default').trim() || 'default';
+        if (!isValidOperationalTenant(safeTenantId)) return summary;
         const phone = coerceHumanPhone(summary?.phone || '');
         const baseChatId = String(summary?.baseChatId || parseScopedChatId(summary?.id || '').chatId || '').trim();
         const normalizedBaseChatId = baseChatId || String(summary?.id || '').trim();
@@ -1368,7 +1414,13 @@ class SocketManager {
     setupSocketEvents() {
 
         this.io.on('connection', async (socket) => {
-            const tenantId = String(socket?.data?.tenantId || 'default');
+            const tenantId = String(socket?.data?.tenantId || '').trim();
+            if (!isValidOperationalTenant(tenantId)) {
+                warnInvalidTenant(tenantId, 'socket.connection');
+                socket.emit('connect_error', { message: 'tenant_not_resolved' });
+                socket.disconnect(true);
+                return;
+            }
             const authContext = socket?.data?.authContext || null;
             const authzAudit = createSocketAuthzAuditService({
                 socket,

@@ -30,7 +30,8 @@ function registerSecurityPushHttpRoutes({
     }
 
     function getTenantId(req = {}) {
-        return String(req?.authContext?.user?.tenantId || req?.tenantContext?.id || req?.body?.tenantId || '').trim();
+        const tenantId = String(req?.authContext?.user?.tenantId || req?.tenantContext?.id || '').trim();
+        return tenantId && tenantId !== 'default' ? tenantId : '';
     }
 
     app.post('/api/push/subscribe', async (req, res) => {

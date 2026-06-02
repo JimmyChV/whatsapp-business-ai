@@ -185,7 +185,7 @@ app.use((req, res, next) => {
             route: req.originalUrl || req.url || '/',
             statusCode: res.statusCode,
             durationMs,
-            tenantId: String(req?.tenantContext?.id || 'default')
+            tenantId: String(req?.tenantContext?.id || '')
         });
     });
 
@@ -233,14 +233,15 @@ app.use(async (req, res, next) => {
         const authContext = await authService.getRequestAuthContextAsync(req);
         const tenant = tenantService.resolveTenantForRequest(req, authContext?.user || null);
         req.authContext = authContext;
-        req.tenantContext = tenant;
-        res.setHeader('X-Tenant-Id', String(tenant?.id || 'default'));
+        req.tenantContext = tenant || null;
+        if (tenant?.id) {
+            res.setHeader('X-Tenant-Id', String(tenant.id));
+        }
         next();
     } catch (error) {
         logger.warn('[Auth] request middleware failed: ' + String(error?.message || error));
         req.authContext = { enabled: authService.isAuthEnabled(), tokenPresent: false, isAuthenticated: false, user: null };
-        req.tenantContext = tenantService.DEFAULT_TENANT;
-        res.setHeader('X-Tenant-Id', String(tenantService.DEFAULT_TENANT?.id || 'default'));
+        req.tenantContext = null;
         next();
     }
 });
@@ -359,14 +360,18 @@ io.use((socket, next) => {
         }
 
         const tenant = tenantService.resolveTenantForSocket(socket, authContext || null);
+        if (saasSocketAuthRequired && (!tenant?.id || !authContext?.tenantId)) {
+            opsTelemetry.recordSocketReject('tenant_not_resolved');
+            return next(new Error('Unauthorized'));
+        }
         if (saasSocketAuthRequired && authContext?.tenantId && authContext.tenantId !== tenant.id) {
             opsTelemetry.recordSocketReject('tenant_mismatch');
             return next(new Error('Unauthorized'));
         }
 
         socket.data = socket.data || {};
-        socket.data.tenantId = String(tenant?.id || 'default');
-        socket.data.tenant = tenant;
+        socket.data.tenantId = String(tenant?.id || '');
+        socket.data.tenant = tenant || null;
         socket.data.authContext = authContext || null;
         return next();
     })().catch((error) => {
@@ -604,7 +609,7 @@ const chatAssignmentInactivityJob = chatAssignmentInactivityJobService.createCha
     opsTelemetry
 });
 const campaignDispatcherTransportOrchestrator = createModuleTransportEnsurer({
-    tenantId: 'default',
+    tenantId: null,
     waClient,
     waModuleService,
     getWaRuntime: () => (typeof waClient.getRuntimeInfo === 'function' ? waClient.getRuntimeInfo() : {})
