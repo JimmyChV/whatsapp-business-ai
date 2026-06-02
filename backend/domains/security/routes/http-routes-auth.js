@@ -257,8 +257,28 @@
             tenantName: String(row?.tenant_name || fallbackUser?.tenantName || '').trim(),
             avatarUrl: String(row?.avatar_url || fallbackUser?.avatarUrl || '').trim(),
             phone: cleanText(metadata.phone || metadata.phoneNumber || '', 40),
-            createdAt: row?.created_at ? new Date(row.created_at).toISOString() : null
+            createdAt: row?.created_at ? new Date(row.created_at).toISOString() : null,
+            passwordChangedAt: row?.password_changed_at ? new Date(row.password_changed_at).toISOString() : null
         };
+    }
+
+    let passwordChangedAtColumnAvailable = null;
+    async function hasPasswordChangedAtColumn() {
+        if (passwordChangedAtColumnAvailable !== null) return passwordChangedAtColumnAvailable;
+        try {
+            const { rows } = await queryPostgres(
+                `SELECT 1
+                   FROM information_schema.columns
+                  WHERE table_schema = 'public'
+                    AND table_name = 'users'
+                    AND column_name = 'password_changed_at'
+                  LIMIT 1`
+            );
+            passwordChangedAtColumnAvailable = Boolean(rows?.[0]);
+        } catch (_) {
+            passwordChangedAtColumnAvailable = false;
+        }
+        return passwordChangedAtColumnAvailable;
     }
 
     async function fetchUserProfile(req = {}) {
@@ -266,8 +286,10 @@
         const userId = String(user?.userId || user?.id || '').trim();
         const tenantId = getCurrentTenantId(req);
         if (!userId) throw new Error('No autenticado.');
+        const includePasswordChangedAt = await hasPasswordChangedAtColumn();
         const { rows } = await queryPostgres(
             `SELECT u.user_id, u.email, u.display_name, u.avatar_url, u.metadata, u.created_at,
+                    ${includePasswordChangedAt ? 'u.password_changed_at' : 'NULL::timestamptz AS password_changed_at'},
                     m.role, t.name AS tenant_name
                FROM users u
                LEFT JOIN memberships m
@@ -953,13 +975,24 @@
             }
 
             const nextHash = passwordHashService.hashPassword(newPassword);
-            await queryPostgres(
-                `UPDATE users
-                    SET password_hash = $2,
-                        updated_at = NOW()
-                  WHERE user_id = $1`,
-                [userId, nextHash]
-            );
+            if (await hasPasswordChangedAtColumn()) {
+                await queryPostgres(
+                    `UPDATE users
+                        SET password_hash = $2,
+                            password_changed_at = NOW(),
+                            updated_at = NOW()
+                      WHERE user_id = $1`,
+                    [userId, nextHash]
+                );
+            } else {
+                await queryPostgres(
+                    `UPDATE users
+                        SET password_hash = $2,
+                            updated_at = NOW()
+                      WHERE user_id = $1`,
+                    [userId, nextHash]
+                );
+            }
 
             const revokedSessions = await authSessionService.revokeUserRefreshSessionsExcept({
                 userId,

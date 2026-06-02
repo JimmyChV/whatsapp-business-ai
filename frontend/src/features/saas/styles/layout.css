@@ -913,6 +913,50 @@
   line-height: 1.35;
 }
 
+.saas-profile-password-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid var(--saas-border-color);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--saas-bg-input) 88%, #ffffff 12%);
+  padding: 14px;
+}
+
+.saas-profile-password-summary > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.saas-profile-password-summary span {
+  color: var(--saas-text-secondary);
+  font-size: 0.82rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.saas-profile-password-summary strong {
+  color: var(--saas-text-primary);
+  font-size: 1.18rem;
+  letter-spacing: 0.08em;
+  line-height: 1;
+}
+
+.saas-profile-password-summary small {
+  color: var(--saas-text-secondary);
+  font-weight: 700;
+}
+
+.saas-profile-password-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .saas-profile-password-rules {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1057,6 +1101,11 @@
 
   .saas-profile-password-rules {
     grid-template-columns: 1fr;
+  }
+
+  .saas-profile-password-summary {
+    grid-template-columns: 1fr;
+    align-items: stretch;
   }
 
   .saas-profile-device,

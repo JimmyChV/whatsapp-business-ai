@@ -42,6 +42,19 @@ function formatDate(value = '') {
     });
 }
 
+function formatPasswordChangedAt(value = '') {
+    if (!value) return 'Nunca cambiada desde el panel';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Nunca cambiada desde el panel';
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    const diffDays = Math.floor((startOfToday - startOfDate) / (24 * 60 * 60 * 1000));
+    if (diffDays <= 0) return 'Hoy';
+    if (diffDays < 7) return `Hace ${diffDays} ${diffDays === 1 ? 'día' : 'días'}`;
+    return `el ${date.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
+}
+
 function deviceIcon(type = '') {
     const normalized = String(type || '').toLowerCase();
     if (normalized === 'mobile') return <Smartphone size={18} strokeWidth={2} />;
@@ -88,6 +101,7 @@ export default function SaasProfileModal({
     const [activeSection, setActiveSection] = useState(initialSection === 'devices' ? 'devices' : 'profile');
     const [profileDraft, setProfileDraft] = useState({ displayName: '', phone: '' });
     const [passwordDraft, setPasswordDraft] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    const [editingPassword, setEditingPassword] = useState(false);
     const [visiblePasswords, setVisiblePasswords] = useState({});
     const [status, setStatus] = useState('');
     const [error, setError] = useState('');
@@ -150,6 +164,11 @@ export default function SaasProfileModal({
         && Object.values(passwordChecks).every(Boolean)
         && passwordDraft.currentPassword !== passwordDraft.newPassword;
 
+    const resetPasswordEditor = () => {
+        setPasswordDraft({ currentPassword: '', newPassword: '', confirmPassword: '' });
+        setVisiblePasswords({});
+    };
+
     const handleAvatarChange = async (event) => {
         const file = event.target.files?.[0];
         event.target.value = '';
@@ -205,7 +224,9 @@ export default function SaasProfileModal({
                 method: 'POST',
                 body: passwordDraft
             });
-            setPasswordDraft({ currentPassword: '', newPassword: '', confirmPassword: '' });
+            resetPasswordEditor();
+            setEditingPassword(false);
+            setProfile((prev) => prev ? { ...prev, passwordChangedAt: new Date().toISOString() } : prev);
             setStatus('Contraseña cambiada correctamente. Se cerraron todas las sesiones en otros dispositivos por seguridad.');
         } catch (err) {
             const message = String(err?.message || '');
@@ -358,46 +379,81 @@ export default function SaasProfileModal({
                             {activeSection === 'security' ? (
                                 <section className="saas-profile-card">
                                     <h4>Seguridad</h4>
-                                    <PasswordField
-                                        label="Contraseña actual"
-                                        description="Ingresa tu contraseña actual para confirmar tu identidad."
-                                        value={passwordDraft.currentPassword}
-                                        onChange={(value) => setPasswordDraft((prev) => ({ ...prev, currentPassword: value }))}
-                                        visible={visiblePasswords.current}
-                                        onToggle={() => setVisiblePasswords((prev) => ({ ...prev, current: !prev.current }))}
-                                        autoComplete="current-password"
-                                    />
-                                    <PasswordField
-                                        label="Nueva contraseña"
-                                        description="Elige una contraseña segura que no hayas usado antes."
-                                        value={passwordDraft.newPassword}
-                                        onChange={(value) => setPasswordDraft((prev) => ({ ...prev, newPassword: value }))}
-                                        visible={visiblePasswords.next}
-                                        onToggle={() => setVisiblePasswords((prev) => ({ ...prev, next: !prev.next }))}
-                                        autoComplete="new-password"
-                                    />
-                                    <PasswordField
-                                        label="Confirmar nueva contraseña"
-                                        description="Escribe nuevamente la nueva contraseña para verificar que sea correcta."
-                                        value={passwordDraft.confirmPassword}
-                                        onChange={(value) => setPasswordDraft((prev) => ({ ...prev, confirmPassword: value }))}
-                                        visible={visiblePasswords.confirm}
-                                        onToggle={() => setVisiblePasswords((prev) => ({ ...prev, confirm: !prev.confirm }))}
-                                        autoComplete="new-password"
-                                    />
-                                    <div className="saas-profile-password-rules">
-                                        {PASSWORD_RULES.map((rule) => (
-                                            <span key={rule.key} className={`is-${passwordRuleStates[rule.key] || 'neutral'}`}>
-                                                {passwordRuleStates[rule.key] === 'neutral'
-                                                    ? <em aria-hidden="true">○</em>
-                                                    : (passwordChecks[rule.key] ? <Check size={13} /> : <X size={13} />)}
-                                                {rule.label}
-                                            </span>
-                                        ))}
-                                    </div>
-                                    <button type="button" className="saas-btn saas-btn-primary" disabled={saving || !canChangePassword} onClick={handleChangePassword}>
-                                        <Shield size={15} /> Cambiar contraseña
-                                    </button>
+                                    {!editingPassword ? (
+                                        <div className="saas-profile-password-summary">
+                                            <div>
+                                                <span>Contraseña</span>
+                                                <strong>••••••••••••</strong>
+                                                <small>Última vez cambiada: {formatPasswordChangedAt(profile?.passwordChangedAt)}</small>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                className="saas-btn saas-header-btn saas-header-btn--secondary"
+                                                onClick={() => {
+                                                    resetPasswordEditor();
+                                                    setEditingPassword(true);
+                                                }}
+                                            >
+                                                Cambiar contraseña →
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <PasswordField
+                                                label="Contraseña actual"
+                                                description="Ingresa tu contraseña actual para confirmar tu identidad."
+                                                value={passwordDraft.currentPassword}
+                                                onChange={(value) => setPasswordDraft((prev) => ({ ...prev, currentPassword: value }))}
+                                                visible={visiblePasswords.current}
+                                                onToggle={() => setVisiblePasswords((prev) => ({ ...prev, current: !prev.current }))}
+                                                autoComplete="current-password"
+                                            />
+                                            <PasswordField
+                                                label="Nueva contraseña"
+                                                description="Elige una contraseña segura que no hayas usado antes."
+                                                value={passwordDraft.newPassword}
+                                                onChange={(value) => setPasswordDraft((prev) => ({ ...prev, newPassword: value }))}
+                                                visible={visiblePasswords.next}
+                                                onToggle={() => setVisiblePasswords((prev) => ({ ...prev, next: !prev.next }))}
+                                                autoComplete="new-password"
+                                            />
+                                            <PasswordField
+                                                label="Confirmar nueva contraseña"
+                                                description="Escribe nuevamente la nueva contraseña para verificar que sea correcta."
+                                                value={passwordDraft.confirmPassword}
+                                                onChange={(value) => setPasswordDraft((prev) => ({ ...prev, confirmPassword: value }))}
+                                                visible={visiblePasswords.confirm}
+                                                onToggle={() => setVisiblePasswords((prev) => ({ ...prev, confirm: !prev.confirm }))}
+                                                autoComplete="new-password"
+                                            />
+                                            <div className="saas-profile-password-rules">
+                                                {PASSWORD_RULES.map((rule) => (
+                                                    <span key={rule.key} className={`is-${passwordRuleStates[rule.key] || 'neutral'}`}>
+                                                        {passwordRuleStates[rule.key] === 'neutral'
+                                                            ? <em aria-hidden="true">○</em>
+                                                            : (passwordChecks[rule.key] ? <Check size={13} /> : <X size={13} />)}
+                                                        {rule.label}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                            <div className="saas-profile-password-actions">
+                                                <button
+                                                    type="button"
+                                                    className="saas-btn saas-header-btn saas-header-btn--secondary"
+                                                    disabled={saving}
+                                                    onClick={() => {
+                                                        resetPasswordEditor();
+                                                        setEditingPassword(false);
+                                                    }}
+                                                >
+                                                    Cancelar
+                                                </button>
+                                                <button type="button" className="saas-btn saas-btn-primary" disabled={saving || !canChangePassword} onClick={handleChangePassword}>
+                                                    <Shield size={15} /> Guardar contraseña
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
                                 </section>
                             ) : null}
 
