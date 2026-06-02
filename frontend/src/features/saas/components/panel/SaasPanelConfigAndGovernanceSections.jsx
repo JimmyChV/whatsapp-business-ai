@@ -38,6 +38,7 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
         canRevokeOwnDevices: context.canRevokeOwnDevices,
         canViewAllDevices: context.canViewAllDevices,
         canRevokeAllDevices: context.canRevokeAllDevices,
+        canViewAuditLogs: context.canViewAuditLogs,
         canViewEmailTemplates: context.canViewEmailTemplates,
         canManageEmailTemplates: context.canManageEmailTemplates,
         canViewBrand: context.canViewBrand,

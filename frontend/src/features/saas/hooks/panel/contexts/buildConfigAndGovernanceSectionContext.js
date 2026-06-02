@@ -56,6 +56,7 @@ export default function buildConfigAndGovernanceSectionContext(c) {
         canRevokeOwnDevices: c.canRevokeOwnDevices,
         canViewAllDevices: c.canViewAllDevices,
         canRevokeAllDevices: c.canRevokeAllDevices,
+        canViewAuditLogs: c.canViewAuditLogs,
         canViewEmailTemplates: c.canViewEmailTemplates,
         canManageEmailTemplates: c.canManageEmailTemplates,
         canViewBrand: c.canViewBrand,
