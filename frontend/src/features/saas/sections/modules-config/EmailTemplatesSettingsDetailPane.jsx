@@ -462,6 +462,7 @@ export default function EmailTemplatesSettingsDetailPane({
                     </div>
                 </div>
 
+                <div className="saas-email-brand-card__body">
                 {brandUnavailable ? (
                     <div className="saas-admin-empty-inline">
                         {brandError || 'No se pudo cargar identidad de marca. La seccion seguira visible para que no pierdas contexto.'}
@@ -553,6 +554,7 @@ export default function EmailTemplatesSettingsDetailPane({
                     </div>
                     </>
                 )}
+                </div>
             </section>
 
             <section className="saas-admin-related-block saas-email-templates-list">
