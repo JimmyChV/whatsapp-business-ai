@@ -73,6 +73,7 @@ function registerTenantCustomerHttpRoutes({
     isTenantAllowedForUser,
     hasPermission
 }) {
+    const auditLogService = require('../../security/services/audit-log.service');
     if (!app) throw new Error('registerTenantCustomerHttpRoutes requiere app.');
 
     function hasLabelsReadAccess(req) {
@@ -194,6 +195,13 @@ function registerTenantCustomerHttpRoutes({
         try {
             const payload = req.body && typeof req.body === 'object' ? req.body : {};
             const result = await customerService.upsertCustomer(tenantId, payload, { allowPhoneMerge: true });
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: result?.created ? 'customer.created' : 'customer.updated',
+                resourceType: 'customer',
+                resourceId: result?.item?.customerId || result?.item?.customer_id || payload.customerId || payload.phoneE164 || null,
+                newValue: result?.item || payload
+            });
             return res.status(result?.created ? 201 : 200).json({ ok: true, tenantId, created: Boolean(result?.created), item: result?.item || null });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar cliente.') });
@@ -211,6 +219,13 @@ function registerTenantCustomerHttpRoutes({
         try {
             const patch = req.body && typeof req.body === 'object' ? req.body : {};
             const result = await customerService.updateCustomer(tenantId, customerId, patch);
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'customer.updated',
+                resourceType: 'customer',
+                resourceId: customerId,
+                newValue: result?.item || patch
+            });
             return res.json({ ok: true, tenantId, item: result?.item || null });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar cliente.') });
@@ -229,6 +244,19 @@ function registerTenantCustomerHttpRoutes({
             const moduleId = String(req.body?.moduleId || '').trim();
             const delimiter = String(req.body?.delimiter || '').trim();
             const result = await customerService.importCustomersCsv(tenantId, csvText, { moduleId, delimiter });
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'customer.imported',
+                resourceType: 'customer_import',
+                resourceId: result?.importId || null,
+                newValue: {
+                    source: 'csv',
+                    moduleId,
+                    total: result?.total || result?.totalRows || null,
+                    created: result?.created || result?.inserted || null,
+                    updated: result?.updated || null
+                }
+            });
             return res.json({ ok: true, tenantId, ...result });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo importar CSV de clientes.') });
@@ -318,6 +346,19 @@ function registerTenantCustomerHttpRoutes({
                     mode
                 });
                 console.log('[ERP-IMPORT][HTTP] service completed importId=%s mode=%s', importId, mode);
+                if (mode === 'commit') {
+                    await auditLogService.writeRequestAuditLog(req, {
+                        tenantId,
+                        action: 'customer.imported',
+                        resourceType: 'customer_import',
+                        resourceId: importId,
+                        newValue: {
+                            source: 'erp',
+                            customers: result?.customers || null,
+                            addresses: result?.addresses || null
+                        }
+                    });
+                }
                 return res.json({ ok: true, tenantId, ...result });
             } catch (error) {
                 console.error('[ERP-IMPORT][HTTP] failed', error?.message, error?.stack);
@@ -452,6 +493,13 @@ function registerTenantCustomerHttpRoutes({
             const tenantId = requireTenantId(req);
             const payload = req.body && typeof req.body === 'object' ? req.body : {};
             const item = await tenantZoneRulesService.saveZoneRule(tenantId, payload);
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'zone.created',
+                resourceType: 'zone_rule',
+                resourceId: item?.ruleId || item?.id || payload.ruleId || null,
+                newValue: item
+            });
             return res.status(201).json({ ok: true, tenantId, item });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar zona.') });
@@ -466,6 +514,13 @@ function registerTenantCustomerHttpRoutes({
             const ruleId = String(req.params?.ruleId || '').trim();
             const payload = req.body && typeof req.body === 'object' ? req.body : {};
             const item = await tenantZoneRulesService.saveZoneRule(tenantId, { ...payload, ruleId });
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'zone.updated',
+                resourceType: 'zone_rule',
+                resourceId: ruleId,
+                newValue: item
+            });
             return res.json({ ok: true, tenantId, item });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar zona.') });
@@ -479,6 +534,13 @@ function registerTenantCustomerHttpRoutes({
             const tenantId = requireTenantId(req);
             const ruleId = String(req.params?.ruleId || '').trim();
             const result = await tenantZoneRulesService.deleteZoneRule(tenantId, ruleId);
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'zone.deleted',
+                resourceType: 'zone_rule',
+                resourceId: ruleId,
+                oldValue: result
+            });
             return res.json({ ok: true, tenantId, ...result });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo eliminar zona.') });
@@ -491,6 +553,13 @@ function registerTenantCustomerHttpRoutes({
             if (!hasZonesManageAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
             const tenantId = requireTenantId(req);
             const result = await tenantZoneRulesService.recalculateZonesForTenant(tenantId);
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'zone.synced',
+                resourceType: 'zone_rule',
+                resourceId: tenantId,
+                newValue: result
+            });
             return res.json({ ok: true, tenantId, ...result });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo recalcular zonas.') });
@@ -505,6 +574,13 @@ function registerTenantCustomerHttpRoutes({
             const payload = req.body && typeof req.body === 'object' ? req.body : {};
             const catalogId = String(payload.catalogId || req.query?.catalogId || '').trim();
             const result = await wooZonesSyncService.syncZonesFromWooCommerce(tenantId, catalogId);
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'zone.synced',
+                resourceType: 'zone_rule',
+                resourceId: catalogId || tenantId,
+                newValue: result
+            });
             return res.json({ ok: true, tenantId, ...result });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron importar zonas desde WooCommerce.') });
@@ -747,6 +823,13 @@ function registerTenantCustomerHttpRoutes({
             if (!customerId) return res.status(400).json({ ok: false, error: 'customerId invalido.' });
             const payload = req.body && typeof req.body === 'object' ? req.body : {};
             const item = await customerAddressesService.upsertAddress(tenantId, { ...payload, customerId });
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'customer.address.updated',
+                resourceType: 'customer_address',
+                resourceId: item?.addressId || item?.id || null,
+                newValue: item
+            });
             return res.status(201).json({ ok: true, tenantId, customerId, item });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear direccion.') });
@@ -765,6 +848,13 @@ function registerTenantCustomerHttpRoutes({
             if (!customerId || !addressId) return res.status(400).json({ ok: false, error: 'customerId/addressId invalido.' });
             const payload = req.body && typeof req.body === 'object' ? req.body : {};
             const item = await customerAddressesService.upsertAddress(tenantId, { ...payload, customerId, addressId });
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'customer.address.updated',
+                resourceType: 'customer_address',
+                resourceId: addressId,
+                newValue: item
+            });
             return res.json({ ok: true, tenantId, customerId, item });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar direccion.') });
@@ -782,6 +872,16 @@ function registerTenantCustomerHttpRoutes({
             const addressId = String(req.params?.addressId || '').trim();
             if (!customerId || !addressId) return res.status(400).json({ ok: false, error: 'customerId/addressId invalido.' });
             const deleted = await customerAddressesService.deleteAddress(tenantId, { addressId });
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'customer.address.updated',
+                resourceType: 'customer_address',
+                resourceId: addressId,
+                oldValue: {
+                    deleted: Boolean(deleted),
+                    customerId
+                }
+            });
             return res.json({ ok: true, tenantId, customerId, addressId, deleted: Boolean(deleted) });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo eliminar direccion.') });
@@ -799,6 +899,13 @@ function registerTenantCustomerHttpRoutes({
             const addressId = String(req.params?.addressId || '').trim();
             if (!customerId || !addressId) return res.status(400).json({ ok: false, error: 'customerId/addressId invalido.' });
             const item = await customerAddressesService.setPrimaryAddress(tenantId, { customerId, addressId });
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'customer.address.updated',
+                resourceType: 'customer_address',
+                resourceId: addressId,
+                newValue: item
+            });
             return res.json({ ok: true, tenantId, customerId, item });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo marcar direccion primaria.') });

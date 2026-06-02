@@ -11,6 +11,7 @@
     sanitizeQuickReplyLibraryPayload,
     sanitizeQuickReplyItemPayload
 }) {
+    const auditLogService = require('../../security/services/audit-log.service');
     if (!app) throw new Error('registerTenantLabelsQuickRepliesHttpRoutes requiere app.');
 
     function ensureAuthenticated(req, res) {
@@ -132,6 +133,13 @@
             const payload = sanitizeTenantLabelPayload(req.body, { allowLabelId: true });
             if (!String(payload.name || '').trim()) return res.status(400).json({ ok: false, error: 'Nombre de etiqueta requerido.' });
             const item = await tenantLabelService.saveLabel(payload, { tenantId });
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'label.created',
+                resourceType: 'label',
+                resourceId: item?.labelId || payload.labelId || null,
+                newValue: item
+            });
             return res.status(201).json({ ok: true, tenantId, item });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear etiqueta.') });
@@ -154,6 +162,13 @@
             const payload = sanitizeTenantLabelPayload(req.body, { allowLabelId: false });
             if (!String(payload.name || '').trim()) return res.status(400).json({ ok: false, error: 'Nombre de etiqueta requerido.' });
             const item = await tenantLabelService.saveLabel({ ...payload, labelId }, { tenantId });
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'label.updated',
+                resourceType: 'label',
+                resourceId: labelId,
+                newValue: item
+            });
             return res.json({ ok: true, tenantId, item });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar etiqueta.') });
@@ -299,6 +314,13 @@
             if (!payload.label) return res.status(400).json({ ok: false, error: 'Etiqueta requerida.' });
             if (!payload.text && (!Array.isArray(payload.mediaAssets) || payload.mediaAssets.length === 0) && !payload.mediaUrl) return res.status(400).json({ ok: false, error: 'Debes registrar texto o adjunto.' });
             const item = await quickReplyLibrariesService.saveQuickReplyItem(payload, { tenantId });
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'quick_reply.created',
+                resourceType: 'quick_reply',
+                resourceId: item?.itemId || payload.itemId || null,
+                newValue: item
+            });
             return res.status(201).json({ ok: true, tenantId, item });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear respuesta rapida.') });
@@ -318,6 +340,13 @@
             if (!payload.label) return res.status(400).json({ ok: false, error: 'Etiqueta requerida.' });
             if (!payload.text && (!Array.isArray(payload.mediaAssets) || payload.mediaAssets.length === 0) && !payload.mediaUrl) return res.status(400).json({ ok: false, error: 'Debes registrar texto o adjunto.' });
             const item = await quickReplyLibrariesService.saveQuickReplyItem({ ...payload, itemId }, { tenantId });
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'quick_reply.updated',
+                resourceType: 'quick_reply',
+                resourceId: itemId,
+                newValue: item
+            });
             return res.json({ ok: true, tenantId, item });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar respuesta rapida.') });

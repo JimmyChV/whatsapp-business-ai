@@ -2,6 +2,7 @@
 
 const emailService = require('../../security/services/email.service');
 const emailTemplatesService = require('../../security/services/email-templates.service');
+const auditLogService = require('../../security/services/audit-log.service');
 const {
     getStorageDriver,
     queryPostgres
@@ -321,6 +322,16 @@ function registerTenantAdminConfigCatalogHttpRoutes({
         try {
             const patch = { smtp: sanitizeTenantSmtpPayload(req.body) };
             const integrations = await tenantIntegrationsService.updateTenantIntegrations(tenantId, patch);
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'config.smtp.updated',
+                resourceType: 'smtp_config',
+                resourceId: tenantId,
+                newValue: {
+                    ...patch.smtp,
+                    pass: patch.smtp?.pass ? '[redacted]' : undefined
+                }
+            });
             return res.json({ ok: true, tenantId, smtp: integrations?.smtp || {} });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar la configuracion de correo.') });
@@ -400,6 +411,17 @@ function registerTenantAdminConfigCatalogHttpRoutes({
         try {
             const userId = text(req?.authContext?.user?.userId || req?.authContext?.user?.id);
             const item = await emailTemplatesService.saveTemplate(tenantId, templateKey, req.body || {}, userId);
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'config.email_template.updated',
+                resourceType: 'email_template',
+                resourceId: templateKey,
+                newValue: {
+                    templateKey,
+                    subject: item?.subject || null,
+                    isCustom: item?.isCustom ?? item?.is_custom ?? true
+                }
+            });
             return res.json({ ok: true, tenantId, item });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar la plantilla.') });
@@ -416,6 +438,16 @@ function registerTenantAdminConfigCatalogHttpRoutes({
 
         try {
             const item = await emailTemplatesService.resetTemplate(tenantId, templateKey);
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'config.email_template.updated',
+                resourceType: 'email_template',
+                resourceId: templateKey,
+                newValue: {
+                    templateKey,
+                    restoredDefault: true
+                }
+            });
             return res.json({ ok: true, tenantId, item });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo restaurar la plantilla.') });
@@ -504,6 +536,13 @@ function registerTenantAdminConfigCatalogHttpRoutes({
 
         try {
             const brand = await emailTemplatesService.upsertBrand(tenantId, req.body || {});
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'config.brand.updated',
+                resourceType: 'email_brand',
+                resourceId: tenantId,
+                newValue: brand
+            });
             return res.json({ ok: true, tenantId, brand });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar identidad de marca.') });
@@ -558,6 +597,13 @@ function registerTenantAdminConfigCatalogHttpRoutes({
                 [tenantId, email, name]
             );
             const items = await listTenantDeviceAuthorizers(tenantId);
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'config.authorizers.updated',
+                resourceType: 'device_authorizer',
+                resourceId: String(rows?.[0]?.id || email),
+                newValue: normalizeDeviceAuthorizer(rows?.[0] || null)
+            });
             return res.json({ ok: true, tenantId, item: normalizeDeviceAuthorizer(rows?.[0] || null), items, limit: 5 });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar autorizador.') });
@@ -590,6 +636,16 @@ function registerTenantAdminConfigCatalogHttpRoutes({
                 [tenantId, id]
             );
             const items = await listTenantDeviceAuthorizers(tenantId);
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'config.authorizers.updated',
+                resourceType: 'device_authorizer',
+                resourceId: String(id),
+                newValue: {
+                    id,
+                    isActive: false
+                }
+            });
             return res.json({ ok: true, tenantId, items, limit: 5 });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo eliminar autorizador.') });
@@ -629,6 +685,13 @@ function registerTenantAdminConfigCatalogHttpRoutes({
             if (!payload.name) return res.status(400).json({ ok: false, error: 'Nombre de asistente requerido.' });
 
             const result = await tenantIntegrationsService.createTenantAiAssistant(tenantId, payload);
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'ai_assistant.created',
+                resourceType: 'ai_assistant',
+                resourceId: result?.item?.assistantId || result?.item?.id || payload.assistantId || null,
+                newValue: result?.item || payload
+            });
             return res.json({ ok: true, tenantId, defaultAssistantId: result?.defaultAssistantId || null, item: result?.item || null });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear asistente IA.') });
@@ -647,6 +710,13 @@ function registerTenantAdminConfigCatalogHttpRoutes({
         try {
             const payload = sanitizeAiAssistantPayload(req.body, { allowAssistantId: false });
             const result = await tenantIntegrationsService.updateTenantAiAssistant(tenantId, assistantId, payload);
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'ai_assistant.updated',
+                resourceType: 'ai_assistant',
+                resourceId: assistantId,
+                newValue: result?.item || payload
+            });
             return res.json({ ok: true, tenantId, defaultAssistantId: result?.defaultAssistantId || null, item: result?.item || null });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar asistente IA.') });
@@ -681,6 +751,13 @@ function registerTenantAdminConfigCatalogHttpRoutes({
 
         try {
             const result = await tenantIntegrationsService.deactivateTenantAiAssistant(tenantId, assistantId);
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'ai_assistant.deactivated',
+                resourceType: 'ai_assistant',
+                resourceId: assistantId,
+                newValue: result?.item || { assistantId, active: false }
+            });
             return res.json({ ok: true, tenantId, defaultAssistantId: result?.defaultAssistantId || null, item: result?.item || null });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar asistente IA.') });
@@ -716,6 +793,13 @@ function registerTenantAdminConfigCatalogHttpRoutes({
             const item = await tenantCatalogService.createCatalog(tenantId, payload, {
                 maxCatalogs: Number(limits?.maxCatalogs || 0) || 0
             });
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'catalog.created',
+                resourceType: 'catalog',
+                resourceId: item?.catalogId || item?.id || null,
+                newValue: item
+            });
             return res.status(201).json({ ok: true, tenantId, item });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear el catalogo.') });
@@ -733,6 +817,13 @@ function registerTenantAdminConfigCatalogHttpRoutes({
         try {
             const patch = req.body && typeof req.body === 'object' ? req.body : {};
             const item = await tenantCatalogService.updateCatalog(tenantId, catalogId, patch);
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'catalog.updated',
+                resourceType: 'catalog',
+                resourceId: catalogId,
+                newValue: item || patch
+            });
             return res.json({ ok: true, tenantId, item });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar el catalogo.') });
@@ -791,6 +882,16 @@ function registerTenantAdminConfigCatalogHttpRoutes({
             const result = await catalogSyncService.syncCatalogFromWoocommerce(tenantId, catalogId);
             if (hasInterval) catalogSyncService.scheduleCatalogSync(tenantId, catalogId, body.intervalHours);
             const status = await catalogSyncService.getSyncStatus(tenantId, catalogId);
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'catalog.synced',
+                resourceType: 'catalog',
+                resourceId: catalogId,
+                newValue: {
+                    result,
+                    status
+                }
+            });
             return res.json({ ok: true, tenantId, catalogId, result, status });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo sincronizar el catalogo.') });
@@ -842,6 +943,13 @@ function registerTenantAdminConfigCatalogHttpRoutes({
                 catalogId,
                 moduleId: moduleId || null
             });
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'product.created',
+                resourceType: 'catalog_product',
+                resourceId: item?.id || item?.productId || item?.sku || null,
+                newValue: item
+            });
             return res.status(201).json({ ok: true, tenantId, catalogId, item });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear el producto del catalogo.') });
@@ -878,6 +986,13 @@ function registerTenantAdminConfigCatalogHttpRoutes({
             if (!item) {
                 return res.status(404).json({ ok: false, error: 'Producto no encontrado para este catalogo.' });
             }
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'product.updated',
+                resourceType: 'catalog_product',
+                resourceId: productId,
+                newValue: item
+            });
             return res.json({ ok: true, tenantId, catalogId, item });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar el producto.') });
@@ -905,6 +1020,13 @@ function registerTenantAdminConfigCatalogHttpRoutes({
             if (!item) {
                 return res.status(404).json({ ok: false, error: 'Producto no encontrado para este catalogo.' });
             }
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'product.deactivated',
+                resourceType: 'catalog_product',
+                resourceId: productId,
+                newValue: item
+            });
             return res.json({ ok: true, tenantId, catalogId, item });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar el producto.') });

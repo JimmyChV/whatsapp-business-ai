@@ -29,8 +29,70 @@ function toSafePayload(value = null) {
 
 function normalizeRole(value = '') {
     const role = String(value || '').trim().toLowerCase();
-    if (['owner', 'admin', 'seller'].includes(role)) return role;
+    if (['owner', 'admin', 'seller', 'superadmin'].includes(role)) return role;
     return 'seller';
+}
+
+function getRequestIp(req = {}) {
+    const forwarded = String(req?.headers?.['x-forwarded-for'] || '').split(',')[0].trim();
+    return forwarded || toText(req?.ip || req?.socket?.remoteAddress);
+}
+
+function getRequestUser(req = {}) {
+    return req?.authContext?.user || req?.user || {};
+}
+
+function getRequestTenantId(req = {}, fallbackTenantId = null) {
+    const user = getRequestUser(req);
+    return toText(
+        fallbackTenantId
+        || req?.tenantContext?.id
+        || req?.tenantId
+        || user?.tenantId
+        || user?.tenant_id
+        || DEFAULT_TENANT_ID,
+        DEFAULT_TENANT_ID
+    );
+}
+
+function getRequestRole(req = {}) {
+    const user = getRequestUser(req);
+    if (user?.isSuperAdmin) return 'superadmin';
+    return normalizeRole(user?.role || user?.primaryRole);
+}
+
+async function writeRequestAuditLog(req = {}, {
+    tenantId = null,
+    action = 'unknown_action',
+    resourceType = null,
+    resourceId = null,
+    oldValue = null,
+    newValue = null,
+    payload = null,
+    source = 'api'
+} = {}) {
+    try {
+        const user = getRequestUser(req);
+        return await writeAuditLog(getRequestTenantId(req, tenantId), {
+            userId: toText(user?.userId || user?.id),
+            userEmail: toText(user?.email),
+            role: getRequestRole(req),
+            action,
+            resourceType,
+            resourceId,
+            source,
+            ip: getRequestIp(req),
+            userAgent: toText(req?.headers?.['user-agent']),
+            payload: {
+                ...(payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}),
+                oldValue: oldValue || null,
+                newValue: newValue || null
+            }
+        });
+    } catch (error) {
+        console.warn('[audit] no se pudo registrar evento:', String(error?.message || error));
+        return null;
+    }
 }
 
 function getAuditFileLimit() {
@@ -242,6 +304,7 @@ async function listAuditLogs(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset
 
 module.exports = {
     writeAuditLog,
+    writeRequestAuditLog,
     logAction,
     listAuditLogs
 };

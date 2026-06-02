@@ -20,6 +20,7 @@
     isActorSuperiorToRole,
     canActorManageRoleChanges
 }) {
+    const auditLogService = require('../../security/services/audit-log.service');
     if (!app) throw new Error('registerTenantAdminTenantsUsersHttpRoutes requiere app.');
 
     app.get('/api/admin/saas/tenants', async (req, res) => {
@@ -47,6 +48,13 @@
             const snapshot = await saasControlService.createTenant(payload);
             const createdId = String(payload.id || payload.tenantId || '').trim();
             const tenant = Array.isArray(snapshot?.tenants) ? snapshot.tenants.find((item) => item.id === createdId) : null;
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId: createdId || tenant?.id || null,
+                action: 'tenant.created',
+                resourceType: 'tenant',
+                resourceId: createdId || tenant?.id || null,
+                newValue: tenant ? saasControlService.sanitizeTenantPublic(tenant) : payload
+            });
 
             return res.status(201).json({ ok: true, tenant: tenant ? saasControlService.sanitizeTenantPublic(tenant) : null });
         } catch (error) {
@@ -64,6 +72,13 @@
             const payload = sanitizeTenantPayload(req.body);
             const snapshot = await saasControlService.updateTenant(tenantId, payload);
             const tenant = Array.isArray(snapshot?.tenants) ? snapshot.tenants.find((item) => item.id === tenantId) : null;
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId,
+                action: 'tenant.updated',
+                resourceType: 'tenant',
+                resourceId: tenantId,
+                newValue: tenant ? saasControlService.sanitizeTenantPublic(tenant) : payload
+            });
             return res.json({ ok: true, tenant: tenant ? saasControlService.sanitizeTenantPublic(tenant) : null });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar empresa.') });
@@ -156,6 +171,16 @@
                     return String(item?.email || '').trim().toLowerCase() === String(payload.email || '').trim().toLowerCase();
                 })
                 : null;
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId: String((payload.memberships || [])[0]?.tenantId || req?.authContext?.user?.tenantId || '').trim() || null,
+                action: 'user.created',
+                resourceType: 'user',
+                resourceId: user?.id || createdId || payload.email || null,
+                newValue: user ? saasControlService.sanitizeUserPublic(user) : {
+                    email: payload.email,
+                    memberships: payload.memberships
+                }
+            });
             return res.status(201).json({ ok: true, user: user ? saasControlService.sanitizeUserPublic(user) : null });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear usuario.') });
@@ -229,6 +254,20 @@
             delete payload.role;
             const snapshot = await saasControlService.updateUser(userId, payload);
             const user = Array.isArray(snapshot?.users) ? snapshot.users.find((item) => item.id === userId) : null;
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId: String((resultingMemberships || [])[0]?.tenantId || req?.authContext?.user?.tenantId || '').trim() || null,
+                action: touchesRole ? 'user.role.changed' : 'user.updated',
+                resourceType: 'user',
+                resourceId: userId,
+                oldValue: {
+                    user: saasControlService.sanitizeUserPublic(targetUser),
+                    role: targetRoleBefore
+                },
+                newValue: user ? {
+                    user: saasControlService.sanitizeUserPublic(user),
+                    role: targetRoleAfter
+                } : payload
+            });
             return res.json({ ok: true, user: user ? saasControlService.sanitizeUserPublic(user) : null });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar usuario.') });
@@ -274,6 +313,20 @@
 
             const snapshot = await saasControlService.setUserMemberships(userId, memberships);
             const user = Array.isArray(snapshot?.users) ? snapshot.users.find((item) => item.id === userId) : null;
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId: String(memberships[0]?.tenantId || req?.authContext?.user?.tenantId || '').trim() || null,
+                action: 'user.role.changed',
+                resourceType: 'user',
+                resourceId: userId,
+                oldValue: {
+                    memberships: sanitizeMembershipPayload(targetUser.memberships || []),
+                    role: targetRoleBefore
+                },
+                newValue: {
+                    memberships,
+                    role: targetRole
+                }
+            });
             return res.json({ ok: true, user: user ? saasControlService.sanitizeUserPublic(user) : null });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar membresias.') });
@@ -312,6 +365,13 @@
             }
 
             await saasControlService.deleteUser(userId);
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId: String((sanitizeMembershipPayload(targetUser.memberships || [])[0] || {}).tenantId || req?.authContext?.user?.tenantId || '').trim() || null,
+                action: 'user.deactivated',
+                resourceType: 'user',
+                resourceId: userId,
+                oldValue: saasControlService.sanitizeUserPublic(targetUser)
+            });
             return res.json({ ok: true });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar usuario.') });

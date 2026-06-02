@@ -593,6 +593,15 @@
                 deviceId,
                 ipAddress: String(req.ip || '').trim()
             });
+            await auditLogService.writeRequestAuditLog(req, {
+                tenantId: result?.tenantId || null,
+                action: 'auth.otp.resent',
+                resourceType: 'auth_device',
+                resourceId: deviceId,
+                newValue: {
+                    expiresInSec: result?.expiresInSec || 600
+                }
+            });
             return res.json({
                 ok: true,
                 message: 'OTP reenviado',

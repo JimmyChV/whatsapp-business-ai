@@ -11,6 +11,7 @@
     filterAdminOverviewByScope,
     sanitizeObjectPayload
 } = {}) {
+    const auditLogService = require('../services/audit-log.service');
     if (!app) throw new Error('registerSecurityAccessControlHttpRoutes requiere app.');
     if (!saasControlService) throw new Error('registerSecurityAccessControlHttpRoutes requiere saasControlService.');
     if (!aiUsageService) throw new Error('registerSecurityAccessControlHttpRoutes requiere aiUsageService.');
@@ -75,6 +76,19 @@
             const actorRole = getAuthRole(req);
             const isActorSuperAdmin = Boolean(req?.authContext?.user?.isSuperAdmin);
             const catalog = accessPolicyService.getAccessCatalog({ actorRole, isActorSuperAdmin });
+            await auditLogService.writeRequestAuditLog(req, {
+                action: 'role.updated',
+                resourceType: 'role',
+                resourceId: roleKey,
+                newValue: {
+                    role: roleKey,
+                    label: String(source.label || '').trim(),
+                    required: accessPolicyService.normalizePermissionList(source.required || []),
+                    optional: accessPolicyService.normalizePermissionList(source.optional || []),
+                    blocked: accessPolicyService.normalizePermissionList(source.blocked || []),
+                    active: source.active === undefined ? undefined : source.active !== false
+                }
+            });
             return res.json({ ok: true, ...catalog });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar el rol.') });
@@ -100,6 +114,19 @@
             const actorRole = getAuthRole(req);
             const isActorSuperAdmin = Boolean(req?.authContext?.user?.isSuperAdmin);
             const catalog = accessPolicyService.getAccessCatalog({ actorRole, isActorSuperAdmin });
+            await auditLogService.writeRequestAuditLog(req, {
+                action: 'role.created',
+                resourceType: 'role',
+                resourceId: String(source.role || source.id || '').trim().toLowerCase(),
+                newValue: {
+                    role: String(source.role || source.id || '').trim().toLowerCase(),
+                    label: String(source.label || '').trim(),
+                    required: accessPolicyService.normalizePermissionList(source.required || []),
+                    optional: accessPolicyService.normalizePermissionList(source.optional || []),
+                    blocked: accessPolicyService.normalizePermissionList(source.blocked || []),
+                    active: source.active === undefined ? true : source.active !== false
+                }
+            });
             return res.status(201).json({ ok: true, ...catalog });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear el rol.') });
@@ -126,6 +153,17 @@
             const actorRole = getAuthRole(req);
             const isActorSuperAdmin = Boolean(req?.authContext?.user?.isSuperAdmin);
             const catalog = accessPolicyService.getAccessCatalog({ actorRole, isActorSuperAdmin });
+            await auditLogService.writeRequestAuditLog(req, {
+                action: 'permission.pack.updated',
+                resourceType: 'permission_pack',
+                resourceId: packId,
+                newValue: {
+                    id: packId,
+                    label: String(source.label || '').trim(),
+                    permissions: accessPolicyService.normalizePermissionList(source.permissions || []),
+                    active: source.active === undefined ? undefined : source.active !== false
+                }
+            });
             return res.json({ ok: true, ...catalog });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar el pack.') });
@@ -191,6 +229,13 @@
             };
             planLimitsService.setPlanOverrides(nextOverrides);
             await planLimitsStoreService.saveOverrides(nextOverrides);
+            await auditLogService.writeRequestAuditLog(req, {
+                action: 'plan.updated',
+                resourceType: 'plan',
+                resourceId: planId,
+                oldValue: current?.[planId] || null,
+                newValue: normalized
+            });
 
             return res.json({
                 ok: true,
