@@ -22,31 +22,133 @@ function formatDate(value, formatDateTimeLabel) {
 
 function actionLabel(action = '') {
     const normalized = text(action);
-    const labels = {
-        'auth.login.success': 'Login exitoso',
-        'auth.login.failed': 'Login fallido',
-        'auth.logout.success': 'Logout',
-        'auth.device.otp_verified': 'OTP verificado',
-        'auth.device.revoked': 'Dispositivo revocado',
-        'auth.device.reauth_requested': 'Reautorizacion solicitada',
-        'auth.device.reauthorized': 'Dispositivo reautorizado',
-        'auth.device.rename': 'Dispositivo renombrado',
-        'campaign.created': 'Campana creada',
-        'campaign.sent': 'Campana enviada',
-        'customer.updated': 'Cliente actualizado',
-        'config.updated': 'Configuracion cambiada',
-        'user.created': 'Usuario creado',
-        'user.deactivated': 'Usuario desactivado'
-    };
-    return labels[normalized] || normalized || 'Evento';
+    return actionMeta(normalized).label;
 }
 
 function actionTone(action = '') {
+    return actionMeta(action).tone;
+}
+
+function actionMeta(action = '') {
     const normalized = text(action);
-    if (normalized.includes('failed') || normalized.includes('revoked') || normalized.includes('revoke')) return 'danger';
-    if (normalized.includes('login') || normalized.includes('verified') || normalized.includes('created')) return 'success';
-    if (normalized.includes('campaign')) return 'info';
-    return 'neutral';
+    const labels = {
+        'auth.login.success': ['Acceso exitoso', 'success', 'OK'],
+        'auth.login.failed': ['Acceso fallido', 'danger', 'ERR'],
+        'auth.logout': ['Cierre de sesion', 'neutral', 'OUT'],
+        'auth.logout.success': ['Cierre de sesion', 'neutral', 'OUT'],
+        'auth.logout.all_devices': ['Cierre global de sesiones', 'danger', 'LOCK'],
+        'auth.password.changed': ['Contrasena cambiada', 'success', 'KEY'],
+        'auth.otp.sent': ['OTP enviado', 'info', 'OTP'],
+        'auth.otp.resent': ['OTP reenviado', 'info', 'OTP'],
+        'auth.otp.verified': ['OTP verificado', 'success', 'OTP'],
+        'auth.device.approved': ['Dispositivo aprobado', 'success', 'DEV'],
+        'auth.device.revoked': ['Dispositivo revocado', 'danger', 'DEV'],
+        'auth.device.reauth_requested': ['Reautorizacion solicitada', 'info', 'DEV'],
+        'auth.device.reauthorized': ['Dispositivo reautorizado', 'success', 'DEV'],
+        'auth.device.rename': ['Dispositivo renombrado', 'neutral', 'DEV'],
+        'auth.device.otp_verified': ['OTP de dispositivo verificado', 'success', 'OTP'],
+        'role.created': ['Rol creado', 'success', 'ROL'],
+        'role.updated': ['Rol actualizado', 'info', 'ROL'],
+        'permission.pack.updated': ['Permisos actualizados', 'info', 'PERM'],
+        'plan.updated': ['Plan actualizado', 'info', 'PLAN'],
+        'user.created': ['Usuario creado', 'success', 'USR'],
+        'user.updated': ['Usuario actualizado', 'info', 'USR'],
+        'user.deactivated': ['Usuario desactivado', 'danger', 'USR'],
+        'user.role.changed': ['Rol de usuario cambiado', 'info', 'USR'],
+        'tenant.created': ['Empresa creada', 'success', 'EMP'],
+        'tenant.updated': ['Empresa actualizada', 'info', 'EMP'],
+        'config.smtp.updated': ['SMTP actualizado', 'info', 'MAIL'],
+        'config.authorizers.updated': ['Autorizadores actualizados', 'info', 'OTP'],
+        'config.email_template.updated': ['Plantilla de correo actualizada', 'info', 'MAIL'],
+        'config.brand.updated': ['Identidad de marca actualizada', 'info', 'BRAND'],
+        'ai_assistant.created': ['Asistente IA creado', 'success', 'IA'],
+        'ai_assistant.updated': ['Asistente IA actualizado', 'info', 'IA'],
+        'ai_assistant.deactivated': ['Asistente IA desactivado', 'danger', 'IA'],
+        'wa_module.created': ['Modulo WhatsApp creado', 'success', 'MOD'],
+        'wa_module.updated': ['Modulo WhatsApp actualizado', 'info', 'MOD'],
+        'wa_module.deactivated': ['Modulo WhatsApp desactivado', 'danger', 'MOD'],
+        'wa_module.selected': ['Modulo WhatsApp seleccionado', 'neutral', 'MOD'],
+        'catalog.created': ['Catalogo creado', 'success', 'CAT'],
+        'catalog.updated': ['Catalogo actualizado', 'info', 'CAT'],
+        'catalog.synced': ['Catalogo sincronizado', 'info', 'CAT'],
+        'product.created': ['Producto creado', 'success', 'PROD'],
+        'product.updated': ['Producto actualizado', 'info', 'PROD'],
+        'product.deactivated': ['Producto desactivado', 'danger', 'PROD'],
+        'customer.created': ['Cliente creado', 'success', 'CLI'],
+        'customer.updated': ['Cliente actualizado', 'info', 'CLI'],
+        'customer.imported': ['Clientes importados', 'info', 'CLI'],
+        'customer.address.updated': ['Direccion de cliente actualizada', 'info', 'DIR'],
+        'zone.created': ['Zona creada', 'success', 'ZONA'],
+        'zone.updated': ['Zona actualizada', 'info', 'ZONA'],
+        'zone.deleted': ['Zona eliminada', 'danger', 'ZONA'],
+        'zone.synced': ['Zonas sincronizadas', 'info', 'ZONA'],
+        'label.created': ['Etiqueta creada', 'success', 'TAG'],
+        'label.updated': ['Etiqueta actualizada', 'info', 'TAG'],
+        'quick_reply.created': ['Respuesta rapida creada', 'success', 'QR'],
+        'quick_reply.updated': ['Respuesta rapida actualizada', 'info', 'QR'],
+        'campaign.created': ['Campana creada', 'success', 'CAMP'],
+        'campaign.sent': ['Campana enviada', 'success', 'CAMP'],
+        'campaign.paused': ['Campana pausada', 'info', 'CAMP'],
+        'campaign.resumed': ['Campana reanudada', 'success', 'CAMP'],
+        'campaign.cancelled': ['Campana cancelada', 'danger', 'CAMP'],
+        'campaign.repaired': ['Historial de campana reparado', 'info', 'CAMP'],
+        'chat.assignment.taken': ['Chat tomado', 'success', 'CHAT'],
+        'chat.assignment.updated': ['Chat reasignado', 'info', 'CHAT'],
+        'chat.assignment.cleared': ['Chat liberado', 'neutral', 'CHAT'],
+        'chat.commercial_status.updated': ['Estado comercial actualizado', 'info', 'CHAT'],
+        'chat.patty_mode.updated': ['Modo Patty actualizado', 'info', 'IA'],
+        'meta_template.created': ['Plantilla Meta creada', 'success', 'META'],
+        'meta_template.updated': ['Plantilla Meta actualizada', 'info', 'META'],
+        'meta_template.deleted': ['Plantilla Meta eliminada', 'danger', 'META'],
+        'meta_template.synced': ['Plantillas Meta sincronizadas', 'info', 'META'],
+        'meta.template.create': ['Plantilla Meta creada', 'success', 'META'],
+        'meta.template.delete': ['Plantilla Meta eliminada', 'danger', 'META'],
+        'meta.template.sync': ['Plantillas Meta sincronizadas', 'info', 'META']
+    };
+    const entry = labels[normalized];
+    if (entry) return { label: entry[0], tone: entry[1], icon: entry[2] };
+    if (normalized.includes('failed') || normalized.includes('revoked') || normalized.includes('revoke')) return { label: normalized || 'Evento', tone: 'danger', icon: 'ERR' };
+    if (normalized.includes('login') || normalized.includes('verified') || normalized.includes('created')) return { label: normalized || 'Evento', tone: 'success', icon: 'OK' };
+    if (normalized.includes('campaign')) return { label: normalized || 'Evento', tone: 'info', icon: 'CAMP' };
+    return { label: normalized || 'Evento', tone: 'neutral', icon: 'LOG' };
+}
+
+function compactValue(value) {
+    if (value === null || value === undefined || value === '') return '';
+    if (typeof value === 'boolean') return value ? 'si' : 'no';
+    if (Array.isArray(value)) return `${value.length} items`;
+    if (typeof value === 'object') {
+        return text(value.name || value.displayName || value.email || value.id || value.userId || value.deviceName || value.templateName || '');
+    }
+    return text(value);
+}
+
+function firstPayloadValue(payload = {}, keys = []) {
+    for (const key of keys) {
+        const value = compactValue(payload?.[key]);
+        if (value) return value;
+    }
+    return '';
+}
+
+function buildAuditDetail(item = {}) {
+    const payload = item?.payload && typeof item.payload === 'object' ? item.payload : {};
+    const resource = firstPayloadValue(payload, [
+        'deviceName', 'targetUserEmail', 'targetUserId', 'userEmail', 'displayName',
+        'catalogName', 'productName', 'templateName', 'assistantName', 'moduleName',
+        'campaignName', 'customerName', 'labelName', 'quickReplyLabel', 'zoneName'
+    ]);
+    const oldValue = firstPayloadValue(payload, ['previousMode', 'previousStatus', 'previousAssigneeUserId', 'oldRole', 'oldValue']);
+    const newValue = firstPayloadValue(payload, ['nextMode', 'nextStatus', 'nextAssigneeUserId', 'newRole', 'newValue', 'status']);
+    const count = firstPayloadValue(payload, ['count', 'imported', 'totalSynced', 'recipients', 'queued', 'repaired']);
+    const reason = firstPayloadValue(payload, ['reason']);
+    const pieces = [];
+    if (resource) pieces.push(resource);
+    if (oldValue || newValue) pieces.push(`${oldValue || '-'} -> ${newValue || '-'}`);
+    if (count) pieces.push(`${count} registros`);
+    if (reason) pieces.push(`Motivo: ${reason}`);
+    if (!pieces.length && item?.resourceId) pieces.push(`${item.resourceType || 'Recurso'} ${item.resourceId}`);
+    return pieces.join(' · ') || 'Sin detalle adicional';
 }
 
 function buildQuery(filters = {}, offset = 0) {
@@ -64,9 +166,8 @@ function AuditRow({ item, formatDateTimeLabel }) {
     const payload = item?.payload && typeof item.payload === 'object' ? item.payload : {};
     const entityType = item?.resourceType || item?.entityType || '-';
     const entityId = item?.resourceId || item?.entityId || '-';
-    const detail = payload?.data
-        ? JSON.stringify(payload.data).slice(0, 140)
-        : (Object.keys(payload).length ? JSON.stringify(payload).slice(0, 140) : 'Sin detalle adicional');
+    const meta = actionMeta(item?.action);
+    const detail = buildAuditDetail(item);
     return (
         <article className="saas-audit-row">
             <div className="saas-audit-row__time">
@@ -75,6 +176,7 @@ function AuditRow({ item, formatDateTimeLabel }) {
             </div>
             <div className="saas-audit-row__main">
                 <span className={`saas-audit-action saas-audit-action--${actionTone(item?.action)}`}>
+                    <span className="saas-audit-action__icon">{meta.icon}</span>
                     {actionLabel(item?.action)}
                 </span>
                 <strong>{item?.userEmail || item?.userId || 'Sistema'}</strong>

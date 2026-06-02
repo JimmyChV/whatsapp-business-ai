@@ -115,8 +115,20 @@ function normalizeDateFilter(value = '') {
 
 function buildPostgresFilters(cleanTenant, filters = {}) {
     const isGlobalScope = !cleanTenant || cleanTenant === DEFAULT_TENANT_ID;
-    const clauses = [isGlobalScope ? '(tenant_id IS NULL OR tenant_id = $1)' : 'tenant_id = $1'];
-    const params = [isGlobalScope ? DEFAULT_TENANT_ID : cleanTenant];
+    const includeUserGlobalLogs = Boolean(filters.includeUserGlobalLogs);
+    const currentUserId = toText(filters.currentUserId);
+    const clauses = [];
+    const params = [];
+    if (isGlobalScope) {
+        params.push(DEFAULT_TENANT_ID);
+        clauses.push('(tenant_id IS NULL OR tenant_id = $1)');
+    } else if (includeUserGlobalLogs && currentUserId) {
+        params.push(cleanTenant, currentUserId);
+        clauses.push('(tenant_id = $1 OR (tenant_id IS NULL AND user_id = $2))');
+    } else {
+        params.push(cleanTenant);
+        clauses.push('tenant_id = $1');
+    }
     const userId = toText(filters.userId);
     const action = toText(filters.action);
     const fromDate = normalizeDateFilter(filters.from);
@@ -249,11 +261,20 @@ async function logAction({
     });
 }
 
-async function listAuditLogs(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0, userId = '', action = '', from = '', to = '' } = {}) {
+async function listAuditLogs(tenantId = DEFAULT_TENANT_ID, {
+    limit = 100,
+    offset = 0,
+    userId = '',
+    action = '',
+    from = '',
+    to = '',
+    currentUserId = '',
+    includeUserGlobalLogs = false
+} = {}) {
     const cleanTenant = resolveTenantId(tenantId);
     const safeLimit = Math.min(500, Math.max(1, Number(limit) || 100));
     const safeOffset = Math.max(0, Number(offset) || 0);
-    const filters = { userId, action, from, to };
+    const filters = { userId, action, from, to, currentUserId, includeUserGlobalLogs };
 
     if (getStorageDriver() === 'postgres') {
         try {

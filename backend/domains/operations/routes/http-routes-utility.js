@@ -180,6 +180,10 @@ function registerOperationsUtilityHttpRoutes({
 
             const tenantId = String(req?.authContext?.user?.tenantId || req?.tenantContext?.id || '').trim();
             const auditTenantId = tenantId && tenantId !== 'default' ? tenantId : null;
+            const auditUser = req?.authContext?.user || {};
+            const auditUserRole = String(auditUser?.role || '').trim().toLowerCase();
+            const auditUserId = String(auditUser?.userId || auditUser?.id || '').trim();
+            const includeUserGlobalLogs = Boolean(auditTenantId && auditUserId && (auditUser?.isSuperAdmin === true || auditUserRole === 'owner'));
             const limit = Number(req.query.limit || 100);
             const offset = Number(req.query.offset || 0);
             const items = await auditLogService.listAuditLogs(auditTenantId, {
@@ -188,7 +192,9 @@ function registerOperationsUtilityHttpRoutes({
                 userId: String(req.query.userId || '').trim(),
                 action: String(req.query.action || '').trim(),
                 from: String(req.query.from || '').trim(),
-                to: String(req.query.to || '').trim()
+                to: String(req.query.to || '').trim(),
+                currentUserId: auditUserId,
+                includeUserGlobalLogs
             });
             return res.json({ ok: true, tenant: auditTenantId ? { id: auditTenantId } : null, items });
         } catch (error) {

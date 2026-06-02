@@ -1609,6 +1609,23 @@ function registerOperationsHttpRoutes({
                     reason: 'http_patty_mode'
                 });
 
+            await auditLogService.writeAuditLog(tenantId, {
+                userId: actorUserId,
+                userEmail: req?.authContext?.user?.email || null,
+                role: req?.authContext?.user?.role || null,
+                action: 'chat.patty_mode.updated',
+                resourceType: 'chat',
+                resourceId: chatId,
+                source: 'http',
+                payload: {
+                    scopeModuleId,
+                    previousMode: result?.previous?.pattyMode || null,
+                    nextMode: isGlobalMode ? null : mode,
+                    effectiveMode: result?.status?.pattyMode || null,
+                    changed: Boolean(result?.changed)
+                }
+            });
+
             if (typeof emitCommercialStatusUpdated === 'function') {
                 emitCommercialStatusUpdated({
                     tenantId,
@@ -1804,7 +1821,7 @@ function registerOperationsHttpRoutes({
                 userId: resolveActorUserId(req),
                 userEmail: req?.authContext?.user?.email || null,
                 role: req?.authContext?.user?.role || null,
-                action: 'meta.template.create',
+                action: 'meta_template.created',
                 resourceType: 'meta_template',
                 resourceId: String(result?.template?.templateId || result?.template?.templateName || ''),
                 source: 'http',
@@ -1880,7 +1897,7 @@ function registerOperationsHttpRoutes({
                 userId: resolveActorUserId(req),
                 userEmail: req?.authContext?.user?.email || null,
                 role: req?.authContext?.user?.role || null,
-                action: 'meta.template.delete',
+                action: 'meta_template.deleted',
                 resourceType: 'meta_template',
                 resourceId: templateId,
                 source: 'http',
@@ -1920,7 +1937,7 @@ function registerOperationsHttpRoutes({
                 userId: resolveActorUserId(req),
                 userEmail: req?.authContext?.user?.email || null,
                 role: req?.authContext?.user?.role || null,
-                action: 'meta.template.sync',
+                action: 'meta_template.synced',
                 resourceType: 'meta_template',
                 resourceId: moduleId,
                 source: 'http',
@@ -2254,6 +2271,21 @@ function registerOperationsHttpRoutes({
                 actorUserId
             });
 
+            await auditLogService.writeAuditLog(tenantId, {
+                userId: actorUserId,
+                userEmail: req?.authContext?.user?.email || null,
+                role: req?.authContext?.user?.role || null,
+                action: 'campaign.paused',
+                resourceType: 'campaign',
+                resourceId: campaignId,
+                source: 'http',
+                ip: String(req.ip || ''),
+                payload: {
+                    status: campaign?.status || null,
+                    moduleId: campaign?.moduleId || campaign?.module_id || null
+                }
+            });
+
             return res.json({ ok: true, tenantId, campaign });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo pausar la campana.') });
@@ -2276,6 +2308,21 @@ function registerOperationsHttpRoutes({
             const campaign = await resumeCampaign(tenantId, {
                 campaignId,
                 actorUserId
+            });
+
+            await auditLogService.writeAuditLog(tenantId, {
+                userId: actorUserId,
+                userEmail: req?.authContext?.user?.email || null,
+                role: req?.authContext?.user?.role || null,
+                action: 'campaign.resumed',
+                resourceType: 'campaign',
+                resourceId: campaignId,
+                source: 'http',
+                ip: String(req.ip || ''),
+                payload: {
+                    status: campaign?.status || null,
+                    moduleId: campaign?.moduleId || campaign?.module_id || null
+                }
             });
 
             return res.json({ ok: true, tenantId, campaign });
@@ -2302,6 +2349,22 @@ function registerOperationsHttpRoutes({
                 campaignId,
                 actorUserId,
                 reason
+            });
+
+            await auditLogService.writeAuditLog(tenantId, {
+                userId: actorUserId,
+                userEmail: req?.authContext?.user?.email || null,
+                role: req?.authContext?.user?.role || null,
+                action: 'campaign.cancelled',
+                resourceType: 'campaign',
+                resourceId: campaignId,
+                source: 'http',
+                ip: String(req.ip || ''),
+                payload: {
+                    status: campaign?.status || null,
+                    moduleId: campaign?.moduleId || campaign?.module_id || null,
+                    reason: reason || null
+                }
             });
 
             return res.json({ ok: true, tenantId, campaign });
@@ -2636,6 +2699,21 @@ function registerOperationsHttpRoutes({
                     ? null
                     : Number(rawBlockIndex),
                 actorUserId: resolveActorUserId(req)
+            });
+
+            await auditLogService.writeAuditLog(tenantId, {
+                userId: resolveActorUserId(req),
+                userEmail: req?.authContext?.user?.email || null,
+                role: req?.authContext?.user?.role || null,
+                action: 'campaign.repaired',
+                resourceType: 'campaign',
+                resourceId: campaignId,
+                source: 'http',
+                ip: String(req.ip || ''),
+                payload: {
+                    blockIndex: result?.blockIndex ?? null,
+                    repaired: result?.repaired ?? result?.updated ?? null
+                }
             });
 
             return res.json({ ok: true, tenantId, campaignId, ...result });
