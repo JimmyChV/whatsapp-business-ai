@@ -3,6 +3,7 @@ import { SaasEntityPage } from '../components/layout';
 import AuditSettingsDetailPane from './modules-config/AuditSettingsDetailPane';
 import DeviceAuthorizersSettingsDetailPane from './modules-config/DeviceAuthorizersSettingsDetailPane';
 import DevicesSettingsDetailPane from './modules-config/DevicesSettingsDetailPane';
+import EmailTemplatesSettingsDetailPane from './modules-config/EmailTemplatesSettingsDetailPane';
 import GeneralSettingsDetailPane from './modules-config/GeneralSettingsDetailPane';
 import ModulesConfigModuleDetailPane from './modules-config/ModulesConfigModuleDetailPane';
 import SmtpSettingsDetailPane from './modules-config/SmtpSettingsDetailPane';
@@ -11,6 +12,7 @@ const CONFIG_KEYS = {
     TENANT_SETTINGS: 'tenant_settings',
     AUTH_DEVICES: 'auth_devices',
     SMTP_EMAIL: 'smtp_email',
+    EMAIL_TEMPLATES: 'email_templates',
     DEVICE_AUTHORIZERS: 'device_authorizers',
     AUDIT_LOGS: 'audit_logs'
 };
@@ -35,6 +37,10 @@ function ModulesConfigSection(props = {}) {
     canViewAllDevices = false,
     canRevokeAllDevices = false,
     canViewAuditLogs = false,
+    canViewEmailTemplates = false,
+    canManageEmailTemplates = false,
+    canViewBrand = false,
+    canManageBrand = false,
     ensureSectionData = null,
     isLoading = null,
     getError = null,
@@ -115,7 +121,16 @@ function ModulesConfigSection(props = {}) {
                 defaultLabel: 'No',
                 assignedUsers: '-',
                 updatedAt: '-'
-            }, {
+            }, canViewEmailTemplates ? {
+                id: CONFIG_KEYS.EMAIL_TEMPLATES,
+                name: 'Plantillas de correo',
+                phone: 'Branding y contenido',
+                status: canManageEmailTemplates ? 'Editable' : 'Solo lectura',
+                channel: 'Email',
+                defaultLabel: 'No',
+                assignedUsers: '-',
+                updatedAt: '-'
+            } : null, {
                 id: CONFIG_KEYS.DEVICE_AUTHORIZERS,
                 name: 'Autorizadores de acceso',
                 phone: 'OTP por tenant',
@@ -146,7 +161,7 @@ function ModulesConfigSection(props = {}) {
             updatedAt: formatDateTimeLabel?.(module?.updatedAt) || '-',
             raw: module
         }));
-    }, [MODULE_KEYS, canViewAuditLogs, canViewOwnDevices, formatDateTimeLabel, isGeneralConfigSection, tenantSettings, waModules]);
+    }, [MODULE_KEYS, canManageEmailTemplates, canViewAuditLogs, canViewEmailTemplates, canViewOwnDevices, formatDateTimeLabel, isGeneralConfigSection, tenantSettings, waModules]);
 
     const columns = React.useMemo(() => [
         { key: 'name', label: 'Nombre', width: '32%', minWidth: '240px', sortable: true },
@@ -261,6 +276,17 @@ function ModulesConfigSection(props = {}) {
                 requestJson={requestJson}
             />
 
+            <EmailTemplatesSettingsDetailPane
+                settingsTenantId={settingsTenantId}
+                isGeneralConfigSection={isGeneralConfigSection}
+                selectedConfigKey={selectedConfigKey}
+                requestJson={requestJson}
+                canViewEmailTemplates={canViewEmailTemplates}
+                canManageEmailTemplates={canManageEmailTemplates}
+                canViewBrand={canViewBrand}
+                canManageBrand={canManageBrand}
+            />
+
             <DeviceAuthorizersSettingsDetailPane
                 settingsTenantId={settingsTenantId}
                 isGeneralConfigSection={isGeneralConfigSection}
@@ -334,8 +360,12 @@ function ModulesConfigSection(props = {}) {
         canEditModules,
         canRevokeAllDevices,
         canRevokeOwnDevices,
+        canManageBrand,
+        canManageEmailTemplates,
         canViewAllDevices,
         canViewAuditLogs,
+        canViewBrand,
+        canViewEmailTemplates,
         canViewOwnDevices,
         clearConfigSelection,
         formatDateTimeLabel,
@@ -424,6 +454,8 @@ function ModulesConfigSection(props = {}) {
                         setSelectedConfigKey?.(CONFIG_KEYS.AUTH_DEVICES);
                     } else if (row?.id === CONFIG_KEYS.SMTP_EMAIL) {
                         setSelectedConfigKey?.(CONFIG_KEYS.SMTP_EMAIL);
+                    } else if (row?.id === CONFIG_KEYS.EMAIL_TEMPLATES && canViewEmailTemplates) {
+                        setSelectedConfigKey?.(CONFIG_KEYS.EMAIL_TEMPLATES);
                     } else if (row?.id === CONFIG_KEYS.DEVICE_AUTHORIZERS) {
                         setSelectedConfigKey?.(CONFIG_KEYS.DEVICE_AUTHORIZERS);
                     } else if (row?.id === CONFIG_KEYS.AUDIT_LOGS && canViewAuditLogs) {
@@ -457,6 +489,9 @@ function ModulesConfigSection(props = {}) {
                     : null,
                 isGeneralConfigSection
                     ? { label: 'Correo', onClick: () => setSelectedConfigKey?.(CONFIG_KEYS.SMTP_EMAIL), disabled: busy || !settingsTenantId }
+                    : null,
+                isGeneralConfigSection && canViewEmailTemplates
+                    ? { label: 'Plantillas de correo', onClick: () => setSelectedConfigKey?.(CONFIG_KEYS.EMAIL_TEMPLATES), disabled: busy || !settingsTenantId }
                     : null,
                 isGeneralConfigSection
                     ? { label: 'Autorizadores', onClick: () => setSelectedConfigKey?.(CONFIG_KEYS.DEVICE_AUTHORIZERS), disabled: busy || !settingsTenantId }
