@@ -11621,10 +11621,14 @@ textarea:focus {
 }
 
 .saas-email-brand-card--standalone {
+  height: auto;
+  min-height: 0;
   max-height: none;
+  overflow: visible;
 }
 
 .saas-email-brand-card--standalone .saas-email-brand-card__body {
+  min-height: 0;
   overflow: visible;
 }
 
