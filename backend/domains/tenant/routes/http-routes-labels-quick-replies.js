@@ -1,5 +1,6 @@
 ﻿function registerTenantLabelsQuickRepliesHttpRoutes({
     app,
+    authService,
     accessPolicyService,
     tenantLabelService,
     saasUserUiPreferencesService,
@@ -11,6 +12,14 @@
     sanitizeQuickReplyItemPayload
 }) {
     if (!app) throw new Error('registerTenantLabelsQuickRepliesHttpRoutes requiere app.');
+
+    function ensureAuthenticated(req, res) {
+        if (authService?.isAuthEnabled?.() && !req?.authContext?.isAuthenticated) {
+            res.status(401).json({ ok: false, error: 'No autenticado.' });
+            return false;
+        }
+        return true;
+    }
 
     function resolveTenantId(req) {
         return String(req?.tenantContext?.id || req?.query?.tenantId || req?.body?.tenantId || 'default').trim() || 'default';
@@ -29,6 +38,7 @@
     app.get('/api/tenant/ui-preferences/:sectionKey', async (req, res) => {
         const sectionKey = resolveUiSectionKey(req);
         try {
+            if (!ensureAuthenticated(req, res)) return;
             const item = await saasUserUiPreferencesService.getPreference({
                 tenantId: resolveTenantId(req),
                 userId: resolveUserId(req),
@@ -53,6 +63,7 @@
     app.put('/api/tenant/ui-preferences/:sectionKey', async (req, res) => {
         const sectionKey = resolveUiSectionKey(req);
         try {
+            if (!ensureAuthenticated(req, res)) return;
             const item = await saasUserUiPreferencesService.savePreference({
                 tenantId: resolveTenantId(req),
                 userId: resolveUserId(req),

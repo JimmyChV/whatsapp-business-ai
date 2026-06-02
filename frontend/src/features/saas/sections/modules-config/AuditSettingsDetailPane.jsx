@@ -91,9 +91,7 @@ export default function AuditSettingsDetailPane({
     selectedConfigKey,
     requestJson,
     formatDateTimeLabel,
-    currentUser,
-    isSuperAdmin,
-    userRole
+    canViewAuditLogs = false
 }) {
     const [items, setItems] = React.useState([]);
     const [filters, setFilters] = React.useState({ userId: '', action: '', from: '', to: '' });
@@ -101,9 +99,7 @@ export default function AuditSettingsDetailPane({
     const [loading, setLoading] = React.useState(false);
     const [error, setError] = React.useState('');
 
-    const role = text(userRole || currentUser?.role).toLowerCase();
-    const canView = Boolean(isSuperAdmin || currentUser?.isSuperAdmin === true || role === 'owner');
-    const isVisible = Boolean(settingsTenantId && isGeneralConfigSection && selectedConfigKey === 'audit_logs' && canView);
+    const isVisible = Boolean(settingsTenantId && isGeneralConfigSection && selectedConfigKey === 'audit_logs' && canViewAuditLogs);
 
     const loadLogs = React.useCallback(async (nextOffset = offset) => {
         if (!isVisible || typeof requestJson !== 'function') return;

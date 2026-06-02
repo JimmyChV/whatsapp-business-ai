@@ -1,9 +1,9 @@
-﻿function hasTenantSettingsWriteAccess(req = {}, authService) {
-    if (!authService?.isAuthEnabled || !authService.isAuthEnabled()) return true;
-    const authContext = req.authContext || { isAuthenticated: false, user: null };
-    if (!authContext.isAuthenticated || !authContext.user) return false;
-    const role = String(authContext.user.role || '').trim().toLowerCase();
-    return role === 'owner' || role === 'admin';
+function ensureAuthenticated(req, res, authService) {
+    if (authService?.isAuthEnabled?.() && !req?.authContext?.isAuthenticated) {
+        res.status(401).json({ ok: false, error: 'No autenticado.' });
+        return false;
+    }
+    return true;
 }
 
 function registerTenantRuntimeSettingsHttpRoutes({
@@ -45,8 +45,14 @@ function registerTenantRuntimeSettingsHttpRoutes({
 
     app.get('/api/tenant/settings', async (req, res) => {
         try {
+            if (!ensureAuthenticated(req, res, authService)) return;
             const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
-            const settings = await tenantSettingsService.getTenantSettings(tenant?.id || 'default');
+            const tenantId = String(tenant?.id || 'default').trim() || 'default';
+            if (!isTenantAllowedForUser(req, tenantId)
+                || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_SETTINGS_READ)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+            const settings = await tenantSettingsService.getTenantSettings(tenantId);
             return res.json({
                 ok: true,
                 tenant,
@@ -59,21 +65,25 @@ function registerTenantRuntimeSettingsHttpRoutes({
 
     app.put('/api/tenant/settings', async (req, res) => {
         try {
-            if (!hasTenantSettingsWriteAccess(req, authService)) {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
+            const tenantId = String(tenant?.id || 'default').trim() || 'default';
+            if (!isTenantAllowedForUser(req, tenantId)
+                || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_SETTINGS_MANAGE)) {
                 return res.status(403).json({ ok: false, error: 'No tienes permisos para editar configuracion de empresa.' });
             }
 
-            const tenant = req.tenantContext || tenantService.DEFAULT_TENANT;
             const patch = req.body && typeof req.body === 'object' ? req.body : {};
-            const settings = await tenantSettingsService.updateTenantSettings(tenant?.id || 'default', patch);
+            const settings = await tenantSettingsService.updateTenantSettings(tenantId, patch);
 
-            await auditLogService.writeAuditLog(tenant?.id || 'default', {
+            await auditLogService.writeAuditLog(tenantId, {
                 userId: req?.authContext?.user?.userId || null,
                 userEmail: req?.authContext?.user?.email || null,
                 role: req?.authContext?.user?.role || 'seller',
                 action: 'tenant.settings.updated',
                 resourceType: 'tenant_settings',
-                resourceId: tenant?.id || 'default',
+                resourceId: tenantId,
                 source: 'api',
                 ip: String(req.ip || ''),
                 payload: { patch }

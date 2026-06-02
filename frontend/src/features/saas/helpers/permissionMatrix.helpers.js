@@ -36,6 +36,12 @@ export const PERMISSION_DESCRIPTIONS = Object.freeze({
     'tenant.kpis.read': 'Ver KPIs y reportes operativos.',
     'tenant.settings.read': 'Ver configuracion general del tenant.',
     'tenant.settings.manage': 'Editar configuracion, limites y parametros generales del tenant.',
+    'tenant.email_templates.read': 'Ver plantillas de correo transaccional.',
+    'tenant.email_templates.manage': 'Editar plantillas de correo transaccional.',
+    'tenant.brand.read': 'Ver identidad de marca usada en correos.',
+    'tenant.brand.manage': 'Editar logo, color y datos de marca para correos.',
+    'tenant.profile.manage': 'Editar informacion y seguridad del perfil propio.',
+    'tenant.chat.assign_autonomous': 'Cambiar el modo autonomo de Patty por chat o modulo.',
     'tenant.integrations.read': 'Ver integraciones conectadas al tenant.',
     'tenant.integrations.manage': 'Editar credenciales, integraciones y conexiones externas.',
     'tenant.assets.upload': 'Subir imagenes y archivos usados por el tenant.',
@@ -123,6 +129,11 @@ export const PERMISSION_GROUPS = Object.freeze([
             'tenant.overview.read',
             'tenant.settings.read',
             'tenant.settings.manage',
+            'tenant.email_templates.read',
+            'tenant.email_templates.manage',
+            'tenant.brand.read',
+            'tenant.brand.manage',
+            'tenant.profile.manage',
             'tenant.integrations.read',
             'tenant.integrations.manage',
             'tenant.assets.upload',
@@ -134,6 +145,11 @@ export const PERMISSION_GROUPS = Object.freeze([
             'devices:view_all',
             'devices:revoke_all'
         ]
+    },
+    {
+        id: 'patty',
+        title: 'IA / PATTY',
+        permissions: ['tenant.chat.assign_autonomous']
     }
 ]);
 

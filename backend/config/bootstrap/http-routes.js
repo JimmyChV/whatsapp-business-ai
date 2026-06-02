@@ -288,6 +288,7 @@ function registerHttpRoutes({
 
     registerTenantLabelsQuickRepliesHttpRoutes({
         app,
+        authService,
         accessPolicyService,
         tenantLabelService,
         saasUserUiPreferencesService,

@@ -239,9 +239,6 @@ export default function DevicesSettingsDetailPane({
     selectedConfigKey,
     requestJson,
     formatDateTimeLabel,
-    currentUser,
-    isSuperAdmin,
-    userRole,
     canViewAllDevices = false,
     canRevokeAllDevices = false
 }) {
@@ -255,8 +252,8 @@ export default function DevicesSettingsDetailPane({
     const [notice, setNotice] = React.useState('');
     const [search, setSearch] = React.useState('');
 
-    const canAdminDevices = Boolean(canViewAllDevices || isSuperAdmin || currentUser?.isSuperAdmin === true || toText(userRole).toLowerCase() === 'owner');
-    const canRevokeTeamDevices = Boolean(canRevokeAllDevices || isSuperAdmin || currentUser?.isSuperAdmin === true);
+    const canAdminDevices = Boolean(canViewAllDevices);
+    const canRevokeTeamDevices = Boolean(canRevokeAllDevices);
 
     const loadTeamDevices = React.useCallback(async () => {
         if (typeof requestJson !== 'function' || !canAdminDevices) return;

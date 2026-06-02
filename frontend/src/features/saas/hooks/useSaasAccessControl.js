@@ -45,7 +45,14 @@ export default function useSaasAccessControl({
         PERMISSION_TENANT_AUTOMATIONS_MANAGE,
         PERMISSION_TENANT_SCHEDULES_READ,
         PERMISSION_TENANT_SCHEDULES_MANAGE,
+        PERMISSION_TENANT_AUDIT_READ,
+        PERMISSION_TENANT_EMAIL_TEMPLATES_READ,
+        PERMISSION_TENANT_EMAIL_TEMPLATES_MANAGE,
+        PERMISSION_TENANT_BRAND_READ,
+        PERMISSION_TENANT_BRAND_MANAGE,
+        PERMISSION_TENANT_PROFILE_MANAGE,
         PERMISSION_TENANT_CHAT_OPERATE,
+        PERMISSION_TENANT_CHAT_ASSIGN_AUTONOMOUS,
         PERMISSION_TENANT_CHAT_ASSIGNMENTS_READ,
         PERMISSION_TENANT_CHAT_ASSIGNMENTS_MANAGE,
         PERMISSION_TENANT_ASSIGNMENT_RULES_READ,
@@ -98,6 +105,13 @@ export default function useSaasAccessControl({
     const roleBasedCanManageAutomations = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanViewSchedules = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanManageSchedules = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanViewAuditLogs = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || noRoleContext);
+    const roleBasedCanViewEmailTemplates = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageEmailTemplates = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanViewBrand = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
+    const roleBasedCanManageBrand = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || noRoleContext);
+    const roleBasedCanManageOwnProfile = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || normalizedRole === 'seller' || noRoleContext);
+    const roleBasedCanAssignAutonomousPatty = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
     const roleBasedCanViewOwnDevices = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || normalizedRole === 'seller' || noRoleContext);
     const roleBasedCanRevokeOwnDevices = roleBasedCanViewOwnDevices;
     const roleBasedCanViewAllDevices = Boolean(effectiveIsSuperAdmin || normalizedRole === 'owner' || normalizedRole === 'admin' || noRoleContext);
@@ -239,6 +253,27 @@ export default function useSaasAccessControl({
     const canManageSchedules = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_SCHEDULES_MANAGE])
         : roleBasedCanManageSchedules;
+    const canViewAuditLogs = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_AUDIT_READ])
+        : roleBasedCanViewAuditLogs;
+    const canViewEmailTemplates = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_EMAIL_TEMPLATES_READ, PERMISSION_TENANT_EMAIL_TEMPLATES_MANAGE])
+        : roleBasedCanViewEmailTemplates;
+    const canManageEmailTemplates = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_EMAIL_TEMPLATES_MANAGE])
+        : roleBasedCanManageEmailTemplates;
+    const canViewBrand = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_BRAND_READ, PERMISSION_TENANT_BRAND_MANAGE])
+        : roleBasedCanViewBrand;
+    const canManageBrand = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_BRAND_MANAGE])
+        : roleBasedCanManageBrand;
+    const canManageOwnProfile = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_PROFILE_MANAGE])
+        : roleBasedCanManageOwnProfile;
+    const canAssignAutonomousPatty = hasPermissionContext
+        ? hasAnyActorPermission([PERMISSION_TENANT_CHAT_ASSIGN_AUTONOMOUS])
+        : roleBasedCanAssignAutonomousPatty;
     const canViewCustomers = hasPermissionContext
         ? hasAnyActorPermission([PERMISSION_TENANT_CUSTOMERS_READ, PERMISSION_TENANT_CUSTOMERS_MANAGE])
         : roleBasedCanManageCustomers;
@@ -437,6 +472,13 @@ export default function useSaasAccessControl({
         canManageAutomations,
         canViewSchedules,
         canManageSchedules,
+        canViewAuditLogs,
+        canViewEmailTemplates,
+        canManageEmailTemplates,
+        canViewBrand,
+        canManageBrand,
+        canManageOwnProfile,
+        canAssignAutonomousPatty,
         canViewCustomers,
         canManageCustomers,
         canViewOperations,

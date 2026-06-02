@@ -20,9 +20,6 @@ function ModulesConfigSection(props = {}) {
     const {
     isGeneralConfigSection,
     isModulesSection,
-    isSuperAdmin,
-    currentUser,
-    userRole,
     settingsTenantId,
     loadTenantSettings,
     loadWaModules,
@@ -37,6 +34,7 @@ function ModulesConfigSection(props = {}) {
     canRevokeOwnDevices = true,
     canViewAllDevices = false,
     canRevokeAllDevices = false,
+    canViewAuditLogs = false,
     ensureSectionData = null,
     isLoading = null,
     getError = null,
@@ -88,8 +86,6 @@ function ModulesConfigSection(props = {}) {
     const sectionReloadToken = typeof getReloadToken === 'function' ? getReloadToken(lazySectionId) : 0;
     const sectionLoading = typeof isLoading === 'function' && isLoading(lazySectionId);
     const sectionError = typeof getError === 'function' ? getError(lazySectionId) : '';
-    const canViewAuditLogs = Boolean(isSuperAdmin || currentUser?.isSuperAdmin === true || String(userRole || currentUser?.role || '').trim().toLowerCase() === 'owner');
-
     const rows = React.useMemo(() => {
         if (isGeneralConfigSection) {
             return [{
@@ -252,9 +248,6 @@ function ModulesConfigSection(props = {}) {
                     selectedConfigKey={selectedConfigKey}
                     requestJson={requestJson}
                     formatDateTimeLabel={formatDateTimeLabel}
-                    currentUser={currentUser}
-                    isSuperAdmin={isSuperAdmin}
-                    userRole={userRole}
                     canRevokeOwnDevices={canRevokeOwnDevices}
                     canViewAllDevices={canViewAllDevices}
                     canRevokeAllDevices={canRevokeAllDevices}
@@ -281,9 +274,7 @@ function ModulesConfigSection(props = {}) {
                 selectedConfigKey={selectedConfigKey}
                 requestJson={requestJson}
                 formatDateTimeLabel={formatDateTimeLabel}
-                currentUser={currentUser}
-                isSuperAdmin={isSuperAdmin}
-                userRole={userRole}
+                canViewAuditLogs={canViewAuditLogs}
             />
 
             <ModulesConfigModuleDetailPane
@@ -347,12 +338,10 @@ function ModulesConfigSection(props = {}) {
         canViewAuditLogs,
         canViewOwnDevices,
         clearConfigSelection,
-        currentUser,
         formatDateTimeLabel,
         handleFormImageUpload,
         handleOpenOperation,
         isGeneralConfigSection,
-        isSuperAdmin,
         isModulesSection,
         moduleQuickReplyLibraryDraft,
         moduleUserPickerId,
@@ -375,7 +364,6 @@ function ModulesConfigSection(props = {}) {
         toggleCatalogForModule,
         toggleQuickReplyLibraryForModuleDraft,
         toggleWaModuleActive,
-        userRole,
         usersForSettingsTenant,
         waModuleForm,
         waModulePanelMode

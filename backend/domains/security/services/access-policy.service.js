@@ -40,6 +40,12 @@ const PERMISSIONS = Object.freeze({
     TENANT_SCHEDULES_READ: 'tenant.schedules.read',
     TENANT_SCHEDULES_MANAGE: 'tenant.schedules.manage',
     TENANT_AUDIT_READ: 'tenant.audit.read',
+    TENANT_EMAIL_TEMPLATES_READ: 'tenant.email_templates.read',
+    TENANT_EMAIL_TEMPLATES_MANAGE: 'tenant.email_templates.manage',
+    TENANT_BRAND_READ: 'tenant.brand.read',
+    TENANT_BRAND_MANAGE: 'tenant.brand.manage',
+    TENANT_PROFILE_MANAGE: 'tenant.profile.manage',
+    TENANT_CHAT_ASSIGN_AUTONOMOUS: 'tenant.chat.assign_autonomous',
     TENANT_RUNTIME_READ: 'tenant.runtime.read',
     TENANT_ASSETS_UPLOAD: 'tenant.assets.upload',
     TENANT_CHAT_OPERATE: 'tenant.chat.operate',
@@ -94,6 +100,12 @@ const PERMISSION_LABELS = Object.freeze({
     [PERMISSIONS.TENANT_SCHEDULES_READ]: 'Ver horarios',
     [PERMISSIONS.TENANT_SCHEDULES_MANAGE]: 'Gestionar horarios',
     [PERMISSIONS.TENANT_AUDIT_READ]: 'Ver auditoria tenant',
+    [PERMISSIONS.TENANT_EMAIL_TEMPLATES_READ]: 'Ver plantillas de correo',
+    [PERMISSIONS.TENANT_EMAIL_TEMPLATES_MANAGE]: 'Editar plantillas de correo',
+    [PERMISSIONS.TENANT_BRAND_READ]: 'Ver identidad de marca',
+    [PERMISSIONS.TENANT_BRAND_MANAGE]: 'Editar identidad de marca',
+    [PERMISSIONS.TENANT_PROFILE_MANAGE]: 'Editar perfil propio',
+    [PERMISSIONS.TENANT_CHAT_ASSIGN_AUTONOMOUS]: 'Cambiar modo autonomo Patty',
     [PERMISSIONS.TENANT_RUNTIME_READ]: 'Ver runtime tenant',
     [PERMISSIONS.TENANT_ASSETS_UPLOAD]: 'Subir archivos/imagenes',
     [PERMISSIONS.TENANT_CHAT_OPERATE]: 'Operar chat',
@@ -261,6 +273,12 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
             PERMISSIONS.TENANT_ASSIGNMENT_RULES_MANAGE,
             PERMISSIONS.TENANT_KPIS_READ,
             PERMISSIONS.TENANT_ASSETS_UPLOAD,
+            PERMISSIONS.TENANT_EMAIL_TEMPLATES_READ,
+            PERMISSIONS.TENANT_EMAIL_TEMPLATES_MANAGE,
+            PERMISSIONS.TENANT_BRAND_READ,
+            PERMISSIONS.TENANT_BRAND_MANAGE,
+            PERMISSIONS.TENANT_PROFILE_MANAGE,
+            PERMISSIONS.TENANT_CHAT_ASSIGN_AUTONOMOUS,
             PERMISSIONS.DEVICES_VIEW_OWN,
             PERMISSIONS.DEVICES_REVOKE_OWN,
             PERMISSIONS.DEVICES_VIEW_ALL,
@@ -317,9 +335,15 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
             PERMISSIONS.TENANT_ASSIGNMENT_RULES_MANAGE,
             PERMISSIONS.TENANT_KPIS_READ,
             PERMISSIONS.TENANT_ASSETS_UPLOAD,
+            PERMISSIONS.TENANT_EMAIL_TEMPLATES_READ,
+            PERMISSIONS.TENANT_EMAIL_TEMPLATES_MANAGE,
+            PERMISSIONS.TENANT_BRAND_READ,
+            PERMISSIONS.TENANT_PROFILE_MANAGE,
+            PERMISSIONS.TENANT_CHAT_ASSIGN_AUTONOMOUS,
             PERMISSIONS.DEVICES_VIEW_OWN,
             PERMISSIONS.DEVICES_REVOKE_OWN,
-            PERMISSIONS.DEVICES_VIEW_ALL
+            PERMISSIONS.DEVICES_VIEW_ALL,
+            PERMISSIONS.DEVICES_REVOKE_ALL
         ],
         optional: [
             PERMISSIONS.TENANT_SETTINGS_MANAGE,
@@ -356,6 +380,7 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
             PERMISSIONS.TENANT_CONVERSATION_EVENTS_READ,
             PERMISSIONS.TENANT_CHAT_ASSIGNMENTS_READ,
             PERMISSIONS.TENANT_ASSIGNMENT_RULES_READ,
+            PERMISSIONS.TENANT_PROFILE_MANAGE,
             PERMISSIONS.DEVICES_VIEW_OWN,
             PERMISSIONS.DEVICES_REVOKE_OWN
         ],
@@ -367,7 +392,8 @@ const SYSTEM_ROLE_PROFILES = Object.freeze({
             PERMISSIONS.TENANT_QUICK_REPLIES_MANAGE,
             PERMISSIONS.TENANT_LABELS_MANAGE,
             PERMISSIONS.TENANT_ZONES_READ,
-            PERMISSIONS.TENANT_KPIS_READ
+            PERMISSIONS.TENANT_KPIS_READ,
+            PERMISSIONS.TENANT_EMAIL_TEMPLATES_READ
         ],
         blocked: [
             PERMISSIONS.PLATFORM_OVERVIEW_READ,
@@ -485,23 +511,41 @@ function normalizeRolePermissionBuckets({
     }
     const normalizedRole = String(role || '').trim().toLowerCase();
     if (normalizedRole === 'owner') {
+        requiredSet.add(PERMISSIONS.TENANT_EMAIL_TEMPLATES_READ);
+        requiredSet.add(PERMISSIONS.TENANT_EMAIL_TEMPLATES_MANAGE);
+        requiredSet.add(PERMISSIONS.TENANT_BRAND_READ);
+        requiredSet.add(PERMISSIONS.TENANT_BRAND_MANAGE);
+        requiredSet.add(PERMISSIONS.TENANT_PROFILE_MANAGE);
+        requiredSet.add(PERMISSIONS.TENANT_CHAT_ASSIGN_AUTONOMOUS);
         requiredSet.add(PERMISSIONS.DEVICES_VIEW_OWN);
         requiredSet.add(PERMISSIONS.DEVICES_REVOKE_OWN);
         requiredSet.add(PERMISSIONS.DEVICES_VIEW_ALL);
         requiredSet.add(PERMISSIONS.DEVICES_REVOKE_ALL);
     } else if (normalizedRole === 'admin') {
+        requiredSet.add(PERMISSIONS.TENANT_EMAIL_TEMPLATES_READ);
+        requiredSet.add(PERMISSIONS.TENANT_EMAIL_TEMPLATES_MANAGE);
+        requiredSet.add(PERMISSIONS.TENANT_BRAND_READ);
+        requiredSet.add(PERMISSIONS.TENANT_PROFILE_MANAGE);
+        requiredSet.add(PERMISSIONS.TENANT_CHAT_ASSIGN_AUTONOMOUS);
         requiredSet.add(PERMISSIONS.DEVICES_VIEW_OWN);
         requiredSet.add(PERMISSIONS.DEVICES_REVOKE_OWN);
         requiredSet.add(PERMISSIONS.DEVICES_VIEW_ALL);
+        requiredSet.add(PERMISSIONS.DEVICES_REVOKE_ALL);
     } else if (normalizedRole === 'seller') {
+        requiredSet.add(PERMISSIONS.TENANT_PROFILE_MANAGE);
         requiredSet.add(PERMISSIONS.DEVICES_VIEW_OWN);
         requiredSet.add(PERMISSIONS.DEVICES_REVOKE_OWN);
     }
 
     const normalizedRequired = normalizePermissionList(Array.from(requiredSet));
+    const optionalSet = new Set(normalizePermissionList(optional));
+    if (normalizedRole === 'seller') {
+        optionalSet.add(PERMISSIONS.TENANT_EMAIL_TEMPLATES_READ);
+    }
+
     const normalizedBlocked = normalizePermissionList(blocked)
         .filter((permission) => !normalizedRequired.includes(permission));
-    const normalizedOptional = normalizePermissionList(optional)
+    const normalizedOptional = normalizePermissionList(Array.from(optionalSet))
         .filter((permission) => !normalizedRequired.includes(permission) && !normalizedBlocked.includes(permission));
 
     return {

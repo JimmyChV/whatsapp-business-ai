@@ -84,6 +84,11 @@ function registerTenantCustomerHttpRoutes({
             || hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CHAT_OPERATE);
     }
 
+    function hasCustomersReadAccess(req) {
+        return hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_READ)
+            || hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CUSTOMERS_MANAGE);
+    }
+
     app.get('/api/admin/saas/tenants/:tenantId/customers', async (req, res) => {
         const tenantId = String(req.params?.tenantId || '').trim();
         if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
@@ -370,6 +375,7 @@ function registerTenantCustomerHttpRoutes({
     app.get('/api/tenant/customers', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasCustomersReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
 
             const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
             const query = String(req.query?.q || req.query?.query || '').trim();
@@ -622,6 +628,7 @@ function registerTenantCustomerHttpRoutes({
     app.get('/api/tenant/customers/by-phone/:phoneE164', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasCustomersReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
 
             const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
             const phoneE164 = String(req.params?.phoneE164 || '').trim();
@@ -705,6 +712,7 @@ function registerTenantCustomerHttpRoutes({
     app.get('/api/tenant/customers/:customerId/addresses', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;
+            if (!hasCustomersReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
             const tenantId = String(req?.tenantContext?.id || 'default').trim() || 'default';
             const customerId = String(req.params?.customerId || '').trim();
             if (!customerId) return res.status(400).json({ ok: false, error: 'customerId invalido.' });
