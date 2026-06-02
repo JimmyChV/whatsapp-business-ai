@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Camera, Check, Eye, EyeOff, Laptop, LogOut, MonitorSmartphone, Phone, Save, Shield, Smartphone, X } from 'lucide-react';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 
@@ -267,7 +268,7 @@ export default function SaasProfileModal({
     const avatarStyle = { background: avatarColor(profile?.displayName || profile?.email) };
     const devicesActive = devices.filter((device) => !device.revokedAt);
 
-    return (
+    const modalContent = (
         <div className="saas-profile-overlay" role="dialog" aria-modal="true" aria-label="Mi Perfil" onClick={onClose}>
             <div className="saas-profile-modal" onClick={(event) => event.stopPropagation()}>
                 <header className="saas-profile-header">
@@ -453,4 +454,10 @@ export default function SaasProfileModal({
             </div>
         </div>
     );
+
+    if (typeof document === 'undefined') {
+        return modalContent;
+    }
+
+    return createPortal(modalContent, document.body);
 }
