@@ -121,6 +121,7 @@ const ChatWindow = ({
         resolveGroupSenderName,
         formatDayLabel,
         headerDisplayName,
+        headerPhone,
         headerAlias,
         headerLocation,
         showHeaderModule,
@@ -244,6 +245,9 @@ const ChatWindow = ({
                     <div className="chat-header-title-row chat-header-title-row--clean">
                         <h3 className="chat-header-name" title={headerDisplayName}>{headerDisplayName}</h3>
                     </div>
+                    {headerPhone && !activeChatDetails?.isGroup ? (
+                        <div className="chat-header-subtitle" title={headerPhone}>{headerPhone}</div>
+                    ) : null}
                     {activeAdOrigin && (
                         <span
                             className="chat-ad-origin-badge"
@@ -581,14 +585,22 @@ const ChatWindow = ({
             {canWriteByAssignment ? (
                 <>
                     {!conversationWindowOpen && (
-                        <div className="chat-window-expired-banner">
+                        <div className="chat-window-expired-banner chat-window-closed-banner">
                             <div className="chat-window-expired-banner-copy">
-                                <span className="chat-window-expired-banner-title">Ventana de 24 horas cerrada</span>
-                                <span className="chat-window-expired-banner-text">
+                                <span className="chat-window-expired-banner-title banner-title banner-title--desktop">Ventana de 24 horas cerrada</span>
+                                <span className="chat-window-expired-banner-title banner-title banner-title--mobile">⏰ Ventana de 24h cerrada</span>
+                                <span className="chat-window-expired-banner-text banner-text-long">
                                     La ventana de conversación expiró. Solo puedes contactar con un template aprobado.
                                 </span>
                             </div>
-                            <div className="chat-window-expired-banner-actions">
+                            <div className="chat-window-expired-banner-actions banner-actions">
+                                <button
+                                    type="button"
+                                    className="chat-window-expired-banner-action"
+                                    onClick={() => inputProps?.onOpenSendTemplate?.()}
+                                >
+                                    Enviar template
+                                </button>
                                 <button
                                     type="button"
                                     className="chat-window-expired-banner-action chat-window-expired-banner-action--secondary"
@@ -596,13 +608,6 @@ const ChatWindow = ({
                                     onClick={() => inputProps?.onOpenDirectWhatsApp?.()}
                                 >
                                     📱 Abrir en WhatsApp
-                                </button>
-                                <button
-                                    type="button"
-                                    className="chat-window-expired-banner-action"
-                                    onClick={() => inputProps?.onOpenSendTemplate?.()}
-                                >
-                                    Enviar template
                                 </button>
                             </div>
                         </div>
