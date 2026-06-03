@@ -74,6 +74,8 @@ const ChatWindow = ({
         setShowMenu,
         showLabelMenu,
         setShowLabelMenu,
+        showMobileShortcuts,
+        setShowMobileShortcuts,
         lightboxMedia,
         setLightboxMedia,
         showMapModal,
@@ -359,21 +361,37 @@ const ChatWindow = ({
                         )}
                     </div>
                     <div className="chat-header-mobile-tools">
-                        <button
-                            type="button"
-                            className="chat-mobile-nav-btn chat-mobile-tools-btn"
-                            onClick={() => onMobileOpenTools?.()}
-                            title="Abrir herramientas"
-                        >
-                            Herramientas
-                        </button>
-                        <button
-                            className={`btn-icon ui-icon-btn chat-header-action-btn ${searchVisible ? 'active' : ''}`}
-                            onClick={() => setSearchVisible(v => !v)}
-                            title="Buscar en chat"
-                        >
-                            <Search size={18} />
-                        </button>
+                        <div className="chat-header-menu-wrap chat-header-menu-wrap--mobile-shortcuts">
+                            <button
+                                type="button"
+                                className={`chat-mobile-nav-btn chat-mobile-tools-btn ${showMobileShortcuts ? 'active' : ''}`}
+                                onClick={() => setShowMobileShortcuts(v => !v)}
+                                title="Atajos del chat"
+                            >
+                                Atajos
+                            </button>
+                            {showMobileShortcuts && (
+                                <div className="chat-header-popover chat-header-popover--mobile-shortcuts">
+                                    {[
+                                        { label: 'Herramientas', action: () => onMobileOpenTools?.() },
+                                        { label: searchVisible ? 'Ocultar busqueda' : 'Buscar en chat', action: () => setSearchVisible(v => !v) },
+                                        { label: 'Abrir mapa', action: () => openMapModal({ query: '' }) }
+                                    ].map((item, idx) => (
+                                        <button
+                                            key={`mobile_shortcut_${idx}`}
+                                            type="button"
+                                            className="chat-header-action-item chat-header-action-item--button"
+                                            onClick={() => {
+                                                item.action?.();
+                                                setShowMobileShortcuts(false);
+                                            }}
+                                        >
+                                            {item.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
                 <div className="chat-header-actions" onClick={e => e.stopPropagation()}>
