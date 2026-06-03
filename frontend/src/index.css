@@ -10691,6 +10691,87 @@ body {
     min-width: 0;
   }
 
+  .app-container--operation .chat-header-pro {
+    min-height: auto !important;
+    padding: 8px 10px !important;
+    display: grid !important;
+    grid-template-columns: 42px minmax(0, 1fr) !important;
+    grid-template-rows: auto auto !important;
+    align-items: start !important;
+    gap: 8px !important;
+  }
+
+  .app-container--operation .chat-header-avatar--module {
+    display: none !important;
+  }
+
+  .app-container--operation .chat-header-meta {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    margin-left: 0 !important;
+    max-width: none !important;
+    width: 100% !important;
+  }
+
+  .app-container--operation .chat-header-title-row--clean {
+    gap: 0 !important;
+  }
+
+  .app-container--operation .chat-header-name {
+    font-size: 15px !important;
+    line-height: 1.15 !important;
+  }
+
+  .app-container--operation .chat-header-subtitle {
+    display: block !important;
+    font-size: 12px !important;
+    line-height: 1.25 !important;
+  }
+
+  .app-container--operation .chat-header-actions {
+    grid-column: 1 / -1 !important;
+    grid-row: 2 !important;
+    min-width: 0 !important;
+    width: 100% !important;
+    margin-left: 0 !important;
+    align-items: stretch !important;
+  }
+
+  .app-container--operation .chat-header-actions-top,
+  .app-container--operation .chat-ad-origin-badge,
+  .app-container--operation .chat-header-info-row,
+  .app-container--operation .chat-header-labels-row {
+    display: none !important;
+  }
+
+  .app-container--operation .chat-header-actions-row {
+    width: 100% !important;
+    justify-content: flex-end !important;
+  }
+
+  .app-container--operation .chat-window-closed-banner {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    padding: 8px 12px !important;
+    gap: 6px !important;
+  }
+
+  .app-container--operation .chat-window-closed-banner .chat-window-expired-banner-copy {
+    display: block !important;
+  }
+
+  .app-container--operation .chat-window-closed-banner .banner-actions {
+    width: 100% !important;
+    justify-content: flex-start !important;
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+  }
+
+  .app-container--operation .chat-window-closed-banner button {
+    padding: 6px 8px !important;
+    font-size: 12px !important;
+  }
+
   .chat-messages {
     padding: 14px 12px 16px;
   }
