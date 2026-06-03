@@ -1595,6 +1595,71 @@ button.saas-admin-related-row small::after {
   align-items: center;
 }
 
+.saas-audit-user-search {
+  position: relative;
+  min-width: 0;
+}
+
+.saas-audit-user-search input {
+  padding-right: 40px;
+}
+
+.saas-audit-user-search__clear {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--saas-text-secondary, #6b7280) 14%, transparent);
+  color: var(--saas-text-secondary, #6b7280);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.saas-audit-user-search__suggestions {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 6;
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--saas-border-color);
+  border-radius: 14px;
+  background: var(--saas-surface-elevated, #fff);
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
+}
+
+.saas-audit-user-search__option {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  border: 1px solid color-mix(in srgb, var(--saas-border-color) 88%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--saas-surface-elevated, #fff) 94%, transparent);
+  cursor: pointer;
+}
+
+.saas-audit-user-search__option:hover {
+  border-color: color-mix(in srgb, var(--saas-accent-primary, #1d9e75) 28%, var(--saas-border-color));
+  background: color-mix(in srgb, var(--saas-accent-primary, #1d9e75) 8%, transparent);
+}
+
+.saas-audit-user-search__option small,
+.saas-audit-user-search__empty {
+  color: var(--saas-text-secondary, #6b7280);
+  font-size: 12px;
+}
+
 .saas-audit-list {
   display: grid;
   gap: 8px;
@@ -1623,6 +1688,12 @@ button.saas-admin-related-row small::after {
 .saas-audit-row__payload {
   color: var(--saas-text-secondary, #6b7280);
   font-size: 12px;
+}
+
+.saas-audit-connection {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .saas-audit-row__main strong,

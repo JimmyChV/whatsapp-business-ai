@@ -8,6 +8,12 @@
 } = require('../../../config/persistence-runtime');
 
 const AUDIT_FILE = 'audit_logs.json';
+const TECHNICAL_AUDIT_ACTIONS = new Set([
+    'wa.transport_mode.changed',
+    'wa.transport_mode.autoset_by_module',
+    'auth.refresh.success',
+    'auth.refresh.failed'
+]);
 
 function resolveTenantId(tenantId = '') {
     return normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
@@ -53,6 +59,10 @@ function getRequestTenantId(req = {}, fallbackTenantId = null) {
         || DEFAULT_TENANT_ID,
         DEFAULT_TENANT_ID
     );
+}
+
+function isTechnicalAuditAction(action = '') {
+    return TECHNICAL_AUDIT_ACTIONS.has(toText(action, ''));
 }
 
 function getRequestRole(req = {}) {
@@ -118,50 +128,73 @@ function buildPostgresFilters(cleanTenant, filters = {}) {
     const includeUserGlobalLogs = Boolean(filters.includeUserGlobalLogs);
     const currentUserId = toText(filters.currentUserId);
     const clauses = [];
+    const joins = [];
     const params = [];
     if (isGlobalScope) {
         params.push(DEFAULT_TENANT_ID);
-        clauses.push('(tenant_id IS NULL OR tenant_id = $1)');
+        clauses.push('(audit_logs.tenant_id IS NULL OR audit_logs.tenant_id = $1)');
     } else if (includeUserGlobalLogs && currentUserId) {
         params.push(cleanTenant, currentUserId);
-        clauses.push('(tenant_id = $1 OR (tenant_id IS NULL AND user_id = $2))');
+        clauses.push('(audit_logs.tenant_id = $1 OR (audit_logs.tenant_id IS NULL AND audit_logs.user_id = $2))');
     } else {
         params.push(cleanTenant);
-        clauses.push('tenant_id = $1');
+        clauses.push('audit_logs.tenant_id = $1');
     }
-    const userId = toText(filters.userId);
+    const userSearch = toText(filters.userSearch || filters.userId);
     const action = toText(filters.action);
     const fromDate = normalizeDateFilter(filters.from);
     const toDate = normalizeDateFilter(filters.to);
 
-    if (userId) {
-        params.push(userId);
-        clauses.push(`user_id = $${params.length}`);
+    if (userSearch) {
+        params.push(`%${userSearch}%`);
+        const partialIndex = params.length;
+        params.push(userSearch);
+        const exactIndex = params.length;
+        joins.push('LEFT JOIN users u ON u.user_id = audit_logs.user_id');
+        clauses.push(`(
+            u.email ILIKE $${partialIndex}
+            OR u.display_name ILIKE $${partialIndex}
+            OR audit_logs.user_id = $${exactIndex}
+        )`);
     }
     if (action) {
         params.push(action);
-        clauses.push(`action = $${params.length}`);
+        clauses.push(`audit_logs.action = $${params.length}`);
     }
     if (fromDate) {
         params.push(fromDate.toISOString());
-        clauses.push(`created_at >= $${params.length}`);
+        clauses.push(`audit_logs.created_at >= $${params.length}`);
     }
     if (toDate) {
         params.push(toDate.toISOString());
-        clauses.push(`created_at <= $${params.length}`);
+        clauses.push(`audit_logs.created_at <= $${params.length}`);
     }
 
-    return { clauses, params };
+    const blockedActionPlaceholders = Array.from(TECHNICAL_AUDIT_ACTIONS).map((blockedAction) => {
+        params.push(blockedAction);
+        return `$${params.length}`;
+    });
+    clauses.push(`audit_logs.action NOT IN (${blockedActionPlaceholders.join(', ')})`);
+
+    return { clauses, joins, params };
 }
 
 function matchesFileFilters(item = {}, filters = {}) {
-    const userId = toText(filters.userId);
+    const userSearch = toText(filters.userSearch || filters.userId);
     const action = toText(filters.action);
     const fromDate = normalizeDateFilter(filters.from);
     const toDate = normalizeDateFilter(filters.to);
     const createdAt = normalizeDateFilter(item.createdAt);
+    const displayName = toText(item?.payload?.displayName || item?.payload?.userDisplayName || '', '');
+    const userEmail = toText(item.userEmail || item?.payload?.userEmail || '', '');
 
-    if (userId && toText(item.userId) !== userId) return false;
+    if (isTechnicalAuditAction(item?.action)) return false;
+    if (userSearch) {
+        const search = userSearch.toLowerCase();
+        const exactUserId = toText(item.userId);
+        const matchesPartial = userEmail.toLowerCase().includes(search) || displayName.toLowerCase().includes(search);
+        if (!matchesPartial && exactUserId !== userSearch) return false;
+    }
     if (action && toText(item.action) !== action) return false;
     if (fromDate && (!createdAt || createdAt < fromDate)) return false;
     if (toDate && (!createdAt || createdAt > toDate)) return false;
@@ -170,6 +203,14 @@ function matchesFileFilters(item = {}, filters = {}) {
 
 async function writeAuditLog(tenantId = DEFAULT_TENANT_ID, entry = {}) {
     const cleanTenant = resolveTenantId(tenantId);
+    if (isTechnicalAuditAction(entry?.action)) {
+        return {
+            skipped: true,
+            reason: 'technical_audit_action',
+            action: toText(entry?.action, 'unknown_action'),
+            tenantId: cleanTenant
+        };
+    }
     const record = {
         id: toText(entry.id) || `audit_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
         tenantId: cleanTenant,
@@ -265,6 +306,7 @@ async function listAuditLogs(tenantId = DEFAULT_TENANT_ID, {
     limit = 100,
     offset = 0,
     userId = '',
+    userSearch = '',
     action = '',
     from = '',
     to = '',
@@ -274,19 +316,28 @@ async function listAuditLogs(tenantId = DEFAULT_TENANT_ID, {
     const cleanTenant = resolveTenantId(tenantId);
     const safeLimit = Math.min(500, Math.max(1, Number(limit) || 100));
     const safeOffset = Math.max(0, Number(offset) || 0);
-    const filters = { userId, action, from, to, currentUserId, includeUserGlobalLogs };
+    const filters = { userId, userSearch, action, from, to, currentUserId, includeUserGlobalLogs };
 
     if (getStorageDriver() === 'postgres') {
         try {
-            const { clauses, params } = buildPostgresFilters(cleanTenant, filters);
+            const { clauses, joins, params } = buildPostgresFilters(cleanTenant, filters);
             params.push(safeLimit, safeOffset);
             const limitIndex = params.length - 1;
             const offsetIndex = params.length;
             const { rows } = await queryPostgres(
-                `SELECT id, tenant_id, user_id, action, resource_type, resource_id, payload, created_at
+                `SELECT
+                        audit_logs.id,
+                        audit_logs.tenant_id,
+                        audit_logs.user_id,
+                        audit_logs.action,
+                        audit_logs.resource_type,
+                        audit_logs.resource_id,
+                        audit_logs.payload,
+                        audit_logs.created_at
                    FROM audit_logs
+                   ${joins.join(' ')}
                   WHERE ${clauses.join(' AND ')}
-                  ORDER BY created_at DESC
+                  ORDER BY audit_logs.created_at DESC
                   LIMIT $${limitIndex}
                  OFFSET $${offsetIndex}`,
                 params
@@ -323,11 +374,57 @@ async function listAuditLogs(tenantId = DEFAULT_TENANT_ID, {
     return items.filter((item) => matchesFileFilters(item, filters)).slice(safeOffset, safeOffset + safeLimit);
 }
 
+async function searchAuditUsers(tenantId = DEFAULT_TENANT_ID, {
+    search = '',
+    limit = 8
+} = {}) {
+    const cleanTenant = resolveTenantId(tenantId);
+    const cleanSearch = toText(search);
+    const safeLimit = Math.min(10, Math.max(1, Number(limit) || 8));
+    if (!cleanTenant || cleanTenant === DEFAULT_TENANT_ID || !cleanSearch) return [];
+    if (getStorageDriver() !== 'postgres') return [];
+
+    try {
+        const partial = `%${cleanSearch}%`;
+        const { rows } = await queryPostgres(
+            `SELECT DISTINCT
+                    u.user_id,
+                    u.email,
+                    COALESCE(NULLIF(BTRIM(u.display_name), ''), u.email, u.user_id) AS display_name
+               FROM memberships m
+               JOIN users u
+                 ON u.user_id = m.user_id
+              WHERE m.tenant_id = $1
+                AND m.is_active = TRUE
+                AND u.is_active = TRUE
+                AND (
+                    u.email ILIKE $2
+                    OR u.display_name ILIKE $2
+                    OR u.user_id = $3
+                )
+              ORDER BY CASE WHEN u.user_id = $3 THEN 0 ELSE 1 END,
+                       LOWER(COALESCE(NULLIF(BTRIM(u.display_name), ''), u.email, u.user_id)) ASC
+              LIMIT $4`,
+            [cleanTenant, partial, cleanSearch, safeLimit]
+        );
+
+        return (rows || []).map((row) => ({
+            userId: toText(row.user_id),
+            email: toText(row.email),
+            displayName: toText(row.display_name || row.email || row.user_id)
+        })).filter((item) => item.userId);
+    } catch (error) {
+        if (!missingRelation(error)) throw error;
+        return [];
+    }
+}
+
 module.exports = {
     writeAuditLog,
     writeRequestAuditLog,
     logAction,
-    listAuditLogs
+    listAuditLogs,
+    searchAuditUsers
 };
 
 

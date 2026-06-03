@@ -89,10 +89,11 @@ function createModuleTransportEnsurer({
         runtimeStore?.set?.('contactListCache', { items: [], updatedAt: 0 });
         emitWaCapabilities(socket);
         socket?.emit?.('transport_mode_set', nextRuntime);
-        await authzAudit?.auditSocketAction?.('wa.transport_mode.autoset_by_module', {
-            resourceType: 'wa_module',
-            resourceId: selectedModule?.moduleId || null,
-            payload: { moduleTransport, runtime: nextRuntime }
+        console.log('[wa.transport_mode.autoset_by_module]', {
+            tenantId: effectiveTenantId,
+            moduleId: selectedModule?.moduleId || null,
+            moduleTransport,
+            runtime: nextRuntime
         });
 
         if (waClient.isReady) {
@@ -328,15 +329,14 @@ function createSocketTransportOrchestrator({
                     channelType: selectedModule?.channelType || null,
                     transportMode: runtime?.activeTransport || nextMode
                 });
-                await authzAudit.auditSocketAction('wa.transport_mode.changed', {
+                console.log('[wa.transport_mode.changed]', {
+                    tenantId,
                     resourceType: hasForcedMode ? 'wa_module' : 'wa_runtime',
                     resourceId: hasForcedMode ? (selectedModule?.moduleId || null) : (runtime?.activeTransport || nextMode),
-                    payload: {
-                        requestedMode: nextMode,
-                        effectiveMode: runtime?.activeTransport || nextMode,
-                        selectedModuleId: selectedModule?.moduleId || null,
-                        runtime
-                    }
+                    requestedMode: nextMode,
+                    effectiveMode: runtime?.activeTransport || nextMode,
+                    selectedModuleId: selectedModule?.moduleId || null,
+                    runtime
                 });
 
                 if (waClient.isReady) {

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link2 } from 'lucide-react';
 
 const DEFAULT_LIMIT = 100;
 
@@ -18,6 +19,13 @@ function formatDate(value, formatDateTimeLabel) {
         hour: '2-digit',
         minute: '2-digit'
     });
+}
+
+function suggestionLabel(user = {}) {
+    const displayName = text(user.displayName || user.name || user.userId);
+    const email = text(user.email);
+    if (displayName && email) return `${displayName} - ${email}`;
+    return displayName || email || text(user.userId);
 }
 
 function actionLabel(action = '') {
@@ -148,18 +156,25 @@ function buildAuditDetail(item = {}) {
     if (count) pieces.push(`${count} registros`);
     if (reason) pieces.push(`Motivo: ${reason}`);
     if (!pieces.length && item?.resourceId) pieces.push(`${item.resourceType || 'Recurso'} ${item.resourceId}`);
-    return pieces.join(' · ') || 'Sin detalle adicional';
+    return pieces.join(' | ') || 'Sin detalle adicional';
 }
 
 function buildQuery(filters = {}, offset = 0) {
     const params = new URLSearchParams();
     params.set('limit', String(DEFAULT_LIMIT));
     params.set('offset', String(offset));
-    if (text(filters.userId)) params.set('userId', text(filters.userId));
+    if (text(filters.userSearch)) params.set('userSearch', text(filters.userSearch));
     if (text(filters.action)) params.set('action', text(filters.action));
     if (text(filters.from)) params.set('from', text(filters.from));
     if (text(filters.to)) params.set('to', `${text(filters.to)}T23:59:59`);
     return `/api/audit/logs?${params.toString()}`;
+}
+
+function buildUserSearchQuery(search = '') {
+    const params = new URLSearchParams();
+    params.set('search', text(search));
+    params.set('limit', '6');
+    return `/api/audit/users?${params.toString()}`;
 }
 
 function AuditRow({ item, formatDateTimeLabel }) {
@@ -168,11 +183,19 @@ function AuditRow({ item, formatDateTimeLabel }) {
     const entityId = item?.resourceId || item?.entityId || '-';
     const meta = actionMeta(item?.action);
     const detail = buildAuditDetail(item);
+    const ip = text(item?.ip || payload?.ip);
     return (
         <article className="saas-audit-row">
             <div className="saas-audit-row__time">
                 <strong>{formatDate(item?.createdAt, formatDateTimeLabel)}</strong>
-                <span>{item?.ip || payload?.ip || 'IP no disponible'}</span>
+                {ip ? (
+                    <span>{ip}</span>
+                ) : (
+                    <span className="saas-audit-connection">
+                        <Link2 size={12} />
+                        WebSocket
+                    </span>
+                )}
             </div>
             <div className="saas-audit-row__main">
                 <span className={`saas-audit-action saas-audit-action--${actionTone(item?.action)}`}>
@@ -196,19 +219,27 @@ export default function AuditSettingsDetailPane({
     canViewAuditLogs = false
 }) {
     const [items, setItems] = React.useState([]);
-    const [filters, setFilters] = React.useState({ userId: '', action: '', from: '', to: '' });
+    const [filters, setFilters] = React.useState({ userSearch: '', action: '', from: '', to: '' });
+    const [userSearchInput, setUserSearchInput] = React.useState('');
+    const [selectedUser, setSelectedUser] = React.useState(null);
+    const [userSuggestions, setUserSuggestions] = React.useState([]);
+    const [loadingSuggestions, setLoadingSuggestions] = React.useState(false);
     const [offset, setOffset] = React.useState(0);
     const [loading, setLoading] = React.useState(false);
     const [error, setError] = React.useState('');
 
     const isVisible = Boolean(settingsTenantId && isGeneralConfigSection && selectedConfigKey === 'audit_logs' && canViewAuditLogs);
+    const currentFilters = React.useMemo(() => ({
+        ...filters,
+        userSearch: selectedUser?.userId ? text(selectedUser.userId) : text(userSearchInput)
+    }), [filters, selectedUser, userSearchInput]);
 
-    const loadLogs = React.useCallback(async (nextOffset = offset) => {
+    const loadLogs = React.useCallback(async (nextOffset = 0, nextFilters = filters) => {
         if (!isVisible || typeof requestJson !== 'function') return;
         setLoading(true);
         setError('');
         try {
-            const payload = await requestJson(buildQuery(filters, nextOffset), {
+            const payload = await requestJson(buildQuery(nextFilters, nextOffset), {
                 method: 'GET',
                 tenantIdOverride: settingsTenantId
             });
@@ -219,14 +250,70 @@ export default function AuditSettingsDetailPane({
         } finally {
             setLoading(false);
         }
-    }, [filters, isVisible, offset, requestJson, settingsTenantId]);
+    }, [filters, isVisible, requestJson, settingsTenantId]);
 
     React.useEffect(() => {
-        void loadLogs(0);
-    }, [loadLogs]);
+        if (!isVisible) return undefined;
+        const timer = window.setTimeout(() => {
+            void loadLogs(0, filters);
+        }, 300);
+        return () => window.clearTimeout(timer);
+    }, [filters, isVisible, loadLogs]);
+
+    React.useEffect(() => {
+        if (!isVisible) return undefined;
+        const timer = window.setTimeout(async () => {
+            const rawValue = text(userSearchInput);
+            if (selectedUser?.userId) {
+                setFilters((prev) => (prev.userSearch === selectedUser.userId ? prev : { ...prev, userSearch: selectedUser.userId }));
+                setUserSuggestions([]);
+                setLoadingSuggestions(false);
+                return;
+            }
+
+            setFilters((prev) => (prev.userSearch === rawValue ? prev : { ...prev, userSearch: rawValue }));
+
+            if (rawValue.length < 2) {
+                setUserSuggestions([]);
+                setLoadingSuggestions(false);
+                return;
+            }
+
+            setLoadingSuggestions(true);
+            try {
+                const payload = await requestJson(buildUserSearchQuery(rawValue), {
+                    method: 'GET',
+                    tenantIdOverride: settingsTenantId
+                });
+                setUserSuggestions(Array.isArray(payload?.items) ? payload.items : []);
+            } catch (_) {
+                setUserSuggestions([]);
+            } finally {
+                setLoadingSuggestions(false);
+            }
+        }, 300);
+
+        return () => window.clearTimeout(timer);
+    }, [isVisible, requestJson, selectedUser, settingsTenantId, userSearchInput]);
 
     const updateFilter = React.useCallback((key, value) => {
         setFilters((prev) => ({ ...prev, [key]: value }));
+    }, []);
+
+    const clearUserFilter = React.useCallback(() => {
+        setSelectedUser(null);
+        setUserSearchInput('');
+        setUserSuggestions([]);
+        setLoadingSuggestions(false);
+        setFilters((prev) => ({ ...prev, userSearch: '' }));
+    }, []);
+
+    const selectUserSuggestion = React.useCallback((user = {}) => {
+        if (!text(user?.userId)) return;
+        setSelectedUser(user);
+        setUserSearchInput(suggestionLabel(user));
+        setUserSuggestions([]);
+        setFilters((prev) => ({ ...prev, userSearch: text(user.userId) }));
     }, []);
 
     if (!isVisible) return null;
@@ -239,7 +326,7 @@ export default function AuditSettingsDetailPane({
                     <small>Eventos sensibles de acceso, dispositivos, campanas y cambios operativos.</small>
                 </div>
                 <div className="saas-admin-list-actions saas-admin-list-actions--row">
-                    <button type="button" disabled={loading} onClick={() => loadLogs(0)}>
+                    <button type="button" disabled={loading} onClick={() => loadLogs(0, currentFilters)}>
                         Recargar
                     </button>
                 </div>
@@ -249,11 +336,38 @@ export default function AuditSettingsDetailPane({
 
             <div className="saas-admin-related-block saas-audit-panel">
                 <div className="saas-audit-filters">
-                    <input
-                        value={filters.userId}
-                        onChange={(event) => updateFilter('userId', event.target.value)}
-                        placeholder="Filtrar por user_id"
-                    />
+                    <div className="saas-audit-user-search">
+                        <input
+                            value={userSearchInput}
+                            onChange={(event) => {
+                                setSelectedUser(null);
+                                setUserSearchInput(event.target.value);
+                            }}
+                            placeholder="Nombre, email o ID..."
+                            aria-label="Buscar usuario"
+                        />
+                        {text(userSearchInput) ? (
+                            <button type="button" className="saas-audit-user-search__clear" onClick={clearUserFilter} aria-label="Limpiar filtro de usuario">
+                                X
+                            </button>
+                        ) : null}
+                        {loadingSuggestions || userSuggestions.length ? (
+                            <div className="saas-audit-user-search__suggestions">
+                                {loadingSuggestions ? <div className="saas-audit-user-search__empty">Buscando usuarios...</div> : null}
+                                {userSuggestions.map((user) => (
+                                    <button
+                                        key={user.userId}
+                                        type="button"
+                                        className="saas-audit-user-search__option"
+                                        onClick={() => selectUserSuggestion(user)}
+                                    >
+                                        <span>USR {text(user.displayName || user.userId)}</span>
+                                        <small>{text(user.email)}</small>
+                                    </button>
+                                ))}
+                            </div>
+                        ) : null}
+                    </div>
                     <input
                         value={filters.action}
                         onChange={(event) => updateFilter('action', event.target.value)}
@@ -269,7 +383,7 @@ export default function AuditSettingsDetailPane({
                         value={filters.to}
                         onChange={(event) => updateFilter('to', event.target.value)}
                     />
-                    <button type="button" disabled={loading} onClick={() => loadLogs(0)}>
+                    <button type="button" disabled={loading} onClick={() => loadLogs(0, currentFilters)}>
                         Aplicar
                     </button>
                 </div>
@@ -287,11 +401,11 @@ export default function AuditSettingsDetailPane({
                 )}
 
                 <div className="saas-audit-pagination">
-                    <button type="button" disabled={loading || offset <= 0} onClick={() => loadLogs(Math.max(0, offset - DEFAULT_LIMIT))}>
+                    <button type="button" disabled={loading || offset <= 0} onClick={() => loadLogs(Math.max(0, offset - DEFAULT_LIMIT), currentFilters)}>
                         Anterior
                     </button>
                     <span>Mostrando {offset + 1}-{offset + items.length}</span>
-                    <button type="button" disabled={loading || items.length < DEFAULT_LIMIT} onClick={() => loadLogs(offset + DEFAULT_LIMIT)}>
+                    <button type="button" disabled={loading || items.length < DEFAULT_LIMIT} onClick={() => loadLogs(offset + DEFAULT_LIMIT, currentFilters)}>
                         Siguiente
                     </button>
                 </div>

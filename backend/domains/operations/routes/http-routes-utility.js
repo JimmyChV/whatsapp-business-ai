@@ -190,6 +190,7 @@ function registerOperationsUtilityHttpRoutes({
                 limit,
                 offset,
                 userId: String(req.query.userId || '').trim(),
+                userSearch: String(req.query.userSearch || req.query.userId || '').trim(),
                 action: String(req.query.action || '').trim(),
                 from: String(req.query.from || '').trim(),
                 to: String(req.query.to || '').trim(),
@@ -199,6 +200,23 @@ function registerOperationsUtilityHttpRoutes({
             return res.json({ ok: true, tenant: auditTenantId ? { id: auditTenantId } : null, items });
         } catch (error) {
             return res.status(500).json({ ok: false, error: 'No se pudo cargar la auditoria.' });
+        }
+    });
+
+    app.get('/api/audit/users', async (req, res) => {
+        try {
+            if (!hasAuditReadAccess(req, authService)) {
+                return res.status(403).json({ ok: false, error: 'No tienes permisos para ver auditoria.' });
+            }
+
+            const tenantId = String(req?.authContext?.user?.tenantId || req?.tenantContext?.id || '').trim();
+            const auditTenantId = tenantId && tenantId !== 'default' ? tenantId : null;
+            const search = String(req.query.search || '').trim();
+            const limit = Number(req.query.limit || 6);
+            const items = await auditLogService.searchAuditUsers(auditTenantId, { search, limit });
+            return res.json({ ok: true, tenant: auditTenantId ? { id: auditTenantId } : null, items });
+        } catch (error) {
+            return res.status(500).json({ ok: false, error: 'No se pudo buscar usuarios de auditoria.' });
         }
     });
 

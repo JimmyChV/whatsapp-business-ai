@@ -750,16 +750,12 @@
 
             const session = await authService.refreshSession({ refreshToken, deviceId });
             setRefreshCookie(res, session?.refreshToken, session);
-            await auditLogService.writeAuditLog(session?.user?.tenantId || req?.tenantContext?.id || 'default', {
+            console.log('[auth.refresh.success]', {
+                tenantId: session?.user?.tenantId || req?.tenantContext?.id || 'default',
                 userId: session?.user?.id || null,
-                userEmail: session?.user?.email || null,
-                role: session?.user?.role || 'seller',
-                action: 'auth.refresh.success',
-                resourceType: 'auth',
-                resourceId: session?.user?.id || null,
-                source: 'api',
-                ip: String(req.ip || ''),
-                payload: {}
+                email: session?.user?.email || null,
+                deviceId: deviceId || null,
+                ip: String(req.ip || '')
             });
 
             return res.json({ ok: true, ...stripRefreshToken(session) });
