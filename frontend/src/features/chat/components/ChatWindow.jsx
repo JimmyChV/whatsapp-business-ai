@@ -170,6 +170,10 @@ const ChatWindow = ({
         ? activeChatDetails.adOrigin
         : null;
     const activeAdOriginName = String(activeAdOrigin?.adName || '').trim();
+    const mobileHeaderSubtitle = [headerLocation, headerPhone]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+        .join(' · ');
     const conversationWindowOpen = activeChatDetails?.windowOpen !== false;
     const pendingJumpMessageIdRef = useRef('');
 
@@ -245,8 +249,8 @@ const ChatWindow = ({
                     <div className="chat-header-title-row chat-header-title-row--clean">
                         <h3 className="chat-header-name" title={headerDisplayName}>{headerDisplayName}</h3>
                     </div>
-                    {headerPhone && !activeChatDetails?.isGroup ? (
-                        <div className="chat-header-subtitle" title={headerPhone}>{headerPhone}</div>
+                    {mobileHeaderSubtitle && !activeChatDetails?.isGroup ? (
+                        <div className="chat-header-subtitle" title={mobileHeaderSubtitle}>{mobileHeaderSubtitle}</div>
                     ) : null}
                     {activeAdOrigin && (
                         <span
