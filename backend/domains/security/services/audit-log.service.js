@@ -14,6 +14,10 @@ const TECHNICAL_AUDIT_ACTIONS = new Set([
     'auth.refresh.success',
     'auth.refresh.failed'
 ]);
+const PANEL_HIDDEN_AUDIT_ACTIONS = new Set([
+    ...TECHNICAL_AUDIT_ACTIONS,
+    'chat.labels.updated'
+]);
 
 function resolveTenantId(tenantId = '') {
     return normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
@@ -63,6 +67,10 @@ function getRequestTenantId(req = {}, fallbackTenantId = null) {
 
 function isTechnicalAuditAction(action = '') {
     return TECHNICAL_AUDIT_ACTIONS.has(toText(action, ''));
+}
+
+function isHiddenFromAuditPanel(action = '') {
+    return PANEL_HIDDEN_AUDIT_ACTIONS.has(toText(action, ''));
 }
 
 function getRequestRole(req = {}) {
@@ -128,7 +136,7 @@ function buildPostgresFilters(cleanTenant, filters = {}) {
     const includeUserGlobalLogs = Boolean(filters.includeUserGlobalLogs);
     const currentUserId = toText(filters.currentUserId);
     const clauses = [];
-    const joins = [];
+    const joins = ['LEFT JOIN users u ON u.user_id = audit_logs.user_id'];
     const params = [];
     if (isGlobalScope) {
         params.push(DEFAULT_TENANT_ID);
@@ -150,7 +158,6 @@ function buildPostgresFilters(cleanTenant, filters = {}) {
         const partialIndex = params.length;
         params.push(userSearch);
         const exactIndex = params.length;
-        joins.push('LEFT JOIN users u ON u.user_id = audit_logs.user_id');
         clauses.push(`(
             u.email ILIKE $${partialIndex}
             OR u.display_name ILIKE $${partialIndex}
@@ -170,7 +177,7 @@ function buildPostgresFilters(cleanTenant, filters = {}) {
         clauses.push(`audit_logs.created_at <= $${params.length}`);
     }
 
-    const blockedActionPlaceholders = Array.from(TECHNICAL_AUDIT_ACTIONS).map((blockedAction) => {
+    const blockedActionPlaceholders = Array.from(PANEL_HIDDEN_AUDIT_ACTIONS).map((blockedAction) => {
         params.push(blockedAction);
         return `$${params.length}`;
     });
@@ -185,10 +192,10 @@ function matchesFileFilters(item = {}, filters = {}) {
     const fromDate = normalizeDateFilter(filters.from);
     const toDate = normalizeDateFilter(filters.to);
     const createdAt = normalizeDateFilter(item.createdAt);
-    const displayName = toText(item?.payload?.displayName || item?.payload?.userDisplayName || '', '');
+    const displayName = toText(item.displayName || item?.payload?.displayName || item?.payload?.userDisplayName || '', '');
     const userEmail = toText(item.userEmail || item?.payload?.userEmail || '', '');
 
-    if (isTechnicalAuditAction(item?.action)) return false;
+    if (isHiddenFromAuditPanel(item?.action)) return false;
     if (userSearch) {
         const search = userSearch.toLowerCase();
         const exactUserId = toText(item.userId);
@@ -333,7 +340,8 @@ async function listAuditLogs(tenantId = DEFAULT_TENANT_ID, {
                         audit_logs.resource_type,
                         audit_logs.resource_id,
                         audit_logs.payload,
-                        audit_logs.created_at
+                        audit_logs.created_at,
+                        u.display_name AS user_display_name
                    FROM audit_logs
                    ${joins.join(' ')}
                   WHERE ${clauses.join(' AND ')}
@@ -349,6 +357,7 @@ async function listAuditLogs(tenantId = DEFAULT_TENANT_ID, {
                     id: String(row.id || ''),
                     tenantId: String(row.tenant_id || cleanTenant),
                     userId: toText(row.user_id),
+                    displayName: toText(row.user_display_name),
                     userEmail: toText(payload.userEmail),
                     role: normalizeRole(payload.role),
                     action: toText(row.action, 'unknown_action'),
@@ -371,7 +380,13 @@ async function listAuditLogs(tenantId = DEFAULT_TENANT_ID, {
         defaultValue: []
     });
     const items = Array.isArray(current) ? current : [];
-    return items.filter((item) => matchesFileFilters(item, filters)).slice(safeOffset, safeOffset + safeLimit);
+    return items
+        .filter((item) => matchesFileFilters(item, filters))
+        .slice(safeOffset, safeOffset + safeLimit)
+        .map((item) => ({
+            ...item,
+            displayName: toText(item.displayName || item?.payload?.displayName || item?.payload?.userDisplayName, null)
+        }));
 }
 
 async function searchAuditUsers(tenantId = DEFAULT_TENANT_ID, {

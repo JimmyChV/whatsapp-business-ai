@@ -1733,13 +1733,48 @@ button.saas-admin-related-row small::after {
 }
 
 .saas-audit-action--danger {
-  background: color-mix(in srgb, #dc2626 12%, transparent);
-  color: #b91c1c;
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+  color: #ef4444;
+}
+
+.saas-audit-action--warning {
+  background: color-mix(in srgb, #f59e0b 13%, transparent);
+  color: #f59e0b;
 }
 
 .saas-audit-action--info {
-  background: color-mix(in srgb, #2563eb 10%, transparent);
-  color: #1d4ed8;
+  background: color-mix(in srgb, #3b82f6 10%, transparent);
+  color: #3b82f6;
+}
+
+.saas-audit-action--neutral {
+  background: color-mix(in srgb, #6b7280 12%, transparent);
+  color: #6b7280;
+}
+
+.saas-audit-action--device {
+  background: color-mix(in srgb, #6366f1 12%, transparent);
+  color: #6366f1;
+}
+
+.saas-audit-action--chat {
+  background: color-mix(in srgb, #25d366 12%, transparent);
+  color: #16a34a;
+}
+
+.saas-audit-action--campaign {
+  background: color-mix(in srgb, #059669 12%, transparent);
+  color: #059669;
+}
+
+.saas-audit-action--config {
+  background: color-mix(in srgb, #eab308 15%, transparent);
+  color: #a16207;
+}
+
+.saas-audit-action--meta {
+  background: color-mix(in srgb, #1877f2 12%, transparent);
+  color: #1877f2;
 }
 
 .saas-audit-pagination {

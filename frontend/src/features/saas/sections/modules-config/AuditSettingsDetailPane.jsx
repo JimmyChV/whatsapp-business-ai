@@ -2,6 +2,81 @@ import React from 'react';
 import { Link2 } from 'lucide-react';
 
 const DEFAULT_LIMIT = 100;
+const ACTION_META = {
+    'ai_assistant.created': { icon: 'AI', label: 'Asistente IA creado', tone: 'success' },
+    'ai_assistant.deactivated': { icon: 'AI', label: 'Asistente IA desactivado', tone: 'danger' },
+    'ai_assistant.updated': { icon: 'AI', label: 'Asistente IA actualizado', tone: 'info' },
+    'auth.device.approved': { icon: 'DEV', label: 'Dispositivo aprobado', tone: 'device' },
+    'auth.device.reauth_requested': { icon: 'DEV', label: 'Reautorizacion solicitada', tone: 'device' },
+    'auth.device.rename': { icon: 'DEV', label: 'Dispositivo renombrado', tone: 'device' },
+    'auth.device.revoked': { icon: 'DEV', label: 'Dispositivo revocado', tone: 'danger' },
+    'auth.login.failed': { icon: 'ERR', label: 'Intento de acceso fallido', tone: 'danger' },
+    'auth.login.otp_required': { icon: 'OTP', label: 'OTP requerido por nuevo dispositivo', tone: 'warning' },
+    'auth.login.success': { icon: 'OK', label: 'Acceso exitoso', tone: 'success' },
+    'auth.logout.all_devices': { icon: 'OUT', label: 'Cierre en todos los dispositivos', tone: 'neutral' },
+    'auth.logout.success': { icon: 'OUT', label: 'Cierre de sesion', tone: 'neutral' },
+    'auth.otp.resent': { icon: 'OTP', label: 'Codigo OTP reenviado', tone: 'warning' },
+    'auth.password.changed': { icon: 'KEY', label: 'Contrasena cambiada', tone: 'warning' },
+    'auth.profile.avatar_updated': { icon: 'USR', label: 'Foto de perfil actualizada', tone: 'info' },
+    'auth.profile.updated': { icon: 'USR', label: 'Perfil actualizado', tone: 'info' },
+    'auth.recovery.request': { icon: 'KEY', label: 'Recuperacion de contrasena solicitada', tone: 'warning' },
+    'auth.recovery.reset': { icon: 'KEY', label: 'Contrasena restablecida', tone: 'success' },
+    'auth.recovery.verify': { icon: 'KEY', label: 'Codigo de recuperacion verificado', tone: 'success' },
+    'auth.tenant.switch.success': { icon: 'CFG', label: 'Cambio de empresa exitoso', tone: 'config' },
+    'campaign.cancelled': { icon: 'CAMP', label: 'Campana cancelada', tone: 'campaign' },
+    'campaign.created': { icon: 'CAMP', label: 'Campana creada', tone: 'campaign' },
+    'campaign.paused': { icon: 'CAMP', label: 'Campana pausada', tone: 'campaign' },
+    'campaign.repaired': { icon: 'CAMP', label: 'Campana reparada', tone: 'campaign' },
+    'campaign.resumed': { icon: 'CAMP', label: 'Campana reanudada', tone: 'campaign' },
+    'campaign.sent': { icon: 'CAMP', label: 'Campana enviada', tone: 'campaign' },
+    'campaign.update_draft': { icon: 'CAMP', label: 'Borrador de campana actualizado', tone: 'campaign' },
+    'catalog.created': { icon: 'CAT', label: 'Catalogo creado', tone: 'info' },
+    'catalog.synced': { icon: 'CAT', label: 'Catalogo sincronizado', tone: 'info' },
+    'catalog.updated': { icon: 'CAT', label: 'Catalogo actualizado', tone: 'info' },
+    'chat.assignment.auto.assign': { icon: 'CHAT', label: 'Asignacion automatica de chat', tone: 'chat' },
+    'chat.assignment.cleared': { icon: 'CHAT', label: 'Chat liberado', tone: 'chat' },
+    'chat.assignment.rule.updated': { icon: 'CHAT', label: 'Regla de asignacion actualizada', tone: 'chat' },
+    'chat.assignment.taken': { icon: 'CHAT', label: 'Chat tomado', tone: 'chat' },
+    'chat.assignment.updated': { icon: 'CHAT', label: 'Chat reasignado', tone: 'chat' },
+    'chat.commercial_status.updated': { icon: 'CHAT', label: 'Estado comercial actualizado', tone: 'chat' },
+    'chat.patty_mode.updated': { icon: 'AI', label: 'Modo Patty actualizado', tone: 'info' },
+    'chat.state.updated': { icon: 'CHAT', label: 'Estado visual del chat actualizado', tone: 'chat' },
+    'config.authorizers.updated': { icon: 'CFG', label: 'Autorizadores actualizados', tone: 'config' },
+    'config.brand.updated': { icon: 'CFG', label: 'Identidad de marca actualizada', tone: 'config' },
+    'config.email_template.updated': { icon: 'CFG', label: 'Plantilla de correo actualizada', tone: 'config' },
+    'config.smtp.updated': { icon: 'CFG', label: 'Correo SMTP actualizado', tone: 'config' },
+    'customer.address.updated': { icon: 'CLI', label: 'Direccion de cliente actualizada', tone: 'info' },
+    'customer.imported': { icon: 'CLI', label: 'Clientes importados', tone: 'info' },
+    'customer.updated': { icon: 'CLI', label: 'Cliente actualizado', tone: 'info' },
+    'label.created': { icon: 'TAG', label: 'Etiqueta creada', tone: 'info' },
+    'label.updated': { icon: 'TAG', label: 'Etiqueta actualizada', tone: 'info' },
+    'meta_template.created': { icon: 'META', label: 'Plantilla Meta creada', tone: 'meta' },
+    'meta_template.deleted': { icon: 'META', label: 'Plantilla Meta eliminada', tone: 'meta' },
+    'meta_template.synced': { icon: 'META', label: 'Plantillas Meta sincronizadas', tone: 'meta' },
+    'permission.pack.updated': { icon: 'ROL', label: 'Pack de permisos actualizado', tone: 'config' },
+    'plan.updated': { icon: 'CFG', label: 'Plan actualizado', tone: 'config' },
+    'product.created': { icon: 'CAT', label: 'Producto creado', tone: 'info' },
+    'product.deactivated': { icon: 'CAT', label: 'Producto desactivado', tone: 'danger' },
+    'product.updated': { icon: 'CAT', label: 'Producto actualizado', tone: 'info' },
+    'quick_reply.created': { icon: 'TAG', label: 'Respuesta rapida creada', tone: 'info' },
+    'quick_reply.updated': { icon: 'TAG', label: 'Respuesta rapida actualizada', tone: 'info' },
+    'role.created': { icon: 'ROL', label: 'Rol creado', tone: 'config' },
+    'role.updated': { icon: 'ROL', label: 'Rol actualizado', tone: 'config' },
+    'tenant.created': { icon: 'CFG', label: 'Empresa creada', tone: 'config' },
+    'tenant.settings.updated': { icon: 'CFG', label: 'Configuracion general actualizada', tone: 'config' },
+    'tenant.updated': { icon: 'CFG', label: 'Empresa actualizada', tone: 'config' },
+    'user.created': { icon: 'USR', label: 'Usuario creado', tone: 'success' },
+    'user.deactivated': { icon: 'USR', label: 'Usuario desactivado', tone: 'danger' },
+    'user.role.changed': { icon: 'USR', label: 'Rol de usuario cambiado', tone: 'config' },
+    'wa_module.created': { icon: 'MOD', label: 'Modulo WhatsApp creado', tone: 'device' },
+    'wa_module.deactivated': { icon: 'MOD', label: 'Modulo WhatsApp desactivado', tone: 'danger' },
+    'wa_module.selected': { icon: 'MOD', label: 'Modulo WhatsApp seleccionado', tone: 'device' },
+    'wa_module.updated': { icon: 'MOD', label: 'Modulo WhatsApp actualizado', tone: 'device' },
+    'zone.created': { icon: 'ZONA', label: 'Zona creada', tone: 'info' },
+    'zone.deleted': { icon: 'ZONA', label: 'Zona eliminada', tone: 'danger' },
+    'zone.synced': { icon: 'ZONA', label: 'Zonas sincronizadas', tone: 'info' },
+    'zone.updated': { icon: 'ZONA', label: 'Zona actualizada', tone: 'info' }
+};
 
 function text(value = '') {
     return String(value || '').trim();
@@ -39,86 +114,7 @@ function actionTone(action = '') {
 
 function actionMeta(action = '') {
     const normalized = text(action);
-    const labels = {
-        'auth.login.success': ['Acceso exitoso', 'success', 'OK'],
-        'auth.login.failed': ['Acceso fallido', 'danger', 'ERR'],
-        'auth.logout': ['Cierre de sesion', 'neutral', 'OUT'],
-        'auth.logout.success': ['Cierre de sesion', 'neutral', 'OUT'],
-        'auth.logout.all_devices': ['Cierre global de sesiones', 'danger', 'LOCK'],
-        'auth.password.changed': ['Contrasena cambiada', 'success', 'KEY'],
-        'auth.otp.sent': ['OTP enviado', 'info', 'OTP'],
-        'auth.otp.resent': ['OTP reenviado', 'info', 'OTP'],
-        'auth.otp.verified': ['OTP verificado', 'success', 'OTP'],
-        'auth.device.approved': ['Dispositivo aprobado', 'success', 'DEV'],
-        'auth.device.revoked': ['Dispositivo revocado', 'danger', 'DEV'],
-        'auth.device.reauth_requested': ['Reautorizacion solicitada', 'info', 'DEV'],
-        'auth.device.reauthorized': ['Dispositivo reautorizado', 'success', 'DEV'],
-        'auth.device.rename': ['Dispositivo renombrado', 'neutral', 'DEV'],
-        'auth.device.otp_verified': ['OTP de dispositivo verificado', 'success', 'OTP'],
-        'role.created': ['Rol creado', 'success', 'ROL'],
-        'role.updated': ['Rol actualizado', 'info', 'ROL'],
-        'permission.pack.updated': ['Permisos actualizados', 'info', 'PERM'],
-        'plan.updated': ['Plan actualizado', 'info', 'PLAN'],
-        'user.created': ['Usuario creado', 'success', 'USR'],
-        'user.updated': ['Usuario actualizado', 'info', 'USR'],
-        'user.deactivated': ['Usuario desactivado', 'danger', 'USR'],
-        'user.role.changed': ['Rol de usuario cambiado', 'info', 'USR'],
-        'tenant.created': ['Empresa creada', 'success', 'EMP'],
-        'tenant.updated': ['Empresa actualizada', 'info', 'EMP'],
-        'config.smtp.updated': ['SMTP actualizado', 'info', 'MAIL'],
-        'config.authorizers.updated': ['Autorizadores actualizados', 'info', 'OTP'],
-        'config.email_template.updated': ['Plantilla de correo actualizada', 'info', 'MAIL'],
-        'config.brand.updated': ['Identidad de marca actualizada', 'info', 'BRAND'],
-        'ai_assistant.created': ['Asistente IA creado', 'success', 'IA'],
-        'ai_assistant.updated': ['Asistente IA actualizado', 'info', 'IA'],
-        'ai_assistant.deactivated': ['Asistente IA desactivado', 'danger', 'IA'],
-        'wa_module.created': ['Modulo WhatsApp creado', 'success', 'MOD'],
-        'wa_module.updated': ['Modulo WhatsApp actualizado', 'info', 'MOD'],
-        'wa_module.deactivated': ['Modulo WhatsApp desactivado', 'danger', 'MOD'],
-        'wa_module.selected': ['Modulo WhatsApp seleccionado', 'neutral', 'MOD'],
-        'catalog.created': ['Catalogo creado', 'success', 'CAT'],
-        'catalog.updated': ['Catalogo actualizado', 'info', 'CAT'],
-        'catalog.synced': ['Catalogo sincronizado', 'info', 'CAT'],
-        'product.created': ['Producto creado', 'success', 'PROD'],
-        'product.updated': ['Producto actualizado', 'info', 'PROD'],
-        'product.deactivated': ['Producto desactivado', 'danger', 'PROD'],
-        'customer.created': ['Cliente creado', 'success', 'CLI'],
-        'customer.updated': ['Cliente actualizado', 'info', 'CLI'],
-        'customer.imported': ['Clientes importados', 'info', 'CLI'],
-        'customer.address.updated': ['Direccion de cliente actualizada', 'info', 'DIR'],
-        'zone.created': ['Zona creada', 'success', 'ZONA'],
-        'zone.updated': ['Zona actualizada', 'info', 'ZONA'],
-        'zone.deleted': ['Zona eliminada', 'danger', 'ZONA'],
-        'zone.synced': ['Zonas sincronizadas', 'info', 'ZONA'],
-        'label.created': ['Etiqueta creada', 'success', 'TAG'],
-        'label.updated': ['Etiqueta actualizada', 'info', 'TAG'],
-        'quick_reply.created': ['Respuesta rapida creada', 'success', 'QR'],
-        'quick_reply.updated': ['Respuesta rapida actualizada', 'info', 'QR'],
-        'campaign.created': ['Campana creada', 'success', 'CAMP'],
-        'campaign.sent': ['Campana enviada', 'success', 'CAMP'],
-        'campaign.paused': ['Campana pausada', 'info', 'CAMP'],
-        'campaign.resumed': ['Campana reanudada', 'success', 'CAMP'],
-        'campaign.cancelled': ['Campana cancelada', 'danger', 'CAMP'],
-        'campaign.repaired': ['Historial de campana reparado', 'info', 'CAMP'],
-        'chat.assignment.taken': ['Chat tomado', 'success', 'CHAT'],
-        'chat.assignment.updated': ['Chat reasignado', 'info', 'CHAT'],
-        'chat.assignment.cleared': ['Chat liberado', 'neutral', 'CHAT'],
-        'chat.commercial_status.updated': ['Estado comercial actualizado', 'info', 'CHAT'],
-        'chat.patty_mode.updated': ['Modo Patty actualizado', 'info', 'IA'],
-        'meta_template.created': ['Plantilla Meta creada', 'success', 'META'],
-        'meta_template.updated': ['Plantilla Meta actualizada', 'info', 'META'],
-        'meta_template.deleted': ['Plantilla Meta eliminada', 'danger', 'META'],
-        'meta_template.synced': ['Plantillas Meta sincronizadas', 'info', 'META'],
-        'meta.template.create': ['Plantilla Meta creada', 'success', 'META'],
-        'meta.template.delete': ['Plantilla Meta eliminada', 'danger', 'META'],
-        'meta.template.sync': ['Plantillas Meta sincronizadas', 'info', 'META']
-    };
-    const entry = labels[normalized];
-    if (entry) return { label: entry[0], tone: entry[1], icon: entry[2] };
-    if (normalized.includes('failed') || normalized.includes('revoked') || normalized.includes('revoke')) return { label: normalized || 'Evento', tone: 'danger', icon: 'ERR' };
-    if (normalized.includes('login') || normalized.includes('verified') || normalized.includes('created')) return { label: normalized || 'Evento', tone: 'success', icon: 'OK' };
-    if (normalized.includes('campaign')) return { label: normalized || 'Evento', tone: 'info', icon: 'CAMP' };
-    return { label: normalized || 'Evento', tone: 'neutral', icon: 'LOG' };
+    return ACTION_META[normalized] || { icon: 'LOG', label: normalized || 'Evento', tone: 'neutral' };
 }
 
 function compactValue(value) {
@@ -139,24 +135,70 @@ function firstPayloadValue(payload = {}, keys = []) {
     return '';
 }
 
-function buildAuditDetail(item = {}) {
+function formatIp(ip = '') {
+    const value = text(ip);
+    if (!value) return 'WebSocket';
+    if (value === '::ffff:127.0.0.1' || value === '127.0.0.1' || value === '::1') return 'Servidor local';
+    return value;
+}
+
+function truncateText(value = '', max = 30) {
+    const clean = text(value);
+    if (!clean) return '';
+    if (clean.length <= max) return clean;
+    return `${clean.slice(0, Math.max(0, max - 3))}...`;
+}
+
+function stripEntityTypePrefix(entityType = '', entityId = '') {
+    const type = text(entityType).toLowerCase();
+    const value = text(entityId);
+    if (!type || !value) return value;
+    const normalized = value.toLowerCase();
+    const prefixes = [`${type}_`, `${type}:`, `${type}.`, `${type}-`];
+    const prefix = prefixes.find((item) => normalized.startsWith(item));
+    return prefix ? value.slice(prefix.length) : value;
+}
+
+function formatChatResource(resourceId = '') {
+    const raw = text(resourceId).split('@')[0];
+    const digits = raw.replace(/\D/g, '');
+    if (!digits) return '';
+    if (digits.length === 11 && digits.startsWith('51')) {
+        return `+51 ${digits.slice(2, 5)} ${digits.slice(5, 8)} ${digits.slice(8, 11)}`;
+    }
+    if (digits.length > 2) {
+        const country = digits.slice(0, digits.length - 9);
+        const local = digits.slice(-9);
+        if (country) return `+${country} ${local.slice(0, 3)} ${local.slice(3, 6)} ${local.slice(6, 9)}`.trim();
+    }
+    return digits;
+}
+
+function buildEntitySummary(item = {}) {
     const payload = item?.payload && typeof item.payload === 'object' ? item.payload : {};
-    const resource = firstPayloadValue(payload, [
-        'deviceName', 'targetUserEmail', 'targetUserId', 'userEmail', 'displayName',
-        'catalogName', 'productName', 'templateName', 'assistantName', 'moduleName',
-        'campaignName', 'customerName', 'labelName', 'quickReplyLabel', 'zoneName'
-    ]);
-    const oldValue = firstPayloadValue(payload, ['previousMode', 'previousStatus', 'previousAssigneeUserId', 'oldRole', 'oldValue']);
-    const newValue = firstPayloadValue(payload, ['nextMode', 'nextStatus', 'nextAssigneeUserId', 'newRole', 'newValue', 'status']);
-    const count = firstPayloadValue(payload, ['count', 'imported', 'totalSynced', 'recipients', 'queued', 'repaired']);
-    const reason = firstPayloadValue(payload, ['reason']);
-    const pieces = [];
-    if (resource) pieces.push(resource);
-    if (oldValue || newValue) pieces.push(`${oldValue || '-'} -> ${newValue || '-'}`);
-    if (count) pieces.push(`${count} registros`);
-    if (reason) pieces.push(`Motivo: ${reason}`);
-    if (!pieces.length && item?.resourceId) pieces.push(`${item.resourceType || 'Recurso'} ${item.resourceId}`);
-    return pieces.join(' | ') || 'Sin detalle adicional';
+    const entityType = text(item?.resourceType || item?.entityType).toLowerCase();
+    const entityId = stripEntityTypePrefix(entityType, item?.resourceId || item?.entityId || '');
+    if (entityType === 'chat') return formatChatResource(entityId) || truncateText(entityId, 30);
+    if (entityType === 'campaign') {
+        const campaignName = firstPayloadValue(payload, ['campaignName', 'templateName']);
+        const nestedCampaignName = compactValue(payload?.newValue?.campaignName || payload?.newValue?.name);
+        return campaignName || nestedCampaignName || truncateText(entityId, 30);
+    }
+    if (entityType === 'auth_device') return firstPayloadValue(payload, ['deviceName', 'deviceType']);
+    if (entityType === 'meta_template') return firstPayloadValue(payload, ['templateName', 'deletedTemplateId']) || truncateText(entityId, 30);
+    if (entityType === 'auth') return firstPayloadValue(payload, ['deviceName', 'deviceType']);
+    return truncateText(entityId, 30);
+}
+
+function resolveUserTitle(item = {}) {
+    return text(item?.displayName || item?.userEmail || item?.userId || 'Sistema');
+}
+
+function resolveUserSubtitle(item = {}) {
+    const displayName = text(item?.displayName);
+    const userEmail = text(item?.userEmail);
+    if (displayName && userEmail && displayName.toLowerCase() !== userEmail.toLowerCase()) return userEmail;
+    return '';
 }
 
 function buildQuery(filters = {}, offset = 0) {
@@ -179,22 +221,21 @@ function buildUserSearchQuery(search = '') {
 
 function AuditRow({ item, formatDateTimeLabel }) {
     const payload = item?.payload && typeof item.payload === 'object' ? item.payload : {};
-    const entityType = item?.resourceType || item?.entityType || '-';
-    const entityId = item?.resourceId || item?.entityId || '-';
     const meta = actionMeta(item?.action);
-    const detail = buildAuditDetail(item);
-    const ip = text(item?.ip || payload?.ip);
+    const detail = buildEntitySummary(item);
+    const ip = formatIp(item?.ip || payload?.ip);
+    const userSubtitle = resolveUserSubtitle(item);
     return (
         <article className="saas-audit-row">
             <div className="saas-audit-row__time">
                 <strong>{formatDate(item?.createdAt, formatDateTimeLabel)}</strong>
-                {ip ? (
-                    <span>{ip}</span>
-                ) : (
+                {ip === 'WebSocket' ? (
                     <span className="saas-audit-connection">
                         <Link2 size={12} />
                         WebSocket
                     </span>
+                ) : (
+                    <span>{ip}</span>
                 )}
             </div>
             <div className="saas-audit-row__main">
@@ -202,10 +243,10 @@ function AuditRow({ item, formatDateTimeLabel }) {
                     <span className="saas-audit-action__icon">{meta.icon}</span>
                     {actionLabel(item?.action)}
                 </span>
-                <strong>{item?.userEmail || item?.userId || 'Sistema'}</strong>
-                <small>{entityType}{entityId !== '-' ? ` - ${entityId}` : ''}</small>
+                <strong>{resolveUserTitle(item)}</strong>
+                {userSubtitle ? <small>{userSubtitle}</small> : null}
             </div>
-            <div className="saas-audit-row__payload">{detail}</div>
+            <div className="saas-audit-row__payload">{detail || '-'}</div>
         </article>
     );
 }
