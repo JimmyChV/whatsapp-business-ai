@@ -10642,7 +10642,8 @@ body {
     align-items: center;
     min-height: 66px;
     padding: 8px 10px;
-    top: 0;
+    position: relative;
+    top: auto;
   }
 
   .chat-mobile-back-btn {
@@ -10691,11 +10692,53 @@ body {
 
   .chat-header-mobile-utility-row {
     display: flex;
+    flex-direction: column;
     grid-column: 1 / -1;
     grid-row: 2;
     align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .chat-header-mobile-utility-handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    align-self: center;
+    min-height: 26px;
+    padding: 0 10px;
+    border: 1px solid var(--chat-pill-border);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--chat-pill-bg) 92%, var(--saas-bg-surface));
+    color: var(--chat-text-soft);
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1;
+    box-shadow: 0 6px 14px color-mix(in srgb, var(--saas-bg-base) 10%, transparent);
+  }
+
+  .chat-header-mobile-utility-handle.active {
+    color: var(--saas-text-primary);
+    border-color: color-mix(in srgb, var(--saas-accent-primary) 28%, var(--chat-pill-border));
+  }
+
+  .chat-header-mobile-utility-panel {
+    display: none;
+    width: 100%;
+    align-items: center;
     justify-content: space-between;
     gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--chat-pill-border);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--chat-pill-bg) 94%, var(--saas-bg-surface));
+    box-shadow: 0 14px 28px color-mix(in srgb, var(--saas-bg-base) 14%, transparent);
+  }
+
+  .chat-header-mobile-utility-row.is-open .chat-header-mobile-utility-panel {
+    display: flex;
   }
 
   .chat-header-mobile-labels {
@@ -10720,32 +10763,12 @@ body {
     display: none;
   }
 
-.chat-header-mobile-tools {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.chat-header-menu-wrap--mobile-shortcuts {
-  position: relative;
-  z-index: 2200;
-}
-
-.chat-header-popover--mobile-shortcuts {
-  top: calc(100% + 8px);
-  right: 0;
-  left: auto;
-  min-width: 180px;
-  display: grid;
-  gap: 4px;
-}
-
-.chat-header-action-item--button {
-  width: 100%;
-  border: 0;
-  background: transparent;
-}
+  .chat-header-mobile-tools {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
 
   .chat-header-menu-wrap--mobile {
     position: relative;
@@ -10846,6 +10869,8 @@ body {
     display: grid !important;
     grid-template-columns: 42px minmax(0, 1fr) auto !important;
     grid-template-rows: auto auto !important;
+    position: relative !important;
+    top: auto !important;
     align-items: start !important;
     gap: 8px !important;
   }
@@ -10890,11 +10915,33 @@ body {
 
   .app-container--operation .chat-header-mobile-utility-row {
     display: flex !important;
+    flex-direction: column !important;
     grid-column: 1 / -1 !important;
     grid-row: 2 !important;
     align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 6px !important;
+    width: 100% !important;
+  }
+
+  .app-container--operation .chat-header-mobile-utility-handle {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    align-self: center !important;
+    gap: 4px !important;
+  }
+
+  .app-container--operation .chat-header-mobile-utility-panel {
+    display: none !important;
+    width: 100% !important;
+    align-items: center !important;
     justify-content: space-between !important;
     gap: 8px !important;
+  }
+
+  .app-container--operation .chat-header-mobile-utility-row.is-open .chat-header-mobile-utility-panel {
+    display: flex !important;
   }
 
   .app-container--operation .chat-header-mobile-labels {
@@ -10917,13 +10964,6 @@ body {
 
   .app-container--operation .chat-header-mobile-label-badges::-webkit-scrollbar {
     display: none !important;
-  }
-
-  .app-container--operation .chat-header-mobile-tools {
-    display: inline-flex !important;
-    align-items: center !important;
-    gap: 6px !important;
-    flex-shrink: 0 !important;
   }
 
   .app-container--operation .chat-header-menu-wrap--mobile {
@@ -11053,8 +11093,10 @@ body {
     box-shadow: 0 8px 16px color-mix(in srgb, var(--saas-accent-primary) 18%, transparent);
   }
 
-  .chat-header-popover--mobile-shortcuts {
-    min-width: min(190px, calc(100vw - 24px));
-    max-width: calc(100vw - 24px);
+  .app-container--operation .chat-header-mobile-tools {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    flex-shrink: 0 !important;
   }
 }

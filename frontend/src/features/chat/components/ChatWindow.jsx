@@ -178,6 +178,7 @@ const ChatWindow = ({
         .join(' · ');
     const conversationWindowOpen = activeChatDetails?.windowOpen !== false;
     const pendingJumpMessageIdRef = useRef('');
+    const chatHeaderRef = useRef(null);
 
     const handleJumpToMessage = (targetMessageId, attempt = 0) => {
         const safeTargetMessageId = String(targetMessageId || '').trim();
@@ -205,6 +206,18 @@ const ChatWindow = ({
         targetNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, [messages]);
 
+    useEffect(() => {
+        const handlePointerDown = (event) => {
+            if (chatHeaderRef.current?.contains(event.target)) return;
+            setShowMenu(false);
+            setShowLabelMenu(false);
+            setShowMobileShortcuts(false);
+        };
+
+        document.addEventListener('pointerdown', handlePointerDown);
+        return () => document.removeEventListener('pointerdown', handlePointerDown);
+    }, [setShowLabelMenu, setShowMenu, setShowMobileShortcuts]);
+
     return (
         <div
             className={`chat-window drop-zone ${isDragOver ? 'drag-over' : ''}`}
@@ -213,7 +226,7 @@ const ChatWindow = ({
             onDrop={onDrop}
         >
             {/* Chat Header */}
-            <div className="chat-header chat-header-pro" onClick={() => setShowClientProfile(v => !v)}>
+            <div className="chat-header chat-header-pro" onClick={() => setShowClientProfile(v => !v)} ref={chatHeaderRef}>
                 <button
                     type="button"
                     className="chat-mobile-nav-btn chat-mobile-back-btn"
@@ -312,85 +325,97 @@ const ChatWindow = ({
                         </div>
                     )}
                 </div>
-                <div className="chat-header-mobile-utility-row" onClick={e => e.stopPropagation()}>
-                    <div className="chat-header-mobile-labels">
-                        <div className="chat-header-menu-wrap chat-header-menu-wrap--mobile">
-                            <button
-                                className={`btn-icon ui-icon-btn chat-header-action-btn ${showLabelMenu ? 'active' : ''}`}
-                                onClick={() => setShowLabelMenu(v => !v)}
-                                title="Etiquetas"
-                            >
-                                <Tag size={18} />
-                            </button>
-                            {showLabelMenu && (
-                                <div className="chat-header-popover chat-header-label-popover">
-                                    <div className="chat-header-popover-title">Etiquetas del tenant (CRM)</div>
-                                    {labelDefinitions.length === 0 && <div className="chat-header-popover-empty">No hay etiquetas disponibles.</div>}
-                                    {labelDefinitions.map((label) => {
-                                        const labelId = String(label?.id || label?.labelId || '').trim();
-                                        const isActive = (activeChatDetails?.labels || []).some((l) => String(l?.id || l?.labelId || '').trim() === labelId);
-                                        return (
-                                            <label key={`mobile_${labelId || label.name}`} className="chat-header-label-option">
-                                                <input type="checkbox" checked={isActive} onChange={() => onToggleChatLabel?.(activeChatDetails?.id, labelId)} />
-                                                <span className="chat-header-label-color" style={{ background: label.color || '#8696a0' }} />
-                                                <span className="chat-header-label-name">{label.name}</span>
-                                            </label>
-                                        );
-                                    })}
+                <div className={`chat-header-mobile-utility-row ${showMobileShortcuts ? 'is-open' : ''}`} onClick={e => e.stopPropagation()}>
+                    <button
+                        type="button"
+                        className={`chat-header-mobile-utility-handle ${showMobileShortcuts ? 'active' : ''}`}
+                        onClick={() => setShowMobileShortcuts(v => !v)}
+                        aria-expanded={showMobileShortcuts}
+                        title={showMobileShortcuts ? 'Ocultar opciones del chat' : 'Mostrar opciones del chat'}
+                    >
+                        <span>Mas</span>
+                        {showMobileShortcuts ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+                    <div className="chat-header-mobile-utility-panel">
+                        <div className="chat-header-mobile-labels">
+                            <div className="chat-header-menu-wrap chat-header-menu-wrap--mobile">
+                                <button
+                                    className={`btn-icon ui-icon-btn chat-header-action-btn ${showLabelMenu ? 'active' : ''}`}
+                                    onClick={() => setShowLabelMenu(v => !v)}
+                                    title="Etiquetas"
+                                >
+                                    <Tag size={18} />
+                                </button>
+                                {showLabelMenu && (
+                                    <div className="chat-header-popover chat-header-label-popover">
+                                        <div className="chat-header-popover-title">Etiquetas del tenant (CRM)</div>
+                                        {labelDefinitions.length === 0 && <div className="chat-header-popover-empty">No hay etiquetas disponibles.</div>}
+                                        {labelDefinitions.map((label) => {
+                                            const labelId = String(label?.id || label?.labelId || '').trim();
+                                            const isActive = (activeChatDetails?.labels || []).some((l) => String(l?.id || l?.labelId || '').trim() === labelId);
+                                            return (
+                                                <label key={`mobile_${labelId || label.name}`} className="chat-header-label-option">
+                                                    <input type="checkbox" checked={isActive} onChange={() => onToggleChatLabel?.(activeChatDetails?.id, labelId)} />
+                                                    <span className="chat-header-label-color" style={{ background: label.color || '#8696a0' }} />
+                                                    <span className="chat-header-label-name">{label.name}</span>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                            {(visibleHeaderLabels.length > 0 || hiddenHeaderLabelsCount > 0) && (
+                                <div className="chat-header-mobile-label-badges">
+                                    {visibleHeaderLabels.map((label, index) => (
+                                        <span
+                                            key={`mobile_badge_${label?.id || label?.name || 'h'}_${index}`}
+                                            className="chat-header-label-chip chat-header-label-chip--compact"
+                                            style={{ '--label-color': label?.color || '#7a8f9a' }}
+                                            title={label?.name || 'Etiqueta'}
+                                        >
+                                            {label?.name || 'Etiqueta'}
+                                        </span>
+                                    ))}
+                                    {hiddenHeaderLabelsCount > 0 && (
+                                        <span className="chat-header-label-more" title={`${hiddenHeaderLabelsCount} etiqueta(s) adicionales`}>
+                                            +{hiddenHeaderLabelsCount}
+                                        </span>
+                                    )}
                                 </div>
                             )}
                         </div>
-                        {(visibleHeaderLabels.length > 0 || hiddenHeaderLabelsCount > 0) && (
-                            <div className="chat-header-mobile-label-badges">
-                                {visibleHeaderLabels.map((label, index) => (
-                                    <span
-                                        key={`mobile_badge_${label?.id || label?.name || 'h'}_${index}`}
-                                        className="chat-header-label-chip chat-header-label-chip--compact"
-                                        style={{ '--label-color': label?.color || '#7a8f9a' }}
-                                        title={label?.name || 'Etiqueta'}
-                                    >
-                                        {label?.name || 'Etiqueta'}
-                                    </span>
-                                ))}
-                                {hiddenHeaderLabelsCount > 0 && (
-                                    <span className="chat-header-label-more" title={`${hiddenHeaderLabelsCount} etiqueta(s) adicionales`}>
-                                        +{hiddenHeaderLabelsCount}
-                                    </span>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                    <div className="chat-header-mobile-tools">
-                        <div className="chat-header-menu-wrap chat-header-menu-wrap--mobile-shortcuts">
+                        <div className="chat-header-mobile-tools">
                             <button
                                 type="button"
-                                className={`chat-mobile-nav-btn chat-mobile-tools-btn ${showMobileShortcuts ? 'active' : ''}`}
-                                onClick={() => setShowMobileShortcuts(v => !v)}
-                                title="Atajos del chat"
+                                className="chat-mobile-nav-btn chat-mobile-tools-btn"
+                                onClick={() => {
+                                    setShowMobileShortcuts(false);
+                                    onMobileOpenTools?.();
+                                }}
+                                title="Abrir herramientas"
                             >
-                                Atajos
+                                Herramientas
                             </button>
-                            {showMobileShortcuts && (
-                                <div className="chat-header-popover chat-header-popover--mobile-shortcuts">
-                                    {[
-                                        { label: 'Herramientas', action: () => onMobileOpenTools?.() },
-                                        { label: searchVisible ? 'Ocultar busqueda' : 'Buscar en chat', action: () => setSearchVisible(v => !v) },
-                                        { label: 'Abrir mapa', action: () => openMapModal({ query: '' }) }
-                                    ].map((item, idx) => (
-                                        <button
-                                            key={`mobile_shortcut_${idx}`}
-                                            type="button"
-                                            className="chat-header-action-item chat-header-action-item--button"
-                                            onClick={() => {
-                                                item.action?.();
-                                                setShowMobileShortcuts(false);
-                                            }}
-                                        >
-                                            {item.label}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
+                            <button
+                                className={`btn-icon ui-icon-btn chat-header-action-btn ${searchVisible ? 'active' : ''}`}
+                                onClick={() => {
+                                    setSearchVisible(v => !v);
+                                    setShowMobileShortcuts(false);
+                                }}
+                                title="Buscar en chat"
+                            >
+                                <Search size={18} />
+                            </button>
+                            <button
+                                className={`btn-icon ui-icon-btn chat-header-action-btn ${showMapModal ? 'active' : ''}`}
+                                onClick={() => {
+                                    openMapModal({ query: '' });
+                                    setShowMobileShortcuts(false);
+                                }}
+                                title="Abrir mapa"
+                            >
+                                <MapPin size={18} />
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -517,7 +542,7 @@ const ChatWindow = ({
             )}
 
             {/* Messages Area */}
-            <div className="chat-messages" onClick={() => { setShowMenu(false); setShowLabelMenu(false); }}>
+            <div className="chat-messages" onClick={() => { setShowMenu(false); setShowLabelMenu(false); setShowMobileShortcuts(false); }}>
                 {/* TODO(bug): historial de chat muestra a veces solo el ultimo mensaje en lugar del historial completo — intermitente, causa desconocida */}
                 {messages.length === 0 && (
                     <div className="chat-empty-state-pill">
