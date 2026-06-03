@@ -310,6 +310,72 @@ const ChatWindow = ({
                         </div>
                     )}
                 </div>
+                <div className="chat-header-mobile-utility-row" onClick={e => e.stopPropagation()}>
+                    <div className="chat-header-mobile-labels">
+                        <div className="chat-header-menu-wrap chat-header-menu-wrap--mobile">
+                            <button
+                                className={`btn-icon ui-icon-btn chat-header-action-btn ${showLabelMenu ? 'active' : ''}`}
+                                onClick={() => setShowLabelMenu(v => !v)}
+                                title="Etiquetas"
+                            >
+                                <Tag size={18} />
+                            </button>
+                            {showLabelMenu && (
+                                <div className="chat-header-popover chat-header-label-popover">
+                                    <div className="chat-header-popover-title">Etiquetas del tenant (CRM)</div>
+                                    {labelDefinitions.length === 0 && <div className="chat-header-popover-empty">No hay etiquetas disponibles.</div>}
+                                    {labelDefinitions.map((label) => {
+                                        const labelId = String(label?.id || label?.labelId || '').trim();
+                                        const isActive = (activeChatDetails?.labels || []).some((l) => String(l?.id || l?.labelId || '').trim() === labelId);
+                                        return (
+                                            <label key={`mobile_${labelId || label.name}`} className="chat-header-label-option">
+                                                <input type="checkbox" checked={isActive} onChange={() => onToggleChatLabel?.(activeChatDetails?.id, labelId)} />
+                                                <span className="chat-header-label-color" style={{ background: label.color || '#8696a0' }} />
+                                                <span className="chat-header-label-name">{label.name}</span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                        {(visibleHeaderLabels.length > 0 || hiddenHeaderLabelsCount > 0) && (
+                            <div className="chat-header-mobile-label-badges">
+                                {visibleHeaderLabels.map((label, index) => (
+                                    <span
+                                        key={`mobile_badge_${label?.id || label?.name || 'h'}_${index}`}
+                                        className="chat-header-label-chip chat-header-label-chip--compact"
+                                        style={{ '--label-color': label?.color || '#7a8f9a' }}
+                                        title={label?.name || 'Etiqueta'}
+                                    >
+                                        {label?.name || 'Etiqueta'}
+                                    </span>
+                                ))}
+                                {hiddenHeaderLabelsCount > 0 && (
+                                    <span className="chat-header-label-more" title={`${hiddenHeaderLabelsCount} etiqueta(s) adicionales`}>
+                                        +{hiddenHeaderLabelsCount}
+                                    </span>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                    <div className="chat-header-mobile-tools">
+                        <button
+                            type="button"
+                            className="chat-mobile-nav-btn chat-mobile-tools-btn"
+                            onClick={() => onMobileOpenTools?.()}
+                            title="Abrir herramientas"
+                        >
+                            Herramientas
+                        </button>
+                        <button
+                            className={`btn-icon ui-icon-btn chat-header-action-btn ${searchVisible ? 'active' : ''}`}
+                            onClick={() => setSearchVisible(v => !v)}
+                            title="Buscar en chat"
+                        >
+                            <Search size={18} />
+                        </button>
+                    </div>
+                </div>
                 <div className="chat-header-actions" onClick={e => e.stopPropagation()}>
                     <div className="chat-header-actions-top">
                         <CommercialStatusActions
