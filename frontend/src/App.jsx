@@ -267,20 +267,42 @@ function App() {
   useEffect(() => {
     if (typeof window === 'undefined' || typeof document === 'undefined') return undefined;
 
+    let lastStableHeight = 0;
+    const readViewportHeight = () => {
+      const viewportHeight = Number(window.visualViewport?.height || 0);
+      if (Number.isFinite(viewportHeight) && viewportHeight > 0) return viewportHeight;
+      return Number(window.innerHeight || 0);
+    };
+    const isTypingElementFocused = () => {
+      const activeElement = document.activeElement;
+      if (!activeElement) return false;
+      const tagName = String(activeElement.tagName || '').toUpperCase();
+      return tagName === 'INPUT' || tagName === 'TEXTAREA' || Boolean(activeElement.isContentEditable);
+    };
     const setRealViewportHeight = () => {
-      document.documentElement.style.setProperty('--real-vh', `${window.innerHeight * 0.01}px`);
+      const viewportHeight = readViewportHeight();
+      if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) return;
+      const isMobileViewport = window.matchMedia?.('(max-width: 768px)')?.matches;
+      const shouldFreezeViewport = isMobileViewport && isTypingElementFocused() && lastStableHeight > viewportHeight;
+      if (!shouldFreezeViewport) {
+        lastStableHeight = viewportHeight;
+      }
+      const appliedHeight = lastStableHeight || viewportHeight;
+      document.documentElement.style.setProperty('--real-vh', `${appliedHeight * 0.01}px`);
     };
 
     setRealViewportHeight();
     window.addEventListener('resize', setRealViewportHeight);
     window.addEventListener('orientationchange', setRealViewportHeight);
     window.addEventListener('pageshow', setRealViewportHeight);
+    window.visualViewport?.addEventListener?.('resize', setRealViewportHeight);
     document.addEventListener('visibilitychange', setRealViewportHeight);
 
     return () => {
       window.removeEventListener('resize', setRealViewportHeight);
       window.removeEventListener('orientationchange', setRealViewportHeight);
       window.removeEventListener('pageshow', setRealViewportHeight);
+      window.visualViewport?.removeEventListener?.('resize', setRealViewportHeight);
       document.removeEventListener('visibilitychange', setRealViewportHeight);
     };
   }, []);
