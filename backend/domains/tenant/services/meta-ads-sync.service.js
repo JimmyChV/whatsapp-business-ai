@@ -664,27 +664,48 @@ async function listMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, { dateStart, da
 
     const { rows } = await queryPostgres(
         `SELECT
-            i.object_id AS ad_id,
-            i.date_start,
-            i.date_stop,
-            i.spend,
-            i.impressions,
-            i.reach,
-            i.clicks,
-            i.ctr,
-            i.cpc,
-            i.cpm,
-            i.cpp,
-            i.frequency,
-            i.actions,
-            COALESCE(i.ad_name, ad.object_name) AS ad_name,
-            COALESCE(i.ad_status, ad.status) AS ad_status,
-            COALESCE(i.adset_id, adset.object_id) AS adset_id,
+            COALESCE(i.campaign_id, adset.parent_id, campaign.object_id) AS campaign_id,
+            COALESCE(i.campaign_name, campaign.object_name) AS campaign_name,
+            COALESCE(i.campaign_status, campaign.status) AS campaign_status,
+            COALESCE(i.adset_id, ad.parent_id, adset.object_id) AS adset_id,
             COALESCE(i.adset_name, adset.object_name) AS adset_name,
             COALESCE(i.adset_status, adset.status) AS adset_status,
-            COALESCE(i.campaign_id, campaign.object_id) AS campaign_id,
-            COALESCE(i.campaign_name, campaign.object_name) AS campaign_name,
-            COALESCE(i.campaign_status, campaign.status) AS campaign_status
+            i.object_id AS ad_id,
+            COALESCE(i.ad_name, ad.object_name) AS ad_name,
+            COALESCE(i.ad_status, ad.status) AS ad_status,
+            SUM(i.spend) AS spend,
+            SUM(i.impressions) AS impressions,
+            SUM(i.reach) AS reach,
+            SUM(i.clicks) AS clicks,
+            CASE WHEN SUM(i.impressions) > 0
+              THEN ROUND(SUM(i.clicks)::numeric / SUM(i.impressions) * 100, 4)
+              ELSE NULL
+            END AS ctr,
+            CASE WHEN SUM(i.clicks) > 0
+              THEN ROUND(SUM(i.spend)::numeric / SUM(i.clicks), 4)
+              ELSE NULL
+            END AS cpc,
+            CASE WHEN SUM(i.impressions) > 0
+              THEN ROUND(SUM(i.spend)::numeric / SUM(i.impressions) * 1000, 4)
+              ELSE NULL
+            END AS cpm,
+            CASE WHEN SUM(i.reach) > 0
+              THEN ROUND(SUM(i.impressions)::numeric / SUM(i.reach), 4)
+              ELSE NULL
+            END AS frequency,
+            SUM(
+              COALESCE((
+                SELECT SUM((action_item->>'value')::numeric)
+                  FROM jsonb_array_elements(COALESCE(i.actions, '[]'::jsonb)) action_item
+                 WHERE action_item->>'action_type' IN (
+                   'messaging_conversation_started_7d',
+                   'onsite_conversion.total_messaging_connection'
+                 )
+              ), 0)
+            ) AS messaging_conversations,
+            MIN(i.date_start) AS date_start,
+            MAX(i.date_stop) AS date_stop,
+            COUNT(DISTINCT i.date_start) AS days_active
          FROM tenant_meta_ads_insights i
          LEFT JOIN tenant_meta_ads_structure ad
            ON ad.tenant_id = i.tenant_id
@@ -702,14 +723,26 @@ async function listMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, { dateStart, da
            AND i.object_type = 'ad'
            AND i.date_start >= $2::date
            AND i.date_stop <= $3::date
-         ORDER BY i.date_start DESC, campaign.object_name NULLS LAST, adset.object_name NULLS LAST, ad.object_name NULLS LAST`,
+         GROUP BY
+            i.object_id,
+            COALESCE(i.ad_name, ad.object_name),
+            COALESCE(i.ad_status, ad.status),
+            COALESCE(i.adset_id, ad.parent_id, adset.object_id),
+            COALESCE(i.adset_name, adset.object_name),
+            COALESCE(i.adset_status, adset.status),
+            COALESCE(i.campaign_id, adset.parent_id, campaign.object_id),
+            COALESCE(i.campaign_name, campaign.object_name),
+            COALESCE(i.campaign_status, campaign.status)
+         ORDER BY SUM(i.spend) DESC NULLS LAST,
+            campaign_name NULLS LAST,
+            adset_name NULLS LAST,
+            ad_name NULLS LAST`,
         [cleanTenantId, normalizedDateStart, normalizedDateStop]
     );
 
     return (Array.isArray(rows) ? rows : []).map((row) => {
-        const actions = Array.isArray(row?.actions) ? row.actions : parseJsonSafely(row?.actions, []);
-        const messagingConversations = getMessagingConversations(actions);
         const spend = toNumber(row?.spend, 0, { decimals: 2 });
+        const messagingConversations = toNumber(row?.messaging_conversations, 0, { decimals: 4 });
         return {
             campaign_id: toNullableText(row?.campaign_id),
             campaign_name: toNullableText(row?.campaign_name),
@@ -731,7 +764,8 @@ async function listMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, { dateStart, da
             messaging_conversations: messagingConversations,
             cost_per_conversation: messagingConversations > 0 ? toNumber(spend / messagingConversations, 0, { decimals: 4 }) : 0,
             date_start: normalizeDateInput(row?.date_start),
-            date_stop: normalizeDateInput(row?.date_stop)
+            date_stop: normalizeDateInput(row?.date_stop),
+            days_active: toInteger(row?.days_active, 0)
         };
     });
 }
