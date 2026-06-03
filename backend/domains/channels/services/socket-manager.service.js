@@ -1821,6 +1821,32 @@ class SocketManager {
                 socket.emit('quick_reply_error', 'Gestiona respuestas rapidas desde Panel SaaS.');
             });
 
+            socket.on('audit_action', async (payload = {}) => {
+                try {
+                    const action = String(payload?.action || '').trim();
+                    const entityType = String(payload?.entityType || 'socket').trim() || 'socket';
+                    const rawEntityId = String(payload?.entityId || '').trim();
+                    const selectedScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
+                    const scopedTarget = entityType === 'chat'
+                        ? resolveScopedChatTarget(rawEntityId, selectedScopeModuleId)
+                        : null;
+                    const resourceId = entityType === 'chat'
+                        ? String(scopedTarget?.baseChatId || rawEntityId).trim()
+                        : rawEntityId;
+                    const newValue = payload?.newValue && typeof payload.newValue === 'object' && !Array.isArray(payload.newValue)
+                        ? payload.newValue
+                        : {};
+
+                    if (!action || !resourceId) return;
+
+                    await authzAudit.auditSocketAction(action, {
+                        resourceType: entityType,
+                        resourceId,
+                        payload: newValue
+                    });
+                } catch (_) { }
+            });
+
             socket.on('take_chat', async (payload = {}) => {
                 if (!guardRateLimit(socket, 'take_chat')) return;
                 const requestedChatId = String(payload?.chatId || '').trim();

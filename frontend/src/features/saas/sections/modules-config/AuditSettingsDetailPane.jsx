@@ -43,6 +43,7 @@ const ACTION_META = {
     'chat.assignment.taken': { icon: 'CHAT', label: 'Chat tomado', tone: 'chat' },
     'chat.assignment.updated': { icon: 'CHAT', label: 'Chat reasignado', tone: 'chat' },
     'chat.commercial_status.updated': { icon: 'CHAT', label: 'Estado comercial actualizado', tone: 'chat' },
+    'chat.whatsapp_direct_open': { icon: '📱', label: 'Chat abierto en WhatsApp directo', tone: 'chat' },
     'chat.patty_mode.updated': { icon: 'AI', label: 'Modo Patty actualizado', tone: 'info' },
     'chat.state.updated': { icon: 'CHAT', label: 'Estado visual del chat actualizado', tone: 'chat' },
     'config.authorizers.updated': { icon: 'CFG', label: 'Autorizadores actualizados', tone: 'config' },

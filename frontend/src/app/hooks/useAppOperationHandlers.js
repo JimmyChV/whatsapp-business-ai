@@ -312,6 +312,7 @@ export default function useAppOperationHandlers({
     handleRetryMessage,
     handleSendReaction,
     handleOpenSendTemplate,
+    handleOpenDirectWhatsApp,
     handleCloseSendTemplate,
     handleSelectTemplatePreview,
     handleConfirmSendTemplate
@@ -525,6 +526,7 @@ export default function useAppOperationHandlers({
     handleDeleteMessage,
     handleSendQuickReply,
     handleOpenSendTemplate,
+    handleOpenDirectWhatsApp,
     handleCloseSendTemplate,
     handleSelectTemplatePreview,
     handleConfirmSendTemplate,

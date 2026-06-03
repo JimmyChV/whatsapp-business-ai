@@ -588,13 +588,23 @@ const ChatWindow = ({
                                     La ventana de conversación expiró. Solo puedes contactar con un template aprobado.
                                 </span>
                             </div>
-                            <button
-                                type="button"
-                                className="chat-window-expired-banner-action"
-                                onClick={() => inputProps?.onOpenSendTemplate?.()}
-                            >
-                                Enviar template
-                            </button>
+                            <div className="chat-window-expired-banner-actions">
+                                <button
+                                    type="button"
+                                    className="chat-window-expired-banner-action chat-window-expired-banner-action--secondary"
+                                    title="Escribe directamente desde WhatsApp Business sin costo de plantilla"
+                                    onClick={() => inputProps?.onOpenDirectWhatsApp?.()}
+                                >
+                                    📱 Abrir en WhatsApp
+                                </button>
+                                <button
+                                    type="button"
+                                    className="chat-window-expired-banner-action"
+                                    onClick={() => inputProps?.onOpenSendTemplate?.()}
+                                >
+                                    Enviar template
+                                </button>
+                            </div>
                         </div>
                     )}
                     <ChatInput

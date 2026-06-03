@@ -60,6 +60,7 @@ export default function OperationPage({
   handleSendCatalogProduct,
   handleSendReaction,
   handleRetryMessage,
+  handleOpenDirectWhatsApp,
   attachment,
   attachmentPreview,
   removeAttachment,
@@ -427,6 +428,7 @@ export default function OperationPage({
               forwardChatOptions={forwardChatOptions}
               quickReplies={quickReplies}
               onOpenSendTemplate={handleOpenSendTemplate}
+              onOpenDirectWhatsApp={handleOpenDirectWhatsApp}
               onCloseSendTemplate={handleCloseSendTemplate}
               onSelectTemplatePreview={handleSelectTemplatePreview}
               onConfirmSendTemplate={handleConfirmSendTemplate}

@@ -3,6 +3,7 @@ import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
 import { buildTemplateResolvedPreview } from '../helpers/templateMessages.helpers';
 import { getTemplateVariablesPreview, listApprovedIndividualTemplates } from '../services/templateMessages.service';
 import { patchCachedMessages } from '../helpers/messageCache.helpers';
+import { getBestChatPhone, parseScopedChatId } from '../helpers/appChat.helpers';
 
 export default function useChatMessageActions({
   socket,
@@ -421,6 +422,47 @@ export default function useChatMessageActions({
     setSelectedSendTemplatePreviewError
   ]);
 
+  const handleOpenDirectWhatsApp = useCallback(() => {
+    const activeId = String(activeChatIdRef.current || activeChatId || '').trim();
+    if (!activeId) return;
+
+    const parsedActiveId = parseScopedChatId(activeId);
+    const baseChatId = String(parsedActiveId?.baseChatId || activeId).trim();
+    const activeChatForSend = chatsRef.current.find((chat) => String(chat?.id || '') === String(activeChatId || activeId))
+      || chatsRef.current.find((chat) => String(chat?.id || '') === activeId)
+      || chatsRef.current.find((chat) => String(chat?.baseChatId || '') === baseChatId)
+      || null;
+    const phoneNumber = normalizeDigits(
+      getBestChatPhone(activeChatForSend || {}) || String(baseChatId || '').replace('@c.us', '').replace('+', '')
+    );
+
+    if (!phoneNumber) {
+      notify({ type: 'warn', message: 'No se encontro un numero valido para abrir este chat en WhatsApp.' });
+      return;
+    }
+
+    if (socket && typeof socket.emit === 'function') {
+      socket.emit('audit_action', {
+        action: 'chat.whatsapp_direct_open',
+        entityType: 'chat',
+        entityId: baseChatId,
+        newValue: {
+          phone: phoneNumber,
+          reason: 'window_expired'
+        }
+      });
+    }
+
+    window.open(`https://wa.me/${phoneNumber}`, '_blank', 'noopener,noreferrer');
+  }, [
+    activeChatId,
+    activeChatIdRef,
+    chatsRef,
+    normalizeDigits,
+    notify,
+    socket
+  ]);
+
   const handleSelectTemplatePreview = useCallback(async (template = null) => {
     const entry = template && typeof template === 'object' ? template : null;
     if (!entry) return;
@@ -825,6 +867,7 @@ export default function useChatMessageActions({
     handleRetryMessage,
     handleSendReaction,
     handleOpenSendTemplate,
+    handleOpenDirectWhatsApp,
     handleCloseSendTemplate,
     handleSelectTemplatePreview,
     handleConfirmSendTemplate

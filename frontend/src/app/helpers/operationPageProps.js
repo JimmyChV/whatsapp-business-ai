@@ -48,6 +48,7 @@ export function buildOperationPageProps(input = {}) {
     handleSendCatalogProduct: input.handleSendCatalogProduct,
     handleSendReaction: input.handleSendReaction,
     handleRetryMessage: input.handleRetryMessage,
+    handleOpenDirectWhatsApp: input.handleOpenDirectWhatsApp,
     attachment: input.attachment,
     attachmentPreview: input.attachmentPreview,
     removeAttachment: input.removeAttachment,
