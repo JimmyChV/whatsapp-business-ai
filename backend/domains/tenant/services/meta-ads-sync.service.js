@@ -283,17 +283,62 @@ async function fetchMetaAdsPages({ path, params = {}, accessToken }) {
     return collected;
 }
 
-async function fetchMetaAdsObject({ path, params = {}, accessToken }) {
-    const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${path}?${new URLSearchParams({
-        ...params,
-        access_token: accessToken
-    }).toString()}`;
-    const response = await fetch(url, { method: 'GET' });
-    if (!response.ok) {
-        const detail = await response.text();
-        throw new Error(`Meta Ads request failed (${response.status}): ${detail}`);
+function sleep(ms = 0) {
+    return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms || 0))));
+}
+
+function chunkArray(items = [], size = 50) {
+    const safeItems = Array.isArray(items) ? items : [];
+    const chunkSize = Math.max(1, Number(size || 50));
+    const chunks = [];
+    for (let index = 0; index < safeItems.length; index += chunkSize) {
+        chunks.push(safeItems.slice(index, index + chunkSize));
     }
-    return response.json();
+    return chunks;
+}
+
+function extractMetaErrorCode(error = null) {
+    if (!error) return null;
+    const directCode = Number(error?.code || error?.error?.code || error?.metaCode);
+    if (Number.isFinite(directCode)) return directCode;
+    const body = parseJsonSafely(error?.body || error?.message, null);
+    const bodyCode = Number(body?.error?.code || body?.code);
+    return Number.isFinite(bodyCode) ? bodyCode : null;
+}
+
+async function callMetaBatch(adIds = [], accessToken = '') {
+    const batch = (Array.isArray(adIds) ? adIds : [])
+        .map((adId) => toText(adId))
+        .filter(Boolean)
+        .map((adId) => ({
+            method: 'GET',
+            relative_url: `${adId}?fields=creative{id,object_story_spec{link_data{page_welcome_message}}}`
+        }));
+    if (batch.length === 0) return [];
+
+    const response = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+            access_token: accessToken,
+            batch: JSON.stringify(batch)
+        }).toString()
+    });
+    const rawBody = await response.text();
+    const payload = parseJsonSafely(rawBody, null);
+    if (!response.ok) {
+        const error = new Error(`Meta Ads batch request failed (${response.status}): ${rawBody}`);
+        error.status = response.status;
+        error.body = rawBody;
+        error.code = extractMetaErrorCode(payload);
+        throw error;
+    }
+    if (!Array.isArray(payload)) {
+        const error = new Error('Meta Ads batch response invalida.');
+        error.body = rawBody;
+        throw error;
+    }
+    return payload;
 }
 
 async function listConfiguredMetaAdsTenants() {
@@ -436,32 +481,33 @@ async function upsertStructureRow(tenantId, row = {}) {
     );
 }
 
-function normalizeCreativeButtons(pageWelcomeMessage = {}) {
-    const source = isPlainObject(pageWelcomeMessage) ? pageWelcomeMessage : {};
-    const textFormat = isPlainObject(source?.text_format) ? source.text_format : {};
-    const message = isPlainObject(textFormat?.message) ? textFormat.message : {};
-    const actionType = toText(source?.customer_action_type || textFormat?.customer_action_type || message?.customer_action_type).toLowerCase();
-    if (actionType && actionType !== 'buttons') return [];
+function parsePageWelcomeMessage(rawWelcome = null) {
+    if (!rawWelcome) return null;
+    if (typeof rawWelcome === 'string') return parseJsonSafely(rawWelcome, null);
+    return isPlainObject(rawWelcome) ? rawWelcome : null;
+}
 
-    const candidates = [
-        source?.buttons,
-        textFormat?.buttons,
-        message?.buttons,
-        message?.quick_replies
-    ].find((entry) => Array.isArray(entry)) || [];
+function normalizeGreetingText(value = '') {
+    const text = toNullableText(value);
+    return text ? text.replace(/\{\{user_first_name\}\}/g, '{{nombre}}') : null;
+}
 
-    return candidates
-        .map((button) => {
-            if (!isPlainObject(button)) return null;
-            const label = toNullableText(button?.title || button?.text || button?.label || button?.payload);
-            if (!label) return null;
-            return {
-                label,
-                type: toNullableText(button?.type || button?.button_type || button?.action_type),
-                payload: toNullableText(button?.payload || button?.id)
-            };
-        })
-        .filter(Boolean);
+function normalizeCreativeButtons(welcomeObj = {}) {
+    const source = isPlainObject(welcomeObj) ? welcomeObj : {};
+    const message = isPlainObject(source?.text_format?.message) ? source.text_format.message : {};
+    const iceBreakers = Array.isArray(message?.ice_breakers) ? message.ice_breakers : [];
+    const quickReplies = Array.isArray(message?.quick_replies) ? message.quick_replies : [];
+
+    return [
+        ...iceBreakers.map((button) => ({
+            title: toNullableText(button?.title),
+            type: 'ice_breaker'
+        })),
+        ...quickReplies.map((button) => ({
+            title: toNullableText(button?.title),
+            type: 'quick_reply'
+        }))
+    ].filter((button) => button.title);
 }
 
 function extractCreativePayload(adId = '', payload = {}) {
@@ -469,7 +515,7 @@ function extractCreativePayload(adId = '', payload = {}) {
     const creative = isPlainObject(source?.creative) ? source.creative : {};
     const objectStorySpec = isPlainObject(creative?.object_story_spec) ? creative.object_story_spec : {};
     const linkData = isPlainObject(objectStorySpec?.link_data) ? objectStorySpec.link_data : {};
-    const pageWelcomeMessage = isPlainObject(linkData?.page_welcome_message) ? linkData.page_welcome_message : {};
+    const pageWelcomeMessage = parsePageWelcomeMessage(linkData?.page_welcome_message);
     const textFormat = isPlainObject(pageWelcomeMessage?.text_format) ? pageWelcomeMessage.text_format : {};
     const message = isPlainObject(textFormat?.message) ? textFormat.message : {};
     const autofillMessage = isPlainObject(message?.autofill_message)
@@ -479,8 +525,8 @@ function extractCreativePayload(adId = '', payload = {}) {
     return {
         ad_id: toText(adId),
         creative_id: toNullableText(creative?.id),
-        greeting_text: toNullableText(message?.text || pageWelcomeMessage?.text || pageWelcomeMessage?.message),
-        autofill_message: toNullableText(autofillMessage?.content || autofillMessage?.text),
+        greeting_text: normalizeGreetingText(message?.text),
+        autofill_message: toNullableText(autofillMessage?.content),
         buttons_json: normalizeCreativeButtons(pageWelcomeMessage),
         raw_creative: source
     };
@@ -509,6 +555,25 @@ async function upsertCreativeRow(tenantId, row = {}) {
             row.autofill_message,
             JSON.stringify(Array.isArray(row.buttons_json) ? row.buttons_json : []),
             JSON.stringify(isPlainObject(row.raw_creative) ? row.raw_creative : {})
+        ]
+    );
+}
+
+async function updateCreativeParsedFields(tenantId, row = {}) {
+    await queryPostgres(
+        `UPDATE tenant_meta_ads_creatives
+            SET greeting_text = $3,
+                autofill_message = $4,
+                buttons_json = $5::jsonb,
+                synced_at = NOW()
+          WHERE tenant_id = $1
+            AND ad_id = $2`,
+        [
+            tenantId,
+            row.ad_id,
+            row.greeting_text,
+            row.autofill_message,
+            JSON.stringify(Array.isArray(row.buttons_json) ? row.buttons_json : [])
         ]
     );
 }
@@ -635,6 +700,36 @@ async function syncMetaAdsStructure(tenantId = DEFAULT_TENANT_ID) {
     };
 }
 
+async function reprocessExistingCreatives(tenantId = DEFAULT_TENANT_ID) {
+    await ensurePostgresSchema();
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const { rows } = await queryPostgres(
+        `SELECT ad_id, raw_creative
+           FROM tenant_meta_ads_creatives
+          WHERE tenant_id = $1
+            AND raw_creative IS NOT NULL
+            AND raw_creative <> '{}'::jsonb
+            AND (greeting_text IS NULL OR TRIM(greeting_text) = '')`,
+        [cleanTenantId]
+    );
+    let reprocessedCount = 0;
+    for (const row of (Array.isArray(rows) ? rows : [])) {
+        const adId = toText(row?.ad_id);
+        if (!adId) continue;
+        const parsed = extractCreativePayload(adId, row?.raw_creative);
+        if (!parsed.greeting_text && !parsed.autofill_message && (!Array.isArray(parsed.buttons_json) || parsed.buttons_json.length === 0)) {
+            continue;
+        }
+        await updateCreativeParsedFields(cleanTenantId, parsed);
+        reprocessedCount += 1;
+    }
+    return {
+        tenantId: cleanTenantId,
+        scannedCount: Array.isArray(rows) ? rows.length : 0,
+        reprocessedCount
+    };
+}
+
 async function syncAdCreatives(tenantId = DEFAULT_TENANT_ID, configOverride = null) {
     await ensurePostgresSchema();
     const config = configOverride && typeof configOverride === 'object'
@@ -647,40 +742,89 @@ async function syncAdCreatives(tenantId = DEFAULT_TENANT_ID, configOverride = nu
           WHERE tenant_id = $1
             AND object_type = 'ad'
             AND COALESCE(object_id, '') <> ''
+            AND UPPER(COALESCE(status, '')) IN ('ACTIVE', 'PAUSED')
+            AND synced_at >= NOW() - INTERVAL '90 days'
           ORDER BY synced_at DESC, object_id ASC`,
         [cleanTenantId]
     );
     const ads = (Array.isArray(rows) ? rows : []).map((row) => toText(row?.object_id)).filter(Boolean);
     let syncedCount = 0;
     let failedCount = 0;
+    const batches = chunkArray(ads, 50);
 
-    for (const adId of ads) {
-        try {
-            const creativePayload = await fetchMetaAdsObject({
-                path: adId,
-                params: {
-                    fields: 'creative{id,object_story_spec{link_data{call_to_action,page_welcome_message}}}'
-                },
-                accessToken: config.accessToken
-            });
+    const processBatchResults = async (batchAdIds = [], results = []) => {
+        for (let index = 0; index < batchAdIds.length; index += 1) {
+            const adId = batchAdIds[index];
+            const item = results[index] || {};
+            if (Number(item?.code || 0) !== 200) {
+                const itemError = parseJsonSafely(item?.body, null);
+                if (extractMetaErrorCode(itemError) === 17) {
+                    const error = new Error('Meta Ads rate limit en batch item.');
+                    error.code = 17;
+                    error.error = itemError?.error || itemError;
+                    throw error;
+                }
+                failedCount += 1;
+                console.warn('[meta-ads-sync] Creative batch item fallo.', {
+                    tenantId: cleanTenantId,
+                    adId,
+                    code: item?.code || null,
+                    body: String(item?.body || '').slice(0, 500)
+                });
+                continue;
+            }
+            const creativePayload = parseJsonSafely(item?.body, null);
+            if (!isPlainObject(creativePayload)) {
+                failedCount += 1;
+                console.warn('[meta-ads-sync] Creative batch item sin JSON valido.', {
+                    tenantId: cleanTenantId,
+                    adId
+                });
+                continue;
+            }
             const normalized = extractCreativePayload(adId, creativePayload);
             await upsertCreativeRow(cleanTenantId, normalized);
             syncedCount += 1;
-        } catch (error) {
-            failedCount += 1;
-            console.warn('[meta-ads-sync] No se pudo sincronizar creative del anuncio.', {
-                tenantId: cleanTenantId,
-                adId,
-                error: String(error?.message || error)
-            });
         }
+    };
+
+    for (const batch of batches) {
+        try {
+            const results = await callMetaBatch(batch, config.accessToken);
+            await processBatchResults(batch, results);
+        } catch (error) {
+            if (extractMetaErrorCode(error) === 17) {
+                console.warn('[MetaSync] Rate limit, esperando 60s...');
+                await sleep(60000);
+                try {
+                    const results = await callMetaBatch(batch, config.accessToken);
+                    await processBatchResults(batch, results);
+                } catch (retryError) {
+                    failedCount += batch.length;
+                    console.error('[MetaSync] Retry fallo, saltando batch', {
+                        tenantId: cleanTenantId,
+                        error: String(retryError?.message || retryError)
+                    });
+                }
+            } else {
+                failedCount += batch.length;
+                console.error('[MetaSync] Error en batch:', {
+                    tenantId: cleanTenantId,
+                    error: String(error?.message || error)
+                });
+            }
+        }
+        await sleep(2000);
     }
+
+    const reprocess = await reprocessExistingCreatives(cleanTenantId);
 
     return {
         tenantId: cleanTenantId,
         adsCount: ads.length,
         creativesCount: syncedCount,
-        failedCount
+        failedCount,
+        reprocessedCount: Number(reprocess?.reprocessedCount || 0)
     };
 }
 
@@ -1141,6 +1285,7 @@ module.exports = {
     getMetaAdsSyncState,
     syncMetaAdsStructure,
     syncAdCreatives,
+    reprocessExistingCreatives,
     syncMetaAdsInsights,
     listMetaAdsInsights,
     syncMetaAdsHistoricalCurrentYear,
