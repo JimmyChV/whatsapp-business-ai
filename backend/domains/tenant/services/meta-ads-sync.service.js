@@ -1001,6 +1001,10 @@ async function listMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, { dateStart, da
             SUM(i.impressions) AS impressions,
             SUM(i.reach) AS reach,
             SUM(i.clicks) AS clicks,
+            cr.creative_id AS creative_id,
+            cr.greeting_text AS greeting_text,
+            cr.autofill_message AS autofill_message,
+            cr.buttons_json AS buttons_json,
             CASE WHEN SUM(i.impressions) > 0
               THEN ROUND(SUM(i.clicks)::numeric / SUM(i.impressions) * 100, 4)
               ELSE NULL
@@ -1043,6 +1047,9 @@ async function listMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, { dateStart, da
            ON campaign.tenant_id = i.tenant_id
           AND campaign.object_id = COALESCE(i.campaign_id, adset.parent_id)
           AND campaign.object_type = 'campaign'
+         LEFT JOIN tenant_meta_ads_creatives cr
+           ON cr.tenant_id = i.tenant_id
+          AND cr.ad_id = i.object_id
          WHERE i.tenant_id = $1
            AND i.object_type = 'ad'
            AND i.date_start >= $2::date
@@ -1056,7 +1063,11 @@ async function listMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, { dateStart, da
             COALESCE(i.adset_status, adset.status),
             COALESCE(i.campaign_id, adset.parent_id, campaign.object_id),
             COALESCE(i.campaign_name, campaign.object_name),
-            COALESCE(i.campaign_status, campaign.status)
+            COALESCE(i.campaign_status, campaign.status),
+            cr.creative_id,
+            cr.greeting_text,
+            cr.autofill_message,
+            cr.buttons_json
          ORDER BY SUM(i.spend) DESC NULLS LAST,
             campaign_name NULLS LAST,
             adset_name NULLS LAST,
@@ -1081,6 +1092,10 @@ async function listMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, { dateStart, da
             impressions: toInteger(row?.impressions, 0),
             reach: toInteger(row?.reach, 0),
             clicks: toInteger(row?.clicks, 0),
+            creative_id: toNullableText(row?.creative_id),
+            greeting_text: toNullableText(row?.greeting_text),
+            autofill_message: toNullableText(row?.autofill_message),
+            buttons_json: Array.isArray(row?.buttons_json) ? row.buttons_json : [],
             ctr: toNumber(row?.ctr, 0, { decimals: 4 }),
             cpc: toNumber(row?.cpc, 0, { decimals: 4 }),
             cpm: toNumber(row?.cpm, 0, { decimals: 4 }),
@@ -1092,6 +1107,81 @@ async function listMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, { dateStart, da
             days_active: toInteger(row?.days_active, 0)
         };
     });
+}
+
+async function updateMetaAdCreativeGreeting(tenantId = DEFAULT_TENANT_ID, adId = '', greetingText = '') {
+    await ensurePostgresSchema();
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const cleanAdId = toText(adId);
+    if (!cleanAdId) throw new Error('adId requerido para actualizar greeting Meta.');
+    const cleanGreeting = toNullableText(greetingText);
+    await queryPostgres(
+        `INSERT INTO tenant_meta_ads_creatives (
+            tenant_id, ad_id, greeting_text, buttons_json, raw_creative, synced_at
+        ) VALUES (
+            $1, $2, $3, '[]'::jsonb, '{}'::jsonb, NOW()
+        )
+        ON CONFLICT (tenant_id, ad_id)
+        DO UPDATE SET
+            greeting_text = EXCLUDED.greeting_text,
+            synced_at = NOW()`,
+        [cleanTenantId, cleanAdId, cleanGreeting]
+    );
+    return {
+        ok: true,
+        tenantId: cleanTenantId,
+        adId: cleanAdId,
+        greetingText: cleanGreeting
+    };
+}
+
+async function getMetaAdConversationStats(tenantId = DEFAULT_TENANT_ID, adId = '') {
+    await ensurePostgresSchema();
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const cleanAdId = toText(adId);
+    if (!cleanAdId) throw new Error('adId requerido para estadisticas Meta.');
+    try {
+        const { rows } = await queryPostgres(
+            `SELECT
+                COUNT(*)::INT AS total_conversations,
+                COUNT(*) FILTER (
+                    WHERE tcs.status IN ('cotizado', 'aceptado', 'vendido')
+                )::INT AS converted,
+                MIN(o.detected_at) AS first_seen,
+                MAX(o.detected_at) AS last_seen,
+                MAX(NULLIF(o.referral_source_url, '')) AS source_url
+             FROM tenant_chat_origins o
+             LEFT JOIN tenant_chat_commercial_status tcs
+               ON tcs.tenant_id = o.tenant_id
+              AND tcs.chat_id = o.chat_id
+             WHERE o.tenant_id = $1
+               AND o.referral_source_id = $2`,
+            [cleanTenantId, cleanAdId]
+        );
+        const row = rows?.[0] || {};
+        const total = toInteger(row?.total_conversations, 0);
+        const converted = toInteger(row?.converted, 0);
+        return {
+            totalConversations: total,
+            converted,
+            conversionRate: total > 0 ? toNumber((converted / total) * 100, 0, { decimals: 2 }) : 0,
+            firstSeen: row?.first_seen || null,
+            lastSeen: row?.last_seen || null,
+            sourceUrl: toNullableText(row?.source_url)
+        };
+    } catch (error) {
+        if (String(error?.code || '').trim() === '42P01') {
+            return {
+                totalConversations: 0,
+                converted: 0,
+                conversionRate: 0,
+                firstSeen: null,
+                lastSeen: null,
+                sourceUrl: null
+            };
+        }
+        throw error;
+    }
 }
 
 async function syncMetaAdsHistoricalCurrentYear(tenantId = DEFAULT_TENANT_ID, options = {}) {
@@ -1315,6 +1405,8 @@ module.exports = {
     reprocessExistingCreatives,
     syncMetaAdsInsights,
     listMetaAdsInsights,
+    updateMetaAdCreativeGreeting,
+    getMetaAdConversationStats,
     syncMetaAdsHistoricalCurrentYear,
     runMetaAdsDailySyncOnce,
     backfillConfiguredTenantsCurrentYear,

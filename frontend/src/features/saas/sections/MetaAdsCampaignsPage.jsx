@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CheckSquare, Columns3, RotateCcw } from 'lucide-react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import { SaasEntityPage } from '../components/entity';
-import { SaasDataTable, SaasViewHeader, useSaasViewPreferences } from '../components/layout';
+import { SaasDetailPanel, SaasViewHeader, useSaasViewPreferences } from '../components/layout';
 import {
     applyEntityFilters,
     createEmptyFilterItem,
@@ -162,6 +162,10 @@ function formatCurrency(value, fractionDigits = 2) {
     });
 }
 
+function formatCurrencyLabel(value) {
+    return `S/ ${formatCurrency(value)}`;
+}
+
 function formatRatio(value) {
     const safe = Number(value);
     if (!Number.isFinite(safe)) return '-';
@@ -169,6 +173,29 @@ function formatRatio(value) {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
     });
+}
+
+function formatDateLabel(value) {
+    const text = String(value || '').trim();
+    if (!text) return '-';
+    const parsed = new Date(text);
+    if (!Number.isFinite(parsed.getTime())) return text;
+    return parsed.toLocaleDateString('es-PE', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+    });
+}
+
+function parseButtonsJson(value) {
+    if (Array.isArray(value)) return value.filter((item) => item && typeof item === 'object');
+    if (!value) return [];
+    try {
+        const parsed = JSON.parse(String(value));
+        return Array.isArray(parsed) ? parsed.filter((item) => item && typeof item === 'object') : [];
+    } catch {
+        return [];
+    }
 }
 
 function normalizeDateRange(dateRange = null) {
@@ -224,13 +251,18 @@ function normalizeInsightItems(payload) {
         impressions: toNumber(item?.impressions),
         reach: toNumber(item?.reach),
         clicks: toNumber(item?.clicks),
+        creative_id: String(item?.creative_id || '').trim(),
+        greeting_text: String(item?.greeting_text || '').trim(),
+        autofill_message: String(item?.autofill_message || '').trim(),
+        buttons_json: parseButtonsJson(item?.buttons_json),
         ctr: Number(item?.ctr),
         cpc: Number(item?.cpc),
         cpm: Number(item?.cpm),
         frequency: Number(item?.frequency),
         messaging_conversations: toNumber(item?.messaging_conversations),
         date_start: String(item?.date_start || '').trim(),
-        date_stop: String(item?.date_stop || '').trim()
+        date_stop: String(item?.date_stop || '').trim(),
+        days_active: toNumber(item?.days_active)
     }));
 }
 
@@ -260,8 +292,13 @@ function aggregateInsightRows(items = []) {
             reach: 0,
             clicks: 0,
             messaging_conversations: 0,
+            creative_id: '',
+            greeting_text: '',
+            autofill_message: '',
+            buttons_json: [],
             date_start: '',
-            date_stop: ''
+            date_stop: '',
+            days_active: 0
         };
 
         current.campaign_id = String(item?.campaign_id || current.campaign_id || '').trim();
@@ -276,6 +313,11 @@ function aggregateInsightRows(items = []) {
         current.reach += toNumber(item?.reach);
         current.clicks += toNumber(item?.clicks);
         current.messaging_conversations += toNumber(item?.messaging_conversations);
+        current.creative_id = String(current.creative_id || item?.creative_id || '').trim();
+        current.greeting_text = String(current.greeting_text || item?.greeting_text || '').trim();
+        current.autofill_message = String(current.autofill_message || item?.autofill_message || '').trim();
+        current.buttons_json = current.buttons_json?.length ? current.buttons_json : parseButtonsJson(item?.buttons_json);
+        current.days_active = Math.max(toNumber(current.days_active), toNumber(item?.days_active));
         current.date_start = current.date_start && item?.date_start
             ? (current.date_start < item.date_start ? current.date_start : item.date_start)
             : String(current.date_start || item?.date_start || '').trim();
@@ -306,42 +348,6 @@ function aggregateInsightRows(items = []) {
     });
 }
 
-function buildSummaryRow(rows = []) {
-    const totals = rows.reduce((acc, row) => {
-        acc.spend += toNumber(row?.spend);
-        acc.impressions += toNumber(row?.impressions);
-        acc.reach += toNumber(row?.reach);
-        acc.clicks += toNumber(row?.clicks);
-        acc.messaging_conversations += toNumber(row?.messaging_conversations);
-        return acc;
-    }, {
-        spend: 0,
-        impressions: 0,
-        reach: 0,
-        clicks: 0,
-        messaging_conversations: 0
-    });
-
-    return {
-        id: 'meta-ads-summary',
-        isSummary: true,
-        campaign_name: 'Resumen',
-        adset_name: `${rows.length.toLocaleString('es-PE')} filas`,
-        ad_name: '-',
-        ad_status: 'Resumen',
-        spend: totals.spend,
-        impressions: totals.impressions,
-        reach: totals.reach,
-        clicks: totals.clicks,
-        ctr: totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : null,
-        cpc: totals.clicks > 0 ? totals.spend / totals.clicks : null,
-        cpm: totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : null,
-        frequency: totals.reach > 0 ? totals.impressions / totals.reach : null,
-        messaging_conversations: totals.messaging_conversations,
-        cost_per_conversation: totals.messaging_conversations > 0 ? totals.spend / totals.messaging_conversations : null
-    };
-}
-
 function applySearch(rows = [], search = '') {
     const query = String(search || '').trim().toLowerCase();
     if (!query) return rows;
@@ -354,28 +360,6 @@ function applySearch(rows = [], search = '') {
         ].map((value) => String(value || '').trim().toLowerCase()).join(' ');
         return haystack.includes(query);
     });
-}
-
-function normalizeColumns(columns = [], visibleColumnKeys = [], columnOrder = []) {
-    const safeColumns = Array.isArray(columns) ? columns.filter((column) => column && column.key) : [];
-    const order = Array.isArray(columnOrder) ? columnOrder : [];
-    const configurableColumns = safeColumns.filter((column) => column.configurable !== false);
-    const fixedColumns = safeColumns.filter((column) => column.configurable === false);
-    const orderedConfigurable = [
-        ...order.map((key) => configurableColumns.find((column) => column.key === key)).filter(Boolean),
-        ...configurableColumns.filter((column) => !order.includes(column.key))
-    ];
-    const visible = new Set(Array.isArray(visibleColumnKeys) ? visibleColumnKeys : []);
-
-    return [
-        ...fixedColumns,
-        ...orderedConfigurable
-    ].map((column) => ({
-        ...column,
-        hidden: column.configurable === false
-            ? column.hidden
-            : (visible.size > 0 ? !visible.has(column.key) : column.hidden)
-    }));
 }
 
 function getColumnTextLabel(column = {}) {
@@ -438,6 +422,207 @@ function ColumnMenu({ columns = [], preferences = null, disabled = false }) {
     );
 }
 
+function StatusBadge({ value = '' }) {
+    const status = String(value || '').trim().toUpperCase();
+    const statusClass = status === 'ACTIVE' ? 'saas-campaigns-status--running' : 'saas-campaigns-status--paused';
+    return <span className={`saas-campaigns-status ${statusClass}`}>{status || '-'}</span>;
+}
+
+function MetaMetricCard({ label, value }) {
+    return (
+        <div className="saas-admin-kpi saas-meta-ad-metric-card">
+            <small>{label}</small>
+            <strong>{value}</strong>
+        </div>
+    );
+}
+
+function MetaAdList({ rows = [], selectedId = '', loading = false, onSelect = null }) {
+    if (loading) {
+        return <div className="saas-admin-empty-state"><p>Cargando anuncios Meta...</p></div>;
+    }
+    if (!rows.length) {
+        return <div className="saas-admin-empty-state"><p>No hay anuncios Meta Ads para este rango.</p></div>;
+    }
+    return (
+        <div className="saas-meta-ads-list" role="list">
+            {rows.map((row) => {
+                const adId = String(row?.ad_id || row?.id || '').trim();
+                const active = adId && adId === selectedId;
+                return (
+                    <button
+                        key={adId || row.id}
+                        type="button"
+                        className={`saas-meta-ads-list-item ${active ? 'is-selected' : ''}`.trim()}
+                        onClick={() => onSelect?.(adId)}
+                    >
+                        <span className="saas-meta-ads-list-item__title">{row.ad_name || '-'}</span>
+                        <span className="saas-meta-ads-list-item__meta">{row.campaign_name || '-'}</span>
+                        <span className="saas-meta-ads-list-item__meta">{row.adset_name || '-'}</span>
+                        <span className="saas-meta-ads-list-item__footer">
+                            <StatusBadge value={row.ad_status} />
+                            <strong>{formatCurrencyLabel(row.spend)}</strong>
+                        </span>
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
+function MetaAdGreetingModal({
+    ad = null,
+    value = '',
+    saving = false,
+    onChange = null,
+    onCancel = null,
+    onSave = null
+}) {
+    if (!ad) return null;
+    return (
+        <div className="saas-template-builder-modal-overlay saas-meta-ad-greeting-modal" role="presentation">
+            <div className="saas-template-builder-modal-shell" role="dialog" aria-modal="true" aria-labelledby="meta-ad-greeting-title">
+                <section className="saas-admin-related-block saas-admin-related-block--modal-form">
+                    <div className="saas-admin-pane-header saas-admin-pane-header--modal">
+                        <div>
+                            <h3 id="meta-ad-greeting-title">Mensaje de bienvenida</h3>
+                            <p>{ad.ad_name || '-'}</p>
+                        </div>
+                    </div>
+                    <textarea
+                        className="saas-input"
+                        rows={10}
+                        value={value}
+                        disabled={saving}
+                        onChange={(event) => onChange?.(event.target.value)}
+                    />
+                    <div className="saas-admin-alert saas-admin-alert--info">
+                        Este texto se mostrara a las vendedoras como referencia del mensaje que recibio el cliente al hacer click en el anuncio. No modifica el anuncio en Meta.
+                    </div>
+                    <div className="saas-admin-form-row saas-admin-form-row--actions">
+                        <button type="button" className="saas-btn saas-btn-outline" disabled={saving} onClick={onCancel}>Cancelar</button>
+                        <button type="button" className="saas-btn" disabled={saving} onClick={onSave}>{saving ? 'Guardando...' : 'Guardar'}</button>
+                    </div>
+                </section>
+            </div>
+        </div>
+    );
+}
+
+function MetaAdDetail({
+    ad = null,
+    stats = null,
+    statsLoading = false,
+    onBack = null,
+    onCopyAdId = null,
+    onEditGreeting = null,
+    onOpenChats = null
+}) {
+    if (!ad) {
+        return (
+            <div className="saas-admin-empty-state saas-admin-empty-state--detail">
+                <p>Selecciona un anuncio para ver identificacion, metricas, greeting y conversiones.</p>
+            </div>
+        );
+    }
+    const buttons = parseButtonsJson(ad.buttons_json);
+    const hasMetrics = ['spend', 'impressions', 'reach', 'clicks'].some((key) => toNumber(ad?.[key]) > 0);
+    const sourceUrl = String(stats?.sourceUrl || '').trim();
+    const totalConversations = Number(stats?.totalConversations || 0);
+    return (
+        <div className="saas-meta-ad-detail">
+            <button type="button" className="saas-btn saas-btn-outline saas-meta-ad-detail__back" onClick={onBack}>
+                Volver a la lista
+            </button>
+
+            <section className="saas-admin-related-block">
+                <h4>Identificacion</h4>
+                <div className="saas-admin-detail-grid">
+                    <div className="saas-admin-detail-field"><span>CAMPAÑA</span><strong>{ad.campaign_name || '-'}</strong></div>
+                    <div className="saas-admin-detail-field"><span>CONJUNTO</span><strong>{ad.adset_name || '-'}</strong></div>
+                    <div className="saas-admin-detail-field"><span>ANUNCIO</span><strong>{ad.ad_name || '-'}</strong></div>
+                    <div className="saas-admin-detail-field"><span>ESTADO</span><strong><StatusBadge value={ad.ad_status} /></strong></div>
+                    <button type="button" className="saas-admin-detail-field saas-meta-ad-copy-field" onClick={() => onCopyAdId?.(ad.ad_id)} title="Copiar Ad ID">
+                        <span>AD ID</span><strong>{ad.ad_id || '-'}</strong>
+                    </button>
+                </div>
+            </section>
+
+            <section className="saas-admin-related-block">
+                <h4>Metricas del periodo</h4>
+                {hasMetrics ? (
+                    <div className="saas-admin-kpis saas-meta-ad-metrics-grid">
+                        <MetaMetricCard label="Inversion" value={formatCurrencyLabel(ad.spend)} />
+                        <MetaMetricCard label="Impresiones" value={formatInteger(ad.impressions)} />
+                        <MetaMetricCard label="Alcance" value={formatInteger(ad.reach)} />
+                        <MetaMetricCard label="Clicks" value={formatInteger(ad.clicks)} />
+                        <MetaMetricCard label="CTR" value={`${formatRatio(ad.ctr)}%`} />
+                        <MetaMetricCard label="CPM" value={formatCurrencyLabel(ad.cpm)} />
+                        <MetaMetricCard label="CPC" value={formatCurrencyLabel(ad.cpc)} />
+                        <MetaMetricCard label="Frec." value={formatRatio(ad.frequency)} />
+                    </div>
+                ) : (
+                    <div className="saas-admin-empty-inline">Sin datos en este periodo</div>
+                )}
+            </section>
+
+            <section className="saas-admin-related-block">
+                <h4>Mensaje de bienvenida</h4>
+                {ad.greeting_text ? (
+                    <>
+                        <pre className="saas-meta-ad-greeting-text">{ad.greeting_text}</pre>
+                        {buttons.length ? (
+                            <div className="saas-meta-ad-greeting-chips">
+                                {buttons.map((button, index) => (
+                                    <span key={`${button.title || 'button'}_${index}`}> {button.title || '-'}</span>
+                                ))}
+                            </div>
+                        ) : null}
+                        <button type="button" className="saas-btn saas-btn-outline" onClick={onEditGreeting}>Editar greeting</button>
+                    </>
+                ) : (
+                    <>
+                        <div className="saas-admin-empty-inline">No hay mensaje de bienvenida sincronizado desde Meta para este anuncio.</div>
+                        <button type="button" className="saas-btn saas-btn-outline" onClick={onEditGreeting}>Agregar greeting manualmente</button>
+                    </>
+                )}
+            </section>
+
+            <section className="saas-admin-related-block">
+                <h4>Conversaciones</h4>
+                {statsLoading ? (
+                    <div className="saas-admin-empty-inline">Cargando conversaciones...</div>
+                ) : (
+                    <div className="saas-admin-detail-grid">
+                        <div className="saas-admin-detail-field"><span>Total de conversaciones</span><strong>{formatInteger(totalConversations)}</strong></div>
+                        <div className="saas-admin-detail-field"><span>Convertidas</span><strong>{formatInteger(stats?.converted || 0)}</strong></div>
+                        <div className="saas-admin-detail-field"><span>Tasa de conversion</span><strong>{formatRatio(stats?.conversionRate || 0)}%</strong></div>
+                    </div>
+                )}
+                {totalConversations > 0 ? (
+                    <button type="button" className="saas-btn saas-btn-outline" onClick={() => onOpenChats?.(ad.ad_id)}>
+                        Ver chats de este anuncio
+                    </button>
+                ) : null}
+            </section>
+
+            <section className="saas-admin-related-block">
+                <h4>Informacion del anuncio</h4>
+                <div className="saas-admin-detail-grid">
+                    <div className="saas-admin-detail-field"><span>Dias activo en el periodo</span><strong>{formatInteger(ad.days_active || 0)} dias</strong></div>
+                    <div className="saas-admin-detail-field"><span>Fecha primer dato</span><strong>{formatDateLabel(ad.date_start)}</strong></div>
+                    <div className="saas-admin-detail-field"><span>Fecha ultimo dato</span><strong>{formatDateLabel(ad.date_stop)}</strong></div>
+                </div>
+                {sourceUrl ? (
+                    <button type="button" className="saas-btn saas-btn-outline" onClick={() => window.open(sourceUrl, '_blank', 'noopener,noreferrer')}>
+                        Ver anuncio en Meta
+                    </button>
+                ) : null}
+            </section>
+        </div>
+    );
+}
+
 export default function MetaAdsCampaignsPage({ context = {} }) {
     const { notify } = useUiFeedback();
     const requestJson = typeof context?.requestJson === 'function' ? context.requestJson : null;
@@ -466,6 +651,12 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
     const [syncingCreatives, setSyncingCreatives] = useState(false);
     const [error, setError] = useState('');
     const [syncMessage, setSyncMessage] = useState('');
+    const [selectedAdId, setSelectedAdId] = useState('');
+    const [adStats, setAdStats] = useState(null);
+    const [adStatsLoading, setAdStatsLoading] = useState(false);
+    const [greetingModalOpen, setGreetingModalOpen] = useState(false);
+    const [greetingDraft, setGreetingDraft] = useState('');
+    const [savingGreeting, setSavingGreeting] = useState(false);
     const syncBusy = syncing || syncingCreatives;
 
     useEffect(() => {
@@ -514,11 +705,6 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
         []
     );
 
-    const effectiveColumns = useMemo(
-        () => normalizeColumns(META_ADS_COLUMNS, columnPrefs.visibleColumnKeys, columnPrefs.columnOrder),
-        [columnPrefs.columnOrder, columnPrefs.visibleColumnKeys]
-    );
-
     const filteredRows = useMemo(() => {
         const searchedRows = applySearch(rows, searchValue);
         return applyEntityFilters(searchedRows, activeFilters, filterDefinitions);
@@ -529,10 +715,47 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
         [columnPrefs.sort, filteredRows]
     );
 
-    const visibleRows = useMemo(() => {
-        if (sortedRows.length === 0) return sortedRows;
-        return [...sortedRows, buildSummaryRow(sortedRows)];
-    }, [sortedRows]);
+    const selectedAd = useMemo(
+        () => sortedRows.find((row) => String(row?.ad_id || '').trim() === selectedAdId) || null,
+        [selectedAdId, sortedRows]
+    );
+
+    useEffect(() => {
+        if (!selectedAdId) return;
+        if (selectedAd) return;
+        setSelectedAdId('');
+    }, [selectedAd, selectedAdId]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const adId = String(selectedAdId || '').trim();
+        if (!requestJson || !tenantId || !adId) {
+            setAdStats(null);
+            setAdStatsLoading(false);
+            return () => {
+                cancelled = true;
+            };
+        }
+        setAdStatsLoading(true);
+        setAdStats(null);
+        const query = new URLSearchParams({ tenantId });
+        requestJson(`/api/tenant/meta-ads/ad-stats/${encodeURIComponent(adId)}?${query.toString()}`, { tenantIdOverride: tenantId })
+            .then((payload) => {
+                if (!cancelled) setAdStats(payload || null);
+            })
+            .catch((statsError) => {
+                if (!cancelled) {
+                    setAdStats(null);
+                    notify({ type: 'error', message: String(statsError?.message || 'No se pudieron cargar conversaciones del anuncio.') });
+                }
+            })
+            .finally(() => {
+                if (!cancelled) setAdStatsLoading(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [notify, requestJson, selectedAdId, tenantId]);
 
     const handleSync = useCallback(async () => {
         if (!requestJson || !tenantId) return;
@@ -631,6 +854,66 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
         }
     }, [notify, requestJson, runSectionAction, tenantId]);
 
+    const copyAdId = useCallback((adId = '') => {
+        const cleanAdId = String(adId || '').trim();
+        if (!cleanAdId) return;
+        if (typeof navigator !== 'undefined' && navigator?.clipboard?.writeText) {
+            navigator.clipboard.writeText(cleanAdId).catch(() => {});
+        }
+        notify({ type: 'info', message: 'Ad ID copiado.' });
+    }, [notify]);
+
+    const openGreetingModal = useCallback(() => {
+        if (!selectedAd) return;
+        setGreetingDraft(String(selectedAd.greeting_text || ''));
+        setGreetingModalOpen(true);
+    }, [selectedAd]);
+
+    const closeGreetingModal = useCallback(() => {
+        if (savingGreeting) return;
+        setGreetingModalOpen(false);
+        setGreetingDraft('');
+    }, [savingGreeting]);
+
+    const saveGreeting = useCallback(async () => {
+        if (!requestJson || !tenantId || !selectedAd?.ad_id) return;
+        setSavingGreeting(true);
+        try {
+            await requestJson(`/api/tenant/meta-ads/creatives/${encodeURIComponent(selectedAd.ad_id)}`, {
+                method: 'PATCH',
+                tenantIdOverride: tenantId,
+                headers: { 'Content-Type': 'application/json' },
+                body: {
+                    tenantId,
+                    greetingText: greetingDraft
+                }
+            });
+            setRows((currentRows) => currentRows.map((row) => (
+                String(row?.ad_id || '').trim() === String(selectedAd.ad_id || '').trim()
+                    ? { ...row, greeting_text: String(greetingDraft || '').trim() }
+                    : row
+            )));
+            setGreetingModalOpen(false);
+            notify({ type: 'success', message: 'Greeting guardado.' });
+        } catch (saveError) {
+            notify({ type: 'error', message: String(saveError?.message || 'No se pudo guardar el greeting.') });
+        } finally {
+            setSavingGreeting(false);
+        }
+    }, [greetingDraft, notify, requestJson, selectedAd, tenantId]);
+
+    const openChatsForAd = useCallback((adId = '') => {
+        const cleanAdId = String(adId || '').trim();
+        if (!cleanAdId) return;
+        try {
+            window.localStorage.setItem('chat.filter.metaAdId', cleanAdId);
+            window.dispatchEvent(new CustomEvent('chat:filter-meta-ad', { detail: { adId: cleanAdId } }));
+        } catch {
+            // best-effort handoff to the operational chat.
+        }
+        notify({ type: 'info', message: 'Filtro de anuncio preparado para el chat operativo.' });
+    }, [notify]);
+
     const headerElement = (
         <SaasViewHeader
             title="Campañas Meta"
@@ -708,25 +991,71 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
         </div>
     ) : (
         <div className="saas-campaigns-pane">
-            <SaasDataTable
-                columns={effectiveColumns}
-                rows={visibleRows}
+            <MetaAdList
+                rows={sortedRows}
+                selectedId={selectedAdId}
                 loading={loading}
                 emptyText="No hay campañas Meta Ads para este rango."
-                enableInfinite={false}
-                sortConfig={columnPrefs.sort}
-                onSortChange={columnPrefs.setSort}
+                onSelect={setSelectedAdId}
             />
         </div>
     );
 
+    const rightPane = selectedAd ? (
+        <SaasDetailPanel
+            title={selectedAd.ad_name || 'Detalle de anuncio'}
+            subtitle={selectedAd.ad_id || ''}
+            className="saas-entity-detail-panel saas-meta-ad-detail-panel"
+            bodyClassName="saas-entity-detail-panel__body"
+            actions={(
+                <button type="button" className="saas-btn-cancel" onClick={() => setSelectedAdId('')}>
+                    Volver
+                </button>
+            )}
+        >
+            <MetaAdDetail
+                ad={selectedAd}
+                stats={adStats}
+                statsLoading={adStatsLoading}
+                onBack={() => setSelectedAdId('')}
+                onCopyAdId={copyAdId}
+                onEditGreeting={openGreetingModal}
+                onOpenChats={openChatsForAd}
+            />
+        </SaasDetailPanel>
+    ) : (
+        <SaasDetailPanel
+            title="Detalle de anuncio"
+            subtitle="Selecciona un anuncio"
+            className="saas-entity-detail-panel saas-meta-ad-detail-panel"
+            bodyClassName="saas-entity-detail-panel__body"
+        >
+            <MetaAdDetail />
+        </SaasDetailPanel>
+    );
+
     return (
-        <SaasEntityPage
-            id="saas_meta_ads_campaigns"
-            sectionKey="meta_ads_campaigns"
-            header={headerElement}
-            left={leftPane}
-            className="saas-entity-page--campaigns"
-        />
+        <>
+            <SaasEntityPage
+                id="saas_meta_ads_campaigns"
+                sectionKey="meta_ads_campaigns"
+                header={headerElement}
+                left={leftPane}
+                right={rightPane}
+                selectedId={selectedAdId}
+                layoutClassName="saas-entity-layout saas-meta-ads-detail-layout"
+                className="saas-entity-page--campaigns saas-entity-page--meta-ads"
+            />
+            {greetingModalOpen ? (
+                <MetaAdGreetingModal
+                    ad={selectedAd}
+                    value={greetingDraft}
+                    saving={savingGreeting}
+                    onChange={setGreetingDraft}
+                    onCancel={closeGreetingModal}
+                    onSave={saveGreeting}
+                />
+            ) : null}
+        </>
     );
 }

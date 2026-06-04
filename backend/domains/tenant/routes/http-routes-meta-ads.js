@@ -22,6 +22,28 @@ function isOwnerForTenant(req = {}, tenantId = '') {
     });
 }
 
+function canEditMetaAdsCreative(req = {}, tenantId = '') {
+    const user = req?.authContext?.user && typeof req.authContext.user === 'object'
+        ? req.authContext.user
+        : null;
+    if (!user) return false;
+    if (user.isSuperAdmin === true) return true;
+    const cleanTenantId = String(tenantId || '').trim();
+    const directRole = String(user.role || '').trim().toLowerCase();
+    const directTenantId = String(user.tenantId || '').trim();
+    if (['owner', 'admin'].includes(directRole) && (!cleanTenantId || !directTenantId || directTenantId === cleanTenantId)) {
+        return true;
+    }
+    return (Array.isArray(user.memberships) ? user.memberships : []).some((membership) => {
+        const membershipTenantId = String(membership?.tenantId || membership?.tenant_id || '').trim();
+        const membershipRole = String(membership?.role || '').trim().toLowerCase();
+        const membershipActive = membership?.active !== false;
+        return membershipActive
+            && ['owner', 'admin'].includes(membershipRole)
+            && (!cleanTenantId || membershipTenantId === cleanTenantId);
+    });
+}
+
 function registerTenantMetaAdsHttpRoutes({
     app,
     accessPolicyService,
@@ -109,6 +131,47 @@ function registerTenantMetaAdsHttpRoutes({
             });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo sincronizar Meta Ads.') });
+        }
+    });
+
+    app.get('/api/tenant/meta-ads/ad-stats/:adId', async (req, res) => {
+        const tenantId = String(req.query?.tenantId || req.body?.tenantId || '').trim();
+        const adId = String(req.params?.adId || '').trim();
+        if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+        if (!adId) return res.status(400).json({ ok: false, error: 'adId invalido.' });
+        if (!isTenantAllowedForUser(req, tenantId)
+            || !hasAnyPermission(req, [
+                accessPolicyService.PERMISSIONS.TENANT_META_ADS_READ,
+                accessPolicyService.PERMISSIONS.TENANT_META_ADS_MANAGE
+            ])) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const stats = await metaAdsSyncService.getMetaAdConversationStats(tenantId, adId);
+            return res.json({ ok: true, tenantId, adId, ...stats });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron cargar estadisticas del anuncio.') });
+        }
+    });
+
+    app.patch('/api/tenant/meta-ads/creatives/:adId', async (req, res) => {
+        const source = req.body && typeof req.body === 'object' ? req.body : {};
+        const tenantId = String(source?.tenantId || req.query?.tenantId || '').trim();
+        const adId = String(req.params?.adId || '').trim();
+        if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+        if (!adId) return res.status(400).json({ ok: false, error: 'adId invalido.' });
+        if (!isTenantAllowedForUser(req, tenantId)
+            || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_META_ADS_MANAGE)
+            || !canEditMetaAdsCreative(req, tenantId)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            await metaAdsSyncService.updateMetaAdCreativeGreeting(tenantId, adId, source?.greetingText);
+            return res.json({ ok: true });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar el greeting Meta.') });
         }
     });
 }
