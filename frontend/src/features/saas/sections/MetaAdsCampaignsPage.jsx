@@ -447,7 +447,9 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
     const canManageMetaAds = context?.canManageMetaAds === true;
     const currentUser = context?.currentUser && typeof context.currentUser === 'object' ? context.currentUser : {};
     const normalizedUserRole = String(context?.normalizedRole || context?.userRole || currentUser?.role || '').trim().toLowerCase();
-    const isOwnerUser = currentUser?.isSuperAdmin === true
+    const canSyncCreatives = context?.isSuperAdmin === true
+        || currentUser?.isSuperAdmin === true
+        || normalizedUserRole === 'superadmin'
         || normalizedUserRole === 'owner'
         || (Array.isArray(currentUser?.memberships) ? currentUser.memberships : []).some((membership) => (
             membership?.active !== false
@@ -642,10 +644,11 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
                 label: syncing ? 'Sincronizando...' : 'Sincronizar',
                 onClick: handleSync,
                 disabled: tenantScopeLocked || syncBusy || loading || !tenantId || !canManageMetaAds
-            }, ...(isOwnerUser ? [{
+            }, ...(canSyncCreatives ? [{
                 key: 'sync_creatives',
                 label: syncingCreatives ? 'Creativos...' : 'Sincronizar creativos',
                 variant: 'secondary',
+                title: 'Sincronizar mensajes de bienvenida de los anuncios activos',
                 onClick: handleSyncCreatives,
                 disabled: tenantScopeLocked || syncBusy || loading || !tenantId || !canManageMetaAds
             }] : [])]}

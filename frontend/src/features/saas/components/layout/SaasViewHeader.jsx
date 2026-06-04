@@ -315,8 +315,9 @@ export default function SaasViewHeader({
             {inlineActions.map((action, index) => {
               const ActionIcon = resolveHeaderActionIcon(action);
               const actionLabel = resolveHeaderActionLabel(action);
+              const actionTitle = String(action.title || actionLabel).trim() || actionLabel;
               return (
-                <button key={String(action.key || action.label || index)} type="button" className={`saas-btn saas-header-btn saas-header-btn--${resolveHeaderActionVariant(action)} saas-view-header__action-btn`} onClick={typeof action.onClick === 'function' ? action.onClick : undefined} disabled={Boolean(action.disabled)} title={actionLabel}>
+                <button key={String(action.key || action.label || index)} type="button" className={`saas-btn saas-header-btn saas-header-btn--${resolveHeaderActionVariant(action)} saas-view-header__action-btn`} onClick={typeof action.onClick === 'function' ? action.onClick : undefined} disabled={Boolean(action.disabled)} title={actionTitle}>
                   {ActionIcon ? <ActionIcon size={15} strokeWidth={2} /> : null}
                   <span className="saas-btn-text">{actionLabel}</span>
                 </button>
@@ -333,8 +334,9 @@ export default function SaasViewHeader({
                     {overflowActions.map((action, index) => {
                       const ActionIcon = resolveHeaderActionIcon(action);
                       const actionLabel = resolveHeaderActionLabel(action);
+                      const actionTitle = String(action.title || actionLabel).trim() || actionLabel;
                       return (
-                        <button key={`overflow_${String(action.key || action.label || index)}`} type="button" className={`saas-btn saas-header-btn saas-header-btn--${resolveHeaderActionVariant(action)}`} onClick={() => { setOverflowOpen(false); action?.onClick?.(); }} disabled={Boolean(action.disabled)}>
+                        <button key={`overflow_${String(action.key || action.label || index)}`} type="button" className={`saas-btn saas-header-btn saas-header-btn--${resolveHeaderActionVariant(action)}`} onClick={() => { setOverflowOpen(false); action?.onClick?.(); }} disabled={Boolean(action.disabled)} title={actionTitle}>
                           {ActionIcon ? <ActionIcon size={15} strokeWidth={2} /> : null}
                           <span className="saas-btn-text">{actionLabel}</span>
                         </button>

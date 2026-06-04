@@ -312,7 +312,7 @@ async function callMetaBatch(adIds = [], accessToken = '') {
         .filter(Boolean)
         .map((adId) => ({
             method: 'GET',
-            relative_url: `${adId}?fields=creative{id,object_story_spec{link_data{page_welcome_message}}}`
+            relative_url: `${adId}?fields=creative{id,object_story_spec{link_data{page_welcome_message},video_data{page_welcome_message},template_data{page_welcome_message},offer_data{page_welcome_message},photo_data{page_welcome_message},text_data{page_welcome_message}}}`
         }));
     if (batch.length === 0) return [];
 
@@ -483,27 +483,39 @@ async function upsertStructureRow(tenantId, row = {}) {
 
 function parsePageWelcomeMessage(rawWelcome = null) {
     if (!rawWelcome) return null;
-    if (typeof rawWelcome === 'string') return parseJsonSafely(rawWelcome, null);
+    if (typeof rawWelcome === 'string') {
+        try {
+            return JSON.parse(rawWelcome);
+        } catch (error) {
+            console.warn('[MetaSync] No se pudo parsear page_welcome_message:', String(error?.message || error));
+            return null;
+        }
+    }
     return isPlainObject(rawWelcome) ? rawWelcome : null;
 }
 
 function normalizeGreetingText(value = '') {
     const text = toNullableText(value);
-    return text ? text.replace(/\{\{user_first_name\}\}/g, '{{nombre}}') : null;
+    return text ? text.replace(/\{\{user_first_name\}\}/g, '{{nombre}}').trim() : null;
 }
 
 function normalizeCreativeButtons(welcomeObj = {}) {
     const source = isPlainObject(welcomeObj) ? welcomeObj : {};
-    const message = isPlainObject(source?.text_format?.message) ? source.text_format.message : {};
-    const iceBreakers = Array.isArray(message?.ice_breakers) ? message.ice_breakers : [];
-    const quickReplies = Array.isArray(message?.quick_replies) ? message.quick_replies : [];
+    const textFormat = isPlainObject(source?.text_format) ? source.text_format : {};
+    const message = isPlainObject(textFormat?.message) ? textFormat.message : {};
+    const iceBreakers = Array.isArray(message?.ice_breakers)
+        ? message.ice_breakers
+        : (Array.isArray(source?.ice_breakers) ? source.ice_breakers : []);
+    const quickReplies = Array.isArray(message?.quick_replies)
+        ? message.quick_replies
+        : (Array.isArray(source?.quick_replies) ? source.quick_replies : []);
 
     return [
-        ...iceBreakers.map((button) => ({
+        ...iceBreakers.filter((button) => button?.title).map((button) => ({
             title: toNullableText(button?.title),
             type: 'ice_breaker'
         })),
-        ...quickReplies.map((button) => ({
+        ...quickReplies.filter((button) => button?.title).map((button) => ({
             title: toNullableText(button?.title),
             type: 'quick_reply'
         }))
@@ -513,19 +525,28 @@ function normalizeCreativeButtons(welcomeObj = {}) {
 function extractCreativePayload(adId = '', payload = {}) {
     const source = isPlainObject(payload) ? payload : {};
     const creative = isPlainObject(source?.creative) ? source.creative : {};
-    const objectStorySpec = isPlainObject(creative?.object_story_spec) ? creative.object_story_spec : {};
-    const linkData = isPlainObject(objectStorySpec?.link_data) ? objectStorySpec.link_data : {};
-    const pageWelcomeMessage = parsePageWelcomeMessage(linkData?.page_welcome_message);
+    const storySpec = isPlainObject(creative?.object_story_spec) ? creative.object_story_spec : {};
+    const candidates = [
+        storySpec?.link_data,
+        storySpec?.video_data,
+        storySpec?.template_data,
+        storySpec?.offer_data,
+        storySpec?.photo_data,
+        storySpec?.text_data
+    ].filter(isPlainObject);
+    const dataSource = candidates.find((entry) => entry?.page_welcome_message) || null;
+    const pageWelcomeMessage = parsePageWelcomeMessage(dataSource?.page_welcome_message);
     const textFormat = isPlainObject(pageWelcomeMessage?.text_format) ? pageWelcomeMessage.text_format : {};
     const message = isPlainObject(textFormat?.message) ? textFormat.message : {};
+    const welcomeMessage = isPlainObject(pageWelcomeMessage?.message) ? pageWelcomeMessage.message : {};
     const autofillMessage = isPlainObject(message?.autofill_message)
         ? message.autofill_message
-        : (isPlainObject(textFormat?.autofill_message) ? textFormat.autofill_message : {});
+        : (isPlainObject(pageWelcomeMessage?.autofill_message) ? pageWelcomeMessage.autofill_message : {});
 
     return {
         ad_id: toText(adId),
         creative_id: toNullableText(creative?.id),
-        greeting_text: normalizeGreetingText(message?.text),
+        greeting_text: normalizeGreetingText(message?.text || welcomeMessage?.text || pageWelcomeMessage?.text),
         autofill_message: toNullableText(autofillMessage?.content),
         buttons_json: normalizeCreativeButtons(pageWelcomeMessage),
         raw_creative: source
