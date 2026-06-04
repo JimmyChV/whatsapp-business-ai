@@ -109,6 +109,7 @@ const ConversationOriginBlock = ({ origin = null }) => {
         const campaignName = String(origin.campaignName || origin.campaign_name || origin.campaignId || origin.campaign_id || '').trim();
         const adsetName = String(origin.adsetName || origin.adset_name || origin.adsetId || origin.adset_id || '').trim();
         const adName = String(origin.adName || origin.ad_name || origin.referralHeadline || origin.referral_headline || originLabel || '').trim();
+        const referralSourceUrl = String(origin.referralSourceUrl || origin.referral_source_url || origin.sourceUrl || '').trim();
         return (
             <div className="chat-origin-card chat-origin-card--meta">
                 <div className="chat-origin-card-title"><span aria-hidden="true">{icon}</span><span>Cliente desde anuncio Meta</span></div>
@@ -127,6 +128,16 @@ const ConversationOriginBlock = ({ origin = null }) => {
                     <div className="chat-origin-chips">
                         {buttons.map((button, index) => <span key={`${button.label}_${index}`}>{button.label}</span>)}
                     </div>
+                )}
+                {referralSourceUrl && (
+                    <button
+                        type="button"
+                        className="chat-origin-action-btn"
+                        title="Ver el anuncio en Facebook/Instagram"
+                        onClick={() => window.open(referralSourceUrl, '_blank')}
+                    >
+                        🎬 Ver anuncio →
+                    </button>
                 )}
                 {greetingText && <div className="chat-origin-note">Meta envio este mensaje automaticamente. No aparece en el chat.</div>}
             </div>

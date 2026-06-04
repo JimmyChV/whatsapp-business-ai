@@ -445,6 +445,15 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
     const tenantId = String(context?.settingsTenantId || context?.selectedTenantId || context?.tenantScopeId || '').trim();
     const tenantScopeLocked = context?.tenantScopeLocked === true;
     const canManageMetaAds = context?.canManageMetaAds === true;
+    const currentUser = context?.currentUser && typeof context.currentUser === 'object' ? context.currentUser : {};
+    const normalizedUserRole = String(context?.normalizedRole || context?.userRole || currentUser?.role || '').trim().toLowerCase();
+    const isOwnerUser = currentUser?.isSuperAdmin === true
+        || normalizedUserRole === 'owner'
+        || (Array.isArray(currentUser?.memberships) ? currentUser.memberships : []).some((membership) => (
+            membership?.active !== false
+            && String(membership?.role || '').trim().toLowerCase() === 'owner'
+            && (!tenantId || String(membership?.tenantId || membership?.tenant_id || '').trim() === tenantId)
+        ));
     const columnPrefs = useSaasViewPreferences('meta_ads_campaigns', META_ADS_COLUMNS, { requestJson });
     const [dateRange, setDateRange] = useState(() => readStoredDateRange(tenantId));
     const [searchValue, setSearchValue] = useState('');
@@ -452,8 +461,10 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
     const [syncing, setSyncing] = useState(false);
+    const [syncingCreatives, setSyncingCreatives] = useState(false);
     const [error, setError] = useState('');
     const [syncMessage, setSyncMessage] = useState('');
+    const syncBusy = syncing || syncingCreatives;
 
     useEffect(() => {
         setDateRange(readStoredDateRange(tenantId));
@@ -571,6 +582,53 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
         }
     }, [loadInsights, notify, requestJson, runSectionAction, tenantId]);
 
+    const handleSyncCreatives = useCallback(async () => {
+        if (!requestJson || !tenantId) return;
+        const executeSync = async () => {
+            setSyncingCreatives(true);
+            setError('');
+            setSyncMessage('');
+            try {
+                const payload = await requestJson('/api/meta-ads/sync', {
+                    method: 'POST',
+                    tenantIdOverride: tenantId,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: { tenantId, mode: 'creatives' }
+                });
+                const nextMessage = `${Number(payload?.creativesCount || 0).toLocaleString('es-PE')} creativos Meta sincronizados.`;
+                setSyncMessage(nextMessage);
+                return { ...payload, message: nextMessage };
+            } catch (syncError) {
+                const nextError = String(syncError?.message || 'No se pudieron sincronizar creativos Meta.');
+                setError(nextError);
+                throw syncError;
+            } finally {
+                setSyncingCreatives(false);
+            }
+        };
+
+        if (runSectionAction) {
+            return runSectionAction('sync_meta_ads_creatives', executeSync, {
+                label: 'creativos Meta',
+                successMessage: '',
+                onSuccess: (payload) => {
+                    const nextMessage = String(payload?.message || '').trim();
+                    if (nextMessage) notify({ type: 'info', message: nextMessage });
+                }
+            });
+        }
+
+        try {
+            const payload = await executeSync();
+            if (payload?.message) notify({ type: 'info', message: payload.message });
+            return payload;
+        } catch (syncError) {
+            const nextError = String(syncError?.message || 'No se pudieron sincronizar creativos Meta.');
+            notify({ type: 'error', message: nextError });
+            return undefined;
+        }
+    }, [notify, requestJson, runSectionAction, tenantId]);
+
     const headerElement = (
         <SaasViewHeader
             title="Campañas Meta"
@@ -578,14 +636,20 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
             searchValue={searchValue}
             onSearchChange={setSearchValue}
             searchPlaceholder="Buscar campaña, conjunto o anuncio..."
-            searchDisabled={tenantScopeLocked || loading || syncing}
+            searchDisabled={tenantScopeLocked || loading || syncBusy}
             actions={[{
                 key: 'sync',
                 label: syncing ? 'Sincronizando...' : 'Sincronizar',
                 onClick: handleSync,
-                disabled: tenantScopeLocked || syncing || loading || !tenantId || !canManageMetaAds
-            }]}
-            actionsExtra={<ColumnMenu columns={META_ADS_COLUMNS} preferences={columnPrefs} disabled={tenantScopeLocked || loading || syncing} />}
+                disabled: tenantScopeLocked || syncBusy || loading || !tenantId || !canManageMetaAds
+            }, ...(isOwnerUser ? [{
+                key: 'sync_creatives',
+                label: syncingCreatives ? 'Creativos...' : 'Sincronizar creativos',
+                variant: 'secondary',
+                onClick: handleSyncCreatives,
+                disabled: tenantScopeLocked || syncBusy || loading || !tenantId || !canManageMetaAds
+            }] : [])]}
+            actionsExtra={<ColumnMenu columns={META_ADS_COLUMNS} preferences={columnPrefs} disabled={tenantScopeLocked || loading || syncBusy} />}
             filters={{
                 columns: filterDefinitions,
                 items: activeFilters,
@@ -606,7 +670,7 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
                                 id="meta-ads-date-start"
                                 type="date"
                                 value={dateRange.dateStart}
-                                disabled={tenantScopeLocked || loading || syncing}
+                                disabled={tenantScopeLocked || loading || syncBusy}
                                 onChange={(event) => setDateRange((current) => ({ ...current, dateStart: event.target.value }))}
                             />
                         </div>
@@ -616,7 +680,7 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
                                 id="meta-ads-date-stop"
                                 type="date"
                                 value={dateRange.dateStop}
-                                disabled={tenantScopeLocked || loading || syncing}
+                                disabled={tenantScopeLocked || loading || syncBusy}
                                 onChange={(event) => setDateRange((current) => ({ ...current, dateStop: event.target.value }))}
                             />
                         </div>

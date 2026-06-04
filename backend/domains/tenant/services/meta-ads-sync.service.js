@@ -742,9 +742,9 @@ async function syncAdCreatives(tenantId = DEFAULT_TENANT_ID, configOverride = nu
           WHERE tenant_id = $1
             AND object_type = 'ad'
             AND COALESCE(object_id, '') <> ''
-            AND UPPER(COALESCE(status, '')) IN ('ACTIVE', 'PAUSED')
-            AND synced_at >= NOW() - INTERVAL '90 days'
-          ORDER BY synced_at DESC, object_id ASC`,
+            AND status = 'ACTIVE'
+          ORDER BY synced_at DESC NULLS LAST, object_id ASC
+          LIMIT 30`,
         [cleanTenantId]
     );
     const ads = (Array.isArray(rows) ? rows : []).map((row) => toText(row?.object_id)).filter(Boolean);
@@ -794,8 +794,8 @@ async function syncAdCreatives(tenantId = DEFAULT_TENANT_ID, configOverride = nu
             await processBatchResults(batch, results);
         } catch (error) {
             if (extractMetaErrorCode(error) === 17) {
-                console.warn('[MetaSync] Rate limit, esperando 60s...');
-                await sleep(60000);
+                console.warn('[MetaSync] Rate limit, esperando 120s...');
+                await sleep(120000);
                 try {
                     const results = await callMetaBatch(batch, config.accessToken);
                     await processBatchResults(batch, results);
@@ -814,7 +814,7 @@ async function syncAdCreatives(tenantId = DEFAULT_TENANT_ID, configOverride = nu
                 });
             }
         }
-        await sleep(2000);
+        await sleep(5000);
     }
 
     const reprocess = await reprocessExistingCreatives(cleanTenantId);

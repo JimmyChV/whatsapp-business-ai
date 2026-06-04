@@ -1,5 +1,27 @@
 const metaAdsSyncService = require('../services/meta-ads-sync.service');
 
+function isOwnerForTenant(req = {}, tenantId = '') {
+    const user = req?.authContext?.user && typeof req.authContext.user === 'object'
+        ? req.authContext.user
+        : null;
+    if (!user) return false;
+    if (user.isSuperAdmin === true) return true;
+    const cleanTenantId = String(tenantId || '').trim();
+    const directRole = String(user.role || '').trim().toLowerCase();
+    const directTenantId = String(user.tenantId || '').trim();
+    if (directRole === 'owner' && (!cleanTenantId || !directTenantId || directTenantId === cleanTenantId)) {
+        return true;
+    }
+    return (Array.isArray(user.memberships) ? user.memberships : []).some((membership) => {
+        const membershipTenantId = String(membership?.tenantId || membership?.tenant_id || '').trim();
+        const membershipRole = String(membership?.role || '').trim().toLowerCase();
+        const membershipActive = membership?.active !== false;
+        return membershipActive
+            && membershipRole === 'owner'
+            && (!cleanTenantId || membershipTenantId === cleanTenantId);
+    });
+}
+
 function registerTenantMetaAdsHttpRoutes({
     app,
     accessPolicyService,
@@ -54,13 +76,26 @@ function registerTenantMetaAdsHttpRoutes({
                 });
             }
 
+            if (mode === 'creatives') {
+                if (!isOwnerForTenant(req, tenantId)) {
+                    return res.status(403).json({ ok: false, error: 'Solo un owner puede sincronizar creativos Meta manualmente.' });
+                }
+                const creatives = await metaAdsSyncService.syncAdCreatives(tenantId);
+                return res.json({
+                    ok: true,
+                    tenantId,
+                    mode: 'creatives',
+                    creativesCount: Number(creatives?.creativesCount || 0),
+                    creatives
+                });
+            }
+
             const now = new Date();
             const today = now.toISOString().slice(0, 10);
             const dateStart = String(source?.dateStart || '').trim() || today;
             const dateStop = String(source?.dateStop || '').trim() || dateStart;
             const structure = await metaAdsSyncService.syncMetaAdsStructure(tenantId);
             const insights = await metaAdsSyncService.syncMetaAdsInsights(tenantId, dateStart, dateStop);
-            const creatives = await metaAdsSyncService.syncAdCreatives(tenantId);
             return res.json({
                 ok: true,
                 tenantId,
@@ -69,10 +104,8 @@ function registerTenantMetaAdsHttpRoutes({
                 dateStop,
                 adsCount: Number(structure?.totalCount || 0),
                 insightsCount: Number(insights?.insightsCount || 0),
-                creativesCount: Number(creatives?.creativesCount || 0),
                 structure,
-                insights,
-                creatives
+                insights
             });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo sincronizar Meta Ads.') });
