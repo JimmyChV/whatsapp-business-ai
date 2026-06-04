@@ -16,7 +16,8 @@ function createSocketChatHistoryMediaService({
     extractLocationInfo,
     getOutgoingAgentMeta,
     mergeAgentMeta,
-    getSortedVisibleChats
+    getSortedVisibleChats,
+    chatOriginService
 } = {}) {
     const MESSAGE_WINDOW_MS = 24 * 60 * 60 * 1000;
     const HISTORY_FETCH_LIMIT = 300;
@@ -174,6 +175,32 @@ function createSocketChatHistoryMediaService({
         };
     };
 
+    const resolveChatOriginForHistory = async (tenantId = 'default', { chatId = '', scopeModuleId = '' } = {}) => {
+        const safeChatId = String(chatId || '').trim();
+        if (!safeChatId || typeof chatOriginService?.getChatOrigin !== 'function') return null;
+        const safeScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
+        try {
+            const scopedOrigin = await chatOriginService.getChatOrigin(tenantId, {
+                chatId: safeChatId,
+                scopeModuleId: safeScopeModuleId
+            });
+            if (scopedOrigin) return scopedOrigin;
+            if (!safeScopeModuleId) return null;
+            return await chatOriginService.getChatOrigin(tenantId, {
+                chatId: safeChatId,
+                scopeModuleId: ''
+            });
+        } catch (error) {
+            console.warn('[chat-history] No se pudo resolver origen del chat.', {
+                tenantId,
+                chatId: safeChatId,
+                scopeModuleId: safeScopeModuleId || null,
+                error: String(error?.message || error)
+            });
+            return null;
+        }
+    };
+
     const registerChatHistoryHandlers = ({
         socket,
         tenantId = 'default',
@@ -206,12 +233,17 @@ function createSocketChatHistoryMediaService({
                         limit: HISTORY_FETCH_LIMIT,
                         scopeModuleId
                     });
+                    const origin = await resolveChatOriginForHistory(tenantId, {
+                        chatId: fallbackHistory?.chatId || historyChatId,
+                        scopeModuleId
+                    });
                     socket.emit('chat_history', {
                         ...fallbackHistory,
                         chatId: requestedScopedChatId || fallbackHistory?.chatId || historyChatId,
                         requestedChatId: requestedRawChatId,
                         baseChatId: fallbackHistory?.chatId || historyChatId,
-                        scopeModuleId: scopeModuleId || null
+                        scopeModuleId: scopeModuleId || null,
+                        origin
                     });
                     return;
                 }
@@ -344,6 +376,10 @@ function createSocketChatHistoryMediaService({
                 const selectedBaseChatId = useFallback
                     ? (historyFallback?.chatId || historyChatId)
                     : historyChatId;
+                const origin = await resolveChatOriginForHistory(tenantId, {
+                    chatId: selectedBaseChatId,
+                    scopeModuleId
+                });
 
                 socket.emit('chat_history', {
                     chatId: requestedScopedChatId || selectedBaseChatId,
@@ -352,7 +388,8 @@ function createSocketChatHistoryMediaService({
                     scopeModuleId: scopeModuleId || null,
                     windowOpen: Boolean(historyFallback?.windowOpen),
                     windowExpiresAt: historyFallback?.windowExpiresAt || null,
-                    messages: selectedMessages
+                    messages: selectedMessages,
+                    origin
                 });
 
                 // Avoid blocking chat open while media is downloaded/cached.
@@ -395,7 +432,11 @@ function createSocketChatHistoryMediaService({
                         chatId: requestedScopedChatId || fallbackHistory?.chatId || scopedTarget.baseChatId || requestedRawChatId,
                         requestedChatId: requestedRawChatId,
                         baseChatId: fallbackHistory?.chatId || scopedTarget.baseChatId || requestedRawChatId,
-                        scopeModuleId: scopeModuleId || null
+                        scopeModuleId: scopeModuleId || null,
+                        origin: await resolveChatOriginForHistory(tenantId, {
+                            chatId: fallbackHistory?.chatId || scopedTarget.baseChatId || requestedRawChatId,
+                            scopeModuleId
+                        })
                     });
                 } catch (historyErr) {
                     socket.emit('chat_history', {

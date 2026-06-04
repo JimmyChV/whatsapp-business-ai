@@ -833,6 +833,10 @@ export default function useSocketChatConversationEvents({
             }
             const nextWindowOpen = Boolean(data?.windowOpen);
             const nextWindowExpiresAt = String(data?.windowExpiresAt || '').trim() || null;
+            const hasOriginPayload = Object.prototype.hasOwnProperty.call(data || {}, 'origin');
+            const nextOrigin = hasOriginPayload && data?.origin && typeof data.origin === 'object'
+                ? data.origin
+                : null;
             setChats((prev) => prev.map((chat) => (
                 chatIdsReferSameScope(String(chat?.id || ''), resolvedChatId)
                     ? {
@@ -861,7 +865,8 @@ export default function useSocketChatConversationEvents({
                             ? (String(latestHistoryMessage?.sentViaChannelType || chat?.lastMessageChannelType || '').trim().toLowerCase() || null)
                             : chat?.lastMessageChannelType,
                         windowOpen: nextWindowOpen,
-                        windowExpiresAt: nextWindowExpiresAt
+                        windowExpiresAt: nextWindowExpiresAt,
+                        origin: hasOriginPayload ? nextOrigin : chat?.origin
                     }
                     : chat
             )));

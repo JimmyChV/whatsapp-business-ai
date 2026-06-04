@@ -56,6 +56,29 @@ const shouldFetchOriginForChat = (chat = null, messages = []) => {
     return (Date.now() - Math.max(...timestamps)) <= CHAT_ORIGIN_RECENT_WINDOW_MS;
 };
 
+const buildChatOriginCacheKey = (chatId = '', scopeModuleId = '') => {
+    const safeChatId = String(chatId || '').trim();
+    const safeScopeModuleId = String(scopeModuleId || '').trim().toLowerCase();
+    return `${safeChatId}::${safeScopeModuleId}`;
+};
+
+const getChatOriginState = (chat = null) => {
+    if (!chat || typeof chat !== 'object') return { hasValue: false, origin: null };
+    if (Object.prototype.hasOwnProperty.call(chat, 'origin')) {
+        return {
+            hasValue: true,
+            origin: chat.origin && typeof chat.origin === 'object' ? chat.origin : null
+        };
+    }
+    if (Object.prototype.hasOwnProperty.call(chat, 'chatOrigin')) {
+        return {
+            hasValue: true,
+            origin: chat.chatOrigin && typeof chat.chatOrigin === 'object' ? chat.chatOrigin : null
+        };
+    }
+    return { hasValue: false, origin: null };
+};
+
 const normalizeOriginButtons = (buttons = []) => (
     Array.isArray(buttons)
         ? buttons.map((button) => {
@@ -289,6 +312,7 @@ const ChatWindow = ({
         : null;
     const activeAdOriginName = String(activeAdOrigin?.adName || '').trim();
     const [chatOrigin, setChatOrigin] = React.useState(null);
+    const chatOriginCacheRef = useRef({});
     const mobileHeaderSubtitle = [headerLocation, headerPhone]
         .map((value) => String(value || '').trim())
         .filter(Boolean)
@@ -327,8 +351,21 @@ const ChatWindow = ({
     useEffect(() => {
         const baseChatId = String(activeChatDetails?.baseChatId || activeChatDetails?.id || '').trim();
         const scopeForOrigin = String(activeChatDetails?.scopeModuleId || activeScopeModuleId || '').trim();
-        setChatOrigin(null);
-        if (!baseChatId || !shouldFetchOriginForChat(activeChatDetails, messages)) return undefined;
+        const cacheKey = buildChatOriginCacheKey(baseChatId, scopeForOrigin);
+        const embeddedOrigin = getChatOriginState(activeChatDetails);
+        if (embeddedOrigin.hasValue) {
+            chatOriginCacheRef.current[cacheKey] = embeddedOrigin.origin || null;
+            setChatOrigin(embeddedOrigin.origin || null);
+            return undefined;
+        }
+        if (Object.prototype.hasOwnProperty.call(chatOriginCacheRef.current, cacheKey)) {
+            setChatOrigin(chatOriginCacheRef.current[cacheKey] || null);
+            return undefined;
+        }
+        if (!baseChatId || !shouldFetchOriginForChat(activeChatDetails, messages)) {
+            setChatOrigin(null);
+            return undefined;
+        }
 
         const controller = new AbortController();
         const query = new URLSearchParams();
@@ -340,11 +377,20 @@ const ChatWindow = ({
         })
             .then((response) => (response.ok ? response.json() : null))
             .then((payload) => {
-                if (!payload?.ok) return;
-                setChatOrigin(payload.origin || null);
+                if (!payload?.ok) {
+                    chatOriginCacheRef.current[cacheKey] = null;
+                    setChatOrigin(null);
+                    return;
+                }
+                const nextOrigin = payload.origin || null;
+                chatOriginCacheRef.current[cacheKey] = nextOrigin;
+                setChatOrigin(nextOrigin);
             })
             .catch((error) => {
-                if (error?.name !== 'AbortError') setChatOrigin(null);
+                if (error?.name !== 'AbortError') {
+                    chatOriginCacheRef.current[cacheKey] = null;
+                    setChatOrigin(null);
+                }
             });
 
         return () => controller.abort();

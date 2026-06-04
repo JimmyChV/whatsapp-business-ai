@@ -343,7 +343,8 @@ class SocketManager {
             extractLocationInfo,
             getOutgoingAgentMeta,
             mergeAgentMeta,
-            getSortedVisibleChats: this.getSortedVisibleChats.bind(this)
+            getSortedVisibleChats: this.getSortedVisibleChats.bind(this),
+            chatOriginService
         });
         this.chatStateLabelsService = createSocketChatStateLabelsService({
             messageHistoryService,
