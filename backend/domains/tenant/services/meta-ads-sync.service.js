@@ -758,14 +758,20 @@ async function syncAdCreatives(tenantId = DEFAULT_TENANT_ID, configOverride = nu
         : await getMetaAdsConfig(tenantId);
     const cleanTenantId = normalizeTenantId(config?.tenantId || tenantId || DEFAULT_TENANT_ID);
     const { rows } = await queryPostgres(
-        `SELECT object_id
-           FROM tenant_meta_ads_structure
-          WHERE tenant_id = $1
-            AND object_type = 'ad'
-            AND COALESCE(object_id, '') <> ''
-            AND status = 'ACTIVE'
-          ORDER BY synced_at DESC NULLS LAST, object_id ASC
-          LIMIT 30`,
+        `SELECT s.object_id,
+                CASE WHEN c.creative_id IS NOT NULL THEN TRUE ELSE FALSE END AS already_synced
+           FROM tenant_meta_ads_structure s
+           LEFT JOIN tenant_meta_ads_creatives c
+             ON c.tenant_id = s.tenant_id
+            AND c.ad_id = s.object_id
+          WHERE s.tenant_id = $1
+            AND s.object_type = 'ad'
+            AND COALESCE(s.object_id, '') <> ''
+            AND (
+              s.status = 'ACTIVE'
+              OR (s.status = 'PAUSED' AND c.creative_id IS NOT NULL)
+            )
+          ORDER BY s.synced_at DESC NULLS LAST, s.object_id ASC`,
         [cleanTenantId]
     );
     const ads = (Array.isArray(rows) ? rows : []).map((row) => toText(row?.object_id)).filter(Boolean);
