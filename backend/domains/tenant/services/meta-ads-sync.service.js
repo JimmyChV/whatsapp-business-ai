@@ -312,7 +312,7 @@ async function callMetaBatch(adIds = [], accessToken = '') {
         .filter(Boolean)
         .map((adId) => ({
             method: 'GET',
-            relative_url: `${adId}?fields=creative{id,object_story_spec{link_data{page_welcome_message},video_data{page_welcome_message},template_data{page_welcome_message},offer_data{page_welcome_message},photo_data{page_welcome_message},text_data{page_welcome_message}}}`
+            relative_url: `${adId}?fields=creative{id,object_story_spec{link_data{page_welcome_message},video_data{page_welcome_message},template_data{page_welcome_message},photo_data{page_welcome_message},text_data{page_welcome_message}}}`
         }));
     if (batch.length === 0) return [];
 
