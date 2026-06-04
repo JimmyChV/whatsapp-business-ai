@@ -4,6 +4,10 @@ const {
     getStorageDriver,
     queryPostgres
 } = require('../../../config/persistence-runtime');
+const {
+    parseScopedChatId,
+    buildScopedChatId
+} = require('../../channels/helpers/chat-scope.helpers');
 const { parseCsvRows } = require('../../tenant/helpers/customers-normalizers.helpers');
 const { normalizeAddressFields } = require('../../../utils/normalize-text');
 
@@ -208,6 +212,8 @@ function registerOperationsHttpRoutes({
     chatAssignmentRouterService,
     operationsKpiService,
     globalLabelsService,
+    tenantLabelService,
+    messageHistoryService,
     accessPolicyService,
     hasPermission,
     isTenantAllowedForUser,
@@ -222,7 +228,8 @@ function registerOperationsHttpRoutes({
     hasTenantCampaignWriteAccess,
     hasTenantMetaTemplateReadAccess,
     hasTenantMetaTemplateWriteAccess,
-    emitCommercialStatusUpdated
+    emitCommercialStatusUpdated,
+    emitToTenant
 }) {
     if (!app) throw new Error('registerOperationsHttpRoutes requiere app.');
     function requireSuperAdmin(req, res) {
@@ -245,6 +252,82 @@ function registerOperationsHttpRoutes({
         if (authService && typeof authService.isAuthEnabled === 'function' && !authService.isAuthEnabled()) return true;
         if (!accessPolicyService || typeof hasPermission !== 'function') return false;
         return hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_COMMERCIAL_INTELLIGENCE_MANAGE);
+    }
+
+    function normalizeBulkChatTargets(chatIds = []) {
+        const seen = new Set();
+        return (Array.isArray(chatIds) ? chatIds : [])
+            .map((entry) => {
+                const source = entry && typeof entry === 'object' && !Array.isArray(entry)
+                    ? entry
+                    : { chatId: entry };
+                const rawChatId = toText(source.chatId || source.id || source.baseChatId || '');
+                const parsed = parseScopedChatId(rawChatId);
+                const baseChatId = toText(source.baseChatId || parsed.chatId || rawChatId);
+                const scopeModuleId = normalizeScopeModuleId(source.scopeModuleId || parsed.moduleId || '');
+                if (!baseChatId) return null;
+                const key = `${baseChatId}::${scopeModuleId}`;
+                if (seen.has(key)) return null;
+                seen.add(key);
+                return {
+                    baseChatId,
+                    scopeModuleId,
+                    scopedChatId: buildScopedChatId(baseChatId, scopeModuleId || '') || baseChatId
+                };
+            })
+            .filter(Boolean);
+    }
+
+    function resolveActorRole(req = {}, tenantId = '') {
+        return String(resolveActorTenantRole({ req, tenantId }) || req?.authContext?.user?.role || 'seller').trim().toLowerCase() || 'seller';
+    }
+
+    function isManagerRole(role = '') {
+        return ['owner', 'admin', 'superadmin'].includes(String(role || '').trim().toLowerCase());
+    }
+
+    function hasChatOperateAccess(req = {}, tenantId = '') {
+        if (authService && typeof authService.isAuthEnabled === 'function' && !authService.isAuthEnabled()) return true;
+        if (!tenantId || typeof isTenantAllowedForUser !== 'function' || !isTenantAllowedForUser(req, tenantId)) return false;
+        if (req?.authContext?.user?.isSuperAdmin) return true;
+        if (isManagerRole(resolveActorRole(req, tenantId))) return true;
+        return Boolean(
+            accessPolicyService
+            && typeof hasPermission === 'function'
+            && hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_CHAT_OPERATE)
+        );
+    }
+
+    function hasTenantLabelsManageAccess(req = {}, tenantId = '') {
+        if (authService && typeof authService.isAuthEnabled === 'function' && !authService.isAuthEnabled()) return true;
+        if (!tenantId || typeof isTenantAllowedForUser !== 'function' || !isTenantAllowedForUser(req, tenantId)) return false;
+        if (req?.authContext?.user?.isSuperAdmin) return true;
+        return Boolean(
+            accessPolicyService
+            && typeof hasPermission === 'function'
+            && hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_LABELS_MANAGE)
+        );
+    }
+
+    async function filterMarkUnreadTargetsForActor(req = {}, tenantId = '', targets = []) {
+        const actorUserId = resolveActorUserId(req);
+        const actorRole = resolveActorRole(req, tenantId);
+        if (req?.authContext?.user?.isSuperAdmin || isManagerRole(actorRole)) return targets;
+        if (!actorUserId) return [];
+
+        const allowed = [];
+        for (const target of targets) {
+            const assignment = await conversationOpsService.getChatAssignment(tenantId, {
+                chatId: target.baseChatId,
+                scopeModuleId: target.scopeModuleId || ''
+            });
+            const assignedUserId = toText(assignment?.assigneeUserId || assignment?.assignee_user_id || '');
+            const status = toLower(assignment?.status || 'active');
+            if (assignedUserId === actorUserId && status !== 'released') {
+                allowed.push(target);
+            }
+        }
+        return allowed;
     }
 
     app.get('/api/ops/global-labels', async (req, res) => {
@@ -1389,6 +1472,148 @@ function registerOperationsHttpRoutes({
             });
         } catch (error) {
             return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar la previsualizacion de variables de template.') });
+        }
+    });
+
+    app.post('/api/tenant/chats/bulk/mark-unread', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatOperateAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+            if (!messageHistoryService || typeof messageHistoryService.bulkMarkChatsUnread !== 'function') {
+                return res.status(500).json({ ok: false, error: 'Servicio de historial no disponible.' });
+            }
+
+            const targets = normalizeBulkChatTargets(req.body?.chatIds || []);
+            if (!targets.length) return res.status(400).json({ ok: false, error: 'chatIds requerido.' });
+
+            const allowedTargets = await filterMarkUnreadTargetsForActor(req, tenantId, targets);
+            if (!allowedTargets.length) {
+                return res.status(403).json({ ok: false, error: 'No hay chats autorizados para actualizar.' });
+            }
+
+            const result = await messageHistoryService.bulkMarkChatsUnread(
+                tenantId,
+                allowedTargets.map((target) => target.baseChatId)
+            );
+            const updatedByBaseId = new Map(
+                (Array.isArray(result?.items) ? result.items : [])
+                    .map((item) => [toText(item.chatId), Number(item.unreadCount || 0) || 0])
+            );
+            const items = allowedTargets
+                .filter((target) => updatedByBaseId.has(target.baseChatId))
+                .map((target) => ({
+                    chatId: target.scopedChatId,
+                    baseChatId: target.baseChatId,
+                    scopeModuleId: target.scopeModuleId || null,
+                    unreadCount: updatedByBaseId.get(target.baseChatId) || 1
+                }));
+
+            const payload = {
+                tenantId,
+                chatIds: items.map((item) => item.chatId),
+                items
+            };
+            if (typeof emitToTenant === 'function' && items.length > 0) {
+                emitToTenant(tenantId, 'chats_unread_updated', payload);
+            }
+
+            return res.json({
+                ok: true,
+                tenantId,
+                requested: targets.length,
+                authorized: allowedTargets.length,
+                updated: items.length,
+                chatIds: payload.chatIds,
+                items
+            });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron marcar chats como no leidos.') });
+        }
+    });
+
+    app.post('/api/tenant/chats/bulk/label', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasTenantLabelsManageAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+            if (!tenantLabelService || typeof tenantLabelService.setChatLabels !== 'function') {
+                return res.status(500).json({ ok: false, error: 'Servicio de etiquetas no disponible.' });
+            }
+
+            const targets = normalizeBulkChatTargets(req.body?.chatIds || []);
+            const action = toLower(req.body?.action || 'add');
+            const labelId = tenantLabelService.normalizeLabelId(req.body?.labelId || req.body?.label_id || '');
+            if (!targets.length) return res.status(400).json({ ok: false, error: 'chatIds requerido.' });
+            if (!labelId) return res.status(400).json({ ok: false, error: 'labelId requerido.' });
+            if (!['add', 'remove'].includes(action)) return res.status(400).json({ ok: false, error: 'action invalido.' });
+
+            if (action === 'add' && typeof tenantLabelService.listLabels === 'function') {
+                const labels = await tenantLabelService.listLabels({ tenantId, includeInactive: false });
+                const exists = (Array.isArray(labels) ? labels : [])
+                    .some((entry) => tenantLabelService.normalizeLabelId(entry.labelId || entry.id || '') === labelId);
+                if (!exists) return res.status(400).json({ ok: false, error: 'Etiqueta no disponible.' });
+            }
+
+            const items = [];
+            for (const target of targets) {
+                const currentLabels = typeof tenantLabelService.listChatLabels === 'function'
+                    ? await tenantLabelService.listChatLabels({
+                        tenantId,
+                        chatId: target.baseChatId,
+                        scopeModuleId: target.scopeModuleId || ''
+                    })
+                    : [];
+                const nextIdsSet = new Set(
+                    (Array.isArray(currentLabels) ? currentLabels : [])
+                        .map((entry) => tenantLabelService.normalizeLabelId(entry.id || entry.labelId || ''))
+                        .filter(Boolean)
+                );
+                if (action === 'add') nextIdsSet.add(labelId);
+                else nextIdsSet.delete(labelId);
+
+                const labels = await tenantLabelService.setChatLabels({
+                    tenantId,
+                    chatId: target.baseChatId,
+                    scopeModuleId: target.scopeModuleId || '',
+                    labelIds: Array.from(nextIdsSet)
+                });
+                items.push({
+                    chatId: target.scopedChatId,
+                    baseChatId: target.baseChatId,
+                    scopeModuleId: target.scopeModuleId || null,
+                    labels: Array.isArray(labels) ? labels : []
+                });
+            }
+
+            const payload = {
+                tenantId,
+                chatIds: items.map((item) => item.chatId),
+                labelId,
+                action,
+                items
+            };
+            if (typeof emitToTenant === 'function' && items.length > 0) {
+                emitToTenant(tenantId, 'chats_labels_updated', payload);
+            }
+
+            return res.json({
+                ok: true,
+                tenantId,
+                labelId,
+                action,
+                updated: items.length,
+                chatIds: payload.chatIds,
+                items
+            });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron actualizar etiquetas.') });
         }
     });
 

@@ -258,6 +258,8 @@ function registerHttpRoutes({
         chatAssignmentRouterService,
         operationsKpiService,
         globalLabelsService,
+        tenantLabelService,
+        messageHistoryService,
         accessPolicyService,
         hasPermission,
         isTenantAllowedForUser,
@@ -272,7 +274,8 @@ function registerHttpRoutes({
         hasAssignmentRulesReadAccess,
         hasAssignmentRulesWriteAccess,
         hasOperationsKpiReadAccess,
-        emitCommercialStatusUpdated: socketManager?.emitCommercialStatusUpdated?.bind(socketManager) || null
+        emitCommercialStatusUpdated: socketManager?.emitCommercialStatusUpdated?.bind(socketManager) || null,
+        emitToTenant: socketManager?.emitToTenant?.bind(socketManager) || null
     });
 
     registerTenantRuntimeSettingsHttpRoutes({

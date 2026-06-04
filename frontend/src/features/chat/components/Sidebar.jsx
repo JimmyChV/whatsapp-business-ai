@@ -1,5 +1,5 @@
 import React from 'react';
-import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck, UserCheck, ChevronDown, Moon, Sun, Clock3 } from 'lucide-react';
+import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck, UserCheck, ChevronDown, Moon, Sun, Clock3, CheckSquare, Square, Loader2 } from 'lucide-react';
 import ChannelBrandIcon from './ChannelBrandIcon';
 import AssignmentBadge from './assignment/AssignmentBadge';
 import CommercialStatusBadge from './commercial/CommercialStatusBadge';
@@ -7,6 +7,7 @@ import useSidebarFiltersController from './hooks/useSidebarFiltersController';
 import useSidebarChatPresentationModel from './hooks/useSidebarChatPresentationModel';
 import useSidebarInfiniteScroll from './hooks/useSidebarInfiniteScroll';
 import useSidebarUiToggles from './hooks/useSidebarUiToggles';
+import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import { API_URL } from '../../../config/runtime';
 import { searchTenantCustomersForChat } from '../core/services/customerSearch.service';
 import { getWindowStatus, WINDOW_FILTER_OPTIONS } from '../core/helpers/windowTimer.helpers';
@@ -100,6 +101,7 @@ const Sidebar = ({
     themeMode = 'dark',
     onThemeChange = null,
 }) => {
+    const { notify } = useUiFeedback();
     const {
         showMenu,
         setShowMenu,
@@ -185,7 +187,13 @@ const Sidebar = ({
     const commercialMenuRef = React.useRef(null);
     const windowMenuRef = React.useRef(null);
     const labelPanelRef = React.useRef(null);
+    const bulkLabelMenuRef = React.useRef(null);
     const customerSearchRequestRef = React.useRef(0);
+    const [selectionMode, setSelectionMode] = React.useState(false);
+    const [selectedChatIds, setSelectedChatIds] = React.useState(() => new Set());
+    const [bulkActionBusy, setBulkActionBusy] = React.useState('');
+    const [bulkLabelMenu, setBulkLabelMenu] = React.useState(null);
+    const [bulkLabelQuery, setBulkLabelQuery] = React.useState('');
     const visibleChats = React.useMemo(() => {
         const items = Array.isArray(filteredChats) ? [...filteredChats] : [];
         return items.sort((a, b) => {
@@ -195,10 +203,31 @@ const Sidebar = ({
             return 0;
         });
     }, [filteredChats, getCommercialStatus]);
+    const visibleChatIds = React.useMemo(() => (
+        visibleChats.map((chat) => String(chat?.id || '').trim()).filter(Boolean)
+    ), [visibleChats]);
+    const selectedChatIdList = React.useMemo(() => (
+        Array.from(selectedChatIds).filter((chatId) => visibleChatIds.includes(chatId))
+    ), [selectedChatIds, visibleChatIds]);
+    const selectedChatCount = selectedChatIdList.length;
+    const bulkLabelOptions = React.useMemo(() => {
+        const query = normalizeSearchText(bulkLabelQuery);
+        return (Array.isArray(labelDefinitions) ? labelDefinitions : [])
+            .filter((label) => {
+                const labelId = String(label?.id || label?.labelId || '').trim();
+                const name = String(label?.name || label?.label || labelId || '').trim();
+                if (!labelId || !name) return false;
+                if (!query) return true;
+                return normalizeSearchText(`${name} ${labelId}`).includes(query);
+            });
+    }, [bulkLabelQuery, labelDefinitions]);
 
     React.useEffect(() => {
         const handlePointerDown = (event) => {
             const target = event.target;
+            if (bulkLabelMenuRef.current && !bulkLabelMenuRef.current.contains(target)) {
+                setBulkLabelMenu(null);
+            }
             if (assigneeMenuRef.current && !assigneeMenuRef.current.contains(target)) {
                 setShowAssigneeFilterMenu(false);
             }
@@ -228,10 +257,24 @@ const Sidebar = ({
             setShowMenu(false);
             setShowAdvancedFilters(false);
             setMobileFilterMode(null);
+            setBulkLabelMenu(null);
+            if (selectionMode) {
+                setSelectionMode(false);
+                setSelectedChatIds(new Set());
+            }
         };
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [setShowLabelPanel, setShowMenu]);
+    }, [selectionMode, setShowLabelPanel, setShowMenu]);
+
+    React.useEffect(() => {
+        setSelectedChatIds((prev) => {
+            if (!prev.size) return prev;
+            const visibleSet = new Set(visibleChatIds);
+            const next = new Set(Array.from(prev).filter((chatId) => visibleSet.has(chatId)));
+            return next.size === prev.size ? prev : next;
+        });
+    }, [visibleChatIds]);
 
     React.useEffect(() => {
         const timerId = window.setInterval(() => {
@@ -367,6 +410,105 @@ const Sidebar = ({
         return `Clientes CRM (${prioritizedMatches.length || dedupedCustomerSearchResults.length})`;
     }, [dedupedCustomerSearchResults, localQuery]);
 
+    const exitSelectionMode = React.useCallback(() => {
+        setSelectionMode(false);
+        setSelectedChatIds(new Set());
+        setBulkLabelMenu(null);
+        setBulkLabelQuery('');
+    }, []);
+
+    const toggleSelectionMode = React.useCallback(() => {
+        setSelectionMode((current) => {
+            const next = !current;
+            if (current) {
+                setSelectedChatIds(new Set());
+                setBulkLabelMenu(null);
+            }
+            return next;
+        });
+    }, []);
+
+    const toggleSelectedChat = React.useCallback((chatId = '') => {
+        const cleanChatId = String(chatId || '').trim();
+        if (!cleanChatId) return;
+        setSelectedChatIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(cleanChatId)) next.delete(cleanChatId);
+            else next.add(cleanChatId);
+            return next;
+        });
+    }, []);
+
+    const selectAllVisibleChats = React.useCallback(() => {
+        setSelectedChatIds(new Set(visibleChatIds));
+    }, [visibleChatIds]);
+
+    const clearSelectedChats = React.useCallback(() => {
+        setSelectedChatIds(new Set());
+        setBulkLabelMenu(null);
+    }, []);
+
+    const postBulkAction = React.useCallback(async (endpoint, body = {}) => {
+        if (typeof buildApiHeaders !== 'function') {
+            throw new Error('Sesion no disponible para ejecutar acciones masivas.');
+        }
+        const headers = { ...(buildApiHeaders({ includeJson: true }) || {}) };
+        if (currentTenantId) headers['x-tenant-id'] = currentTenantId;
+        const response = await fetch(`${String(API_URL || '').replace(/\/$/, '')}${endpoint}`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body)
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload?.ok === false) {
+            throw new Error(String(payload?.error || 'Error al ejecutar la accion.'));
+        }
+        return payload;
+    }, [buildApiHeaders, currentTenantId]);
+
+    const handleBulkMarkUnread = React.useCallback(async () => {
+        if (!selectedChatCount) {
+            notify({ type: 'warn', message: 'Selecciona al menos un chat.' });
+            return;
+        }
+        setBulkActionBusy('mark-unread');
+        try {
+            const payload = await postBulkAction('/api/tenant/chats/bulk/mark-unread', {
+                chatIds: selectedChatIdList
+            });
+            const updated = Number(payload?.updated || 0) || 0;
+            notify({ type: 'success', message: `${updated} chats marcados como no leidos.` });
+            onRefreshChats?.();
+            exitSelectionMode();
+        } catch (error) {
+            notify({ type: 'error', message: String(error?.message || 'Error al ejecutar la accion.') });
+        } finally {
+            setBulkActionBusy('');
+        }
+    }, [exitSelectionMode, notify, onRefreshChats, postBulkAction, selectedChatCount, selectedChatIdList]);
+
+    const handleBulkLabelAction = React.useCallback(async (label = null) => {
+        const labelId = String(label?.id || label?.labelId || '').trim();
+        if (!selectedChatCount || !labelId || !bulkLabelMenu) return;
+        setBulkActionBusy(`label-${bulkLabelMenu}`);
+        try {
+            const payload = await postBulkAction('/api/tenant/chats/bulk/label', {
+                chatIds: selectedChatIdList,
+                labelId,
+                action: bulkLabelMenu
+            });
+            const updated = Number(payload?.updated || 0) || 0;
+            const verb = bulkLabelMenu === 'remove' ? 'quitada' : 'aplicada';
+            notify({ type: 'success', message: `Etiqueta ${verb} a ${updated} chats.` });
+            onRefreshChats?.();
+            exitSelectionMode();
+        } catch (error) {
+            notify({ type: 'error', message: String(error?.message || 'Error al ejecutar la accion.') });
+        } finally {
+            setBulkActionBusy('');
+        }
+    }, [bulkLabelMenu, exitSelectionMode, notify, onRefreshChats, postBulkAction, selectedChatCount, selectedChatIdList]);
+
     return (
         <div className="sidebar sidebar-pro">
             <div className="sidebar-header sidebar-header-pro">
@@ -388,6 +530,17 @@ const Sidebar = ({
                 </button>
 
                 <div className="sidebar-header-actions">
+                    {visibleChats.length > 0 && (
+                        <button
+                            type="button"
+                            className={`ui-icon-btn sidebar-select-mode-btn ${selectionMode ? 'active' : ''}`.trim()}
+                            onClick={toggleSelectionMode}
+                            title={selectionMode ? 'Cancelar seleccion' : 'Seleccionar chats'}
+                            aria-pressed={selectionMode}
+                        >
+                            {selectionMode ? <CheckSquare size={18} /> : <Square size={18} />}
+                        </button>
+                    )}
                     <button
                         type="button"
                         className="ui-icon-btn"
@@ -854,6 +1007,89 @@ const Sidebar = ({
                         </button>
                     </div>
             <div className="chat-list" onClick={() => { if (showMenu) setShowMenu(false); if (showLabelPanel) setShowLabelPanel(false); if (showAssigneeFilterMenu) setShowAssigneeFilterMenu(false); if (showCommercialFilterMenu) setShowCommercialFilterMenu(false); if (showWindowFilterMenu) setShowWindowFilterMenu(false); if (showAdvancedFilters) setShowAdvancedFilters(false); if (mobileFilterMode) setMobileFilterMode(null); }} onScroll={handleChatListScroll}>
+                {selectionMode && (
+                    <div className="sidebar-bulk-actions" onClick={(event) => event.stopPropagation()}>
+                        <div className="sidebar-bulk-actions-top">
+                            <button type="button" onClick={selectAllVisibleChats} disabled={visibleChatIds.length === 0 || Boolean(bulkActionBusy)}>
+                                Todo
+                            </button>
+                            <button type="button" onClick={clearSelectedChats} disabled={selectedChatCount === 0 || Boolean(bulkActionBusy)}>
+                                Ninguno
+                            </button>
+                            <span>{selectedChatCount} seleccionados</span>
+                        </div>
+                        <div className="sidebar-bulk-actions-row">
+                            <button
+                                type="button"
+                                className="sidebar-bulk-action-btn"
+                                onClick={handleBulkMarkUnread}
+                                disabled={selectedChatCount === 0 || Boolean(bulkActionBusy)}
+                            >
+                                {bulkActionBusy === 'mark-unread' ? <Loader2 size={14} className="spin" /> : <span aria-hidden="true">🔵</span>}
+                                <span>No leido</span>
+                            </button>
+                            <div className="sidebar-bulk-label-wrap" ref={bulkLabelMenuRef}>
+                                <button
+                                    type="button"
+                                    className="sidebar-bulk-action-btn"
+                                    onClick={() => setBulkLabelMenu((current) => current === 'add' ? null : 'add')}
+                                    disabled={selectedChatCount === 0 || Boolean(bulkActionBusy)}
+                                >
+                                    <Tag size={14} />
+                                    <span>Etiquetar</span>
+                                    <ChevronDown size={13} />
+                                </button>
+                                <button
+                                    type="button"
+                                    className="sidebar-bulk-action-btn"
+                                    onClick={() => setBulkLabelMenu((current) => current === 'remove' ? null : 'remove')}
+                                    disabled={selectedChatCount === 0 || Boolean(bulkActionBusy)}
+                                >
+                                    <X size={14} />
+                                    <span>Quitar</span>
+                                    <ChevronDown size={13} />
+                                </button>
+                                {bulkLabelMenu && (
+                                    <div className="sidebar-bulk-label-menu">
+                                        <input
+                                            type="search"
+                                            value={bulkLabelQuery}
+                                            onChange={(event) => setBulkLabelQuery(event.target.value)}
+                                            placeholder="Buscar etiqueta..."
+                                        />
+                                        <div className="sidebar-bulk-label-options">
+                                            {bulkLabelOptions.length === 0 ? (
+                                                <div className="sidebar-bulk-label-empty">No hay etiquetas para mostrar</div>
+                                            ) : bulkLabelOptions.map((label) => {
+                                                const labelId = String(label?.id || label?.labelId || '').trim();
+                                                const labelName = String(label?.name || label?.label || labelId).trim();
+                                                return (
+                                                    <button
+                                                        key={labelId || labelName}
+                                                        type="button"
+                                                        className="sidebar-bulk-label-option"
+                                                        onClick={() => handleBulkLabelAction(label)}
+                                                    >
+                                                        <span className="sidebar-label-color" style={{ background: label?.color || 'var(--chat-control-text-soft)' }} />
+                                                        <span>{labelName}</span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            <button
+                                type="button"
+                                className="sidebar-bulk-cancel-btn"
+                                onClick={exitSelectionMode}
+                                disabled={Boolean(bulkActionBusy)}
+                            >
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+                )}
                 {filteredChats.length === 0 && chats.length === 0 && !chatsLoaded ? (
                     [1, 2, 3, 4, 5].map((i) => (
                         <div key={i} className="chat-item chat-item-modern">
@@ -893,12 +1129,32 @@ const Sidebar = ({
                         const labels = Array.isArray(chat?.labels) ? chat.labels : [];
                         const adOrigin = null;
                         const adOriginName = String(adOrigin?.adName || '').trim();
+                        const isSelected = selectedChatIds.has(String(chat.id || ''));
                         return (
                             <div
                                 key={chat.id}
-                                className={`chat-item chat-item-modern ${activeChatId === chat.id ? 'active' : ''}${chatCommercialStatus?.needsAdvisor ? ' chat-item-modern--needs-advisor' : ''}`}
-                                onClick={() => onChatSelect(chat.id, { clearSearch: true })}
+                                className={`chat-item chat-item-modern ${activeChatId === chat.id ? 'active' : ''}${chatCommercialStatus?.needsAdvisor ? ' chat-item-modern--needs-advisor' : ''}${selectionMode ? ' chat-item-modern--selecting' : ''}${isSelected ? ' chat-item-modern--selected' : ''}`}
+                                onClick={() => {
+                                    if (selectionMode) {
+                                        toggleSelectedChat(chat.id);
+                                        return;
+                                    }
+                                    onChatSelect(chat.id, { clearSearch: true });
+                                }}
                             >
+                                <button
+                                    type="button"
+                                    className={`chat-select-checkbox ${selectionMode || isSelected ? 'visible' : ''}${isSelected ? ' selected' : ''}`}
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        if (!selectionMode) setSelectionMode(true);
+                                        toggleSelectedChat(chat.id);
+                                    }}
+                                    aria-label={isSelected ? 'Deseleccionar chat' : 'Seleccionar chat'}
+                                    aria-pressed={isSelected}
+                                >
+                                    {isSelected ? <CheckSquare size={17} /> : <Square size={17} />}
+                                </button>
                                 <div
                                     className="chat-avatar-modern chat-avatar-modern--module"
                                     style={{ background: moduleAvatarImage ? `url(${moduleAvatarImage}) center/cover` : avatarColor(moduleBadge?.moduleName || displayName) }}

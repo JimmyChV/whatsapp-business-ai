@@ -506,6 +506,63 @@ async function updateChatState(tenantId = DEFAULT_TENANT_ID, {
             : {}
     };
 }
+
+async function bulkMarkChatsUnread(tenantId = DEFAULT_TENANT_ID, chatIds = []) {
+    if (!isHistoryEnabled()) return { ok: false, skipped: 'disabled', items: [] };
+
+    const cleanTenant = resolveTenantId(tenantId);
+    assertValidTenant(cleanTenant, 'message-history.bulkMarkChatsUnread');
+    const safeChatIds = Array.from(new Set(
+        (Array.isArray(chatIds) ? chatIds : [])
+            .map((entry) => toSafeString(entry))
+            .filter(Boolean)
+    ));
+    if (!safeChatIds.length) return { ok: true, items: [], updated: 0 };
+
+    if (getStorageDriver() === 'postgres') {
+        try {
+            await ensurePostgresMessageColumns();
+            const { rows } = await queryPostgres(
+                `UPDATE tenant_chats
+                    SET unread_count = GREATEST(COALESCE(unread_count, 0), 1),
+                        updated_at = NOW()
+                  WHERE tenant_id = $1
+                    AND chat_id = ANY($2::text[])
+                RETURNING chat_id, unread_count`,
+                [cleanTenant, safeChatIds]
+            );
+            const items = (Array.isArray(rows) ? rows : [])
+                .map((row) => ({
+                    chatId: String(row.chat_id || '').trim(),
+                    unreadCount: Number(row.unread_count || 0) || 0
+                }))
+                .filter((entry) => entry.chatId);
+            return { ok: true, driver: 'postgres', items, updated: items.length };
+        } catch (error) {
+            if (missingRelation(error)) return { ok: false, skipped: 'schema_missing', items: [] };
+            throw error;
+        }
+    }
+
+    const store = await loadStore(cleanTenant);
+    const items = [];
+    for (const chatId of safeChatIds) {
+        const current = store.chats[chatId];
+        if (!current) continue;
+        const unreadCount = Math.max(1, Number(current.unreadCount || 0) || 0);
+        store.chats[chatId] = {
+            ...current,
+            unreadCount,
+            updatedAt: new Date().toISOString()
+        };
+        items.push({ chatId, unreadCount });
+    }
+    if (items.length > 0) {
+        await saveStore(cleanTenant, store);
+    }
+    return { ok: true, driver: 'file', items, updated: items.length };
+}
+
 async function updateMessageAck(tenantId = DEFAULT_TENANT_ID, { messageId, chatId, ack } = {}) {
     if (!isHistoryEnabled()) return { ok: false, skipped: 'disabled' };
 
@@ -912,6 +969,7 @@ module.exports = {
     normalizeMessageRecord,
     upsertMessage,
     updateChatState,
+    bulkMarkChatsUnread,
     updateMessageAck,
     updateMessageEdit,
     updateMessageReactions,

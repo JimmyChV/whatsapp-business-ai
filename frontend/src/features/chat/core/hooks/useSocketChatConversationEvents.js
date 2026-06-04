@@ -699,6 +699,49 @@ export default function useSocketChatConversationEvents({
             }
         });
 
+        socket.on('chats_labels_updated', ({ items = [] } = {}) => {
+            const normalizedItems = (Array.isArray(items) ? items : [])
+                .map((item) => ({
+                    chatId: normalizeChatScopedId(item?.chatId || item?.baseChatId || '', item?.scopeModuleId || ''),
+                    labels: normalizeChatLabels(item?.labels)
+                }))
+                .filter((item) => item.chatId);
+            if (!normalizedItems.length) return;
+
+            setChats((prev) => {
+                const next = prev.map((chat) => {
+                    const match = normalizedItems.find((item) => chatIdsReferSameScope(String(chat?.id || ''), item.chatId));
+                    if (!match) return chat;
+                    return { ...chat, labels: match.labels };
+                });
+                return next.filter((chat) => chatMatchesQuery(chat, chatSearchRef.current) && chatMatchesFilters(chat, chatFiltersRef.current));
+            });
+
+            const active = String(activeChatIdRef.current || '');
+            if (active && normalizedItems.some((item) => chatIdsReferSameScope(active, item.chatId))) {
+                socket.emit('get_contact_info', active);
+            }
+        });
+
+        socket.on('chats_unread_updated', ({ items = [] } = {}) => {
+            const normalizedItems = (Array.isArray(items) ? items : [])
+                .map((item) => ({
+                    chatId: normalizeChatScopedId(item?.chatId || item?.baseChatId || '', item?.scopeModuleId || ''),
+                    unreadCount: Math.max(1, Number(item?.unreadCount || 1) || 1)
+                }))
+                .filter((item) => item.chatId);
+            if (!normalizedItems.length) return;
+
+            setChats((prev) => prev.map((chat) => {
+                const match = normalizedItems.find((item) => chatIdsReferSameScope(String(chat?.id || ''), item.chatId));
+                if (!match) return chat;
+                return {
+                    ...chat,
+                    unreadCount: Math.max(Number(chat?.unreadCount || 0) || 0, match.unreadCount)
+                };
+            }));
+        });
+
         socket.on('chat_labels_error', (msg) => {
             if (msg) notify({ type: 'error', message: msg });
         });
@@ -1604,6 +1647,8 @@ export default function useSocketChatConversationEvents({
                 'chat_opened',
                 'start_new_chat_error',
                 'chat_labels_updated',
+                'chats_labels_updated',
+                'chats_unread_updated',
                 'chat_labels_error',
                 'chat_labels_saved',
                 'contact_info',

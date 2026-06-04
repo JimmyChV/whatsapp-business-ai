@@ -5350,6 +5350,200 @@ body {
   box-shadow: 0 0 0 1px rgba(7, 20, 27, 0.5);
 }
 
+.sidebar-select-mode-btn.active {
+  border-color: rgba(0, 168, 132, 0.48);
+  background: rgba(0, 168, 132, 0.18);
+  color: var(--chat-success-text, #00a884);
+}
+
+.sidebar-bulk-actions {
+  position: sticky;
+  top: 0;
+  z-index: 24;
+  display: grid;
+  gap: 8px;
+  margin: 0 8px 8px;
+  padding: 10px;
+  border: 1px solid rgba(0, 168, 132, 0.18);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--chat-bg-panel) 92%, white 8%);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
+}
+
+.sidebar-bulk-actions-top,
+.sidebar-bulk-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.sidebar-bulk-actions-top span {
+  margin-left: auto;
+  color: var(--chat-control-text-soft);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.sidebar-bulk-actions-top button,
+.sidebar-bulk-action-btn,
+.sidebar-bulk-cancel-btn {
+  border: 1px solid rgba(134, 150, 160, 0.24);
+  border-radius: 999px;
+  background: var(--chat-card-surface);
+  color: var(--chat-control-text);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+  transition: all 0.14s ease;
+}
+
+.sidebar-bulk-actions-top button {
+  padding: 6px 10px;
+}
+
+.sidebar-bulk-action-btn,
+.sidebar-bulk-cancel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 7px 10px;
+}
+
+.sidebar-bulk-action-btn:hover,
+.sidebar-bulk-actions-top button:hover {
+  border-color: rgba(0, 168, 132, 0.4);
+  background: rgba(0, 168, 132, 0.12);
+}
+
+.sidebar-bulk-cancel-btn:hover {
+  border-color: rgba(239, 68, 68, 0.36);
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.sidebar-bulk-action-btn:disabled,
+.sidebar-bulk-cancel-btn:disabled,
+.sidebar-bulk-actions-top button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.sidebar-bulk-label-wrap {
+  position: relative;
+  display: inline-flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.sidebar-bulk-label-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 36;
+  width: min(260px, calc(100vw - 36px));
+  padding: 10px;
+  border: 1px solid var(--chat-card-border);
+  border-radius: 15px;
+  background: var(--chat-bg-panel);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+}
+
+.sidebar-bulk-label-menu input {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(134, 150, 160, 0.22);
+  border-radius: 10px;
+  background: var(--chat-card-surface);
+  color: var(--chat-control-text);
+  font-size: 0.76rem;
+}
+
+.sidebar-bulk-label-options {
+  display: grid;
+  gap: 4px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.sidebar-bulk-label-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--chat-control-text);
+  cursor: pointer;
+  padding: 8px;
+  text-align: left;
+}
+
+.sidebar-bulk-label-option:hover {
+  background: rgba(0, 168, 132, 0.12);
+}
+
+.sidebar-bulk-label-empty {
+  color: var(--chat-control-text-soft);
+  font-size: 0.76rem;
+  padding: 8px;
+}
+
+.chat-select-checkbox {
+  width: 0;
+  height: 28px;
+  flex: 0 0 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0 solid rgba(134, 150, 160, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--chat-control-text-soft);
+  cursor: pointer;
+  opacity: 0;
+  overflow: hidden;
+  transform: translateX(-4px);
+  transition: all 0.14s ease;
+}
+
+.chat-item-modern:hover .chat-select-checkbox,
+.chat-select-checkbox.visible {
+  width: 28px;
+  flex-basis: 28px;
+  border-width: 1px;
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.chat-select-checkbox.selected {
+  border-color: rgba(0, 168, 132, 0.62);
+  background: rgba(0, 168, 132, 0.18);
+  color: var(--chat-success-text, #00a884);
+}
+
+.chat-item-modern--selecting {
+  cursor: pointer;
+}
+
+.chat-item-modern--selected {
+  border-color: rgba(0, 168, 132, 0.42);
+  background: rgba(0, 168, 132, 0.12);
+}
+
+.spin {
+  animation: codexSpin 0.8s linear infinite;
+}
+
+@keyframes codexSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .chat-header-pro {
   min-height: 66px;
   padding: 8px 12px;
