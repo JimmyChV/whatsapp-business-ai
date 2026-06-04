@@ -5456,10 +5456,17 @@ body {
   left: auto;
   z-index: 2147483000;
   max-height: min(330px, calc(100vh - 24px));
+  background: var(--saas-bg-surface, #ffffff);
+  background-color: var(--saas-bg-surface, #ffffff);
+  isolation: isolate;
 }
 
 .sidebar-bulk-label-menu--portal .sidebar-bulk-label-options {
   max-height: min(238px, calc(100vh - 118px));
+}
+
+.sidebar-bulk-label-menu--portal .sidebar-bulk-label-option {
+  background: var(--saas-bg-surface, #ffffff);
 }
 
 .sidebar-bulk-label-menu input {
