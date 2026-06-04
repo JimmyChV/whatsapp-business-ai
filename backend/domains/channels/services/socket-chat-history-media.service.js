@@ -1,3 +1,19 @@
+const {
+    getStorageDriver,
+    queryPostgres
+} = require('../../../config/persistence-runtime');
+
+const toText = (value = '') => String(value || '').trim();
+
+const toSafeObject = (value = null) => (
+    value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+);
+
+const missingOriginRelation = (error = null) => {
+    const code = String(error?.code || '').trim();
+    return code === '42P01' || code === '42703';
+};
+
 function createSocketChatHistoryMediaService({
     waClient,
     mediaManager,
@@ -179,7 +195,7 @@ function createSocketChatHistoryMediaService({
         const safeChatId = String(chatId || '').trim();
         if (!safeChatId || typeof chatOriginService?.getChatOrigin !== 'function') return null;
         const safeScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
-        try {
+        const resolveBasicOrigin = async () => {
             const scopedOrigin = await chatOriginService.getChatOrigin(tenantId, {
                 chatId: safeChatId,
                 scopeModuleId: safeScopeModuleId
@@ -190,7 +206,87 @@ function createSocketChatHistoryMediaService({
                 chatId: safeChatId,
                 scopeModuleId: ''
             });
+        };
+        try {
+            if (getStorageDriver() === 'postgres') {
+                const result = await queryPostgres(
+                    `SELECT
+                        o.origin_type,
+                        o.origin_source,
+                        o.origin_label,
+                        o.origin_detail,
+                        o.referral_source_id,
+                        o.referral_headline,
+                        o.referral_source_type,
+                        o.ctwa_clid,
+                        o.campaign_id,
+                        o.detected_at,
+                        ad.object_name AS ad_name,
+                        adset.object_name AS adset_name,
+                        adset.object_id AS adset_id,
+                        campaign.object_name AS campaign_name,
+                        c.creative_id,
+                        c.greeting_text,
+                        c.autofill_message,
+                        c.buttons_json
+                       FROM tenant_chat_origins o
+                       LEFT JOIN tenant_meta_ads_structure ad
+                         ON ad.tenant_id = o.tenant_id
+                        AND ad.object_id = o.referral_source_id
+                        AND ad.object_type = 'ad'
+                       LEFT JOIN tenant_meta_ads_structure adset
+                         ON adset.tenant_id = o.tenant_id
+                        AND adset.object_id = ad.parent_id
+                        AND adset.object_type = 'adset'
+                       LEFT JOIN tenant_meta_ads_structure campaign
+                         ON campaign.tenant_id = o.tenant_id
+                        AND campaign.object_id = COALESCE(o.campaign_id, adset.parent_id)
+                        AND campaign.object_type = 'campaign'
+                       LEFT JOIN tenant_meta_ads_creatives c
+                         ON c.tenant_id = o.tenant_id
+                        AND c.ad_id = o.referral_source_id
+                      WHERE o.tenant_id = $1
+                        AND o.chat_id = $2
+                        AND ($3 = '' OR o.scope_module_id = $3 OR o.scope_module_id = '')
+                      ORDER BY CASE
+                        WHEN o.scope_module_id = $3 THEN 0
+                        WHEN o.scope_module_id = '' THEN 1
+                        ELSE 2
+                      END
+                      LIMIT 1`,
+                    [tenantId, safeChatId, safeScopeModuleId]
+                );
+                const row = result?.rows?.[0] || null;
+                return row ? {
+                    originType: toText(row.origin_type),
+                    originSource: toText(row.origin_source),
+                    originLabel: toText(row.origin_label),
+                    originDetail: toSafeObject(row.origin_detail),
+                    referralSourceId: toText(row.referral_source_id),
+                    referralHeadline: toText(row.referral_headline),
+                    referralSourceType: toText(row.referral_source_type),
+                    ctwaClid: toText(row.ctwa_clid),
+                    campaignId: toText(row.campaign_id),
+                    detectedAt: row.detected_at || null,
+                    adName: toText(row.ad_name),
+                    adsetName: toText(row.adset_name),
+                    adsetId: toText(row.adset_id),
+                    campaignName: toText(row.campaign_name),
+                    creativeId: toText(row.creative_id),
+                    greetingText: toText(row.greeting_text),
+                    autofillMessage: toText(row.autofill_message),
+                    buttons: Array.isArray(row.buttons_json) ? row.buttons_json : []
+                } : null;
+            }
+            return await resolveBasicOrigin();
         } catch (error) {
+            if (missingOriginRelation(error)) {
+                try {
+                    return await resolveBasicOrigin();
+                } catch (_) {
+                    return null;
+                }
+            }
             console.warn('[chat-history] No se pudo resolver origen del chat.', {
                 tenantId,
                 chatId: safeChatId,
