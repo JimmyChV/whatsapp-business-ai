@@ -94,6 +94,31 @@ const formatOriginDate = (value = '') => {
     return parsed.isValid() ? parsed.format('DD/MM/YYYY HH:mm') : '';
 };
 
+const getMetaOriginGreetingText = (origin = null) => {
+    if (!origin || typeof origin !== 'object') return '';
+    const source = String(origin.originSource || origin.origin_source || origin.originType || origin.origin_type || '').trim();
+    if (source !== 'meta_ad') return '';
+    return String(origin.greetingText || origin.greeting_text || origin.autofillMessage || origin.autofill_message || '').trim();
+};
+
+const MetaGreetingBubble = ({ greeting = '', buttons = [] }) => {
+    const safeGreeting = String(greeting || '').trim();
+    if (!safeGreeting) return null;
+    const safeButtons = normalizeOriginButtons(buttons);
+
+    return (
+        <div className="message out meta-greeting-bubble">
+            <div className="meta-greeting-text">{safeGreeting}</div>
+            {safeButtons.length > 0 && (
+                <div className="meta-greeting-chips">
+                    {safeButtons.map((button, index) => <span key={`${button.label}_${index}`}>{button.label}</span>)}
+                </div>
+            )}
+            <div className="meta-greeting-footer">🤖 Enviado automáticamente por Meta</div>
+        </div>
+    );
+};
+
 const ConversationOriginBlock = ({ origin = null }) => {
     if (!origin || typeof origin !== 'object') return null;
     const source = String(origin.originSource || origin.origin_source || origin.originType || origin.origin_type || '').trim();
@@ -102,9 +127,6 @@ const ConversationOriginBlock = ({ origin = null }) => {
     const icon = ORIGIN_ICON_MAP[source] || '💬';
     const originLabel = String(origin.originLabel || origin.origin_label || '').trim();
     const originDetail = origin.originDetail && typeof origin.originDetail === 'object' ? origin.originDetail : {};
-    const buttons = normalizeOriginButtons(origin.buttons || origin.buttons_json);
-    const greetingText = String(origin.greetingText || origin.greeting_text || origin.autofillMessage || origin.autofill_message || '').trim();
-
     if (source === 'meta_ad') {
         const campaignName = String(origin.campaignName || origin.campaign_name || origin.campaignId || origin.campaign_id || '').trim();
         const adsetName = String(origin.adsetName || origin.adset_name || origin.adsetId || origin.adset_id || '').trim();
@@ -118,17 +140,6 @@ const ConversationOriginBlock = ({ origin = null }) => {
                     {adsetName && <><span>Conjunto</span><strong>{adsetName}</strong></>}
                     {adName && <><span>Anuncio</span><strong>{adName}</strong></>}
                 </div>
-                {greetingText && (
-                    <div className="chat-origin-greeting">
-                        <span>Mensaje que recibio el cliente</span>
-                        <p>"{greetingText}"</p>
-                    </div>
-                )}
-                {buttons.length > 0 && (
-                    <div className="chat-origin-chips">
-                        {buttons.map((button, index) => <span key={`${button.label}_${index}`}>{button.label}</span>)}
-                    </div>
-                )}
                 {referralSourceUrl && (
                     <button
                         type="button"
@@ -139,7 +150,6 @@ const ConversationOriginBlock = ({ origin = null }) => {
                         🎬 Ver anuncio →
                     </button>
                 )}
-                {greetingText && <div className="chat-origin-note">Meta envio este mensaje automaticamente. No aparece en el chat.</div>}
             </div>
         );
     }
@@ -324,6 +334,8 @@ const ChatWindow = ({
     const activeAdOriginName = String(activeAdOrigin?.adName || '').trim();
     const [chatOrigin, setChatOrigin] = React.useState(null);
     const chatOriginCacheRef = useRef({});
+    const metaGreetingText = getMetaOriginGreetingText(chatOrigin);
+    const metaGreetingButtons = normalizeOriginButtons(chatOrigin?.buttonsJson || chatOrigin?.buttons_json || chatOrigin?.buttons);
     const mobileHeaderSubtitle = [headerLocation, headerPhone]
         .map((value) => String(value || '').trim())
         .filter(Boolean)
@@ -770,6 +782,8 @@ const ChatWindow = ({
                     const messageKey = msg.id || `idx_${idx}`;
                     const messageRenderKey = msg.clientTempId || msg.id || `idx_${idx}`;
                     const senderDisplayName = resolveGroupSenderName(msg);
+                    const previousMessages = messages.slice(0, idx);
+                    const isFirstInbound = msg?.fromMe === false && previousMessages.every((entry) => entry?.fromMe !== false);
                     return (
                         <React.Fragment key={messageRenderKey}>
                             {showDay && (
@@ -813,6 +827,12 @@ const ChatWindow = ({
                                     buildApiHeaders={buildApiHeaders}
                                 />
                             </div>
+                            {isFirstInbound && metaGreetingText && (
+                                <MetaGreetingBubble
+                                    greeting={metaGreetingText}
+                                    buttons={metaGreetingButtons}
+                                />
+                            )}
                         </React.Fragment>
                     );
                 })}
