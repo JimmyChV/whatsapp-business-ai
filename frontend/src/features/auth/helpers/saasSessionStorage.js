@@ -13,6 +13,8 @@ export const loadStoredSaasSession = () => {
       tokenType: String(parsed.tokenType || 'Bearer').trim() || 'Bearer',
       accessExpiresAtUnix: Number(parsed.accessExpiresAtUnix || 0) || 0,
       refreshExpiresAtUnix: Number(parsed.refreshExpiresAtUnix || 0) || 0,
+      deviceId: String(parsed.deviceId || '').trim(),
+      deviceType: String(parsed.deviceType || '').trim(),
       user: parsed.user && typeof parsed.user === 'object' ? parsed.user : null
     };
   } catch (_error) {

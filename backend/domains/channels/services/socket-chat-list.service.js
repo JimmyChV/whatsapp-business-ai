@@ -98,11 +98,6 @@ function createSocketChatListService({
 
     const enrichWithWindowData = async (item = null, tenantId = 'default', scopeModuleId = '') => {
         if (!item || typeof item !== 'object') return item;
-        console.log('[Window] enriching', {
-            chatId: item?.id || item?.chatId || null,
-            tenantId,
-            scopeModuleId
-        });
         const resolvedTenantId = String(tenantId || 'default').trim() || 'default';
         const resolvedScopeModuleId = normalizeScopedModuleId(
             scopeModuleId
@@ -148,15 +143,192 @@ function createSocketChatListService({
             laboralMinutesRemaining,
             laboralWindowMeasuredAt
         };
-        console.log('[Window] enriched result', {
-            chatId: enrichedItem?.id || enrichedItem?.chatId || null,
-            baseChatId: enrichedItem?.baseChatId || null,
-            scopeModuleId: enrichedItem?.scopeModuleId || null,
-            lastCustomerMessageAt: enrichedItem?.lastCustomerMessageAt || null,
-            windowExpiresAt: enrichedItem?.windowExpiresAt || null,
-            laboralMinutesRemaining: enrichedItem?.laboralMinutesRemaining ?? null
-        });
         return enrichedItem;
+    };
+
+    const resolveLastCustomerMessageMap = async ({
+        tenantId = 'default',
+        chatIds = [],
+        scopeModuleId = ''
+    } = {}) => {
+        const resolvedTenantId = String(tenantId || 'default').trim() || 'default';
+        const resolvedScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
+        const cleanChatIds = Array.from(new Set(
+            (Array.isArray(chatIds) ? chatIds : [])
+                .map((entry) => String(entry || '').trim())
+                .filter(Boolean)
+        ));
+        const resultMap = new Map();
+        if (!cleanChatIds.length) return resultMap;
+
+        try {
+            const { rows } = await queryPostgres(
+                `WITH ranked_assignments AS (
+                    SELECT chat_id,
+                           last_customer_message_at,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY chat_id
+                               ORDER BY
+                                   CASE
+                                       WHEN scope_module_id = $3 THEN 0
+                                       WHEN scope_module_id = '' THEN 1
+                                       ELSE 2
+                                   END,
+                                   updated_at DESC
+                           ) AS rn
+                      FROM tenant_chat_assignments
+                     WHERE tenant_id = $1
+                       AND chat_id = ANY($2::text[])
+                       AND ($3 = '' OR scope_module_id = $3 OR scope_module_id = '')
+                       AND last_customer_message_at IS NOT NULL
+                 )
+                 SELECT chat_id, last_customer_message_at
+                   FROM ranked_assignments
+                  WHERE rn = 1`,
+                [resolvedTenantId, cleanChatIds, resolvedScopeModuleId]
+            );
+            (Array.isArray(rows) ? rows : []).forEach((row) => {
+                const chatId = String(row?.chat_id || '').trim();
+                const value = String(row?.last_customer_message_at || '').trim();
+                if (chatId && value) resultMap.set(chatId, value);
+            });
+        } catch (_) {
+            // Some local databases may be missing lifecycle columns; tenant_messages is the fallback.
+        }
+
+        const missingChatIds = cleanChatIds.filter((chatId) => !resultMap.has(chatId));
+        if (missingChatIds.length > 0) {
+            try {
+                const { rows } = await queryPostgres(
+                    `SELECT DISTINCT ON (chat_id)
+                            chat_id,
+                            created_at
+                       FROM tenant_messages
+                      WHERE tenant_id = $1
+                        AND chat_id = ANY($2::text[])
+                        AND from_me = false
+                   ORDER BY chat_id, created_at DESC`,
+                    [resolvedTenantId, missingChatIds]
+                );
+                (Array.isArray(rows) ? rows : []).forEach((row) => {
+                    const chatId = String(row?.chat_id || '').trim();
+                    const value = String(row?.created_at || '').trim();
+                    if (chatId && value) resultMap.set(chatId, value);
+                });
+            } catch (_) { }
+        }
+
+        return resultMap;
+    };
+
+    const enrichItemsWithWindowData = async (items = [], tenantId = 'default', scopeModuleId = '') => {
+        const safeItems = Array.isArray(items) ? items : [];
+        if (!safeItems.length) return [];
+
+        const resolvedTenantId = String(tenantId || 'default').trim() || 'default';
+        const resolvedScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
+        const baseChatIds = safeItems
+            .map((item) => resolveBaseChatIdFromSummary(item))
+            .filter(Boolean);
+        const lastCustomerMessageMap = await resolveLastCustomerMessageMap({
+            tenantId: resolvedTenantId,
+            chatIds: baseChatIds,
+            scopeModuleId: resolvedScopeModuleId
+        });
+        const activeSchedule = lastCustomerMessageMap.size > 0
+            ? await getActiveTenantSchedule(resolvedTenantId)
+            : null;
+        const measuredAt = new Date().toISOString();
+
+        return safeItems.map((item) => {
+            if (!item || typeof item !== 'object') return item;
+            const itemScopeModuleId = normalizeScopedModuleId(
+                resolvedScopeModuleId
+                || item?.scopeModuleId
+                || item?.lastMessageModuleId
+                || ''
+            );
+            const baseChatId = resolveBaseChatIdFromSummary(item);
+            if (!baseChatId) {
+                return {
+                    ...item,
+                    lastCustomerMessageAt: null,
+                    windowExpiresAt: null,
+                    laboralMinutesRemaining: null,
+                    laboralWindowMeasuredAt: null
+                };
+            }
+
+            const lastCustomerMessageAt = lastCustomerMessageMap.get(baseChatId) || null;
+            const lastCustomerDate = lastCustomerMessageAt ? new Date(lastCustomerMessageAt) : null;
+            const hasValidLastCustomerDate = Boolean(lastCustomerDate) && Number.isFinite(lastCustomerDate.getTime());
+            const windowExpiresAt = hasValidLastCustomerDate
+                ? new Date(lastCustomerDate.getTime() + DAY_WINDOW_MS).toISOString()
+                : null;
+            const laboralMinutesRemaining = hasValidLastCustomerDate
+                ? (typeof tenantScheduleService?.getRemainingLaboralMinutes === 'function'
+                    ? tenantScheduleService.getRemainingLaboralMinutes(activeSchedule, windowExpiresAt, measuredAt)
+                    : null)
+                : null;
+
+            return {
+                ...item,
+                baseChatId: baseChatId || item?.baseChatId || null,
+                scopeModuleId: itemScopeModuleId || item?.scopeModuleId || null,
+                lastCustomerMessageAt,
+                windowExpiresAt,
+                laboralMinutesRemaining,
+                laboralWindowMeasuredAt: hasValidLastCustomerDate ? measuredAt : null
+            };
+        });
+    };
+
+    const enrichItemsWithPersistedChatState = async (items = [], tenantId = 'default') => {
+        const safeItems = Array.isArray(items) ? items : [];
+        if (!safeItems.length) return [];
+
+        const resolvedTenantId = String(tenantId || 'default').trim() || 'default';
+        const baseChatIds = Array.from(new Set(
+            safeItems
+                .map((item) => resolveBaseChatIdFromSummary(item))
+                .filter(Boolean)
+        ));
+        if (!baseChatIds.length) return safeItems;
+
+        const persistedByChatId = new Map();
+        try {
+            const { rows } = await queryPostgres(
+                `SELECT chat_id, unread_count, archived, pinned
+                   FROM tenant_chats
+                  WHERE tenant_id = $1
+                    AND chat_id = ANY($2::text[])`,
+                [resolvedTenantId, baseChatIds]
+            );
+            (Array.isArray(rows) ? rows : []).forEach((row) => {
+                const chatId = String(row?.chat_id || '').trim();
+                if (!chatId) return;
+                persistedByChatId.set(chatId, {
+                    unreadCount: Number(row?.unread_count || 0) || 0,
+                    archived: Boolean(row?.archived),
+                    pinned: Boolean(row?.pinned)
+                });
+            });
+        } catch (_) {
+            return safeItems;
+        }
+
+        if (!persistedByChatId.size) return safeItems;
+        return safeItems.map((item) => {
+            const baseChatId = resolveBaseChatIdFromSummary(item);
+            const persisted = persistedByChatId.get(baseChatId);
+            if (!persisted) return item;
+            return {
+                ...item,
+                unreadCount: Math.max(Number(item?.unreadCount || 0) || 0, persisted.unreadCount),
+                archived: Boolean(item?.archived || persisted.archived),
+                pinned: Boolean(item?.pinned || persisted.pinned)
+            };
+        });
     };
 
     const enrichWithAdOrigin = async (item = null, tenantId = 'default', scopeModuleId = '') => {
@@ -232,10 +404,16 @@ function createSocketChatListService({
         return enrichWithAdOrigin(withWindowData, tenantId, scopeModuleId);
     };
 
+    const enrichItemsWithChatListData = async (items = [], tenantId = 'default', scopeModuleId = '') => {
+        const withPersistedState = await enrichItemsWithPersistedChatState(items, tenantId);
+        const withWindowData = await enrichItemsWithWindowData(withPersistedState, tenantId, scopeModuleId);
+        return Promise.all(withWindowData.map((item) => enrichWithAdOrigin(item, tenantId, scopeModuleId)));
+    };
+
     const enrichChatPageWithWindowData = async (page = null, tenantId = 'default', scopeModuleId = '') => {
         const safePage = page && typeof page === 'object' ? page : {};
         const rawItems = Array.isArray(safePage.items) ? safePage.items : [];
-        const items = await Promise.all(rawItems.map((item) => enrichWithChatListData(item, tenantId, scopeModuleId)));
+        const items = await enrichItemsWithChatListData(rawItems, tenantId, scopeModuleId);
         return {
             ...safePage,
             items
@@ -905,13 +1083,7 @@ function createSocketChatListService({
                     }
                 }
 
-                console.log('[Window] enriching page', {
-                    count: Array.isArray(items) ? items.length : 0,
-                    tenantId
-                });
-                items = await Promise.all(
-                    items.map((item) => enrichWithChatListData(item, tenantId, activeScopeModuleId || ''))
-                );
+                items = await enrichItemsWithChatListData(items, tenantId, activeScopeModuleId || '');
 
                 const nextOffset = offset + items.length;
                 const total = Math.max(filtered.length, historyTotalHint, offset + items.length);

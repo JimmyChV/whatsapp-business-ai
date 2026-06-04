@@ -34,7 +34,9 @@ export default function useSessionActivityPing({
           method: 'PATCH',
           credentials: 'include',
           headers: buildApiHeaders({ includeJson: true }),
-          body: JSON.stringify({})
+          body: JSON.stringify({
+            deviceId: String(saasSessionRef?.current?.deviceId || '').trim() || undefined
+          })
         });
         const payload = await response.json().catch(() => ({}));
         if (cancelled) return;

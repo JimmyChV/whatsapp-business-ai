@@ -2007,6 +2007,12 @@ class SocketManager {
                     }
                     if (!isManager && !isAssignedToActor) return;
                     await waClient.markAsRead(safeChatId);
+                    if (typeof messageHistoryService?.updateChatState === 'function') {
+                        await messageHistoryService.updateChatState(tenantId, {
+                            chatId: safeChatId,
+                            unreadCount: 0
+                        });
+                    }
                 } catch (e) { }
             });
 

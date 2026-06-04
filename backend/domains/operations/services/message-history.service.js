@@ -419,6 +419,7 @@ async function updateChatState(tenantId = DEFAULT_TENANT_ID, {
     chatId,
     archived,
     pinned,
+    unreadCount,
     metadata = null
 } = {}) {
     if (!isHistoryEnabled()) return { ok: false, skipped: 'disabled' };
@@ -430,8 +431,12 @@ async function updateChatState(tenantId = DEFAULT_TENANT_ID, {
 
     const hasArchived = typeof archived === 'boolean';
     const hasPinned = typeof pinned === 'boolean';
+    const normalizedUnreadCount = Number.isFinite(Number(unreadCount))
+        ? Math.max(0, Math.floor(Number(unreadCount)))
+        : null;
+    const hasUnreadCount = normalizedUnreadCount !== null;
     const hasMetadata = metadata && typeof metadata === 'object';
-    if (!hasArchived && !hasPinned && !hasMetadata) {
+    if (!hasArchived && !hasPinned && !hasUnreadCount && !hasMetadata) {
         return { ok: false, skipped: 'empty_patch' };
     }
 
@@ -451,6 +456,11 @@ async function updateChatState(tenantId = DEFAULT_TENANT_ID, {
                 setClauses.push(`pinned = $${idx}`);
                 params.push(Boolean(pinned));
             }
+            if (hasUnreadCount) {
+                idx += 1;
+                setClauses.push(`unread_count = $${idx}`);
+                params.push(normalizedUnreadCount);
+            }
             if (hasMetadata) {
                 idx += 1;
                 setClauses.push(`metadata = COALESCE(metadata, '{}'::jsonb) || $${idx}::jsonb`);
@@ -461,7 +471,7 @@ async function updateChatState(tenantId = DEFAULT_TENANT_ID, {
                             SET ${setClauses.join(', ')}
                           WHERE tenant_id = $1
                             AND chat_id = $2
-                        RETURNING chat_id, archived, pinned, metadata`;
+                        RETURNING chat_id, archived, pinned, unread_count, metadata`;
             const { rows } = await queryPostgres(sql, params);
             if (!rows.length) return { ok: false, skipped: 'not_found' };
 
@@ -472,6 +482,7 @@ async function updateChatState(tenantId = DEFAULT_TENANT_ID, {
                 chatId: String(row.chat_id || safeChatId),
                 archived: Boolean(row.archived),
                 pinned: Boolean(row.pinned),
+                unreadCount: Number(row.unread_count || 0) || 0,
                 metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
             };
         } catch (error) {
@@ -488,6 +499,7 @@ async function updateChatState(tenantId = DEFAULT_TENANT_ID, {
         ...currentChat,
         archived: hasArchived ? Boolean(archived) : Boolean(currentChat.archived),
         pinned: hasPinned ? Boolean(pinned) : Boolean(currentChat.pinned),
+        unreadCount: hasUnreadCount ? normalizedUnreadCount : Number(currentChat.unreadCount || 0),
         metadata: {
             ...(currentChat.metadata && typeof currentChat.metadata === 'object' ? currentChat.metadata : {}),
             ...(hasMetadata ? metadata : {})
@@ -501,6 +513,7 @@ async function updateChatState(tenantId = DEFAULT_TENANT_ID, {
         chatId: safeChatId,
         archived: Boolean(store.chats[safeChatId]?.archived),
         pinned: Boolean(store.chats[safeChatId]?.pinned),
+        unreadCount: Number(store.chats[safeChatId]?.unreadCount || 0),
         metadata: store.chats[safeChatId]?.metadata && typeof store.chats[safeChatId].metadata === 'object'
             ? store.chats[safeChatId].metadata
             : {}

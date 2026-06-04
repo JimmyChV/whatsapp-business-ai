@@ -743,7 +743,7 @@
             if (!refreshToken) {
                 return res.status(401).json({ ok: false, error: 'refresh token requerido.' });
             }
-            const deviceId = getDeviceIdFromRequest(req);
+            const deviceId = String(req.body?.deviceId || getDeviceIdFromRequest(req) || '').trim();
             if (deviceId && await resolvedDeviceAuthService.isDeviceRevoked(deviceId)) {
                 return res.status(401).json({ ok: false, error: 'device_revoked' });
             }
@@ -771,7 +771,7 @@
             if (authService.isAuthEnabled() && (!authContext.isAuthenticated || !authContext.user)) {
                 return res.status(401).json({ ok: false, error: 'No autenticado.' });
             }
-            const deviceId = getDeviceIdFromRequest(req);
+            const deviceId = String(req.body?.deviceId || getDeviceIdFromRequest(req) || '').trim();
             if (!deviceId) {
                 return res.status(400).json({ ok: false, error: 'device_id requerido.' });
             }

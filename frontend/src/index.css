@@ -5450,6 +5450,18 @@ body {
   box-shadow: 0 20px 48px rgba(0, 0, 0, 0.42);
 }
 
+.sidebar-bulk-label-menu--portal {
+  position: fixed;
+  top: auto;
+  left: auto;
+  z-index: 2147483000;
+  max-height: min(330px, calc(100vh - 24px));
+}
+
+.sidebar-bulk-label-menu--portal .sidebar-bulk-label-options {
+  max-height: min(238px, calc(100vh - 118px));
+}
+
 .sidebar-bulk-label-menu input {
   width: 100%;
   margin-bottom: 8px;

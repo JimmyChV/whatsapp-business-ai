@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck, UserCheck, ChevronDown, Moon, Sun, Clock3, CheckSquare, Square, Loader2 } from 'lucide-react';
 import ChannelBrandIcon from './ChannelBrandIcon';
 import AssignmentBadge from './assignment/AssignmentBadge';
@@ -188,12 +189,14 @@ const Sidebar = ({
     const windowMenuRef = React.useRef(null);
     const labelPanelRef = React.useRef(null);
     const bulkLabelMenuRef = React.useRef(null);
+    const bulkLabelPortalRef = React.useRef(null);
     const customerSearchRequestRef = React.useRef(0);
     const [selectionMode, setSelectionMode] = React.useState(false);
     const [selectedChatIds, setSelectedChatIds] = React.useState(() => new Set());
     const [bulkActionBusy, setBulkActionBusy] = React.useState('');
     const [bulkLabelMenu, setBulkLabelMenu] = React.useState(null);
     const [bulkLabelQuery, setBulkLabelQuery] = React.useState('');
+    const [bulkLabelMenuPosition, setBulkLabelMenuPosition] = React.useState(null);
     const visibleChats = React.useMemo(() => {
         const items = Array.isArray(filteredChats) ? [...filteredChats] : [];
         return items.sort((a, b) => {
@@ -225,8 +228,11 @@ const Sidebar = ({
     React.useEffect(() => {
         const handlePointerDown = (event) => {
             const target = event.target;
-            if (bulkLabelMenuRef.current && !bulkLabelMenuRef.current.contains(target)) {
+            const insideBulkToolbar = bulkLabelMenuRef.current && bulkLabelMenuRef.current.contains(target);
+            const insideBulkPortal = bulkLabelPortalRef.current && bulkLabelPortalRef.current.contains(target);
+            if (!insideBulkToolbar && !insideBulkPortal) {
                 setBulkLabelMenu(null);
+                setBulkLabelMenuPosition(null);
             }
             if (assigneeMenuRef.current && !assigneeMenuRef.current.contains(target)) {
                 setShowAssigneeFilterMenu(false);
@@ -414,6 +420,7 @@ const Sidebar = ({
         setSelectionMode(false);
         setSelectedChatIds(new Set());
         setBulkLabelMenu(null);
+        setBulkLabelMenuPosition(null);
         setBulkLabelQuery('');
     }, []);
 
@@ -423,6 +430,7 @@ const Sidebar = ({
             if (current) {
                 setSelectedChatIds(new Set());
                 setBulkLabelMenu(null);
+                setBulkLabelMenuPosition(null);
             } else {
                 setShowAdvancedFilters(false);
                 setMobileFilterMode(null);
@@ -453,7 +461,36 @@ const Sidebar = ({
     const clearSelectedChats = React.useCallback(() => {
         setSelectedChatIds(new Set());
         setBulkLabelMenu(null);
+        setBulkLabelMenuPosition(null);
     }, []);
+
+    const toggleBulkLabelMenu = React.useCallback((menuType = '', event = null) => {
+        const nextMenu = String(menuType || '').trim();
+        if (!nextMenu) return;
+        if (bulkLabelMenu === nextMenu) {
+            setBulkLabelMenu(null);
+            setBulkLabelMenuPosition(null);
+            return;
+        }
+
+        const rect = event?.currentTarget?.getBoundingClientRect?.();
+        if (rect && typeof window !== 'undefined') {
+            const width = Math.min(300, Math.max(248, window.innerWidth - 24));
+            const left = Math.min(
+                Math.max(12, rect.left),
+                Math.max(12, window.innerWidth - width - 12)
+            );
+            const top = Math.min(
+                rect.bottom + 8,
+                Math.max(12, window.innerHeight - 300)
+            );
+            setBulkLabelMenuPosition({ top, left, width });
+        } else {
+            setBulkLabelMenuPosition(null);
+        }
+        setBulkLabelQuery('');
+        setBulkLabelMenu(nextMenu);
+    }, [bulkLabelMenu]);
 
     const postBulkAction = React.useCallback(async (endpoint, body = {}) => {
         if (typeof buildApiHeaders !== 'function') {
@@ -485,14 +522,13 @@ const Sidebar = ({
             });
             const updated = Number(payload?.updated || 0) || 0;
             notify({ type: 'success', message: `${updated} chats marcados como no leidos.` });
-            onRefreshChats?.();
             exitSelectionMode();
         } catch (error) {
             notify({ type: 'error', message: String(error?.message || 'Error al ejecutar la accion.') });
         } finally {
             setBulkActionBusy('');
         }
-    }, [exitSelectionMode, notify, onRefreshChats, postBulkAction, selectedChatCount, selectedChatIdList]);
+    }, [exitSelectionMode, notify, postBulkAction, selectedChatCount, selectedChatIdList]);
 
     const handleBulkLabelAction = React.useCallback(async (label = null) => {
         const labelId = String(label?.id || label?.labelId || '').trim();
@@ -507,16 +543,53 @@ const Sidebar = ({
             const updated = Number(payload?.updated || 0) || 0;
             const verb = bulkLabelMenu === 'remove' ? 'quitada' : 'aplicada';
             notify({ type: 'success', message: `Etiqueta ${verb} a ${updated} chats.` });
-            onRefreshChats?.();
             exitSelectionMode();
         } catch (error) {
             notify({ type: 'error', message: String(error?.message || 'Error al ejecutar la accion.') });
         } finally {
             setBulkActionBusy('');
         }
-    }, [bulkLabelMenu, exitSelectionMode, notify, onRefreshChats, postBulkAction, selectedChatCount, selectedChatIdList]);
+    }, [bulkLabelMenu, exitSelectionMode, notify, postBulkAction, selectedChatCount, selectedChatIdList]);
+
+    const bulkLabelMenuPortal = bulkLabelMenu && typeof document !== 'undefined'
+        ? createPortal((
+            <div
+                ref={bulkLabelPortalRef}
+                className="sidebar-bulk-label-menu sidebar-bulk-label-menu--portal"
+                style={bulkLabelMenuPosition || undefined}
+            >
+                <input
+                    type="search"
+                    value={bulkLabelQuery}
+                    onChange={(event) => setBulkLabelQuery(event.target.value)}
+                    placeholder="Buscar etiqueta..."
+                    autoFocus
+                />
+                <div className="sidebar-bulk-label-options">
+                    {bulkLabelOptions.length === 0 ? (
+                        <div className="sidebar-bulk-label-empty">No hay etiquetas para mostrar</div>
+                    ) : bulkLabelOptions.map((label) => {
+                        const labelId = String(label?.id || label?.labelId || '').trim();
+                        const labelName = String(label?.name || label?.label || labelId).trim();
+                        return (
+                            <button
+                                key={labelId || labelName}
+                                type="button"
+                                className="sidebar-bulk-label-option"
+                                onClick={() => handleBulkLabelAction(label)}
+                            >
+                                <span className="sidebar-label-color" style={{ background: label?.color || 'var(--chat-control-text-soft)' }} />
+                                <span>{labelName}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+        ), document.body)
+        : null;
 
     return (
+        <>
         <div className="sidebar sidebar-pro">
             <div className="sidebar-header sidebar-header-pro">
                 <button
@@ -819,7 +892,7 @@ const Sidebar = ({
                                         <button
                                             type="button"
                                             className="sidebar-bulk-action-btn"
-                                            onClick={() => setBulkLabelMenu((current) => current === 'add' ? null : 'add')}
+                                            onClick={(event) => toggleBulkLabelMenu('add', event)}
                                             disabled={selectedChatCount === 0 || Boolean(bulkActionBusy)}
                                         >
                                             <Tag size={14} />
@@ -829,42 +902,13 @@ const Sidebar = ({
                                         <button
                                             type="button"
                                             className="sidebar-bulk-action-btn"
-                                            onClick={() => setBulkLabelMenu((current) => current === 'remove' ? null : 'remove')}
+                                            onClick={(event) => toggleBulkLabelMenu('remove', event)}
                                             disabled={selectedChatCount === 0 || Boolean(bulkActionBusy)}
                                         >
                                             <X size={14} />
                                             <span>Quitar</span>
                                             <ChevronDown size={13} />
                                         </button>
-                                        {bulkLabelMenu && (
-                                            <div className="sidebar-bulk-label-menu">
-                                                <input
-                                                    type="search"
-                                                    value={bulkLabelQuery}
-                                                    onChange={(event) => setBulkLabelQuery(event.target.value)}
-                                                    placeholder="Buscar etiqueta..."
-                                                />
-                                                <div className="sidebar-bulk-label-options">
-                                                    {bulkLabelOptions.length === 0 ? (
-                                                        <div className="sidebar-bulk-label-empty">No hay etiquetas para mostrar</div>
-                                                    ) : bulkLabelOptions.map((label) => {
-                                                        const labelId = String(label?.id || label?.labelId || '').trim();
-                                                        const labelName = String(label?.name || label?.label || labelId).trim();
-                                                        return (
-                                                            <button
-                                                                key={labelId || labelName}
-                                                                type="button"
-                                                                className="sidebar-bulk-label-option"
-                                                                onClick={() => handleBulkLabelAction(label)}
-                                                            >
-                                                                <span className="sidebar-label-color" style={{ background: label?.color || 'var(--chat-control-text-soft)' }} />
-                                                                <span>{labelName}</span>
-                                                            </button>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        )}
                                     </div>
                                     <button
                                         type="button"
@@ -1360,6 +1404,8 @@ const Sidebar = ({
                 </div>
             </div>
         </div>
+        {bulkLabelMenuPortal}
+        </>
     );
 };
 

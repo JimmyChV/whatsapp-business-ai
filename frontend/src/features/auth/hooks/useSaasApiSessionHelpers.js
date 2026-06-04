@@ -60,6 +60,7 @@ export default function useSaasApiSessionHelpers({
       tokenType: String(payload?.tokenType || previousSession?.tokenType || 'Bearer').trim() || 'Bearer',
       accessExpiresAtUnix,
       refreshExpiresAtUnix,
+      deviceId: String(payload?.deviceId || previousSession?.deviceId || '').trim(),
       deviceType: String(payload?.deviceType || previousSession?.deviceType || '').trim(),
       user: payload?.user && typeof payload.user === 'object'
         ? payload.user
@@ -74,7 +75,9 @@ export default function useSaasApiSessionHelpers({
       method: 'POST',
       credentials: 'include',
       headers: buildApiHeaders({ includeJson: true, tokenOverride: String(current?.accessToken || '').trim() }),
-      body: JSON.stringify({})
+      body: JSON.stringify({
+        deviceId: String(current?.deviceId || '').trim() || undefined
+      })
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload?.ok) {
