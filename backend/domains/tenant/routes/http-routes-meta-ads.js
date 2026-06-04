@@ -60,6 +60,7 @@ function registerTenantMetaAdsHttpRoutes({
             const dateStop = String(source?.dateStop || '').trim() || dateStart;
             const structure = await metaAdsSyncService.syncMetaAdsStructure(tenantId);
             const insights = await metaAdsSyncService.syncMetaAdsInsights(tenantId, dateStart, dateStop);
+            const creatives = await metaAdsSyncService.syncAdCreatives(tenantId);
             return res.json({
                 ok: true,
                 tenantId,
@@ -68,8 +69,10 @@ function registerTenantMetaAdsHttpRoutes({
                 dateStop,
                 adsCount: Number(structure?.totalCount || 0),
                 insightsCount: Number(insights?.insightsCount || 0),
+                creativesCount: Number(creatives?.creativesCount || 0),
                 structure,
-                insights
+                insights,
+                creatives
             });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo sincronizar Meta Ads.') });

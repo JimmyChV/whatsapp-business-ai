@@ -198,6 +198,7 @@ function registerOperationsHttpRoutes({
     templateWebhookEventsService,
     templateVariablesService,
     campaignsService,
+    chatOriginService,
     conversationOpsService,
     chatCommercialStatusService,
     commercialIntelligenceService,
@@ -1422,6 +1423,105 @@ function registerOperationsHttpRoutes({
             return res.json({ ok: true, tenantId, chatId, scopeModuleId, ...result });
         } catch (error) {
             return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar eventos de conversacion.') });
+        }
+    });
+
+    app.get('/api/tenant/chats/:chatId/origin', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatAssignmentsReadAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+
+            const chatId = String(req.params?.chatId || '').trim();
+            if (!chatId) return res.status(400).json({ ok: false, error: 'chatId invalido.' });
+
+            const scopeModuleId = normalizeScopeModuleId(req.query?.scopeModuleId || '');
+            if (getStorageDriver() !== 'postgres') {
+                const origin = chatOriginService && typeof chatOriginService.getChatOrigin === 'function'
+                    ? await chatOriginService.getChatOrigin(tenantId, { chatId, scopeModuleId })
+                    : null;
+                return res.json({ ok: true, tenantId, chatId, scopeModuleId, origin });
+            }
+
+            const result = await queryPostgres(
+                `SELECT
+                    o.origin_type,
+                    o.origin_source,
+                    o.origin_label,
+                    o.origin_detail,
+                    o.referral_source_id,
+                    o.referral_headline,
+                    o.referral_source_type,
+                    o.ctwa_clid,
+                    o.campaign_id,
+                    o.detected_at,
+                    ad.object_name AS ad_name,
+                    adset.object_name AS adset_name,
+                    adset.object_id AS adset_id,
+                    campaign.object_name AS campaign_name,
+                    c.creative_id,
+                    c.greeting_text,
+                    c.autofill_message,
+                    c.buttons_json
+                   FROM tenant_chat_origins o
+                   LEFT JOIN tenant_meta_ads_structure ad
+                     ON ad.tenant_id = o.tenant_id
+                    AND ad.object_id = o.referral_source_id
+                    AND ad.object_type = 'ad'
+                   LEFT JOIN tenant_meta_ads_structure adset
+                     ON adset.tenant_id = o.tenant_id
+                    AND adset.object_id = ad.parent_id
+                    AND adset.object_type = 'adset'
+                   LEFT JOIN tenant_meta_ads_structure campaign
+                     ON campaign.tenant_id = o.tenant_id
+                    AND campaign.object_id = COALESCE(o.campaign_id, adset.parent_id)
+                    AND campaign.object_type = 'campaign'
+                   LEFT JOIN tenant_meta_ads_creatives c
+                     ON c.tenant_id = o.tenant_id
+                    AND c.ad_id = o.referral_source_id
+                  WHERE o.tenant_id = $1
+                    AND o.chat_id = $2
+                    AND ($3 = '' OR o.scope_module_id = $3 OR o.scope_module_id = '')
+                  ORDER BY CASE
+                    WHEN o.scope_module_id = $3 THEN 0
+                    WHEN o.scope_module_id = '' THEN 1
+                    ELSE 2
+                  END
+                  LIMIT 1`,
+                [tenantId, chatId, scopeModuleId]
+            );
+
+            const row = result?.rows?.[0] || null;
+            const origin = row ? {
+                originType: toText(row.origin_type),
+                originSource: toText(row.origin_source),
+                originLabel: toText(row.origin_label),
+                originDetail: toSafeObject(row.origin_detail),
+                referralSourceId: toText(row.referral_source_id),
+                referralHeadline: toText(row.referral_headline),
+                referralSourceType: toText(row.referral_source_type),
+                ctwaClid: toText(row.ctwa_clid),
+                campaignId: toText(row.campaign_id),
+                detectedAt: row.detected_at || null,
+                adName: toText(row.ad_name),
+                adsetName: toText(row.adset_name),
+                adsetId: toText(row.adset_id),
+                campaignName: toText(row.campaign_name),
+                creativeId: toText(row.creative_id),
+                greetingText: toText(row.greeting_text),
+                autofillMessage: toText(row.autofill_message),
+                buttons: Array.isArray(row.buttons_json) ? row.buttons_json : []
+            } : null;
+
+            return res.json({ ok: true, tenantId, chatId, scopeModuleId, origin });
+        } catch (error) {
+            if (String(error?.code || '').trim() === '42P01' || String(error?.code || '').trim() === '42703') {
+                return res.json({ ok: true, tenantId: resolveTenantIdFromContext(req), chatId: String(req.params?.chatId || '').trim(), origin: null });
+            }
+            return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudo cargar el origen del chat.') });
         }
     });
 

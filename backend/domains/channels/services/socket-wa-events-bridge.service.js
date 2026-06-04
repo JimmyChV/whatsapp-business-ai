@@ -64,6 +64,175 @@ function createSocketWaEventsBridgeService({
         return out;
     };
 
+    const ORIGIN_KEYWORDS = [
+        { source: 'instagram_bio', label: 'Instagram', keywords: ['instagram', ' ig ', 'reel', 'story', 'historia', 'perfil ig'] },
+        { source: 'google_business', label: 'Google', keywords: ['google', 'maps', 'gmaps', 'busque', 'buscando', 'encontre'] },
+        { source: 'ai_referral', label: 'Busqueda IA (ChatGPT/Gemini)', keywords: ['chatgpt', 'chat gpt', 'gpt', 'gemini', 'bard', 'copilot', 'inteligencia artificial', 'ia me'] },
+        { source: 'tiktok', label: 'TikTok', keywords: ['tiktok', 'tik tok'] },
+        { source: 'youtube', label: 'YouTube', keywords: ['youtube', 'you tube', 'video yt'] },
+        { source: 'facebook_organic', label: 'Facebook', keywords: ['facebook', ' fb ', 'face book'] },
+        { source: 'qr_product', label: 'QR en producto', keywords: ['qr', 'codigo qr', 'escanee', 'empaque', 'envase', 'etiqueta del producto'] },
+        { source: 'qr_store', label: 'QR en tienda', keywords: ['qr tienda', 'qr local', 'qr establecimiento'] },
+        { source: 'referral', label: 'Recomendacion', keywords: ['recomend', 'me dijeron', 'me pasaron', 'me compartieron', 'un amigo', 'una amiga', 'familiar', 'conocido', 'referido'] },
+        { source: 'saved_contact', label: 'Contacto guardado', keywords: ['guarde tu numero', 'tenia tu numero', 'numero guardado'] }
+    ];
+
+    const normalizeOriginLookup = (value = '') => ` ${String(value || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, ' ')} `;
+
+    const detectKeywordOrigin = (body = '') => {
+        const normalizedBody = normalizeOriginLookup(body);
+        for (const entry of ORIGIN_KEYWORDS) {
+            const matchedKeyword = entry.keywords.find((keyword) => normalizedBody.includes(normalizeOriginLookup(keyword)));
+            if (matchedKeyword) {
+                return {
+                    originSource: entry.source,
+                    originLabel: entry.label,
+                    originDetail: { keyword_detected: matchedKeyword }
+                };
+            }
+        }
+        return {
+            originSource: 'organic',
+            originLabel: 'Directo / Organico',
+            originDetail: {}
+        };
+    };
+
+    const isOriginRecent = (origin = null, referenceIso = '') => {
+        const detectedAtMs = Date.parse(origin?.detectedAt || origin?.detected_at || '');
+        const referenceMs = Date.parse(referenceIso || '');
+        if (!Number.isFinite(detectedAtMs) || !Number.isFinite(referenceMs)) return false;
+        return (referenceMs - detectedAtMs) < (30 * 24 * 60 * 60 * 1000);
+    };
+
+    const hasRecentInboundBefore = async (tenantId = '', chatId = '', scopeModuleId = '', messageId = '', activityAtIso = '') => {
+        if (getStorageDriver() !== 'postgres') return false;
+        const cleanTenantId = String(tenantId || '').trim();
+        const cleanChatId = String(chatId || '').trim();
+        const cleanScopeModuleId = String(scopeModuleId || '').trim().toLowerCase();
+        const activityAtMs = Date.parse(activityAtIso || '');
+        if (!cleanTenantId || !cleanChatId || !Number.isFinite(activityAtMs)) return false;
+
+        const activityUnix = Math.floor(activityAtMs / 1000);
+        const cutoffUnix = activityUnix - (30 * 24 * 60 * 60);
+        const params = [cleanTenantId, cleanChatId, String(messageId || '').trim(), cutoffUnix, activityUnix];
+        let scopeSql = '';
+        if (cleanScopeModuleId) {
+            params.push(cleanScopeModuleId);
+            scopeSql = ` AND LOWER(COALESCE(wa_module_id, '')) = LOWER($${params.length})`;
+        }
+
+        const { rows } = await queryPostgres(
+            `SELECT 1
+               FROM tenant_messages
+              WHERE tenant_id = $1
+                AND chat_id = $2
+                AND message_id <> $3
+                AND from_me = FALSE
+                AND COALESCE(timestamp_unix, 0) >= $4
+                AND COALESCE(timestamp_unix, 0) <= $5${scopeSql}
+              LIMIT 1`,
+            params
+        );
+        return Boolean(rows?.[0]);
+    };
+
+    const findRecentCampaignOrigin = async (tenantId = '', chatId = '') => {
+        if (getStorageDriver() !== 'postgres') return null;
+        const cleanTenantId = String(tenantId || '').trim();
+        const phoneCandidates = extractPhoneCandidatesFromChatId(chatId);
+        if (!cleanTenantId || phoneCandidates.length === 0) return null;
+        const { rows } = await queryPostgres(
+            `SELECT cr.campaign_id, tc.campaign_name, cr.sent_at
+               FROM tenant_campaign_recipients cr
+               JOIN tenant_campaigns tc
+                 ON tc.tenant_id = cr.tenant_id
+                AND tc.campaign_id = cr.campaign_id
+              WHERE cr.tenant_id = $1
+                AND cr.phone = ANY($2::text[])
+                AND cr.sent_at >= NOW() - INTERVAL '30 days'
+                AND cr.status = 'sent'
+              ORDER BY cr.sent_at DESC NULLS LAST
+              LIMIT 1`,
+            [cleanTenantId, phoneCandidates]
+        );
+        const row = rows?.[0] || null;
+        if (!row) return null;
+        const campaignName = String(row?.campaign_name || '').trim() || 'Campana sin nombre';
+        return {
+            originType: 'inbound',
+            originSource: 'campaign',
+            originLabel: campaignName,
+            campaignId: String(row?.campaign_id || '').trim() || null,
+            originDetail: {
+                campaign_id: String(row?.campaign_id || '').trim() || null,
+                campaign_name: campaignName,
+                sent_at: row?.sent_at || null
+            }
+        };
+    };
+
+    const detectAndPersistChatOrigin = async ({
+        tenantId = '',
+        chatId = '',
+        scopeModuleId = '',
+        messageId = '',
+        activityAtIso = '',
+        referral = null,
+        body = ''
+    } = {}) => {
+        if (!chatOriginService || !tenantId || !chatId) return;
+        const existingOrigin = typeof chatOriginService.getChatOrigin === 'function'
+            ? await chatOriginService.getChatOrigin(tenantId, { chatId, scopeModuleId })
+            : null;
+        if (existingOrigin && isOriginRecent(existingOrigin, activityAtIso)) return;
+
+        const hasPreviousInbound = await hasRecentInboundBefore(tenantId, chatId, scopeModuleId, messageId, activityAtIso);
+        if (hasPreviousInbound) return;
+
+        const hasMetaReferral = Boolean(referral && typeof referral === 'object' && Object.keys(referral).length > 0);
+        let payload = null;
+        if (hasMetaReferral) {
+            const referralHeadline = String(referral?.headline || '').trim();
+            payload = {
+                originType: 'meta_ad',
+                originSource: 'meta_ad',
+                originLabel: referralHeadline || 'Anuncio Meta',
+                referralSourceUrl: String(referral?.sourceUrl || referral?.source_url || '').trim() || null,
+                referralSourceType: String(referral?.sourceType || referral?.source_type || '').trim() || null,
+                referralSourceId: String(referral?.sourceId || referral?.source_id || '').trim() || null,
+                referralHeadline: referralHeadline || null,
+                ctwaClid: String(referral?.ctwaClid || referral?.ctwa_clid || '').trim() || null,
+                campaignId: null,
+                rawReferral: referral,
+                originDetail: {}
+            };
+        } else {
+            payload = await findRecentCampaignOrigin(tenantId, chatId);
+            if (!payload) {
+                const keywordOrigin = detectKeywordOrigin(body);
+                payload = {
+                    originType: 'inbound',
+                    originSource: keywordOrigin.originSource,
+                    originLabel: keywordOrigin.originLabel,
+                    originDetail: keywordOrigin.originDetail
+                };
+            }
+        }
+
+        await chatOriginService.upsertChatOrigin(tenantId, {
+            chatId,
+            scopeModuleId,
+            ...payload,
+            detectedAt: activityAtIso
+        });
+    };
+
     const resolveCustomerIdFromChat = async (tenantId = '', chatId = '', scopeModuleId = '') => {
         const cleanTenantId = String(tenantId || '').trim();
         const cleanChatId = String(chatId || '').trim();
@@ -424,7 +593,6 @@ function createSocketWaEventsBridgeService({
                 : order;
             const location = extractLocationInfo(msg);
             const referral = msg?.referral && typeof msg.referral === 'object' ? msg.referral : null;
-            const hasReferral = Boolean(referral && Object.keys(referral).length > 0);
             const rawMessageData = msg?._data && typeof msg._data === 'object' ? msg._data : {};
             const rawMessageMetadata = rawMessageData?.metadata && typeof rawMessageData.metadata === 'object'
                 ? rawMessageData.metadata
@@ -646,20 +814,23 @@ function createSocketWaEventsBridgeService({
                         }
                     }
 
-                    if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase && chatOriginService && hasReferral) {
+                    if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase && chatOriginService) {
                         try {
-                            await chatOriginService.upsertChatOrigin(historyTenantId, {
+                            await detectAndPersistChatOrigin({
+                                tenantId: historyTenantId,
                                 chatId: relatedChatIdBase,
                                 scopeModuleId: cleanScopeModuleId,
-                                originType: 'meta_ad',
-                                referralSourceUrl: String(referral?.sourceUrl || referral?.source_url || '').trim() || null,
-                                referralSourceType: String(referral?.sourceType || referral?.source_type || '').trim() || null,
-                                referralSourceId: String(referral?.sourceId || referral?.source_id || '').trim() || null,
-                                referralHeadline: String(referral?.headline || '').trim() || null,
-                                ctwaClid: String(referral?.ctwaClid || referral?.ctwa_clid || '').trim() || null,
-                                campaignId: null,
-                                rawReferral: referral,
-                                detectedAt: activityAtIso
+                                messageId,
+                                activityAtIso,
+                                referral,
+                                body: String(
+                                    msg?.body
+                                    || msg?.text
+                                    || msg?.message
+                                    || msg?.caption
+                                    || msg?._data?.body
+                                    || ''
+                                ).trim()
                             });
                         } catch (_) {
                             // silent: inbound processing should not fail by origin attribution persistence issues

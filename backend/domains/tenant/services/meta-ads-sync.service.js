@@ -211,8 +211,22 @@ async function ensurePostgresSchema() {
               updated_at TIMESTAMPTZ DEFAULT NOW()
             )
         `);
+        await queryPostgres(`
+            CREATE TABLE IF NOT EXISTS tenant_meta_ads_creatives (
+              tenant_id TEXT NOT NULL,
+              ad_id TEXT NOT NULL,
+              creative_id TEXT,
+              greeting_text TEXT,
+              autofill_message TEXT,
+              buttons_json JSONB DEFAULT '[]'::jsonb,
+              raw_creative JSONB DEFAULT '{}'::jsonb,
+              synced_at TIMESTAMPTZ DEFAULT NOW(),
+              PRIMARY KEY (tenant_id, ad_id)
+            )
+        `);
         await queryPostgres(`CREATE INDEX IF NOT EXISTS idx_tenant_meta_ads_structure_tenant_type ON tenant_meta_ads_structure(tenant_id, object_type)`);
         await queryPostgres(`CREATE INDEX IF NOT EXISTS idx_tenant_meta_ads_insights_tenant_type_dates ON tenant_meta_ads_insights(tenant_id, object_type, date_start, date_stop)`);
+        await queryPostgres(`CREATE INDEX IF NOT EXISTS idx_meta_ads_creatives_tenant ON tenant_meta_ads_creatives(tenant_id)`);
     })().catch((error) => {
         schemaPromise = null;
         throw error;
@@ -267,6 +281,19 @@ async function fetchMetaAdsPages({ path, params = {}, accessToken }) {
     }
 
     return collected;
+}
+
+async function fetchMetaAdsObject({ path, params = {}, accessToken }) {
+    const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${path}?${new URLSearchParams({
+        ...params,
+        access_token: accessToken
+    }).toString()}`;
+    const response = await fetch(url, { method: 'GET' });
+    if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(`Meta Ads request failed (${response.status}): ${detail}`);
+    }
+    return response.json();
 }
 
 async function listConfiguredMetaAdsTenants() {
@@ -409,6 +436,83 @@ async function upsertStructureRow(tenantId, row = {}) {
     );
 }
 
+function normalizeCreativeButtons(pageWelcomeMessage = {}) {
+    const source = isPlainObject(pageWelcomeMessage) ? pageWelcomeMessage : {};
+    const textFormat = isPlainObject(source?.text_format) ? source.text_format : {};
+    const message = isPlainObject(textFormat?.message) ? textFormat.message : {};
+    const actionType = toText(source?.customer_action_type || textFormat?.customer_action_type || message?.customer_action_type).toLowerCase();
+    if (actionType && actionType !== 'buttons') return [];
+
+    const candidates = [
+        source?.buttons,
+        textFormat?.buttons,
+        message?.buttons,
+        message?.quick_replies
+    ].find((entry) => Array.isArray(entry)) || [];
+
+    return candidates
+        .map((button) => {
+            if (!isPlainObject(button)) return null;
+            const label = toNullableText(button?.title || button?.text || button?.label || button?.payload);
+            if (!label) return null;
+            return {
+                label,
+                type: toNullableText(button?.type || button?.button_type || button?.action_type),
+                payload: toNullableText(button?.payload || button?.id)
+            };
+        })
+        .filter(Boolean);
+}
+
+function extractCreativePayload(adId = '', payload = {}) {
+    const source = isPlainObject(payload) ? payload : {};
+    const creative = isPlainObject(source?.creative) ? source.creative : {};
+    const objectStorySpec = isPlainObject(creative?.object_story_spec) ? creative.object_story_spec : {};
+    const linkData = isPlainObject(objectStorySpec?.link_data) ? objectStorySpec.link_data : {};
+    const pageWelcomeMessage = isPlainObject(linkData?.page_welcome_message) ? linkData.page_welcome_message : {};
+    const textFormat = isPlainObject(pageWelcomeMessage?.text_format) ? pageWelcomeMessage.text_format : {};
+    const message = isPlainObject(textFormat?.message) ? textFormat.message : {};
+    const autofillMessage = isPlainObject(message?.autofill_message)
+        ? message.autofill_message
+        : (isPlainObject(textFormat?.autofill_message) ? textFormat.autofill_message : {});
+
+    return {
+        ad_id: toText(adId),
+        creative_id: toNullableText(creative?.id),
+        greeting_text: toNullableText(message?.text || pageWelcomeMessage?.text || pageWelcomeMessage?.message),
+        autofill_message: toNullableText(autofillMessage?.content || autofillMessage?.text),
+        buttons_json: normalizeCreativeButtons(pageWelcomeMessage),
+        raw_creative: source
+    };
+}
+
+async function upsertCreativeRow(tenantId, row = {}) {
+    await queryPostgres(
+        `INSERT INTO tenant_meta_ads_creatives (
+            tenant_id, ad_id, creative_id, greeting_text, autofill_message, buttons_json, raw_creative, synced_at
+         ) VALUES (
+            $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, NOW()
+         )
+         ON CONFLICT (tenant_id, ad_id)
+         DO UPDATE SET
+            creative_id = COALESCE(EXCLUDED.creative_id, tenant_meta_ads_creatives.creative_id),
+            greeting_text = COALESCE(EXCLUDED.greeting_text, tenant_meta_ads_creatives.greeting_text),
+            autofill_message = COALESCE(EXCLUDED.autofill_message, tenant_meta_ads_creatives.autofill_message),
+            buttons_json = COALESCE(EXCLUDED.buttons_json, tenant_meta_ads_creatives.buttons_json),
+            raw_creative = COALESCE(EXCLUDED.raw_creative, tenant_meta_ads_creatives.raw_creative),
+            synced_at = NOW()`,
+        [
+            tenantId,
+            row.ad_id,
+            row.creative_id,
+            row.greeting_text,
+            row.autofill_message,
+            JSON.stringify(Array.isArray(row.buttons_json) ? row.buttons_json : []),
+            JSON.stringify(isPlainObject(row.raw_creative) ? row.raw_creative : {})
+        ]
+    );
+}
+
 async function upsertInsightRow(tenantId, row = {}) {
     await queryPostgres(
         `INSERT INTO tenant_meta_ads_insights (
@@ -528,6 +632,55 @@ async function syncMetaAdsStructure(tenantId = DEFAULT_TENANT_ID) {
         adsetsCount: adsets.length,
         adsCount: ads.length,
         totalCount: campaigns.length + adsets.length + ads.length
+    };
+}
+
+async function syncAdCreatives(tenantId = DEFAULT_TENANT_ID, configOverride = null) {
+    await ensurePostgresSchema();
+    const config = configOverride && typeof configOverride === 'object'
+        ? configOverride
+        : await getMetaAdsConfig(tenantId);
+    const cleanTenantId = normalizeTenantId(config?.tenantId || tenantId || DEFAULT_TENANT_ID);
+    const { rows } = await queryPostgres(
+        `SELECT object_id
+           FROM tenant_meta_ads_structure
+          WHERE tenant_id = $1
+            AND object_type = 'ad'
+            AND COALESCE(object_id, '') <> ''
+          ORDER BY synced_at DESC, object_id ASC`,
+        [cleanTenantId]
+    );
+    const ads = (Array.isArray(rows) ? rows : []).map((row) => toText(row?.object_id)).filter(Boolean);
+    let syncedCount = 0;
+    let failedCount = 0;
+
+    for (const adId of ads) {
+        try {
+            const creativePayload = await fetchMetaAdsObject({
+                path: adId,
+                params: {
+                    fields: 'creative{id,object_story_spec{link_data{call_to_action,page_welcome_message}}}'
+                },
+                accessToken: config.accessToken
+            });
+            const normalized = extractCreativePayload(adId, creativePayload);
+            await upsertCreativeRow(cleanTenantId, normalized);
+            syncedCount += 1;
+        } catch (error) {
+            failedCount += 1;
+            console.warn('[meta-ads-sync] No se pudo sincronizar creative del anuncio.', {
+                tenantId: cleanTenantId,
+                adId,
+                error: String(error?.message || error)
+            });
+        }
+    }
+
+    return {
+        tenantId: cleanTenantId,
+        adsCount: ads.length,
+        creativesCount: syncedCount,
+        failedCount
     };
 }
 
@@ -902,7 +1055,8 @@ async function runMetaAdsDailySyncOnce() {
             try {
                 const structure = await syncMetaAdsStructure(tenantId);
                 const insights = await syncMetaAdsInsights(tenantId, dateLabel, dateLabel);
-                results.push({ tenantId, ok: true, structure, insights });
+                const creatives = await syncAdCreatives(tenantId);
+                results.push({ tenantId, ok: true, structure, insights, creatives });
             } catch (error) {
                 results.push({ tenantId, ok: false, error: String(error?.message || error) });
             }
@@ -986,6 +1140,7 @@ module.exports = {
     ensurePostgresSchema,
     getMetaAdsSyncState,
     syncMetaAdsStructure,
+    syncAdCreatives,
     syncMetaAdsInsights,
     listMetaAdsInsights,
     syncMetaAdsHistoricalCurrentYear,

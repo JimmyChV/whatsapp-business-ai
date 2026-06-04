@@ -891,7 +891,7 @@ const Sidebar = ({
                         const hasInteraction = Number(chat?.timestamp || 0) > 0;
                         const lastMessage = safeLastMessage || (hasInteraction ? 'Adjunto o evento sin vista previa' : 'Haz clic para chatear');
                         const labels = Array.isArray(chat?.labels) ? chat.labels : [];
-                        const adOrigin = chat?.adOrigin && typeof chat.adOrigin === 'object' ? chat.adOrigin : null;
+                        const adOrigin = null;
                         const adOriginName = String(adOrigin?.adName || '').trim();
                         return (
                             <div

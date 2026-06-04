@@ -16,6 +16,122 @@ import useChatWindowSearchController from './hooks/useChatWindowSearchController
 import useChatWindowHeaderModel from './hooks/useChatWindowHeaderModel';
 import useChatWindowUiToggles from './hooks/useChatWindowUiToggles';
 
+const CHAT_ORIGIN_RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+const ORIGIN_ICON_MAP = {
+    meta_ad: '📢',
+    campaign: '📣',
+    instagram_bio: '📱',
+    google_business: '🔍',
+    ai_referral: '🤖',
+    tiktok: '🎵',
+    youtube: '▶️',
+    facebook_organic: '👥',
+    qr_product: '📦',
+    qr_store: '🏪',
+    referral: '🤝',
+    saved_contact: '📋'
+};
+
+const toChatOriginTimestampMs = (value = null) => {
+    if (value === null || value === undefined || value === '') return 0;
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) {
+        return numeric < 1000000000000 ? numeric * 1000 : numeric;
+    }
+    const parsed = new Date(value).getTime();
+    return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const shouldFetchOriginForChat = (chat = null, messages = []) => {
+    if (!chat) return false;
+    if (chat?.adOrigin && typeof chat.adOrigin === 'object') return true;
+    const timestamps = [
+        chat?.createdAt,
+        chat?.created_at,
+        chat?.timestamp,
+        Array.isArray(messages) && messages[0]?.timestamp
+    ].map(toChatOriginTimestampMs).filter((value) => value > 0);
+    if (timestamps.length === 0) return false;
+    return (Date.now() - Math.max(...timestamps)) <= CHAT_ORIGIN_RECENT_WINDOW_MS;
+};
+
+const normalizeOriginButtons = (buttons = []) => (
+    Array.isArray(buttons)
+        ? buttons.map((button) => {
+            if (!button || typeof button !== 'object') return null;
+            const label = String(button.label || button.title || button.text || '').trim();
+            return label ? { label } : null;
+        }).filter(Boolean)
+        : []
+);
+
+const formatOriginDate = (value = '') => {
+    const parsed = moment(value);
+    return parsed.isValid() ? parsed.format('DD/MM/YYYY HH:mm') : '';
+};
+
+const ConversationOriginBlock = ({ origin = null }) => {
+    if (!origin || typeof origin !== 'object') return null;
+    const source = String(origin.originSource || origin.origin_source || origin.originType || origin.origin_type || '').trim();
+    if (!source || source === 'organic') return null;
+
+    const icon = ORIGIN_ICON_MAP[source] || '💬';
+    const originLabel = String(origin.originLabel || origin.origin_label || '').trim();
+    const originDetail = origin.originDetail && typeof origin.originDetail === 'object' ? origin.originDetail : {};
+    const buttons = normalizeOriginButtons(origin.buttons || origin.buttons_json);
+    const greetingText = String(origin.greetingText || origin.greeting_text || origin.autofillMessage || origin.autofill_message || '').trim();
+
+    if (source === 'meta_ad') {
+        const campaignName = String(origin.campaignName || origin.campaign_name || origin.campaignId || origin.campaign_id || '').trim();
+        const adsetName = String(origin.adsetName || origin.adset_name || origin.adsetId || origin.adset_id || '').trim();
+        const adName = String(origin.adName || origin.ad_name || origin.referralHeadline || origin.referral_headline || originLabel || '').trim();
+        return (
+            <div className="chat-origin-card chat-origin-card--meta">
+                <div className="chat-origin-card-title"><span aria-hidden="true">{icon}</span><span>Cliente desde anuncio Meta</span></div>
+                <div className="chat-origin-grid">
+                    {campaignName && <><span>Campana</span><strong>{campaignName}</strong></>}
+                    {adsetName && <><span>Conjunto</span><strong>{adsetName}</strong></>}
+                    {adName && <><span>Anuncio</span><strong>{adName}</strong></>}
+                </div>
+                {greetingText && (
+                    <div className="chat-origin-greeting">
+                        <span>Mensaje que recibio el cliente</span>
+                        <p>"{greetingText}"</p>
+                    </div>
+                )}
+                {buttons.length > 0 && (
+                    <div className="chat-origin-chips">
+                        {buttons.map((button, index) => <span key={`${button.label}_${index}`}>{button.label}</span>)}
+                    </div>
+                )}
+                {greetingText && <div className="chat-origin-note">Meta envio este mensaje automaticamente. No aparece en el chat.</div>}
+            </div>
+        );
+    }
+
+    if (source === 'campaign') {
+        const sentAt = formatOriginDate(originDetail.sent_at || originDetail.sentAt);
+        return (
+            <div className="chat-origin-card chat-origin-card--campaign">
+                <div className="chat-origin-card-title"><span aria-hidden="true">{icon}</span><span>Cliente desde campana</span></div>
+                <div className="chat-origin-grid">
+                    <span>Campana</span><strong>{originLabel || String(originDetail.campaign_name || '').trim() || 'Campana'}</strong>
+                    {sentAt && <><span>Enviada</span><strong>{sentAt}</strong></>}
+                </div>
+                <div className="chat-origin-note">Respondio a una campana enviada en los ultimos 30 dias.</div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="chat-origin-card">
+            <div className="chat-origin-card-title"><span aria-hidden="true">{icon}</span><span>{originLabel || 'Origen detectado'}</span></div>
+            <div className="chat-origin-note">Origen detectado por el primer mensaje del cliente.</div>
+        </div>
+    );
+};
+
 const normalizePattyMode = (value = '') => {
     const mode = String(value || '').trim().toLowerCase();
     return ['autonomous', 'review', 'off'].includes(mode) ? mode : '';
@@ -172,6 +288,7 @@ const ChatWindow = ({
         ? activeChatDetails.adOrigin
         : null;
     const activeAdOriginName = String(activeAdOrigin?.adName || '').trim();
+    const [chatOrigin, setChatOrigin] = React.useState(null);
     const mobileHeaderSubtitle = [headerLocation, headerPhone]
         .map((value) => String(value || '').trim())
         .filter(Boolean)
@@ -206,6 +323,32 @@ const ChatWindow = ({
         pendingJumpMessageIdRef.current = '';
         targetNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, [messages]);
+
+    useEffect(() => {
+        const baseChatId = String(activeChatDetails?.baseChatId || activeChatDetails?.id || '').trim();
+        const scopeForOrigin = String(activeChatDetails?.scopeModuleId || activeScopeModuleId || '').trim();
+        setChatOrigin(null);
+        if (!baseChatId || !shouldFetchOriginForChat(activeChatDetails, messages)) return undefined;
+
+        const controller = new AbortController();
+        const query = new URLSearchParams();
+        if (scopeForOrigin) query.set('scopeModuleId', scopeForOrigin);
+        fetch(`/api/tenant/chats/${encodeURIComponent(baseChatId)}/origin?${query.toString()}`, {
+            method: 'GET',
+            headers: typeof buildApiHeaders === 'function' ? buildApiHeaders() : undefined,
+            signal: controller.signal
+        })
+            .then((response) => (response.ok ? response.json() : null))
+            .then((payload) => {
+                if (!payload?.ok) return;
+                setChatOrigin(payload.origin || null);
+            })
+            .catch((error) => {
+                if (error?.name !== 'AbortError') setChatOrigin(null);
+            });
+
+        return () => controller.abort();
+    }, [activeChatDetails, activeScopeModuleId, buildApiHeaders, messages]);
 
     useEffect(() => {
         const handlePointerDown = (event) => {
@@ -269,7 +412,7 @@ const ChatWindow = ({
                     {mobileHeaderSubtitle && !activeChatDetails?.isGroup ? (
                         <div className="chat-header-subtitle" title={mobileHeaderSubtitle}>{mobileHeaderSubtitle}</div>
                     ) : null}
-                    {activeAdOrigin && (
+                    {false && activeAdOrigin && (
                         <span
                             className="chat-ad-origin-badge"
                             title={activeAdOriginName || 'Anuncio Meta'}
@@ -559,6 +702,7 @@ const ChatWindow = ({
                         No hay mensajes en esta conversacion.
                     </div>
                 )}
+                <ConversationOriginBlock origin={chatOrigin} />
                 {messages.map((msg, idx) => {
                     const currentDay = moment.unix(msg.timestamp || 0).format('YYYY-MM-DD');
                     const prevDay = idx > 0 ? moment.unix(messages[idx - 1].timestamp || 0).format('YYYY-MM-DD') : null;

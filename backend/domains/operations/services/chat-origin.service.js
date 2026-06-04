@@ -10,7 +10,7 @@ const {
 const STORE_FILE = 'chat_origins.json';
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 500;
-const VALID_ORIGIN_TYPES = new Set(['organic', 'meta_ad', 'campaign']);
+const VALID_ORIGIN_TYPES = new Set(['organic', 'meta_ad', 'campaign', 'inbound']);
 
 let schemaReady = false;
 let schemaPromise = null;
@@ -89,6 +89,9 @@ function normalizeOriginRecord(input = {}) {
         chatId: toText(source.chatId || source.chat_id),
         scopeModuleId: normalizeScopeModuleId(source.scopeModuleId || source.scope_module_id),
         originType: normalizeOriginType(source.originType || source.origin_type),
+        originSource: toNullableText(source.originSource || source.origin_source),
+        originLabel: toNullableText(source.originLabel || source.origin_label),
+        originDetail: normalizeObject(source.originDetail || source.origin_detail),
         referralSourceUrl: toNullableText(source.referralSourceUrl || source.referral_source_url),
         referralSourceType: toNullableText(source.referralSourceType || source.referral_source_type),
         referralSourceId: toNullableText(source.referralSourceId || source.referral_source_id),
@@ -117,6 +120,9 @@ function toPublicRecord(record = {}) {
         chatId: toText(source.chatId),
         scopeModuleId: normalizeScopeModuleId(source.scopeModuleId),
         originType: normalizeOriginType(source.originType),
+        originSource: toNullableText(source.originSource),
+        originLabel: toNullableText(source.originLabel),
+        originDetail: normalizeObject(source.originDetail),
         referralSourceUrl: toNullableText(source.referralSourceUrl),
         referralSourceType: toNullableText(source.referralSourceType),
         referralSourceId: toNullableText(source.referralSourceId),
@@ -143,7 +149,10 @@ async function ensurePostgresSchema() {
                 tenant_id TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
                 chat_id TEXT NOT NULL,
                 scope_module_id TEXT NOT NULL DEFAULT '',
-                origin_type TEXT NOT NULL CHECK (origin_type IN ('organic', 'meta_ad', 'campaign')),
+                origin_type TEXT NOT NULL CHECK (origin_type IN ('organic', 'meta_ad', 'campaign', 'inbound')),
+                origin_source TEXT NULL,
+                origin_label TEXT NULL,
+                origin_detail JSONB NOT NULL DEFAULT '{}'::jsonb,
                 referral_source_url TEXT NULL,
                 referral_source_type TEXT NULL,
                 referral_source_id TEXT NULL,
@@ -155,6 +164,15 @@ async function ensurePostgresSchema() {
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 PRIMARY KEY (tenant_id, chat_id, scope_module_id)
             )
+        `);
+        await queryPostgres(`ALTER TABLE IF EXISTS tenant_chat_origins ADD COLUMN IF NOT EXISTS origin_source TEXT`);
+        await queryPostgres(`ALTER TABLE IF EXISTS tenant_chat_origins ADD COLUMN IF NOT EXISTS origin_label TEXT`);
+        await queryPostgres(`ALTER TABLE IF EXISTS tenant_chat_origins ADD COLUMN IF NOT EXISTS origin_detail JSONB DEFAULT '{}'::jsonb`);
+        await queryPostgres(`ALTER TABLE IF EXISTS tenant_chat_origins DROP CONSTRAINT IF EXISTS tenant_chat_origins_origin_type_check`);
+        await queryPostgres(`
+            ALTER TABLE IF EXISTS tenant_chat_origins
+            ADD CONSTRAINT tenant_chat_origins_origin_type_check
+            CHECK (origin_type IN ('organic', 'meta_ad', 'campaign', 'inbound'))
         `);
         await queryPostgres(`
             CREATE INDEX IF NOT EXISTS idx_tenant_chat_origins_origin
@@ -200,17 +218,20 @@ async function upsertChatOrigin(tenantId = DEFAULT_TENANT_ID, payload = {}) {
     await ensurePostgresSchema();
     const result = await queryPostgres(
         `INSERT INTO tenant_chat_origins (
-            tenant_id, chat_id, scope_module_id, origin_type,
+            tenant_id, chat_id, scope_module_id, origin_type, origin_source, origin_label, origin_detail,
             referral_source_url, referral_source_type, referral_source_id, referral_headline,
             ctwa_clid, campaign_id, raw_referral, detected_at, created_at
         ) VALUES (
-            $1, $2, $3, $4,
-            $5, $6, $7, $8,
-            $9, $10, $11::jsonb, $12::timestamptz, $13::timestamptz
+            $1, $2, $3, $4, $5, $6, $7::jsonb,
+            $8, $9, $10, $11,
+            $12, $13, $14::jsonb, $15::timestamptz, $16::timestamptz
         )
         ON CONFLICT (tenant_id, chat_id, scope_module_id)
         DO UPDATE SET
             origin_type = EXCLUDED.origin_type,
+            origin_source = COALESCE(EXCLUDED.origin_source, tenant_chat_origins.origin_source),
+            origin_label = COALESCE(EXCLUDED.origin_label, tenant_chat_origins.origin_label),
+            origin_detail = COALESCE(tenant_chat_origins.origin_detail, '{}'::jsonb) || COALESCE(EXCLUDED.origin_detail, '{}'::jsonb),
             referral_source_url = COALESCE(EXCLUDED.referral_source_url, tenant_chat_origins.referral_source_url),
             referral_source_type = COALESCE(EXCLUDED.referral_source_type, tenant_chat_origins.referral_source_type),
             referral_source_id = COALESCE(EXCLUDED.referral_source_id, tenant_chat_origins.referral_source_id),
@@ -220,7 +241,7 @@ async function upsertChatOrigin(tenantId = DEFAULT_TENANT_ID, payload = {}) {
             raw_referral = COALESCE(tenant_chat_origins.raw_referral, '{}'::jsonb) || COALESCE(EXCLUDED.raw_referral, '{}'::jsonb),
             detected_at = COALESCE(EXCLUDED.detected_at, tenant_chat_origins.detected_at)
         RETURNING
-            chat_id, scope_module_id, origin_type,
+            chat_id, scope_module_id, origin_type, origin_source, origin_label, origin_detail,
             referral_source_url, referral_source_type, referral_source_id, referral_headline,
             ctwa_clid, campaign_id, raw_referral, detected_at, created_at`,
         [
@@ -228,6 +249,9 @@ async function upsertChatOrigin(tenantId = DEFAULT_TENANT_ID, payload = {}) {
             clean.chatId,
             clean.scopeModuleId || '',
             clean.originType,
+            clean.originSource,
+            clean.originLabel,
+            JSON.stringify(clean.originDetail || {}),
             clean.referralSourceUrl,
             clean.referralSourceType,
             clean.referralSourceId,
@@ -245,6 +269,9 @@ async function upsertChatOrigin(tenantId = DEFAULT_TENANT_ID, payload = {}) {
         chatId: row?.chat_id,
         scopeModuleId: row?.scope_module_id,
         originType: row?.origin_type,
+        originSource: row?.origin_source,
+        originLabel: row?.origin_label,
+        originDetail: row?.origin_detail,
         referralSourceUrl: row?.referral_source_url,
         referralSourceType: row?.referral_source_type,
         referralSourceId: row?.referral_source_id,
@@ -273,7 +300,7 @@ async function getChatOrigin(tenantId = DEFAULT_TENANT_ID, options = {}) {
     try {
         await ensurePostgresSchema();
         const result = await queryPostgres(
-            `SELECT chat_id, scope_module_id, origin_type,
+            `SELECT chat_id, scope_module_id, origin_type, origin_source, origin_label, origin_detail,
                     referral_source_url, referral_source_type, referral_source_id, referral_headline,
                     ctwa_clid, campaign_id, raw_referral, detected_at, created_at
                FROM tenant_chat_origins
@@ -289,6 +316,9 @@ async function getChatOrigin(tenantId = DEFAULT_TENANT_ID, options = {}) {
             chatId: row.chat_id,
             scopeModuleId: row.scope_module_id,
             originType: row.origin_type,
+            originSource: row.origin_source,
+            originLabel: row.origin_label,
+            originDetail: row.origin_detail,
             referralSourceUrl: row.referral_source_url,
             referralSourceType: row.referral_source_type,
             referralSourceId: row.referral_source_id,
@@ -352,7 +382,7 @@ async function listChatOrigins(tenantId = DEFAULT_TENANT_ID, options = {}) {
 
         const rowParams = [...params, limit, offset];
         const rowsResult = await queryPostgres(
-            `SELECT chat_id, scope_module_id, origin_type,
+            `SELECT chat_id, scope_module_id, origin_type, origin_source, origin_label, origin_detail,
                     referral_source_url, referral_source_type, referral_source_id, referral_headline,
                     ctwa_clid, campaign_id, raw_referral, detected_at, created_at
                FROM tenant_chat_origins
@@ -367,6 +397,9 @@ async function listChatOrigins(tenantId = DEFAULT_TENANT_ID, options = {}) {
             chatId: row.chat_id,
             scopeModuleId: row.scope_module_id,
             originType: row.origin_type,
+            originSource: row.origin_source,
+            originLabel: row.origin_label,
+            originDetail: row.origin_detail,
             referralSourceUrl: row.referral_source_url,
             referralSourceType: row.referral_source_type,
             referralSourceId: row.referral_source_id,
