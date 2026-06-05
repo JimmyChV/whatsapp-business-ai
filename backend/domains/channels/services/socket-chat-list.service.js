@@ -398,7 +398,8 @@ function createSocketChatListService({
                         archived,
                         pinned,
                         COALESCE(metadata->>'manuallyMarkedUnread', 'false') = 'true' AS manually_marked_unread,
-                        metadata->>'manuallyMarkedUnreadAt' AS manually_marked_unread_at
+                        metadata->>'manuallyMarkedUnreadAt' AS manually_marked_unread_at,
+                        metadata->>'manuallyMarkedUnreadClearedAt' AS manually_marked_unread_cleared_at
                    FROM tenant_chats
                   WHERE tenant_id = $1
                     AND chat_id = ANY($2::text[])`,
@@ -412,7 +413,8 @@ function createSocketChatListService({
                     archived: Boolean(row?.archived),
                     pinned: Boolean(row?.pinned),
                     manuallyMarkedUnread: Boolean(row?.manually_marked_unread),
-                    manuallyMarkedUnreadAt: String(row?.manually_marked_unread_at || '').trim() || null
+                    manuallyMarkedUnreadAt: String(row?.manually_marked_unread_at || '').trim() || null,
+                    manuallyMarkedUnreadClearedAt: String(row?.manually_marked_unread_cleared_at || '').trim() || null
                 });
             });
         } catch (_) {
@@ -437,11 +439,12 @@ function createSocketChatListService({
             if (!persisted) return item;
             return {
                 ...item,
-                unreadCount: Math.max(Number(item?.unreadCount || 0) || 0, persisted.unreadCount),
+                unreadCount: Math.max(0, Number(persisted.unreadCount || 0) || 0),
                 archived: Boolean(item?.archived || persisted.archived),
                 pinned: Boolean(item?.pinned || persisted.pinned),
-                manuallyMarkedUnread: Boolean(item?.manuallyMarkedUnread || persisted.manuallyMarkedUnread),
-                manuallyMarkedUnreadAt: item?.manuallyMarkedUnreadAt || persisted.manuallyMarkedUnreadAt || null
+                manuallyMarkedUnread: Boolean(persisted.manuallyMarkedUnread),
+                manuallyMarkedUnreadAt: persisted.manuallyMarkedUnreadAt || null,
+                manuallyMarkedUnreadClearedAt: persisted.manuallyMarkedUnreadClearedAt || null
             };
         });
     };

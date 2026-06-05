@@ -404,6 +404,7 @@ async function upsertMessage(tenantId = DEFAULT_TENANT_ID, input = {}) {
     if (record.fromMe) {
         record.chat = {
             ...(record.chat || { id: record.chatId }),
+            unreadCount: 0,
             metadata: {
                 ...((record.chat?.metadata && typeof record.chat.metadata === 'object') ? record.chat.metadata : {}),
                 manuallyMarkedUnread: false,

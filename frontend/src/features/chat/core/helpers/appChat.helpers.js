@@ -6,6 +6,20 @@ const isManualUnreadProtectionActive = (chat = {}) => {
   return chat?.manuallyMarkedUnread === true;
 };
 
+const parseTimeMs = (value = '') => {
+  const parsed = Date.parse(String(value || ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const hasExplicitManualUnreadClear = (chat = {}) => (
+  hasOwn(chat, 'manuallyMarkedUnread')
+  && chat?.manuallyMarkedUnread === false
+  && (
+    hasOwn(chat, 'manuallyMarkedUnreadClearedAt')
+    || hasOwn(chat, 'manualUnreadReset')
+  )
+);
+
 export const isChatUnreadLike = (chat = {}) => (
   Number(chat?.unreadCount || 0) > 0
   || chat?.manuallyMarkedUnread === true
@@ -709,12 +723,13 @@ export const upsertAndSortChat = (list = [], incoming = null) => {
   const incomingHasUnread = hasOwn(incoming, 'unreadCount');
   const incomingUnread = incomingHasUnread ? (Number(incoming?.unreadCount || 0) || 0) : previousUnread;
   const previousManualUnreadActive = isManualUnreadProtectionActive(previousChat);
-  const incomingManualUnreadActive = isManualUnreadProtectionActive(incoming);
-  const incomingExplicitlyClearsManualUnread = hasOwn(incoming, 'manuallyMarkedUnread')
-    && incoming?.manuallyMarkedUnread === false
+  const incomingExplicitlyClearsManualUnread = hasExplicitManualUnreadClear(incoming);
+  const previousManualUnreadClearedAtMs = parseTimeMs(previousChat?.manuallyMarkedUnreadClearedAt);
+  const incomingManualUnreadAtMs = parseTimeMs(incoming?.manuallyMarkedUnreadAt);
+  const incomingManualUnreadActive = isManualUnreadProtectionActive(incoming)
     && (
-      hasOwn(incoming, 'manuallyMarkedUnreadClearedAt')
-      || hasOwn(incoming, 'manualUnreadReset')
+      !previousManualUnreadClearedAtMs
+      || (incomingManualUnreadAtMs && incomingManualUnreadAtMs > previousManualUnreadClearedAtMs)
     );
   const keepPreviousManualUnread = previousManualUnreadActive
     && !incomingManualUnreadActive
@@ -727,9 +742,14 @@ export const upsertAndSortChat = (list = [], incoming = null) => {
       ? previousUnread
       : (incomingHasUnread ? incomingUnread : previousUnread),
     manuallyMarkedUnread: protectUnread || incomingManualUnreadActive || keepPreviousManualUnread,
-    manuallyMarkedUnreadAt: protectUnread || keepPreviousManualUnread
-      ? (previousChat?.manuallyMarkedUnreadAt || null)
-      : (incoming?.manuallyMarkedUnreadAt || (previousManualUnreadActive ? previousChat?.manuallyMarkedUnreadAt : null) || null)
+    manuallyMarkedUnreadAt: incomingExplicitlyClearsManualUnread
+      ? null
+      : (protectUnread || keepPreviousManualUnread
+        ? (previousChat?.manuallyMarkedUnreadAt || null)
+        : (incoming?.manuallyMarkedUnreadAt || (previousManualUnreadActive ? previousChat?.manuallyMarkedUnreadAt : null) || null)),
+    manuallyMarkedUnreadClearedAt: incomingExplicitlyClearsManualUnread
+      ? (incoming?.manuallyMarkedUnreadClearedAt || new Date().toISOString())
+      : (incoming?.manuallyMarkedUnreadClearedAt || previousChat?.manuallyMarkedUnreadClearedAt || null)
   };
   next[existingIndex] = mergedChat;
   const previousTimestamp = getChatTimestampValue(previousChat);
