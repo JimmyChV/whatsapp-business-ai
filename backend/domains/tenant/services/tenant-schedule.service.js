@@ -595,6 +595,16 @@ function getRemainingLaboralMinutes(schedule = null, windowExpiresAt = null, now
         return { minutes: 0, status: 'expires_outside_hours' };
     }
 
+    const timezone = normalizeTimezone(schedule?.timezone);
+    const nowParts = getTimezoneParts(nowDate, timezone);
+    const lastCloseParts = getTimezoneParts(lastLaboralClose, timezone);
+    if (lastCloseParts?.date && nowParts?.date && lastCloseParts.date !== nowParts.date) {
+        return {
+            minutes: Math.max(0, Math.floor((expiresDate.getTime() - nowDate.getTime()) / (60 * 1000))),
+            status: 'open'
+        };
+    }
+
     return {
         minutes: Math.max(0, Math.floor((lastLaboralClose.getTime() - nowDate.getTime()) / (60 * 1000))),
         status: 'expires_outside_hours'
