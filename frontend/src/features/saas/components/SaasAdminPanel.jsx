@@ -22,6 +22,7 @@ const GRID_SECTION_IDS = new Set([
     'saas_quick_replies',
     'saas_modulos',
     'saas_commercial_intelligence',
+    'saas_reports',
     'saas_config',
     'saas_catalogos',
     'saas_schedules',

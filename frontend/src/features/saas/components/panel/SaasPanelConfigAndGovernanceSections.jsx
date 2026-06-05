@@ -4,6 +4,7 @@ import {
     CommercialIntelligenceSection,
     ModulesConfigSection,
     PlansSection,
+    ReportsDashboardPage,
     RoleProfilesSection,
     SchedulesSection
 } from '../../sections';
@@ -180,6 +181,21 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
         activeCatalogOptions: context.activeCatalogOptions
     };
 
+    const reportsContext = {
+        selectedSectionId: context.selectedSectionId,
+        isReportsSection: context.isReportsSection,
+        settingsTenantId: context.settingsTenantId,
+        tenantScopeId: context.tenantScopeId,
+        tenantScopeLocked: context.tenantScopeLocked,
+        activeTenantLabel: context.activeTenantLabel,
+        busy: context.busy,
+        requestJson: context.requestJson,
+        canViewReports: context.canViewOperations,
+        users: context.scopedUsers || context.usersForSettingsTenant || [],
+        waModules: context.waModules || [],
+        toUserDisplayName: context.toUserDisplayName
+    };
+
     const schedulesContext = {
         ...sectionLoaderContext,
         selectedSectionId: context.selectedSectionId,
@@ -256,6 +272,8 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
             <CatalogSection context={catalogContext} />
 
             <CommercialIntelligenceSection context={commercialIntelligenceContext} />
+
+            <ReportsDashboardPage context={reportsContext} />
 
             <AutomationSection context={automationContext} />
 

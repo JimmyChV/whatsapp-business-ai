@@ -1,0 +1,756 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { SaasEntityPage } from '../components/entity';
+
+const TIME_ZONE = 'America/Lima';
+const EMPTY_REPORTS = {
+    kpis: null,
+    funnel: null,
+    equipo: [],
+    origenes: { porFuente: [], porAnuncioMeta: [] },
+    campanas: [],
+    actividadDiaria: [],
+    horarios: { dentroHorario: 0, fueraHorario: 0, porHora: [], porDiaSemana: [] }
+};
+const REPORT_ENDPOINTS = {
+    kpis: '/api/tenant/reports/kpis',
+    funnel: '/api/tenant/reports/funnel',
+    equipo: '/api/tenant/reports/equipo',
+    origenes: '/api/tenant/reports/origenes',
+    campanas: '/api/tenant/reports/campanas',
+    actividadDiaria: '/api/tenant/reports/actividad-diaria',
+    horarios: '/api/tenant/reports/horarios'
+};
+const KPI_DEFS = [
+    { key: 'chatsNuevos', label: 'Chats nuevos', type: 'integer', improve: 'up' },
+    { key: 'tiempoRespuestaPromedio', label: 'Tiempo respuesta', type: 'minutes', improve: 'down' },
+    { key: 'cotizaciones', label: 'Cotizaciones', type: 'integer', improve: 'up' },
+    { key: 'tasaConversion', label: 'Tasa conversion', type: 'percent', improve: 'up' },
+    { key: 'ticketPromedio', label: 'Ticket promedio', type: 'currency', improve: 'up' },
+    { key: 'mensajesEnviados', label: 'Mensajes enviados', type: 'integer', improve: 'up' },
+    { key: 'chatsActivos', label: 'Chats activos', type: 'integer', improve: 'up' },
+    { key: 'revenueEstimado', label: 'Revenue estimado', type: 'currency', improve: 'up' }
+];
+const FUNNEL_STAGES = [
+    { key: 'nuevo', label: 'Nuevo', color: '#3b82f6' },
+    { key: 'enConversacion', label: 'En conv.', color: '#1D9E75' },
+    { key: 'cotizado', label: 'Cotizado', color: '#f59e0b' },
+    { key: 'vendido', label: 'Vendido', color: '#059669' },
+    { key: 'perdido', label: 'Perdido', color: '#ef4444' }
+];
+const TEMPORAL_LINES = [
+    { key: 'chatsNuevos', label: 'Chats nuevos', color: '#1D9E75' },
+    { key: 'mensajesEnviados', label: 'Mensajes enviados', color: '#3b82f6' },
+    { key: 'cotizaciones', label: 'Cotizaciones', color: '#f59e0b' }
+];
+const FUNNEL_LINES = [
+    { key: 'nuevo', label: 'Nuevo', color: '#3b82f6' },
+    { key: 'enConversacion', label: 'En conv.', color: '#1D9E75' },
+    { key: 'cotizado', label: 'Cotizado', color: '#f59e0b' },
+    { key: 'vendido', label: 'Vendido', color: '#059669' },
+    { key: 'perdido', label: 'Perdido', color: '#ef4444' }
+];
+const ROLE_LABELS = {
+    owner: 'Owner',
+    admin: 'Admin',
+    seller: 'Vendedora'
+};
+const PERIOD_PRESETS = [
+    { key: 'today', label: 'Hoy', days: 0 },
+    { key: 'yesterday', label: 'Ayer', days: 0 },
+    { key: '7d', label: '7d', days: 6 },
+    { key: '30d', label: '30d', days: 29 },
+    { key: 'custom', label: 'Personalizado' }
+];
+
+const text = (value = '') => String(value ?? '').trim();
+const toArray = (value) => (Array.isArray(value) ? value : []);
+const number = (value, fallback = 0) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+};
+const percent = (value, digits = 1) => `${number(value).toFixed(digits)}%`;
+const formatInt = (value) => new Intl.NumberFormat('es-PE', { maximumFractionDigits: 0 }).format(number(value));
+const formatCurrency = (value) => `S/ ${new Intl.NumberFormat('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(number(value))}`;
+const formatDateShort = (value = '') => {
+    const clean = text(value);
+    if (!clean) return '-';
+    const [year, month, day] = clean.slice(0, 10).split('-');
+    if (!year || !month || !day) return clean;
+    return `${day}/${month}`;
+};
+const formatDateRangeLabel = (from = '', to = '') => `${formatDateShort(from)} - ${formatDateShort(to)}`;
+const formatKpiValue = (value, type = 'integer') => {
+    if (type === 'currency') return formatCurrency(value);
+    if (type === 'percent') return percent(value, 1);
+    if (type === 'minutes') return `${number(value).toFixed(number(value) >= 10 ? 0 : 1)} min`;
+    return formatInt(value);
+};
+
+function getDateLabel(date = new Date()) {
+    const safeDate = date instanceof Date ? date : new Date(date);
+    if (Number.isNaN(safeDate.getTime())) return '';
+    return safeDate.toLocaleDateString('en-CA', { timeZone: TIME_ZONE });
+}
+
+function addDays(label = '', amount = 0) {
+    const [year, month, day] = text(label).split('-').map((part) => Number(part));
+    if (!year || !month || !day) return getDateLabel();
+    const date = new Date(Date.UTC(year, month - 1, day));
+    date.setUTCDate(date.getUTCDate() + amount);
+    return date.toISOString().slice(0, 10);
+}
+
+function getPresetRange(preset = '7d') {
+    const today = getDateLabel();
+    if (preset === 'today') return { dateFrom: today, dateTo: today };
+    if (preset === 'yesterday') {
+        const yesterday = addDays(today, -1);
+        return { dateFrom: yesterday, dateTo: yesterday };
+    }
+    const match = PERIOD_PRESETS.find((item) => item.key === preset);
+    const days = Number.isFinite(match?.days) ? match.days : 6;
+    return { dateFrom: addDays(today, -days), dateTo: today };
+}
+
+function buildReportQuery({ tenantId, dateFrom, dateTo, userId, moduleId }) {
+    const params = new URLSearchParams();
+    params.set('tenantId', tenantId);
+    params.set('dateFrom', dateFrom);
+    params.set('dateTo', dateTo);
+    if (userId) params.set('userId', userId);
+    if (moduleId) params.set('moduleId', moduleId);
+    return params.toString();
+}
+
+function normalizeUser(user = {}, fallbackFormatter = null) {
+    const userId = text(user.userId || user.user_id || user.id);
+    const displayName = text(user.displayName || user.display_name || user.name || fallbackFormatter?.(user) || user.email || userId);
+    return {
+        userId,
+        displayName: displayName || userId,
+        role: text(user.role || user.primaryRole || user.primary_role || 'seller')
+    };
+}
+
+function normalizeModule(module = {}) {
+    const moduleId = text(module.moduleId || module.module_id || module.id || module.value);
+    const label = text(module.name || module.label || module.displayName || moduleId);
+    return { moduleId, label };
+}
+
+function aggregateSeries(rows = [], mode = 'day') {
+    if (mode === 'day') return toArray(rows);
+    const bucketMap = new Map();
+    toArray(rows).forEach((row) => {
+        const date = text(row?.date).slice(0, 10);
+        if (!date) return;
+        let key = date;
+        if (mode === 'month') key = date.slice(0, 7);
+        if (mode === 'week') {
+            const parsed = new Date(`${date}T00:00:00Z`);
+            const day = parsed.getUTCDay();
+            const diff = day === 0 ? -6 : 1 - day;
+            parsed.setUTCDate(parsed.getUTCDate() + diff);
+            key = parsed.toISOString().slice(0, 10);
+        }
+        const current = bucketMap.get(key) || { date: key, chatsNuevos: 0, mensajesEnviados: 0, mensajesRecibidos: 0, cotizaciones: 0, tiempoRespuestaPromedio: 0, samples: 0 };
+        current.chatsNuevos += number(row.chatsNuevos);
+        current.mensajesEnviados += number(row.mensajesEnviados);
+        current.mensajesRecibidos += number(row.mensajesRecibidos);
+        current.cotizaciones += number(row.cotizaciones);
+        current.tiempoRespuestaPromedio += number(row.tiempoRespuestaPromedio);
+        current.samples += 1;
+        bucketMap.set(key, current);
+    });
+    return Array.from(bucketMap.values()).map((row) => ({
+        ...row,
+        tiempoRespuestaPromedio: row.samples > 0 ? row.tiempoRespuestaPromedio / row.samples : 0
+    })).sort((a, b) => text(a.date).localeCompare(text(b.date)));
+}
+
+function downloadTextFile(fileName, content, mimeType = 'text/plain;charset=utf-8') {
+    if (typeof document === 'undefined') return;
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+}
+
+function buildCsv(rows = [], columns = []) {
+    const escapeCell = (value) => {
+        const clean = String(value ?? '');
+        if (!/[",\n]/.test(clean)) return clean;
+        return `"${clean.replaceAll('"', '""')}"`;
+    };
+    return [
+        columns.map((column) => escapeCell(column.label)).join(','),
+        ...toArray(rows).map((row) => columns.map((column) => escapeCell(row?.[column.key])).join(','))
+    ].join('\n');
+}
+
+function ReportCard({ title, children, subtitle = '', className = '' }) {
+    return (
+        <section className={`saas-summary-card saas-reports-card ${className}`.trim()}>
+            <div className="saas-summary-card__header saas-reports-card__header">
+                <h3>{title}</h3>
+                {subtitle ? <span>{subtitle}</span> : null}
+            </div>
+            {children}
+        </section>
+    );
+}
+
+function EmptyState({ text: message = 'Sin datos en este periodo.' }) {
+    return <div className="saas-reports-empty">{message}</div>;
+}
+
+function KpiCard({ def, current = {}, previous = {} }) {
+    const currentValue = number(current?.[def.key]);
+    const previousValue = number(previous?.[def.key]);
+    const hasPrevious = previousValue !== 0;
+    const delta = hasPrevious ? ((currentValue - previousValue) / Math.abs(previousValue)) * 100 : 0;
+    const improved = def.improve === 'down' ? delta < 0 : delta > 0;
+    const worsened = def.improve === 'down' ? delta > 0 : delta < 0;
+    const tone = !hasPrevious || delta === 0 ? 'neutral' : (improved ? 'good' : (worsened ? 'bad' : 'neutral'));
+    return (
+        <article className={`saas-reports-kpi saas-reports-kpi--${tone}`}>
+            <small>{def.label}</small>
+            <strong>{formatKpiValue(currentValue, def.type)}</strong>
+            <span>{hasPrevious ? `${delta > 0 ? '+' : ''}${delta.toFixed(1)}% vs anterior` : 'Sin comparacion previa'}</span>
+        </article>
+    );
+}
+
+function FunnelChart({ data = {} }) {
+    const max = Math.max(...FUNNEL_STAGES.map((stage) => number(data?.[stage.key])), 1);
+    return (
+        <div className="saas-reports-funnel">
+            {FUNNEL_STAGES.map((stage, index) => {
+                const value = number(data?.[stage.key]);
+                const previous = index === 0 ? max : Math.max(number(data?.[FUNNEL_STAGES[index - 1]?.key]), 1);
+                const width = Math.max(5, (value / max) * 100);
+                const rate = index === 0 ? 100 : (value / previous) * 100;
+                return (
+                    <div className="saas-reports-funnel__row" key={stage.key}>
+                        <span>{stage.label}</span>
+                        <strong>{formatInt(value)}</strong>
+                        <div className="saas-reports-funnel__bar">
+                            <i style={{ width: `${width}%`, background: stage.color }} />
+                        </div>
+                        <em>{index === 0 ? 'Base' : percent(rate, 0)}</em>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+function MultiLineChart({ data = [], lines = [], height = 260 }) {
+    const rows = toArray(data);
+    const values = rows.flatMap((row) => lines.map((line) => number(row?.[line.key])));
+    const max = Math.max(...values, 1);
+    const width = 720;
+    const padding = { top: 20, right: 18, bottom: 42, left: 42 };
+    const chartWidth = width - padding.left - padding.right;
+    const chartHeight = height - padding.top - padding.bottom;
+    const pointFor = (row, index, line) => {
+        const x = padding.left + (rows.length <= 1 ? chartWidth / 2 : (index / (rows.length - 1)) * chartWidth);
+        const y = padding.top + chartHeight - ((number(row?.[line.key]) / max) * chartHeight);
+        return `${x},${y}`;
+    };
+    if (!rows.length) return <EmptyState />;
+    return (
+        <div className="saas-reports-linechart">
+            <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Grafico de lineas">
+                <line x1={padding.left} y1={padding.top + chartHeight} x2={width - padding.right} y2={padding.top + chartHeight} />
+                <line x1={padding.left} y1={padding.top} x2={padding.left} y2={padding.top + chartHeight} />
+                {[0, 0.5, 1].map((ratio) => (
+                    <g key={`grid_${ratio}`}>
+                        <line className="grid" x1={padding.left} y1={padding.top + chartHeight - (ratio * chartHeight)} x2={width - padding.right} y2={padding.top + chartHeight - (ratio * chartHeight)} />
+                        <text x={12} y={padding.top + chartHeight - (ratio * chartHeight) + 4}>{formatInt(max * ratio)}</text>
+                    </g>
+                ))}
+                {lines.map((line) => (
+                    <polyline
+                        key={line.key}
+                        points={rows.map((row, index) => pointFor(row, index, line)).join(' ')}
+                        fill="none"
+                        stroke={line.color}
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                    />
+                ))}
+                {rows.map((row, index) => (
+                    <text key={`label_${row.date}_${index}`} x={padding.left + (rows.length <= 1 ? chartWidth / 2 : (index / (rows.length - 1)) * chartWidth)} y={height - 14} textAnchor="middle">
+                        {formatDateShort(row.date)}
+                    </text>
+                ))}
+            </svg>
+            <div className="saas-reports-chart-legend">
+                {lines.map((line) => (
+                    <span key={line.key}><i style={{ background: line.color }} />{line.label}</span>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function SimpleBarChart({ rows = [], labelKey = 'label', valueKey = 'value', color = '#1D9E75', horizontal = false }) {
+    const items = toArray(rows);
+    const max = Math.max(...items.map((row) => number(row?.[valueKey])), 1);
+    if (!items.length) return <EmptyState />;
+    return (
+        <div className={horizontal ? 'saas-reports-bars saas-reports-bars--horizontal' : 'saas-reports-bars'}>
+            {items.map((row) => {
+                const value = number(row?.[valueKey]);
+                const size = Math.max(4, (value / max) * 100);
+                return (
+                    <div className="saas-reports-bars__item" key={`${row?.[labelKey]}_${value}`}>
+                        <span>{row?.[labelKey]}</span>
+                        <div className="saas-reports-bars__track">
+                            <i style={horizontal ? { width: `${size}%`, background: color } : { height: `${size}%`, background: color }} />
+                        </div>
+                        <strong>{formatInt(value)}</strong>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+function DonutChart({ rows = [] }) {
+    const items = toArray(rows).filter((row) => number(row.total) > 0);
+    const total = items.reduce((acc, row) => acc + number(row.total), 0);
+    const colors = ['#1D9E75', '#3b82f6', '#f59e0b', '#ef4444', '#6366f1', '#25d366'];
+    let start = 0;
+    const gradient = items.map((row, index) => {
+        const pct = total > 0 ? (number(row.total) / total) * 100 : 0;
+        const end = start + pct;
+        const part = `${colors[index % colors.length]} ${start}% ${end}%`;
+        start = end;
+        return part;
+    }).join(', ');
+    if (!items.length) return <EmptyState />;
+    return (
+        <div className="saas-reports-donut-wrap">
+            <div className="saas-reports-donut" style={{ background: `conic-gradient(${gradient})` }}>
+                <strong>{formatInt(total)}</strong>
+                <span>Chats</span>
+            </div>
+            <div className="saas-reports-donut-legend">
+                {items.map((row, index) => (
+                    <span key={`${row.source}_${row.label}`}>
+                        <i style={{ background: colors[index % colors.length] }} />
+                        {row.label || row.source} · {formatInt(row.total)}
+                    </span>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function TeamHeatmap({ rows = [] }) {
+    const users = toArray(rows).slice(0, 8);
+    const max = Math.max(...users.flatMap((user) => toArray(user.actividadPorHora).map((item) => number(item.mensajes))), 1);
+    if (!users.length) return <EmptyState />;
+    return (
+        <div className="saas-reports-heatmap" role="img" aria-label="Heatmap de actividad por hora del equipo">
+            <div className="saas-reports-heatmap__hours">
+                <span />
+                {Array.from({ length: 24 }, (_, hour) => <em key={hour}>{hour}</em>)}
+            </div>
+            {users.map((user) => {
+                const hourMap = new Map(toArray(user.actividadPorHora).map((item) => [number(item.hora), number(item.mensajes)]));
+                return (
+                    <div className="saas-reports-heatmap__row" key={user.userId}>
+                        <strong title={user.displayName}>{user.displayName}</strong>
+                        {Array.from({ length: 24 }, (_, hour) => {
+                            const value = hourMap.get(hour) || 0;
+                            const alpha = value > 0 ? Math.max(0.12, value / max) : 0;
+                            return <i key={hour} title={`${user.displayName} · ${hour}:00 · ${value} mensajes`} style={{ '--heat': alpha }} />;
+                        })}
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+function SortableTeamTable({ rows = [] }) {
+    const [sort, setSort] = useState({ key: 'mensajesEnviados', direction: 'desc' });
+    const columns = [
+        ['displayName', 'Vendedora'],
+        ['chatsAsignados', 'Chats'],
+        ['chatsAtendidos', 'Respondidos'],
+        ['cotizaciones', 'Cotiz.'],
+        ['ventas', 'Ventas'],
+        ['tiempoRespuesta', 'T.Resp'],
+        ['tasaConversion', 'Conversion']
+    ];
+    const sortedRows = useMemo(() => {
+        const dir = sort.direction === 'asc' ? 1 : -1;
+        return [...toArray(rows)].sort((a, b) => {
+            const left = sort.key === 'displayName' ? text(a?.[sort.key]).toLowerCase() : number(a?.[sort.key]);
+            const right = sort.key === 'displayName' ? text(b?.[sort.key]).toLowerCase() : number(b?.[sort.key]);
+            if (left < right) return -1 * dir;
+            if (left > right) return 1 * dir;
+            return 0;
+        });
+    }, [rows, sort]);
+    if (!sortedRows.length) return <EmptyState text="Sin actividad de equipo en este periodo." />;
+    const toggleSort = (key) => {
+        setSort((prev) => ({
+            key,
+            direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc'
+        }));
+    };
+    return (
+        <div className="saas-reports-table-wrap">
+            <table className="saas-reports-table">
+                <thead>
+                    <tr>
+                        {columns.map(([key, label]) => (
+                            <th key={key}>
+                                <button type="button" onClick={() => toggleSort(key)}>
+                                    {label}{sort.key === key ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}
+                                </button>
+                            </th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    {sortedRows.map((row) => (
+                        <tr key={row.userId}>
+                            <td>
+                                <strong>{row.displayName}</strong>
+                                <span>{ROLE_LABELS[row.role] || row.role || 'Equipo'}</span>
+                            </td>
+                            <td>{formatInt(row.chatsAsignados)}</td>
+                            <td>{formatInt(row.chatsAtendidos)}</td>
+                            <td>{formatInt(row.cotizaciones)}</td>
+                            <td>{formatInt(row.ventas)}</td>
+                            <td>{formatKpiValue(row.tiempoRespuesta, 'minutes')}</td>
+                            <td>{percent(row.tasaConversion, 1)}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
+function AiAnalysisCard({ dateFrom, dateTo, userLabel, moduleLabel }) {
+    const [message, setMessage] = useState('');
+    return (
+        <ReportCard title="Analisis IA del periodo" subtitle="Resumen ejecutivo, alertas y recomendaciones accionables.">
+            <div className="saas-reports-ai">
+                <div>
+                    <p><strong>Periodo:</strong> {formatDateRangeLabel(dateFrom, dateTo)}</p>
+                    <p><strong>Filtros:</strong> {userLabel} · {moduleLabel}</p>
+                </div>
+                <button
+                    type="button"
+                    className="saas-btn saas-btn--primary"
+                    onClick={() => setMessage('El analisis con Claude se habilitara en el Commit 3 para no mezclar la llamada IA con el montaje visual del panel.')}
+                >
+                    Analizar
+                </button>
+                <div className="saas-reports-ai__result">
+                    {message || 'El analisis aparecera aqui despues del click. Incluira resumen ejecutivo, puntos fuertes, areas de mejora y recomendaciones concretas.'}
+                </div>
+            </div>
+        </ReportCard>
+    );
+}
+
+export default function ReportsDashboardPage(props = {}) {
+    const context = props.context && typeof props.context === 'object' ? props.context : props;
+    const {
+        isReportsSection = false,
+        settingsTenantId = '',
+        tenantScopeId = '',
+        tenantScopeLocked = false,
+        activeTenantLabel = '',
+        requestJson = null,
+        canViewReports = false,
+        users = [],
+        waModules = [],
+        toUserDisplayName = null
+    } = context;
+    const tenantId = text(settingsTenantId || tenantScopeId);
+    const [preset, setPreset] = useState('7d');
+    const [range, setRange] = useState(() => getPresetRange('7d'));
+    const [userId, setUserId] = useState('');
+    const [moduleId, setModuleId] = useState('');
+    const [reports, setReports] = useState(EMPTY_REPORTS);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+    const [exportOpen, setExportOpen] = useState(false);
+    const [temporalMode, setTemporalMode] = useState('day');
+
+    const userOptions = useMemo(() => toArray(users)
+        .map((user) => normalizeUser(user, toUserDisplayName))
+        .filter((user) => user.userId)
+        .sort((a, b) => a.displayName.localeCompare(b.displayName, 'es')), [toUserDisplayName, users]);
+    const moduleOptions = useMemo(() => toArray(waModules)
+        .map(normalizeModule)
+        .filter((module) => module.moduleId)
+        .sort((a, b) => a.label.localeCompare(b.label, 'es')), [waModules]);
+    const selectedUserLabel = userId
+        ? (userOptions.find((user) => user.userId === userId)?.displayName || 'Usuario seleccionado')
+        : 'Todos los usuarios';
+    const selectedModuleLabel = moduleId
+        ? (moduleOptions.find((module) => module.moduleId === moduleId)?.label || 'Modulo seleccionado')
+        : 'Todos los modulos';
+
+    const loadReports = useCallback(async () => {
+        if (!isReportsSection || !tenantId || typeof requestJson !== 'function' || !canViewReports || tenantScopeLocked) return;
+        const query = buildReportQuery({
+            tenantId,
+            dateFrom: range.dateFrom,
+            dateTo: range.dateTo,
+            userId,
+            moduleId
+        });
+        setLoading(true);
+        setError('');
+        try {
+            const entries = await Promise.all(Object.entries(REPORT_ENDPOINTS).map(async ([key, endpoint]) => {
+                const response = await requestJson(`${endpoint}?${query}`);
+                return [key, response?.data];
+            }));
+            setReports({ ...EMPTY_REPORTS, ...Object.fromEntries(entries) });
+        } catch (loadError) {
+            setError(String(loadError?.message || 'No se pudieron cargar los reportes.'));
+        } finally {
+            setLoading(false);
+        }
+    }, [canViewReports, isReportsSection, moduleId, range.dateFrom, range.dateTo, requestJson, tenantId, tenantScopeLocked, userId]);
+
+    useEffect(() => {
+        void loadReports();
+    }, [loadReports]);
+
+    if (!isReportsSection) return null;
+
+    const handlePresetClick = (key) => {
+        setPreset(key);
+        if (key !== 'custom') setRange(getPresetRange(key));
+    };
+    const kpis = reports.kpis || {};
+    const previousKpis = kpis.kpisPeriodoAnterior || {};
+    const temporalRows = aggregateSeries(reports.actividadDiaria, temporalMode);
+    const teamBarRows = toArray(reports.equipo).slice(0, 8).map((row) => ({
+        label: text(row.displayName).split(' ')[0] || row.userId,
+        value: number(row.mensajesEnviados)
+    }));
+    const sourceRows = toArray(reports.origenes?.porFuente);
+    const metaAdRows = toArray(reports.origenes?.porAnuncioMeta).slice(0, 5);
+    const campaignRows = toArray(reports.campanas);
+    const hourRows = toArray(reports.horarios?.porHora).map((row) => ({ label: `${row.hora}`, value: row.mensajes }));
+    const dayRows = toArray(reports.horarios?.porDiaSemana).map((row) => ({ label: row.dia, value: row.mensajes }));
+
+    const exportJson = () => {
+        downloadTextFile(`reportes-${range.dateFrom}-${range.dateTo}.json`, JSON.stringify({
+            tenantId,
+            tenant: activeTenantLabel,
+            filters: { dateFrom: range.dateFrom, dateTo: range.dateTo, userId, moduleId },
+            reports
+        }, null, 2), 'application/json;charset=utf-8');
+        setExportOpen(false);
+    };
+    const exportExcel = () => {
+        const csv = buildCsv(temporalRows, [
+            { key: 'date', label: 'Fecha' },
+            { key: 'chatsNuevos', label: 'Chats nuevos' },
+            { key: 'mensajesEnviados', label: 'Mensajes enviados' },
+            { key: 'mensajesRecibidos', label: 'Mensajes recibidos' },
+            { key: 'cotizaciones', label: 'Cotizaciones' },
+            { key: 'tiempoRespuestaPromedio', label: 'Tiempo respuesta' }
+        ]);
+        downloadTextFile(`reportes-${range.dateFrom}-${range.dateTo}.csv`, csv, 'text/csv;charset=utf-8');
+        setExportOpen(false);
+    };
+
+    return (
+        <SaasEntityPage
+            id="saas_reports"
+            sectionKey="reports"
+            className="saas-admin-flow-card saas-reports-page"
+        >
+            <div className="saas-reports-shell">
+                <header className="saas-reports-toolbar">
+                    <div className="saas-reports-toolbar__title">
+                        <strong>Reportes</strong>
+                        <span>{activeTenantLabel || tenantId || 'Tenant'} · {formatDateRangeLabel(range.dateFrom, range.dateTo)}</span>
+                    </div>
+                    <div className="saas-reports-toolbar__controls">
+                        <div className="saas-reports-presets" role="group" aria-label="Periodo">
+                            {PERIOD_PRESETS.map((item) => (
+                                <button
+                                    key={item.key}
+                                    type="button"
+                                    className={preset === item.key ? 'is-active' : ''}
+                                    onClick={() => handlePresetClick(item.key)}
+                                >
+                                    {item.label}
+                                </button>
+                            ))}
+                        </div>
+                        {preset === 'custom' ? (
+                            <div className="saas-reports-date-range">
+                                <input className="saas-input" type="date" value={range.dateFrom} onChange={(event) => setRange((prev) => ({ ...prev, dateFrom: event.target.value }))} />
+                                <input className="saas-input" type="date" value={range.dateTo} onChange={(event) => setRange((prev) => ({ ...prev, dateTo: event.target.value }))} />
+                            </div>
+                        ) : null}
+                        <select className="saas-input" value={userId} onChange={(event) => setUserId(event.target.value)}>
+                            <option value="">Todos los usuarios</option>
+                            {userOptions.map((user) => <option key={user.userId} value={user.userId}>{user.displayName}</option>)}
+                        </select>
+                        <select className="saas-input" value={moduleId} onChange={(event) => setModuleId(event.target.value)}>
+                            <option value="">Todos los modulos</option>
+                            {moduleOptions.map((module) => <option key={module.moduleId} value={module.moduleId}>{module.label}</option>)}
+                        </select>
+                        <div className="saas-reports-export">
+                            <button type="button" className="saas-btn saas-btn--secondary" onClick={() => setExportOpen((prev) => !prev)}>Exportar</button>
+                            {exportOpen ? (
+                                <div className="saas-reports-export__menu">
+                                    <button type="button" onClick={() => { window.print?.(); setExportOpen(false); }}>PDF</button>
+                                    <button type="button" onClick={exportExcel}>Excel</button>
+                                    <button type="button" onClick={exportJson}>JSON</button>
+                                </div>
+                            ) : null}
+                        </div>
+                    </div>
+                </header>
+
+                {!canViewReports ? <EmptyState text="No tienes permiso para ver reportes operativos." /> : null}
+                {tenantScopeLocked ? <EmptyState text="Selecciona una empresa para cargar reportes." /> : null}
+                {error ? <div className="saas-admin-alert error">{error}</div> : null}
+                {loading ? <div className="saas-reports-loading"><span className="loader" />Cargando metricas...</div> : null}
+
+                <section className="saas-reports-kpi-grid" aria-label="KPIs principales">
+                    {KPI_DEFS.map((def) => <KpiCard key={def.key} def={def} current={kpis} previous={previousKpis} />)}
+                </section>
+
+                <div className="saas-reports-two-col saas-reports-two-col--funnel">
+                    <ReportCard title="Embudo de ventas" subtitle="Conversion entre etapas comerciales.">
+                        <FunnelChart data={reports.funnel} />
+                    </ReportCard>
+                    <ReportCard title="Evolucion del embudo" subtitle="Tendencia diaria por estado.">
+                        <MultiLineChart data={toArray(reports.funnel?.porDia)} lines={FUNNEL_LINES} />
+                    </ReportCard>
+                </div>
+
+                <ReportCard title="Actividad del equipo" subtitle="Rendimiento por vendedora y actividad por hora.">
+                    <SortableTeamTable rows={reports.equipo} />
+                    <div className="saas-reports-two-col">
+                        <div>
+                            <h4 className="saas-reports-subtitle">Mensajes enviados por equipo</h4>
+                            <SimpleBarChart rows={teamBarRows} horizontal color="#3b82f6" />
+                        </div>
+                        <div>
+                            <h4 className="saas-reports-subtitle">Heatmap por hora</h4>
+                            <TeamHeatmap rows={reports.equipo} />
+                        </div>
+                    </div>
+                </ReportCard>
+
+                <div className="saas-reports-two-col">
+                    <ReportCard title="Origen de conversaciones" subtitle="Fuentes que generan chats y conversion.">
+                        <DonutChart rows={sourceRows} />
+                    </ReportCard>
+                    <ReportCard title="Fuentes y anuncios Meta" subtitle="Tabla de conversion y top anuncios.">
+                        <div className="saas-reports-table-wrap">
+                            <table className="saas-reports-table">
+                                <thead><tr><th>Fuente</th><th>Chats</th><th>Cotiz.</th><th>Ventas</th><th>Conversion</th></tr></thead>
+                                <tbody>
+                                    {sourceRows.length ? sourceRows.map((row) => {
+                                        const conversion = number(row.total) > 0 ? (number(row.ventas) / number(row.total)) * 100 : 0;
+                                        return (
+                                            <tr key={`${row.source}_${row.label}`}>
+                                                <td><strong>{row.label || row.source}</strong><span>{row.source}</span></td>
+                                                <td>{formatInt(row.total)}</td>
+                                                <td>{formatInt(row.cotizaciones)}</td>
+                                                <td>{formatInt(row.ventas)}</td>
+                                                <td>{percent(conversion, 1)}</td>
+                                            </tr>
+                                        );
+                                    }) : <tr><td colSpan={5}><EmptyState /></td></tr>}
+                                </tbody>
+                            </table>
+                        </div>
+                        {metaAdRows.length ? (
+                            <div className="saas-reports-top-ads">
+                                <h4 className="saas-reports-subtitle">Top 5 anuncios por chats</h4>
+                                {metaAdRows.map((row) => (
+                                    <div key={row.adId} className="saas-reports-ad-row">
+                                        <strong>{row.adName || row.adId}</strong>
+                                        <span>{row.campaignName || 'Sin campana'}</span>
+                                        <em>{formatInt(row.chats)} chats · {formatCurrency(row.inversion)} · {formatCurrency(row.costoPerChat)}/chat</em>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : null}
+                    </ReportCard>
+                </div>
+
+                <ReportCard title="Actividad temporal" subtitle="Chats, mensajes y cotizaciones a lo largo del periodo.">
+                    <div className="saas-reports-chart-toggle" role="group" aria-label="Agrupar por">
+                        {[
+                            ['day', 'Dia'],
+                            ['week', 'Semana'],
+                            ['month', 'Mes']
+                        ].map(([key, label]) => (
+                            <button key={key} type="button" className={temporalMode === key ? 'is-active' : ''} onClick={() => setTemporalMode(key)}>{label}</button>
+                        ))}
+                    </div>
+                    <MultiLineChart data={temporalRows} lines={TEMPORAL_LINES} height={300} />
+                </ReportCard>
+
+                <div className="saas-reports-two-col">
+                    <ReportCard title="Distribucion horaria" subtitle={`${formatInt(reports.horarios?.dentroHorario)} mensajes dentro de horario · ${formatInt(reports.horarios?.fueraHorario)} fuera.`}>
+                        <SimpleBarChart rows={hourRows} color="#1D9E75" />
+                    </ReportCard>
+                    <ReportCard title="Actividad por dia de semana" subtitle="Volumen de mensajes por dia operativo.">
+                        <SimpleBarChart rows={dayRows} horizontal color="#f59e0b" />
+                    </ReportCard>
+                </div>
+
+                {campaignRows.length ? (
+                    <ReportCard title="Campanas WhatsApp" subtitle="Rendimiento de campanas en el periodo.">
+                        <div className="saas-reports-table-wrap">
+                            <table className="saas-reports-table">
+                                <thead><tr><th>Campana</th><th>Enviados</th><th>Respondieron</th><th>Cotizaciones</th><th>Tasa respuesta</th></tr></thead>
+                                <tbody>
+                                    {campaignRows.map((row) => (
+                                        <tr key={row.campaignId}>
+                                            <td><strong>{row.campaignName}</strong><span>{row.status}</span></td>
+                                            <td>{formatInt(row.enviados)}</td>
+                                            <td>{formatInt(row.respondieron)}</td>
+                                            <td>{formatInt(row.cotizaciones)}</td>
+                                            <td>{percent(row.tasaRespuesta, 1)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </ReportCard>
+                ) : null}
+
+                <AiAnalysisCard
+                    dateFrom={range.dateFrom}
+                    dateTo={range.dateTo}
+                    userLabel={selectedUserLabel}
+                    moduleLabel={selectedModuleLabel}
+                />
+            </div>
+        </SaasEntityPage>
+    );
+}

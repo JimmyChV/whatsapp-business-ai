@@ -43,6 +43,7 @@ export default function useSaasPanelNavigation({
         if (cleanId === 'saas_usuarios') return canViewUsers || canManageUsers;
         if (cleanId === 'saas_clientes') return canViewCustomers;
         if (cleanId === 'saas_operacion') return canViewOperations;
+        if (cleanId === 'saas_reports') return canViewOperations;
         if (cleanId === 'saas_campaigns') return canViewCampaigns;
         if (cleanId === 'saas_meta_ads_campaigns') return canViewMetaAds;
         if (cleanId === 'saas_templates') return canViewMetaTemplates;
@@ -134,6 +135,7 @@ export default function useSaasPanelNavigation({
         isRolesSection: selectedSectionId === 'saas_roles',
         isCustomersSection: selectedSectionId === 'saas_clientes',
         isOperationsSection: selectedSectionId === 'saas_operacion',
+        isReportsSection: selectedSectionId === 'saas_reports',
         isCampaignsSection: selectedSectionId === 'saas_campaigns',
         isMetaTemplatesSection: selectedSectionId === 'saas_templates',
         isAiSection: selectedSectionId === 'saas_ia',
