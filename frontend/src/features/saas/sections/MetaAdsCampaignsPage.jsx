@@ -139,7 +139,14 @@ const META_ADS_TABLE_COLUMN_KEYS = new Set([
     'reach',
     'clicks',
     'ctr',
-    'cpm'
+    'cpm',
+    'cpc',
+    'frequency',
+    'messaging_conversations',
+    'cost_per_conversation',
+    'days_active',
+    'date_start',
+    'date_stop'
 ]);
 
 const META_ADS_TABLE_LABELS = {
@@ -152,21 +159,70 @@ const META_ADS_TABLE_LABELS = {
     reach: 'ALCANCE',
     clicks: 'CLICKS',
     ctr: 'CTR',
-    cpm: 'CPM'
+    cpm: 'CPM',
+    cpc: 'CPC',
+    frequency: 'FREC.',
+    messaging_conversations: 'CONVERSACIONES',
+    cost_per_conversation: 'COSTO/CONV.',
+    days_active: 'DÍAS',
+    date_start: 'DESDE',
+    date_stop: 'HASTA'
 };
 
+const META_ADS_TABLE_COLUMN_ORDER = [
+    'campaign_name',
+    'adset_name',
+    'ad_name',
+    'ad_status',
+    'spend',
+    'impressions',
+    'reach',
+    'clicks',
+    'ctr',
+    'cpm',
+    'cpc',
+    'frequency',
+    'messaging_conversations',
+    'cost_per_conversation',
+    'days_active',
+    'date_start',
+    'date_stop'
+];
+
+const META_ADS_EXTRA_TABLE_COLUMNS = [
+    { key: 'days_active', minWidth: '90px', align: 'right', type: 'number', filterable: true },
+    { key: 'date_start', minWidth: '120px', type: 'text', filterable: true },
+    { key: 'date_stop', minWidth: '120px', type: 'text', filterable: true }
+];
+
 function buildMetaAdsTableColumns() {
-    return META_ADS_COLUMNS
-        .filter((column) => META_ADS_TABLE_COLUMN_KEYS.has(column.key))
+    const baseColumns = [...META_ADS_COLUMNS, ...META_ADS_EXTRA_TABLE_COLUMNS];
+    const columnByKey = new Map(baseColumns.map((column) => [column.key, column]));
+    return META_ADS_TABLE_COLUMN_ORDER
+        .map((key) => columnByKey.get(key))
+        .filter((column) => column && META_ADS_TABLE_COLUMN_KEYS.has(column.key))
         .map((column) => {
             if (column.key === 'ad_status') {
-                return { ...column, label: META_ADS_TABLE_LABELS[column.key], render: (value) => <StatusBadge value={value} /> };
+                return {
+                    ...column,
+                    label: META_ADS_TABLE_LABELS[column.key],
+                    render: (value, row) => (row?.isSummary ? <strong>Total</strong> : <StatusBadge value={value} />)
+                };
             }
-            if (column.key === 'spend' || column.key === 'cpm') {
+            if (column.key === 'spend' || column.key === 'cpm' || column.key === 'cpc' || column.key === 'cost_per_conversation') {
                 return { ...column, label: META_ADS_TABLE_LABELS[column.key], render: (value) => formatMetricCurrency(value) };
             }
             if (column.key === 'ctr') {
                 return { ...column, label: META_ADS_TABLE_LABELS[column.key], render: (value) => formatMetricPercent(value) };
+            }
+            if (column.key === 'frequency') {
+                return { ...column, label: META_ADS_TABLE_LABELS[column.key], render: (value) => formatMetricDecimal(value) };
+            }
+            if (column.key === 'messaging_conversations' || column.key === 'days_active') {
+                return { ...column, label: META_ADS_TABLE_LABELS[column.key], render: (value) => formatMetricInteger(value) };
+            }
+            if (column.key === 'date_start' || column.key === 'date_stop') {
+                return { ...column, label: META_ADS_TABLE_LABELS[column.key], render: (value) => formatDateLabel(value) };
             }
             return { ...column, label: META_ADS_TABLE_LABELS[column.key] || column.label };
         });
@@ -235,6 +291,10 @@ function formatMetricPercent(value) {
 
 function formatMetricDecimal(value) {
     return hasMetricValue(value) ? formatRatio(value) : '-';
+}
+
+function formatMetricInteger(value) {
+    return hasMetricValue(value) ? formatInteger(value) : '-';
 }
 
 function formatDateLabel(value) {
@@ -414,6 +474,56 @@ function aggregateInsightRows(items = []) {
             cost_per_conversation: costPerConversation
         };
     });
+}
+
+function buildSummaryRow(rows = []) {
+    const totals = (Array.isArray(rows) ? rows : []).reduce((acc, row) => {
+        acc.spend += toNumber(row?.spend);
+        acc.impressions += toNumber(row?.impressions);
+        acc.reach += toNumber(row?.reach);
+        acc.clicks += toNumber(row?.clicks);
+        acc.messaging_conversations += toNumber(row?.messaging_conversations);
+        acc.days_active = Math.max(acc.days_active, toNumber(row?.days_active));
+        const dateStart = String(row?.date_start || '').trim();
+        const dateStop = String(row?.date_stop || '').trim();
+        acc.date_start = acc.date_start && dateStart
+            ? (acc.date_start < dateStart ? acc.date_start : dateStart)
+            : (acc.date_start || dateStart);
+        acc.date_stop = acc.date_stop && dateStop
+            ? (acc.date_stop > dateStop ? acc.date_stop : dateStop)
+            : (acc.date_stop || dateStop);
+        return acc;
+    }, {
+        spend: 0,
+        impressions: 0,
+        reach: 0,
+        clicks: 0,
+        messaging_conversations: 0,
+        days_active: 0,
+        date_start: '',
+        date_stop: ''
+    });
+    return {
+        id: 'meta-ads-summary',
+        isSummary: true,
+        campaign_name: 'Total',
+        adset_name: `${rows.length.toLocaleString('es-PE')} anuncios`,
+        ad_name: 'Rango filtrado',
+        ad_status: 'TOTAL',
+        spend: totals.spend,
+        impressions: totals.impressions,
+        reach: totals.reach,
+        clicks: totals.clicks,
+        ctr: totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : null,
+        cpm: totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : null,
+        cpc: totals.clicks > 0 ? totals.spend / totals.clicks : null,
+        frequency: totals.reach > 0 ? totals.impressions / totals.reach : null,
+        messaging_conversations: totals.messaging_conversations,
+        cost_per_conversation: totals.messaging_conversations > 0 ? totals.spend / totals.messaging_conversations : null,
+        days_active: totals.days_active,
+        date_start: totals.date_start,
+        date_stop: totals.date_stop
+    };
 }
 
 function applySearch(rows = [], search = '') {
@@ -723,7 +833,7 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
             && String(membership?.role || '').trim().toLowerCase() === 'owner'
             && (!tenantId || String(membership?.tenantId || membership?.tenant_id || '').trim() === tenantId)
         ));
-    const columnPrefs = useSaasViewPreferences('meta_ads_campaigns', META_ADS_TABLE_COLUMNS, { requestJson });
+    const columnPrefs = useSaasViewPreferences('meta_ads_campaigns_expanded', META_ADS_TABLE_COLUMNS, { requestJson });
     const [dateRange, setDateRange] = useState(() => readStoredDateRange(tenantId));
     const [searchValue, setSearchValue] = useState('');
     const [activeFilters, setActiveFilters] = useState([createEmptyFilterItem()]);
@@ -801,6 +911,11 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
         () => applyMultiSort(filteredRows, columnPrefs.sort),
         [columnPrefs.sort, filteredRows]
     );
+
+    const visibleRows = useMemo(() => {
+        if (sortedRows.length === 0) return sortedRows;
+        return [...sortedRows, buildSummaryRow(sortedRows)];
+    }, [sortedRows]);
 
     const selectedAd = useMemo(
         () => sortedRows.find((row) => String(row?.ad_id || '').trim() === selectedAdId) || null,
@@ -1106,14 +1221,17 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
         <div className="saas-campaigns-pane">
             <SaasDataTable
                 columns={effectiveColumns}
-                rows={sortedRows}
+                rows={visibleRows}
                 selectedId={selectedAdId}
                 loading={loading}
                 emptyText="No hay campañas Meta Ads para este rango."
                 enableInfinite={false}
                 sortConfig={columnPrefs.sort}
                 onSortChange={columnPrefs.setSort}
-                onSelect={(row, rowId) => setSelectedAdId(String(row?.ad_id || rowId || '').trim())}
+                onSelect={(row, rowId) => {
+                    if (row?.isSummary) return;
+                    setSelectedAdId(String(row?.ad_id || rowId || '').trim());
+                }}
             />
         </div>
     );
