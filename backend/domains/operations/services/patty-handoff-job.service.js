@@ -1,3 +1,9 @@
+const {
+    DEFAULT_TENANT_ID,
+    getStorageDriver,
+    queryPostgres
+} = require('../../../config/persistence-runtime');
+
 function toBool(value, fallback = false) {
     const raw = String(value ?? '').trim().toLowerCase();
     if (!raw) return Boolean(fallback);
@@ -22,16 +28,34 @@ function createPattyHandoffJob({
     let timer = null;
     let running = false;
 
+    async function listRunnableTenants() {
+        if (getStorageDriver() === 'postgres') {
+            const { rows } = await queryPostgres(
+                `SELECT DISTINCT tenant_id
+                   FROM wa_modules
+                  WHERE tenant_id != $1
+                    AND is_active = TRUE
+                  ORDER BY tenant_id ASC`,
+                [DEFAULT_TENANT_ID]
+            );
+            return (Array.isArray(rows) ? rows : [])
+                .map((row) => String(row?.tenant_id || '').trim())
+                .filter(Boolean);
+        }
+
+        return (typeof tenantService?.getTenants === 'function' ? tenantService.getTenants() : [])
+            .filter((tenant) => tenant?.active !== false)
+            .map((tenant) => String(tenant?.id || '').trim())
+            .filter((tenantId) => tenantId && tenantId !== DEFAULT_TENANT_ID);
+    }
+
     async function runNow() {
         if (!enabled) return { ok: true, skipped: true, reason: 'disabled' };
         if (running) return { ok: true, skipped: true, reason: 'already_running' };
         running = true;
 
         try {
-            const tenants = (typeof tenantService?.getTenants === 'function' ? tenantService.getTenants() : [])
-                .filter((tenant) => tenant?.active !== false)
-                .map((tenant) => String(tenant?.id || '').trim())
-                .filter(Boolean);
+            const tenants = await listRunnableTenants();
 
             let resumed = 0;
 

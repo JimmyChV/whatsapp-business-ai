@@ -292,7 +292,20 @@ function createSocketWaEventsBridgeService({
         scopeModuleId = '',
         moduleContext = null
     } = {}) => {
-        const scheduleId = resolveScheduleIdFromModule(moduleContext);
+        let scheduleId = resolveScheduleIdFromModule(moduleContext);
+        const cleanTenantId = text(tenantId);
+        const cleanScopeModuleId = text(scopeModuleId).toLowerCase();
+        if (!scheduleId && cleanTenantId && cleanScopeModuleId && getStorageDriver() === 'postgres') {
+            const { rows } = await queryPostgres(
+                `SELECT metadata->>'scheduleId' AS schedule_id
+                   FROM wa_modules
+                  WHERE tenant_id = $1
+                    AND LOWER(module_id) = LOWER($2)
+                  LIMIT 1`,
+                [cleanTenantId, cleanScopeModuleId]
+            );
+            scheduleId = text(rows?.[0]?.schedule_id);
+        }
         if (!scheduleId || !tenantScheduleService?.getSchedule || !tenantScheduleService?.isWithinSchedule) return;
 
         const schedule = await tenantScheduleService.getSchedule(tenantId, scheduleId);
@@ -307,7 +320,7 @@ function createSocketWaEventsBridgeService({
         if (isOpen && schedule.welcomeEnabled && text(schedule.welcomeMessage) && isFirstMessage) {
             candidates.push({ type: 'welcome', body: schedule.welcomeMessage });
         }
-        if (!isOpen && schedule.awayEnabled && text(schedule.awayMessage)) {
+        if (!isOpen && schedule.awayEnabled && text(schedule.awayMessage) && isFirstMessage) {
             candidates.push({ type: 'away', body: schedule.awayMessage });
         }
 
