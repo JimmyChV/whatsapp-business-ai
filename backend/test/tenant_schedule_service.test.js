@@ -103,12 +103,12 @@ test('getRemainingLaboralMinutes does not warn one day before a future close', (
         customDays: []
     };
 
-    const now = '2026-06-05T18:30:00.000Z'; // viernes 13:30 Lima
+    const now = '2026-06-05T19:00:00.000Z'; // viernes 14:00 Lima
     const windowExpiresAt = '2026-06-06T18:40:00.000Z'; // sabado 13:40 Lima
 
     const result = tenantScheduleService.getRemainingLaboralMinutes(schedule, windowExpiresAt, now);
 
-    assert.deepEqual(result, { minutes: 1450, status: 'open' });
+    assert.deepEqual(result, { minutes: 1380, status: 'open' });
 });
 
 test('getLastLaboralCloseBeforeDate uses weekend close before a closed expiry day', () => {

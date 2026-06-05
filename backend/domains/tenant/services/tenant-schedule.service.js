@@ -600,7 +600,7 @@ function getRemainingLaboralMinutes(schedule = null, windowExpiresAt = null, now
     const lastCloseParts = getTimezoneParts(lastLaboralClose, timezone);
     if (lastCloseParts?.date && nowParts?.date && lastCloseParts.date !== nowParts.date) {
         return {
-            minutes: Math.max(0, Math.floor((expiresDate.getTime() - nowDate.getTime()) / (60 * 1000))),
+            minutes: Math.max(0, Math.floor((lastLaboralClose.getTime() - nowDate.getTime()) / (60 * 1000))),
             status: 'open'
         };
     }
