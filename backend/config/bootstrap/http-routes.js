@@ -101,6 +101,7 @@ function registerHttpRoutes({
     assignmentRulesService,
     chatAssignmentRouterService,
     operationsKpiService,
+    aiService,
     globalLabelsService,
     normalizeScopeModuleId,
     hasConversationEventsReadAccess,
@@ -286,7 +287,8 @@ function registerHttpRoutes({
             accessPolicyService,
             isTenantAllowedForUser,
             hasAnyPermission,
-            hasOperationsKpiReadAccess
+            hasOperationsKpiReadAccess,
+            aiService
         });
     }
 

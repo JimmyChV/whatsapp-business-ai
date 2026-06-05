@@ -1562,6 +1562,13 @@
   color: var(--saas-text-secondary);
 }
 
+.saas-reports-ai__actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .saas-reports-ai__result {
   grid-column: 1 / -1;
   border: 1px dashed var(--saas-border-color);
@@ -1570,6 +1577,47 @@
   background: var(--saas-bg-surface);
   color: var(--saas-text-secondary);
   line-height: 1.55;
+}
+
+.saas-reports-ai__error {
+  margin-bottom: 12px;
+  color: #ef4444;
+  font-weight: 700;
+}
+
+.saas-reports-ai__markdown {
+  display: grid;
+  gap: 8px;
+}
+
+.saas-reports-ai__markdown h4 {
+  margin: 10px 0 2px;
+  color: var(--saas-text-primary);
+  font-size: 0.92rem;
+}
+
+.saas-reports-ai__markdown h4:first-child {
+  margin-top: 0;
+}
+
+.saas-reports-ai__markdown p {
+  margin: 0;
+}
+
+.saas-reports-ai__bullet {
+  position: relative;
+  padding-left: 16px;
+}
+
+.saas-reports-ai__bullet::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.72em;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: #1D9E75;
 }
 
 @media (max-width: 1180px) {
@@ -1625,6 +1673,10 @@
   .saas-reports-donut-wrap,
   .saas-reports-ai {
     grid-template-columns: 1fr;
+  }
+
+  .saas-reports-ai__actions {
+    justify-content: flex-start;
   }
 
   .saas-reports-donut {

@@ -16,6 +16,14 @@ function clipText(value = '', maxLen = 600) {
     return text.slice(0, maxLen) + '...';
 }
 
+function safeJsonForPrompt(value = {}, maxLen = 14000) {
+    try {
+        return clipText(JSON.stringify(value || {}, null, 2), maxLen);
+    } catch {
+        return '{}';
+    }
+}
+
 function normalizeAssistantId(value = '') {
     const clean = String(value || '').trim().toUpperCase();
     return /^AIA-[A-Z0-9]{6}$/.test(clean) ? clean : '';
@@ -256,8 +264,70 @@ OBJETIVO DE ESTA EJECUCION:
     }
 }
 
+async function analyzeOperationalReports({
+    tenantId = 'default',
+    moduleAssistantId = '',
+    reportData = {},
+    dateFrom = '',
+    dateTo = '',
+    filters = {}
+} = {}) {
+    try {
+        const config = await getOpenAIConfig({ tenantId, moduleAssistantId });
+        if (!config.apiKey) {
+            return 'IA no configurada. Falta OpenAI API Key para este tenant.';
+        }
+
+        const systemPrompt = `Eres un analista senior de operaciones comerciales por WhatsApp.
+Analizas reportes de ventas, equipo, origenes, campanas y horarios para una empresa peruana.
+Responde en espanol claro, ejecutivo y accionable. No inventes datos que no aparecen en el JSON.
+Si falta informacion, dilo como limitacion. Prioriza hallazgos utiles para operacion diaria.`;
+
+        const userPrompt = `Analiza este periodo operativo y entrega un informe breve pero completo.
+
+PERIODO:
+- Desde: ${dateFrom || 'N/D'}
+- Hasta: ${dateTo || 'N/D'}
+
+FILTROS:
+- Usuario: ${filters.userLabel || filters.userId || 'Todos'}
+- Modulo: ${filters.moduleLabel || filters.moduleId || 'Todos'}
+
+DATOS DISPONIBLES:
+${safeJsonForPrompt(reportData)}
+
+FORMATO DE RESPUESTA:
+## Resumen ejecutivo
+3 a 5 bullets con lo mas importante.
+
+## Alertas
+Riesgos o anomalias concretas. Si no hay alertas, dilo.
+
+## Oportunidades
+Acciones comerciales o de operacion que podrian mejorar resultados.
+
+## Recomendaciones para hoy
+Lista priorizada de acciones simples para el equipo.`;
+
+        const analysisConfig = {
+            ...config,
+            temperature: 0.35,
+            maxTokens: Math.max(1200, Math.min(1800, Number(config.maxTokens || 1200) || 1200))
+        };
+
+        return await generateWithOpenAI([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+        ], analysisConfig);
+    } catch (error) {
+        console.error('Error en analisis IA de reportes:', error?.message || error);
+        return mapAiError(error);
+    }
+}
+
 module.exports = {
     getChatSuggestion,
-    askInternalCopilot
+    askInternalCopilot,
+    analyzeOperationalReports
 };
 

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SaasEntityPage } from '../components/entity';
 
 const TIME_ZONE = 'America/Lima';
@@ -457,12 +457,134 @@ function AiAnalysisCard({ dateFrom, dateTo, userLabel, moduleLabel }) {
                 <button
                     type="button"
                     className="saas-btn saas-btn--primary"
-                    onClick={() => setMessage('El analisis con Claude se habilitara en el Commit 3 para no mezclar la llamada IA con el montaje visual del panel.')}
+                    onClick={() => setMessage('El analisis usa OpenAI desde el backend con la configuracion del tenant.')}
                 >
                     Analizar
                 </button>
                 <div className="saas-reports-ai__result">
                     {message || 'El analisis aparecera aqui despues del click. Incluira resumen ejecutivo, puntos fuertes, areas de mejora y recomendaciones concretas.'}
+                </div>
+            </div>
+        </ReportCard>
+    );
+}
+
+function renderAnalysisLine(line = '', index = 0) {
+    const clean = text(line);
+    if (!clean) return <br key={`analysis_line_${index}`} />;
+    if (clean.startsWith('## ')) {
+        return <h4 key={`analysis_line_${index}`}>{clean.replace(/^##\s+/, '')}</h4>;
+    }
+    if (/^[-*]\s+/.test(clean)) {
+        return <p key={`analysis_line_${index}`} className="saas-reports-ai__bullet">{clean.replace(/^[-*]\s+/, '')}</p>;
+    }
+    if (/^\d+\.\s+/.test(clean)) {
+        return <p key={`analysis_line_${index}`} className="saas-reports-ai__bullet">{clean}</p>;
+    }
+    return <p key={`analysis_line_${index}`}>{clean}</p>;
+}
+
+function OpenAiAnalysisCard({ tenantId, dateFrom, dateTo, userId, moduleId, userLabel, moduleLabel, reports, requestJson }) {
+    const [analysis, setAnalysis] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+    const cacheRef = useRef(new Map());
+    const reportData = useMemo(() => ({
+        kpis: reports?.kpis || null,
+        funnel: reports?.funnel || null,
+        equipo: reports?.equipo || [],
+        origenes: reports?.origenes || { porFuente: [], porAnuncioMeta: [] },
+        campanas: reports?.campanas || [],
+        actividadDiaria: reports?.actividadDiaria || [],
+        horarios: reports?.horarios || { dentroHorario: 0, fueraHorario: 0, porHora: [], porDiaSemana: [] }
+    }), [reports]);
+    const cacheKey = useMemo(() => JSON.stringify({
+        tenantId,
+        dateFrom,
+        dateTo,
+        userId,
+        moduleId,
+        reportData
+    }), [dateFrom, dateTo, moduleId, reportData, tenantId, userId]);
+
+    useEffect(() => {
+        setError('');
+        setAnalysis(cacheRef.current.get(cacheKey) || '');
+    }, [cacheKey]);
+
+    const handleAnalyze = useCallback(async ({ force = false } = {}) => {
+        if (!tenantId || typeof requestJson !== 'function') {
+            setError('No se pudo iniciar el analisis: falta contexto del tenant.');
+            return;
+        }
+        if (!force && cacheRef.current.has(cacheKey)) {
+            setAnalysis(cacheRef.current.get(cacheKey));
+            setError('');
+            return;
+        }
+        setLoading(true);
+        setError('');
+        try {
+            const payload = await requestJson('/api/tenant/reports/analyze', {
+                method: 'POST',
+                tenantIdOverride: tenantId,
+                body: {
+                    tenantId,
+                    dateFrom,
+                    dateTo,
+                    userId,
+                    moduleId,
+                    userLabel,
+                    moduleLabel,
+                    reportData
+                }
+            });
+            const nextAnalysis = text(payload?.analysis) || 'OpenAI no devolvio un analisis para este periodo.';
+            cacheRef.current.set(cacheKey, nextAnalysis);
+            setAnalysis(nextAnalysis);
+        } catch (analysisError) {
+            setError(String(analysisError?.message || 'No se pudo generar el analisis IA.'));
+        } finally {
+            setLoading(false);
+        }
+    }, [cacheKey, dateFrom, dateTo, moduleId, moduleLabel, reportData, requestJson, tenantId, userId, userLabel]);
+
+    return (
+        <ReportCard title="Analisis IA del periodo" subtitle="Resumen ejecutivo, alertas y recomendaciones accionables.">
+            <div className="saas-reports-ai">
+                <div>
+                    <p><strong>Periodo:</strong> {formatDateRangeLabel(dateFrom, dateTo)}</p>
+                    <p><strong>Filtros:</strong> {userLabel} - {moduleLabel}</p>
+                </div>
+                <div className="saas-reports-ai__actions">
+                    <button
+                        type="button"
+                        className="saas-btn saas-btn--primary"
+                        onClick={() => handleAnalyze()}
+                        disabled={loading || !tenantId}
+                    >
+                        {loading ? 'Analizando...' : (analysis ? 'Ver analisis cacheado' : 'Analizar')}
+                    </button>
+                    {analysis ? (
+                        <button
+                            type="button"
+                            className="saas-btn saas-btn--secondary"
+                            onClick={() => handleAnalyze({ force: true })}
+                            disabled={loading || !tenantId}
+                        >
+                            Regenerar
+                        </button>
+                    ) : null}
+                </div>
+                <div className="saas-reports-ai__result">
+                    {error ? <div className="saas-reports-ai__error">{error}</div> : null}
+                    {analysis ? (
+                        <div className="saas-reports-ai__markdown">
+                            {analysis.split('\n').map(renderAnalysisLine)}
+                        </div>
+                    ) : (
+                        <span>El analisis aparecera aqui despues del click. Usara la configuracion OpenAI del tenant y resumira KPIs, embudo, equipo, origenes, campanas y horarios.</span>
+                    )}
                 </div>
             </div>
         </ReportCard>
@@ -744,11 +866,16 @@ export default function ReportsDashboardPage(props = {}) {
                     </ReportCard>
                 ) : null}
 
-                <AiAnalysisCard
+                <OpenAiAnalysisCard
+                    tenantId={tenantId}
                     dateFrom={range.dateFrom}
                     dateTo={range.dateTo}
+                    userId={userId}
+                    moduleId={moduleId}
                     userLabel={selectedUserLabel}
                     moduleLabel={selectedModuleLabel}
+                    reports={reports}
+                    requestJson={requestJson}
                 />
             </div>
         </SaasEntityPage>

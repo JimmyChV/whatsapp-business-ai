@@ -222,6 +222,31 @@ function buildReportContext(req, res, deps = {}) {
     };
 }
 
+function buildReportAnalysisContext(req, res, deps = {}) {
+    if (!ensureAuthenticated(req, res, deps.authService)) return null;
+    const tenantId = resolveTenantId(req);
+    if (!tenantId) {
+        res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+        return null;
+    }
+    if (!canReadReports(req, tenantId, deps)) {
+        res.status(403).json({ ok: false, error: 'No autorizado.' });
+        return null;
+    }
+    const range = parseDateRange({ ...(req.query || {}), ...(req.body || {}) });
+    return {
+        tenantId,
+        ...range,
+        userId: nullableText(req.body?.userId || req.query?.userId),
+        moduleId: nullableText(req.body?.moduleId || req.query?.moduleId),
+        userLabel: nullableText(req.body?.userLabel),
+        moduleLabel: nullableText(req.body?.moduleLabel),
+        reportData: req.body?.reportData && typeof req.body.reportData === 'object'
+            ? req.body.reportData
+            : {}
+    };
+}
+
 function reportParams(ctx = {}) {
     return [
         ctx.tenantId,
@@ -1108,7 +1133,8 @@ function registerOperationsReportsHttpRoutes({
     accessPolicyService,
     isTenantAllowedForUser,
     hasAnyPermission,
-    hasOperationsKpiReadAccess
+    hasOperationsKpiReadAccess,
+    aiService
 }) {
     if (!app) throw new Error('registerOperationsReportsHttpRoutes requiere app.');
 
@@ -1117,7 +1143,8 @@ function registerOperationsReportsHttpRoutes({
         accessPolicyService,
         isTenantAllowedForUser,
         hasAnyPermission,
-        hasOperationsKpiReadAccess
+        hasOperationsKpiReadAccess,
+        aiService
     };
 
     async function handleReport(req, res, loader) {
@@ -1150,6 +1177,44 @@ function registerOperationsReportsHttpRoutes({
     app.get('/api/tenant/reports/campanas', (req, res) => handleReport(req, res, getReportCampaigns));
     app.get('/api/tenant/reports/actividad-diaria', (req, res) => handleReport(req, res, getDailyActivity));
     app.get('/api/tenant/reports/horarios', (req, res) => handleReport(req, res, getScheduleReport));
+
+    app.post('/api/tenant/reports/analyze', async (req, res) => {
+        try {
+            assertPostgresReports();
+            const ctx = buildReportAnalysisContext(req, res, deps);
+            if (!ctx) return;
+            if (typeof aiService?.analyzeOperationalReports !== 'function') {
+                res.status(500).json({ ok: false, error: 'Servicio IA de reportes no disponible.' });
+                return;
+            }
+
+            const analysis = await aiService.analyzeOperationalReports({
+                tenantId: ctx.tenantId,
+                reportData: ctx.reportData,
+                dateFrom: ctx.dateFrom,
+                dateTo: ctx.dateTo,
+                filters: {
+                    userId: ctx.userId,
+                    moduleId: ctx.moduleId,
+                    userLabel: ctx.userLabel,
+                    moduleLabel: ctx.moduleLabel
+                }
+            });
+
+            res.json({
+                ok: true,
+                tenantId: ctx.tenantId,
+                dateFrom: ctx.dateFrom,
+                dateTo: ctx.dateTo,
+                analysis
+            });
+        } catch (error) {
+            res.status(400).json({
+                ok: false,
+                error: String(error?.message || 'No se pudo generar el analisis IA.')
+            });
+        }
+    });
 }
 
 module.exports = {
