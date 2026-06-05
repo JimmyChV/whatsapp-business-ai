@@ -563,6 +563,7 @@ export default function useSocketChatConversationEvents({
                 if (!freshChat) return chat;
                 const hasFreshWindowOpen = Object.prototype.hasOwnProperty.call(freshChat || {}, 'windowOpen');
                 const hasFreshWindowExpiresAt = Object.prototype.hasOwnProperty.call(freshChat || {}, 'windowExpiresAt');
+                const hasFreshWindowStatus = Object.prototype.hasOwnProperty.call(freshChat || {}, 'windowStatus');
                 const hasFreshLaboralMinutes = Object.prototype.hasOwnProperty.call(freshChat || {}, 'laboralMinutesRemaining');
                 const hasFreshMeasuredAt = Object.prototype.hasOwnProperty.call(freshChat || {}, 'laboralWindowMeasuredAt');
                 const hasFreshLastCustomer = Object.prototype.hasOwnProperty.call(freshChat || {}, 'lastCustomerMessageAt');
@@ -570,6 +571,7 @@ export default function useSocketChatConversationEvents({
                     ...chat,
                     windowOpen: hasFreshWindowOpen ? Boolean(freshChat.windowOpen) : chat.windowOpen,
                     windowExpiresAt: hasFreshWindowExpiresAt ? (String(freshChat.windowExpiresAt || '').trim() || null) : (chat.windowExpiresAt || null),
+                    windowStatus: hasFreshWindowStatus ? (String(freshChat.windowStatus || '').trim() || null) : (chat.windowStatus || null),
                     laboralMinutesRemaining: hasFreshLaboralMinutes ? freshChat.laboralMinutesRemaining : chat.laboralMinutesRemaining,
                     laboralWindowMeasuredAt: hasFreshMeasuredAt ? (freshChat.laboralWindowMeasuredAt || null) : (chat.laboralWindowMeasuredAt || null),
                     lastCustomerMessageAt: hasFreshLastCustomer ? (freshChat.lastCustomerMessageAt || null) : (chat.lastCustomerMessageAt || null),
@@ -909,6 +911,7 @@ export default function useSocketChatConversationEvents({
             }
             const nextWindowOpen = Boolean(data?.windowOpen);
             const nextWindowExpiresAt = String(data?.windowExpiresAt || '').trim() || null;
+            const nextWindowStatus = String(data?.windowStatus || '').trim() || null;
             const nextLaboralMinutesRemaining = Number.isFinite(Number(data?.laboralMinutesRemaining))
                 ? Math.max(0, Math.floor(Number(data.laboralMinutesRemaining)))
                 : null;
@@ -946,6 +949,7 @@ export default function useSocketChatConversationEvents({
                             : chat?.lastMessageChannelType,
                         windowOpen: nextWindowOpen,
                         windowExpiresAt: nextWindowExpiresAt,
+                        windowStatus: nextWindowStatus,
                         laboralMinutesRemaining: nextLaboralMinutesRemaining,
                         laboralWindowMeasuredAt: nextLaboralWindowMeasuredAt,
                         origin: hasOriginPayload ? nextOrigin : chat?.origin
@@ -1207,6 +1211,7 @@ export default function useSocketChatConversationEvents({
                 status: repairMojibake(contact?.status || ''),
                 windowOpen: Boolean(contact?.windowOpen),
                 windowExpiresAt: String(contact?.windowExpiresAt || '').trim() || null,
+                windowStatus: String(contact?.windowStatus || '').trim() || null,
                 participants: participantsCount,
                 participantsList,
                 erpCustomer,
@@ -1254,7 +1259,8 @@ export default function useSocketChatConversationEvents({
                     contactName: erpCustomer?.contactName || erpCustomer?.contact_name || existing?.contactName || existing?.contact_name || null,
                     erpCustomer: erpCustomer || existing?.erpCustomer || null,
                     windowOpen: typeof normalizedContact?.windowOpen === 'boolean' ? normalizedContact.windowOpen : existing?.windowOpen,
-                    windowExpiresAt: normalizedContact?.windowExpiresAt || existing?.windowExpiresAt || null
+                    windowExpiresAt: normalizedContact?.windowExpiresAt || existing?.windowExpiresAt || null,
+                    windowStatus: normalizedContact?.windowStatus || existing?.windowStatus || null
                 };
 
                 if (!chatMatchesQuery(nextChat, chatSearchRef.current) || !chatMatchesFilters(nextChat, chatFiltersRef.current)) {
@@ -1434,6 +1440,7 @@ export default function useSocketChatConversationEvents({
                     unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (shouldMarkActiveChatRead ? 0 : (existing?.unreadCount || 0) + 1),
                     windowOpen: msg.fromMe ? existing?.windowOpen : true,
                     windowExpiresAt: msg.fromMe ? (existing?.windowExpiresAt || null) : relatedWindowExpiresAt,
+                    windowStatus: msg.fromMe ? (existing?.windowStatus || null) : null,
                     lastMessageModuleId: String(msg?.sentViaModuleId || canonicalScopeModuleId || existing?.lastMessageModuleId || '').trim().toLowerCase() || null,
                     lastMessageModuleName: String(msg?.sentViaModuleName || existing?.lastMessageModuleName || '').trim() || null,
                     lastMessageModuleImageUrl: normalizeModuleImageUrl(msg?.sentViaModuleImageUrl || existing?.lastMessageModuleImageUrl || '') || null,
@@ -1495,7 +1502,8 @@ export default function useSocketChatConversationEvents({
                     return {
                         ...safePrev,
                         windowOpen: true,
-                        windowExpiresAt: relatedWindowExpiresAt
+                        windowExpiresAt: relatedWindowExpiresAt,
+                        windowStatus: null
                     };
                 });
             }

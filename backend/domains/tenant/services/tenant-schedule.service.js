@@ -529,20 +529,76 @@ function getNextLaboralClose(schedule = null, now = new Date()) {
     return null;
 }
 
+function getLastLaboralCloseBeforeDate(schedule = null, date = new Date()) {
+    if (!schedule || schedule?.isActive === false) return null;
+    const targetDate = date instanceof Date ? date : new Date(date);
+    if (Number.isNaN(targetDate.getTime())) return null;
+
+    const timezone = normalizeTimezone(schedule?.timezone);
+    const targetParts = getTimezoneParts(targetDate, timezone);
+    let currentDateKey = targetParts.date;
+
+    for (let dayOffset = 0; dayOffset <= 7 && currentDateKey; dayOffset += 1) {
+        const dayParts = buildCalendarParts(currentDateKey);
+        if (!dayParts) break;
+        const closeMinutes = getScheduleHoursForDate(schedule, dayParts)
+            .map((range) => timeToMinutes(range.end))
+            .filter((minute) => minute !== null)
+            .sort((a, b) => b - a);
+
+        for (const closeMinute of closeMinutes) {
+            const closeDate = buildDateInTimezone(currentDateKey, closeMinute, timezone);
+            if (closeDate && closeDate.getTime() < targetDate.getTime()) {
+                return closeDate;
+            }
+        }
+
+        currentDateKey = addDaysToDateKey(currentDateKey, -1);
+    }
+
+    return null;
+}
+
+function isDateWithinLaboralHours(schedule = null, date = new Date()) {
+    if (!schedule || schedule?.isActive === false) return false;
+    const targetDate = date instanceof Date ? date : new Date(date);
+    if (Number.isNaN(targetDate.getTime())) return false;
+
+    const timezone = normalizeTimezone(schedule?.timezone);
+    const parts = getTimezoneParts(targetDate, timezone);
+    const dayHours = getScheduleHoursForDate(schedule, parts);
+    return dayHours.some((range) => {
+        const start = timeToMinutes(range.start);
+        const end = timeToMinutes(range.end);
+        return start !== null && end !== null && end > start && parts.minutes >= start && parts.minutes <= end;
+    });
+}
+
 function getRemainingLaboralMinutes(schedule = null, windowExpiresAt = null, now = new Date()) {
     if (!schedule || schedule?.isActive === false) return null;
     const nowDate = now instanceof Date ? now : new Date(now);
     const expiresDate = windowExpiresAt instanceof Date ? windowExpiresAt : new Date(windowExpiresAt);
     if (Number.isNaN(nowDate.getTime()) || Number.isNaN(expiresDate.getTime())) return null;
-    if (expiresDate.getTime() <= nowDate.getTime()) return 0;
+    if (expiresDate.getTime() <= nowDate.getTime()) {
+        return { minutes: 0, status: 'expired' };
+    }
 
-    const nextLaboralClose = getNextLaboralClose(schedule, nowDate);
-    if (!nextLaboralClose || Number.isNaN(nextLaboralClose.getTime())) return 0;
+    if (isDateWithinLaboralHours(schedule, expiresDate)) {
+        return {
+            minutes: Math.max(0, Math.floor((expiresDate.getTime() - nowDate.getTime()) / (60 * 1000))),
+            status: 'open'
+        };
+    }
 
-    const effectiveDeadline = expiresDate.getTime() <= nextLaboralClose.getTime()
-        ? expiresDate
-        : nextLaboralClose;
-    return getWorkingMinutesBetween(schedule, nowDate, effectiveDeadline);
+    const lastLaboralClose = getLastLaboralCloseBeforeDate(schedule, expiresDate);
+    if (!lastLaboralClose || lastLaboralClose.getTime() <= nowDate.getTime()) {
+        return { minutes: 0, status: 'expires_outside_hours' };
+    }
+
+    return {
+        minutes: Math.max(0, Math.floor((lastLaboralClose.getTime() - nowDate.getTime()) / (60 * 1000))),
+        status: 'expires_outside_hours'
+    };
 }
 
 async function isWithinSchedule(tenantId, scheduleId, datetime = new Date()) {
@@ -585,5 +641,6 @@ module.exports = {
     isWithinSchedule,
     getWorkingMinutesBetween,
     getNextLaboralClose,
+    getLastLaboralCloseBeforeDate,
     getRemainingLaboralMinutes
 };

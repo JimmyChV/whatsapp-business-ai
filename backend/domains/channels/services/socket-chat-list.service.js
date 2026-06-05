@@ -70,6 +70,32 @@ function createSocketChatListService({
         return null;
     };
 
+    const normalizeWindowStatus = (value = '') => {
+        const status = String(value || '').trim().toLowerCase();
+        return ['open', 'expires_outside_hours', 'expired'].includes(status) ? status : null;
+    };
+
+    const resolveLaboralWindowDisplay = (activeSchedule = null, windowExpiresAt = null, measuredAt = new Date()) => {
+        if (typeof tenantScheduleService?.getRemainingLaboralMinutes !== 'function') {
+            return { laboralMinutesRemaining: null, windowStatus: null };
+        }
+        const result = tenantScheduleService.getRemainingLaboralMinutes(activeSchedule, windowExpiresAt, measuredAt);
+        if (result && typeof result === 'object') {
+            return {
+                laboralMinutesRemaining: Number.isFinite(Number(result.minutes))
+                    ? Math.max(0, Math.floor(Number(result.minutes)))
+                    : null,
+                windowStatus: normalizeWindowStatus(result.status)
+            };
+        }
+        return {
+            laboralMinutesRemaining: Number.isFinite(Number(result))
+                ? Math.max(0, Math.floor(Number(result)))
+                : null,
+            windowStatus: null
+        };
+    };
+
     const persistWindowMetadataBatch = async (tenantId = 'default', items = []) => {
         const resolvedTenantId = String(tenantId || 'default').trim() || 'default';
         const payload = (Array.isArray(items) ? items : [])
@@ -77,6 +103,7 @@ function createSocketChatListService({
                 chat_id: String(item?.baseChatId || resolveBaseChatIdFromSummary(item) || '').trim(),
                 window_expires_at: item?.windowExpiresAt || null,
                 window_open: typeof item?.windowOpen === 'boolean' ? item.windowOpen : false,
+                window_status: normalizeWindowStatus(item?.windowStatus),
                 last_customer_message_at: item?.lastCustomerMessageAt || null,
                 laboral_minutes_remaining: Number.isFinite(Number(item?.laboralMinutesRemaining))
                     ? Math.max(0, Math.floor(Number(item.laboralMinutesRemaining)))
@@ -94,6 +121,7 @@ function createSocketChatListService({
                         chat_id text,
                         window_expires_at text,
                         window_open boolean,
+                        window_status text,
                         last_customer_message_at text,
                         laboral_minutes_remaining integer,
                         laboral_window_measured_at text
@@ -103,6 +131,7 @@ function createSocketChatListService({
                     SET metadata = COALESCE(c.metadata, '{}'::jsonb) || jsonb_build_object(
                             'windowExpiresAt', incoming.window_expires_at,
                             'windowOpen', incoming.window_open,
+                            'windowStatus', incoming.window_status,
                             'lastCustomerMessageAt', incoming.last_customer_message_at,
                             'laboralMinutesRemaining', incoming.laboral_minutes_remaining,
                             'laboralWindowMeasuredAt', incoming.laboral_window_measured_at
@@ -171,6 +200,7 @@ function createSocketChatListService({
                 lastCustomerMessageAt: null,
                 windowExpiresAt: null,
                 laboralMinutesRemaining: null,
+                windowStatus: null,
                 laboralWindowMeasuredAt: null
             };
         }
@@ -190,11 +220,9 @@ function createSocketChatListService({
         const windowOpen = hasValidLastCustomerDate
             ? lastCustomerDate.getTime() + DAY_WINDOW_MS > Date.now()
             : false;
-        const laboralMinutesRemaining = hasValidLastCustomerDate
-            ? (typeof tenantScheduleService?.getRemainingLaboralMinutes === 'function'
-                ? tenantScheduleService.getRemainingLaboralMinutes(activeSchedule, windowExpiresAt, laboralWindowMeasuredAt)
-                : null)
-            : null;
+        const laboralDisplay = hasValidLastCustomerDate
+            ? resolveLaboralWindowDisplay(activeSchedule, windowExpiresAt, laboralWindowMeasuredAt)
+            : { laboralMinutesRemaining: null, windowStatus: null };
 
         const enrichedItem = {
             ...item,
@@ -203,7 +231,8 @@ function createSocketChatListService({
             lastCustomerMessageAt,
             windowOpen,
             windowExpiresAt,
-            laboralMinutesRemaining,
+            laboralMinutesRemaining: laboralDisplay.laboralMinutesRemaining,
+            windowStatus: laboralDisplay.windowStatus,
             laboralWindowMeasuredAt
         };
         return enrichedItem;
@@ -322,6 +351,7 @@ function createSocketChatListService({
                     lastCustomerMessageAt: null,
                     windowExpiresAt: null,
                     laboralMinutesRemaining: null,
+                    windowStatus: null,
                     laboralWindowMeasuredAt: null
                 };
             }
@@ -335,11 +365,9 @@ function createSocketChatListService({
             const windowOpen = hasValidLastCustomerDate
                 ? lastCustomerDate.getTime() + DAY_WINDOW_MS > Date.now()
                 : false;
-            const laboralMinutesRemaining = hasValidLastCustomerDate
-                ? (typeof tenantScheduleService?.getRemainingLaboralMinutes === 'function'
-                    ? tenantScheduleService.getRemainingLaboralMinutes(activeSchedule, windowExpiresAt, measuredAt)
-                    : null)
-                : null;
+            const laboralDisplay = hasValidLastCustomerDate
+                ? resolveLaboralWindowDisplay(activeSchedule, windowExpiresAt, measuredAt)
+                : { laboralMinutesRemaining: null, windowStatus: null };
 
             return {
                 ...item,
@@ -348,7 +376,8 @@ function createSocketChatListService({
                 lastCustomerMessageAt,
                 windowOpen,
                 windowExpiresAt,
-                laboralMinutesRemaining,
+                laboralMinutesRemaining: laboralDisplay.laboralMinutesRemaining,
+                windowStatus: laboralDisplay.windowStatus,
                 laboralWindowMeasuredAt: hasValidLastCustomerDate ? measuredAt : null
             };
         });

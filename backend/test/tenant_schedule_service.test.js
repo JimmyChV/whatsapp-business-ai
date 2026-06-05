@@ -3,18 +3,18 @@ const assert = require('node:assert/strict');
 
 const tenantScheduleService = require('../domains/tenant/services/tenant-schedule.service');
 
-test('getRemainingLaboralMinutes counts next-day working time when window expires tomorrow', () => {
+test('getRemainingLaboralMinutes returns real time when window expires inside working hours', () => {
     const schedule = {
         scheduleId: 'sch_lavitat',
         tenantId: 'tenant_cleaning',
         timezone: 'America/Lima',
         isActive: true,
         weeklyHours: {
-            mon: [{ start: '09:00', end: '17:00' }],
-            tue: [{ start: '09:00', end: '17:00' }],
-            wed: [{ start: '09:00', end: '17:00' }],
-            thu: [{ start: '09:00', end: '17:00' }],
-            fri: [{ start: '09:00', end: '17:00' }],
+            mon: [{ start: '07:30', end: '17:00' }],
+            tue: [{ start: '07:30', end: '17:00' }],
+            wed: [{ start: '07:30', end: '17:00' }],
+            thu: [{ start: '07:30', end: '17:00' }],
+            fri: [{ start: '07:30', end: '17:00' }],
             sat: [],
             sun: []
         },
@@ -22,26 +22,26 @@ test('getRemainingLaboralMinutes counts next-day working time when window expire
         customDays: []
     };
 
-    const now = '2026-05-29T00:11:35.000Z';
-    const windowExpiresAt = '2026-05-30T00:11:35.000Z';
+    const now = '2026-06-04T15:00:00.000Z'; // 10:00 Lima
+    const windowExpiresAt = '2026-06-05T13:00:00.000Z'; // manana 08:00 Lima
 
-    const minutes = tenantScheduleService.getRemainingLaboralMinutes(schedule, windowExpiresAt, now);
+    const result = tenantScheduleService.getRemainingLaboralMinutes(schedule, windowExpiresAt, now);
 
-    assert.equal(minutes, 480);
+    assert.deepEqual(result, { minutes: 1320, status: 'open' });
 });
 
-test('getRemainingLaboralMinutes truncates to expiry minute within the next work day', () => {
+test('getRemainingLaboralMinutes warns at last close when expiry is before next opening', () => {
     const schedule = {
         scheduleId: 'sch_lavitat',
         tenantId: 'tenant_cleaning',
         timezone: 'America/Lima',
         isActive: true,
         weeklyHours: {
-            mon: [{ start: '09:00', end: '19:00' }],
-            tue: [{ start: '09:00', end: '19:00' }],
-            wed: [{ start: '09:00', end: '19:00' }],
-            thu: [{ start: '09:00', end: '19:00' }],
-            fri: [{ start: '09:00', end: '19:00' }],
+            mon: [{ start: '07:30', end: '17:00' }],
+            tue: [{ start: '07:30', end: '17:00' }],
+            wed: [{ start: '07:30', end: '17:00' }],
+            thu: [{ start: '07:30', end: '17:00' }],
+            fri: [{ start: '07:30', end: '17:00' }],
             sat: [],
             sun: []
         },
@@ -49,15 +49,15 @@ test('getRemainingLaboralMinutes truncates to expiry minute within the next work
         customDays: []
     };
 
-    const now = '2026-05-29T01:00:00.000Z';
-    const windowExpiresAt = '2026-05-29T22:30:00.000Z';
+    const now = '2026-06-04T15:00:00.000Z'; // 10:00 Lima
+    const windowExpiresAt = '2026-06-05T11:00:00.000Z'; // manana 06:00 Lima
 
-    const minutes = tenantScheduleService.getRemainingLaboralMinutes(schedule, windowExpiresAt, now);
+    const result = tenantScheduleService.getRemainingLaboralMinutes(schedule, windowExpiresAt, now);
 
-    assert.equal(minutes, 510);
+    assert.deepEqual(result, { minutes: 420, status: 'expires_outside_hours' });
 });
 
-test('getRemainingLaboralMinutes stops at next laboral close before the WhatsApp window expires', () => {
+test('getRemainingLaboralMinutes returns zero urgency when the last close already passed', () => {
     const schedule = {
         scheduleId: 'sch_lavitat',
         tenantId: 'tenant_cleaning',
@@ -76,10 +76,37 @@ test('getRemainingLaboralMinutes stops at next laboral close before the WhatsApp
         customDays: []
     };
 
-    const now = '2026-06-05T14:00:00.000Z'; // 09:00 Lima
-    const windowExpiresAt = '2026-06-06T15:00:00.000Z'; // manana 10:00 Lima
+    const now = '2026-06-05T23:00:00.000Z'; // 18:00 Lima
+    const windowExpiresAt = '2026-06-06T11:00:00.000Z'; // manana 06:00 Lima
 
-    const minutes = tenantScheduleService.getRemainingLaboralMinutes(schedule, windowExpiresAt, now);
+    const result = tenantScheduleService.getRemainingLaboralMinutes(schedule, windowExpiresAt, now);
 
-    assert.equal(minutes, 480);
+    assert.deepEqual(result, { minutes: 0, status: 'expires_outside_hours' });
+});
+
+test('getLastLaboralCloseBeforeDate uses weekend close before a closed expiry day', () => {
+    const schedule = {
+        scheduleId: 'sch_lavitat',
+        tenantId: 'tenant_cleaning',
+        timezone: 'America/Lima',
+        isActive: true,
+        weeklyHours: {
+            mon: [{ start: '07:30', end: '17:00' }],
+            tue: [{ start: '07:30', end: '17:00' }],
+            wed: [{ start: '07:30', end: '17:00' }],
+            thu: [{ start: '07:30', end: '17:00' }],
+            fri: [{ start: '07:30', end: '17:00' }],
+            sat: [{ start: '07:30', end: '13:00' }],
+            sun: []
+        },
+        holidays: [],
+        customDays: []
+    };
+
+    const now = '2026-06-06T15:00:00.000Z'; // sabado 10:00 Lima
+    const windowExpiresAt = '2026-06-07T19:00:00.000Z'; // domingo 14:00 Lima
+
+    const result = tenantScheduleService.getRemainingLaboralMinutes(schedule, windowExpiresAt, now);
+
+    assert.deepEqual(result, { minutes: 180, status: 'expires_outside_hours' });
 });

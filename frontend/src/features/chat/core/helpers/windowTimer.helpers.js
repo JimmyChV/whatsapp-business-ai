@@ -12,6 +12,11 @@ const normalizeMinutes = (value = null) => {
   return Math.max(0, Math.floor(parsed));
 };
 
+const normalizeWindowStatus = (value = '') => {
+  const status = String(value || '').trim().toLowerCase();
+  return ['open', 'expires_outside_hours', 'expired'].includes(status) ? status : null;
+};
+
 const formatLaborMinutes = (minutes = 0) => {
   const safeMinutes = Math.max(1, Math.floor(Number(minutes || 0)));
   if (safeMinutes < 60) return `${safeMinutes}m`;
@@ -34,12 +39,13 @@ const resolveCurrentLaboralMinutes = (source = {}, nowMs = Date.now()) => {
 
 export function getWindowState(source = {}, nowMs = Date.now()) {
   const expiresAt = toSafeDate(source?.windowExpiresAt);
+  const windowStatus = normalizeWindowStatus(source?.windowStatus);
   const hasWindowOpen = typeof source?.windowOpen === 'boolean';
-  const isExpired = Boolean(expiresAt) && (
+  const isExpired = windowStatus === 'expired' || (Boolean(expiresAt) && (
     hasWindowOpen
       ? source.windowOpen === false
       : expiresAt.getTime() <= Number(nowMs || Date.now())
-  );
+  ));
   if (isExpired) {
     return {
       status: 'expired',
@@ -56,16 +62,18 @@ export function getWindowState(source = {}, nowMs = Date.now()) {
   if (laborMinutesRemaining === null) {
     return { status: 'unknown', laborMinutesRemaining: null, active: false, expiring: false, expired: false, label: '' };
   }
-  if (laborMinutesRemaining <= 0) {
+  if (windowStatus === 'expires_outside_hours' || laborMinutesRemaining <= 0) {
     return {
       status: 'outside-hours',
-      laborMinutesRemaining: 0,
+      laborMinutesRemaining,
       active: true,
       expiring: true,
       expired: false,
       outsideHours: true,
-      label: '⚠️ Vence fuera de horario',
-      title: 'La ventana sigue abierta, pero no quedan minutos laborales disponibles'
+      label: laborMinutesRemaining > 0 ? `${formatLaborMinutes(laborMinutesRemaining)} ⚠️` : '⚠️ Vence fuera de horario',
+      title: laborMinutesRemaining > 0
+        ? 'La ventana vence fuera del horario laboral; este es el último margen operativo'
+        : 'La ventana sigue abierta, pero ya pasó el último cierre laboral disponible'
     };
   }
 

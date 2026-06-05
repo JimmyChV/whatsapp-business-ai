@@ -145,6 +145,7 @@ function normalizeChat(chat = {}, tenantId = _activeTenantId) {
     lastCustomerMessageAt: chat?.lastCustomerMessageAt || null,
     windowOpen: typeof chat?.windowOpen === 'boolean' ? chat.windowOpen : null,
     windowExpiresAt: chat?.windowExpiresAt || null,
+    windowStatus: chat?.windowStatus || null,
     laboralMinutesRemaining: Number.isFinite(Number(chat?.laboralMinutesRemaining))
       ? Math.max(0, Math.floor(Number(chat.laboralMinutesRemaining)))
       : null,
@@ -356,6 +357,7 @@ export async function cleanStaleWindowData(maxExpiredMs = STALE_WINDOW_DATA_MS) 
         ...chat,
         windowOpen: false,
         windowExpiresAt: null,
+        windowStatus: null,
         laboralMinutesRemaining: null,
         laboralWindowMeasuredAt: null,
         lastCustomerMessageAt: null,

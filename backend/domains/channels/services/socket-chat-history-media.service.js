@@ -62,6 +62,32 @@ function createSocketChatHistoryMediaService({
         return schedule || null;
     };
 
+    const normalizeWindowStatus = (value = '') => {
+        const status = String(value || '').trim().toLowerCase();
+        return ['open', 'expires_outside_hours', 'expired'].includes(status) ? status : null;
+    };
+
+    const resolveLaboralWindowDisplay = (activeSchedule = null, windowExpiresAt = null, measuredAt = new Date()) => {
+        if (typeof tenantScheduleService?.getRemainingLaboralMinutes !== 'function') {
+            return { laboralMinutesRemaining: null, windowStatus: null };
+        }
+        const result = tenantScheduleService.getRemainingLaboralMinutes(activeSchedule, windowExpiresAt, measuredAt);
+        if (result && typeof result === 'object') {
+            return {
+                laboralMinutesRemaining: Number.isFinite(Number(result.minutes))
+                    ? Math.max(0, Math.floor(Number(result.minutes)))
+                    : null,
+                windowStatus: normalizeWindowStatus(result.status)
+            };
+        }
+        return {
+            laboralMinutesRemaining: Number.isFinite(Number(result))
+                ? Math.max(0, Math.floor(Number(result)))
+                : null,
+            windowStatus: null
+        };
+    };
+
     const buildConversationWindowStateFromRows = async (tenantId = 'default', rows = []) => {
         const lastInbound = (Array.isArray(rows) ? rows : []).find((message) => message?.fromMe === false);
         const lastInboundTs = Number(lastInbound?.timestampUnix || 0) || 0;
@@ -70,6 +96,7 @@ function createSocketChatHistoryMediaService({
                 windowOpen: false,
                 windowExpiresAt: null,
                 laboralMinutesRemaining: null,
+                windowStatus: null,
                 laboralWindowMeasuredAt: null
             };
         }
@@ -77,13 +104,12 @@ function createSocketChatHistoryMediaService({
         const windowExpiresAt = new Date(windowExpiresAtMs).toISOString();
         const laboralWindowMeasuredAt = new Date().toISOString();
         const activeSchedule = await getActiveTenantSchedule(tenantId);
-        const laboralMinutesRemaining = typeof tenantScheduleService?.getRemainingLaboralMinutes === 'function'
-            ? tenantScheduleService.getRemainingLaboralMinutes(activeSchedule, windowExpiresAt, laboralWindowMeasuredAt)
-            : null;
+        const laboralDisplay = resolveLaboralWindowDisplay(activeSchedule, windowExpiresAt, laboralWindowMeasuredAt);
         return {
             windowOpen: windowExpiresAtMs > Date.now(),
             windowExpiresAt,
-            laboralMinutesRemaining,
+            laboralMinutesRemaining: laboralDisplay.laboralMinutesRemaining,
+            windowStatus: laboralDisplay.windowStatus,
             laboralWindowMeasuredAt
         };
     };
@@ -532,6 +558,7 @@ function createSocketChatHistoryMediaService({
                     windowOpen: Boolean(historyFallback?.windowOpen),
                     windowExpiresAt: historyFallback?.windowExpiresAt || null,
                     laboralMinutesRemaining: historyFallback?.laboralMinutesRemaining ?? null,
+                    windowStatus: historyFallback?.windowStatus || null,
                     laboralWindowMeasuredAt: historyFallback?.laboralWindowMeasuredAt || null,
                     messages: selectedMessages,
                     origin
@@ -591,6 +618,7 @@ function createSocketChatHistoryMediaService({
                         scopeModuleId: normalizeScopedModuleId(resolveScopedChatTarget(String(chatId || ''), '').moduleId || '') || null,
                         windowOpen: false,
                         windowExpiresAt: null,
+                        windowStatus: null,
                         messages: [],
                         source: 'history_fallback'
                     });
