@@ -203,10 +203,48 @@ export default function useSocketChatConversationEvents({
         canMarkChatAsReadRef.current = canMarkChatAsRead;
     }, [canMarkChatAsRead]);
 
+    const resolveMarkReadPayload = (chatId = '', source = 'active_chat') => {
+        const rawChatId = String(chatId || '').trim();
+        if (!rawChatId) return null;
+
+        const parsed = typeof parseScopedChatId === 'function'
+            ? parseScopedChatId(rawChatId)
+            : { baseChatId: rawChatId, scopeModuleId: '' };
+        let baseChatId = String(parsed?.baseChatId || rawChatId).trim();
+        let scopeModuleId = String(parsed?.scopeModuleId || '').trim().toLowerCase();
+
+        if (!scopeModuleId) {
+            const candidates = Array.isArray(chatsRef?.current) ? chatsRef.current : [];
+            const match = candidates.find((chat) => {
+                const candidateId = String(chat?.id || '').trim();
+                const candidateBase = String(chat?.baseChatId || '').trim();
+                const candidateParsed = typeof parseScopedChatId === 'function'
+                    ? parseScopedChatId(candidateId)
+                    : { baseChatId: candidateId, scopeModuleId: '' };
+                const resolvedCandidateBase = String(candidateParsed?.baseChatId || candidateBase || candidateId).trim();
+                return candidateId === rawChatId || candidateBase === baseChatId || resolvedCandidateBase === baseChatId;
+            });
+            if (match) {
+                const matchParsed = typeof parseScopedChatId === 'function'
+                    ? parseScopedChatId(match?.id || '')
+                    : { baseChatId: String(match?.id || ''), scopeModuleId: '' };
+                baseChatId = String(matchParsed?.baseChatId || match?.baseChatId || baseChatId).trim();
+                scopeModuleId = String(matchParsed?.scopeModuleId || match?.scopeModuleId || match?.lastMessageModuleId || '').trim().toLowerCase();
+            }
+        }
+
+        return {
+            chatId: rawChatId,
+            baseChatId: baseChatId || undefined,
+            scopeModuleId: scopeModuleId || undefined,
+            source
+        };
+    };
+
     const emitMarkChatRead = (chatId = '', source = 'active_chat') => {
-        if (typeof canMarkChatAsReadRef.current !== 'function') return;
-        if (!canMarkChatAsReadRef.current(chatId)) return;
-        socket.emit('mark_chat_read', { chatId, source });
+        const payload = resolveMarkReadPayload(chatId, source);
+        if (!payload) return;
+        socket.emit('mark_chat_read', payload);
     };
 
     useEffect(() => {

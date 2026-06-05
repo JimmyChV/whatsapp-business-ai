@@ -283,8 +283,7 @@ export default function useAppOperationHandlers({
     setClientContact,
     setQuickReplyDraft,
     setChats,
-    chatIdsReferSameScope,
-    canMarkChatAsRead
+    chatIdsReferSameScope
   });
 
   useEffect(() => {

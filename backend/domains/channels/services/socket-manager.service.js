@@ -1999,18 +1999,29 @@ class SocketManager {
                     const isObjectPayload = payload && typeof payload === 'object' && !Array.isArray(payload);
                     const requestedChatId = String(isObjectPayload ? payload.chatId : payload || '').trim();
                     if (!requestedChatId) return;
+                    const requestedBaseChatId = String(isObjectPayload ? payload.baseChatId || '' : '').trim();
+                    const requestedScopeModuleId = normalizeScopedModuleId(isObjectPayload ? payload.scopeModuleId || payload.moduleId || '' : '');
                     const fallbackScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
-                    const scopedTarget = resolveScopedChatTarget(requestedChatId, fallbackScopeModuleId);
-                    const safeChatId = String(scopedTarget.baseChatId || '').trim();
+                    const scopedTarget = resolveScopedChatTarget(requestedChatId, requestedScopeModuleId || fallbackScopeModuleId);
+                    const safeChatId = String(scopedTarget.baseChatId || requestedBaseChatId || '').trim();
                     if (!safeChatId) return;
-                    const scopeModuleId = normalizeScopedModuleId(scopedTarget.moduleId || fallbackScopeModuleId || '');
-                    const actorUserId = String(authContext?.userId || authContext?.user?.userId || authContext?.user?.id || '').trim();
+                    const scopeModuleId = normalizeScopedModuleId(scopedTarget.moduleId || requestedScopeModuleId || fallbackScopeModuleId || '');
+                    const actorUserIds = Array.from(new Set([
+                        authContext?.userId,
+                        authContext?.user?.userId,
+                        authContext?.user?.id
+                    ].map((entry) => String(entry || '').trim()).filter(Boolean)));
                     let isAssignedToActor = false;
-                    if (actorUserId) {
-                        const assignment = await conversationOpsService.getChatAssignment(tenantId, {
-                            chatId: safeChatId,
-                            scopeModuleId
-                        });
+                    if (actorUserIds.length > 0) {
+                        const candidateScopes = Array.from(new Set([scopeModuleId, '']));
+                        let assignment = null;
+                        for (const candidateScope of candidateScopes) {
+                            assignment = await conversationOpsService.getChatAssignment(tenantId, {
+                                chatId: safeChatId,
+                                scopeModuleId: candidateScope
+                            });
+                            if (assignment) break;
+                        }
                         const assignedUserId = String(
                             assignment?.assigneeUserId
                             || assignment?.assignedUserId
@@ -2018,7 +2029,7 @@ class SocketManager {
                             || ''
                         ).trim();
                         const assignmentStatus = String(assignment?.status || 'active').trim().toLowerCase();
-                        isAssignedToActor = assignedUserId === actorUserId && assignmentStatus !== 'released';
+                        isAssignedToActor = actorUserIds.includes(assignedUserId) && assignmentStatus !== 'released';
                     }
                     if (!isAssignedToActor) return;
                     let readStateResult = null;

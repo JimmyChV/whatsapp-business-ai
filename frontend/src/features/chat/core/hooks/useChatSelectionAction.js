@@ -27,8 +27,7 @@ export default function useChatSelectionAction({
   setReplyingMessage,
   setShowClientProfile,
   setClientContact,
-  setQuickReplyDraft,
-  canMarkChatAsRead
+  setQuickReplyDraft
 } = {}) {
   const emitQuickRepliesRequest = (moduleId = '') => {
     const cleanModuleId = String(moduleId || '').trim().toLowerCase();
@@ -119,12 +118,11 @@ export default function useChatSelectionAction({
     setClientContact(null);
     setQuickReplyDraft(null);
     socket.emit('get_chat_history', resolvedChatId);
-    const readGuardCanMark = typeof canMarkChatAsRead === 'function'
-      ? canMarkChatAsRead(resolvedChatId)
-      : false;
-    if (readGuardCanMark) {
-      socket.emit('mark_chat_read', { chatId: resolvedChatId, source: 'chat_open' });
-    }
+    socket.emit('mark_chat_read', {
+      chatId: resolvedChatId,
+      scopeModuleId: resolvedScopeModuleId || undefined,
+      source: 'chat_open'
+    });
     socket.emit('get_contact_info', resolvedChatId);
   };
 
