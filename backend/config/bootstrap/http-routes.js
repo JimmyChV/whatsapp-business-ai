@@ -16,6 +16,7 @@ function registerHttpRoutes({
     registerTenantWaModuleAdminHttpRoutes,
     registerTenantCustomerHttpRoutes,
     registerOperationsHttpRoutes,
+    registerOperationsReportsHttpRoutes,
     registerTenantRuntimeSettingsHttpRoutes,
     registerTenantLabelsQuickRepliesHttpRoutes,
     registerTenantAdminConfigCatalogHttpRoutes,
@@ -277,6 +278,17 @@ function registerHttpRoutes({
         emitCommercialStatusUpdated: socketManager?.emitCommercialStatusUpdated?.bind(socketManager) || null,
         emitToTenant: socketManager?.emitToTenant?.bind(socketManager) || null
     });
+
+    if (typeof registerOperationsReportsHttpRoutes === 'function') {
+        registerOperationsReportsHttpRoutes({
+            app,
+            authService,
+            accessPolicyService,
+            isTenantAllowedForUser,
+            hasAnyPermission,
+            hasOperationsKpiReadAccess
+        });
+    }
 
     registerTenantRuntimeSettingsHttpRoutes({
         app,

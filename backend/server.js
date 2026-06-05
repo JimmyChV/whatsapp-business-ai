@@ -81,6 +81,7 @@ const {
     globalLabelsService,
     opsTelemetry,
     registerOperationsHttpRoutes,
+    registerOperationsReportsHttpRoutes,
     registerOperationsUtilityHttpRoutes,
     registerOperationsHealthHttpRoutes
 } = require('./domains/operations');
@@ -485,6 +486,7 @@ registerHttpRoutes({
     registerTenantWaModuleAdminHttpRoutes,
     registerTenantCustomerHttpRoutes,
     registerOperationsHttpRoutes,
+    registerOperationsReportsHttpRoutes,
     registerTenantRuntimeSettingsHttpRoutes,
     registerTenantLabelsQuickRepliesHttpRoutes,
     registerTenantAdminConfigCatalogHttpRoutes,
