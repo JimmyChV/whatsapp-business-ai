@@ -6568,6 +6568,19 @@
     overflow: hidden !important;
 }
 
+.saas-admin-shell #saas_reports.saas-entity-page {
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    scrollbar-gutter: stable both-edges;
+}
+
+.saas-admin-shell #saas_reports .saas-reports-shell {
+    min-height: min-content;
+    padding-bottom: 28px;
+}
+
 .saas-admin-shell .saas-admin-grid:has(> .saas-entity-page) {
     overflow: hidden !important;
 }
