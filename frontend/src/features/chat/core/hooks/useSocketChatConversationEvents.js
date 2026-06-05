@@ -79,13 +79,8 @@ function resolveHighestAck(nextAck = 0, currentAck = 0) {
     return Math.max(safeNext, safeCurrent);
 }
 
-const MANUAL_UNREAD_PROTECTION_MS = 5 * 60 * 1000;
-
 function isManualUnreadProtectionActive(chat = {}) {
-    if (chat?.manuallyMarkedUnread !== true) return false;
-    const markedAt = Date.parse(String(chat?.manuallyMarkedUnreadAt || ''));
-    if (!Number.isFinite(markedAt)) return true;
-    return Date.now() - markedAt <= MANUAL_UNREAD_PROTECTION_MS;
+    return chat?.manuallyMarkedUnread === true;
 }
 
 function mergeRealtimeSenderAttribution(existingMessage = null, incomingMessage = null) {

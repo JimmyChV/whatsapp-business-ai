@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
 import { getWindowState } from '../../core/helpers/windowTimer.helpers';
-import { isChatUnreadLike } from '../../core/helpers/appChat.helpers';
 
 const WA_LABEL_COLORS = ['#25D366', '#34B7F1', '#FFB02E', '#FF5C5C', '#9C6BFF', '#00A884', '#7D8D95'];
 const DEFAULT_COMMERCIAL_STATUS_OPTIONS = [{ value: 'all', label: 'Todos' }];
@@ -22,6 +21,10 @@ const hasCrmIdentity = (chat = {}) => (
 const isSavedCustomerChat = (chat = {}) => (
   chat?.isMyContact === true
   || hasCrmIdentity(chat)
+);
+const isUnreadChat = (chat = {}) => (
+  Number(chat?.unreadCount || 0) > 0
+  || chat?.manuallyMarkedUnread === true
 );
 const normalizeFilterToken = (value = '') => String(value || '').trim().toLowerCase();
 const formatCommercialStatusLabel = (value = '') => {
@@ -291,7 +294,7 @@ const useSidebarFiltersController = ({
   }, [assignmentUserOptions]);
 
   const quickStats = useMemo(() => {
-    const unread = chats.filter((c) => isChatUnreadLike(c)).length;
+    const unread = chats.filter((c) => isUnreadChat(c)).length;
     const unlabeled = chats.filter((c) => (Array.isArray(c?.labels) ? c.labels.length : 0) === 0).length;
     const myContacts = chats.filter((c) => isSavedCustomerChat(c)).length;
     const unknown = chats.filter((c) => !isSavedCustomerChat(c)).length;
@@ -331,7 +334,7 @@ const useSidebarFiltersController = ({
   const filteredChats = useMemo(() => chats.filter((chat) => {
     const labelTokenSet = getChatLabelTokenSet(chat);
 
-    if (filters.unreadOnly && !isChatUnreadLike(chat)) return false;
+    if (filters.unreadOnly && !isUnreadChat(chat)) return false;
     if (filters.onlyAssignedToMe && assignmentsLoaded && !isAssignedToMeResolver(chat?.id)) return false;
     if (filters.assigneeUserId && assignmentsLoaded) {
       const assignment = resolveChatAssignment(chat);
