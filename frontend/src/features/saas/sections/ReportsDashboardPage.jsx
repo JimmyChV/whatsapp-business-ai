@@ -181,16 +181,235 @@ function downloadTextFile(fileName, content, mimeType = 'text/plain;charset=utf-
     URL.revokeObjectURL(url);
 }
 
-function buildCsv(rows = [], columns = []) {
-    const escapeCell = (value) => {
-        const clean = String(value ?? '');
-        if (!/[",\n]/.test(clean)) return clean;
-        return `"${clean.replaceAll('"', '""')}"`;
-    };
+function escapeHtml(value = '') {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
+function cellValue(row = {}, column = {}) {
+    if (typeof column.value === 'function') return column.value(row);
+    return row?.[column.key];
+}
+
+function buildExportTable({ title = '', subtitle = '', columns = [], rows = [] } = {}) {
+    const safeRows = toArray(rows);
+    const bodyRows = safeRows.length
+        ? safeRows.map((row) => `<tr>${columns.map((column) => `<td>${escapeHtml(cellValue(row, column))}</td>`).join('')}</tr>`).join('')
+        : `<tr><td colspan="${Math.max(columns.length, 1)}">Sin datos en este periodo.</td></tr>`;
+    return `
+      <section class="report-section">
+        <h2>${escapeHtml(title)}</h2>
+        ${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : ''}
+        <table>
+          <thead>
+            <tr>${columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join('')}</tr>
+          </thead>
+          <tbody>${bodyRows}</tbody>
+        </table>
+      </section>`;
+}
+
+function buildReportExportTables({
+    kpis = {},
+    previousKpis = {},
+    reports = EMPTY_REPORTS,
+    temporalRows = [],
+    sourceRows = [],
+    metaAdRows = [],
+    campaignRows = [],
+    userLabel = '',
+    moduleLabel = ''
+} = {}) {
+    const funnel = reports.funnel || {};
+    const teamRows = toArray(reports.equipo);
+    const scheduleHours = toArray(reports.horarios?.porHora);
+    const scheduleDays = toArray(reports.horarios?.porDiaSemana);
+    const filtersLabel = `${userLabel || 'Todos los usuarios'} - ${moduleLabel || 'Todos los modulos'}`;
     return [
-        columns.map((column) => escapeCell(column.label)).join(','),
-        ...toArray(rows).map((row) => columns.map((column) => escapeCell(row?.[column.key])).join(','))
-    ].join('\n');
+        {
+            title: 'Resumen',
+            subtitle: filtersLabel,
+            columns: [
+                { key: 'metric', label: 'Metrica' },
+                { key: 'current', label: 'Actual' },
+                { key: 'previous', label: 'Periodo anterior' }
+            ],
+            rows: KPI_DEFS.map((def) => ({
+                metric: def.label,
+                current: formatKpiValue(kpis?.[def.key], def.type),
+                previous: formatKpiValue(previousKpis?.[def.key], def.type)
+            }))
+        },
+        {
+            title: 'Embudo de ventas',
+            columns: [
+                { key: 'stage', label: 'Etapa' },
+                { key: 'total', label: 'Total' }
+            ],
+            rows: FUNNEL_STAGES.map((stage) => ({
+                stage: stage.label,
+                total: formatInt(funnel?.[stage.key])
+            }))
+        },
+        {
+            title: 'Actividad temporal',
+            columns: [
+                { key: 'date', label: 'Fecha' },
+                { key: 'chatsNuevos', label: 'Chats nuevos' },
+                { key: 'mensajesEnviados', label: 'Mensajes enviados' },
+                { key: 'mensajesRecibidos', label: 'Mensajes recibidos' },
+                { key: 'cotizaciones', label: 'Cotizaciones' },
+                { key: 'tiempoRespuestaPromedio', label: 'Tiempo respuesta promedio' }
+            ],
+            rows: toArray(temporalRows).map((row) => ({
+                ...row,
+                tiempoRespuestaPromedio: formatKpiValue(row.tiempoRespuestaPromedio, 'minutes')
+            }))
+        },
+        {
+            title: 'Equipo',
+            columns: [
+                { key: 'displayName', label: 'Vendedora' },
+                { key: 'chatsAsignados', label: 'Chats asignados' },
+                { key: 'chatsAtendidos', label: 'Chats atendidos' },
+                { key: 'cotizaciones', label: 'Cotizaciones' },
+                { key: 'ventas', label: 'Ventas' },
+                { key: 'tiempoRespuesta', label: 'Tiempo respuesta' },
+                { key: 'tasaConversion', label: 'Conversion' }
+            ],
+            rows: teamRows.map((row) => ({
+                ...row,
+                tiempoRespuesta: formatKpiValue(row.tiempoRespuesta, 'minutes'),
+                tasaConversion: percent(row.tasaConversion, 1)
+            }))
+        },
+        {
+            title: 'Fuentes de conversaciones',
+            columns: [
+                { key: 'label', label: 'Fuente' },
+                { key: 'source', label: 'Tipo' },
+                { key: 'total', label: 'Chats' },
+                { key: 'cotizaciones', label: 'Cotizaciones' },
+                { key: 'ventas', label: 'Ventas' },
+                { key: 'conversion', label: 'Conversion' }
+            ],
+            rows: toArray(sourceRows).map((row) => ({
+                ...row,
+                label: row.label || row.source,
+                conversion: number(row.total) > 0 ? percent((number(row.ventas) / number(row.total)) * 100, 1) : '0.0%'
+            }))
+        },
+        {
+            title: 'Anuncios Meta',
+            columns: [
+                { key: 'adName', label: 'Anuncio' },
+                { key: 'campaignName', label: 'Campana' },
+                { key: 'chats', label: 'Chats' },
+                { key: 'cotizaciones', label: 'Cotizaciones' },
+                { key: 'ventas', label: 'Ventas' },
+                { key: 'inversion', label: 'Inversion' },
+                { key: 'costoPerChat', label: 'Costo por chat' }
+            ],
+            rows: toArray(metaAdRows).map((row) => ({
+                ...row,
+                inversion: formatCurrency(row.inversion),
+                costoPerChat: formatCurrency(row.costoPerChat)
+            }))
+        },
+        {
+            title: 'Horarios por hora',
+            columns: [
+                { key: 'hora', label: 'Hora' },
+                { key: 'mensajes', label: 'Mensajes' },
+                { key: 'chats', label: 'Chats' }
+            ],
+            rows: scheduleHours
+        },
+        {
+            title: 'Horarios por dia',
+            columns: [
+                { key: 'dia', label: 'Dia' },
+                { key: 'mensajes', label: 'Mensajes' },
+                { key: 'chats', label: 'Chats' },
+                { key: 'tiempoRespuesta', label: 'Tiempo respuesta' }
+            ],
+            rows: scheduleDays.map((row) => ({
+                ...row,
+                tiempoRespuesta: formatKpiValue(row.tiempoRespuesta, 'minutes')
+            }))
+        },
+        {
+            title: 'Campanas WhatsApp',
+            columns: [
+                { key: 'campaignName', label: 'Campana' },
+                { key: 'status', label: 'Estado' },
+                { key: 'enviados', label: 'Enviados' },
+                { key: 'respondieron', label: 'Respondieron' },
+                { key: 'cotizaciones', label: 'Cotizaciones' },
+                { key: 'tasaRespuesta', label: 'Tasa respuesta' }
+            ],
+            rows: toArray(campaignRows).map((row) => ({
+                ...row,
+                tasaRespuesta: percent(row.tasaRespuesta, 1)
+            }))
+        }
+    ];
+}
+
+function buildReportDocumentHtml({ title, subtitle, tables = [], mode = 'print' } = {}) {
+    const tableHtml = tables.map(buildExportTable).join('');
+    return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(title)}</title>
+  <style>
+    @page { size: A4 landscape; margin: 12mm; }
+    body { margin: 0; font-family: Arial, sans-serif; color: #111827; background: #fff; }
+    main { padding: ${mode === 'print' ? '0' : '20px'}; }
+    h1 { margin: 0 0 6px; font-size: 24px; }
+    .subtitle { margin: 0 0 18px; color: #4b5563; font-size: 13px; }
+    .report-section { page-break-inside: avoid; margin: 0 0 18px; }
+    h2 { margin: 0 0 8px; font-size: 16px; color: #0f5132; }
+    p { margin: 0 0 8px; color: #4b5563; font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; table-layout: auto; }
+    th, td { border: 1px solid #d1d5db; padding: 7px 8px; text-align: left; vertical-align: top; font-size: 11px; }
+    th { background: #e9f5ee; color: #111827; font-weight: 700; }
+    tr:nth-child(even) td { background: #f9fafb; }
+    @media print {
+      body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      main { padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>${escapeHtml(title)}</h1>
+    <p class="subtitle">${escapeHtml(subtitle)}</p>
+    ${tableHtml}
+  </main>
+</body>
+</html>`;
+}
+
+function printReportDocument(html = '', fallbackFileName = 'reportes.html') {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+        downloadTextFile(fallbackFileName, html, 'text/html;charset=utf-8');
+        return;
+    }
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.setTimeout(() => {
+        printWindow.print();
+    }, 250);
 }
 
 function ReportCard({ title, children, subtitle = '', className = '' }) {
@@ -673,10 +892,30 @@ export default function ReportsDashboardPage(props = {}) {
         value: number(row.mensajesEnviados)
     }));
     const sourceRows = toArray(reports.origenes?.porFuente);
-    const metaAdRows = toArray(reports.origenes?.porAnuncioMeta).slice(0, 5);
+    const allMetaAdRows = toArray(reports.origenes?.porAnuncioMeta);
+    const metaAdRows = allMetaAdRows.slice(0, 5);
     const campaignRows = toArray(reports.campanas);
     const hourRows = toArray(reports.horarios?.porHora).map((row) => ({ label: `${row.hora}`, value: row.mensajes }));
     const dayRows = toArray(reports.horarios?.porDiaSemana).map((row) => ({ label: row.dia, value: row.mensajes }));
+    const buildExportPayload = () => {
+        const title = `Reportes ${activeTenantLabel || tenantId || 'Tenant'}`;
+        const subtitle = `${formatDateRangeLabel(range.dateFrom, range.dateTo)} - ${selectedUserLabel} - ${selectedModuleLabel}`;
+        return {
+            title,
+            subtitle,
+            tables: buildReportExportTables({
+                kpis,
+                previousKpis,
+                reports,
+                temporalRows,
+                sourceRows,
+                metaAdRows: allMetaAdRows,
+                campaignRows,
+                userLabel: selectedUserLabel,
+                moduleLabel: selectedModuleLabel
+            })
+        };
+    };
 
     const exportJson = () => {
         downloadTextFile(`reportes-${range.dateFrom}-${range.dateTo}.json`, JSON.stringify({
@@ -688,15 +927,19 @@ export default function ReportsDashboardPage(props = {}) {
         setExportOpen(false);
     };
     const exportExcel = () => {
-        const csv = buildCsv(temporalRows, [
-            { key: 'date', label: 'Fecha' },
-            { key: 'chatsNuevos', label: 'Chats nuevos' },
-            { key: 'mensajesEnviados', label: 'Mensajes enviados' },
-            { key: 'mensajesRecibidos', label: 'Mensajes recibidos' },
-            { key: 'cotizaciones', label: 'Cotizaciones' },
-            { key: 'tiempoRespuestaPromedio', label: 'Tiempo respuesta' }
-        ]);
-        downloadTextFile(`reportes-${range.dateFrom}-${range.dateTo}.csv`, csv, 'text/csv;charset=utf-8');
+        const payload = buildExportPayload();
+        const html = buildReportDocumentHtml({ ...payload, mode: 'excel' });
+        downloadTextFile(
+            `reportes-${range.dateFrom}-${range.dateTo}.xls`,
+            `\ufeff${html}`,
+            'application/vnd.ms-excel;charset=utf-8'
+        );
+        setExportOpen(false);
+    };
+    const exportPdf = () => {
+        const payload = buildExportPayload();
+        const html = buildReportDocumentHtml({ ...payload, mode: 'print' });
+        printReportDocument(html, `reportes-${range.dateFrom}-${range.dateTo}.html`);
         setExportOpen(false);
     };
 
@@ -743,7 +986,7 @@ export default function ReportsDashboardPage(props = {}) {
                             <button type="button" className="saas-btn saas-btn--secondary" onClick={() => setExportOpen((prev) => !prev)}>Exportar</button>
                             {exportOpen ? (
                                 <div className="saas-reports-export__menu">
-                                    <button type="button" onClick={() => { window.print?.(); setExportOpen(false); }}>PDF</button>
+                                    <button type="button" onClick={exportPdf}>PDF</button>
                                     <button type="button" onClick={exportExcel}>Excel</button>
                                     <button type="button" onClick={exportJson}>JSON</button>
                                 </div>
