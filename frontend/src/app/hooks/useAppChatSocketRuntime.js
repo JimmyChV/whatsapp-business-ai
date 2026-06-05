@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import {
   useMessagesAutoScroll,
@@ -42,7 +42,9 @@ import {
   resolveScopedCatalogSelection,
   normalizeBusinessDataPayload,
   normalizeQuickRepliesSocketPayload,
-  normalizeProfilePayload
+  normalizeProfilePayload,
+  markChatsRead,
+  applyReadItemsToChats
 } from '../../features/chat/core';
 
 export default function useAppChatSocketRuntime({
@@ -325,6 +327,30 @@ export default function useAppChatSocketRuntime({
       : false;
   };
 
+  const markChatRead = useCallback(async (payload = {}) => {
+    const safePayload = payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? payload
+      : { chatId: payload };
+    const chatId = String(safePayload?.chatId || safePayload?.baseChatId || '').trim();
+    if (!chatId) return;
+    try {
+      const result = await markChatsRead({
+        baseApiUrl,
+        buildApiHeaders,
+        tenantId: activeTenantId,
+        chatIds: [safePayload]
+      });
+      const items = Array.isArray(result?.items) ? result.items : [];
+      if (items.length > 0) {
+        setChats((prev) => applyReadItemsToChats(prev, items, chatIdsReferSameScope));
+      }
+    } catch (_) {
+      if (socket && typeof socket.emit === 'function') {
+        socket.emit('mark_chat_read', safePayload);
+      }
+    }
+  }, [activeTenantId, baseApiUrl, buildApiHeaders, chatIdsReferSameScope, setChats, socket]);
+
   useSocketChatConversationEvents({
     socket,
     chatSearchRef,
@@ -377,7 +403,8 @@ export default function useAppChatSocketRuntime({
     isInternalIdentifier,
     setToasts,
     tenantScopeId: activeTenantId,
-    canMarkChatAsRead
+    canMarkChatAsRead,
+    markChatRead
   });
 
   const chatCommercialStatusState = useChatCommercialStatusState({

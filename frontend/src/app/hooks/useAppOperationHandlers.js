@@ -18,7 +18,9 @@ import {
   sanitizeDisplayText,
   normalizeChatFilters,
   normalizeQuickReplyDraft,
-  parseScopedChatId
+  parseScopedChatId,
+  markChatsRead,
+  applyReadItemsToChats
 } from '../../features/chat/core';
 import useUiFeedback from '../ui-feedback/useUiFeedback';
 
@@ -161,8 +163,7 @@ export default function useAppOperationHandlers({
     waModulesRef,
     selectedCatalogModuleIdRef,
     selectedCatalogIdRef,
-    fileInputRef,
-    chatAssignmentState
+    fileInputRef
   } = workspaceStateBlock;
 
   const { buildApiHeaders } = navigationHelpersBlock;
@@ -211,11 +212,29 @@ export default function useAppOperationHandlers({
     chats
   });
 
-  const canMarkChatAsRead = useCallback((chatId = '') => {
-    return typeof chatAssignmentState?.isAssignedToMe === 'function'
-      ? chatAssignmentState.isAssignedToMe(chatId)
-      : false;
-  }, [chatAssignmentState]);
+  const markChatRead = useCallback(async (payload = {}) => {
+    const safePayload = payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? payload
+      : { chatId: payload };
+    const chatId = String(safePayload?.chatId || safePayload?.baseChatId || '').trim();
+    if (!chatId) return;
+    try {
+      const result = await markChatsRead({
+        baseApiUrl: API_URL,
+        buildApiHeaders,
+        tenantId: tenantScopeId,
+        chatIds: [safePayload]
+      });
+      const items = Array.isArray(result?.items) ? result.items : [];
+      if (items.length > 0) {
+        setChats((prev) => applyReadItemsToChats(prev, items, chatIdsReferSameScope));
+      }
+    } catch (_) {
+      if (socket && typeof socket.emit === 'function') {
+        socket.emit('mark_chat_read', safePayload);
+      }
+    }
+  }, [buildApiHeaders, chatIdsReferSameScope, socket, tenantScopeId, setChats]);
 
   const requestAiSuggestion = useCallback((customPromptArg) => {
     requestAiSuggestionForChat({
@@ -283,7 +302,8 @@ export default function useAppOperationHandlers({
     setClientContact,
     setQuickReplyDraft,
     setChats,
-    chatIdsReferSameScope
+    chatIdsReferSameScope,
+    markChatRead
   });
 
   useEffect(() => {

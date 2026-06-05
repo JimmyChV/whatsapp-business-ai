@@ -330,6 +330,35 @@ function registerOperationsHttpRoutes({
         return allowed;
     }
 
+    async function filterMarkReadTargetsForActor(req = {}, tenantId = '', targets = []) {
+        const actorUserIds = Array.from(new Set([
+            resolveActorUserId(req),
+            req?.authContext?.userId,
+            req?.authContext?.user?.userId,
+            req?.authContext?.user?.id
+        ].map((entry) => toText(entry)).filter(Boolean)));
+        if (!actorUserIds.length) return [];
+
+        const allowed = [];
+        for (const target of targets) {
+            const candidateScopes = Array.from(new Set([target.scopeModuleId || '', '']));
+            let assignment = null;
+            for (const candidateScope of candidateScopes) {
+                assignment = await conversationOpsService.getChatAssignment(tenantId, {
+                    chatId: target.baseChatId,
+                    scopeModuleId: candidateScope
+                });
+                if (assignment) break;
+            }
+            const assignedUserId = toText(assignment?.assigneeUserId || assignment?.assignedUserId || assignment?.assignee_user_id || '');
+            const status = toLower(assignment?.status || 'active');
+            if (actorUserIds.includes(assignedUserId) && status !== 'released') {
+                allowed.push(target);
+            }
+        }
+        return allowed;
+    }
+
     app.get('/api/ops/global-labels', async (req, res) => {
         try {
             if (!requireSuperAdmin(req, res)) return;
@@ -1537,6 +1566,66 @@ function registerOperationsHttpRoutes({
             });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron marcar chats como no leidos.') });
+        }
+    });
+
+    app.post('/api/tenant/chats/bulk/mark-read', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!hasChatOperateAccess(req, tenantId)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+            if (!messageHistoryService || typeof messageHistoryService.updateChatState !== 'function') {
+                return res.status(500).json({ ok: false, error: 'Servicio de historial no disponible.' });
+            }
+
+            const targets = normalizeBulkChatTargets(req.body?.chatIds || []);
+            if (!targets.length) return res.status(400).json({ ok: false, error: 'chatIds requerido.' });
+
+            const allowedTargets = await filterMarkReadTargetsForActor(req, tenantId, targets);
+            if (!allowedTargets.length) {
+                return res.status(403).json({ ok: false, error: 'Solo el usuario asignado puede marcar el chat como leido.' });
+            }
+
+            const items = [];
+            for (const target of allowedTargets) {
+                const result = await messageHistoryService.updateChatState(tenantId, {
+                    chatId: target.baseChatId,
+                    unreadCount: 0,
+                    metadata: {
+                        manuallyMarkedUnread: false
+                    }
+                });
+                if (result?.ok === false) continue;
+                const item = {
+                    ok: true,
+                    tenantId,
+                    chatId: target.scopedChatId,
+                    baseChatId: target.baseChatId,
+                    scopeModuleId: target.scopeModuleId || null,
+                    unreadCount: 0,
+                    manuallyMarkedUnread: false,
+                    manuallyMarkedUnreadAt: null
+                };
+                items.push(item);
+                if (typeof emitToTenant === 'function') {
+                    emitToTenant(tenantId, 'chat_read_updated', item);
+                }
+            }
+
+            return res.json({
+                ok: true,
+                tenantId,
+                requested: targets.length,
+                authorized: allowedTargets.length,
+                updated: items.length,
+                chatIds: items.map((item) => item.chatId),
+                items
+            });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron marcar chats como leidos.') });
         }
     });
 

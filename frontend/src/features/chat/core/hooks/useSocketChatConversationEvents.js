@@ -183,13 +183,15 @@ export default function useSocketChatConversationEvents({
     isInternalIdentifier,
     setToasts,
     tenantScopeId = '',
-    canMarkChatAsRead
+    canMarkChatAsRead,
+    markChatRead
 }) {
     const { notify } = useUiFeedback();
     const recentInboundNotificationsRef = useRef(new Map());
     const windowFocusedRef = useRef(true);
     const pageVisibleRef = useRef(true);
     const canMarkChatAsReadRef = useRef(canMarkChatAsRead);
+    const markChatReadRef = useRef(markChatRead);
     const desktopNotificationSummaryRef = useRef({
         totalMessages: 0,
         chats: new Map(),
@@ -202,6 +204,10 @@ export default function useSocketChatConversationEvents({
     useEffect(() => {
         canMarkChatAsReadRef.current = canMarkChatAsRead;
     }, [canMarkChatAsRead]);
+
+    useEffect(() => {
+        markChatReadRef.current = markChatRead;
+    }, [markChatRead]);
 
     const resolveMarkReadPayload = (chatId = '', source = 'active_chat') => {
         const rawChatId = String(chatId || '').trim();
@@ -244,6 +250,10 @@ export default function useSocketChatConversationEvents({
     const emitMarkChatRead = (chatId = '', source = 'active_chat') => {
         const payload = resolveMarkReadPayload(chatId, source);
         if (!payload) return;
+        if (typeof markChatReadRef.current === 'function') {
+            void markChatReadRef.current(payload);
+            return;
+        }
         socket.emit('mark_chat_read', payload);
     };
 
