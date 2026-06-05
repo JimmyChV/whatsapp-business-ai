@@ -2021,14 +2021,26 @@ class SocketManager {
                         isAssignedToActor = assignedUserId === actorUserId && assignmentStatus !== 'released';
                     }
                     if (!isAssignedToActor) return;
-                    await waClient.markAsRead(safeChatId);
+                    let readStateResult = null;
                     if (typeof messageHistoryService?.updateChatState === 'function') {
-                        await messageHistoryService.updateChatState(tenantId, {
+                        readStateResult = await messageHistoryService.updateChatState(tenantId, {
                             chatId: safeChatId,
                             unreadCount: 0,
                             metadata: {
                                 manuallyMarkedUnread: false
                             }
+                        });
+                    }
+                    let whatsappReadOk = true;
+                    try {
+                        await waClient.markAsRead(safeChatId);
+                    } catch (error) {
+                        whatsappReadOk = false;
+                        console.warn('[SocketManager] mark_chat_read: WhatsApp markAsRead failed, app state already cleared', {
+                            tenantId,
+                            chatId: safeChatId,
+                            scopeModuleId: scopeModuleId || null,
+                            error: String(error?.message || error || '')
                         });
                     }
                     const payload = {
@@ -2037,8 +2049,9 @@ class SocketManager {
                         chatId: scopedTarget.scopedChatId || requestedChatId,
                         baseChatId: safeChatId,
                         scopeModuleId: scopeModuleId || null,
-                        unreadCount: 0,
-                        manuallyMarkedUnread: false
+                        unreadCount: Number(readStateResult?.unreadCount || 0) || 0,
+                        manuallyMarkedUnread: false,
+                        whatsappReadOk
                     };
                     socket.emit('mark_chat_read_result', payload);
                     if (typeof this.emitToTenant === 'function') {
