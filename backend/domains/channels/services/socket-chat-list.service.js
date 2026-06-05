@@ -60,6 +60,16 @@ function createSocketChatListService({
         return schedule || null;
     };
 
+    const toIsoFromUnixSeconds = (timestampUnix = null, fallbackDate = null) => {
+        const unixSeconds = Number(timestampUnix || 0);
+        if (Number.isFinite(unixSeconds) && unixSeconds > 0) {
+            return new Date(unixSeconds * 1000).toISOString();
+        }
+        const fallback = fallbackDate instanceof Date ? fallbackDate : new Date(fallbackDate);
+        if (Number.isFinite(fallback.getTime())) return fallback.toISOString();
+        return null;
+    };
+
     const persistWindowMetadataBatch = async (tenantId = 'default', items = []) => {
         const resolvedTenantId = String(tenantId || 'default').trim() || 'default';
         const payload = (Array.isArray(items) ? items : [])
@@ -117,16 +127,17 @@ function createSocketChatListService({
         if (!safeChatId) return null;
         try {
             const { rows } = await queryPostgres(
-                `SELECT created_at
+                `SELECT timestamp_unix, created_at
                    FROM tenant_messages
                   WHERE tenant_id = $1
                     AND chat_id = $2
                     AND from_me = false
-               ORDER BY created_at DESC
+               ORDER BY COALESCE(timestamp_unix, EXTRACT(EPOCH FROM created_at)) DESC,
+                        created_at DESC
                   LIMIT 1`,
                 [safeTenantId, safeChatId]
             );
-            const value = String(rows?.[0]?.created_at || '').trim();
+            const value = toIsoFromUnixSeconds(rows?.[0]?.timestamp_unix, rows?.[0]?.created_at);
             return value || null;
         } catch (_) {
             return null;
@@ -215,8 +226,33 @@ function createSocketChatListService({
 
         try {
             const { rows } = await queryPostgres(
-                `WITH ranked_assignments AS (
+                `SELECT DISTINCT ON (chat_id)
+                        chat_id,
+                        timestamp_unix,
+                        created_at
+                   FROM tenant_messages
+                  WHERE tenant_id = $1
+                    AND chat_id = ANY($2::text[])
+                    AND from_me = false
+               ORDER BY chat_id,
+                        COALESCE(timestamp_unix, EXTRACT(EPOCH FROM created_at)) DESC,
+                        created_at DESC`,
+                [resolvedTenantId, cleanChatIds]
+            );
+            (Array.isArray(rows) ? rows : []).forEach((row) => {
+                const chatId = String(row?.chat_id || '').trim();
+                const value = toIsoFromUnixSeconds(row?.timestamp_unix, row?.created_at);
+                if (chatId && value) resultMap.set(chatId, value);
+            });
+        } catch (_) { }
+
+        const missingChatIds = cleanChatIds.filter((chatId) => !resultMap.has(chatId));
+        if (missingChatIds.length > 0) {
+            try {
+                const { rows } = await queryPostgres(
+                    `WITH ranked_assignments AS (
                     SELECT chat_id,
+                           EXTRACT(EPOCH FROM last_customer_message_at) AS last_customer_message_ts,
                            last_customer_message_at,
                            ROW_NUMBER() OVER (
                                PARTITION BY chat_id
@@ -234,40 +270,19 @@ function createSocketChatListService({
                        AND ($3 = '' OR scope_module_id = $3 OR scope_module_id = '')
                        AND last_customer_message_at IS NOT NULL
                  )
-                 SELECT chat_id, last_customer_message_at
+                 SELECT chat_id, last_customer_message_ts, last_customer_message_at
                    FROM ranked_assignments
                   WHERE rn = 1`,
-                [resolvedTenantId, cleanChatIds, resolvedScopeModuleId]
-            );
-            (Array.isArray(rows) ? rows : []).forEach((row) => {
-                const chatId = String(row?.chat_id || '').trim();
-                const value = String(row?.last_customer_message_at || '').trim();
-                if (chatId && value) resultMap.set(chatId, value);
-            });
-        } catch (_) {
-            // Some local databases may be missing lifecycle columns; tenant_messages is the fallback.
-        }
-
-        const missingChatIds = cleanChatIds.filter((chatId) => !resultMap.has(chatId));
-        if (missingChatIds.length > 0) {
-            try {
-                const { rows } = await queryPostgres(
-                    `SELECT DISTINCT ON (chat_id)
-                            chat_id,
-                            created_at
-                       FROM tenant_messages
-                      WHERE tenant_id = $1
-                        AND chat_id = ANY($2::text[])
-                        AND from_me = false
-                   ORDER BY chat_id, created_at DESC`,
-                    [resolvedTenantId, missingChatIds]
+                    [resolvedTenantId, missingChatIds, resolvedScopeModuleId]
                 );
                 (Array.isArray(rows) ? rows : []).forEach((row) => {
                     const chatId = String(row?.chat_id || '').trim();
-                    const value = String(row?.created_at || '').trim();
+                    const value = toIsoFromUnixSeconds(row?.last_customer_message_ts, row?.last_customer_message_at);
                     if (chatId && value) resultMap.set(chatId, value);
                 });
-            } catch (_) { }
+            } catch (_) {
+                // Some local databases may be missing lifecycle columns; tenant_messages is the primary source.
+            }
         }
 
         return resultMap;
@@ -617,9 +632,16 @@ function createSocketChatListService({
         const safeTenantId = String(tenantId || 'default').trim() || 'default';
         const safeChatId = String(chatId || '').trim();
         const safeScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
-        if (!safeChatId || typeof conversationOpsService?.getChatAssignment !== 'function') return null;
+        if (!safeChatId) return null;
 
         try {
+            const lastInboundMessageAt = await resolveLastInboundMessageAt({
+                tenantId: safeTenantId,
+                chatId: safeChatId
+            });
+            if (lastInboundMessageAt) return lastInboundMessageAt;
+            if (typeof conversationOpsService?.getChatAssignment !== 'function') return null;
+
             const scopedAssignment = await conversationOpsService.getChatAssignment(safeTenantId, {
                 chatId: safeChatId,
                 scopeModuleId: safeScopeModuleId
