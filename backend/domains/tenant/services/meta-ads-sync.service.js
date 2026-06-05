@@ -9,6 +9,7 @@ const {
 
 const GRAPH_API_VERSION = 'v19.0';
 const DAILY_SYNC_HOUR = 1;
+const META_ADS_TIME_ZONE = 'America/Lima';
 
 let schemaPromise = null;
 let scheduleTimeout = null;
@@ -74,8 +75,14 @@ function addDays(dateLabel, daysDelta = 0) {
     return next.toISOString().slice(0, 10);
 }
 
+function getDateLabelInTimeZone(date = new Date(), timeZone = META_ADS_TIME_ZONE) {
+    const safeDate = date instanceof Date ? date : new Date(date);
+    if (Number.isNaN(safeDate.getTime())) return '';
+    return safeDate.toLocaleDateString('en-CA', { timeZone });
+}
+
 function getTodayDateLabel() {
-    return new Date().toISOString().slice(0, 10);
+    return getDateLabelInTimeZone(new Date(), META_ADS_TIME_ZONE);
 }
 
 function getYesterdayDateLabel() {
@@ -83,8 +90,7 @@ function getYesterdayDateLabel() {
 }
 
 function getCurrentYearStartLabel() {
-    const now = new Date();
-    return `${now.getUTCFullYear()}-01-01`;
+    return `${getTodayDateLabel().slice(0, 4)}-01-01`;
 }
 
 function buildDateWindows(dateStart, dateStop, windowDays = 7) {
@@ -941,6 +947,20 @@ async function syncMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, dateStart, date
     const campaignRows = groupBy(adRows, 'campaign_id', 'campaign');
     const allRows = [...adRows, ...adsetRows, ...campaignRows];
 
+    if (adRows.length === 0) {
+        console.warn('[MetaSync] No insights returned for range', normalizedDateStart, '-', normalizedDateStop);
+        return {
+            dateStart: normalizedDateStart,
+            dateStop: normalizedDateStop,
+            adRowsCount: 0,
+            adsetRowsCount: 0,
+            campaignRowsCount: 0,
+            insightsCount: 0,
+            synced: 0,
+            skipped: true
+        };
+    }
+
     for (const row of adRows) {
         if (row.campaign_id) {
             await upsertStructureRow(config.tenantId, {
@@ -1356,7 +1376,7 @@ async function runMetaAdsDailySyncOnce() {
     runInFlight = (async () => {
         await ensurePostgresSchema();
         const tenants = await listConfiguredMetaAdsTenants();
-        const dateLabel = getYesterdayDateLabel();
+        const dateLabel = getTodayDateLabel();
         const results = [];
 
         for (const tenantId of tenants) {

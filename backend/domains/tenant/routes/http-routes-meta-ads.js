@@ -1,5 +1,13 @@
 const metaAdsSyncService = require('../services/meta-ads-sync.service');
 
+const META_ADS_TIME_ZONE = 'America/Lima';
+
+function getDateLabelInTimeZone(date = new Date(), timeZone = META_ADS_TIME_ZONE) {
+    const safeDate = date instanceof Date ? date : new Date(date);
+    if (Number.isNaN(safeDate.getTime())) return '';
+    return safeDate.toLocaleDateString('en-CA', { timeZone });
+}
+
 function isOwnerForTenant(req = {}, tenantId = '') {
     const user = req?.authContext?.user && typeof req.authContext.user === 'object'
         ? req.authContext.user
@@ -112,8 +120,7 @@ function registerTenantMetaAdsHttpRoutes({
                 });
             }
 
-            const now = new Date();
-            const today = now.toISOString().slice(0, 10);
+            const today = getDateLabelInTimeZone();
             const dateStart = String(source?.dateStart || '').trim() || today;
             const dateStop = String(source?.dateStop || '').trim() || dateStart;
             const structure = await metaAdsSyncService.syncMetaAdsStructure(tenantId);

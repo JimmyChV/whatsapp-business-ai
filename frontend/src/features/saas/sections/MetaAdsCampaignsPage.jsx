@@ -12,6 +12,7 @@ import {
 import { applyMultiSort, normalizeSortState } from '../components/layout/sortUtils';
 
 const META_ADS_DATE_RANGE_STORAGE_PREFIX = 'saas.metaAds.dateRange';
+const META_ADS_TIME_ZONE = 'America/Lima';
 const META_ADS_STATUS_OPTIONS = [
     { value: 'ACTIVE', label: 'ACTIVE' },
     { value: 'PAUSED', label: 'PAUSED' },
@@ -231,9 +232,10 @@ function buildMetaAdsTableColumns() {
 const META_ADS_TABLE_COLUMNS = buildMetaAdsTableColumns();
 
 function toDateInputValue(value) {
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
     const safeDate = value instanceof Date ? value : new Date(value);
     if (!Number.isFinite(safeDate.getTime())) return '';
-    return safeDate.toISOString().slice(0, 10);
+    return safeDate.toLocaleDateString('en-CA', { timeZone: META_ADS_TIME_ZONE });
 }
 
 function buildDefaultDateRange() {
@@ -971,7 +973,11 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
                     method: 'POST',
                     tenantIdOverride: tenantId,
                     headers: { 'Content-Type': 'application/json' },
-                    body: { tenantId }
+                    body: {
+                        tenantId,
+                        dateStart: dateRange.dateStart,
+                        dateStop: dateRange.dateStop
+                    }
                 });
                 const nextMessage = `${Number(payload?.adsCount || 0).toLocaleString('es-PE')} ads y ${Number(payload?.insightsCount || 0).toLocaleString('es-PE')} insights sincronizados.`;
                 setSyncMessage(nextMessage);
@@ -1007,7 +1013,7 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
             notify({ type: 'error', message: nextError });
             return undefined;
         }
-    }, [loadInsights, notify, requestJson, runSectionAction, tenantId]);
+    }, [dateRange.dateStart, dateRange.dateStop, loadInsights, notify, requestJson, runSectionAction, tenantId]);
 
     const handleSyncCreatives = useCallback(async () => {
         if (!requestJson || !tenantId) return;
