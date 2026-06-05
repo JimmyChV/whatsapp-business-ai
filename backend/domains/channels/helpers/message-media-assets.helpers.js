@@ -98,21 +98,13 @@ function createMessageMediaAssetsHelpers(deps = {}) {
 
         if (regularPrice > 0 && finalPrice > 0 && finalPrice < regularPrice) {
             const discountAmount = Math.max(regularPrice - finalPrice, 0);
-            lines.push(`Precio regular: S/ ${regularPrice.toFixed(2)}`);
+            lines.push(`Precio: S/ ${regularPrice.toFixed(2)}`);
             lines.push(`*Descuento: S/ ${discountAmount.toFixed(2)}*`);
             lines.push(`*PRECIO FINAL: S/ ${finalPrice.toFixed(2)}*`);
         } else if (finalPrice > 0) {
             lines.push(`*PRECIO FINAL: S/ ${finalPrice.toFixed(2)}*`);
         } else {
             lines.push('*PRECIO FINAL: CONSULTAR*');
-        }
-
-        const description = String(product?.description || '')
-            .replace(/\s+/g, ' ')
-            .trim();
-        if (description) {
-            lines.push('');
-            lines.push(`Detalle: ${description.length > 280 ? `${description.slice(0, 277)}...` : description}`);
         }
 
         return lines.join('\n');
