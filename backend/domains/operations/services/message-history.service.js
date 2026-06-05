@@ -401,6 +401,16 @@ async function upsertMessage(tenantId = DEFAULT_TENANT_ID, input = {}) {
     assertValidTenant(cleanTenant, 'message-history.upsertMessage');
     const record = normalizeMessageRecord(input);
     if (!record) return { ok: false, skipped: 'invalid_record' };
+    if (record.fromMe) {
+        record.chat = {
+            ...(record.chat || { id: record.chatId }),
+            metadata: {
+                ...((record.chat?.metadata && typeof record.chat.metadata === 'object') ? record.chat.metadata : {}),
+                manuallyMarkedUnread: false,
+                manuallyMarkedUnreadClearedAt: new Date().toISOString()
+            }
+        };
+    }
 
     if (getStorageDriver() === 'postgres') {
         await upsertChatPostgres(cleanTenant, record.chat, record);
@@ -538,10 +548,14 @@ async function bulkMarkChatsUnread(tenantId = DEFAULT_TENANT_ID, chatIds = []) {
             const { rows } = await queryPostgres(
                 `UPDATE tenant_chats
                     SET unread_count = GREATEST(COALESCE(unread_count, 0), 1),
+                        metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+                            'manuallyMarkedUnread', true,
+                            'manuallyMarkedUnreadAt', NOW()::text
+                        ),
                         updated_at = NOW()
                   WHERE tenant_id = $1
                     AND chat_id = ANY($2::text[])
-                RETURNING chat_id, unread_count`,
+                RETURNING chat_id, unread_count, metadata`,
                 [cleanTenant, safeChatIds]
             );
             const items = (Array.isArray(rows) ? rows : [])
@@ -566,6 +580,11 @@ async function bulkMarkChatsUnread(tenantId = DEFAULT_TENANT_ID, chatIds = []) {
         store.chats[chatId] = {
             ...current,
             unreadCount,
+            metadata: {
+                ...(current.metadata && typeof current.metadata === 'object' ? current.metadata : {}),
+                manuallyMarkedUnread: true,
+                manuallyMarkedUnreadAt: new Date().toISOString()
+            },
             updatedAt: new Date().toISOString()
         };
         items.push({ chatId, unreadCount });
@@ -574,6 +593,47 @@ async function bulkMarkChatsUnread(tenantId = DEFAULT_TENANT_ID, chatIds = []) {
         await saveStore(cleanTenant, store);
     }
     return { ok: true, driver: 'file', items, updated: items.length };
+}
+
+async function shouldSkipMarkReadDueToManualUnread(tenantId = DEFAULT_TENANT_ID, {
+    chatId,
+    windowSeconds = 30
+} = {}) {
+    if (!isHistoryEnabled()) return false;
+
+    const cleanTenant = resolveTenantId(tenantId);
+    assertValidTenant(cleanTenant, 'message-history.shouldSkipMarkReadDueToManualUnread');
+    const safeChatId = toSafeString(chatId);
+    if (!safeChatId) return false;
+    const safeWindowSeconds = Math.max(1, Math.min(300, Math.floor(toSafeNumber(windowSeconds, 30) || 30)));
+
+    if (getStorageDriver() === 'postgres') {
+        try {
+            await ensurePostgresMessageColumns();
+            const { rows } = await queryPostgres(
+                `SELECT 1
+                   FROM tenant_chats
+                  WHERE tenant_id = $1
+                    AND chat_id = $2
+                    AND metadata->>'manuallyMarkedUnread' = 'true'
+                    AND updated_at > NOW() - ($3::int * INTERVAL '1 second')
+                  LIMIT 1`,
+                [cleanTenant, safeChatId, safeWindowSeconds]
+            );
+            return rows.length > 0;
+        } catch (error) {
+            if (missingRelation(error)) return false;
+            throw error;
+        }
+    }
+
+    const store = await loadStore(cleanTenant);
+    const current = store.chats[safeChatId];
+    const metadata = current?.metadata && typeof current.metadata === 'object' ? current.metadata : {};
+    if (metadata.manuallyMarkedUnread !== true) return false;
+    const markedAtMs = Date.parse(String(metadata.manuallyMarkedUnreadAt || current?.updatedAt || ''));
+    if (!Number.isFinite(markedAtMs)) return false;
+    return Date.now() - markedAtMs <= safeWindowSeconds * 1000;
 }
 
 async function updateMessageAck(tenantId = DEFAULT_TENANT_ID, { messageId, chatId, ack } = {}) {
@@ -983,6 +1043,7 @@ module.exports = {
     upsertMessage,
     updateChatState,
     bulkMarkChatsUnread,
+    shouldSkipMarkReadDueToManualUnread,
     updateMessageAck,
     updateMessageEdit,
     updateMessageReactions,

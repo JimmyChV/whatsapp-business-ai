@@ -777,6 +777,17 @@ export default function useSocketChatConversationEvents({
             }));
         });
 
+        socket.on('chat_read_updated', ({ chatId, baseChatId, scopeModuleId, unreadCount = 0 } = {}) => {
+            const normalizedChatId = normalizeChatScopedId(chatId || baseChatId || '', scopeModuleId || '');
+            if (!normalizedChatId) return;
+            const nextUnreadCount = Math.max(0, Number(unreadCount || 0) || 0);
+            setChats((prev) => prev.map((chat) => (
+                chatIdsReferSameScope(String(chat?.id || ''), normalizedChatId)
+                    ? { ...chat, unreadCount: nextUnreadCount }
+                    : chat
+            )));
+        });
+
         socket.on('chat_labels_error', (msg) => {
             if (msg) notify({ type: 'error', message: msg });
         });
@@ -1437,7 +1448,9 @@ export default function useSocketChatConversationEvents({
                     lastMessageFromMe: !!msg.fromMe,
                     ack: msg.ack || 0,
                     isMyContact: existing?.isMyContact === true,
-                    unreadCount: msg.fromMe ? (existing?.unreadCount || 0) : (shouldMarkActiveChatRead ? 0 : (existing?.unreadCount || 0) + 1),
+                    unreadCount: msg.fromMe
+                        ? (existing?.unreadCount || 0)
+                        : (shouldMarkActiveChatRead ? (existing?.unreadCount || 0) : (existing?.unreadCount || 0) + 1),
                     windowOpen: msg.fromMe ? existing?.windowOpen : true,
                     windowExpiresAt: msg.fromMe ? (existing?.windowExpiresAt || null) : relatedWindowExpiresAt,
                     windowStatus: msg.fromMe ? (existing?.windowStatus || null) : null,
@@ -1696,6 +1709,7 @@ export default function useSocketChatConversationEvents({
                 'chat_labels_updated',
                 'chats_labels_updated',
                 'chats_unread_updated',
+                'chat_read_updated',
                 'chat_labels_error',
                 'chat_labels_saved',
                 'contact_info',

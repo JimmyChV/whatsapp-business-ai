@@ -28,8 +28,6 @@ export default function useChatSelectionAction({
   setShowClientProfile,
   setClientContact,
   setQuickReplyDraft,
-  setChats,
-  chatIdsReferSameScope,
   canMarkChatAsRead
 } = {}) {
   const emitQuickRepliesRequest = (moduleId = '') => {
@@ -128,9 +126,6 @@ export default function useChatSelectionAction({
       socket.emit('mark_chat_read', resolvedChatId);
     }
     socket.emit('get_contact_info', resolvedChatId);
-    if (readGuardCanMark) {
-      setChats((prev) => prev.map((c) => chatIdsReferSameScope(String(c?.id || ''), resolvedChatId) ? { ...c, unreadCount: 0 } : c));
-    }
   };
 
   return { handleChatSelect };

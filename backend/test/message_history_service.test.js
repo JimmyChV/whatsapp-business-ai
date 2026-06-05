@@ -159,6 +159,60 @@ test('message_history_service respects disabled toggle', async () => {
     }
 });
 
+test('message_history_service protects manual unread from immediate read clear', async () => {
+    const prevDriver = process.env.SAAS_STORAGE_DRIVER;
+    const prevDir = process.env.SAAS_TENANT_DATA_DIR;
+    const prevHistoryEnabled = process.env.HISTORY_PERSISTENCE_ENABLED;
+
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'message-history-unread-'));
+
+    try {
+        process.env.SAAS_STORAGE_DRIVER = 'file';
+        process.env.SAAS_TENANT_DATA_DIR = tempRoot;
+        process.env.HISTORY_PERSISTENCE_ENABLED = 'true';
+
+        const service = loadMessageHistoryServiceFresh();
+        const chatId = '51944444444@c.us';
+
+        await service.upsertMessage('tenant_unread', {
+            messageId: 'msg_unread_1',
+            chatId,
+            fromMe: false,
+            body: 'Cliente',
+            messageType: 'chat',
+            timestampUnix: 300,
+            chat: {
+                id: chatId,
+                displayName: 'Cliente No Leido'
+            }
+        });
+
+        const unreadResult = await service.bulkMarkChatsUnread('tenant_unread', [chatId]);
+        assert.equal(unreadResult.updated, 1);
+        assert.equal(await service.shouldSkipMarkReadDueToManualUnread('tenant_unread', { chatId, windowSeconds: 30 }), true);
+
+        await service.upsertMessage('tenant_unread', {
+            messageId: 'msg_unread_2',
+            chatId,
+            fromMe: true,
+            body: 'Respuesta',
+            messageType: 'chat',
+            timestampUnix: 310,
+            chat: {
+                id: chatId,
+                displayName: 'Cliente No Leido'
+            }
+        });
+
+        assert.equal(await service.shouldSkipMarkReadDueToManualUnread('tenant_unread', { chatId, windowSeconds: 30 }), false);
+    } finally {
+        process.env.SAAS_STORAGE_DRIVER = prevDriver;
+        process.env.SAAS_TENANT_DATA_DIR = prevDir;
+        process.env.HISTORY_PERSISTENCE_ENABLED = prevHistoryEnabled;
+        await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+});
+
 test('message_history_service persists reactions in metadata and returns them in history rows', async () => {
     const prevDriver = process.env.SAAS_STORAGE_DRIVER;
     const prevDir = process.env.SAAS_TENANT_DATA_DIR;

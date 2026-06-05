@@ -1987,10 +1987,11 @@ class SocketManager {
                 try {
                     const requestedChatId = String(chatId || '').trim();
                     if (!requestedChatId) return;
-                    const selectedScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
-                    const scopedTarget = resolveScopedChatTarget(requestedChatId, selectedScopeModuleId);
+                    const fallbackScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
+                    const scopedTarget = resolveScopedChatTarget(requestedChatId, fallbackScopeModuleId);
                     const safeChatId = String(scopedTarget.baseChatId || '').trim();
                     if (!safeChatId) return;
+                    const scopeModuleId = normalizeScopedModuleId(scopedTarget.moduleId || fallbackScopeModuleId || '');
                     const actorUserId = String(authContext?.userId || authContext?.user?.userId || authContext?.user?.id || '').trim();
                     const memberships = Array.isArray(authContext?.memberships)
                         ? authContext.memberships
@@ -2006,17 +2007,43 @@ class SocketManager {
                     if (actorUserId) {
                         const assignment = await conversationOpsService.getChatAssignment(tenantId, {
                             chatId: safeChatId,
-                            scopeModuleId: selectedScopeModuleId
+                            scopeModuleId
                         });
                         isAssignedToActor = String(assignment?.assigneeUserId || '').trim() === actorUserId;
                     }
                     if (!isManager && !isAssignedToActor) return;
+                    if (
+                        typeof messageHistoryService?.shouldSkipMarkReadDueToManualUnread === 'function'
+                        && await messageHistoryService.shouldSkipMarkReadDueToManualUnread(tenantId, { chatId: safeChatId, windowSeconds: 30 })
+                    ) {
+                        socket.emit('mark_chat_read_result', {
+                            ok: false,
+                            skipped: 'manual_unread_recent',
+                            tenantId,
+                            chatId: scopedTarget.scopedChatId || requestedChatId,
+                            baseChatId: safeChatId,
+                            scopeModuleId: scopeModuleId || null
+                        });
+                        return;
+                    }
                     await waClient.markAsRead(safeChatId);
                     if (typeof messageHistoryService?.updateChatState === 'function') {
                         await messageHistoryService.updateChatState(tenantId, {
                             chatId: safeChatId,
                             unreadCount: 0
                         });
+                    }
+                    const payload = {
+                        ok: true,
+                        tenantId,
+                        chatId: scopedTarget.scopedChatId || requestedChatId,
+                        baseChatId: safeChatId,
+                        scopeModuleId: scopeModuleId || null,
+                        unreadCount: 0
+                    };
+                    socket.emit('mark_chat_read_result', payload);
+                    if (typeof this.emitToTenant === 'function') {
+                        this.emitToTenant(tenantId, 'chat_read_updated', payload);
                     }
                 } catch (e) { }
             });

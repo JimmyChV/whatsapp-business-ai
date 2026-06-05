@@ -68,6 +68,7 @@ export default function useChatAssignmentState({
   const getAssignment = useCallback((chatId = '') => {
     const safeChatId = asText(chatId);
     if (!safeChatId) return null;
+    const hasExplicitScope = safeChatId.includes('::mod::');
 
     const directKey = resolveAssignmentKey(safeChatId, '');
     if (directKey && assignmentsByChatId[directKey]) {
@@ -76,7 +77,7 @@ export default function useChatAssignmentState({
 
     const parsedSafe = normalizeChatScopedId(safeChatId, '');
     const baseChatId = asText(String(parsedSafe || '').split('::mod::')[0] || safeChatId);
-    if (baseChatId) {
+    if (!hasExplicitScope && baseChatId) {
       const baseKey = resolveAssignmentKey(baseChatId, '');
       if (baseKey && assignmentsByChatId[baseKey]) {
         return assignmentsByChatId[baseKey];
@@ -89,6 +90,7 @@ export default function useChatAssignmentState({
       if (chatIdsReferSameScope(key, safeChatId)) {
         return assignmentsByChatId[key];
       }
+      if (hasExplicitScope) continue;
       if (!baseChatId) continue;
       const keyBase = asText(String(key || '').split('::mod::')[0] || '');
       if (keyBase === baseChatId && !baseFallback) {
