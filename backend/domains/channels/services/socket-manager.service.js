@@ -2005,16 +2005,6 @@ class SocketManager {
                     if (!safeChatId) return;
                     const scopeModuleId = normalizeScopedModuleId(scopedTarget.moduleId || fallbackScopeModuleId || '');
                     const actorUserId = String(authContext?.userId || authContext?.user?.userId || authContext?.user?.id || '').trim();
-                    const memberships = Array.isArray(authContext?.memberships)
-                        ? authContext.memberships
-                        : (Array.isArray(authContext?.user?.memberships) ? authContext.user.memberships : []);
-                    const tenantMembership = memberships.find((entry) => String(entry?.tenantId || entry?.tenant_id || '').trim() === tenantId) || memberships[0] || null;
-                    const actorRole = String(authContext?.role || authContext?.user?.role || tenantMembership?.role || '').trim().toLowerCase();
-                    const isManager = Boolean(
-                        authContext?.isSuperAdmin
-                        || authContext?.user?.isSuperAdmin
-                        || ['owner', 'admin', 'superadmin'].includes(actorRole)
-                    );
                     let isAssignedToActor = false;
                     if (actorUserId) {
                         const assignment = await conversationOpsService.getChatAssignment(tenantId, {
@@ -2027,9 +2017,10 @@ class SocketManager {
                             || assignment?.assignee_user_id
                             || ''
                         ).trim();
-                        isAssignedToActor = assignedUserId === actorUserId;
+                        const assignmentStatus = String(assignment?.status || 'active').trim().toLowerCase();
+                        isAssignedToActor = assignedUserId === actorUserId && assignmentStatus !== 'released';
                     }
-                    if (!isManager && !isAssignedToActor) return;
+                    if (!isAssignedToActor) return;
                     await waClient.markAsRead(safeChatId);
                     if (typeof messageHistoryService?.updateChatState === 'function') {
                         await messageHistoryService.updateChatState(tenantId, {

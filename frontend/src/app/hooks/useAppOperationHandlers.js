@@ -212,18 +212,10 @@ export default function useAppOperationHandlers({
   });
 
   const canMarkChatAsRead = useCallback((chatId = '') => {
-    const session = saasSessionRef?.current || {};
-    const userRole = String(session?.user?.role || session?.role || '').trim().toLowerCase();
-    const isManager = Boolean(
-      session?.isSuperAdmin
-      || session?.user?.isSuperAdmin
-      || ['admin', 'owner', 'superadmin'].includes(userRole)
-    );
-    if (isManager) return true;
     return typeof chatAssignmentState?.isAssignedToMe === 'function'
       ? chatAssignmentState.isAssignedToMe(chatId)
       : false;
-  }, [chatAssignmentState, saasSessionRef]);
+  }, [chatAssignmentState]);
 
   const requestAiSuggestion = useCallback((customPromptArg) => {
     requestAiSuggestionForChat({
