@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CheckSquare, Columns3, RotateCcw } from 'lucide-react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import { SaasEntityPage } from '../components/entity';
-import { SaasDetailPanel, SaasViewHeader, useSaasViewPreferences } from '../components/layout';
+import { SaasDataTable, SaasDetailPanel, SaasViewHeader, useSaasViewPreferences } from '../components/layout';
 import {
     applyEntityFilters,
     createEmptyFilterItem,
@@ -129,6 +129,51 @@ const META_ADS_COLUMNS = [
     }
 ];
 
+const META_ADS_TABLE_COLUMN_KEYS = new Set([
+    'campaign_name',
+    'adset_name',
+    'ad_name',
+    'ad_status',
+    'spend',
+    'impressions',
+    'reach',
+    'clicks',
+    'ctr',
+    'cpm'
+]);
+
+const META_ADS_TABLE_LABELS = {
+    campaign_name: 'CAMPAÑA',
+    adset_name: 'CONJUNTO',
+    ad_name: 'ANUNCIO',
+    ad_status: 'ESTADO',
+    spend: 'INVERSIÓN S/',
+    impressions: 'IMPRESIONES',
+    reach: 'ALCANCE',
+    clicks: 'CLICKS',
+    ctr: 'CTR',
+    cpm: 'CPM'
+};
+
+function buildMetaAdsTableColumns() {
+    return META_ADS_COLUMNS
+        .filter((column) => META_ADS_TABLE_COLUMN_KEYS.has(column.key))
+        .map((column) => {
+            if (column.key === 'ad_status') {
+                return { ...column, label: META_ADS_TABLE_LABELS[column.key], render: (value) => <StatusBadge value={value} /> };
+            }
+            if (column.key === 'spend' || column.key === 'cpm') {
+                return { ...column, label: META_ADS_TABLE_LABELS[column.key], render: (value) => formatMetricCurrency(value) };
+            }
+            if (column.key === 'ctr') {
+                return { ...column, label: META_ADS_TABLE_LABELS[column.key], render: (value) => formatMetricPercent(value) };
+            }
+            return { ...column, label: META_ADS_TABLE_LABELS[column.key] || column.label };
+        });
+}
+
+const META_ADS_TABLE_COLUMNS = buildMetaAdsTableColumns();
+
 function toDateInputValue(value) {
     const safeDate = value instanceof Date ? value : new Date(value);
     if (!Number.isFinite(safeDate.getTime())) return '';
@@ -173,6 +218,23 @@ function formatRatio(value) {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
     });
+}
+
+function hasMetricValue(value) {
+    const safe = Number(value);
+    return Number.isFinite(safe) && safe > 0;
+}
+
+function formatMetricCurrency(value) {
+    return hasMetricValue(value) ? formatCurrencyLabel(value) : '-';
+}
+
+function formatMetricPercent(value) {
+    return hasMetricValue(value) ? `${formatRatio(value)}%` : '-';
+}
+
+function formatMetricDecimal(value) {
+    return hasMetricValue(value) ? formatRatio(value) : '-';
 }
 
 function formatDateLabel(value) {
@@ -253,6 +315,8 @@ function normalizeInsightItems(payload) {
         clicks: toNumber(item?.clicks),
         creative_id: String(item?.creative_id || '').trim(),
         greeting_text: String(item?.greeting_text || '').trim(),
+        is_manual_greeting: item?.is_manual_greeting === true,
+        auto_greeting_text: String(item?.auto_greeting_text || '').trim(),
         autofill_message: String(item?.autofill_message || '').trim(),
         buttons_json: parseButtonsJson(item?.buttons_json),
         ctr: Number(item?.ctr),
@@ -294,6 +358,8 @@ function aggregateInsightRows(items = []) {
             messaging_conversations: 0,
             creative_id: '',
             greeting_text: '',
+            is_manual_greeting: false,
+            auto_greeting_text: '',
             autofill_message: '',
             buttons_json: [],
             date_start: '',
@@ -315,6 +381,8 @@ function aggregateInsightRows(items = []) {
         current.messaging_conversations += toNumber(item?.messaging_conversations);
         current.creative_id = String(current.creative_id || item?.creative_id || '').trim();
         current.greeting_text = String(current.greeting_text || item?.greeting_text || '').trim();
+        current.is_manual_greeting = current.is_manual_greeting || item?.is_manual_greeting === true;
+        current.auto_greeting_text = String(current.auto_greeting_text || item?.auto_greeting_text || '').trim();
         current.autofill_message = String(current.autofill_message || item?.autofill_message || '').trim();
         current.buttons_json = current.buttons_json?.length ? current.buttons_json : parseButtonsJson(item?.buttons_json);
         current.days_active = Math.max(toNumber(current.days_active), toNumber(item?.days_active));
@@ -360,6 +428,28 @@ function applySearch(rows = [], search = '') {
         ].map((value) => String(value || '').trim().toLowerCase()).join(' ');
         return haystack.includes(query);
     });
+}
+
+function normalizeColumns(columns = [], visibleColumnKeys = [], columnOrder = []) {
+    const safeColumns = Array.isArray(columns) ? columns.filter((column) => column && column.key) : [];
+    const order = Array.isArray(columnOrder) ? columnOrder : [];
+    const configurableColumns = safeColumns.filter((column) => column.configurable !== false);
+    const fixedColumns = safeColumns.filter((column) => column.configurable === false);
+    const orderedConfigurable = [
+        ...order.map((key) => configurableColumns.find((column) => column.key === key)).filter(Boolean),
+        ...configurableColumns.filter((column) => !order.includes(column.key))
+    ];
+    const visible = new Set(Array.isArray(visibleColumnKeys) ? visibleColumnKeys : []);
+
+    return [
+        ...fixedColumns,
+        ...orderedConfigurable
+    ].map((column) => ({
+        ...column,
+        hidden: column.configurable === false
+            ? column.hidden
+            : (visible.size > 0 ? !visible.has(column.key) : column.hidden)
+    }));
 }
 
 function getColumnTextLabel(column = {}) {
@@ -424,7 +514,9 @@ function ColumnMenu({ columns = [], preferences = null, disabled = false }) {
 
 function StatusBadge({ value = '' }) {
     const status = String(value || '').trim().toUpperCase();
-    const statusClass = status === 'ACTIVE' ? 'saas-campaigns-status--running' : 'saas-campaigns-status--paused';
+    const statusClass = status === 'ACTIVE'
+        ? 'saas-campaigns-status--running'
+        : (status === 'ARCHIVED' ? 'saas-campaigns-status--cancelled' : 'saas-meta-ads-status--paused');
     return <span className={`saas-campaigns-status ${statusClass}`}>{status || '-'}</span>;
 }
 
@@ -433,39 +525,6 @@ function MetaMetricCard({ label, value }) {
         <div className="saas-admin-kpi saas-meta-ad-metric-card">
             <small>{label}</small>
             <strong>{value}</strong>
-        </div>
-    );
-}
-
-function MetaAdList({ rows = [], selectedId = '', loading = false, onSelect = null }) {
-    if (loading) {
-        return <div className="saas-admin-empty-state"><p>Cargando anuncios Meta...</p></div>;
-    }
-    if (!rows.length) {
-        return <div className="saas-admin-empty-state"><p>No hay anuncios Meta Ads para este rango.</p></div>;
-    }
-    return (
-        <div className="saas-meta-ads-list" role="list">
-            {rows.map((row) => {
-                const adId = String(row?.ad_id || row?.id || '').trim();
-                const active = adId && adId === selectedId;
-                return (
-                    <button
-                        key={adId || row.id}
-                        type="button"
-                        className={`saas-meta-ads-list-item ${active ? 'is-selected' : ''}`.trim()}
-                        onClick={() => onSelect?.(adId)}
-                    >
-                        <span className="saas-meta-ads-list-item__title">{row.ad_name || '-'}</span>
-                        <span className="saas-meta-ads-list-item__meta">{row.campaign_name || '-'}</span>
-                        <span className="saas-meta-ads-list-item__meta">{row.adset_name || '-'}</span>
-                        <span className="saas-meta-ads-list-item__footer">
-                            <StatusBadge value={row.ad_status} />
-                            <strong>{formatCurrencyLabel(row.spend)}</strong>
-                        </span>
-                    </button>
-                );
-            })}
         </div>
     );
 }
@@ -516,6 +575,7 @@ function MetaAdDetail({
     onBack = null,
     onCopyAdId = null,
     onEditGreeting = null,
+    onUseAutoGreeting = null,
     onOpenChats = null
 }) {
     if (!ad) {
@@ -529,6 +589,12 @@ function MetaAdDetail({
     const hasMetrics = ['spend', 'impressions', 'reach', 'clicks'].some((key) => toNumber(ad?.[key]) > 0);
     const sourceUrl = String(stats?.sourceUrl || '').trim();
     const totalConversations = Number(stats?.totalConversations || 0);
+    const convertedConversations = Number(stats?.converted || 0);
+    const autoGreetingText = String(ad.auto_greeting_text || '').trim();
+    const greetingText = String(ad.greeting_text || '').trim();
+    const showAutoGreeting = ad.is_manual_greeting === true
+        && autoGreetingText
+        && autoGreetingText !== greetingText;
     return (
         <div className="saas-meta-ad-detail">
             <button type="button" className="saas-btn saas-btn-outline saas-meta-ad-detail__back" onClick={onBack}>
@@ -538,13 +604,17 @@ function MetaAdDetail({
             <section className="saas-admin-related-block">
                 <h4>Identificacion</h4>
                 <div className="saas-admin-detail-grid">
-                    <div className="saas-admin-detail-field"><span>CAMPAÑA</span><strong>{ad.campaign_name || '-'}</strong></div>
-                    <div className="saas-admin-detail-field"><span>CONJUNTO</span><strong>{ad.adset_name || '-'}</strong></div>
-                    <div className="saas-admin-detail-field"><span>ANUNCIO</span><strong>{ad.ad_name || '-'}</strong></div>
+                    <div className="saas-admin-detail-field"><span>CAMPAÑA</span><p>{ad.campaign_name || '-'}</p></div>
+                    <div className="saas-admin-detail-field"><span>CONJUNTO</span><p>{ad.adset_name || '-'}</p></div>
+                    <div className="saas-admin-detail-field"><span>ANUNCIO</span><p>{ad.ad_name || '-'}</p></div>
                     <div className="saas-admin-detail-field"><span>ESTADO</span><strong><StatusBadge value={ad.ad_status} /></strong></div>
-                    <button type="button" className="saas-admin-detail-field saas-meta-ad-copy-field" onClick={() => onCopyAdId?.(ad.ad_id)} title="Copiar Ad ID">
-                        <span>AD ID</span><strong>{ad.ad_id || '-'}</strong>
-                    </button>
+                    <div className="saas-admin-detail-field saas-meta-ad-id-field">
+                        <span>AD ID</span>
+                        <strong>
+                            <code>{ad.ad_id || '-'}</code>
+                            <button type="button" className="saas-meta-ad-copy-button" onClick={() => onCopyAdId?.(ad.ad_id)} title="Copiar Ad ID">Copiar</button>
+                        </strong>
+                    </div>
                 </div>
             </section>
 
@@ -552,14 +622,14 @@ function MetaAdDetail({
                 <h4>Metricas del periodo</h4>
                 {hasMetrics ? (
                     <div className="saas-admin-kpis saas-meta-ad-metrics-grid">
-                        <MetaMetricCard label="Inversion" value={formatCurrencyLabel(ad.spend)} />
+                        <MetaMetricCard label="Inversion" value={formatMetricCurrency(ad.spend)} />
                         <MetaMetricCard label="Impresiones" value={formatInteger(ad.impressions)} />
                         <MetaMetricCard label="Alcance" value={formatInteger(ad.reach)} />
                         <MetaMetricCard label="Clicks" value={formatInteger(ad.clicks)} />
-                        <MetaMetricCard label="CTR" value={`${formatRatio(ad.ctr)}%`} />
-                        <MetaMetricCard label="CPM" value={formatCurrencyLabel(ad.cpm)} />
-                        <MetaMetricCard label="CPC" value={formatCurrencyLabel(ad.cpc)} />
-                        <MetaMetricCard label="Frec." value={formatRatio(ad.frequency)} />
+                        <MetaMetricCard label="CTR" value={formatMetricPercent(ad.ctr)} />
+                        <MetaMetricCard label="CPM" value={formatMetricCurrency(ad.cpm)} />
+                        <MetaMetricCard label="CPC" value={formatMetricCurrency(ad.cpc)} />
+                        <MetaMetricCard label="Frec." value={formatMetricDecimal(ad.frequency)} />
                     </div>
                 ) : (
                     <div className="saas-admin-empty-inline">Sin datos en este periodo</div>
@@ -568,9 +638,21 @@ function MetaAdDetail({
 
             <section className="saas-admin-related-block">
                 <h4>Mensaje de bienvenida</h4>
+                {ad.is_manual_greeting === true ? (
+                    <span className="saas-meta-ad-manual-badge">✏️ Editado manualmente</span>
+                ) : null}
                 {ad.greeting_text ? (
                     <>
                         <pre className="saas-meta-ad-greeting-text">{ad.greeting_text}</pre>
+                        {showAutoGreeting ? (
+                            <div className="saas-meta-ad-auto-greeting">
+                                <span>Meta tambien tiene:</span>
+                                <pre>{autoGreetingText}</pre>
+                                <button type="button" className="saas-btn saas-btn-outline" onClick={() => onUseAutoGreeting?.(ad)}>
+                                    Usar el de Meta
+                                </button>
+                            </div>
+                        ) : null}
                         {buttons.length ? (
                             <div className="saas-meta-ad-greeting-chips">
                                 {buttons.map((button, index) => (
@@ -592,12 +674,12 @@ function MetaAdDetail({
                 <h4>Conversaciones</h4>
                 {statsLoading ? (
                     <div className="saas-admin-empty-inline">Cargando conversaciones...</div>
+                ) : totalConversations > 0 ? (
+                    <p className="saas-meta-ad-conversation-summary">
+                        {`${formatInteger(totalConversations)} conversaciones · ${formatInteger(convertedConversations)} convertida${convertedConversations === 1 ? '' : 's'} · ${formatRatio(stats?.conversionRate || 0)}% conversion`}
+                    </p>
                 ) : (
-                    <div className="saas-admin-detail-grid">
-                        <div className="saas-admin-detail-field"><span>Total de conversaciones</span><strong>{formatInteger(totalConversations)}</strong></div>
-                        <div className="saas-admin-detail-field"><span>Convertidas</span><strong>{formatInteger(stats?.converted || 0)}</strong></div>
-                        <div className="saas-admin-detail-field"><span>Tasa de conversion</span><strong>{formatRatio(stats?.conversionRate || 0)}%</strong></div>
-                    </div>
+                    <div className="saas-admin-empty-inline">Sin conversaciones registradas</div>
                 )}
                 {totalConversations > 0 ? (
                     <button type="button" className="saas-btn saas-btn-outline" onClick={() => onOpenChats?.(ad.ad_id)}>
@@ -641,7 +723,7 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
             && String(membership?.role || '').trim().toLowerCase() === 'owner'
             && (!tenantId || String(membership?.tenantId || membership?.tenant_id || '').trim() === tenantId)
         ));
-    const columnPrefs = useSaasViewPreferences('meta_ads_campaigns', META_ADS_COLUMNS, { requestJson });
+    const columnPrefs = useSaasViewPreferences('meta_ads_campaigns', META_ADS_TABLE_COLUMNS, { requestJson });
     const [dateRange, setDateRange] = useState(() => readStoredDateRange(tenantId));
     const [searchValue, setSearchValue] = useState('');
     const [activeFilters, setActiveFilters] = useState([createEmptyFilterItem()]);
@@ -701,8 +783,13 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
     }, [loadInsights, tenantScopeLocked]);
 
     const filterDefinitions = useMemo(
-        () => normalizeFilterDefinitions(META_ADS_COLUMNS, META_ADS_COLUMNS),
+        () => normalizeFilterDefinitions(META_ADS_TABLE_COLUMNS, META_ADS_TABLE_COLUMNS),
         []
+    );
+
+    const effectiveColumns = useMemo(
+        () => normalizeColumns(META_ADS_TABLE_COLUMNS, columnPrefs.visibleColumnKeys, columnPrefs.columnOrder),
+        [columnPrefs.columnOrder, columnPrefs.visibleColumnKeys]
     );
 
     const filteredRows = useMemo(() => {
@@ -890,7 +977,7 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
             });
             setRows((currentRows) => currentRows.map((row) => (
                 String(row?.ad_id || '').trim() === String(selectedAd.ad_id || '').trim()
-                    ? { ...row, greeting_text: String(greetingDraft || '').trim() }
+                    ? { ...row, greeting_text: String(greetingDraft || '').trim(), is_manual_greeting: true }
                     : row
             )));
             setGreetingModalOpen(false);
@@ -901,6 +988,32 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
             setSavingGreeting(false);
         }
     }, [greetingDraft, notify, requestJson, selectedAd, tenantId]);
+
+    const useAutoGreeting = useCallback(async (ad = null) => {
+        const adId = String(ad?.ad_id || '').trim();
+        if (!requestJson || !tenantId || !adId) return;
+        const autoGreetingText = String(ad?.auto_greeting_text || '').trim();
+        try {
+            const payload = await requestJson(`/api/tenant/meta-ads/creatives/${encodeURIComponent(adId)}`, {
+                method: 'PATCH',
+                tenantIdOverride: tenantId,
+                headers: { 'Content-Type': 'application/json' },
+                body: {
+                    tenantId,
+                    useAutoGreeting: true
+                }
+            });
+            const nextGreeting = String(payload?.greetingText || autoGreetingText || '').trim();
+            setRows((currentRows) => currentRows.map((row) => (
+                String(row?.ad_id || '').trim() === adId
+                    ? { ...row, greeting_text: nextGreeting, is_manual_greeting: false }
+                    : row
+            )));
+            notify({ type: 'success', message: 'Greeting restaurado desde Meta.' });
+        } catch (saveError) {
+            notify({ type: 'error', message: String(saveError?.message || 'No se pudo usar el greeting de Meta.') });
+        }
+    }, [notify, requestJson, tenantId]);
 
     const openChatsForAd = useCallback((adId = '') => {
         const cleanAdId = String(adId || '').trim();
@@ -935,7 +1048,7 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
                 onClick: handleSyncCreatives,
                 disabled: tenantScopeLocked || syncBusy || loading || !tenantId || !canManageMetaAds
             }] : [])]}
-            actionsExtra={<ColumnMenu columns={META_ADS_COLUMNS} preferences={columnPrefs} disabled={tenantScopeLocked || loading || syncBusy} />}
+            actionsExtra={<ColumnMenu columns={META_ADS_TABLE_COLUMNS} preferences={columnPrefs} disabled={tenantScopeLocked || loading || syncBusy} />}
             filters={{
                 columns: filterDefinitions,
                 items: activeFilters,
@@ -943,7 +1056,7 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
                 onClear: () => setActiveFilters([createEmptyFilterItem()])
             }}
             sortConfig={{
-                columns: META_ADS_COLUMNS,
+                columns: META_ADS_TABLE_COLUMNS,
                 ...normalizeSortState(columnPrefs.sort)
             }}
             onSortChange={columnPrefs.setSort}
@@ -991,12 +1104,16 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
         </div>
     ) : (
         <div className="saas-campaigns-pane">
-            <MetaAdList
+            <SaasDataTable
+                columns={effectiveColumns}
                 rows={sortedRows}
                 selectedId={selectedAdId}
                 loading={loading}
                 emptyText="No hay campañas Meta Ads para este rango."
-                onSelect={setSelectedAdId}
+                enableInfinite={false}
+                sortConfig={columnPrefs.sort}
+                onSortChange={columnPrefs.setSort}
+                onSelect={(row, rowId) => setSelectedAdId(String(row?.ad_id || rowId || '').trim())}
             />
         </div>
     );
@@ -1020,6 +1137,7 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
                 onBack={() => setSelectedAdId('')}
                 onCopyAdId={copyAdId}
                 onEditGreeting={openGreetingModal}
+                onUseAutoGreeting={useAutoGreeting}
                 onOpenChats={openChatsForAd}
             />
         </SaasDetailPanel>

@@ -217,6 +217,8 @@ async function ensurePostgresSchema() {
               ad_id TEXT NOT NULL,
               creative_id TEXT,
               greeting_text TEXT,
+              is_manual_greeting BOOLEAN DEFAULT FALSE,
+              auto_greeting_text TEXT,
               autofill_message TEXT,
               buttons_json JSONB DEFAULT '[]'::jsonb,
               raw_creative JSONB DEFAULT '{}'::jsonb,
@@ -224,6 +226,8 @@ async function ensurePostgresSchema() {
               PRIMARY KEY (tenant_id, ad_id)
             )
         `);
+        await queryPostgres(`ALTER TABLE IF EXISTS tenant_meta_ads_creatives ADD COLUMN IF NOT EXISTS is_manual_greeting BOOLEAN DEFAULT FALSE`);
+        await queryPostgres(`ALTER TABLE IF EXISTS tenant_meta_ads_creatives ADD COLUMN IF NOT EXISTS auto_greeting_text TEXT`);
         await queryPostgres(`CREATE INDEX IF NOT EXISTS idx_tenant_meta_ads_structure_tenant_type ON tenant_meta_ads_structure(tenant_id, object_type)`);
         await queryPostgres(`CREATE INDEX IF NOT EXISTS idx_tenant_meta_ads_insights_tenant_type_dates ON tenant_meta_ads_insights(tenant_id, object_type, date_start, date_stop)`);
         await queryPostgres(`CREATE INDEX IF NOT EXISTS idx_meta_ads_creatives_tenant ON tenant_meta_ads_creatives(tenant_id)`);
@@ -556,14 +560,19 @@ function extractCreativePayload(adId = '', payload = {}) {
 async function upsertCreativeRow(tenantId, row = {}) {
     await queryPostgres(
         `INSERT INTO tenant_meta_ads_creatives (
-            tenant_id, ad_id, creative_id, greeting_text, autofill_message, buttons_json, raw_creative, synced_at
+            tenant_id, ad_id, creative_id, greeting_text, auto_greeting_text, autofill_message, buttons_json, raw_creative, synced_at
          ) VALUES (
-            $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, NOW()
+            $1, $2, $3, $4, $4, $5, $6::jsonb, $7::jsonb, NOW()
          )
          ON CONFLICT (tenant_id, ad_id)
          DO UPDATE SET
             creative_id = COALESCE(EXCLUDED.creative_id, tenant_meta_ads_creatives.creative_id),
-            greeting_text = COALESCE(EXCLUDED.greeting_text, tenant_meta_ads_creatives.greeting_text),
+            auto_greeting_text = COALESCE(EXCLUDED.auto_greeting_text, tenant_meta_ads_creatives.auto_greeting_text),
+            greeting_text = CASE
+              WHEN COALESCE(tenant_meta_ads_creatives.is_manual_greeting, FALSE) = TRUE
+                THEN tenant_meta_ads_creatives.greeting_text
+              ELSE COALESCE(EXCLUDED.greeting_text, tenant_meta_ads_creatives.greeting_text)
+            END,
             autofill_message = COALESCE(EXCLUDED.autofill_message, tenant_meta_ads_creatives.autofill_message),
             buttons_json = COALESCE(EXCLUDED.buttons_json, tenant_meta_ads_creatives.buttons_json),
             raw_creative = COALESCE(EXCLUDED.raw_creative, tenant_meta_ads_creatives.raw_creative),
@@ -583,7 +592,12 @@ async function upsertCreativeRow(tenantId, row = {}) {
 async function updateCreativeParsedFields(tenantId, row = {}) {
     await queryPostgres(
         `UPDATE tenant_meta_ads_creatives
-            SET greeting_text = $3,
+            SET auto_greeting_text = $3,
+                greeting_text = CASE
+                  WHEN COALESCE(is_manual_greeting, FALSE) = TRUE
+                    THEN greeting_text
+                  ELSE COALESCE($3, greeting_text)
+                END,
                 autofill_message = $4,
                 buttons_json = $5::jsonb,
                 synced_at = NOW()
@@ -1003,6 +1017,8 @@ async function listMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, { dateStart, da
             SUM(i.clicks) AS clicks,
             cr.creative_id AS creative_id,
             cr.greeting_text AS greeting_text,
+            COALESCE(cr.is_manual_greeting, FALSE) AS is_manual_greeting,
+            cr.auto_greeting_text AS auto_greeting_text,
             cr.autofill_message AS autofill_message,
             cr.buttons_json AS buttons_json,
             CASE WHEN SUM(i.impressions) > 0
@@ -1066,6 +1082,8 @@ async function listMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, { dateStart, da
             COALESCE(i.campaign_status, campaign.status),
             cr.creative_id,
             cr.greeting_text,
+            cr.is_manual_greeting,
+            cr.auto_greeting_text,
             cr.autofill_message,
             cr.buttons_json
          ORDER BY SUM(i.spend) DESC NULLS LAST,
@@ -1094,6 +1112,8 @@ async function listMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, { dateStart, da
             clicks: toInteger(row?.clicks, 0),
             creative_id: toNullableText(row?.creative_id),
             greeting_text: toNullableText(row?.greeting_text),
+            is_manual_greeting: row?.is_manual_greeting === true,
+            auto_greeting_text: toNullableText(row?.auto_greeting_text),
             autofill_message: toNullableText(row?.autofill_message),
             buttons_json: Array.isArray(row?.buttons_json) ? row.buttons_json : [],
             ctr: toNumber(row?.ctr, 0, { decimals: 4 }),
@@ -1117,13 +1137,14 @@ async function updateMetaAdCreativeGreeting(tenantId = DEFAULT_TENANT_ID, adId =
     const cleanGreeting = toNullableText(greetingText);
     await queryPostgres(
         `INSERT INTO tenant_meta_ads_creatives (
-            tenant_id, ad_id, greeting_text, buttons_json, raw_creative, synced_at
+            tenant_id, ad_id, greeting_text, is_manual_greeting, buttons_json, raw_creative, synced_at
         ) VALUES (
-            $1, $2, $3, '[]'::jsonb, '{}'::jsonb, NOW()
+            $1, $2, $3, TRUE, '[]'::jsonb, '{}'::jsonb, NOW()
         )
         ON CONFLICT (tenant_id, ad_id)
         DO UPDATE SET
             greeting_text = EXCLUDED.greeting_text,
+            is_manual_greeting = TRUE,
             synced_at = NOW()`,
         [cleanTenantId, cleanAdId, cleanGreeting]
     );
@@ -1132,6 +1153,32 @@ async function updateMetaAdCreativeGreeting(tenantId = DEFAULT_TENANT_ID, adId =
         tenantId: cleanTenantId,
         adId: cleanAdId,
         greetingText: cleanGreeting
+    };
+}
+
+async function revertMetaAdCreativeGreetingToAuto(tenantId = DEFAULT_TENANT_ID, adId = '') {
+    await ensurePostgresSchema();
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const cleanAdId = toText(adId);
+    if (!cleanAdId) throw new Error('adId requerido para revertir greeting Meta.');
+    const { rows } = await queryPostgres(
+        `UPDATE tenant_meta_ads_creatives
+            SET greeting_text = COALESCE(auto_greeting_text, greeting_text),
+                is_manual_greeting = FALSE,
+                synced_at = NOW()
+          WHERE tenant_id = $1
+            AND ad_id = $2
+        RETURNING greeting_text, auto_greeting_text, is_manual_greeting`,
+        [cleanTenantId, cleanAdId]
+    );
+    const row = rows?.[0] || {};
+    return {
+        ok: true,
+        tenantId: cleanTenantId,
+        adId: cleanAdId,
+        greetingText: toNullableText(row?.greeting_text),
+        autoGreetingText: toNullableText(row?.auto_greeting_text),
+        isManualGreeting: row?.is_manual_greeting === true
     };
 }
 
@@ -1406,6 +1453,7 @@ module.exports = {
     syncMetaAdsInsights,
     listMetaAdsInsights,
     updateMetaAdCreativeGreeting,
+    revertMetaAdCreativeGreetingToAuto,
     getMetaAdConversationStats,
     syncMetaAdsHistoricalCurrentYear,
     runMetaAdsDailySyncOnce,

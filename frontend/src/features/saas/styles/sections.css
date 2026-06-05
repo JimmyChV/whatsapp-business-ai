@@ -1076,6 +1076,40 @@
     cursor: copy;
 }
 
+.saas-meta-ad-detail .saas-admin-detail-field p {
+    margin: 0;
+    color: var(--color-text-primary, #111827);
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+.saas-meta-ads-status--paused {
+    background: rgba(107, 114, 128, 0.12);
+    color: #6b7280;
+}
+
+.saas-meta-ad-id-field strong {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.saas-meta-ad-id-field code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 12px;
+}
+
+.saas-meta-ad-copy-button {
+    border: 1px solid rgba(59, 130, 246, 0.26);
+    border-radius: 999px;
+    padding: 4px 8px;
+    background: rgba(239, 246, 255, 0.88);
+    color: #1d4ed8;
+    font-size: 11px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
 .saas-meta-ad-metrics-grid {
     grid-template-columns: repeat(4, minmax(120px, 1fr));
     margin: 0;
@@ -1115,6 +1149,48 @@
     color: #1d4ed8;
     font-size: 12px;
     font-weight: 700;
+}
+
+.saas-meta-ad-manual-badge {
+    display: inline-flex;
+    width: fit-content;
+    margin: -4px 0 10px;
+    border-radius: 999px;
+    padding: 4px 10px;
+    background: rgba(234, 179, 8, 0.14);
+    color: #a16207;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.saas-meta-ad-auto-greeting {
+    display: grid;
+    gap: 8px;
+    margin: 0 0 12px;
+    padding: 12px;
+    border: 1px solid rgba(24, 119, 242, 0.16);
+    border-radius: 14px;
+    background: rgba(239, 246, 255, 0.72);
+}
+
+.saas-meta-ad-auto-greeting span {
+    color: #1d4ed8;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.saas-meta-ad-auto-greeting pre {
+    margin: 0;
+    color: var(--color-text-secondary, #6b7280);
+    font-family: inherit;
+    font-size: 13px;
+    white-space: pre-wrap;
+}
+
+.saas-meta-ad-conversation-summary {
+    margin: 0 0 12px;
+    color: var(--color-text-primary, #111827);
+    font-weight: 800;
 }
 
 .saas-meta-ad-greeting-modal .saas-template-builder-modal-shell {

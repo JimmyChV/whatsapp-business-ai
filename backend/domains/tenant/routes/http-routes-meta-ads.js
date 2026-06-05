@@ -168,6 +168,10 @@ function registerTenantMetaAdsHttpRoutes({
         }
 
         try {
+            if (source?.useAutoGreeting === true) {
+                const reverted = await metaAdsSyncService.revertMetaAdCreativeGreetingToAuto(tenantId, adId);
+                return res.json({ ok: true, ...reverted });
+            }
             await metaAdsSyncService.updateMetaAdCreativeGreeting(tenantId, adId, source?.greetingText);
             return res.json({ ok: true });
         } catch (error) {
