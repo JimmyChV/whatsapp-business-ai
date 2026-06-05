@@ -189,16 +189,18 @@ function createSocketWaEventsBridgeService({
         tenantId = '',
         chatId = '',
         scopeModuleId = '',
-        type = ''
+        type = '',
+        windowMinutes = 5
     } = {}) => {
         if (getStorageDriver() !== 'postgres') return false;
         const cleanTenantId = text(tenantId);
         const cleanChatId = text(chatId);
         const cleanScopeModuleId = text(scopeModuleId).toLowerCase();
         const cleanType = text(type);
+        const cleanWindowMinutes = Math.max(1, Number(windowMinutes || 5) || 5);
         if (!cleanTenantId || !cleanChatId || !cleanType) return false;
 
-        const params = [cleanTenantId, cleanChatId, cleanType];
+        const params = [cleanTenantId, cleanChatId, cleanType, cleanWindowMinutes];
         let scopeSql = '';
         if (cleanScopeModuleId) {
             params.push(cleanScopeModuleId);
@@ -211,7 +213,7 @@ function createSocketWaEventsBridgeService({
                 AND chat_id = $2
                 AND COALESCE(from_me, FALSE) = TRUE
                 AND metadata->>'autoMessageType' = $3
-                AND created_at >= NOW() - INTERVAL '5 minutes'
+                AND created_at >= NOW() - ($4::int * INTERVAL '1 minute')
                 ${scopeSql}
               LIMIT 1`,
             params
@@ -297,7 +299,7 @@ function createSocketWaEventsBridgeService({
         const cleanScopeModuleId = text(scopeModuleId).toLowerCase();
         if (!scheduleId && cleanTenantId && cleanScopeModuleId && getStorageDriver() === 'postgres') {
             const { rows } = await queryPostgres(
-                `SELECT metadata->>'scheduleId' AS schedule_id
+                `SELECT COALESCE(metadata->>'scheduleId', metadata->>'schedule_id') AS schedule_id
                    FROM wa_modules
                   WHERE tenant_id = $1
                     AND LOWER(module_id) = LOWER($2)
@@ -320,8 +322,8 @@ function createSocketWaEventsBridgeService({
         if (isOpen && schedule.welcomeEnabled && text(schedule.welcomeMessage) && isFirstMessage) {
             candidates.push({ type: 'welcome', body: schedule.welcomeMessage });
         }
-        if (!isOpen && schedule.awayEnabled && text(schedule.awayMessage) && isFirstMessage) {
-            candidates.push({ type: 'away', body: schedule.awayMessage });
+        if (!isOpen && schedule.awayEnabled && text(schedule.awayMessage)) {
+            candidates.push({ type: 'away', body: schedule.awayMessage, dedupeMinutes: 18 * 60 });
         }
 
         for (const candidate of candidates) {
@@ -329,7 +331,8 @@ function createSocketWaEventsBridgeService({
                 tenantId,
                 chatId,
                 scopeModuleId,
-                type: candidate.type
+                type: candidate.type,
+                windowMinutes: candidate.dedupeMinutes || 5
             });
             if (alreadySent) continue;
             await sendScheduleAutoMessage({

@@ -114,6 +114,7 @@ export default function useMessageBubbleDerivedModel({
 }) {
     return useMemo(() => {
         const safeMsg = msg && typeof msg === 'object' ? msg : {};
+        const metadata = isPlainObject(safeMsg.metadata) ? safeMsg.metadata : {};
 
         // Bloque 1: identidad del mensaje (depende solo de msg)
         const isOut = Boolean(safeMsg.fromMe);
