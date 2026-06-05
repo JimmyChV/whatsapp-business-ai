@@ -1924,8 +1924,7 @@ class SocketManager {
                             await messageHistoryService.updateChatState(tenantId, {
                                 chatId: baseChatId,
                                 metadata: {
-                                    manuallyMarkedUnread: false,
-                                    manuallyMarkedUnreadClearedAt: new Date().toISOString()
+                                    manuallyMarkedUnread: false
                                 }
                             });
                         } catch (_) { }
@@ -1999,7 +1998,6 @@ class SocketManager {
                 try {
                     const isObjectPayload = payload && typeof payload === 'object' && !Array.isArray(payload);
                     const requestedChatId = String(isObjectPayload ? payload.chatId : payload || '').trim();
-                    const readSource = String(isObjectPayload ? payload.source || '' : '').trim().toLowerCase();
                     if (!requestedChatId) return;
                     const fallbackScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
                     const scopedTarget = resolveScopedChatTarget(requestedChatId, fallbackScopeModuleId);
@@ -2032,31 +2030,13 @@ class SocketManager {
                         isAssignedToActor = assignedUserId === actorUserId;
                     }
                     if (!isManager && !isAssignedToActor) return;
-                    if (
-                        readSource !== 'chat_open'
-                        &&
-                        typeof messageHistoryService?.shouldSkipMarkReadDueToManualUnread === 'function'
-                        && await messageHistoryService.shouldSkipMarkReadDueToManualUnread(tenantId, { chatId: safeChatId, windowSeconds: 300 })
-                    ) {
-                        socket.emit('mark_chat_read_result', {
-                            ok: false,
-                            skipped: 'manual_unread_recent',
-                            tenantId,
-                            chatId: scopedTarget.scopedChatId || requestedChatId,
-                            baseChatId: safeChatId,
-                            scopeModuleId: scopeModuleId || null
-                        });
-                        return;
-                    }
-                    const manuallyMarkedUnreadClearedAt = new Date().toISOString();
                     await waClient.markAsRead(safeChatId);
                     if (typeof messageHistoryService?.updateChatState === 'function') {
                         await messageHistoryService.updateChatState(tenantId, {
                             chatId: safeChatId,
                             unreadCount: 0,
                             metadata: {
-                                manuallyMarkedUnread: false,
-                                manuallyMarkedUnreadClearedAt
+                                manuallyMarkedUnread: false
                             }
                         });
                     }
@@ -2067,8 +2047,7 @@ class SocketManager {
                         baseChatId: safeChatId,
                         scopeModuleId: scopeModuleId || null,
                         unreadCount: 0,
-                        manuallyMarkedUnread: false,
-                        manuallyMarkedUnreadClearedAt
+                        manuallyMarkedUnread: false
                     };
                     socket.emit('mark_chat_read_result', payload);
                     if (typeof this.emitToTenant === 'function') {

@@ -1512,7 +1512,7 @@ function registerOperationsHttpRoutes({
                         baseChatId: target.baseChatId,
                         scopeModuleId: target.scopeModuleId || null,
                         unreadCount: Number.isFinite(Number(updated?.unreadCount)) ? Number(updated.unreadCount) : 0,
-                        manuallyMarkedUnread: updated?.manuallyMarkedUnread !== false,
+                        manuallyMarkedUnread: updated?.manuallyMarkedUnread === true,
                         manuallyMarkedUnreadAt: String(updated?.manuallyMarkedUnreadAt || '').trim() || null
                     };
                 });

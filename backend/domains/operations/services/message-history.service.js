@@ -253,8 +253,17 @@ function upsertMessageInMemory(store, record) {
 
     store.messages[record.messageId] = mergedMessage;
 
-    const chatPatch = record.chat || { id: record.chatId };
     const currentChat = store.chats[record.chatId] || { id: record.chatId };
+    const chatPatch = {
+        ...(record.chat || { id: record.chatId }),
+        unreadCount: record.fromMe
+            ? 0
+            : (existing ? (Number(currentChat.unreadCount || 0) || 0) : (Number(currentChat.unreadCount || 0) || 0) + 1),
+        metadata: {
+            ...((record.chat?.metadata && typeof record.chat.metadata === 'object') ? record.chat.metadata : {}),
+            manuallyMarkedUnread: false
+        }
+    };
     store.chats[record.chatId] = applyChatPatch(currentChat, chatPatch, record);
 
     const rawOrder = Array.isArray(store.messageOrderByChat[record.chatId])
@@ -278,6 +287,13 @@ async function upsertChatPostgres(tenantId, chatPatch = {}, fallbackMessage = nu
 
     const incomingTs = Number(fallbackMessage?.timestampUnix || 0) || null;
     const incomingMessageId = toSafeString(fallbackMessage?.messageId);
+    const hasExplicitUnreadCount = Number.isFinite(Number(chatPatch.unreadCount));
+    const unreadMode = hasExplicitUnreadCount
+        ? 'set'
+        : (fallbackMessage?.fromMe === false && fallbackMessage?.skipUnreadIncrement !== true ? 'increment' : 'keep');
+    const unreadCountForInsert = hasExplicitUnreadCount
+        ? Math.max(0, Math.floor(Number(chatPatch.unreadCount)))
+        : (unreadMode === 'increment' ? 1 : 0);
 
     await queryPostgres(
         `INSERT INTO tenant_chats (
@@ -290,7 +306,11 @@ async function upsertChatPostgres(tenantId, chatPatch = {}, fallbackMessage = nu
             display_name = COALESCE(EXCLUDED.display_name, tenant_chats.display_name),
             phone = COALESCE(EXCLUDED.phone, tenant_chats.phone),
             subtitle = COALESCE(EXCLUDED.subtitle, tenant_chats.subtitle),
-            unread_count = COALESCE(EXCLUDED.unread_count, tenant_chats.unread_count),
+            unread_count = CASE
+                WHEN $12 = 'set' THEN EXCLUDED.unread_count
+                WHEN $12 = 'increment' THEN COALESCE(tenant_chats.unread_count, 0) + 1
+                ELSE tenant_chats.unread_count
+            END,
             archived = COALESCE(EXCLUDED.archived, tenant_chats.archived),
             pinned = COALESCE(EXCLUDED.pinned, tenant_chats.pinned),
             last_message_id = CASE
@@ -307,12 +327,13 @@ async function upsertChatPostgres(tenantId, chatPatch = {}, fallbackMessage = nu
             chatPatch.displayName || null,
             chatPatch.phone || null,
             chatPatch.subtitle || null,
-            Number.isFinite(chatPatch.unreadCount) ? chatPatch.unreadCount : 0,
+            unreadCountForInsert,
             typeof chatPatch.archived === 'boolean' ? chatPatch.archived : false,
             typeof chatPatch.pinned === 'boolean' ? chatPatch.pinned : false,
             incomingMessageId,
             incomingTs,
-            JSON.stringify(chatPatch.metadata || {})
+            JSON.stringify(chatPatch.metadata || {}),
+            unreadMode
         ]
     );
 }
@@ -394,6 +415,27 @@ async function upsertMessagePostgres(tenantId, record, { schemaEnsured = false }
         throw error;
     }
 }
+
+async function messageExistsPostgres(tenantId, messageId) {
+    const safeId = toSafeString(messageId);
+    if (!safeId) return false;
+    try {
+        await ensurePostgresMessageColumns();
+        const { rows } = await queryPostgres(
+            `SELECT 1
+               FROM tenant_messages
+              WHERE tenant_id = $1
+                AND message_id = $2
+              LIMIT 1`,
+            [tenantId, safeId]
+        );
+        return rows.length > 0;
+    } catch (error) {
+        if (missingRelation(error)) return false;
+        throw error;
+    }
+}
+
 async function upsertMessage(tenantId = DEFAULT_TENANT_ID, input = {}) {
     if (!isHistoryEnabled()) return { ok: false, skipped: 'disabled' };
 
@@ -407,14 +449,27 @@ async function upsertMessage(tenantId = DEFAULT_TENANT_ID, input = {}) {
             unreadCount: 0,
             metadata: {
                 ...((record.chat?.metadata && typeof record.chat.metadata === 'object') ? record.chat.metadata : {}),
-                manuallyMarkedUnread: false,
-                manuallyMarkedUnreadClearedAt: new Date().toISOString()
+                manuallyMarkedUnread: false
+            }
+        };
+    } else {
+        record.chat = {
+            ...(record.chat || { id: record.chatId }),
+            metadata: {
+                ...((record.chat?.metadata && typeof record.chat.metadata === 'object') ? record.chat.metadata : {}),
+                manuallyMarkedUnread: false
             }
         };
     }
 
     if (getStorageDriver() === 'postgres') {
-        await upsertChatPostgres(cleanTenant, record.chat, record);
+        const skipUnreadIncrement = record.fromMe === false
+            ? await messageExistsPostgres(cleanTenant, record.messageId)
+            : false;
+        await upsertChatPostgres(cleanTenant, record.chat, {
+            ...record,
+            skipUnreadIncrement
+        });
         await upsertMessagePostgres(cleanTenant, record);
         return { ok: true, driver: 'postgres', messageId: record.messageId };
     }
@@ -601,47 +656,6 @@ async function bulkMarkChatsUnread(tenantId = DEFAULT_TENANT_ID, chatIds = []) {
         await saveStore(cleanTenant, store);
     }
     return { ok: true, driver: 'file', items, updated: items.length };
-}
-
-async function shouldSkipMarkReadDueToManualUnread(tenantId = DEFAULT_TENANT_ID, {
-    chatId,
-    windowSeconds = 300
-} = {}) {
-    if (!isHistoryEnabled()) return false;
-
-    const cleanTenant = resolveTenantId(tenantId);
-    assertValidTenant(cleanTenant, 'message-history.shouldSkipMarkReadDueToManualUnread');
-    const safeChatId = toSafeString(chatId);
-    if (!safeChatId) return false;
-    const safeWindowSeconds = Math.max(1, Math.min(300, Math.floor(toSafeNumber(windowSeconds, 300) || 300)));
-
-    if (getStorageDriver() === 'postgres') {
-        try {
-            await ensurePostgresMessageColumns();
-            const { rows } = await queryPostgres(
-                `SELECT 1
-                   FROM tenant_chats
-                  WHERE tenant_id = $1
-                    AND chat_id = $2
-                    AND metadata->>'manuallyMarkedUnread' = 'true'
-                    AND updated_at > NOW() - ($3::int * INTERVAL '1 second')
-                  LIMIT 1`,
-                [cleanTenant, safeChatId, safeWindowSeconds]
-            );
-            return rows.length > 0;
-        } catch (error) {
-            if (missingRelation(error)) return false;
-            throw error;
-        }
-    }
-
-    const store = await loadStore(cleanTenant);
-    const current = store.chats[safeChatId];
-    const metadata = current?.metadata && typeof current.metadata === 'object' ? current.metadata : {};
-    if (metadata.manuallyMarkedUnread !== true) return false;
-    const markedAtMs = Date.parse(String(metadata.manuallyMarkedUnreadAt || current?.updatedAt || ''));
-    if (!Number.isFinite(markedAtMs)) return false;
-    return Date.now() - markedAtMs <= safeWindowSeconds * 1000;
 }
 
 async function updateMessageAck(tenantId = DEFAULT_TENANT_ID, { messageId, chatId, ack } = {}) {
@@ -1051,7 +1065,6 @@ module.exports = {
     upsertMessage,
     updateChatState,
     bulkMarkChatsUnread,
-    shouldSkipMarkReadDueToManualUnread,
     updateMessageAck,
     updateMessageEdit,
     updateMessageReactions,

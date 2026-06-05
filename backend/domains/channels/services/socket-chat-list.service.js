@@ -398,8 +398,7 @@ function createSocketChatListService({
                         archived,
                         pinned,
                         COALESCE(metadata->>'manuallyMarkedUnread', 'false') = 'true' AS manually_marked_unread,
-                        metadata->>'manuallyMarkedUnreadAt' AS manually_marked_unread_at,
-                        metadata->>'manuallyMarkedUnreadClearedAt' AS manually_marked_unread_cleared_at
+                        metadata->>'manuallyMarkedUnreadAt' AS manually_marked_unread_at
                    FROM tenant_chats
                   WHERE tenant_id = $1
                     AND chat_id = ANY($2::text[])`,
@@ -413,8 +412,7 @@ function createSocketChatListService({
                     archived: Boolean(row?.archived),
                     pinned: Boolean(row?.pinned),
                     manuallyMarkedUnread: Boolean(row?.manually_marked_unread),
-                    manuallyMarkedUnreadAt: String(row?.manually_marked_unread_at || '').trim() || null,
-                    manuallyMarkedUnreadClearedAt: String(row?.manually_marked_unread_cleared_at || '').trim() || null
+                    manuallyMarkedUnreadAt: String(row?.manually_marked_unread_at || '').trim() || null
                 });
             });
         } catch (_) {
@@ -443,8 +441,7 @@ function createSocketChatListService({
                 archived: Boolean(item?.archived || persisted.archived),
                 pinned: Boolean(item?.pinned || persisted.pinned),
                 manuallyMarkedUnread: Boolean(persisted.manuallyMarkedUnread),
-                manuallyMarkedUnreadAt: persisted.manuallyMarkedUnreadAt || null,
-                manuallyMarkedUnreadClearedAt: persisted.manuallyMarkedUnreadClearedAt || null
+                manuallyMarkedUnreadAt: persisted.manuallyMarkedUnreadAt || null
             };
         });
     };
@@ -840,9 +837,14 @@ function createSocketChatListService({
 
         await runWithConcurrency(chats, labelConcurrency, async (chat, idx) => {
             const chatId = String(chat?.id?._serialized || '').trim();
+            const hasPersisted = persistedStateByChatId.has(chatId);
             const persisted = persistedStateByChatId.get(chatId) || {};
-            const unreadCount = Math.max(Number(chat?.unreadCount || 0) || 0, Number(persisted?.unreadCount || 0) || 0);
-            const manuallyMarkedUnread = Boolean(chat?.manuallyMarkedUnread || persisted?.manuallyMarkedUnread);
+            const unreadCount = hasPersisted
+                ? Number(persisted?.unreadCount || 0) || 0
+                : Number(chat?.unreadCount || 0) || 0;
+            const manuallyMarkedUnread = hasPersisted
+                ? Boolean(persisted?.manuallyMarkedUnread)
+                : Boolean(chat?.manuallyMarkedUnread);
             if (unreadOnly && unreadCount <= 0 && !manuallyMarkedUnread) return;
 
             // El filtro Guardados/No guardados depende del vínculo CRM enriquecido

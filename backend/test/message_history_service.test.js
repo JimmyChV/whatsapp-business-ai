@@ -159,7 +159,7 @@ test('message_history_service respects disabled toggle', async () => {
     }
 });
 
-test('message_history_service protects manual unread from immediate read clear', async () => {
+test('message_history_service clears manual unread when agent replies', async () => {
     const prevDriver = process.env.SAAS_STORAGE_DRIVER;
     const prevDir = process.env.SAAS_TENANT_DATA_DIR;
     const prevHistoryEnabled = process.env.HISTORY_PERSISTENCE_ENABLED;
@@ -187,9 +187,34 @@ test('message_history_service protects manual unread from immediate read clear',
             }
         });
 
+        let chats = await service.listChats('tenant_unread', { limit: 10 });
+        let chat = chats.find((entry) => entry.chatId === chatId);
+        assert.ok(chat);
+        assert.equal(chat.unreadCount, 1);
+        assert.equal(chat.metadata.manuallyMarkedUnread, false);
+
+        await service.upsertMessage('tenant_unread', {
+            messageId: 'msg_unread_1',
+            chatId,
+            fromMe: false,
+            body: 'Cliente duplicado',
+            messageType: 'chat',
+            timestampUnix: 300,
+            chat: {
+                id: chatId,
+                displayName: 'Cliente No Leido'
+            }
+        });
+
+        chats = await service.listChats('tenant_unread', { limit: 10 });
+        chat = chats.find((entry) => entry.chatId === chatId);
+        assert.ok(chat);
+        assert.equal(chat.unreadCount, 1);
+
         const unreadResult = await service.bulkMarkChatsUnread('tenant_unread', [chatId]);
         assert.equal(unreadResult.updated, 1);
-        assert.equal(await service.shouldSkipMarkReadDueToManualUnread('tenant_unread', { chatId, windowSeconds: 30 }), true);
+        assert.equal(unreadResult.items[0].unreadCount, 0);
+        assert.equal(unreadResult.items[0].manuallyMarkedUnread, true);
 
         await service.upsertMessage('tenant_unread', {
             messageId: 'msg_unread_2',
@@ -204,7 +229,11 @@ test('message_history_service protects manual unread from immediate read clear',
             }
         });
 
-        assert.equal(await service.shouldSkipMarkReadDueToManualUnread('tenant_unread', { chatId, windowSeconds: 30 }), false);
+        chats = await service.listChats('tenant_unread', { limit: 10 });
+        chat = chats.find((entry) => entry.chatId === chatId);
+        assert.ok(chat);
+        assert.equal(chat.unreadCount, 0);
+        assert.equal(chat.metadata.manuallyMarkedUnread, false);
     } finally {
         process.env.SAAS_STORAGE_DRIVER = prevDriver;
         process.env.SAAS_TENANT_DATA_DIR = prevDir;
