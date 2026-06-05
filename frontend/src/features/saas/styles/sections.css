@@ -1010,7 +1010,9 @@
 
 .saas-reports-shell {
   display: grid;
-  gap: 16px;
+  gap: clamp(14px, 1vw, 20px);
+  width: 100%;
+  max-width: none;
   min-width: 0;
 }
 
@@ -1139,7 +1141,8 @@
 }
 
 .saas-reports-card {
-  overflow: hidden;
+  min-width: 0;
+  overflow: visible;
 }
 
 .saas-reports-card__header {
@@ -1148,7 +1151,7 @@
 
 .saas-reports-kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
   gap: 12px;
 }
 
@@ -1189,13 +1192,13 @@
 
 .saas-reports-two-col {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
   gap: 16px;
   align-items: stretch;
 }
 
 .saas-reports-two-col--funnel {
-  grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 540px), 1fr));
 }
 
 .saas-reports-funnel {
@@ -1238,12 +1241,18 @@
 
 .saas-reports-linechart {
   min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 2px 2px 8px;
 }
 
 .saas-reports-linechart svg {
   width: 100%;
+  min-width: min(720px, 100%);
   height: auto;
   display: block;
+  overflow: visible;
 }
 
 .saas-reports-linechart line {
@@ -1297,6 +1306,10 @@
   grid-auto-columns: minmax(20px, 1fr);
   gap: 8px;
   align-items: end;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 2px 0 8px;
 }
 
 .saas-reports-bars__item {
@@ -1420,6 +1433,7 @@
 
 .saas-reports-table-wrap {
   overflow: auto;
+  max-width: 100%;
   border: 1px solid var(--saas-border-color);
   border-radius: 14px;
 }
@@ -6574,6 +6588,15 @@
     overflow-y: auto !important;
     overflow-x: hidden !important;
     scrollbar-gutter: stable both-edges;
+}
+
+.saas-admin-shell .saas-admin-grid > #saas_reports.saas-entity-page {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    align-self: stretch !important;
 }
 
 .saas-admin-shell #saas_reports .saas-reports-shell {
