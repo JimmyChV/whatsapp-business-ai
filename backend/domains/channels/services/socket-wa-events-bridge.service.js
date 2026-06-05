@@ -10,6 +10,8 @@ const {
 const catalogManagerService = require('../../tenant/services/catalog-manager.service');
 const quotesService = require('../../tenant/services/quotes.service');
 const pushNotificationServiceFallback = require('../../security/services/push-notifications.service');
+const tenantScheduleServiceFallback = require('../../tenant/services/tenant-schedule.service');
+const auditLogServiceFallback = require('../../security/services/audit-log.service');
 const pattyService = require('./patty.service');
 const { isValidOperationalTenant, warnInvalidTenant } = require('../../tenant/helpers/tenant-guard.helpers');
 
@@ -50,8 +52,12 @@ function createSocketWaEventsBridgeService({
     extractLocationInfo,
     customerModuleContextsService = customerModuleContextsServiceFallback,
     customerConsentService = customerConsentServiceFallback,
-    pushNotificationService = pushNotificationServiceFallback
+    pushNotificationService = pushNotificationServiceFallback,
+    tenantScheduleService = tenantScheduleServiceFallback,
+    auditLogService = auditLogServiceFallback
 } = {}) {
+    const text = (value = '') => String(value ?? '').trim();
+
     const extractPhoneCandidatesFromChatId = (chatId = '') => {
         const clean = String(chatId || '').trim();
         const base = clean.split('@')[0].trim();
@@ -140,6 +146,188 @@ function createSocketWaEventsBridgeService({
             params
         );
         return Boolean(rows?.[0]);
+    };
+
+    const resolveScheduleIdFromModule = (moduleContext = null) => text(
+        moduleContext?.scheduleId
+        || moduleContext?.schedule_id
+        || moduleContext?.metadata?.scheduleId
+        || moduleContext?.metadata?.schedule_id
+    );
+
+    const getRecentInboundCount = async ({
+        tenantId = '',
+        chatId = '',
+        scopeModuleId = ''
+    } = {}) => {
+        if (getStorageDriver() !== 'postgres') return 0;
+        const cleanTenantId = text(tenantId);
+        const cleanChatId = text(chatId);
+        const cleanScopeModuleId = text(scopeModuleId).toLowerCase();
+        if (!cleanTenantId || !cleanChatId) return 0;
+
+        const params = [cleanTenantId, cleanChatId];
+        let scopeSql = '';
+        if (cleanScopeModuleId) {
+            params.push(cleanScopeModuleId);
+            scopeSql = ` AND LOWER(COALESCE(wa_module_id, '')) = LOWER($${params.length})`;
+        }
+        const { rows } = await queryPostgres(
+            `SELECT COUNT(*)::int AS total
+               FROM tenant_messages
+              WHERE tenant_id = $1
+                AND chat_id = $2
+                AND COALESCE(from_me, FALSE) = FALSE
+                AND created_at >= NOW() - INTERVAL '24 hours'
+                ${scopeSql}`,
+            params
+        );
+        return Number(rows?.[0]?.total || 0) || 0;
+    };
+
+    const hasRecentAutoMessage = async ({
+        tenantId = '',
+        chatId = '',
+        scopeModuleId = '',
+        type = ''
+    } = {}) => {
+        if (getStorageDriver() !== 'postgres') return false;
+        const cleanTenantId = text(tenantId);
+        const cleanChatId = text(chatId);
+        const cleanScopeModuleId = text(scopeModuleId).toLowerCase();
+        const cleanType = text(type);
+        if (!cleanTenantId || !cleanChatId || !cleanType) return false;
+
+        const params = [cleanTenantId, cleanChatId, cleanType];
+        let scopeSql = '';
+        if (cleanScopeModuleId) {
+            params.push(cleanScopeModuleId);
+            scopeSql = ` AND LOWER(COALESCE(wa_module_id, '')) = LOWER($${params.length})`;
+        }
+        const { rows } = await queryPostgres(
+            `SELECT 1
+               FROM tenant_messages
+              WHERE tenant_id = $1
+                AND chat_id = $2
+                AND COALESCE(from_me, FALSE) = TRUE
+                AND metadata->>'autoMessageType' = $3
+                AND created_at >= NOW() - INTERVAL '5 minutes'
+                ${scopeSql}
+              LIMIT 1`,
+            params
+        );
+        return Boolean(rows?.[0]);
+    };
+
+    const sendScheduleAutoMessage = async ({
+        tenantId = '',
+        chatId = '',
+        moduleContext = null,
+        scheduleId = '',
+        body = '',
+        type = ''
+    } = {}) => {
+        const cleanTenantId = text(tenantId);
+        const cleanChatId = text(chatId);
+        const cleanScheduleId = text(scheduleId);
+        const cleanBody = text(body);
+        const cleanType = text(type);
+        if (!cleanTenantId || !cleanChatId || !cleanScheduleId || !cleanBody || !cleanType) return null;
+
+        const moduleAttributionMeta = buildModuleAttributionMeta(moduleContext);
+        const scopeModuleId = normalizeScopedModuleId(
+            moduleContext?.moduleId
+            || moduleAttributionMeta?.sentViaModuleId
+            || ''
+        );
+        const agentMeta = {
+            sentByUserId: 'system',
+            sentByName: cleanType === 'away' ? 'Sistema (fuera de horario)' : 'Sistema',
+            sentByRole: 'automation',
+            sentViaModuleId: moduleAttributionMeta?.sentViaModuleId || scopeModuleId || null,
+            sentViaModuleName: moduleAttributionMeta?.sentViaModuleName || text(moduleContext?.name) || null,
+            sentViaModuleImageUrl: moduleAttributionMeta?.sentViaModuleImageUrl || text(moduleContext?.imageUrl || moduleContext?.logoUrl) || null,
+            sentViaTransport: moduleAttributionMeta?.sentViaTransport || text(moduleContext?.transportMode).toLowerCase() || null,
+            sentViaPhoneNumber: moduleAttributionMeta?.sentViaPhoneNumber || text(moduleContext?.phoneNumber || moduleContext?.phone) || null,
+            sentViaChannelType: moduleAttributionMeta?.sentViaChannelType || text(moduleContext?.channelType).toLowerCase() || null
+        };
+        const sentMessage = await waClient.sendMessage(cleanChatId, cleanBody, {
+            metadata: {
+                tenantId: cleanTenantId,
+                chatId: cleanChatId,
+                autoMessage: true,
+                autoMessageType: cleanType,
+                scheduleId: cleanScheduleId,
+                automationSource: `schedule_${cleanType}`,
+                agentMeta
+            }
+        });
+
+        try {
+            await auditLogService?.writeAuditLog?.(cleanTenantId, {
+                userId: 'system',
+                userEmail: null,
+                role: 'admin',
+                action: 'chat.auto_message.sent',
+                resourceType: 'chat',
+                resourceId: cleanChatId,
+                source: 'socket',
+                payload: {
+                    type: cleanType,
+                    scheduleId: cleanScheduleId,
+                    moduleId: scopeModuleId || null,
+                    messageId: getSerializedMessageId(sentMessage) || null
+                }
+            });
+        } catch (auditError) {
+            console.warn('[WA][AutoMessage] audit warning:', String(auditError?.message || auditError));
+        }
+
+        return sentMessage || null;
+    };
+
+    const maybeSendScheduleAutoMessages = async ({
+        tenantId = '',
+        chatId = '',
+        scopeModuleId = '',
+        moduleContext = null
+    } = {}) => {
+        const scheduleId = resolveScheduleIdFromModule(moduleContext);
+        if (!scheduleId || !tenantScheduleService?.getSchedule || !tenantScheduleService?.isWithinSchedule) return;
+
+        const schedule = await tenantScheduleService.getSchedule(tenantId, scheduleId);
+        if (!schedule || schedule.isActive === false) return;
+
+        const scheduleState = await tenantScheduleService.isWithinSchedule(tenantId, scheduleId, new Date());
+        const isOpen = scheduleState?.open === true;
+        const recentInboundCount = await getRecentInboundCount({ tenantId, chatId, scopeModuleId });
+        const isFirstMessage = recentInboundCount === 1;
+        const candidates = [];
+
+        if (isOpen && schedule.welcomeEnabled && text(schedule.welcomeMessage) && isFirstMessage) {
+            candidates.push({ type: 'welcome', body: schedule.welcomeMessage });
+        }
+        if (!isOpen && schedule.awayEnabled && text(schedule.awayMessage)) {
+            candidates.push({ type: 'away', body: schedule.awayMessage });
+        }
+
+        for (const candidate of candidates) {
+            const alreadySent = await hasRecentAutoMessage({
+                tenantId,
+                chatId,
+                scopeModuleId,
+                type: candidate.type
+            });
+            if (alreadySent) continue;
+            await sendScheduleAutoMessage({
+                tenantId,
+                chatId,
+                moduleContext,
+                scheduleId,
+                body: candidate.body,
+                type: candidate.type
+            });
+        }
     };
 
     const findRecentCampaignOrigin = async (tenantId = '', chatId = '') => {
@@ -866,6 +1054,17 @@ function createSocketWaEventsBridgeService({
                     }
 
                     if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase) {
+                        try {
+                            await maybeSendScheduleAutoMessages({
+                                tenantId: historyTenantId,
+                                chatId: relatedChatIdBase,
+                                scopeModuleId: cleanScopeModuleId,
+                                moduleContext: effectiveModuleContext
+                            });
+                        } catch (autoMessageError) {
+                            console.warn('[WA][AutoMessage] skipped:', String(autoMessageError?.message || autoMessageError));
+                        }
+
                         if (optionChoicePayload) {
                             emitToRuntimeContext('quote_option_chosen', {
                                 ...optionChoicePayload,
@@ -1077,7 +1276,7 @@ function createSocketWaEventsBridgeService({
                 try {
                     const sentByRole = String(agentMeta?.sentByRole || '').trim().toLowerCase();
                     const sentByUserId = String(agentMeta?.sentByUserId || '').trim().toLowerCase();
-                    const isPattyOrAutomation = sentByRole === 'assistant'
+                    const isPattyOrAutomation = ['assistant', 'automation'].includes(sentByRole)
                         || ['patty', 'automation'].includes(sentByUserId)
                         || Boolean(agentMeta?.patty)
                         || String(agentMeta?.automationSource || '').trim();
@@ -1129,11 +1328,15 @@ function createSocketWaEventsBridgeService({
                 sentViaModuleId: moduleAttributionMeta?.sentViaModuleId || null,
                 sentViaModuleName: moduleAttributionMeta?.sentViaModuleName || null,
                 sentViaModuleImageUrl: moduleAttributionMeta?.sentViaModuleImageUrl || null,
-                sentViaTransport: moduleAttributionMeta?.sentViaTransport || null,
-                sentViaPhoneNumber: moduleAttributionMeta?.sentViaPhoneNumber || null,
-                sentViaChannelType: moduleAttributionMeta?.sentViaChannelType || null,
-                ...(agentMeta || {})
-            });
+	                sentViaTransport: moduleAttributionMeta?.sentViaTransport || null,
+	                sentViaPhoneNumber: moduleAttributionMeta?.sentViaPhoneNumber || null,
+	                sentViaChannelType: moduleAttributionMeta?.sentViaChannelType || null,
+	                autoMessage: rawMetadata?.autoMessage === true,
+	                autoMessageType: String(rawMetadata?.autoMessageType || '').trim() || null,
+	                scheduleId: String(rawMetadata?.scheduleId || '').trim() || null,
+	                automationSource: String(rawMetadata?.automationSource || '').trim() || null,
+	                ...(agentMeta || {})
+	            });
 
             if (messageId) {
                 emitMessageEditability(messageId, scopedChatId || relatedChatIdBase);

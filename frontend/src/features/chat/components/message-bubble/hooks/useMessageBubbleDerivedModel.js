@@ -214,6 +214,8 @@ export default function useMessageBubbleDerivedModel({
         const sentByName = String(safeMsg?.sentByName || safeMsg?.sentByEmail || '').trim();
         const sentByRole = String(safeMsg?.sentByRole || '').trim();
         const sentViaModuleName = String(safeMsg?.sentViaModuleName || '').trim();
+        const isAutoMessage = safeMsg?.autoMessage === true || metadata?.autoMessage === true;
+        const autoMessageType = String(safeMsg?.autoMessageType || metadata?.autoMessageType || '').trim().toLowerCase();
         const safeSentByName = sentByName.replace(/\s+/g, ' ').trim();
         const roleLabelMap = {
             superadmin: 'Superadmin',
@@ -295,6 +297,8 @@ export default function useMessageBubbleDerivedModel({
             safeRoleLabel,
             safeSentViaLabel,
             showOutgoingAttribution,
+            isAutoMessage,
+            autoMessageType,
             canEditMessage,
             canReplyMessage,
             canForwardMessage

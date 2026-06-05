@@ -9175,6 +9175,26 @@ body {
   color: color-mix(in srgb, var(--saas-text-primary) 62%, white 38%);
 }
 
+.message-outgoing-attribution__auto {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--chat-success-text) 28%, transparent);
+  background: color-mix(in srgb, var(--chat-success-bg) 72%, white 28%);
+  color: color-mix(in srgb, var(--chat-success-text) 86%, black 14%);
+  font-size: 0.64rem;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.message-outgoing-attribution__auto.is-away {
+  border-color: color-mix(in srgb, var(--chat-warning-text) 35%, transparent);
+  background: color-mix(in srgb, var(--chat-warning-bg) 78%, white 22%);
+  color: color-mix(in srgb, var(--chat-warning-text) 88%, black 12%);
+}
+
 .chat-window-expired-banner,
 .business-assignment-lock-hint {
   background: linear-gradient(

@@ -849,6 +849,10 @@ class SocketManager {
                     sentViaTransport: moduleAttributionMeta?.sentViaTransport || persistedAgentMeta?.sentViaTransport || null,
                     sentViaPhoneNumber: moduleAttributionMeta?.sentViaPhoneNumber || historyModulePhone || null,
                     sentViaChannelType: moduleAttributionMeta?.sentViaChannelType || null,
+                    autoMessage: rawMetadata?.autoMessage === true,
+                    autoMessageType: String(rawMetadata?.autoMessageType || '').trim() || null,
+                    scheduleId: String(rawMetadata?.scheduleId || '').trim() || null,
+                    automationSource: String(rawMetadata?.automationSource || '').trim() || null,
                     ...(persistedAgentMeta || {})
                 },
                 chat: {
@@ -2093,7 +2097,9 @@ class SocketManager {
             extractMessageFileMeta,
             extractQuotedMessageInfo,
             extractOrderInfo,
-            extractLocationInfo
+            extractLocationInfo,
+            tenantScheduleService,
+            auditLogService
         });
         waEventsBridge.registerWaProviderEvents();
         waClient.on('template_webhook_event', async (event = {}) => {

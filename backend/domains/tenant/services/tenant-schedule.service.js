@@ -28,12 +28,17 @@ const DEFAULT_WEEKLY_HOURS = Object.freeze({
     sat: [{ start: '09:00', end: '13:00' }],
     sun: []
 });
+const MAX_AUTO_MESSAGE_LENGTH = 1000;
 
 let schemaReady = false;
 let schemaPromise = null;
 
 function text(value = '') {
     return String(value ?? '').trim();
+}
+
+function truncateAutoMessage(value = '') {
+    return text(value).slice(0, MAX_AUTO_MESSAGE_LENGTH);
 }
 
 function normalizeScheduleId(value = '') {
@@ -128,6 +133,10 @@ function normalizeRow(row = {}) {
         weeklyHours: normalizeWeeklyHours(row.weekly_hours || row.weeklyHours),
         holidays: normalizeHolidays(row.holidays),
         customDays: normalizeCustomDays(row.custom_days || row.customDays),
+        welcomeMessage: truncateAutoMessage(row.welcome_message || row.welcomeMessage),
+        awayMessage: truncateAutoMessage(row.away_message || row.awayMessage),
+        welcomeEnabled: row.welcome_enabled === true || row.welcomeEnabled === true,
+        awayEnabled: row.away_enabled === true || row.awayEnabled === true,
         isActive: row.is_active !== false && row.isActive !== false,
         createdAt: row.created_at || row.createdAt || null,
         updatedAt: row.updated_at || row.updatedAt || null
@@ -141,6 +150,10 @@ function sanitizePayload(payload = {}) {
         weeklyHours: normalizeWeeklyHours(payload.weeklyHours || payload.weekly_hours || DEFAULT_WEEKLY_HOURS),
         holidays: normalizeHolidays(payload.holidays),
         customDays: normalizeCustomDays(payload.customDays || payload.custom_days),
+        welcomeMessage: truncateAutoMessage(payload.welcomeMessage || payload.welcome_message),
+        awayMessage: truncateAutoMessage(payload.awayMessage || payload.away_message),
+        welcomeEnabled: payload.welcomeEnabled === true || payload.welcome_enabled === true,
+        awayEnabled: payload.awayEnabled === true || payload.away_enabled === true,
         isActive: payload.isActive !== false && payload.is_active !== false
     };
 }
@@ -157,12 +170,21 @@ async function ensurePostgresSchema() {
           weekly_hours JSONB NOT NULL DEFAULT '{}',
           holidays JSONB NOT NULL DEFAULT '[]',
           custom_days JSONB NOT NULL DEFAULT '[]',
+          welcome_message TEXT,
+          away_message TEXT,
+          welcome_enabled BOOLEAN DEFAULT FALSE,
+          away_enabled BOOLEAN DEFAULT FALSE,
           is_active BOOLEAN DEFAULT true,
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
         );
         CREATE INDEX IF NOT EXISTS idx_tenant_schedules_tenant
           ON tenant_schedules(tenant_id, is_active);
+        ALTER TABLE tenant_schedules
+          ADD COLUMN IF NOT EXISTS welcome_message TEXT,
+          ADD COLUMN IF NOT EXISTS away_message TEXT,
+          ADD COLUMN IF NOT EXISTS welcome_enabled BOOLEAN DEFAULT FALSE,
+          ADD COLUMN IF NOT EXISTS away_enabled BOOLEAN DEFAULT FALSE;
     `).then(() => {
         schemaReady = true;
     }).finally(() => {
@@ -194,7 +216,8 @@ async function listSchedules(tenantId) {
     await ensurePostgresSchema();
     const { rows } = await queryPostgres(
         `SELECT schedule_id, tenant_id, name, timezone, weekly_hours, holidays,
-                custom_days, is_active, created_at, updated_at
+                custom_days, welcome_message, away_message, welcome_enabled,
+                away_enabled, is_active, created_at, updated_at
            FROM tenant_schedules
           WHERE tenant_id = $1
           ORDER BY is_active DESC, name ASC`,
@@ -219,7 +242,8 @@ async function getSchedule(tenantId, scheduleId) {
     await ensurePostgresSchema();
     const { rows } = await queryPostgres(
         `SELECT schedule_id, tenant_id, name, timezone, weekly_hours, holidays,
-                custom_days, is_active, created_at, updated_at
+                custom_days, welcome_message, away_message, welcome_enabled,
+                away_enabled, is_active, created_at, updated_at
            FROM tenant_schedules
           WHERE tenant_id = $1 AND schedule_id = $2
           LIMIT 1`,
@@ -243,10 +267,12 @@ async function createSchedule(tenantId, data = {}) {
     await ensurePostgresSchema();
     const { rows } = await queryPostgres(
         `INSERT INTO tenant_schedules
-            (schedule_id, tenant_id, name, timezone, weekly_hours, holidays, custom_days, is_active)
-         VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8)
+            (schedule_id, tenant_id, name, timezone, weekly_hours, holidays, custom_days,
+             welcome_message, away_message, welcome_enabled, away_enabled, is_active)
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9, $10, $11, $12)
          RETURNING schedule_id, tenant_id, name, timezone, weekly_hours, holidays,
-                   custom_days, is_active, created_at, updated_at`,
+                   custom_days, welcome_message, away_message, welcome_enabled,
+                   away_enabled, is_active, created_at, updated_at`,
         [
             scheduleId,
             cleanTenantId,
@@ -255,6 +281,10 @@ async function createSchedule(tenantId, data = {}) {
             JSON.stringify(clean.weeklyHours),
             JSON.stringify(clean.holidays),
             JSON.stringify(clean.customDays),
+            clean.welcomeMessage || null,
+            clean.awayMessage || null,
+            clean.welcomeEnabled,
+            clean.awayEnabled,
             clean.isActive
         ]
     );
@@ -283,11 +313,16 @@ async function updateSchedule(tenantId, scheduleId, data = {}) {
                 weekly_hours = $5::jsonb,
                 holidays = $6::jsonb,
                 custom_days = $7::jsonb,
-                is_active = $8,
+                welcome_message = $8,
+                away_message = $9,
+                welcome_enabled = $10,
+                away_enabled = $11,
+                is_active = $12,
                 updated_at = NOW()
           WHERE tenant_id = $1 AND schedule_id = $2
           RETURNING schedule_id, tenant_id, name, timezone, weekly_hours, holidays,
-                    custom_days, is_active, created_at, updated_at`,
+                    custom_days, welcome_message, away_message, welcome_enabled,
+                    away_enabled, is_active, created_at, updated_at`,
         [
             cleanTenantId,
             cleanScheduleId,
@@ -296,6 +331,10 @@ async function updateSchedule(tenantId, scheduleId, data = {}) {
             JSON.stringify(clean.weeklyHours),
             JSON.stringify(clean.holidays),
             JSON.stringify(clean.customDays),
+            clean.welcomeMessage || null,
+            clean.awayMessage || null,
+            clean.welcomeEnabled,
+            clean.awayEnabled,
             clean.isActive
         ]
     );

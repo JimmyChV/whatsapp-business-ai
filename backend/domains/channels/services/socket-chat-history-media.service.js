@@ -96,6 +96,10 @@ function createSocketChatHistoryMediaService({
             sentViaModuleImageUrl: String(metadata?.sentViaModuleImageUrl || '').trim() || null,
             sentViaTransport: String(metadata?.sentViaTransport || '').trim() || null,
             sentViaChannelType: String(metadata?.sentViaChannelType || '').trim() || null,
+            autoMessage: metadata?.autoMessage === true,
+            autoMessageType: String(metadata?.autoMessageType || '').trim() || null,
+            scheduleId: String(metadata?.scheduleId || '').trim() || null,
+            automationSource: String(metadata?.automationSource || '').trim() || null,
             ack: Number.isFinite(Number(row?.ack)) ? Number(row.ack) : 0,
             edited: Boolean(row?.edited),
             editedAt: Number(row?.editedAtUnix || 0) || null,
@@ -449,7 +453,11 @@ function createSocketChatHistoryMediaService({
                         sentViaModuleImageUrl: String(agentMeta?.sentViaModuleImageUrl || '').trim() || null,
                         sentViaTransport: String(agentMeta?.sentViaTransport || '').trim().toLowerCase() || null,
                         sentViaPhoneNumber: String(agentMeta?.sentViaPhoneNumber || persistedEntry?.waPhoneNumber || '').trim() || null,
-                        sentViaChannelType: String(agentMeta?.sentViaChannelType || '').trim().toLowerCase() || null
+                        sentViaChannelType: String(agentMeta?.sentViaChannelType || '').trim().toLowerCase() || null,
+                        autoMessage: persistedMeta?.autoMessage === true,
+                        autoMessageType: String(persistedMeta?.autoMessageType || '').trim() || null,
+                        scheduleId: String(persistedMeta?.scheduleId || '').trim() || null,
+                        automationSource: String(persistedMeta?.automationSource || '').trim() || null
                     });
                 }));
 

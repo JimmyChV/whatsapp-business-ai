@@ -113,6 +113,8 @@ const MessageBubble = ({
         safeRoleLabel,
         safeSentViaLabel,
         showOutgoingAttribution,
+        isAutoMessage,
+        autoMessageType,
         canEditMessage,
         canReplyMessage: canReplyMessageBase,
         canForwardMessage: canForwardMessageBase
@@ -1175,6 +1177,14 @@ const MessageBubble = ({
                         {safeSentViaLabel && (
                             <span className="message-outgoing-attribution__module">
                                 {' - '}{safeSentViaLabel}
+                            </span>
+                        )}
+                        {isAutoMessage && (
+                            <span
+                                className={`message-outgoing-attribution__auto ${autoMessageType === 'away' ? 'is-away' : 'is-welcome'}`}
+                                title={autoMessageType === 'away' ? 'Mensaje automatico fuera de horario' : 'Mensaje automatico de bienvenida'}
+                            >
+                                Auto
                             </span>
                         )}
                     </div>

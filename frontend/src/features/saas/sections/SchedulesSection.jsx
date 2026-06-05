@@ -52,8 +52,13 @@ const EMPTY_FORM = {
     weeklyHours: DEFAULT_WEEKLY_HOURS,
     holidays: [],
     customDays: [],
+    welcomeMessage: '',
+    awayMessage: '',
+    welcomeEnabled: false,
+    awayEnabled: false,
     isActive: true
 };
+const MAX_AUTO_MESSAGE_LENGTH = 1000;
 
 function text(value = '') {
     return String(value ?? '').trim();
@@ -95,6 +100,10 @@ function normalizeForm(schedule = null) {
                 ? [{ start: text(item.hours[0]?.start) || '09:00', end: text(item.hours[0]?.end) || '18:00' }]
                 : [{ start: '09:00', end: '18:00' }]
         })) : [],
+        welcomeMessage: text(schedule.welcomeMessage).slice(0, MAX_AUTO_MESSAGE_LENGTH),
+        awayMessage: text(schedule.awayMessage).slice(0, MAX_AUTO_MESSAGE_LENGTH),
+        welcomeEnabled: schedule.welcomeEnabled === true,
+        awayEnabled: schedule.awayEnabled === true,
         isActive: schedule.isActive !== false
     };
 }
@@ -236,6 +245,10 @@ function SchedulesSection(props = {}) {
                 weeklyHours: form.weeklyHours,
                 holidays: form.holidays,
                 customDays: form.customDays,
+                welcomeMessage: text(form.welcomeMessage).slice(0, MAX_AUTO_MESSAGE_LENGTH),
+                awayMessage: text(form.awayMessage).slice(0, MAX_AUTO_MESSAGE_LENGTH),
+                welcomeEnabled: form.welcomeEnabled === true,
+                awayEnabled: form.awayEnabled === true,
                 isActive: form.isActive !== false
             };
             if (!text(payload.name)) throw new Error('Ingresa un nombre para el horario.');
@@ -348,6 +361,21 @@ function SchedulesSection(props = {}) {
                                 <span>{formatCustomDay(item)}</span>
                             </div>
                         )) : <div className="saas-admin-empty-inline">Sin dias especiales configurados.</div>}
+                    </div>
+                </div>
+                <div className="saas-admin-related-block">
+                    <h4>Mensajes automaticos</h4>
+                    <div className="saas-admin-detail-grid">
+                        <div className="saas-admin-detail-field">
+                            <span>BIENVENIDA</span>
+                            <strong>{selectedSchedule.welcomeEnabled ? 'Activada' : 'Desactivada'}</strong>
+                            <small>{selectedSchedule.welcomeMessage || 'Sin mensaje configurado.'}</small>
+                        </div>
+                        <div className="saas-admin-detail-field">
+                            <span>AUSENCIA</span>
+                            <strong>{selectedSchedule.awayEnabled ? 'Activada' : 'Desactivada'}</strong>
+                            <small>{selectedSchedule.awayMessage || 'Sin mensaje configurado.'}</small>
+                        </div>
                     </div>
                 </div>
             </>
@@ -486,6 +514,59 @@ function SchedulesSection(props = {}) {
                     />
                     <span>Horario activo</span>
                 </label>
+            </div>
+            <div className="saas-admin-related-block">
+                <h4>Mensajes automaticos</h4>
+                <div className="saas-admin-related-list">
+                    <div className="saas-admin-related-row" role="group" aria-label="Mensaje de bienvenida">
+                        <div className="saas-admin-field" style={{ width: '100%' }}>
+                            <label className="saas-admin-module-toggle">
+                                <input
+                                    type="checkbox"
+                                    checked={form.welcomeEnabled === true}
+                                    disabled={busy}
+                                    onChange={(event) => setForm((prev) => ({ ...prev, welcomeEnabled: event.target.checked }))}
+                                />
+                                <span>Mensaje de bienvenida</span>
+                            </label>
+                            <small>Se envia cuando alguien escribe por primera vez durante el horario de atencion.</small>
+                            <textarea
+                                className="saas-input"
+                                rows={4}
+                                maxLength={MAX_AUTO_MESSAGE_LENGTH}
+                                value={form.welcomeMessage}
+                                placeholder="Hola, gracias por escribirnos a Lavitat. En breve te atendemos..."
+                                disabled={busy}
+                                onChange={(event) => setForm((prev) => ({ ...prev, welcomeMessage: event.target.value.slice(0, MAX_AUTO_MESSAGE_LENGTH) }))}
+                            />
+                            <small>{text(form.welcomeMessage).length}/{MAX_AUTO_MESSAGE_LENGTH}</small>
+                        </div>
+                    </div>
+                    <div className="saas-admin-related-row" role="group" aria-label="Mensaje de ausencia">
+                        <div className="saas-admin-field" style={{ width: '100%' }}>
+                            <label className="saas-admin-module-toggle">
+                                <input
+                                    type="checkbox"
+                                    checked={form.awayEnabled === true}
+                                    disabled={busy}
+                                    onChange={(event) => setForm((prev) => ({ ...prev, awayEnabled: event.target.checked }))}
+                                />
+                                <span>Mensaje de ausencia</span>
+                            </label>
+                            <small>Se envia automaticamente cuando alguien escribe fuera del horario de atencion.</small>
+                            <textarea
+                                className="saas-input"
+                                rows={4}
+                                maxLength={MAX_AUTO_MESSAGE_LENGTH}
+                                value={form.awayMessage}
+                                placeholder="Gracias por escribirnos. Nuestro horario es de lunes a viernes de 9am a 7pm. Te responderemos a la brevedad..."
+                                disabled={busy}
+                                onChange={(event) => setForm((prev) => ({ ...prev, awayMessage: event.target.value.slice(0, MAX_AUTO_MESSAGE_LENGTH) }))}
+                            />
+                            <small>{text(form.awayMessage).length}/{MAX_AUTO_MESSAGE_LENGTH}</small>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div className="saas-admin-form-row saas-admin-form-row--actions">
                 <button type="button" disabled={busy || !text(form.name)} onClick={saveSchedule}>
