@@ -8,7 +8,10 @@ import {
     replaceMessageByClientTempId,
     upsertMessageById
 } from '../helpers/messageCache.helpers';
-import { saveMessages as saveCachedMessages } from '../services/chatLocalCache.service';
+import {
+    cleanStaleWindowData,
+    saveMessages as saveCachedMessages
+} from '../services/chatLocalCache.service';
 import { mergeTemplateMessageContent } from '../helpers/templateMessages.helpers';
 
 function toTitleCaseChatText(value = '') {
@@ -548,14 +551,44 @@ export default function useSocketChatConversationEvents({
             const pageOffset = Number.isFinite(Number(page.offset)) ? Number(page.offset) : 0;
             const total = Number.isFinite(Number(page.total)) ? Number(page.total) : hydrated.length;
             const hasMore = Boolean(page.hasMore);
+            if (pageOffset <= 0) {
+                void cleanStaleWindowData();
+            }
+
+            const applyFreshWindowFields = (chat = {}) => {
+                const freshChat = hydrated.find((candidate) => (
+                    String(candidate?.id || '') === String(chat?.id || '')
+                    || chatIdentityKey(candidate) === chatIdentityKey(chat)
+                ));
+                if (!freshChat) return chat;
+                const hasFreshWindowOpen = Object.prototype.hasOwnProperty.call(freshChat || {}, 'windowOpen');
+                const hasFreshWindowExpiresAt = Object.prototype.hasOwnProperty.call(freshChat || {}, 'windowExpiresAt');
+                const hasFreshLaboralMinutes = Object.prototype.hasOwnProperty.call(freshChat || {}, 'laboralMinutesRemaining');
+                const hasFreshMeasuredAt = Object.prototype.hasOwnProperty.call(freshChat || {}, 'laboralWindowMeasuredAt');
+                const hasFreshLastCustomer = Object.prototype.hasOwnProperty.call(freshChat || {}, 'lastCustomerMessageAt');
+                return {
+                    ...chat,
+                    windowOpen: hasFreshWindowOpen ? Boolean(freshChat.windowOpen) : chat.windowOpen,
+                    windowExpiresAt: hasFreshWindowExpiresAt ? (String(freshChat.windowExpiresAt || '').trim() || null) : (chat.windowExpiresAt || null),
+                    laboralMinutesRemaining: hasFreshLaboralMinutes ? freshChat.laboralMinutesRemaining : chat.laboralMinutesRemaining,
+                    laboralWindowMeasuredAt: hasFreshMeasuredAt ? (freshChat.laboralWindowMeasuredAt || null) : (chat.laboralWindowMeasuredAt || null),
+                    lastCustomerMessageAt: hasFreshLastCustomer ? (freshChat.lastCustomerMessageAt || null) : (chat.lastCustomerMessageAt || null),
+                    lastMessageAt: freshChat.lastMessageAt || chat.lastMessageAt || null,
+                    unreadCount: Number.isFinite(Number(freshChat.unreadCount)) ? Number(freshChat.unreadCount) : (Number(chat.unreadCount || 0) || 0)
+                };
+            };
 
             setChats((prev) => {
                 if (pageOffset <= 0) {
                     const cachedVisibleChats = (Array.isArray(prev) ? prev : [])
                         .filter((chat) => chatMatchesQuery(chat, chatSearchRef.current) && chatMatchesFilters(chat, chatFiltersRef.current));
-                    return dedupeChats([...cachedVisibleChats, ...hydrated]).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                    return dedupeChats([...cachedVisibleChats, ...hydrated])
+                        .map(applyFreshWindowFields)
+                        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
                 }
-                return dedupeChats([...prev, ...hydrated]).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                return dedupeChats([...prev, ...hydrated])
+                    .map(applyFreshWindowFields)
+                    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
             });
             if (pageOffset <= 0) {
                 setChatsLoaded(true);
@@ -876,6 +909,10 @@ export default function useSocketChatConversationEvents({
             }
             const nextWindowOpen = Boolean(data?.windowOpen);
             const nextWindowExpiresAt = String(data?.windowExpiresAt || '').trim() || null;
+            const nextLaboralMinutesRemaining = Number.isFinite(Number(data?.laboralMinutesRemaining))
+                ? Math.max(0, Math.floor(Number(data.laboralMinutesRemaining)))
+                : null;
+            const nextLaboralWindowMeasuredAt = String(data?.laboralWindowMeasuredAt || '').trim() || null;
             const hasOriginPayload = Object.prototype.hasOwnProperty.call(data || {}, 'origin');
             const nextOrigin = hasOriginPayload && data?.origin && typeof data.origin === 'object'
                 ? data.origin
@@ -909,6 +946,8 @@ export default function useSocketChatConversationEvents({
                             : chat?.lastMessageChannelType,
                         windowOpen: nextWindowOpen,
                         windowExpiresAt: nextWindowExpiresAt,
+                        laboralMinutesRemaining: nextLaboralMinutesRemaining,
+                        laboralWindowMeasuredAt: nextLaboralWindowMeasuredAt,
                         origin: hasOriginPayload ? nextOrigin : chat?.origin
                     }
                     : chat

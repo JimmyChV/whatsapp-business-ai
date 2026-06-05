@@ -1268,7 +1268,7 @@ const Sidebar = ({
                                             {chatWindowStatus && (
                                                 <span
                                                     className={`chat-window-badge chat-window-badge--${chatWindowStatus.status}`.trim()}
-                                                    title={`Ventana 24h: ${chatWindowStatus.label} laborales restantes`}
+                                                    title={chatWindowStatus.title || `Ventana 24h: ${chatWindowStatus.label} laborales restantes`}
                                                 >
                                                     <Clock3 size={11} />
                                                     <span>{chatWindowStatus.label}</span>

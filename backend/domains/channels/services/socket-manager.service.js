@@ -344,7 +344,8 @@ class SocketManager {
             getOutgoingAgentMeta,
             mergeAgentMeta,
             getSortedVisibleChats: this.getSortedVisibleChats.bind(this),
-            chatOriginService
+            chatOriginService,
+            tenantScheduleService
         });
         this.chatStateLabelsService = createSocketChatStateLabelsService({
             messageHistoryService,

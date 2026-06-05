@@ -5950,11 +5950,23 @@ body {
   color: var(--chat-warning-text);
 }
 
+.chat-window-badge--outside-hours {
+  background: var(--chat-warning-bg);
+  border-color: var(--chat-warning-border);
+  color: var(--chat-warning-text-strong);
+}
+
 .chat-window-badge--critical {
   background: var(--chat-danger-soft);
   border-color: var(--chat-danger-border);
   color: var(--chat-danger-text);
   animation: pulse 1.8s ease-in-out infinite;
+}
+
+.chat-window-badge--expired {
+  background: var(--chat-danger-soft);
+  border-color: var(--chat-danger-border);
+  color: var(--chat-danger-text);
 }
 
 .chat-ad-origin-badge {

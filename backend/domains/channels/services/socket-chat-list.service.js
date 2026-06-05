@@ -60,6 +60,54 @@ function createSocketChatListService({
         return schedule || null;
     };
 
+    const persistWindowMetadataBatch = async (tenantId = 'default', items = []) => {
+        const resolvedTenantId = String(tenantId || 'default').trim() || 'default';
+        const payload = (Array.isArray(items) ? items : [])
+            .map((item) => ({
+                chat_id: String(item?.baseChatId || resolveBaseChatIdFromSummary(item) || '').trim(),
+                window_expires_at: item?.windowExpiresAt || null,
+                window_open: typeof item?.windowOpen === 'boolean' ? item.windowOpen : false,
+                last_customer_message_at: item?.lastCustomerMessageAt || null,
+                laboral_minutes_remaining: Number.isFinite(Number(item?.laboralMinutesRemaining))
+                    ? Math.max(0, Math.floor(Number(item.laboralMinutesRemaining)))
+                    : null,
+                laboral_window_measured_at: item?.laboralWindowMeasuredAt || null
+            }))
+            .filter((item) => item.chat_id);
+        if (!payload.length) return;
+
+        try {
+            await queryPostgres(
+                `WITH incoming AS (
+                    SELECT *
+                      FROM jsonb_to_recordset($2::jsonb) AS x(
+                        chat_id text,
+                        window_expires_at text,
+                        window_open boolean,
+                        last_customer_message_at text,
+                        laboral_minutes_remaining integer,
+                        laboral_window_measured_at text
+                      )
+                 )
+                 UPDATE tenant_chats c
+                    SET metadata = COALESCE(c.metadata, '{}'::jsonb) || jsonb_build_object(
+                            'windowExpiresAt', incoming.window_expires_at,
+                            'windowOpen', incoming.window_open,
+                            'lastCustomerMessageAt', incoming.last_customer_message_at,
+                            'laboralMinutesRemaining', incoming.laboral_minutes_remaining,
+                            'laboralWindowMeasuredAt', incoming.laboral_window_measured_at
+                        ),
+                        updated_at = NOW()
+                   FROM incoming
+                  WHERE c.tenant_id = $1
+                    AND c.chat_id = incoming.chat_id`,
+                [resolvedTenantId, JSON.stringify(payload)]
+            );
+        } catch (_) {
+            // Window metadata is an optimization for cache recovery; socket payloads remain authoritative.
+        }
+    };
+
     const resolveLastInboundMessageAt = async ({
         tenantId = 'default',
         chatId = ''
@@ -128,6 +176,9 @@ function createSocketChatListService({
             : null;
         const activeSchedule = lastCustomerMessageAt ? await getActiveTenantSchedule(resolvedTenantId) : null;
         const laboralWindowMeasuredAt = hasValidLastCustomerDate ? new Date().toISOString() : null;
+        const windowOpen = hasValidLastCustomerDate
+            ? lastCustomerDate.getTime() + DAY_WINDOW_MS > Date.now()
+            : false;
         const laboralMinutesRemaining = hasValidLastCustomerDate
             ? (typeof tenantScheduleService?.getRemainingLaboralMinutes === 'function'
                 ? tenantScheduleService.getRemainingLaboralMinutes(activeSchedule, windowExpiresAt, laboralWindowMeasuredAt)
@@ -139,6 +190,7 @@ function createSocketChatListService({
             baseChatId: baseChatId || item?.baseChatId || null,
             scopeModuleId: resolvedScopeModuleId || item?.scopeModuleId || null,
             lastCustomerMessageAt,
+            windowOpen,
             windowExpiresAt,
             laboralMinutesRemaining,
             laboralWindowMeasuredAt
@@ -265,6 +317,9 @@ function createSocketChatListService({
             const windowExpiresAt = hasValidLastCustomerDate
                 ? new Date(lastCustomerDate.getTime() + DAY_WINDOW_MS).toISOString()
                 : null;
+            const windowOpen = hasValidLastCustomerDate
+                ? lastCustomerDate.getTime() + DAY_WINDOW_MS > Date.now()
+                : false;
             const laboralMinutesRemaining = hasValidLastCustomerDate
                 ? (typeof tenantScheduleService?.getRemainingLaboralMinutes === 'function'
                     ? tenantScheduleService.getRemainingLaboralMinutes(activeSchedule, windowExpiresAt, measuredAt)
@@ -276,6 +331,7 @@ function createSocketChatListService({
                 baseChatId: baseChatId || item?.baseChatId || null,
                 scopeModuleId: itemScopeModuleId || item?.scopeModuleId || null,
                 lastCustomerMessageAt,
+                windowOpen,
                 windowExpiresAt,
                 laboralMinutesRemaining,
                 laboralWindowMeasuredAt: hasValidLastCustomerDate ? measuredAt : null
@@ -407,6 +463,7 @@ function createSocketChatListService({
     const enrichItemsWithChatListData = async (items = [], tenantId = 'default', scopeModuleId = '') => {
         const withPersistedState = await enrichItemsWithPersistedChatState(items, tenantId);
         const withWindowData = await enrichItemsWithWindowData(withPersistedState, tenantId, scopeModuleId);
+        void persistWindowMetadataBatch(tenantId, withWindowData);
         return Promise.all(withWindowData.map((item) => enrichWithAdOrigin(item, tenantId, scopeModuleId)));
     };
 

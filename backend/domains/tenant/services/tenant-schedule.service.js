@@ -437,26 +437,49 @@ function addDaysToDateKey(dateKey = '', days = 0) {
     return `${nextYear}-${nextMonth}-${nextDay}`;
 }
 
-function getRemainingLaboralMinutes(schedule = null, windowExpiresAt = null, now = new Date()) {
+function getTimezoneOffsetMs(date = new Date(), timezone = 'America/Lima') {
+    const parts = getTimezoneParts(date, timezone);
+    const [year, month, day] = String(parts.date || '').split('-').map((part) => Number.parseInt(part, 10));
+    const hour = Math.floor(Number(parts.minutes || 0) / 60);
+    const minute = Number(parts.minutes || 0) % 60;
+    return Date.UTC(year, month - 1, day, hour, minute) - date.getTime();
+}
+
+function buildDateInTimezone(dateKey = '', minutes = 0, timezone = 'America/Lima') {
+    const safeDateKey = normalizeDate(dateKey);
+    if (!safeDateKey) return null;
+    const [year, month, day] = safeDateKey.split('-').map((part) => Number.parseInt(part, 10));
+    const safeMinutes = Math.max(0, Math.min(24 * 60, Math.floor(Number(minutes || 0))));
+    const hour = Math.floor(safeMinutes / 60);
+    const minute = safeMinutes % 60;
+    const utcMillis = Date.UTC(year, month - 1, day, hour, minute);
+    const firstGuess = new Date(utcMillis);
+    const firstOffset = getTimezoneOffsetMs(firstGuess, timezone);
+    const secondGuess = new Date(utcMillis - firstOffset);
+    const secondOffset = getTimezoneOffsetMs(secondGuess, timezone);
+    return new Date(utcMillis - secondOffset);
+}
+
+function getWorkingMinutesBetween(schedule = null, from = new Date(), to = new Date()) {
     if (!schedule || schedule?.isActive === false) return null;
-    const nowDate = now instanceof Date ? now : new Date(now);
-    const expiresDate = windowExpiresAt instanceof Date ? windowExpiresAt : new Date(windowExpiresAt);
-    if (Number.isNaN(nowDate.getTime()) || Number.isNaN(expiresDate.getTime())) return null;
-    if (expiresDate.getTime() <= nowDate.getTime()) return 0;
+    const fromDate = from instanceof Date ? from : new Date(from);
+    const toDate = to instanceof Date ? to : new Date(to);
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) return null;
+    if (toDate.getTime() <= fromDate.getTime()) return 0;
 
     const timezone = normalizeTimezone(schedule?.timezone);
-    const nowParts = getTimezoneParts(nowDate, timezone);
-    const expiresParts = getTimezoneParts(expiresDate, timezone);
+    const fromParts = getTimezoneParts(fromDate, timezone);
+    const toParts = getTimezoneParts(toDate, timezone);
     let totalMinutes = 0;
-    let currentDateKey = nowParts.date;
+    let currentDateKey = fromParts.date;
 
-    while (currentDateKey && currentDateKey <= expiresParts.date) {
+    while (currentDateKey && currentDateKey <= toParts.date) {
         const dayParts = buildCalendarParts(currentDateKey);
         if (!dayParts) break;
         const dayHours = getScheduleHoursForDate(schedule, dayParts);
         if (dayHours.length) {
-            const dayStartMinute = currentDateKey === nowParts.date ? nowParts.minutes : 0;
-            const dayEndMinute = currentDateKey === expiresParts.date ? expiresParts.minutes : (24 * 60);
+            const dayStartMinute = currentDateKey === fromParts.date ? fromParts.minutes : 0;
+            const dayEndMinute = currentDateKey === toParts.date ? toParts.minutes : (24 * 60);
             for (const range of dayHours) {
                 const start = timeToMinutes(range.start);
                 const end = timeToMinutes(range.end);
@@ -468,11 +491,58 @@ function getRemainingLaboralMinutes(schedule = null, windowExpiresAt = null, now
                 }
             }
         }
-        if (currentDateKey === expiresParts.date) break;
+        if (currentDateKey === toParts.date) break;
         currentDateKey = addDaysToDateKey(currentDateKey, 1);
     }
 
     return Math.max(0, totalMinutes);
+}
+
+function getNextLaboralClose(schedule = null, now = new Date()) {
+    if (!schedule || schedule?.isActive === false) return null;
+    const nowDate = now instanceof Date ? now : new Date(now);
+    if (Number.isNaN(nowDate.getTime())) return null;
+
+    const timezone = normalizeTimezone(schedule?.timezone);
+    const nowParts = getTimezoneParts(nowDate, timezone);
+    let currentDateKey = nowParts.date;
+
+    for (let dayOffset = 0; dayOffset < 14 && currentDateKey; dayOffset += 1) {
+        const dayParts = buildCalendarParts(currentDateKey);
+        if (!dayParts) break;
+        const dayHours = getScheduleHoursForDate(schedule, dayParts)
+            .map((range) => ({
+                start: timeToMinutes(range.start),
+                end: timeToMinutes(range.end)
+            }))
+            .filter((range) => range.start !== null && range.end !== null && range.end > range.start)
+            .sort((a, b) => a.start - b.start);
+
+        const currentMinute = currentDateKey === nowParts.date ? nowParts.minutes : -1;
+        const nextRange = dayHours.find((range) => currentMinute < range.end);
+        if (nextRange) {
+            return buildDateInTimezone(currentDateKey, nextRange.end, timezone);
+        }
+        currentDateKey = addDaysToDateKey(currentDateKey, 1);
+    }
+
+    return null;
+}
+
+function getRemainingLaboralMinutes(schedule = null, windowExpiresAt = null, now = new Date()) {
+    if (!schedule || schedule?.isActive === false) return null;
+    const nowDate = now instanceof Date ? now : new Date(now);
+    const expiresDate = windowExpiresAt instanceof Date ? windowExpiresAt : new Date(windowExpiresAt);
+    if (Number.isNaN(nowDate.getTime()) || Number.isNaN(expiresDate.getTime())) return null;
+    if (expiresDate.getTime() <= nowDate.getTime()) return 0;
+
+    const nextLaboralClose = getNextLaboralClose(schedule, nowDate);
+    if (!nextLaboralClose || Number.isNaN(nextLaboralClose.getTime())) return 0;
+
+    const effectiveDeadline = expiresDate.getTime() <= nextLaboralClose.getTime()
+        ? expiresDate
+        : nextLaboralClose;
+    return getWorkingMinutesBetween(schedule, nowDate, effectiveDeadline);
 }
 
 async function isWithinSchedule(tenantId, scheduleId, datetime = new Date()) {
@@ -513,5 +583,7 @@ module.exports = {
     updateSchedule,
     deleteSchedule,
     isWithinSchedule,
+    getWorkingMinutesBetween,
+    getNextLaboralClose,
     getRemainingLaboralMinutes
 };

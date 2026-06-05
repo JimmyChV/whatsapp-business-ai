@@ -6,6 +6,7 @@ const META_STORE = 'meta';
 const MAX_MESSAGES_PER_CHAT = 200;
 const CHAT_TTL_DAYS = 30;
 const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const STALE_WINDOW_DATA_MS = 25 * 60 * 60 * 1000;
 const LAST_CLEANUP_META_KEY = 'lastCleanup';
 let _cryptoKey = null;
 let _activeTenantId = null;
@@ -142,6 +143,12 @@ function normalizeChat(chat = {}, tenantId = _activeTenantId) {
     labels: Array.isArray(chat?.labels) ? chat.labels : [],
     unreadCount: Number(chat?.unreadCount || 0) || 0,
     lastCustomerMessageAt: chat?.lastCustomerMessageAt || null,
+    windowOpen: typeof chat?.windowOpen === 'boolean' ? chat.windowOpen : null,
+    windowExpiresAt: chat?.windowExpiresAt || null,
+    laboralMinutesRemaining: Number.isFinite(Number(chat?.laboralMinutesRemaining))
+      ? Math.max(0, Math.floor(Number(chat.laboralMinutesRemaining)))
+      : null,
+    laboralWindowMeasuredAt: chat?.laboralWindowMeasuredAt || null,
     adOrigin: chat?.adOrigin && typeof chat.adOrigin === 'object' ? chat.adOrigin : null,
     cachedAt: Date.now()
   };
@@ -324,6 +331,58 @@ async function cleanExpiredChatsIfNeeded() {
     await saveMeta(LAST_CLEANUP_META_KEY, Date.now());
   } catch (_error) {
     // Cache cleanup is best-effort and should never block app boot.
+  }
+}
+
+export async function cleanStaleWindowData(maxExpiredMs = STALE_WINDOW_DATA_MS) {
+  try {
+    const activeTenantId = await getActiveTenantId();
+    if (!activeTenantId) return 0;
+    const readDb = await openDB();
+    if (!readDb) return 0;
+    const readTx = readDb.transaction(CHAT_STORE, 'readonly');
+    const records = await requestToPromise(readTx.objectStore(CHAT_STORE).getAll());
+    readDb.close();
+
+    const now = Date.now();
+    const staleChats = [];
+
+    for (const record of (Array.isArray(records) ? records : [])) {
+      const chat = await maybeDecryptRecord(record);
+      if (!chat || String(chat?.tenantId || '').trim() !== activeTenantId) continue;
+      const expiresAt = Date.parse(String(chat?.windowExpiresAt || ''));
+      if (!Number.isFinite(expiresAt) || now - expiresAt <= maxExpiredMs) continue;
+      staleChats.push({
+        ...chat,
+        windowOpen: false,
+        windowExpiresAt: null,
+        laboralMinutesRemaining: null,
+        laboralWindowMeasuredAt: null,
+        lastCustomerMessageAt: null,
+        cachedAt: now
+      });
+    }
+
+    if (!staleChats.length) return 0;
+    const encryptedRecords = await Promise.all(staleChats.map((nextChat) => maybeEncryptRecord(nextChat, {
+      id: nextChat.id,
+      tenantId: nextChat.tenantId,
+      timestamp: nextChat.timestamp,
+      cachedAt: nextChat.cachedAt
+    })));
+    const writeDb = await openDB();
+    if (!writeDb) return 0;
+    const writeTx = writeDb.transaction(CHAT_STORE, 'readwrite');
+    const done = transactionDone(writeTx);
+    const store = writeTx.objectStore(CHAT_STORE);
+    encryptedRecords.forEach((encrypted) => {
+      store.put(encrypted);
+    });
+    await done;
+    writeDb.close();
+    return encryptedRecords.length;
+  } catch (_error) {
+    return 0;
   }
 }
 
@@ -529,6 +588,7 @@ export default {
   openDB,
   saveChats,
   getChats,
+  cleanStaleWindowData,
   saveMessages,
   getMessages,
   saveMeta,

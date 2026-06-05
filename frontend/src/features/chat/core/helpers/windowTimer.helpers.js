@@ -34,9 +34,22 @@ const resolveCurrentLaboralMinutes = (source = {}, nowMs = Date.now()) => {
 
 export function getWindowState(source = {}, nowMs = Date.now()) {
   const expiresAt = toSafeDate(source?.windowExpiresAt);
-  const isExpired = Boolean(expiresAt) && expiresAt.getTime() <= Number(nowMs || Date.now());
+  const hasWindowOpen = typeof source?.windowOpen === 'boolean';
+  const isExpired = Boolean(expiresAt) && (
+    hasWindowOpen
+      ? source.windowOpen === false
+      : expiresAt.getTime() <= Number(nowMs || Date.now())
+  );
   if (isExpired) {
-    return { status: 'expired', laborMinutesRemaining: 0, active: false, expiring: false, expired: true, label: '' };
+    return {
+      status: 'expired',
+      laborMinutesRemaining: 0,
+      active: false,
+      expiring: false,
+      expired: true,
+      label: 'Expirado',
+      title: 'Ventana 24h expirada'
+    };
   }
 
   const laborMinutesRemaining = resolveCurrentLaboralMinutes(source, nowMs);
@@ -44,7 +57,16 @@ export function getWindowState(source = {}, nowMs = Date.now()) {
     return { status: 'unknown', laborMinutesRemaining: null, active: false, expiring: false, expired: false, label: '' };
   }
   if (laborMinutesRemaining <= 0) {
-    return { status: 'inactive', laborMinutesRemaining: 0, active: false, expiring: false, expired: false, label: '' };
+    return {
+      status: 'outside-hours',
+      laborMinutesRemaining: 0,
+      active: true,
+      expiring: true,
+      expired: false,
+      outsideHours: true,
+      label: '⚠️ Vence fuera de horario',
+      title: 'La ventana sigue abierta, pero no quedan minutos laborales disponibles'
+    };
   }
 
   return {
@@ -59,18 +81,16 @@ export function getWindowState(source = {}, nowMs = Date.now()) {
 
 export function getWindowStatus(source = {}, nowMs = Date.now()) {
   const base = getWindowState(source, nowMs);
+  if (base.expired || base.outsideHours) return base;
   if (!base.active) return null;
 
   if (base.laborMinutesRemaining <= 60) {
     return { ...base, status: 'critical', label: formatLaborMinutes(base.laborMinutesRemaining) };
   }
-  if (base.laborMinutesRemaining <= 120) {
+  if (base.laborMinutesRemaining <= 240) {
     return { ...base, status: 'warning', label: formatLaborMinutes(base.laborMinutesRemaining) };
   }
-  if (base.laborMinutesRemaining <= 240) {
-    return { ...base, status: 'ok', label: formatLaborMinutes(base.laborMinutesRemaining) };
-  }
-  return { ...base, status: 'active', label: formatLaborMinutes(base.laborMinutesRemaining) };
+  return { ...base, status: 'ok', label: formatLaborMinutes(base.laborMinutesRemaining) };
 }
 
 export const WINDOW_FILTER_OPTIONS = [
