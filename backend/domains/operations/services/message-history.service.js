@@ -561,7 +561,9 @@ async function bulkMarkChatsUnread(tenantId = DEFAULT_TENANT_ID, chatIds = []) {
             const items = (Array.isArray(rows) ? rows : [])
                 .map((row) => ({
                     chatId: String(row.chat_id || '').trim(),
-                    unreadCount: Number(row.unread_count || 0) || 0
+                    unreadCount: Number(row.unread_count || 0) || 0,
+                    manuallyMarkedUnread: row?.metadata?.manuallyMarkedUnread === true,
+                    manuallyMarkedUnreadAt: String(row?.metadata?.manuallyMarkedUnreadAt || '').trim() || null
                 }))
                 .filter((entry) => entry.chatId);
             return { ok: true, driver: 'postgres', items, updated: items.length };
@@ -587,7 +589,12 @@ async function bulkMarkChatsUnread(tenantId = DEFAULT_TENANT_ID, chatIds = []) {
             },
             updatedAt: new Date().toISOString()
         };
-        items.push({ chatId, unreadCount });
+        items.push({
+            chatId,
+            unreadCount,
+            manuallyMarkedUnread: true,
+            manuallyMarkedUnreadAt: store.chats[chatId].metadata.manuallyMarkedUnreadAt
+        });
     }
     if (items.length > 0) {
         await saveStore(cleanTenant, store);
@@ -597,7 +604,7 @@ async function bulkMarkChatsUnread(tenantId = DEFAULT_TENANT_ID, chatIds = []) {
 
 async function shouldSkipMarkReadDueToManualUnread(tenantId = DEFAULT_TENANT_ID, {
     chatId,
-    windowSeconds = 30
+    windowSeconds = 300
 } = {}) {
     if (!isHistoryEnabled()) return false;
 
@@ -605,7 +612,7 @@ async function shouldSkipMarkReadDueToManualUnread(tenantId = DEFAULT_TENANT_ID,
     assertValidTenant(cleanTenant, 'message-history.shouldSkipMarkReadDueToManualUnread');
     const safeChatId = toSafeString(chatId);
     if (!safeChatId) return false;
-    const safeWindowSeconds = Math.max(1, Math.min(300, Math.floor(toSafeNumber(windowSeconds, 30) || 30)));
+    const safeWindowSeconds = Math.max(1, Math.min(300, Math.floor(toSafeNumber(windowSeconds, 300) || 300)));
 
     if (getStorageDriver() === 'postgres') {
         try {

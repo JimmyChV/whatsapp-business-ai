@@ -1501,16 +1501,21 @@ function registerOperationsHttpRoutes({
             );
             const updatedByBaseId = new Map(
                 (Array.isArray(result?.items) ? result.items : [])
-                    .map((item) => [toText(item.chatId), Number(item.unreadCount || 0) || 0])
+                    .map((item) => [toText(item.chatId), item])
             );
             const items = allowedTargets
                 .filter((target) => updatedByBaseId.has(target.baseChatId))
-                .map((target) => ({
-                    chatId: target.scopedChatId,
-                    baseChatId: target.baseChatId,
-                    scopeModuleId: target.scopeModuleId || null,
-                    unreadCount: updatedByBaseId.get(target.baseChatId) || 1
-                }));
+                .map((target) => {
+                    const updated = updatedByBaseId.get(target.baseChatId) || {};
+                    return {
+                        chatId: target.scopedChatId,
+                        baseChatId: target.baseChatId,
+                        scopeModuleId: target.scopeModuleId || null,
+                        unreadCount: Number(updated?.unreadCount || 0) || 1,
+                        manuallyMarkedUnread: updated?.manuallyMarkedUnread !== false,
+                        manuallyMarkedUnreadAt: String(updated?.manuallyMarkedUnreadAt || '').trim() || null
+                    };
+                });
 
             const payload = {
                 tenantId,

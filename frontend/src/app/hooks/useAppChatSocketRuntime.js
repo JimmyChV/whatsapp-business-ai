@@ -320,6 +320,13 @@ export default function useAppChatSocketRuntime({
   });
 
   const canMarkChatAsRead = (chatId = '') => {
+    const userRole = String(saasSession?.user?.role || saasSession?.role || '').trim().toLowerCase();
+    const isManager = Boolean(
+      saasSession?.isSuperAdmin
+      || saasSession?.user?.isSuperAdmin
+      || ['admin', 'owner', 'superadmin'].includes(userRole)
+    );
+    if (isManager) return true;
     return typeof chatAssignmentState?.isAssignedToMe === 'function'
       ? chatAssignmentState.isAssignedToMe(chatId)
       : false;

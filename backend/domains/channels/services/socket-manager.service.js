@@ -1919,6 +1919,18 @@ class SocketManager {
                         status: 'active'
                     });
 
+                    if (typeof messageHistoryService?.updateChatState === 'function') {
+                        try {
+                            await messageHistoryService.updateChatState(tenantId, {
+                                chatId: baseChatId,
+                                metadata: {
+                                    manuallyMarkedUnread: false,
+                                    manuallyMarkedUnreadClearedAt: new Date().toISOString()
+                                }
+                            });
+                        } catch (_) { }
+                    }
+
                     if (chatCommercialStatusService && typeof chatCommercialStatusService.setChatPattyMode === 'function') {
                         const pattyModeResult = await chatCommercialStatusService.setChatPattyMode(tenantId, {
                             chatId: baseChatId,
@@ -2009,12 +2021,18 @@ class SocketManager {
                             chatId: safeChatId,
                             scopeModuleId
                         });
-                        isAssignedToActor = String(assignment?.assigneeUserId || '').trim() === actorUserId;
+                        const assignedUserId = String(
+                            assignment?.assigneeUserId
+                            || assignment?.assignedUserId
+                            || assignment?.assignee_user_id
+                            || ''
+                        ).trim();
+                        isAssignedToActor = assignedUserId === actorUserId;
                     }
                     if (!isManager && !isAssignedToActor) return;
                     if (
                         typeof messageHistoryService?.shouldSkipMarkReadDueToManualUnread === 'function'
-                        && await messageHistoryService.shouldSkipMarkReadDueToManualUnread(tenantId, { chatId: safeChatId, windowSeconds: 30 })
+                        && await messageHistoryService.shouldSkipMarkReadDueToManualUnread(tenantId, { chatId: safeChatId, windowSeconds: 300 })
                     ) {
                         socket.emit('mark_chat_read_result', {
                             ok: false,

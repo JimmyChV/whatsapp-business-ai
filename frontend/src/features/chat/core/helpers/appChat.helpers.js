@@ -1,5 +1,21 @@
 import { API_URL } from '../../../../config/runtime';
 
+const MANUAL_UNREAD_PROTECTION_MS = 5 * 60 * 1000;
+
+const hasOwn = (source = {}, key = '') => Object.prototype.hasOwnProperty.call(source || {}, key);
+
+const getManualUnreadMarkedAtMs = (chat = {}) => {
+  const markedAt = Date.parse(String(chat?.manuallyMarkedUnreadAt || chat?.manuallyMarkedUnread_at || ''));
+  return Number.isFinite(markedAt) ? markedAt : null;
+};
+
+const isManualUnreadProtectionActive = (chat = {}) => {
+  if (chat?.manuallyMarkedUnread !== true) return false;
+  const markedAt = getManualUnreadMarkedAtMs(chat);
+  if (!markedAt) return true;
+  return Date.now() - markedAt <= MANUAL_UNREAD_PROTECTION_MS;
+};
+
 export const normalizeCatalogItem = (item = {}, index = 0) => {
   const safeItem = item && typeof item === 'object' ? item : {};
   const rawTitle = safeItem.title || safeItem.name || safeItem.nombre || safeItem.productName || safeItem.sku || '';
@@ -694,7 +710,24 @@ export const upsertAndSortChat = (list = [], incoming = null) => {
 
   const next = [...list];
   const previousChat = next[existingIndex] || {};
-  const mergedChat = { ...previousChat, ...incoming };
+  const previousUnread = Number(previousChat?.unreadCount || 0) || 0;
+  const incomingHasUnread = hasOwn(incoming, 'unreadCount');
+  const incomingUnread = incomingHasUnread ? (Number(incoming?.unreadCount || 0) || 0) : previousUnread;
+  const previousManualUnreadActive = isManualUnreadProtectionActive(previousChat);
+  const incomingManualUnreadActive = isManualUnreadProtectionActive(incoming);
+  const incomingExplicitlyClearsManualUnread = hasOwn(incoming, 'manuallyMarkedUnread') && incoming?.manuallyMarkedUnread === false;
+  const protectUnread = previousManualUnreadActive && !incomingExplicitlyClearsManualUnread && incomingHasUnread && incomingUnread < previousUnread;
+  const mergedChat = {
+    ...previousChat,
+    ...incoming,
+    unreadCount: protectUnread
+      ? previousUnread
+      : (incomingHasUnread ? incomingUnread : previousUnread),
+    manuallyMarkedUnread: protectUnread || incomingManualUnreadActive || (previousManualUnreadActive && !hasOwn(incoming, 'manuallyMarkedUnread')),
+    manuallyMarkedUnreadAt: protectUnread
+      ? (previousChat?.manuallyMarkedUnreadAt || null)
+      : (incoming?.manuallyMarkedUnreadAt || (previousManualUnreadActive ? previousChat?.manuallyMarkedUnreadAt : null) || null)
+  };
   next[existingIndex] = mergedChat;
   const previousTimestamp = getChatTimestampValue(previousChat);
   const nextTimestamp = getChatTimestampValue(mergedChat);

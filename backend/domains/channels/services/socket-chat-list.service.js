@@ -383,22 +383,22 @@ function createSocketChatListService({
         });
     };
 
-    const enrichItemsWithPersistedChatState = async (items = [], tenantId = 'default') => {
-        const safeItems = Array.isArray(items) ? items : [];
-        if (!safeItems.length) return [];
-
+    const loadPersistedChatStateMap = async (tenantId = 'default', chatIds = []) => {
         const resolvedTenantId = String(tenantId || 'default').trim() || 'default';
-        const baseChatIds = Array.from(new Set(
-            safeItems
-                .map((item) => resolveBaseChatIdFromSummary(item))
-                .filter(Boolean)
-        ));
-        if (!baseChatIds.length) return safeItems;
-
+        const baseChatIds = Array.from(new Set((Array.isArray(chatIds) ? chatIds : [])
+            .map((chatId) => String(chatId || '').trim())
+            .filter(Boolean)));
         const persistedByChatId = new Map();
+        if (!baseChatIds.length) return persistedByChatId;
+
         try {
             const { rows } = await queryPostgres(
-                `SELECT chat_id, unread_count, archived, pinned
+                `SELECT chat_id,
+                        unread_count,
+                        archived,
+                        pinned,
+                        COALESCE(metadata->>'manuallyMarkedUnread', 'false') = 'true' AS manually_marked_unread,
+                        metadata->>'manuallyMarkedUnreadAt' AS manually_marked_unread_at
                    FROM tenant_chats
                   WHERE tenant_id = $1
                     AND chat_id = ANY($2::text[])`,
@@ -410,12 +410,25 @@ function createSocketChatListService({
                 persistedByChatId.set(chatId, {
                     unreadCount: Number(row?.unread_count || 0) || 0,
                     archived: Boolean(row?.archived),
-                    pinned: Boolean(row?.pinned)
+                    pinned: Boolean(row?.pinned),
+                    manuallyMarkedUnread: Boolean(row?.manually_marked_unread) && Number(row?.unread_count || 0) > 0,
+                    manuallyMarkedUnreadAt: String(row?.manually_marked_unread_at || '').trim() || null
                 });
             });
         } catch (_) {
-            return safeItems;
+            return new Map();
         }
+        return persistedByChatId;
+    };
+
+    const enrichItemsWithPersistedChatState = async (items = [], tenantId = 'default') => {
+        const safeItems = Array.isArray(items) ? items : [];
+        if (!safeItems.length) return [];
+
+        const baseChatIds = safeItems
+            .map((item) => resolveBaseChatIdFromSummary(item))
+            .filter(Boolean);
+        const persistedByChatId = await loadPersistedChatStateMap(tenantId, baseChatIds);
 
         if (!persistedByChatId.size) return safeItems;
         return safeItems.map((item) => {
@@ -426,7 +439,9 @@ function createSocketChatListService({
                 ...item,
                 unreadCount: Math.max(Number(item?.unreadCount || 0) || 0, persisted.unreadCount),
                 archived: Boolean(item?.archived || persisted.archived),
-                pinned: Boolean(item?.pinned || persisted.pinned)
+                pinned: Boolean(item?.pinned || persisted.pinned),
+                manuallyMarkedUnread: Boolean(item?.manuallyMarkedUnread || persisted.manuallyMarkedUnread),
+                manuallyMarkedUnreadAt: item?.manuallyMarkedUnreadAt || persisted.manuallyMarkedUnreadAt || null
             };
         });
     };
@@ -797,18 +812,21 @@ function createSocketChatListService({
 
         const safeTenantId = String(tenantId || 'default').trim() || 'default';
         const safeScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
+        const chatIdsForPersistedState = chats
+            .map((chat) => String(chat?.id?._serialized || '').trim())
+            .filter((chatId) => Boolean(chatId) && isVisibleChatId(chatId));
+        const persistedStateByChatId = (unreadOnly || archivedMode !== 'all' || pinnedMode !== 'all')
+            ? await loadPersistedChatStateMap(safeTenantId, chatIdsForPersistedState)
+            : new Map();
         const labelTokenSetByChatId = new Map();
         if (needsLabelFiltering) {
-            const chatIds = chats
-                .map((chat) => String(chat?.id?._serialized || '').trim())
-                .filter((chatId) => Boolean(chatId) && isVisibleChatId(chatId));
             const labelsMap = await listChatLabelsMapWithScopeFallback({
                 tenantId: safeTenantId,
-                chatIds,
+                chatIds: chatIdsForPersistedState,
                 scopeModuleId: safeScopeModuleId,
                 includeInactive: false
             });
-            chatIds.forEach((chatId) => {
+            chatIdsForPersistedState.forEach((chatId) => {
                 const labels = labelsMap?.[buildLabelMapKey(chatId, safeScopeModuleId)] || [];
                 labelTokenSetByChatId.set(chatId, toLabelTokenSet(labels));
             });
@@ -819,17 +837,18 @@ function createSocketChatListService({
 
         await runWithConcurrency(chats, labelConcurrency, async (chat, idx) => {
             const chatId = String(chat?.id?._serialized || '').trim();
-            const unreadCount = Number(chat?.unreadCount || 0);
+            const persisted = persistedStateByChatId.get(chatId) || {};
+            const unreadCount = Math.max(Number(chat?.unreadCount || 0) || 0, Number(persisted?.unreadCount || 0) || 0);
             if (unreadOnly && unreadCount <= 0) return;
 
             // El filtro Guardados/No guardados depende del vínculo CRM enriquecido
             // que resolvemos después en el summary; aquí no filtramos todavía para
             // no perder chats que sí están guardados en BD pero no vienen como
             // isMyContact desde el runtime.
-            const isArchived = Boolean(chat?.archived);
+            const isArchived = Boolean(chat?.archived || persisted?.archived);
             if (archivedMode === 'archived' && !isArchived) return;
             if (archivedMode === 'active' && isArchived) return;
-            const isPinned = Boolean(chat?.pinned);
+            const isPinned = Boolean(chat?.pinned || persisted?.pinned);
             if (pinnedMode === 'pinned' && !isPinned) return;
             if (pinnedMode === 'unpinned' && isPinned) return;
 
