@@ -123,7 +123,7 @@ export default function useChatSelectionAction({
       ? canMarkChatAsRead(resolvedChatId)
       : false;
     if (readGuardCanMark) {
-      socket.emit('mark_chat_read', resolvedChatId);
+      socket.emit('mark_chat_read', { chatId: resolvedChatId, source: 'chat_open' });
     }
     socket.emit('get_contact_info', resolvedChatId);
   };

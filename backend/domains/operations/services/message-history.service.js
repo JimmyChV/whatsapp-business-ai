@@ -547,7 +547,7 @@ async function bulkMarkChatsUnread(tenantId = DEFAULT_TENANT_ID, chatIds = []) {
             await ensurePostgresMessageColumns();
             const { rows } = await queryPostgres(
                 `UPDATE tenant_chats
-                    SET unread_count = GREATEST(COALESCE(unread_count, 0), 1),
+                    SET unread_count = 0,
                         metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
                             'manuallyMarkedUnread', true,
                             'manuallyMarkedUnreadAt', NOW()::text
@@ -578,7 +578,7 @@ async function bulkMarkChatsUnread(tenantId = DEFAULT_TENANT_ID, chatIds = []) {
     for (const chatId of safeChatIds) {
         const current = store.chats[chatId];
         if (!current) continue;
-        const unreadCount = Math.max(1, Number(current.unreadCount || 0) || 0);
+        const unreadCount = 0;
         store.chats[chatId] = {
             ...current,
             unreadCount,

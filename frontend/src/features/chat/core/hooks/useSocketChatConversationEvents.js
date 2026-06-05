@@ -187,10 +187,10 @@ export default function useSocketChatConversationEvents({
         canMarkChatAsReadRef.current = canMarkChatAsRead;
     }, [canMarkChatAsRead]);
 
-    const emitMarkChatRead = (chatId = '') => {
+    const emitMarkChatRead = (chatId = '', source = 'active_chat') => {
         if (typeof canMarkChatAsReadRef.current !== 'function') return;
         if (!canMarkChatAsReadRef.current(chatId)) return;
-        socket.emit('mark_chat_read', chatId);
+        socket.emit('mark_chat_read', { chatId, source });
     };
 
     const getPendingUnreadUpdate = (chatId = '') => {
@@ -209,9 +209,14 @@ export default function useSocketChatConversationEvents({
     const applyPendingUnreadUpdate = (chat = {}) => {
         const pending = getPendingUnreadUpdate(chat?.id || chat?.chatId || chat?.baseChatId || '');
         if (!pending) return chat;
+        const pendingUnreadCount = Number.isFinite(Number(pending?.unreadCount))
+            ? Math.max(0, Number(pending.unreadCount))
+            : 0;
         return {
             ...chat,
-            unreadCount: Math.max(Number(chat?.unreadCount || 0) || 0, Number(pending?.unreadCount || 1) || 1),
+            unreadCount: pending?.manuallyMarkedUnread === true
+                ? pendingUnreadCount
+                : Math.max(Number(chat?.unreadCount || 0) || 0, pendingUnreadCount),
             manuallyMarkedUnread: true,
             manuallyMarkedUnreadAt: pending?.manuallyMarkedUnreadAt || chat?.manuallyMarkedUnreadAt || null
         };
@@ -830,7 +835,7 @@ export default function useSocketChatConversationEvents({
             const normalizedItems = (Array.isArray(items) ? items : [])
                 .map((item) => ({
                     chatId: normalizeChatScopedId(item?.chatId || item?.baseChatId || '', item?.scopeModuleId || ''),
-                    unreadCount: Math.max(1, Number(item?.unreadCount || 1) || 1),
+                    unreadCount: Math.max(0, Number.isFinite(Number(item?.unreadCount)) ? Number(item.unreadCount) : 0),
                     manuallyMarkedUnread: item?.manuallyMarkedUnread !== false,
                     manuallyMarkedUnreadAt: item?.manuallyMarkedUnreadAt || new Date().toISOString()
                 }))
@@ -846,7 +851,9 @@ export default function useSocketChatConversationEvents({
                 if (!match) return chat;
                 return {
                     ...chat,
-                    unreadCount: Math.max(Number(chat?.unreadCount || 0) || 0, match.unreadCount),
+                    unreadCount: match.manuallyMarkedUnread === true
+                        ? match.unreadCount
+                        : Math.max(Number(chat?.unreadCount || 0) || 0, match.unreadCount),
                     manuallyMarkedUnread: true,
                     manuallyMarkedUnreadAt: match.manuallyMarkedUnreadAt || chat?.manuallyMarkedUnreadAt || null
                 };
@@ -897,7 +904,7 @@ export default function useSocketChatConversationEvents({
             if (resolvedChatId && !chatIdsReferSameScope(resolvedChatId, active)) {
                 activeChatIdRef.current = resolvedChatId;
                 setActiveChatId(resolvedChatId);
-                emitMarkChatRead(resolvedChatId);
+                emitMarkChatRead(resolvedChatId, 'chat_open');
                 socket.emit('get_contact_info', resolvedChatId);
             }
 
@@ -1539,7 +1546,9 @@ export default function useSocketChatConversationEvents({
                     isMyContact: existing?.isMyContact === true,
                     unreadCount: msg.fromMe
                         ? (existing?.unreadCount || 0)
-                        : (shouldMarkActiveChatRead ? (existing?.unreadCount || 0) : (existing?.unreadCount || 0) + 1),
+                        : (shouldMarkActiveChatRead ? 0 : (Number(existing?.unreadCount || 0) || 0) + 1),
+                    manuallyMarkedUnread: false,
+                    manuallyMarkedUnreadAt: null,
                     windowOpen: msg.fromMe ? existing?.windowOpen : true,
                     windowExpiresAt: msg.fromMe ? (existing?.windowExpiresAt || null) : relatedWindowExpiresAt,
                     windowStatus: msg.fromMe ? (existing?.windowStatus || null) : null,
@@ -1706,7 +1715,7 @@ export default function useSocketChatConversationEvents({
 
             if (!msg?.fromMe && chatIdsReferSameScope(relatedChatId, String(activeChatIdRef.current || ''))) {
                 shouldInstantScrollRef.current = true;
-                emitMarkChatRead(relatedChatId);
+                emitMarkChatRead(relatedChatId, 'active_inbound');
             }
         });
 

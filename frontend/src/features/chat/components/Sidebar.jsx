@@ -1185,6 +1185,8 @@ const Sidebar = ({
                         const adOrigin = null;
                         const adOriginName = String(adOrigin?.adName || '').trim();
                         const isSelected = selectedChatIds.has(String(chat.id || ''));
+                        const unreadCount = Number(chat?.unreadCount || 0) || 0;
+                        const manuallyMarkedUnread = chat?.manuallyMarkedUnread === true && unreadCount <= 0;
                         return (
                             <div
                                 key={chat.id}
@@ -1243,7 +1245,7 @@ const Sidebar = ({
                                                 </span>
                                             )}
                                         </div>
-                                        <span className={`chat-time ${chat.unreadCount > 0 ? 'chat-time-unread' : ''}`}>
+                                        <span className={`chat-time ${unreadCount > 0 ? 'chat-time-unread' : ''}`}>
                                             {formatTime(chat.timestamp)}
                                         </span>
                                     </div>
@@ -1305,7 +1307,8 @@ const Sidebar = ({
                                             {renderStatus(chat)}
                                             <span title={lastMessage}>{lastMessage}</span>
                                         </p>
-                                        {chat.unreadCount > 0 && <span className="unread-badge">{chat.unreadCount}</span>}
+                                        {unreadCount > 0 && <span className="unread-badge">{unreadCount}</span>}
+                                        {manuallyMarkedUnread && <span className="chat-unread-dot" title="Marcado como no leído" />}
                                     </div>
                                 </div>
                             </div>

@@ -1995,9 +1995,11 @@ class SocketManager {
 
 
 
-            socket.on('mark_chat_read', async (chatId) => {
+            socket.on('mark_chat_read', async (payload = '') => {
                 try {
-                    const requestedChatId = String(chatId || '').trim();
+                    const isObjectPayload = payload && typeof payload === 'object' && !Array.isArray(payload);
+                    const requestedChatId = String(isObjectPayload ? payload.chatId : payload || '').trim();
+                    const readSource = String(isObjectPayload ? payload.source || '' : '').trim().toLowerCase();
                     if (!requestedChatId) return;
                     const fallbackScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
                     const scopedTarget = resolveScopedChatTarget(requestedChatId, fallbackScopeModuleId);
@@ -2031,6 +2033,8 @@ class SocketManager {
                     }
                     if (!isManager && !isAssignedToActor) return;
                     if (
+                        readSource !== 'chat_open'
+                        &&
                         typeof messageHistoryService?.shouldSkipMarkReadDueToManualUnread === 'function'
                         && await messageHistoryService.shouldSkipMarkReadDueToManualUnread(tenantId, { chatId: safeChatId, windowSeconds: 300 })
                     ) {
@@ -2048,7 +2052,11 @@ class SocketManager {
                     if (typeof messageHistoryService?.updateChatState === 'function') {
                         await messageHistoryService.updateChatState(tenantId, {
                             chatId: safeChatId,
-                            unreadCount: 0
+                            unreadCount: 0,
+                            metadata: {
+                                manuallyMarkedUnread: false,
+                                manuallyMarkedUnreadClearedAt: new Date().toISOString()
+                            }
                         });
                     }
                     const payload = {

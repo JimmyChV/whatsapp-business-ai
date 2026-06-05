@@ -142,6 +142,8 @@ function normalizeChat(chat = {}, tenantId = _activeTenantId) {
     lastMessage: chat?.lastMessage || chat?.lastMessageBody || '',
     labels: Array.isArray(chat?.labels) ? chat.labels : [],
     unreadCount: Number(chat?.unreadCount || 0) || 0,
+    manuallyMarkedUnread: chat?.manuallyMarkedUnread === true,
+    manuallyMarkedUnreadAt: chat?.manuallyMarkedUnreadAt || null,
     lastCustomerMessageAt: chat?.lastCustomerMessageAt || null,
     windowOpen: typeof chat?.windowOpen === 'boolean' ? chat.windowOpen : null,
     windowExpiresAt: chat?.windowExpiresAt || null,

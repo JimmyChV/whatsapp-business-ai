@@ -418,6 +418,16 @@ body {
   justify-content: center;
 }
 
+.chat-unread-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #3b82f6;
+  display: inline-block;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #3b82f6 16%, transparent);
+}
+
 .ai-button {
   color: var(--text-secondary);
   cursor: pointer;

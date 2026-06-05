@@ -411,7 +411,7 @@ function createSocketChatListService({
                     unreadCount: Number(row?.unread_count || 0) || 0,
                     archived: Boolean(row?.archived),
                     pinned: Boolean(row?.pinned),
-                    manuallyMarkedUnread: Boolean(row?.manually_marked_unread) && Number(row?.unread_count || 0) > 0,
+                    manuallyMarkedUnread: Boolean(row?.manually_marked_unread),
                     manuallyMarkedUnreadAt: String(row?.manually_marked_unread_at || '').trim() || null
                 });
             });
@@ -839,7 +839,8 @@ function createSocketChatListService({
             const chatId = String(chat?.id?._serialized || '').trim();
             const persisted = persistedStateByChatId.get(chatId) || {};
             const unreadCount = Math.max(Number(chat?.unreadCount || 0) || 0, Number(persisted?.unreadCount || 0) || 0);
-            if (unreadOnly && unreadCount <= 0) return;
+            const manuallyMarkedUnread = Boolean(chat?.manuallyMarkedUnread || persisted?.manuallyMarkedUnread);
+            if (unreadOnly && unreadCount <= 0 && !manuallyMarkedUnread) return;
 
             // El filtro Guardados/No guardados depende del vínculo CRM enriquecido
             // que resolvemos después en el summary; aquí no filtramos todavía para

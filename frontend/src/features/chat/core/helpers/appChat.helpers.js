@@ -16,6 +16,11 @@ const isManualUnreadProtectionActive = (chat = {}) => {
   return Date.now() - markedAt <= MANUAL_UNREAD_PROTECTION_MS;
 };
 
+export const isChatUnreadLike = (chat = {}) => (
+  Number(chat?.unreadCount || 0) > 0
+  || chat?.manuallyMarkedUnread === true
+);
+
 export const normalizeCatalogItem = (item = {}, index = 0) => {
   const safeItem = item && typeof item === 'object' ? item : {};
   const rawTitle = safeItem.title || safeItem.name || safeItem.nombre || safeItem.productName || safeItem.sku || '';
@@ -589,7 +594,7 @@ export const chatLabelTokenSet = (chat = {}) => {
 export const chatMatchesFilters = (chat = {}, filters = {}) => {
   const normalized = normalizeChatFilters(filters);
 
-  if (normalized.unreadOnly && Number(chat?.unreadCount || 0) <= 0) return false;
+  if (normalized.unreadOnly && !isChatUnreadLike(chat)) return false;
 
   const isMyContact = Boolean(chat?.isMyContact);
   if (normalized.contactMode === 'my' && !isMyContact) return false;

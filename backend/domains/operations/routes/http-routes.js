@@ -1511,7 +1511,7 @@ function registerOperationsHttpRoutes({
                         chatId: target.scopedChatId,
                         baseChatId: target.baseChatId,
                         scopeModuleId: target.scopeModuleId || null,
-                        unreadCount: Number(updated?.unreadCount || 0) || 1,
+                        unreadCount: Number.isFinite(Number(updated?.unreadCount)) ? Number(updated.unreadCount) : 0,
                         manuallyMarkedUnread: updated?.manuallyMarkedUnread !== false,
                         manuallyMarkedUnreadAt: String(updated?.manuallyMarkedUnreadAt || '').trim() || null
                     };
