@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Bot, ShoppingCart, Clock, Package, MapPin, FileText } from 'lucide-react';
+import { Bot, ShoppingCart, Clock, Package, MapPin, FileText, ClipboardList } from 'lucide-react';
 import useUiFeedback from '../../../../app/ui-feedback/useUiFeedback';
+import { API_URL } from '../../../../config/runtime';
 import {
     addItemToCartState,
     buildAiRuntimeContext,
@@ -16,6 +17,7 @@ import {
     formatQuoteProductTitle,
     getCartLineBreakdown,
     normalizeCatalogItem,
+    parseAiScopedChatId,
     parseMoney,
     repairMojibake,
     renderAiMessageWithSendAction,
@@ -40,6 +42,8 @@ import {
     BusinessCartTabSection,
     BusinessCatalogTab,
     BusinessCoverageTabSection,
+    BusinessOrderModal,
+    BusinessOrdersTabSection,
     BusinessQuotesTabSection,
     BusinessQuickRepliesTabSection,
     ClientProfilePanel,
@@ -53,7 +57,114 @@ export { ClientProfilePanel };
 
 // =========================================================
 
-const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], messagesRef = null, activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, onSendCatalogProduct = null, waCapabilities = {}, pendingOrderCartLoad = null, requestedToolTab = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null, cartDraftsByChat: externalCartDraftsByChat = {}, setCartDraftsByChat: externalSetCartDraftsByChat = null, chatAssignmentState = null, chatCommercialStatusState = null, buildApiHeaders = null, onMobileBackToChat = null, onMobileOpenTools = null }) => {
+const toOrderNumber = (value = 0, fallback = 0) => {
+    const cleaned = String(value ?? '')
+        .replace(/[^0-9,.-]/g, '')
+        .replace(',', '.');
+    const parsed = Number.parseFloat(cleaned);
+    if (Number.isFinite(parsed)) return parsed;
+    return Number.isFinite(fallback) ? fallback : 0;
+};
+
+const normalizeOrderLine = (item = {}, fallbackName = 'Producto') => {
+    const quantity = Math.max(1, toOrderNumber(item.quantity ?? item.qty ?? item.cantidad ?? 1, 1));
+    const explicitUnitPrice = item.unitPrice ?? item.unit_price ?? item.price ?? item.precio ?? item.finalUnitPrice;
+    const rawLineTotal = item.subtotal ?? item.lineTotal ?? item.line_total ?? item.total;
+    const unitPrice = toOrderNumber(
+        explicitUnitPrice,
+        quantity > 0 ? toOrderNumber(rawLineTotal, 0) / quantity : 0
+    );
+    const productName = String(
+        item.productName
+        || item.product_name
+        || item.name
+        || item.title
+        || item.description
+        || item.sku
+        || fallbackName
+    ).trim() || fallbackName;
+    return {
+        productId: String(item.productId || item.product_id || item.id || item.sku || '').trim() || null,
+        productName,
+        quantity,
+        unitPrice: Math.max(0, roundMoney(unitPrice))
+    };
+};
+
+const normalizeQuoteItemsForOrder = (quote = {}) => {
+    const summary = quote?.summaryJson && typeof quote.summaryJson === 'object' ? quote.summaryJson : {};
+    const rawItems = Array.isArray(quote?.itemsJson) ? quote.itemsJson : [];
+    const items = rawItems
+        .map((item, index) => normalizeOrderLine(item, `Producto ${index + 1}`))
+        .filter((item) => item.productName && item.unitPrice > 0);
+    if (items.length > 0) return items;
+    const total = toOrderNumber(summary?.totalPayable ?? summary?.total ?? quote?.totalAmount ?? 0);
+    if (total <= 0) return [];
+    const quoteNumber = Number(quote?.quoteNumber || quote?.quote_number || 0) || '';
+    return [{
+        productId: null,
+        productName: `Cotizacion ${quoteNumber}`.trim() || 'Cotizacion',
+        quantity: 1,
+        unitPrice: roundMoney(total)
+    }];
+};
+
+const buildQuoteOrderDraft = (quote = {}) => {
+    const summary = quote?.summaryJson && typeof quote.summaryJson === 'object' ? quote.summaryJson : {};
+    const quoteNumber = Number(quote?.quoteNumber || quote?.quote_number || 0) || null;
+    return {
+        sourceType: 'quote',
+        sourceId: String(quote?.quoteId || quote?.quote_id || '').trim() || null,
+        title: quoteNumber ? `Cotizacion ${quoteNumber}` : 'Cotizacion',
+        items: normalizeQuoteItemsForOrder(quote),
+        deliveryAmount: toOrderNumber(summary?.delivery ?? summary?.deliveryAmount ?? 0),
+        discountAmount: toOrderNumber(summary?.discount ?? summary?.totalDiscount ?? 0),
+        notes: quote?.notes || ''
+    };
+};
+
+const buildCatalogOrderDraft = (payload = {}) => ({
+    sourceType: 'catalog',
+    sourceId: String(payload?.messageId || payload?.sourceId || '').trim() || null,
+    title: String(payload?.productName || 'Producto del catalogo').trim(),
+    items: [{
+        productId: String(payload?.productId || '').trim() || null,
+        productName: String(payload?.productName || 'Producto del catalogo').trim(),
+        quantity: 1,
+        unitPrice: Math.max(0, roundMoney(toOrderNumber(payload?.unitPrice ?? payload?.price ?? 0)))
+    }],
+    deliveryAmount: 0,
+    discountAmount: 0,
+    notes: 'Cliente acepto producto enviado desde catalogo.'
+});
+
+const buildManualOrderDraft = () => ({
+    sourceType: 'manual',
+    sourceId: null,
+    title: 'Pedido manual',
+    description: '',
+    amount: '',
+    items: [],
+    deliveryAmount: 0,
+    discountAmount: 0,
+    notes: ''
+});
+
+const normalizeOrderForState = (order = null) => {
+    if (!order || typeof order !== 'object') return null;
+    const orderId = String(order?.orderId || order?.order_id || '').trim();
+    if (!orderId) return null;
+    return {
+        ...order,
+        orderId,
+        items: Array.isArray(order?.items) ? order.items : (Array.isArray(order?.itemsJson) ? order.itemsJson : []),
+        totalAmount: toOrderNumber(order?.totalAmount ?? order?.total_amount ?? 0),
+        createdAt: order?.createdAt || order?.created_at || null,
+        updatedAt: order?.updatedAt || order?.updated_at || null
+    };
+};
+
+const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessData = {}, messages = [], messagesRef = null, activeChatId, activeChatPhone = '', activeChatDetails = null, onSendToClient, socket, myProfile, onLogout, quickReplies = [], onSendQuickReply = null, onSendCatalogProduct = null, waCapabilities = {}, pendingOrderCartLoad = null, pendingCatalogOrderRequest = null, requestedToolTab = null, openCompanyProfileToken = 0, waModules = [], selectedCatalogModuleId = '', selectedCatalogId = '', activeModuleId = '', onSelectCatalogModule = null, onSelectCatalog = null, onUploadCatalogImage = null, onCartSnapshotChange = null, cartDraftsByChat: externalCartDraftsByChat = {}, setCartDraftsByChat: externalSetCartDraftsByChat = null, chatAssignmentState = null, chatCommercialStatusState = null, buildApiHeaders = null, onMobileBackToChat = null, onMobileOpenTools = null }) => {
     const { notify, confirm } = useUiFeedback();
     const [activeTab, setActiveTab] = useState('ai');
     const [cartOpenReason, setCartOpenReason] = useState(null);
@@ -131,6 +242,11 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         ? activeDraft.sourceQuote
         : null;
     const [chatQuotesByChat, setChatQuotesByChat] = useState({});
+    const [ordersByChat, setOrdersByChat] = useState({});
+    const [ordersLoading, setOrdersLoading] = useState(false);
+    const [ordersError, setOrdersError] = useState('');
+    const [orderDraft, setOrderDraft] = useState(null);
+    const [orderSaving, setOrderSaving] = useState(false);
     const [quoteHistoryExpanded, setQuoteHistoryExpanded] = useState(true);
     const buildInitialQuoteOptionsWizardState = useCallback(() => ({
         modoOpciones: false,
@@ -154,10 +270,19 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             return (Number(b?.revisionNumber || b?.revision_number || 0) || 0) - (Number(a?.revisionNumber || a?.revision_number || 0) || 0);
         });
     }, [activeChatId, chatQuotesByChat]);
+    const activeOrders = useMemo(() => {
+        const items = Array.isArray(ordersByChat?.[activeChatId]) ? ordersByChat[activeChatId] : [];
+        return items.slice().sort((a, b) => {
+            const aTime = new Date(a?.createdAt || a?.created_at || 0).getTime() || 0;
+            const bTime = new Date(b?.createdAt || b?.created_at || 0).getTime() || 0;
+            return bTime - aTime;
+        });
+    }, [activeChatId, ordersByChat]);
     const quoteOptionsModeActive = Boolean(quoteOptionsWizard?.modoOpciones);
     const [quickSearch, setQuickSearch] = useState('');
     const [orderImportStatus, setOrderImportStatus] = useState(null);
     const lastImportedOrderRef = useRef('');
+    const lastCatalogOrderRequestRef = useRef('');
     const tenantScopeRef = useRef(String(tenantScopeKey || 'default').trim() || 'default');
     const canWriteByAssignment = typeof chatAssignmentState?.isAssignedToMe === 'function'
         ? chatAssignmentState.isAssignedToMe(activeChatId)
@@ -360,6 +485,165 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             : null;
         return direct || metadataConfig || {};
     }, [activeBusinessModule]);
+    const activeChatScopeInfo = useMemo(() => {
+        const parsed = parseAiScopedChatId(activeChatId || '');
+        const baseChatId = String(parsed.baseChatId || activeChatId || '').trim();
+        const scopeModuleId = String(
+            activeChatDetails?.scopeModuleId
+            || activeModuleId
+            || parsed.scopeModuleId
+            || ''
+        ).trim().toLowerCase();
+        return { baseChatId, scopeModuleId };
+    }, [activeChatDetails?.scopeModuleId, activeChatId, activeModuleId]);
+    const buildOrderApiHeaders = useCallback((includeJson = false) => {
+        const headers = typeof buildApiHeaders === 'function'
+            ? (buildApiHeaders({ includeJson }) || {})
+            : {};
+        const nextHeaders = { ...headers };
+        if (includeJson && !nextHeaders['Content-Type']) {
+            nextHeaders['Content-Type'] = 'application/json';
+        }
+        return nextHeaders;
+    }, [buildApiHeaders]);
+    const loadOrdersForActiveChat = useCallback(async () => {
+        if (!activeChatId || !activeChatScopeInfo.baseChatId || normalizedTenantScopeKey === 'default') return;
+        setOrdersLoading(true);
+        setOrdersError('');
+        try {
+            const params = new URLSearchParams({ chatId: activeChatScopeInfo.baseChatId });
+            if (activeChatScopeInfo.scopeModuleId) params.set('scopeModuleId', activeChatScopeInfo.scopeModuleId);
+            const response = await fetch(`${API_URL}/api/tenant/orders?${params.toString()}`, {
+                headers: buildOrderApiHeaders(false)
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.ok === false) {
+                throw new Error(payload?.error || 'No se pudieron cargar pedidos.');
+            }
+            const items = (Array.isArray(payload?.items) ? payload.items : [])
+                .map(normalizeOrderForState)
+                .filter(Boolean);
+            setOrdersByChat((prev) => ({
+                ...(prev && typeof prev === 'object' ? prev : {}),
+                [activeChatId]: items
+            }));
+        } catch (error) {
+            setOrdersError(String(error?.message || 'No se pudieron cargar pedidos.'));
+        } finally {
+            setOrdersLoading(false);
+        }
+    }, [activeChatId, activeChatScopeInfo.baseChatId, activeChatScopeInfo.scopeModuleId, buildOrderApiHeaders, normalizedTenantScopeKey]);
+    const upsertOrderForActiveChat = useCallback((order) => {
+        const normalized = normalizeOrderForState(order);
+        if (!activeChatId || !normalized) return;
+        setOrdersByChat((prev) => {
+            const safePrev = prev && typeof prev === 'object' ? prev : {};
+            const current = Array.isArray(safePrev[activeChatId]) ? safePrev[activeChatId] : [];
+            const next = current.filter((item) => String(item?.orderId || '') !== normalized.orderId);
+            next.unshift(normalized);
+            return { ...safePrev, [activeChatId]: next };
+        });
+    }, [activeChatId]);
+    const openOrderDraft = useCallback((draft) => {
+        if (!draft || typeof draft !== 'object') return;
+        if (!canUseMessageTools) {
+            if (!canWriteByAssignment) notifyAssignmentLock();
+            else notifyWindowLock();
+            return;
+        }
+        setOrderDraft(draft);
+        openToolsPanel('orders');
+    }, [canUseMessageTools, canWriteByAssignment, notifyAssignmentLock, notifyWindowLock, openToolsPanel]);
+    const handleOpenManualOrder = useCallback(() => {
+        openOrderDraft(buildManualOrderDraft());
+    }, [openOrderDraft]);
+    const handleConvertQuoteToOrder = useCallback((quote) => {
+        const draft = buildQuoteOrderDraft(quote);
+        if (!draft.items.length) {
+            notify({ type: 'warn', message: 'La cotizacion no tiene monto para crear pedido.' });
+            return;
+        }
+        openOrderDraft(draft);
+    }, [notify, openOrderDraft]);
+    const handleSubmitOrderDraft = useCallback(async (draftWithTotals = {}) => {
+        if (!activeChatScopeInfo.baseChatId || !draftWithTotals || typeof draftWithTotals !== 'object') return;
+        const items = (Array.isArray(draftWithTotals.items) ? draftWithTotals.items : [])
+            .map((item) => normalizeOrderLine(item, draftWithTotals.description || 'Pedido'))
+            .filter((item) => item.productName && item.unitPrice > 0);
+        if (items.length === 0) {
+            notify({ type: 'warn', message: 'Agrega al menos un item con monto.' });
+            return;
+        }
+        setOrderSaving(true);
+        try {
+            const body = {
+                chatId: activeChatScopeInfo.baseChatId,
+                scopeModuleId: activeChatScopeInfo.scopeModuleId || undefined,
+                sourceType: draftWithTotals.sourceType || 'manual',
+                sourceId: draftWithTotals.sourceId || undefined,
+                items,
+                deliveryAmount: toOrderNumber(draftWithTotals.deliveryAmount),
+                discountAmount: toOrderNumber(draftWithTotals.discountAmount),
+                notes: String(draftWithTotals.notes || '').trim()
+            };
+            if (body.sourceType === 'manual') {
+                body.description = String(draftWithTotals.description || items[0]?.productName || '').trim();
+                body.amount = toOrderNumber(draftWithTotals.amount ?? items[0]?.unitPrice ?? 0);
+            }
+            const response = await fetch(`${API_URL}/api/tenant/orders`, {
+                method: 'POST',
+                headers: buildOrderApiHeaders(true),
+                body: JSON.stringify(body)
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.ok === false) {
+                throw new Error(payload?.error || 'No se pudo crear el pedido.');
+            }
+            upsertOrderForActiveChat(payload.order);
+            setOrderDraft(null);
+            setActiveTab('orders');
+            notify({ type: 'success', message: 'Pedido creado.' });
+        } catch (error) {
+            notify({ type: 'error', message: String(error?.message || 'No se pudo crear el pedido.') });
+        } finally {
+            setOrderSaving(false);
+        }
+    }, [activeChatScopeInfo.baseChatId, activeChatScopeInfo.scopeModuleId, buildOrderApiHeaders, notify, upsertOrderForActiveChat]);
+    const handleUpdateOrderStatus = useCallback(async (order, status) => {
+        const orderId = String(order?.orderId || '').trim();
+        const nextStatus = String(status || '').trim().toLowerCase();
+        if (!orderId || !nextStatus) return;
+        try {
+            const response = await fetch(`${API_URL}/api/tenant/orders/${encodeURIComponent(orderId)}/status`, {
+                method: 'PATCH',
+                headers: buildOrderApiHeaders(true),
+                body: JSON.stringify({ status: nextStatus })
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.ok === false) {
+                throw new Error(payload?.error || 'No se pudo actualizar el pedido.');
+            }
+            upsertOrderForActiveChat(payload.order);
+            notify({ type: 'success', message: 'Estado de pedido actualizado.' });
+        } catch (error) {
+            notify({ type: 'error', message: String(error?.message || 'No se pudo actualizar el pedido.') });
+            void loadOrdersForActiveChat();
+        }
+    }, [buildOrderApiHeaders, loadOrdersForActiveChat, notify, upsertOrderForActiveChat]);
+    useEffect(() => {
+        void loadOrdersForActiveChat();
+    }, [loadOrdersForActiveChat]);
+    useEffect(() => {
+        const token = String(pendingCatalogOrderRequest?.token || '');
+        if (!token || String(pendingCatalogOrderRequest?.chatId || '') !== String(activeChatId || '')) return;
+        if (lastCatalogOrderRequestRef.current === token) return;
+        lastCatalogOrderRequestRef.current = token;
+        const draft = buildCatalogOrderDraft(pendingCatalogOrderRequest);
+        if (!draft.items[0]?.unitPrice) {
+            notify({ type: 'warn', message: 'Este producto no tiene precio detectado. Completa el monto antes de guardar.' });
+        }
+        openOrderDraft(draft);
+    }, [activeChatId, notify, openOrderDraft, pendingCatalogOrderRequest]);
     useEffect(() => {
         console.log('[Patty debug] activeBusinessModule:', JSON.stringify(activeBusinessModule?.metadata?.aiConfig));
     }, [activeBusinessModule]);
@@ -1167,6 +1451,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             : { id: 'catalog', icon: <Package size={15} />, label: 'Catalogo', tier: 'primary' },
         { id: 'coverage', icon: <MapPin size={15} />, label: 'Cobertura', tier: 'primary' },
         { id: 'quotes', icon: <FileText size={15} />, label: 'Cotizaciones', tier: 'secondary' },
+        { id: 'orders', icon: <ClipboardList size={15} />, label: 'Pedidos', tier: 'secondary' },
         ...(quickRepliesEnabled ? [{ id: 'quick', icon: <Clock size={15} />, label: 'Rapidas', tier: 'secondary' }] : []),
     ];
     const primaryTabs = tabs.filter(tab => tab.tier === 'primary');
@@ -1367,8 +1652,22 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     quoteHistoryExpanded={quoteHistoryExpanded}
                     setQuoteHistoryExpanded={setQuoteHistoryExpanded}
                     onLoadQuoteToCart={handleLoadQuoteToCart}
+                    onConvertQuoteToOrder={handleConvertQuoteToOrder}
                     onStartNewQuote={handleStartNewQuote}
                     quoteOptionsModeActive={quoteOptionsModeActive}
+                    formatMoney={formatMoney}
+                    canWriteByAssignment={canUseMessageTools}
+                />
+            )}
+
+            {activeTab === 'orders' && (
+                <BusinessOrdersTabSection
+                    orders={activeOrders}
+                    ordersLoading={ordersLoading}
+                    ordersError={ordersError}
+                    onRefreshOrders={loadOrdersForActiveChat}
+                    onOpenManualOrder={handleOpenManualOrder}
+                    onUpdateOrderStatus={handleUpdateOrderStatus}
                     formatMoney={formatMoney}
                     canWriteByAssignment={canUseMessageTools}
                 />
@@ -1388,7 +1687,14 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                 />
             )}
 
-            
+            <BusinessOrderModal
+                draft={orderDraft}
+                saving={orderSaving}
+                onChange={setOrderDraft}
+                onClose={() => !orderSaving && setOrderDraft(null)}
+                onSubmit={handleSubmitOrderDraft}
+                formatMoney={formatMoney}
+            />
 
         </div>
     );

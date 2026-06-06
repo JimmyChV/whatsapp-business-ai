@@ -51,6 +51,14 @@ const formatOrderCardTitle = (value = '') => {
 
 const isRenderableTemplateHeaderImageSrc = (value = '') => /^(https?:\/\/|data:image\/|blob:|\/)/i.test(String(value || '').trim());
 
+const parseCatalogMoney = (value = 0) => {
+    const cleaned = String(value ?? '')
+        .replace(/[^0-9,.-]/g, '')
+        .replace(',', '.');
+    const parsed = Number.parseFloat(cleaned);
+    return Number.isFinite(parsed) ? parsed : 0;
+};
+
 const loadLocationMapsApiKey = async (buildApiHeaders) => {
     if (locationMapsApiKeyCache) return locationMapsApiKeyCache;
     if (!locationMapsApiKeyPromise) {
@@ -72,6 +80,7 @@ const MessageBubble = ({
     msg,
     onPrefillMessage,
     onLoadOrderToCart,
+    onCreateOrderFromCatalog,
     isHighlighted = false,
     isCurrentHighlighted = false,
     onOpenMedia,
@@ -536,9 +545,25 @@ const MessageBubble = ({
                         <div className="catalog-card-title">{productTitle}</div>
                         <div className="catalog-card-price">{productPrice}</div>
                     </div>
-                    <button className="catalog-card-btn" onClick={() => onPrefillMessage && onPrefillMessage(`Hola, me interesa ${productTitle || 'el producto del catalogo'}. Me confirmas stock y precio final?`)}>
-                        <ShoppingBag size={16} /> Pedir cotizacion
-                    </button>
+                    {isOut ? (
+                        <button
+                            className="catalog-card-btn"
+                            disabled={typeof onCreateOrderFromCatalog !== 'function'}
+                            onClick={() => typeof onCreateOrderFromCatalog === 'function' && onCreateOrderFromCatalog({
+                                messageId: String(msg?.id || '').trim() || null,
+                                productId: String(msg?.productId || msg?.product_id || '').trim() || null,
+                                productName: productTitle || 'Producto del catalogo',
+                                unitPrice: parseCatalogMoney(productPrice),
+                                sourceBody: messageBodyText
+                            })}
+                        >
+                            <ShoppingBag size={16} /> Cliente acepto
+                        </button>
+                    ) : (
+                        <button className="catalog-card-btn" onClick={() => onPrefillMessage && onPrefillMessage(`Hola, me interesa ${productTitle || 'el producto del catalogo'}. Me confirmas stock y precio final?`)}>
+                            <ShoppingBag size={16} /> Pedir cotizacion
+                        </button>
+                    )}
                 </div>
             )}
 

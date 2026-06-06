@@ -131,6 +131,7 @@ export default function OperationPage({
   SaasPanelComponent,
 }) {
   const [cartDraftsByChat, setCartDraftsByChat] = useState({});
+  const [pendingCatalogOrderRequest, setPendingCatalogOrderRequest] = useState(null);
   const [mobilePanel, setMobilePanel] = useState('list');
   const [mobileToolRequest, setMobileToolRequest] = useState(null);
   const mobilePanelRef = useRef('list');
@@ -186,6 +187,17 @@ export default function OperationPage({
     handleLoadOrderToCart?.(orderPayload);
     setMobilePanelWithHistory('tools');
   }, [activeChatId, handleLoadOrderToCart, setMobilePanelWithHistory]);
+  const handleCreateOrderFromCatalogMessage = useCallback((payload) => {
+    if (!activeChatId || !payload || typeof payload !== 'object') return;
+    const token = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    setPendingCatalogOrderRequest({
+      ...payload,
+      chatId: activeChatId,
+      token
+    });
+    setMobileToolRequest({ tabId: 'orders', token });
+    setMobilePanelWithHistory('tools');
+  }, [activeChatId, setMobilePanelWithHistory]);
   const effectiveMobilePanel = activeChatId ? mobilePanel : 'list';
 
   useEffect(() => {
@@ -445,6 +457,7 @@ export default function OperationPage({
               quickReplyDraft={quickReplyDraft}
               onClearQuickReplyDraft={() => setQuickReplyDraft(null)}
               onLoadOrderToCart={handleMobileLoadOrderToCart}
+              onCreateOrderFromCatalog={handleCreateOrderFromCatalogMessage}
               onStartNewChat={handleStartNewChat}
               onCancelEditMessage={handleCancelEditMessage}
               onCancelReplyMessage={handleCancelReplyMessage}
@@ -550,6 +563,7 @@ export default function OperationPage({
             onSendQuickReply={handleSendQuickReply}
             onSendCatalogProduct={handleSendCatalogProduct}
             pendingOrderCartLoad={pendingOrderCartLoad}
+            pendingCatalogOrderRequest={pendingCatalogOrderRequest}
             requestedToolTab={mobileToolRequest}
             waCapabilities={waCapabilities}
             openCompanyProfileToken={openCompanyProfileToken}

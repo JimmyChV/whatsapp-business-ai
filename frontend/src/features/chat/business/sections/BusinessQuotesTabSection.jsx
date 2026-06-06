@@ -5,6 +5,7 @@ export default function BusinessQuotesTabSection({
     quoteHistoryExpanded = true,
     setQuoteHistoryExpanded,
     onLoadQuoteToCart,
+    onConvertQuoteToOrder,
     onStartNewQuote,
     quoteOptionsModeActive = false,
     formatMoney,
@@ -85,6 +86,8 @@ export default function BusinessQuotesTabSection({
         const itemCount = Number(summary?.itemCount || summary?.itemsCount || items.length || 0) || 0;
         const total = Number(summary?.totalPayable ?? summary?.total ?? 0) || 0;
         const statusKey = normalizeStatus(quote?.status);
+        const rawStatus = String(quote?.status || 'sent').trim().toLowerCase();
+        const canConvertToOrder = ['sent', 'chosen'].includes(rawStatus);
         const badge = statusMeta[statusKey] || statusMeta.sent;
         const dateLabel = formatQuoteDate(getQuoteDateValue(quote));
         const title = isOptionMode
@@ -109,14 +112,26 @@ export default function BusinessQuotesTabSection({
                     </div>
                 </div>
                 {!quoteOptionsModeActive && (
-                    <button
-                        type="button"
-                        disabled={!canWriteByAssignment}
-                        onClick={() => typeof onLoadQuoteToCart === 'function' && onLoadQuoteToCart(quote)}
-                        style={{ border: `1px solid ${tone.successBorder}`, color: tone.successText, background: tone.successSurface, borderRadius: '999px', padding: '5px 9px', fontWeight: 800, fontSize: '0.72rem', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', opacity: canWriteByAssignment ? 1 : 0.65, whiteSpace: 'nowrap' }}
-                    >
-                        Cargar en carrito
-                    </button>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' }}>
+                        {canConvertToOrder && (
+                            <button
+                                type="button"
+                                disabled={!canWriteByAssignment}
+                                onClick={() => typeof onConvertQuoteToOrder === 'function' && onConvertQuoteToOrder(quote)}
+                                style={{ border: `1px solid ${tone.successBorder}`, color: tone.successText, background: tone.successSurface, borderRadius: '999px', padding: '5px 9px', fontWeight: 900, fontSize: '0.72rem', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', opacity: canWriteByAssignment ? 1 : 0.65, whiteSpace: 'nowrap' }}
+                            >
+                                Convertir en pedido
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            disabled={!canWriteByAssignment}
+                            onClick={() => typeof onLoadQuoteToCart === 'function' && onLoadQuoteToCart(quote)}
+                            style={{ border: `1px solid ${tone.controlBorder}`, color: tone.textSoft, background: 'var(--chat-control-surface)', borderRadius: '999px', padding: '5px 9px', fontWeight: 800, fontSize: '0.72rem', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', opacity: canWriteByAssignment ? 1 : 0.65, whiteSpace: 'nowrap' }}
+                        >
+                            Cargar en carrito
+                        </button>
+                    </div>
                 )}
             </div>
         );
