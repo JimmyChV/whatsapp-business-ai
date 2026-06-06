@@ -1,5 +1,9 @@
 export function normalizeMessageCacheChatId(chatId = '') {
-  return String(chatId || '').trim();
+  const raw = String(chatId || '').trim();
+  const separator = '::mod::';
+  const separatorIndex = raw.lastIndexOf(separator);
+  if (separatorIndex < 0) return raw;
+  return String(raw.slice(0, separatorIndex) || '').trim() || raw;
 }
 
 export function getCachedMessages(cacheRef, chatId) {

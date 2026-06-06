@@ -15,6 +15,7 @@ const {
 
 const HISTORY_FILE = 'message_history.json';
 const presenceBySocketId = new Map();
+const PRESENCE_TTL_MS = 45 * 1000;
 let postgresChatReadColumnsReadyPromise = null;
 
 function toText(value = '') {
@@ -498,6 +499,13 @@ function isAssignedUserViewing({
     const cleanAssignee = toText(assigneeUserId);
     const target = normalizeTarget({ chatId, scopeModuleId });
     if (!cleanTenant || !cleanAssignee || !target.baseChatId) return false;
+    const now = Date.now();
+    for (const [socketId, entry] of presenceBySocketId.entries()) {
+        const focusedAt = Number(entry?.focusedAt || 0) || 0;
+        if (!focusedAt || now - focusedAt > PRESENCE_TTL_MS) {
+            presenceBySocketId.delete(socketId);
+        }
+    }
     return Array.from(presenceBySocketId.values()).some((entry) => (
         entry.tenantId === cleanTenant
         && entry.userId === cleanAssignee

@@ -127,6 +127,14 @@ function toTimestamp(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function normalizeMessageCacheChatId(chatId = '') {
+  const raw = String(chatId || '').trim();
+  const separator = '::mod::';
+  const separatorIndex = raw.lastIndexOf(separator);
+  if (separatorIndex < 0) return raw;
+  return String(raw.slice(0, separatorIndex) || '').trim() || raw;
+}
+
 function normalizeChat(chat = {}, tenantId = _activeTenantId) {
   const id = String(chat?.id || chat?.chatId || '').trim();
   if (!id) return null;
@@ -313,7 +321,7 @@ async function deleteChat(chatId = '') {
 }
 
 async function deleteMessagesByChatId(chatId = '') {
-  const safeChatId = String(chatId || '').trim();
+  const safeChatId = normalizeMessageCacheChatId(chatId);
   const keyRange = getKeyRange();
   if (!safeChatId || !keyRange) return false;
 
@@ -476,12 +484,13 @@ export async function getChats() {
 }
 
 async function pruneMessagesForChat(db, chatId) {
+  const safeChatId = normalizeMessageCacheChatId(chatId);
   const keyRange = getKeyRange();
-  if (!keyRange) return;
+  if (!safeChatId || !keyRange) return;
 
   const readTx = db.transaction(MESSAGE_STORE, 'readonly');
   const index = readTx.objectStore(MESSAGE_STORE).index('chatId');
-  const request = index.getAll(keyRange.only(chatId));
+  const request = index.getAll(keyRange.only(safeChatId));
   const messages = await requestToPromise(request);
   const sorted = (Array.isArray(messages) ? messages : [])
     .sort((a, b) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0));
@@ -499,7 +508,7 @@ async function pruneMessagesForChat(db, chatId) {
 }
 
 export async function saveMessages(chatId = '', messages = []) {
-  const safeChatId = String(chatId || '').trim();
+  const safeChatId = normalizeMessageCacheChatId(chatId);
   const activeTenantId = await getActiveTenantId();
   if (!activeTenantId) return [];
   const safeMessages = (Array.isArray(messages) ? messages : [])
@@ -533,7 +542,7 @@ export async function saveMessages(chatId = '', messages = []) {
 }
 
 export async function getMessages(chatId = '') {
-  const safeChatId = String(chatId || '').trim();
+  const safeChatId = normalizeMessageCacheChatId(chatId);
   if (!safeChatId) return [];
 
   try {

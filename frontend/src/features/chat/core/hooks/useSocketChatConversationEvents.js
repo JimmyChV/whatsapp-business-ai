@@ -330,6 +330,13 @@ export default function useSocketChatConversationEvents({
         if (typeof document !== 'undefined') {
             document.addEventListener('visibilitychange', handleVisibilityChange);
         }
+        const presenceHeartbeatId = typeof window !== 'undefined'
+            ? window.setInterval(() => {
+                syncWindowAttentionState();
+                if (!pageVisibleRef.current || !windowFocusedRef.current) return;
+                emitChatFocus(activeChatIdRef.current, 'presence_heartbeat');
+            }, 15000)
+            : null;
 
         const pruneRecentNotifications = (now = Date.now()) => {
             const cache = recentInboundNotificationsRef.current;
@@ -1786,6 +1793,9 @@ export default function useSocketChatConversationEvents({
             }
             if (typeof document !== 'undefined') {
                 document.removeEventListener('visibilitychange', handleVisibilityChange);
+            }
+            if (presenceHeartbeatId) {
+                window.clearInterval(presenceHeartbeatId);
             }
             [
                 'tenant_context',
