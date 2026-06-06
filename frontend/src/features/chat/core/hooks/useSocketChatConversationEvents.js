@@ -861,7 +861,10 @@ export default function useSocketChatConversationEvents({
             }
         });
 
-        socket.on('chat_unread_state_updated', ({ items = [] } = {}) => {
+        socket.on('chat_unread_state_updated', (data = {}) => {
+            console.log('[Unread] state update recibido:',
+                JSON.stringify(data));
+            const { items = [] } = data || {};
             const normalizedItems = (Array.isArray(items) ? items : [])
                 .map((item) => {
                     const rawChatId = String(item?.chatId || item?.baseChatId || '').trim();

@@ -144,6 +144,8 @@ async function clearUnread(tenantId = DEFAULT_TENANT_ID, target = {}) {
     assertValidTenant(cleanTenant, 'chat-read-state.clearUnread');
     const normalizedTarget = normalizeTarget(target);
     if (!normalizedTarget.baseChatId) return null;
+    console.log('[Unread] LIMPIANDO chat:', normalizedTarget.baseChatId,
+        'caller:', new Error().stack.split('\n')[2]);
 
     if (getStorageDriver() === 'postgres') {
         await ensurePostgresChatReadColumns();
@@ -346,6 +348,8 @@ async function incrementUnreadForInbound({
     assertValidTenant(cleanTenant, 'chat-read-state.incrementUnreadForInbound');
     const target = normalizeTarget({ chatId, scopeModuleId });
     if (!target.baseChatId) return null;
+    console.log('[Unread] incrementando chat:', target.baseChatId,
+        'tenant:', cleanTenant);
 
     if (getStorageDriver() === 'postgres') {
         const snapshot = await getInboundUnreadSnapshot(cleanTenant, target);
@@ -390,7 +394,10 @@ async function incrementUnreadForInbound({
                         manually_marked_unread_at`,
             [cleanTenant, target.baseChatId]
         );
-        return normalizeStateRow(cleanTenant, target, rows?.[0] || {});
+        const result = normalizeStateRow(cleanTenant, target, rows?.[0] || {});
+        console.log('[Unread] resultado increment:',
+            JSON.stringify(result));
+        return result;
     }
 
     const assignment = await resolveAssignment(conversationOpsService, cleanTenant, target);
@@ -419,7 +426,10 @@ async function incrementUnreadForInbound({
         updatedAt: new Date().toISOString()
     };
     await saveFileStore(cleanTenant, store);
-    return normalizeStateRow(cleanTenant, target, store.chats[target.baseChatId]);
+    const result = normalizeStateRow(cleanTenant, target, store.chats[target.baseChatId]);
+    console.log('[Unread] resultado increment:',
+        JSON.stringify(result));
+    return result;
 }
 
 function assignmentIsActive(assignment = null) {
@@ -544,6 +554,7 @@ function emitUnreadState({
     if (typeof emitToTenant !== 'function') return;
     const payload = buildUnreadStatePayload(tenantId, items);
     if (!payload.items.length) return;
+    console.log('[Unread] emitiendo state:', JSON.stringify(payload));
     emitToTenant(payload.tenantId, 'chat_unread_state_updated', payload);
 }
 
