@@ -515,7 +515,7 @@ function createCampaignDispatcherJob({
             const tenants = (typeof tenantService?.getTenants === 'function' ? tenantService.getTenants() : [])
                 .filter((tenant) => tenant?.active !== false)
                 .map((tenant) => toText(tenant?.id || ''))
-                .filter(Boolean);
+                .filter((tenantId) => tenantId && tenantId !== 'default');
 
             let claimed = 0;
             let sent = 0;

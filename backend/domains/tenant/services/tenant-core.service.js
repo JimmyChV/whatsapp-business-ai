@@ -126,7 +126,9 @@ function resolveTenant({ tenantId = '', tenantSlug = '', authContext = null } = 
     const bySlug = findTenantBySlug(tenantSlug);
     if (bySlug) return bySlug;
 
-    console.warn('[TenantCore] No se encontro tenant valido — retornando null');
+    if (process.env.NODE_ENV !== 'production') {
+        console.debug('[TenantCore] tenant null');
+    }
     return null;
 }
 

@@ -124,7 +124,7 @@ function createQuoteExpiryJob({
             const tenants = (typeof tenantService?.getTenants === 'function' ? tenantService.getTenants() : [])
                 .filter((tenant) => tenant?.active !== false)
                 .map((tenant) => String(tenant?.id || '').trim())
-                .filter(Boolean);
+                .filter((tenantId) => tenantId && tenantId !== 'default');
 
             let scanned = 0;
             let expired = 0;

@@ -197,6 +197,7 @@ export default function useSocketChatConversationEvents({
     const recentInboundNotificationsRef = useRef(new Map());
     const windowFocusedRef = useRef(true);
     const pageVisibleRef = useRef(true);
+    const tenantScopeIdRef = useRef(String(tenantScopeId || '').trim());
     const desktopNotificationSummaryRef = useRef({
         totalMessages: 0,
         chats: new Map(),
@@ -205,6 +206,10 @@ export default function useSocketChatConversationEvents({
         latestTitle: '',
         latestPreview: ''
     });
+
+    useEffect(() => {
+        tenantScopeIdRef.current = String(tenantScopeId || '').trim();
+    }, [tenantScopeId]);
 
     const resolveChatPresencePayload = (chatId = '', source = 'active_chat') => {
         const rawChatId = String(chatId || '').trim();
@@ -245,6 +250,8 @@ export default function useSocketChatConversationEvents({
     };
 
     const emitChatFocus = (chatId = '', source = 'active_chat') => {
+        const activeTenantId = String(tenantScopeIdRef.current || '').trim();
+        if (!activeTenantId || activeTenantId === 'default') return;
         const payload = resolveChatPresencePayload(chatId, source);
         if (!payload) return;
         socket.emit('chat_focus', payload);
