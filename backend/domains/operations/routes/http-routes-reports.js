@@ -40,23 +40,7 @@ const MESSAGE_MODULE_SQL = `LOWER(COALESCE(
     ''
 ))`;
 
-const QUOTE_TOTAL_SQL = `COALESCE(
-    NULLIF(
-        regexp_replace(
-            COALESCE(
-                q.summary_json->>'totalPayable',
-                q.summary_json->>'total_payable',
-                q.summary_json->>'total',
-                '0'
-            ),
-            '[^0-9.-]',
-            '',
-            'g'
-        ),
-        ''
-    )::numeric,
-    0
-)`;
+const ORDER_REVENUE_STATUSES_SQL = `('aceptado', 'programado', 'atendido', 'vendido')`;
 
 const SCOPED_CHATS_CTE = `
 scoped_chats AS (
@@ -94,6 +78,16 @@ scoped_chats AS (
                    AND q.chat_id = c.chat_id
                    AND q.created_by_user_id = $4::text
             )
+            OR EXISTS (
+                SELECT 1
+                  FROM tenant_orders o
+                 WHERE o.tenant_id = c.tenant_id
+                   AND o.chat_id = c.chat_id
+                   AND (
+                        o.created_by_user_id = $4::text
+                        OR o.assigned_user_id = $4::text
+                   )
+            )
        )
        AND (
             $5::text IS NULL
@@ -124,6 +118,13 @@ scoped_chats AS (
                  WHERE q.tenant_id = c.tenant_id
                    AND q.chat_id = c.chat_id
                    AND LOWER(COALESCE(q.scope_module_id, '')) = LOWER($5::text)
+            )
+            OR EXISTS (
+                SELECT 1
+                  FROM tenant_orders o
+                 WHERE o.tenant_id = c.tenant_id
+                   AND o.chat_id = c.chat_id
+                   AND LOWER(COALESCE(o.scope_module_id, '')) = LOWER($5::text)
             )
        )
 )`;
@@ -429,6 +430,12 @@ function mapKpis(row = {}) {
         chatsAtendidos: toNumber(row.chats_atendidos),
         cotizaciones: toNumber(row.cotizaciones),
         cotizacionesElegidas: toNumber(row.cotizaciones_elegidas),
+        pedidosConfirmados: toNumber(row.pedidos_confirmados),
+        pedidosAceptados: toNumber(row.pedidos_aceptados),
+        pedidosProgramados: toNumber(row.pedidos_programados),
+        pedidosAtendidos: toNumber(row.pedidos_atendidos),
+        pedidosVendidos: toNumber(row.pedidos_vendidos),
+        clientesConPedido: toNumber(row.clientes_con_pedido),
         ticketPromedio: roundNumber(row.ticket_promedio),
         revenueEstimado: roundNumber(row.revenue_estimado),
         mensajesEnviados: toNumber(row.mensajes_enviados),
@@ -492,37 +499,117 @@ kpis AS (
                AND ($5::text IS NULL OR LOWER(COALESCE(q.scope_module_id, '')) = LOWER($5::text))
         ) AS cotizaciones,
         (
-            SELECT COUNT(DISTINCT q.quote_id)
-              FROM tenant_quotes q
-              JOIN scoped_chats sc ON sc.chat_id = q.chat_id
-             WHERE q.tenant_id = $1
-               AND q.created_at >= p.starts_at
-               AND q.created_at < p.ends_at
-               AND q.status IN ('chosen', 'sent')
-               AND ($4::text IS NULL OR q.created_by_user_id = $4::text)
-               AND ($5::text IS NULL OR LOWER(COALESCE(q.scope_module_id, '')) = LOWER($5::text))
+            SELECT COUNT(DISTINCT o.order_id)
+              FROM tenant_orders o
+              JOIN scoped_chats sc ON sc.chat_id = o.chat_id
+             WHERE o.tenant_id = $1
+               AND o.created_at >= p.starts_at
+               AND o.created_at < p.ends_at
+               AND o.status IN ${ORDER_REVENUE_STATUSES_SQL}
+               AND ($4::text IS NULL OR o.created_by_user_id = $4::text OR o.assigned_user_id = $4::text)
+               AND ($5::text IS NULL OR LOWER(COALESCE(o.scope_module_id, '')) = LOWER($5::text))
         ) AS cotizaciones_elegidas,
         (
-            SELECT AVG(${QUOTE_TOTAL_SQL})
-              FROM tenant_quotes q
-              JOIN scoped_chats sc ON sc.chat_id = q.chat_id
-             WHERE q.tenant_id = $1
-               AND q.created_at >= p.starts_at
-               AND q.created_at < p.ends_at
-               AND q.status IN ('chosen', 'sent')
-               AND ($4::text IS NULL OR q.created_by_user_id = $4::text)
-               AND ($5::text IS NULL OR LOWER(COALESCE(q.scope_module_id, '')) = LOWER($5::text))
+            SELECT COUNT(DISTINCT o.order_id)
+              FROM tenant_orders o
+              JOIN scoped_chats sc ON sc.chat_id = o.chat_id
+             WHERE o.tenant_id = $1
+               AND o.created_at >= p.starts_at
+               AND o.created_at < p.ends_at
+               AND o.status IN ${ORDER_REVENUE_STATUSES_SQL}
+               AND ($4::text IS NULL OR o.created_by_user_id = $4::text OR o.assigned_user_id = $4::text)
+               AND ($5::text IS NULL OR LOWER(COALESCE(o.scope_module_id, '')) = LOWER($5::text))
+        ) AS pedidos_confirmados,
+        (
+            SELECT COUNT(DISTINCT o.order_id)
+              FROM tenant_orders o
+              JOIN scoped_chats sc ON sc.chat_id = o.chat_id
+             WHERE o.tenant_id = $1
+               AND o.created_at >= p.starts_at
+               AND o.created_at < p.ends_at
+               AND o.status = 'aceptado'
+               AND ($4::text IS NULL OR o.created_by_user_id = $4::text OR o.assigned_user_id = $4::text)
+               AND ($5::text IS NULL OR LOWER(COALESCE(o.scope_module_id, '')) = LOWER($5::text))
+        ) AS pedidos_aceptados,
+        (
+            SELECT COUNT(DISTINCT o.order_id)
+              FROM tenant_orders o
+              JOIN scoped_chats sc ON sc.chat_id = o.chat_id
+             WHERE o.tenant_id = $1
+               AND o.created_at >= p.starts_at
+               AND o.created_at < p.ends_at
+               AND o.status = 'programado'
+               AND ($4::text IS NULL OR o.created_by_user_id = $4::text OR o.assigned_user_id = $4::text)
+               AND ($5::text IS NULL OR LOWER(COALESCE(o.scope_module_id, '')) = LOWER($5::text))
+        ) AS pedidos_programados,
+        (
+            SELECT COUNT(DISTINCT o.order_id)
+              FROM tenant_orders o
+              JOIN scoped_chats sc ON sc.chat_id = o.chat_id
+             WHERE o.tenant_id = $1
+               AND o.created_at >= p.starts_at
+               AND o.created_at < p.ends_at
+               AND o.status = 'atendido'
+               AND ($4::text IS NULL OR o.created_by_user_id = $4::text OR o.assigned_user_id = $4::text)
+               AND ($5::text IS NULL OR LOWER(COALESCE(o.scope_module_id, '')) = LOWER($5::text))
+        ) AS pedidos_atendidos,
+        (
+            SELECT COUNT(DISTINCT o.order_id)
+              FROM tenant_orders o
+              JOIN scoped_chats sc ON sc.chat_id = o.chat_id
+             WHERE o.tenant_id = $1
+               AND o.created_at >= p.starts_at
+               AND o.created_at < p.ends_at
+               AND o.status = 'vendido'
+               AND ($4::text IS NULL OR o.created_by_user_id = $4::text OR o.assigned_user_id = $4::text)
+               AND ($5::text IS NULL OR LOWER(COALESCE(o.scope_module_id, '')) = LOWER($5::text))
+        ) AS pedidos_vendidos,
+        (
+            SELECT COUNT(*)
+              FROM (
+                SELECT COALESCE(NULLIF(o.customer_id, ''), o.chat_id) AS customer_key
+                  FROM tenant_orders o
+                  JOIN scoped_chats sc ON sc.chat_id = o.chat_id
+                 WHERE o.tenant_id = $1
+                   AND o.created_at >= p.starts_at
+                   AND o.created_at < p.ends_at
+                   AND o.status IN ${ORDER_REVENUE_STATUSES_SQL}
+                   AND ($4::text IS NULL OR o.created_by_user_id = $4::text OR o.assigned_user_id = $4::text)
+                   AND ($5::text IS NULL OR LOWER(COALESCE(o.scope_module_id, '')) = LOWER($5::text))
+                 GROUP BY COALESCE(NULLIF(o.customer_id, ''), o.chat_id)
+              ) order_customers
+        ) AS clientes_con_pedido,
+        (
+            SELECT AVG(customer_total)
+              FROM (
+                SELECT COALESCE(NULLIF(o.customer_id, ''), o.chat_id) AS customer_key,
+                       SUM(COALESCE(o.total_amount, 0)) AS customer_total
+                  FROM tenant_orders o
+                  JOIN scoped_chats sc ON sc.chat_id = o.chat_id
+                 WHERE o.tenant_id = $1
+                   AND o.created_at >= p.starts_at
+                   AND o.created_at < p.ends_at
+                   AND o.status IN ${ORDER_REVENUE_STATUSES_SQL}
+                   AND ($4::text IS NULL OR o.created_by_user_id = $4::text OR o.assigned_user_id = $4::text)
+                   AND ($5::text IS NULL OR LOWER(COALESCE(o.scope_module_id, '')) = LOWER($5::text))
+                 GROUP BY COALESCE(NULLIF(o.customer_id, ''), o.chat_id)
+              ) order_totals
         ) AS ticket_promedio,
         (
-            SELECT SUM(${QUOTE_TOTAL_SQL})
-              FROM tenant_quotes q
-              JOIN scoped_chats sc ON sc.chat_id = q.chat_id
-             WHERE q.tenant_id = $1
-               AND q.created_at >= p.starts_at
-               AND q.created_at < p.ends_at
-               AND q.status IN ('chosen', 'sent')
-               AND ($4::text IS NULL OR q.created_by_user_id = $4::text)
-               AND ($5::text IS NULL OR LOWER(COALESCE(q.scope_module_id, '')) = LOWER($5::text))
+            SELECT SUM(customer_total)
+              FROM (
+                SELECT COALESCE(NULLIF(o.customer_id, ''), o.chat_id) AS customer_key,
+                       SUM(COALESCE(o.total_amount, 0)) AS customer_total
+                  FROM tenant_orders o
+                  JOIN scoped_chats sc ON sc.chat_id = o.chat_id
+                 WHERE o.tenant_id = $1
+                   AND o.created_at >= p.starts_at
+                   AND o.created_at < p.ends_at
+                   AND o.status IN ${ORDER_REVENUE_STATUSES_SQL}
+                   AND ($4::text IS NULL OR o.created_by_user_id = $4::text OR o.assigned_user_id = $4::text)
+                   AND ($5::text IS NULL OR LOWER(COALESCE(o.scope_module_id, '')) = LOWER($5::text))
+                 GROUP BY COALESCE(NULLIF(o.customer_id, ''), o.chat_id)
+              ) order_totals
         ) AS revenue_estimado,
         (
             SELECT COUNT(*)
@@ -571,6 +658,12 @@ SELECT
     chats_atendidos,
     cotizaciones,
     cotizaciones_elegidas,
+    pedidos_confirmados,
+    pedidos_aceptados,
+    pedidos_programados,
+    pedidos_atendidos,
+    pedidos_vendidos,
+    clientes_con_pedido,
     COALESCE(ticket_promedio, 0) AS ticket_promedio,
     COALESCE(revenue_estimado, 0) AS revenue_estimado,
     mensajes_enviados,
@@ -578,7 +671,7 @@ SELECT
     COALESCE(tiempo_respuesta_promedio, 0) AS tiempo_respuesta_promedio,
     chats_activos,
     CASE WHEN chats_nuevos > 0
-        THEN ROUND((cotizaciones_elegidas::numeric / chats_nuevos::numeric) * 100, 2)
+        THEN ROUND((clientes_con_pedido::numeric / chats_nuevos::numeric) * 100, 2)
         ELSE 0
     END AS tasa_conversion
   FROM kpis`;
@@ -783,15 +876,15 @@ SELECT
            AND ($5::text IS NULL OR LOWER(COALESCE(q.scope_module_id, '')) = LOWER($5::text))
     ), 0) AS cotizaciones,
     COALESCE((
-        SELECT COUNT(DISTINCT q.quote_id)
-          FROM tenant_quotes q
-          JOIN scoped_chats sc ON sc.chat_id = q.chat_id
-         WHERE q.tenant_id = $1
-           AND q.created_by_user_id = tu.user_id
-           AND q.status IN ('chosen', 'sent')
-           AND q.created_at >= (SELECT starts_at FROM bounds)
-           AND q.created_at < (SELECT ends_at FROM bounds)
-           AND ($5::text IS NULL OR LOWER(COALESCE(q.scope_module_id, '')) = LOWER($5::text))
+        SELECT COUNT(DISTINCT o.order_id)
+          FROM tenant_orders o
+          JOIN scoped_chats sc ON sc.chat_id = o.chat_id
+         WHERE o.tenant_id = $1
+           AND (o.created_by_user_id = tu.user_id OR o.assigned_user_id = tu.user_id)
+           AND o.status IN ${ORDER_REVENUE_STATUSES_SQL}
+           AND o.created_at >= (SELECT starts_at FROM bounds)
+           AND o.created_at < (SELECT ends_at FROM bounds)
+           AND ($5::text IS NULL OR LOWER(COALESCE(o.scope_module_id, '')) = LOWER($5::text))
     ), 0) AS ventas,
     COALESCE((
         SELECT COUNT(*)
@@ -882,16 +975,20 @@ source_rows AS (
         ) AS label,
         COUNT(DISTINCT o.chat_id) AS total,
         COUNT(DISTINCT q.quote_id) AS cotizaciones,
-        COUNT(DISTINCT o.chat_id) FILTER (WHERE s.status = 'vendido' OR q.status IN ('chosen', 'sent')) AS ventas
+        COUNT(DISTINCT ord.chat_id) FILTER (WHERE ord.status IN ${ORDER_REVENUE_STATUSES_SQL}) AS ventas
       FROM origins o
       LEFT JOIN tenant_quotes q
         ON q.tenant_id = o.tenant_id
        AND q.chat_id = o.chat_id
        AND q.created_at >= (SELECT starts_at FROM bounds)
        AND q.created_at < (SELECT ends_at FROM bounds)
-      LEFT JOIN tenant_chat_commercial_status s
-        ON s.tenant_id = o.tenant_id
-       AND s.chat_id = o.chat_id
+      LEFT JOIN tenant_orders ord
+        ON ord.tenant_id = o.tenant_id
+       AND ord.chat_id = o.chat_id
+       AND ord.created_at >= (SELECT starts_at FROM bounds)
+       AND ord.created_at < (SELECT ends_at FROM bounds)
+       AND ($4::text IS NULL OR ord.created_by_user_id = $4::text OR ord.assigned_user_id = $4::text)
+       AND ($5::text IS NULL OR LOWER(COALESCE(ord.scope_module_id, '')) = LOWER($5::text))
      GROUP BY 1, 2
 ),
 ad_origins AS (
@@ -923,7 +1020,7 @@ ad_rows AS (
         COALESCE(campaign.object_name, MAX(ao.campaign_id), '') AS campaign_name,
         COUNT(DISTINCT ao.chat_id) AS chats,
         COUNT(DISTINCT q.quote_id) AS cotizaciones,
-        COUNT(DISTINCT ao.chat_id) FILTER (WHERE s.status = 'vendido' OR q.status IN ('chosen', 'sent')) AS ventas,
+        COUNT(DISTINCT ord.chat_id) FILTER (WHERE ord.status IN ${ORDER_REVENUE_STATUSES_SQL}) AS ventas,
         COALESCE(MAX(sp.spend), 0) AS inversion
       FROM ad_origins ao
       LEFT JOIN tenant_meta_ads_structure ad
@@ -944,9 +1041,13 @@ ad_rows AS (
        AND q.chat_id = ao.chat_id
        AND q.created_at >= (SELECT starts_at FROM bounds)
        AND q.created_at < (SELECT ends_at FROM bounds)
-      LEFT JOIN tenant_chat_commercial_status s
-        ON s.tenant_id = $1
-       AND s.chat_id = ao.chat_id
+      LEFT JOIN tenant_orders ord
+        ON ord.tenant_id = $1
+       AND ord.chat_id = ao.chat_id
+       AND ord.created_at >= (SELECT starts_at FROM bounds)
+       AND ord.created_at < (SELECT ends_at FROM bounds)
+       AND ($4::text IS NULL OR ord.created_by_user_id = $4::text OR ord.assigned_user_id = $4::text)
+       AND ($5::text IS NULL OR LOWER(COALESCE(ord.scope_module_id, '')) = LOWER($5::text))
      GROUP BY ao.ad_id, ad.object_name, campaign.object_name
 )
 SELECT
@@ -1048,10 +1149,7 @@ campaign_status_counts AS (
     SELECT
         campaign_id,
         COUNT(DISTINCT chat_id) AS respondieron,
-        COUNT(DISTINCT chat_id) FILTER (WHERE status = 'cotizado') AS cotizados,
-        COUNT(DISTINCT chat_id) FILTER (WHERE status = 'aceptado') AS aceptados,
-        COUNT(DISTINCT chat_id) FILTER (WHERE status IN ('programado', 'atendido', 'vendido')) AS proyeccion_ventas,
-        COUNT(DISTINCT chat_id) FILTER (WHERE status IN ('atendido', 'vendido')) AS ventas_confirmadas
+        COUNT(DISTINCT chat_id) FILTER (WHERE status = 'cotizado') AS cotizados
       FROM campaign_chat_status
      GROUP BY campaign_id
 ),
@@ -1066,6 +1164,24 @@ campaign_quote_counts AS (
        AND q.created_at >= (SELECT starts_at FROM bounds)
        AND q.created_at < (SELECT ends_at FROM bounds)
        AND ($5::text IS NULL OR LOWER(COALESCE(q.scope_module_id, '')) = LOWER($5::text))
+     GROUP BY ccs.campaign_id
+),
+campaign_order_counts AS (
+    SELECT
+        ccs.campaign_id,
+        COUNT(DISTINCT o.chat_id) FILTER (WHERE o.status IN ${ORDER_REVENUE_STATUSES_SQL}) AS pedidos,
+        COUNT(DISTINCT o.chat_id) FILTER (WHERE o.status = 'aceptado') AS aceptados,
+        COUNT(DISTINCT o.chat_id) FILTER (WHERE o.status IN ('programado', 'atendido', 'vendido')) AS proyeccion_ventas,
+        COUNT(DISTINCT o.chat_id) FILTER (WHERE o.status IN ('atendido', 'vendido')) AS ventas_confirmadas
+      FROM campaign_chat_status ccs
+      JOIN tenant_orders o
+        ON o.tenant_id = $1
+       AND o.chat_id = ccs.chat_id
+       AND o.created_at >= (SELECT starts_at FROM bounds)
+       AND o.created_at < (SELECT ends_at FROM bounds)
+       AND o.status IN ${ORDER_REVENUE_STATUSES_SQL}
+       AND ($4::text IS NULL OR o.created_by_user_id = $4::text OR o.assigned_user_id = $4::text)
+       AND ($5::text IS NULL OR LOWER(COALESCE(o.scope_module_id, '')) = LOWER($5::text))
      GROUP BY ccs.campaign_id
 )
 SELECT
@@ -1091,12 +1207,14 @@ SELECT
     COALESCE(csc.respondieron, 0) AS respondieron,
     COALESCE(cqc.cotizaciones, 0) AS cotizaciones,
     COALESCE(csc.cotizados, 0) AS cotizados,
-    COALESCE(csc.aceptados, 0) AS aceptados,
-    COALESCE(csc.proyeccion_ventas, 0) AS proyeccion_ventas,
-    COALESCE(csc.ventas_confirmadas, 0) AS ventas_confirmadas
+    COALESCE(coc.pedidos, 0) AS pedidos,
+    COALESCE(coc.aceptados, 0) AS aceptados,
+    COALESCE(coc.proyeccion_ventas, 0) AS proyeccion_ventas,
+    COALESCE(coc.ventas_confirmadas, 0) AS ventas_confirmadas
   FROM campaign_scope c
   LEFT JOIN campaign_status_counts csc ON csc.campaign_id = c.campaign_id
   LEFT JOIN campaign_quote_counts cqc ON cqc.campaign_id = c.campaign_id
+  LEFT JOIN campaign_order_counts coc ON coc.campaign_id = c.campaign_id
  ORDER BY c.updated_at DESC, c.created_at DESC`;
 
     const { rows } = await queryPostgres(sql, reportParams(ctx));
@@ -1111,6 +1229,7 @@ SELECT
             respondieron,
             cotizaciones: toNumber(row.cotizaciones),
             cotizados: toNumber(row.cotizados),
+            pedidos: toNumber(row.pedidos),
             aceptados: toNumber(row.aceptados),
             proyeccionVentas: toNumber(row.proyeccion_ventas),
             ventasConfirmadas: toNumber(row.ventas_confirmadas),
@@ -1170,6 +1289,16 @@ SELECT
            AND ($5::text IS NULL OR LOWER(COALESCE(q.scope_module_id, '')) = LOWER($5::text))
     ), 0) AS cotizaciones,
     COALESCE((
+        SELECT COUNT(DISTINCT o.order_id)
+          FROM tenant_orders o
+          JOIN scoped_chats sc ON sc.chat_id = o.chat_id
+         WHERE o.tenant_id = $1
+           AND DATE(o.created_at AT TIME ZONE '${REPORT_TIME_ZONE}') = d.day
+           AND o.status IN ${ORDER_REVENUE_STATUSES_SQL}
+           AND ($4::text IS NULL OR o.created_by_user_id = $4::text OR o.assigned_user_id = $4::text)
+           AND ($5::text IS NULL OR LOWER(COALESCE(o.scope_module_id, '')) = LOWER($5::text))
+    ), 0) AS pedidos,
+    COALESCE((
         SELECT AVG(EXTRACT(EPOCH FROM (s.first_agent_response_at - s.first_customer_message_at)) / 60)
           FROM tenant_chat_commercial_status s
           JOIN scoped_chats sc ON sc.chat_id = s.chat_id
@@ -1189,6 +1318,7 @@ SELECT
         mensajesEnviados: toNumber(row.mensajes_enviados),
         mensajesRecibidos: toNumber(row.mensajes_recibidos),
         cotizaciones: toNumber(row.cotizaciones),
+        pedidos: toNumber(row.pedidos),
         tiempoRespuestaPromedio: roundNumber(row.tiempo_respuesta_promedio)
     }));
 }

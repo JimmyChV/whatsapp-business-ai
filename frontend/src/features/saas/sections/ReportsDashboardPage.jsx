@@ -23,12 +23,15 @@ const REPORT_ENDPOINTS = {
 const KPI_DEFS = [
     { key: 'chatsNuevos', label: 'Chats nuevos', type: 'integer', improve: 'up' },
     { key: 'tiempoRespuestaPromedio', label: 'Tiempo respuesta', type: 'minutes', improve: 'down' },
-    { key: 'cotizaciones', label: 'Cotizaciones', type: 'integer', improve: 'up' },
+    { key: 'pedidosAceptados', label: 'Pedidos aceptados', type: 'integer', improve: 'up' },
+    { key: 'pedidosProgramados', label: 'Programados', type: 'integer', improve: 'up' },
+    { key: 'pedidosAtendidos', label: 'Atendidos', type: 'integer', improve: 'up' },
+    { key: 'pedidosVendidos', label: 'Vendidos', type: 'integer', improve: 'up' },
     { key: 'tasaConversion', label: 'Tasa conversion', type: 'percent', improve: 'up' },
     { key: 'ticketPromedio', label: 'Ticket promedio', type: 'currency', improve: 'up' },
     { key: 'mensajesEnviados', label: 'Mensajes enviados', type: 'integer', improve: 'up' },
     { key: 'chatsActivos', label: 'Chats activos', type: 'integer', improve: 'up' },
-    { key: 'revenueEstimado', label: 'Revenue estimado', type: 'currency', improve: 'up' }
+    { key: 'revenueEstimado', label: 'Revenue por pedidos', type: 'currency', improve: 'up' }
 ];
 const FUNNEL_STAGES = [
     { key: 'nuevo', label: 'Nuevo', color: '#9CA3AF', group: 'positive' },
@@ -44,7 +47,8 @@ const FUNNEL_STAGES = [
 const TEMPORAL_LINES = [
     { key: 'chatsNuevos', label: 'Chats nuevos', color: '#1D9E75' },
     { key: 'mensajesEnviados', label: 'Mensajes enviados', color: '#3b82f6' },
-    { key: 'cotizaciones', label: 'Cotizaciones', color: '#f59e0b' }
+    { key: 'cotizaciones', label: 'Cotizaciones', color: '#f59e0b' },
+    { key: 'pedidos', label: 'Pedidos', color: '#15803D' }
 ];
 const FUNNEL_LINES = [
     { key: 'nuevo', label: 'Nuevo', color: '#9CA3AF' },
@@ -161,11 +165,12 @@ function aggregateSeries(rows = [], mode = 'day') {
             parsed.setUTCDate(parsed.getUTCDate() + diff);
             key = parsed.toISOString().slice(0, 10);
         }
-        const current = bucketMap.get(key) || { date: key, chatsNuevos: 0, mensajesEnviados: 0, mensajesRecibidos: 0, cotizaciones: 0, tiempoRespuestaPromedio: 0, samples: 0 };
+        const current = bucketMap.get(key) || { date: key, chatsNuevos: 0, mensajesEnviados: 0, mensajesRecibidos: 0, cotizaciones: 0, pedidos: 0, tiempoRespuestaPromedio: 0, samples: 0 };
         current.chatsNuevos += number(row.chatsNuevos);
         current.mensajesEnviados += number(row.mensajesEnviados);
         current.mensajesRecibidos += number(row.mensajesRecibidos);
         current.cotizaciones += number(row.cotizaciones);
+        current.pedidos += number(row.pedidos);
         current.tiempoRespuestaPromedio += number(row.tiempoRespuestaPromedio);
         current.samples += 1;
         bucketMap.set(key, current);
@@ -286,6 +291,7 @@ function buildReportExportTables({
                 { key: 'mensajesEnviados', label: 'Mensajes enviados' },
                 { key: 'mensajesRecibidos', label: 'Mensajes recibidos' },
                 { key: 'cotizaciones', label: 'Cotizaciones' },
+                { key: 'pedidos', label: 'Pedidos' },
                 { key: 'tiempoRespuestaPromedio', label: 'Tiempo respuesta promedio' }
             ],
             rows: toArray(temporalRows).map((row) => ({
@@ -300,7 +306,7 @@ function buildReportExportTables({
                 { key: 'chatsAsignados', label: 'Chats asignados' },
                 { key: 'chatsAtendidos', label: 'Chats atendidos' },
                 { key: 'cotizaciones', label: 'Cotizaciones' },
-                { key: 'ventas', label: 'Ventas' },
+                { key: 'ventas', label: 'Pedidos' },
                 { key: 'tiempoRespuesta', label: 'Tiempo respuesta' },
                 { key: 'tasaConversion', label: 'Conversion' }
             ],
@@ -317,7 +323,7 @@ function buildReportExportTables({
                 { key: 'source', label: 'Tipo' },
                 { key: 'total', label: 'Chats' },
                 { key: 'cotizaciones', label: 'Cotizaciones' },
-                { key: 'ventas', label: 'Ventas' },
+                { key: 'ventas', label: 'Pedidos' },
                 { key: 'conversion', label: 'Conversion' }
             ],
             rows: toArray(sourceRows).map((row) => ({
@@ -333,7 +339,7 @@ function buildReportExportTables({
                 { key: 'campaignName', label: 'Campana' },
                 { key: 'chats', label: 'Chats' },
                 { key: 'cotizaciones', label: 'Cotizaciones' },
-                { key: 'ventas', label: 'Ventas' },
+                { key: 'ventas', label: 'Pedidos' },
                 { key: 'inversion', label: 'Inversion' },
                 { key: 'costoPerChat', label: 'Costo por chat' }
             ],
@@ -374,6 +380,7 @@ function buildReportExportTables({
                 { key: 'respondieron', label: 'Respondieron' },
                 { key: 'cotizaciones', label: 'Cotizaciones' },
                 { key: 'cotizados', label: 'Cotizados' },
+                { key: 'pedidos', label: 'Pedidos' },
                 { key: 'aceptados', label: 'Aceptados' },
                 { key: 'proyeccionVentas', label: 'Proyeccion' },
                 { key: 'ventasConfirmadas', label: 'Confirmadas' },
@@ -650,7 +657,7 @@ function SortableTeamTable({ rows = [] }) {
         ['chatsAsignados', 'Chats'],
         ['chatsAtendidos', 'Respondidos'],
         ['cotizaciones', 'Cotiz.'],
-        ['ventas', 'Ventas'],
+        ['ventas', 'Pedidos'],
         ['tiempoRespuesta', 'T.Resp'],
         ['tasaConversion', 'Conversion']
     ];
@@ -1076,7 +1083,7 @@ export default function ReportsDashboardPage(props = {}) {
                     <ReportCard title="Fuentes y anuncios Meta" subtitle="Tabla de conversion y top anuncios.">
                         <div className="saas-reports-table-wrap">
                             <table className="saas-reports-table">
-                                <thead><tr><th>Fuente</th><th>Chats</th><th>Cotiz.</th><th>Ventas</th><th>Conversion</th></tr></thead>
+                                <thead><tr><th>Fuente</th><th>Chats</th><th>Cotiz.</th><th>Pedidos</th><th>Conversion</th></tr></thead>
                                 <tbody>
                                     {sourceRows.length ? sourceRows.map((row) => {
                                         const conversion = number(row.total) > 0 ? (number(row.ventas) / number(row.total)) * 100 : 0;
@@ -1108,7 +1115,7 @@ export default function ReportsDashboardPage(props = {}) {
                     </ReportCard>
                 </div>
 
-                <ReportCard title="Actividad temporal" subtitle="Chats, mensajes y cotizaciones a lo largo del periodo.">
+                <ReportCard title="Actividad temporal" subtitle="Chats, mensajes, cotizaciones y pedidos a lo largo del periodo.">
                     <div className="saas-reports-chart-toggle" role="group" aria-label="Agrupar por">
                         {[
                             ['day', 'Dia'],
@@ -1140,6 +1147,7 @@ export default function ReportsDashboardPage(props = {}) {
                                         <th>Env.</th>
                                         <th>Resp.</th>
                                         <th>Cotiz.</th>
+                                        <th>Ped.</th>
                                         <th>Acept.</th>
                                         <th>Proy.</th>
                                         <th>Conf.</th>
@@ -1155,6 +1163,7 @@ export default function ReportsDashboardPage(props = {}) {
                                             <td>{formatInt(row.enviados)}</td>
                                             <td>{formatInt(row.respondieron)}</td>
                                             <td>{formatInt(row.cotizaciones)}</td>
+                                            <td>{formatInt(row.pedidos)}</td>
                                             <td>{formatInt(row.aceptados)}</td>
                                             <td>{formatInt(row.proyeccionVentas)}</td>
                                             <td>{formatInt(row.ventasConfirmadas)}</td>
