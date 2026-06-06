@@ -142,8 +142,8 @@ export default function TestContactsSettingsDetailPane({
                 <h4>Contactos excluidos</h4>
                 <small>Usalo para celulares internos, pruebas de campanas o chats que no deben afectar KPIs.</small>
 
-                <div className="saas-admin-form-row">
-                    <label>
+                <div className="saas-test-contacts-add-row">
+                    <label className="saas-test-contacts-search">
                         Buscar cliente o telefono
                         <input
                             className="saas-input"
@@ -156,17 +156,14 @@ export default function TestContactsSettingsDetailPane({
                             disabled={loading || busy || !canEditTenantSettings}
                         />
                     </label>
-                    <label>
-                        Accion
-                        <button
-                            type="button"
-                            className="saas-btn"
-                            disabled={loading || busy || !canEditTenantSettings || !text(query)}
-                            onClick={() => addContact()}
-                        >
-                            + Agregar
-                        </button>
-                    </label>
+                    <button
+                        type="button"
+                        className="saas-btn saas-test-contacts-add-btn"
+                        disabled={loading || busy || !canEditTenantSettings || !text(query)}
+                        onClick={() => addContact()}
+                    >
+                        + Agregar
+                    </button>
                 </div>
 
                 {candidates.length > 0 ? (

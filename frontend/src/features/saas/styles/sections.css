@@ -1232,6 +1232,39 @@
   text-align: right;
 }
 
+.saas-test-contacts-add-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  align-items: end;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.saas-test-contacts-search {
+  min-width: 0;
+}
+
+.saas-test-contacts-search input {
+  width: 100%;
+}
+
+.saas-test-contacts-add-btn {
+  min-width: 128px;
+  height: 44px;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .saas-test-contacts-add-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .saas-test-contacts-add-btn {
+    width: 100%;
+  }
+}
+
 .saas-reports-funnel__bar {
   height: 13px;
   border-radius: 999px;

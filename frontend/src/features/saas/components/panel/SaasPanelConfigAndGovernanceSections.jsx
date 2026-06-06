@@ -34,6 +34,7 @@ export default function SaasPanelConfigAndGovernanceSections(props = {}) {
         busy: context.busy,
         canViewModules: context.canViewModules,
         canViewTenantSettings: context.canViewTenantSettings,
+        canEditTenantSettings: context.canEditTenantSettings,
         canEditModules: context.canEditModules,
         canViewOwnDevices: context.canViewOwnDevices,
         canRevokeOwnDevices: context.canRevokeOwnDevices,
