@@ -948,21 +948,7 @@ function createSocketWaEventsBridgeService({
                             updatedAt: new Date().toISOString()
                         });
                     }
-                    let skipUnreadIncrement = false;
-                    if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase && chatReadStateService?.shouldIncrementInbound) {
-                        try {
-                            skipUnreadIncrement = !(await chatReadStateService.shouldIncrementInbound({
-                                tenantId: historyTenantId,
-                                chatId: relatedChatIdBase,
-                                scopeModuleId: cleanScopeModuleId,
-                                conversationOpsService
-                            }));
-                        } catch (error) {
-                            console.warn('[ChatReadState] No se pudo evaluar presencia inbound:', error?.message || error);
-                        }
-                    }
-
-                    await persistMessageHistory(historyTenantId, {
+                    const historyResult = await persistMessageHistory(historyTenantId, {
                         msg,
                         senderMeta,
                         fileMeta,
@@ -970,19 +956,21 @@ function createSocketWaEventsBridgeService({
                         location,
                         quotedMessage: effectiveQuotedMessage,
                         agentMeta,
-                        moduleContext: effectiveModuleContext,
-                        skipUnreadIncrement
+                        moduleContext: effectiveModuleContext
                     });
 
-                    if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase && chatReadStateService?.getUnreadState) {
+                    if (msg?.fromMe !== true
+                        && historyTenantId
+                        && relatedChatIdBase
+                        && historyResult?.ok !== false
+                        && historyResult?.duplicateMessage !== true
+                        && chatReadStateService?.incrementUnreadForInbound) {
                         try {
-                            await chatReadStateService.clearManualUnreadFlag?.(historyTenantId, {
+                            const unreadItem = await chatReadStateService.incrementUnreadForInbound({
+                                tenantId: historyTenantId,
                                 chatId: relatedChatIdBase,
-                                scopeModuleId: cleanScopeModuleId
-                            });
-                            const unreadItem = await chatReadStateService.getUnreadState(historyTenantId, {
-                                chatId: relatedChatIdBase,
-                                scopeModuleId: cleanScopeModuleId
+                                scopeModuleId: cleanScopeModuleId,
+                                conversationOpsService
                             });
                             chatReadStateService.emitUnreadState?.({
                                 emitToTenant,

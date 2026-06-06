@@ -7,6 +7,7 @@
     queryPostgres
 } = require('../../../config/persistence-runtime');
 const { assertValidTenant } = require('../../tenant/helpers/tenant-guard.helpers');
+const chatReadStateService = require('./chat-read-state.service');
 
 const HISTORY_FILE = 'message_history.json';
 let postgresMessageColumnsReadyPromise = null;
@@ -52,7 +53,6 @@ function normalizeChatPatch(chat = {}) {
         displayName: toSafeString(chat.displayName || chat.name),
         phone: toSafeString(chat.phone),
         subtitle: toSafeString(chat.subtitle),
-        unreadCount: Math.max(0, Math.floor(toSafeNumber(chat.unreadCount, 0) || 0)),
         archived: toSafeBoolean(chat.archived, false),
         pinned: toSafeBoolean(chat.pinned, false),
         metadata: chat.metadata && typeof chat.metadata === 'object' ? chat.metadata : {}
@@ -89,8 +89,7 @@ function normalizeMessageRecord(input = {}) {
         orderPayload: input.orderPayload && typeof input.orderPayload === 'object' ? input.orderPayload : null,
         locationPayload: input.locationPayload && typeof input.locationPayload === 'object' ? input.locationPayload : null,
         metadata: input.metadata && typeof input.metadata === 'object' ? input.metadata : {},
-        chat: normalizeChatPatch(input.chat || { id: chatId }),
-        skipUnreadIncrement: toSafeBoolean(input.skipUnreadIncrement, false)
+        chat: normalizeChatPatch(input.chat || { id: chatId })
     };
 }
 
@@ -154,12 +153,6 @@ async function ensurePostgresMessageColumns() {
         await queryPostgres(
             `CREATE INDEX IF NOT EXISTS idx_tenant_chats_updated
              ON tenant_chats(tenant_id, updated_at DESC)`
-        );
-        await queryPostgres('ALTER TABLE IF EXISTS tenant_chats ADD COLUMN IF NOT EXISTS manually_marked_unread BOOLEAN NOT NULL DEFAULT FALSE');
-        await queryPostgres('ALTER TABLE IF EXISTS tenant_chats ADD COLUMN IF NOT EXISTS manually_marked_unread_at TIMESTAMPTZ NULL');
-        await queryPostgres(
-            `CREATE INDEX IF NOT EXISTS idx_tenant_chats_unread_state
-             ON tenant_chats(tenant_id, unread_count, manually_marked_unread, updated_at DESC)`
         );
     })();
 
@@ -263,16 +256,8 @@ function upsertMessageInMemory(store, record) {
     const currentChat = store.chats[record.chatId] || { id: record.chatId };
     const chatPatch = {
         ...(record.chat || { id: record.chatId }),
-        unreadCount: record.fromMe
-            ? 0
-            : (
-                existing || record.skipUnreadIncrement === true
-                    ? (Number(currentChat.unreadCount || 0) || 0)
-                    : (Number(currentChat.unreadCount || 0) || 0) + 1
-            ),
         metadata: {
-            ...((record.chat?.metadata && typeof record.chat.metadata === 'object') ? record.chat.metadata : {}),
-            manuallyMarkedUnread: false
+            ...((record.chat?.metadata && typeof record.chat.metadata === 'object') ? record.chat.metadata : {})
         }
     };
     store.chats[record.chatId] = applyChatPatch(currentChat, chatPatch, record);
@@ -298,30 +283,18 @@ async function upsertChatPostgres(tenantId, chatPatch = {}, fallbackMessage = nu
 
     const incomingTs = Number(fallbackMessage?.timestampUnix || 0) || null;
     const incomingMessageId = toSafeString(fallbackMessage?.messageId);
-    const hasExplicitUnreadCount = Number.isFinite(Number(chatPatch.unreadCount));
-    const unreadMode = hasExplicitUnreadCount
-        ? 'set'
-        : (fallbackMessage?.fromMe === false && fallbackMessage?.skipUnreadIncrement !== true ? 'increment' : 'keep');
-    const unreadCountForInsert = hasExplicitUnreadCount
-        ? Math.max(0, Math.floor(Number(chatPatch.unreadCount)))
-        : (unreadMode === 'increment' ? 1 : 0);
 
     await queryPostgres(
         `INSERT INTO tenant_chats (
-            tenant_id, chat_id, display_name, phone, subtitle, unread_count, archived, pinned,
+            tenant_id, chat_id, display_name, phone, subtitle, archived, pinned,
             last_message_id, last_message_at, metadata, created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, NOW(), NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, NOW(), NOW())
         ON CONFLICT (tenant_id, chat_id)
         DO UPDATE SET
             display_name = COALESCE(EXCLUDED.display_name, tenant_chats.display_name),
             phone = COALESCE(EXCLUDED.phone, tenant_chats.phone),
             subtitle = COALESCE(EXCLUDED.subtitle, tenant_chats.subtitle),
-            unread_count = CASE
-                WHEN $12 = 'set' THEN EXCLUDED.unread_count
-                WHEN $12 = 'increment' THEN COALESCE(tenant_chats.unread_count, 0) + 1
-                ELSE tenant_chats.unread_count
-            END,
             archived = COALESCE(EXCLUDED.archived, tenant_chats.archived),
             pinned = COALESCE(EXCLUDED.pinned, tenant_chats.pinned),
             last_message_id = CASE
@@ -338,13 +311,11 @@ async function upsertChatPostgres(tenantId, chatPatch = {}, fallbackMessage = nu
             chatPatch.displayName || null,
             chatPatch.phone || null,
             chatPatch.subtitle || null,
-            unreadCountForInsert,
             typeof chatPatch.archived === 'boolean' ? chatPatch.archived : false,
             typeof chatPatch.pinned === 'boolean' ? chatPatch.pinned : false,
             incomingMessageId,
             incomingTs,
-            JSON.stringify(chatPatch.metadata || {}),
-            unreadMode
+            JSON.stringify(chatPatch.metadata || {})
         ]
     );
 }
@@ -353,7 +324,7 @@ async function upsertMessagePostgres(tenantId, record, { schemaEnsured = false }
     assertValidTenant(tenantId, 'message-history.upsertMessagePostgres');
     try {
         await ensurePostgresMessageColumns();
-        await queryPostgres(
+        const { rows } = await queryPostgres(
             `INSERT INTO tenant_messages (
                 tenant_id, message_id, chat_id, from_me, sender_id, sender_phone, author_id,
                 wa_module_id, wa_phone_number,
@@ -390,7 +361,8 @@ async function upsertMessagePostgres(tenantId, record, { schemaEnsured = false }
                 order_payload = COALESCE(EXCLUDED.order_payload, tenant_messages.order_payload),
                 location_payload = COALESCE(EXCLUDED.location_payload, tenant_messages.location_payload),
                 metadata = COALESCE(tenant_messages.metadata, '{}'::jsonb) || COALESCE(EXCLUDED.metadata, '{}'::jsonb),
-                updated_at = NOW()`,
+                updated_at = NOW()
+            RETURNING (xmax::text = '0') AS inserted`,
             [
                 tenantId,
                 record.messageId,
@@ -417,32 +389,12 @@ async function upsertMessagePostgres(tenantId, record, { schemaEnsured = false }
                 JSON.stringify(record.metadata || {})
             ]
         );
+        return { inserted: rows?.[0]?.inserted === true || rows?.[0]?.inserted === 't' };
     } catch (error) {
         if (!schemaEnsured && missingColumn(error, 'wa_module_id')) {
             await ensurePostgresMessageColumns();
-            await upsertMessagePostgres(tenantId, record, { schemaEnsured: true });
-            return;
+            return upsertMessagePostgres(tenantId, record, { schemaEnsured: true });
         }
-        throw error;
-    }
-}
-
-async function messageExistsPostgres(tenantId, messageId) {
-    const safeId = toSafeString(messageId);
-    if (!safeId) return false;
-    try {
-        await ensurePostgresMessageColumns();
-        const { rows } = await queryPostgres(
-            `SELECT 1
-               FROM tenant_messages
-              WHERE tenant_id = $1
-                AND message_id = $2
-              LIMIT 1`,
-            [tenantId, safeId]
-        );
-        return rows.length > 0;
-    } catch (error) {
-        if (missingRelation(error)) return false;
         throw error;
     }
 }
@@ -454,41 +406,31 @@ async function upsertMessage(tenantId = DEFAULT_TENANT_ID, input = {}) {
     assertValidTenant(cleanTenant, 'message-history.upsertMessage');
     const record = normalizeMessageRecord(input);
     if (!record) return { ok: false, skipped: 'invalid_record' };
-    if (record.fromMe) {
-        record.chat = {
-            ...(record.chat || { id: record.chatId }),
-            unreadCount: 0,
-            metadata: {
-                ...((record.chat?.metadata && typeof record.chat.metadata === 'object') ? record.chat.metadata : {}),
-                manuallyMarkedUnread: false
-            }
-        };
-    } else {
-        record.chat = {
-            ...(record.chat || { id: record.chatId }),
-            metadata: {
-                ...((record.chat?.metadata && typeof record.chat.metadata === 'object') ? record.chat.metadata : {}),
-                manuallyMarkedUnread: false
-            }
-        };
-    }
 
     if (getStorageDriver() === 'postgres') {
-        const skipUnreadIncrement = record.fromMe === false
-            ? (record.skipUnreadIncrement === true || await messageExistsPostgres(cleanTenant, record.messageId))
-            : false;
-        await upsertChatPostgres(cleanTenant, record.chat, {
-            ...record,
-            skipUnreadIncrement
-        });
-        await upsertMessagePostgres(cleanTenant, record);
-        return { ok: true, driver: 'postgres', messageId: record.messageId };
+        await upsertChatPostgres(cleanTenant, record.chat, record);
+        const messageResult = await upsertMessagePostgres(cleanTenant, record);
+        const inserted = messageResult?.inserted === true;
+        return {
+            ok: true,
+            driver: 'postgres',
+            messageId: record.messageId,
+            inserted,
+            duplicateMessage: !inserted
+        };
     }
 
     const store = await loadStore(cleanTenant);
+    const duplicateMessage = Boolean(store.messages[record.messageId]);
     upsertMessageInMemory(store, record);
     await saveStore(cleanTenant, store);
-    return { ok: true, driver: 'file', messageId: record.messageId };
+    return {
+        ok: true,
+        driver: 'file',
+        messageId: record.messageId,
+        inserted: !duplicateMessage,
+        duplicateMessage
+    };
 }
 
 
@@ -496,7 +438,6 @@ async function updateChatState(tenantId = DEFAULT_TENANT_ID, {
     chatId,
     archived,
     pinned,
-    unreadCount,
     metadata = null
 } = {}) {
     if (!isHistoryEnabled()) return { ok: false, skipped: 'disabled' };
@@ -508,12 +449,8 @@ async function updateChatState(tenantId = DEFAULT_TENANT_ID, {
 
     const hasArchived = typeof archived === 'boolean';
     const hasPinned = typeof pinned === 'boolean';
-    const normalizedUnreadCount = Number.isFinite(Number(unreadCount))
-        ? Math.max(0, Math.floor(Number(unreadCount)))
-        : null;
-    const hasUnreadCount = normalizedUnreadCount !== null;
     const hasMetadata = metadata && typeof metadata === 'object';
-    if (!hasArchived && !hasPinned && !hasUnreadCount && !hasMetadata) {
+    if (!hasArchived && !hasPinned && !hasMetadata) {
         return { ok: false, skipped: 'empty_patch' };
     }
 
@@ -533,11 +470,6 @@ async function updateChatState(tenantId = DEFAULT_TENANT_ID, {
                 setClauses.push(`pinned = $${idx}`);
                 params.push(Boolean(pinned));
             }
-            if (hasUnreadCount) {
-                idx += 1;
-                setClauses.push(`unread_count = $${idx}`);
-                params.push(normalizedUnreadCount);
-            }
             if (hasMetadata) {
                 idx += 1;
                 setClauses.push(`metadata = COALESCE(metadata, '{}'::jsonb) || $${idx}::jsonb`);
@@ -548,7 +480,7 @@ async function updateChatState(tenantId = DEFAULT_TENANT_ID, {
                             SET ${setClauses.join(', ')}
                           WHERE tenant_id = $1
                             AND chat_id = $2
-                        RETURNING chat_id, archived, pinned, unread_count, metadata`;
+                        RETURNING chat_id, archived, pinned, metadata`;
             const { rows } = await queryPostgres(sql, params);
             if (!rows.length) return { ok: false, skipped: 'not_found' };
 
@@ -559,7 +491,6 @@ async function updateChatState(tenantId = DEFAULT_TENANT_ID, {
                 chatId: String(row.chat_id || safeChatId),
                 archived: Boolean(row.archived),
                 pinned: Boolean(row.pinned),
-                unreadCount: Number(row.unread_count || 0) || 0,
                 metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
             };
         } catch (error) {
@@ -576,7 +507,6 @@ async function updateChatState(tenantId = DEFAULT_TENANT_ID, {
         ...currentChat,
         archived: hasArchived ? Boolean(archived) : Boolean(currentChat.archived),
         pinned: hasPinned ? Boolean(pinned) : Boolean(currentChat.pinned),
-        unreadCount: hasUnreadCount ? normalizedUnreadCount : Number(currentChat.unreadCount || 0),
         metadata: {
             ...(currentChat.metadata && typeof currentChat.metadata === 'object' ? currentChat.metadata : {}),
             ...(hasMetadata ? metadata : {})
@@ -590,7 +520,6 @@ async function updateChatState(tenantId = DEFAULT_TENANT_ID, {
         chatId: safeChatId,
         archived: Boolean(store.chats[safeChatId]?.archived),
         pinned: Boolean(store.chats[safeChatId]?.pinned),
-        unreadCount: Number(store.chats[safeChatId]?.unreadCount || 0),
         metadata: store.chats[safeChatId]?.metadata && typeof store.chats[safeChatId].metadata === 'object'
             ? store.chats[safeChatId].metadata
             : {}
@@ -609,64 +538,11 @@ async function bulkMarkChatsUnread(tenantId = DEFAULT_TENANT_ID, chatIds = []) {
     ));
     if (!safeChatIds.length) return { ok: true, items: [], updated: 0 };
 
-    if (getStorageDriver() === 'postgres') {
-        try {
-            await ensurePostgresMessageColumns();
-            const { rows } = await queryPostgres(
-                `UPDATE tenant_chats
-                    SET unread_count = 0,
-                        metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
-                            'manuallyMarkedUnread', true,
-                            'manuallyMarkedUnreadAt', NOW()::text
-                        ),
-                        updated_at = NOW()
-                  WHERE tenant_id = $1
-                    AND chat_id = ANY($2::text[])
-                RETURNING chat_id, unread_count, metadata`,
-                [cleanTenant, safeChatIds]
-            );
-            const items = (Array.isArray(rows) ? rows : [])
-                .map((row) => ({
-                    chatId: String(row.chat_id || '').trim(),
-                    unreadCount: Number(row.unread_count || 0) || 0,
-                    manuallyMarkedUnread: row?.metadata?.manuallyMarkedUnread === true,
-                    manuallyMarkedUnreadAt: String(row?.metadata?.manuallyMarkedUnreadAt || '').trim() || null
-                }))
-                .filter((entry) => entry.chatId);
-            return { ok: true, driver: 'postgres', items, updated: items.length };
-        } catch (error) {
-            if (missingRelation(error)) return { ok: false, skipped: 'schema_missing', items: [] };
-            throw error;
-        }
-    }
-
-    const store = await loadStore(cleanTenant);
-    const items = [];
-    for (const chatId of safeChatIds) {
-        const current = store.chats[chatId];
-        if (!current) continue;
-        const unreadCount = 0;
-        store.chats[chatId] = {
-            ...current,
-            unreadCount,
-            metadata: {
-                ...(current.metadata && typeof current.metadata === 'object' ? current.metadata : {}),
-                manuallyMarkedUnread: true,
-                manuallyMarkedUnreadAt: new Date().toISOString()
-            },
-            updatedAt: new Date().toISOString()
-        };
-        items.push({
-            chatId,
-            unreadCount,
-            manuallyMarkedUnread: true,
-            manuallyMarkedUnreadAt: store.chats[chatId].metadata.manuallyMarkedUnreadAt
-        });
-    }
-    if (items.length > 0) {
-        await saveStore(cleanTenant, store);
-    }
-    return { ok: true, driver: 'file', items, updated: items.length };
+    const items = await chatReadStateService.markUnread(
+        cleanTenant,
+        safeChatIds.map((chatId) => ({ chatId }))
+    );
+    return { ok: true, driver: getStorageDriver(), items, updated: items.length };
 }
 
 async function updateMessageAck(tenantId = DEFAULT_TENANT_ID, { messageId, chatId, ack } = {}) {

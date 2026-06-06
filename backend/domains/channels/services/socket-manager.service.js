@@ -784,8 +784,7 @@ class SocketManager {
         location = null,
         quotedMessage = null,
         agentMeta = null,
-        moduleContext = null,
-        skipUnreadIncrement = false
+        moduleContext = null
     } = {}) {
         try {
             if (!msg) return;
@@ -812,7 +811,7 @@ class SocketManager {
                 || ''
             ) || null;
             const moduleAttributionMeta = buildModuleAttributionMeta(moduleContext);
-            await messageHistoryService.upsertMessage(tenantId, {
+            const historyResult = await messageHistoryService.upsertMessage(tenantId, {
                 messageId,
                 chatId,
                 fromMe: Boolean(msg?.fromMe),
@@ -863,8 +862,7 @@ class SocketManager {
                     displayName: senderMeta?.notifyName || null,
                     phone: senderMeta?.senderPhone || null,
                     subtitle: senderMeta?.senderPushname || null
-                },
-                skipUnreadIncrement: Boolean(skipUnreadIncrement)
+                }
             });
 
             const customerPhone = coerceHumanPhone(
@@ -895,8 +893,10 @@ class SocketManager {
             if (HISTORY_DEBUG_ENABLED) {
                 console.info('[History] persist message ok tenant=' + String(tenantId || 'default') + ' chat=' + String(chatId || '') + ' msg=' + String(messageId || '') + ' module=' + String(historyModuleId || 'n/a'));
             }
+            return historyResult;
         } catch (error) {
             console.warn('[History] persistMessageHistory failed:', String(error?.message || error));
+            return { ok: false, error: String(error?.message || error) };
         }
     }
     async persistMessageEdit(tenantId, {

@@ -49,11 +49,17 @@ function normalizeTarget({ chatId = '', baseChatId = '', scopeModuleId = '' } = 
 function normalizeStateRow(tenantId = DEFAULT_TENANT_ID, target = {}, row = {}) {
     const normalizedTarget = normalizeTarget(target);
     const manualFromColumn = row?.manually_marked_unread;
-    const manualFromMetadata = row?.manual_unread;
+    const manualFromMetadata = row?.manual_unread ?? row?.metadata?.manuallyMarkedUnread;
     const manuallyMarkedUnread = manualFromColumn === true
         || manualFromColumn === 'true'
+        || manualFromMetadata === true
         || manualFromMetadata === 'true';
-    const manuallyMarkedUnreadAt = toText(row?.manually_marked_unread_at || row?.manual_unread_at || '') || null;
+    const manuallyMarkedUnreadAt = toText(
+        row?.manually_marked_unread_at
+        || row?.manual_unread_at
+        || row?.metadata?.manuallyMarkedUnreadAt
+        || ''
+    ) || null;
     return {
         tenantId: toTenantId(tenantId),
         chatId: normalizedTarget.scopedChatId,
@@ -68,25 +74,7 @@ function normalizeStateRow(tenantId = DEFAULT_TENANT_ID, target = {}, row = {}) 
 async function ensurePostgresChatReadColumns() {
     if (postgresChatReadColumnsReadyPromise) return postgresChatReadColumnsReadyPromise;
 
-    postgresChatReadColumnsReadyPromise = (async () => {
-        await queryPostgres('ALTER TABLE IF EXISTS tenant_chats ADD COLUMN IF NOT EXISTS manually_marked_unread BOOLEAN NOT NULL DEFAULT FALSE');
-        await queryPostgres('ALTER TABLE IF EXISTS tenant_chats ADD COLUMN IF NOT EXISTS manually_marked_unread_at TIMESTAMPTZ NULL');
-        await queryPostgres(
-            `UPDATE tenant_chats
-                SET manually_marked_unread = COALESCE(metadata->>'manuallyMarkedUnread', 'false') = 'true',
-                    manually_marked_unread_at = CASE
-                        WHEN COALESCE(metadata->>'manuallyMarkedUnreadAt', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
-                            THEN NULLIF(metadata->>'manuallyMarkedUnreadAt', '')::timestamptz
-                        ELSE manually_marked_unread_at
-                    END
-              WHERE metadata ? 'manuallyMarkedUnread'
-                AND manually_marked_unread = FALSE`
-        );
-        await queryPostgres(
-            `CREATE INDEX IF NOT EXISTS idx_tenant_chats_unread_state
-             ON tenant_chats(tenant_id, unread_count, manually_marked_unread, updated_at DESC)`
-        );
-    })();
+    postgresChatReadColumnsReadyPromise = Promise.resolve();
 
     try {
         await postgresChatReadColumnsReadyPromise;
@@ -316,6 +304,124 @@ async function markUnread(tenantId = DEFAULT_TENANT_ID, targets = []) {
     return items;
 }
 
+async function getInboundUnreadSnapshot(tenantId = DEFAULT_TENANT_ID, target = {}) {
+    const cleanTenant = toTenantId(tenantId);
+    const normalizedTarget = normalizeTarget(target);
+    if (!normalizedTarget.baseChatId) return null;
+    const exactScope = normalizedTarget.scopeModuleId || '';
+    const scopeCandidates = Array.from(new Set([exactScope, '']));
+    const { rows } = await queryPostgres(
+        `SELECT tc.chat_id,
+                tc.unread_count,
+                tc.manually_marked_unread,
+                tc.manually_marked_unread_at,
+                tca.assignee_user_id,
+                tca.status AS assignment_status,
+                tca.scope_module_id AS assignment_scope_module_id
+           FROM tenant_chats tc
+           LEFT JOIN LATERAL (
+                SELECT assignee_user_id, status, scope_module_id
+                  FROM tenant_chat_assignments
+                 WHERE tenant_id = tc.tenant_id
+                   AND chat_id = tc.chat_id
+                   AND scope_module_id = ANY($3::text[])
+                 ORDER BY CASE WHEN scope_module_id = $4 THEN 0 ELSE 1 END
+                 LIMIT 1
+           ) tca ON TRUE
+          WHERE tc.tenant_id = $1
+            AND tc.chat_id = $2
+          LIMIT 1`,
+        [cleanTenant, normalizedTarget.baseChatId, scopeCandidates, exactScope]
+    );
+    return rows?.[0] || null;
+}
+
+async function incrementUnreadForInbound({
+    tenantId = DEFAULT_TENANT_ID,
+    chatId = '',
+    scopeModuleId = '',
+    conversationOpsService = null
+} = {}) {
+    const cleanTenant = toTenantId(tenantId);
+    assertValidTenant(cleanTenant, 'chat-read-state.incrementUnreadForInbound');
+    const target = normalizeTarget({ chatId, scopeModuleId });
+    if (!target.baseChatId) return null;
+
+    if (getStorageDriver() === 'postgres') {
+        const snapshot = await getInboundUnreadSnapshot(cleanTenant, target);
+        if (!snapshot) return null;
+        const assignment = snapshot.assignee_user_id
+            ? {
+                assigneeUserId: snapshot.assignee_user_id,
+                status: snapshot.assignment_status || 'active'
+            }
+            : null;
+        const assigneeUserId = toText(assignment?.assigneeUserId || '');
+        const assignedUserIsViewing = assignmentIsActive(assignment) && isAssignedUserViewing({
+            tenantId: cleanTenant,
+            chatId: target.baseChatId,
+            scopeModuleId: target.scopeModuleId || '',
+            assigneeUserId
+        });
+
+        if (assignedUserIsViewing) {
+            const hasUnreadState = (Number(snapshot.unread_count || 0) || 0) > 0
+                || snapshot.manually_marked_unread === true
+                || snapshot.manually_marked_unread === 'true';
+            return hasUnreadState
+                ? clearUnread(cleanTenant, target)
+                : normalizeStateRow(cleanTenant, target, snapshot);
+        }
+
+        const { rows } = await queryPostgres(
+            `UPDATE tenant_chats
+                SET unread_count = COALESCE(unread_count, 0) + 1,
+                    manually_marked_unread = FALSE,
+                    manually_marked_unread_at = NULL,
+                    metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+                        'manuallyMarkedUnread', false
+                    ) - 'manuallyMarkedUnreadAt',
+                    updated_at = NOW()
+              WHERE tenant_id = $1
+                AND chat_id = $2
+              RETURNING chat_id,
+                        unread_count,
+                        manually_marked_unread,
+                        manually_marked_unread_at`,
+            [cleanTenant, target.baseChatId]
+        );
+        return normalizeStateRow(cleanTenant, target, rows?.[0] || {});
+    }
+
+    const assignment = await resolveAssignment(conversationOpsService, cleanTenant, target);
+    const assigneeUserId = toText(assignment?.assigneeUserId || assignment?.assignee_user_id || assignment?.assignedUserId || '');
+    const assignedUserIsViewing = assignmentIsActive(assignment) && isAssignedUserViewing({
+        tenantId: cleanTenant,
+        chatId: target.baseChatId,
+        scopeModuleId: target.scopeModuleId || '',
+        assigneeUserId
+    });
+    if (assignedUserIsViewing) {
+        return clearUnread(cleanTenant, target);
+    }
+
+    const store = await loadFileStore(cleanTenant);
+    const current = store.chats[target.baseChatId] || { id: target.baseChatId };
+    const nextUnreadCount = (Number(current.unreadCount || 0) || 0) + 1;
+    store.chats[target.baseChatId] = {
+        ...current,
+        unreadCount: nextUnreadCount,
+        metadata: {
+            ...(current.metadata && typeof current.metadata === 'object' ? current.metadata : {}),
+            manuallyMarkedUnread: false,
+            manuallyMarkedUnreadAt: null
+        },
+        updatedAt: new Date().toISOString()
+    };
+    await saveFileStore(cleanTenant, store);
+    return normalizeStateRow(cleanTenant, target, store.chats[target.baseChatId]);
+}
+
 function assignmentIsActive(assignment = null) {
     if (!assignment || typeof assignment !== 'object') return false;
     const status = toText(assignment.status || 'active').toLowerCase();
@@ -513,6 +619,7 @@ module.exports = {
     clearUnreadForActor,
     clearManualUnreadFlag,
     markUnread,
+    incrementUnreadForInbound,
     focusChat,
     blurChat,
     clearSocketPresence,

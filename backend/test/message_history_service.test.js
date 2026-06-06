@@ -6,8 +6,10 @@ const path = require('path');
 
 function loadMessageHistoryServiceFresh() {
     const runtimePath = require.resolve('../config/persistence-runtime');
+    const chatReadStatePath = require.resolve('../domains/operations/services/chat-read-state.service');
     const modulePath = require.resolve('../domains/operations/services/message-history.service');
     delete require.cache[runtimePath];
+    delete require.cache[chatReadStatePath];
     delete require.cache[modulePath];
     return require('../domains/operations/services/message-history.service');
 }
@@ -159,7 +161,7 @@ test('message_history_service respects disabled toggle', async () => {
     }
 });
 
-test('message_history_service clears manual unread when agent replies', async () => {
+test('message_history_service leaves unread state to chat read state service', async () => {
     const prevDriver = process.env.SAAS_STORAGE_DRIVER;
     const prevDir = process.env.SAAS_TENANT_DATA_DIR;
     const prevHistoryEnabled = process.env.HISTORY_PERSISTENCE_ENABLED;
@@ -190,8 +192,8 @@ test('message_history_service clears manual unread when agent replies', async ()
         let chats = await service.listChats('tenant_unread', { limit: 10 });
         let chat = chats.find((entry) => entry.chatId === chatId);
         assert.ok(chat);
-        assert.equal(chat.unreadCount, 1);
-        assert.equal(chat.metadata.manuallyMarkedUnread, false);
+        assert.equal(chat.unreadCount, 0);
+        assert.equal(chat.metadata.manuallyMarkedUnread, undefined);
 
         await service.upsertMessage('tenant_unread', {
             messageId: 'msg_unread_1',
@@ -209,7 +211,7 @@ test('message_history_service clears manual unread when agent replies', async ()
         chats = await service.listChats('tenant_unread', { limit: 10 });
         chat = chats.find((entry) => entry.chatId === chatId);
         assert.ok(chat);
-        assert.equal(chat.unreadCount, 1);
+        assert.equal(chat.unreadCount, 0);
 
         const unreadResult = await service.bulkMarkChatsUnread('tenant_unread', [chatId]);
         assert.equal(unreadResult.updated, 1);
@@ -233,7 +235,7 @@ test('message_history_service clears manual unread when agent replies', async ()
         chat = chats.find((entry) => entry.chatId === chatId);
         assert.ok(chat);
         assert.equal(chat.unreadCount, 0);
-        assert.equal(chat.metadata.manuallyMarkedUnread, false);
+        assert.equal(chat.metadata.manuallyMarkedUnread, true);
     } finally {
         process.env.SAAS_STORAGE_DRIVER = prevDriver;
         process.env.SAAS_TENANT_DATA_DIR = prevDir;
