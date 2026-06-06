@@ -12,6 +12,7 @@
     sanitizeObjectPayload
 } = {}) {
     const auditLogService = require('../services/audit-log.service');
+    const authService = require('../services/auth.service');
     if (!app) throw new Error('registerSecurityAccessControlHttpRoutes requiere app.');
     if (!saasControlService) throw new Error('registerSecurityAccessControlHttpRoutes requiere saasControlService.');
     if (!aiUsageService) throw new Error('registerSecurityAccessControlHttpRoutes requiere aiUsageService.');
@@ -89,6 +90,9 @@
                     active: source.active === undefined ? undefined : source.active !== false
                 }
             });
+            if (typeof authService.invalidatePermissionsCache === 'function') {
+                authService.invalidatePermissionsCache();
+            }
             return res.json({ ok: true, ...catalog });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar el rol.') });
@@ -127,6 +131,9 @@
                     active: source.active === undefined ? true : source.active !== false
                 }
             });
+            if (typeof authService.invalidatePermissionsCache === 'function') {
+                authService.invalidatePermissionsCache();
+            }
             return res.status(201).json({ ok: true, ...catalog });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear el rol.') });
@@ -164,6 +171,9 @@
                     active: source.active === undefined ? undefined : source.active !== false
                 }
             });
+            if (typeof authService.invalidatePermissionsCache === 'function') {
+                authService.invalidatePermissionsCache();
+            }
             return res.json({ ok: true, ...catalog });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar el pack.') });
@@ -187,6 +197,9 @@
             const actorRole = getAuthRole(req);
             const isActorSuperAdmin = Boolean(req?.authContext?.user?.isSuperAdmin);
             const catalog = accessPolicyService.getAccessCatalog({ actorRole, isActorSuperAdmin });
+            if (typeof authService.invalidatePermissionsCache === 'function') {
+                authService.invalidatePermissionsCache();
+            }
             return res.status(201).json({ ok: true, ...catalog });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo crear el pack.') });

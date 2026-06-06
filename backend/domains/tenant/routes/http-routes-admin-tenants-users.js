@@ -21,7 +21,22 @@
     canActorManageRoleChanges
 }) {
     const auditLogService = require('../../security/services/audit-log.service');
+    const authService = require('../../security/services/auth.service');
     if (!app) throw new Error('registerTenantAdminTenantsUsersHttpRoutes requiere app.');
+
+    function invalidateUserPermissionsCache(userId = '', memberships = []) {
+        if (typeof authService.invalidatePermissionsCache !== 'function') return;
+        const tenantIds = new Set(
+            sanitizeMembershipPayload(memberships || [])
+                .map((membership) => String(membership?.tenantId || '').trim())
+                .filter(Boolean)
+        );
+        if (tenantIds.size === 0) {
+            authService.invalidatePermissionsCache({ userId });
+            return;
+        }
+        tenantIds.forEach((tenantId) => authService.invalidatePermissionsCache({ userId, tenantId }));
+    }
 
     app.get('/api/admin/saas/tenants', async (req, res) => {
         try {
@@ -268,6 +283,10 @@
                     role: targetRoleAfter
                 } : payload
             });
+            invalidateUserPermissionsCache(userId, [
+                ...(sanitizeMembershipPayload(targetUser.memberships || [])),
+                ...(sanitizeMembershipPayload(resultingMemberships || []))
+            ]);
             return res.json({ ok: true, user: user ? saasControlService.sanitizeUserPublic(user) : null });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar usuario.') });
@@ -327,6 +346,10 @@
                     role: targetRole
                 }
             });
+            invalidateUserPermissionsCache(userId, [
+                ...(sanitizeMembershipPayload(targetUser.memberships || [])),
+                ...(sanitizeMembershipPayload(memberships || []))
+            ]);
             return res.json({ ok: true, user: user ? saasControlService.sanitizeUserPublic(user) : null });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar membresias.') });
@@ -372,6 +395,7 @@
                 resourceId: userId,
                 oldValue: saasControlService.sanitizeUserPublic(targetUser)
             });
+            invalidateUserPermissionsCache(userId, sanitizeMembershipPayload(targetUser.memberships || []));
             return res.json({ ok: true });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar usuario.') });

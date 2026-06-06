@@ -6,6 +6,9 @@ const saasControlService = require('../../tenant/services/tenant-control.service
 const accessPolicyService = require('./access-policy.service');
 const passwordHashService = require('./password-hash.service');
 
+const permissionsCache = new Map();
+const PERMISSIONS_CACHE_TTL_MS = 60 * 1000;
+
 function parseBooleanEnv(value, defaultValue = false) {
     const raw = String(value ?? '').trim().toLowerCase();
     if (!raw) return Boolean(defaultValue);
@@ -72,6 +75,28 @@ function roleWeight(role = '') {
 
 function normalizeTenantId(value = '') {
     return String(value || '').trim();
+}
+
+function buildPermissionsCacheKey(userId = '', tenantId = '') {
+    const cleanUserId = String(userId || '').trim().toLowerCase();
+    const cleanTenantId = normalizeTenantId(tenantId) || 'default';
+    return cleanUserId ? `${cleanUserId}:${cleanTenantId}` : '';
+}
+
+function invalidatePermissionsCache({ userId = '', tenantId = '' } = {}) {
+    const cleanUserId = String(userId || '').trim().toLowerCase();
+    const cleanTenantId = normalizeTenantId(tenantId);
+    if (!cleanUserId && !cleanTenantId) {
+        permissionsCache.clear();
+        return;
+    }
+
+    for (const key of permissionsCache.keys()) {
+        const [cachedUserId, cachedTenantId] = key.split(':');
+        const matchesUser = !cleanUserId || cachedUserId === cleanUserId;
+        const matchesTenant = !cleanTenantId || cachedTenantId === cleanTenantId;
+        if (matchesUser && matchesTenant) permissionsCache.delete(key);
+    }
 }
 
 function normalizeMembership(entry, fallbackRole = 'seller') {
@@ -444,13 +469,30 @@ function sanitizeUser(user = {}) {
     const scoped = resolveScopedUser(user, user?.tenantId);
     const memberships = sanitizeMemberships(scoped.memberships);
     const isSuperAdmin = saasControlService.isSuperAdminUser(scoped);
-    const resolvedAccess = accessPolicyService.resolveUserPermissions({
-        role: normalizeRole(scoped.role),
-        isSuperAdmin,
-        permissionGrants: scoped.permissionGrants || scoped.permissions || scoped?.metadata?.access?.permissionGrants || [],
-        permissionPacks: scoped.permissionPacks || scoped?.metadata?.access?.permissionPacks || []
-    });
-    console.log('[Auth] user', scoped.id || scoped.userId || scoped.email || 'unknown', 'resolved', resolvedAccess.permissions.length, 'effective permissions for tenant', scoped.tenantId || 'default');
+    const cacheUserId = scoped.id || scoped.userId || scoped.email || '';
+    const cacheKey = buildPermissionsCacheKey(cacheUserId, scoped.tenantId);
+    const cached = cacheKey ? permissionsCache.get(cacheKey) : null;
+    let resolvedAccess = null;
+
+    if (cached && Date.now() - cached.ts < PERMISSIONS_CACHE_TTL_MS) {
+        resolvedAccess = cached.permissions;
+    } else {
+        resolvedAccess = accessPolicyService.resolveUserPermissions({
+            role: normalizeRole(scoped.role),
+            isSuperAdmin,
+            permissionGrants: scoped.permissionGrants || scoped.permissions || scoped?.metadata?.access?.permissionGrants || [],
+            permissionPacks: scoped.permissionPacks || scoped?.metadata?.access?.permissionPacks || []
+        });
+        if (cacheKey) {
+            permissionsCache.set(cacheKey, {
+                permissions: resolvedAccess,
+                ts: Date.now()
+            });
+        }
+        if (process.env.NODE_ENV !== 'production') {
+            console.log('[Auth] user', cacheUserId || 'unknown', 'resolved', resolvedAccess.permissions.length, 'effective permissions for tenant', scoped.tenantId || 'default');
+        }
+    }
 
     return {
         id: scoped.id,
@@ -863,6 +905,7 @@ async function logoutSession({ accessToken = '', refreshToken = '', reason = 'lo
             reason
         });
         revokedAccess = true;
+        invalidatePermissionsCache({ userId: auth.userId, tenantId: auth.tenantId });
     }
 
     let revokedRefresh = false;
@@ -947,7 +990,8 @@ module.exports = {
     getRequestAuthContext,
     getRequestAuthContextAsync,
     getAllowedTenantsForUser,
-    findUserRecord
+    findUserRecord,
+    invalidatePermissionsCache
 };
 
 
