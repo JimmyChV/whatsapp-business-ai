@@ -2,6 +2,7 @@ import React from 'react';
 import { useEffect, useRef } from 'react';
 import { Search, MoreVertical, ChevronUp, ChevronDown, Tag, MapPin, Share2, X } from 'lucide-react';
 import MessageBubble from './message-bubble/MessageBubble';
+import LocationMapDetails from './LocationMapDetails';
 import moment from 'moment';
 import ChannelBrandIcon from './ChannelBrandIcon';
 import ChatInput from './ChatInput';
@@ -250,6 +251,8 @@ const ChatWindow = ({
         mapResolveLoading,
         selectedMapSuggestion,
         setSelectedMapSuggestion,
+        mapModalMode,
+        mapLocationPayload,
         selectMapSuggestion,
         openMapModal,
         submitMapSearch,
@@ -852,74 +855,88 @@ const ChatWindow = ({
 
             {showMapModal && (
                 <div className="chat-lightbox" onClick={() => setShowMapModal(false)}>
-                    <div className="chat-lightbox-content map-lightbox-content" onClick={(e) => e.stopPropagation()}>
-                        <button className="chat-lightbox-close" onClick={() => setShowMapModal(false)} aria-label="Cerrar mapa">
-                            <X size={20} />
-                        </button>
-
-                        <form className="map-search-form" onSubmit={submitMapSearch}>
-                            <input
-                                className="map-search-input"
-                                placeholder="Busca una direccion o pega un link de mapa"
-                                value={mapQuery}
-                                onChange={(e) => {
-                                    setMapQuery(e.target.value);
-                                    setSelectedMapSuggestion(null);
-                                }}
-                            />
-                            <button type="submit" className="map-search-btn" disabled={mapResolveLoading}>
-                                {mapResolveLoading ? 'Resolviendo...' : 'Buscar'}
+                    <div className={`chat-lightbox-content map-lightbox-content ${mapModalMode === 'location' ? 'map-lightbox-content--location' : ''}`} onClick={(e) => e.stopPropagation()}>
+                        {mapModalMode !== 'location' && (
+                            <button className="chat-lightbox-close" onClick={() => setShowMapModal(false)} aria-label="Cerrar mapa">
+                                <X size={20} />
                             </button>
-                            {mapExternalUrl && (
-                                <a
-                                    className="map-open-external"
-                                    href={mapExternalUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                >
-                                    Abrir
-                                </a>
-                            )}
-                            <button
-                                type="button"
-                                className="map-share-btn"
-                                onClick={shareMapSelection}
-                                disabled={!canShareLocation}
-                                title="Copiar ubicacion al mensaje"
-                            >
-                                <Share2 size={14} /> Compartir
-                            </button>
-                        </form>
-
-                        {(mapSuggestionsLoading || mapSuggestions.length > 0) && (
-                            <div className="map-suggest-list">
-                                {mapSuggestionsLoading && <div className="map-suggest-empty">Buscando lugares...</div>}
-                                {!mapSuggestionsLoading && mapSuggestions.map((item) => (
-                                    <button
-                                        key={item.id}
-                                        type="button"
-                                        className={`map-suggest-item ${selectedMapSuggestion?.id === item.id ? 'active' : ''}`}
-                                        onClick={() => selectMapSuggestion(item)}
-                                    >
-                                        <span className="map-suggest-title">{item.label}</span>
-                                        {(item.latitude !== null && item.longitude !== null) && (
-                                            <span className="map-suggest-coords">{item.latitude.toFixed(5)}, {item.longitude.toFixed(5)}</span>
-                                        )}
-                                    </button>
-                                ))}
-                            </div>
                         )}
 
-                        {mapEmbedUrl ? (
-                            <iframe
-                                title="Mapa"
-                                src={mapEmbedUrl}
-                                className="map-lightbox-iframe"
-                                loading="lazy"
-                                referrerPolicy="no-referrer-when-downgrade"
+                        {mapModalMode === 'location' && mapLocationPayload ? (
+                            <LocationMapDetails
+                                location={mapLocationPayload}
+                                buildApiHeaders={buildApiHeaders}
+                                activeTenantId={activeTenantId}
+                                activeChatId={activeChatScopedId}
+                                onClose={() => setShowMapModal(false)}
                             />
                         ) : (
-                            <div className="map-lightbox-empty">Busca y selecciona un lugar para previsualizarlo.</div>
+                            <>
+                                <form className="map-search-form" onSubmit={submitMapSearch}>
+                                    <input
+                                        className="map-search-input"
+                                        placeholder="Busca una direccion o pega un link de mapa"
+                                        value={mapQuery}
+                                        onChange={(e) => {
+                                            setMapQuery(e.target.value);
+                                            setSelectedMapSuggestion(null);
+                                        }}
+                                    />
+                                    <button type="submit" className="map-search-btn" disabled={mapResolveLoading}>
+                                        {mapResolveLoading ? 'Resolviendo...' : 'Buscar'}
+                                    </button>
+                                    {mapExternalUrl && (
+                                        <a
+                                            className="map-open-external"
+                                            href={mapExternalUrl}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                        >
+                                            Abrir
+                                        </a>
+                                    )}
+                                    <button
+                                        type="button"
+                                        className="map-share-btn"
+                                        onClick={shareMapSelection}
+                                        disabled={!canShareLocation}
+                                        title="Copiar ubicacion al mensaje"
+                                    >
+                                        <Share2 size={14} /> Compartir
+                                    </button>
+                                </form>
+
+                                {(mapSuggestionsLoading || mapSuggestions.length > 0) && (
+                                    <div className="map-suggest-list">
+                                        {mapSuggestionsLoading && <div className="map-suggest-empty">Buscando lugares...</div>}
+                                        {!mapSuggestionsLoading && mapSuggestions.map((item) => (
+                                            <button
+                                                key={item.id}
+                                                type="button"
+                                                className={`map-suggest-item ${selectedMapSuggestion?.id === item.id ? 'active' : ''}`}
+                                                onClick={() => selectMapSuggestion(item)}
+                                            >
+                                                <span className="map-suggest-title">{item.label}</span>
+                                                {(item.latitude !== null && item.longitude !== null) && (
+                                                    <span className="map-suggest-coords">{item.latitude.toFixed(5)}, {item.longitude.toFixed(5)}</span>
+                                                )}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {mapEmbedUrl ? (
+                                    <iframe
+                                        title="Mapa"
+                                        src={mapEmbedUrl}
+                                        className="map-lightbox-iframe"
+                                        loading="lazy"
+                                        referrerPolicy="no-referrer-when-downgrade"
+                                    />
+                                ) : (
+                                    <div className="map-lightbox-empty">Busca y selecciona un lugar para previsualizarlo.</div>
+                                )}
+                            </>
                         )}
                     </div>
                 </div>

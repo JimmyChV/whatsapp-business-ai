@@ -14,6 +14,8 @@ const useChatWindowMapController = ({
   const [mapSuggestionsLoading, setMapSuggestionsLoading] = useState(false);
   const [mapResolveLoading, setMapResolveLoading] = useState(false);
   const [selectedMapSuggestion, setSelectedMapSuggestion] = useState(null);
+  const [mapModalMode, setMapModalMode] = useState('search');
+  const [mapLocationPayload, setMapLocationPayload] = useState(null);
 
   const parseMapCoord = (value) => Number.parseFloat(String(value ?? '').replace(',', '.'));
   const isValidMapLat = (value) => Number.isFinite(value) && value >= -90 && value <= 90;
@@ -134,10 +136,11 @@ const useChatWindowMapController = ({
     setMapSuggestions([]);
   };
 
-  const openMapModal = async ({ query = '', mapUrl = '', latitude = null, longitude = null } = {}) => {
+  const openMapModal = async ({ query = '', mapUrl = '', latitude = null, longitude = null, mode = '' } = {}) => {
     const lat = parseMapCoord(latitude);
     const lng = parseMapCoord(longitude);
     const hasCoords = isValidMapLat(lat) && isValidMapLng(lng);
+    const shouldShowLocation = String(mode || '').trim().toLowerCase() === 'location' && hasCoords;
 
     const initialSeed = hasCoords
       ? `${lat},${lng}`
@@ -145,6 +148,14 @@ const useChatWindowMapController = ({
     const normalizedSeed = normalizeMapSeed(initialSeed);
 
     setShowMapModal(true);
+    setMapModalMode(shouldShowLocation ? 'location' : 'search');
+    setMapLocationPayload(shouldShowLocation ? {
+      latitude: lat,
+      longitude: lng,
+      query: String(query || '').trim(),
+      mapUrl: String(mapUrl || '').trim(),
+      label: String(query || '').trim() || (hasCoords ? `${lat}, ${lng}` : '')
+    } : null);
     setSelectedMapSuggestion(null);
     setMapSuggestions([]);
     setMapQuery(normalizedSeed || initialSeed || '');
@@ -214,6 +225,14 @@ const useChatWindowMapController = ({
     if (!showMapModal) {
       setMapSuggestions([]);
       setMapSuggestionsLoading(false);
+      setMapModalMode('search');
+      setMapLocationPayload(null);
+      return;
+    }
+
+    if (mapModalMode === 'location') {
+      setMapSuggestions([]);
+      setMapSuggestionsLoading(false);
       return;
     }
 
@@ -249,7 +268,7 @@ const useChatWindowMapController = ({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [mapQuery, showMapModal]);
+  }, [mapModalMode, mapQuery, showMapModal]);
 
   const mapExternalUrl = selectedMapSuggestion?.mapUrl
     || (mapEmbedUrl ? buildExternalMapUrl(mapQuery) : '');
@@ -284,6 +303,10 @@ const useChatWindowMapController = ({
     setMapResolveLoading,
     selectedMapSuggestion,
     setSelectedMapSuggestion,
+    mapModalMode,
+    setMapModalMode,
+    mapLocationPayload,
+    setMapLocationPayload,
     selectMapSuggestion,
     openMapModal,
     submitMapSearch,

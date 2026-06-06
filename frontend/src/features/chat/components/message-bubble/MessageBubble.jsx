@@ -17,6 +17,8 @@ import { buildRenderedTemplateMessage } from '../../core/helpers/templateMessage
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const GLOBAL_SKIN_TONE_STORAGE_KEY = 'chat-emoji-skin-tone:global';
+let staticMapsApiKeyPromise = null;
+let staticMapsApiKeyCache = '';
 const REACTION_TONE_VARIANTS = {
     '👍': {
         '1f3fb': '👍🏻',
@@ -43,6 +45,38 @@ const formatOrderCardTitle = (value = '') => {
 };
 
 const isRenderableTemplateHeaderImageSrc = (value = '') => /^(https?:\/\/|data:image\/|blob:|\/)/i.test(String(value || '').trim());
+
+const loadStaticMapsApiKey = async (buildApiHeaders) => {
+    if (staticMapsApiKeyCache) return staticMapsApiKeyCache;
+    if (!staticMapsApiKeyPromise) {
+        staticMapsApiKeyPromise = fetch(`${API_URL}/api/tenant/config/maps-api-key`, {
+            headers: typeof buildApiHeaders === 'function' ? buildApiHeaders({ includeJson: true }) : undefined
+        })
+            .then((response) => response.json().then((body) => ({ response, body })).catch(() => ({ response, body: {} })))
+            .then(({ response, body }) => {
+                if (!response.ok || body?.ok === false) return '';
+                staticMapsApiKeyCache = String(body?.apiKey || '').trim();
+                return staticMapsApiKeyCache;
+            })
+            .catch(() => '');
+    }
+    return staticMapsApiKeyPromise;
+};
+
+const buildStaticLocationMapUrl = ({ latitude, longitude, apiKey }) => {
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || !apiKey) return '';
+    const params = new URLSearchParams();
+    params.set('center', `${lat},${lng}`);
+    params.set('zoom', '15');
+    params.set('size', '520x180');
+    params.set('scale', '2');
+    params.set('maptype', 'roadmap');
+    params.append('markers', `color:red|label:C|${lat},${lng}`);
+    params.set('key', apiKey);
+    return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
+};
 
 const MessageBubble = ({
     msg,
@@ -200,6 +234,8 @@ const MessageBubble = ({
     const [showReactionPicker, setShowReactionPicker] = useState(false);
     const [preferredSkinTone, setPreferredSkinTone] = useState('neutral');
     const [templateHeaderImageFailed, setTemplateHeaderImageFailed] = useState(false);
+    const [staticMapsApiKey, setStaticMapsApiKey] = useState(staticMapsApiKeyCache);
+    const [staticMapFailed, setStaticMapFailed] = useState(false);
     const bubbleRef = useRef(null);
     const reactionOptions = ['👍', '❤️', '😂', '😮', '😢', '🙏'].map((emoji) => {
         const variants = REACTION_TONE_VARIANTS[emoji];
@@ -316,9 +352,26 @@ const MessageBubble = ({
     const locationMapQuery = hasLocationCoords
         ? `${locationData.latitude},${locationData.longitude}`
         : String(locationData?.mapUrl || locationData?.label || '');
-    const locationEmbedUrl = locationMapQuery
-        ? `https://www.google.com/maps?q=${encodeURIComponent(locationMapQuery)}&output=embed`
-        : '';
+    const locationStaticMapUrl = buildStaticLocationMapUrl({
+        latitude: locationData?.latitude,
+        longitude: locationData?.longitude,
+        apiKey: staticMapsApiKey
+    });
+
+    useEffect(() => {
+        setStaticMapFailed(false);
+    }, [msg?.id, locationData?.latitude, locationData?.longitude]);
+
+    useEffect(() => {
+        let cancelled = false;
+        if (!isLocationMessage || !hasLocationCoords || staticMapsApiKey) return undefined;
+        loadStaticMapsApiKey(buildApiHeaders).then((apiKey) => {
+            if (!cancelled) setStaticMapsApiKey(apiKey);
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [buildApiHeaders, hasLocationCoords, isLocationMessage, staticMapsApiKey]);
 
     const getAckLabel = (ackValue) => {
         const ack = Number.isFinite(Number(ackValue)) ? Number(ackValue) : 0;
@@ -830,10 +883,10 @@ const MessageBubble = ({
                             <MapPin size={14} /> Ubicacion compartida
                         </div>
 
-                        {locationEmbedUrl && (
+                        {hasLocationCoords && (
                             <button
                                 type="button"
-                                onClick={() => openMapPopup({ query: locationMapQuery, mapUrl: locationData?.mapUrl, latitude: locationData?.latitude, longitude: locationData?.longitude })}
+                                onClick={() => openMapPopup({ mode: 'location', query: locationData?.label || locationMapQuery, mapUrl: locationData?.mapUrl, latitude: locationData?.latitude, longitude: locationData?.longitude })}
                                 style={{
                                     marginTop: '7px',
                                     width: '100%',
@@ -845,13 +898,19 @@ const MessageBubble = ({
                                     background: '#17242d'
                                 }}
                             >
-                                <iframe
-                                    title="Vista previa de ubicacion"
-                                    src={locationEmbedUrl}
-                                    style={{ width: '100%', height: '118px', border: 'none', pointerEvents: 'none' }}
-                                    loading="lazy"
-                                    referrerPolicy="no-referrer-when-downgrade"
-                                />
+                                {locationStaticMapUrl && !staticMapFailed ? (
+                                    <img
+                                        src={locationStaticMapUrl}
+                                        alt="Vista previa de ubicacion"
+                                        style={{ display: 'block', width: '100%', height: '118px', objectFit: 'cover' }}
+                                        loading="lazy"
+                                        onError={() => setStaticMapFailed(true)}
+                                    />
+                                ) : (
+                                    <div style={{ height: '118px', display: 'grid', placeItems: 'center', color: '#cfefff', fontWeight: 800 }}>
+                                        Ver mapa de ubicacion
+                                    </div>
+                                )}
                             </button>
                         )}
 
@@ -866,7 +925,7 @@ const MessageBubble = ({
                         <div style={{ marginTop: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                             <button
                                 type="button"
-                                onClick={() => openMapPopup({ query: locationMapQuery, mapUrl: locationData?.mapUrl, latitude: locationData?.latitude, longitude: locationData?.longitude })}
+                                onClick={() => openMapPopup({ mode: 'location', query: locationData?.label || locationMapQuery, mapUrl: locationData?.mapUrl, latitude: locationData?.latitude, longitude: locationData?.longitude })}
                                 style={{
                                     border: '1px solid rgba(124,200,255,0.45)',
                                     background: 'rgba(124,200,255,0.12)',

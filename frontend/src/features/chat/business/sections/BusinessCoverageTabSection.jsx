@@ -26,7 +26,7 @@ function isValidCoords(lat, lng) {
         && lng >= -180 && lng <= 180;
 }
 
-function coordPair(value = {}) {
+export function coordPair(value = {}) {
     const lat = numberOrNull(value.lat ?? value.latitude);
     const lng = numberOrNull(value.lng ?? value.longitude);
     return isValidCoords(lat, lng) ? { lat, lng } : null;
@@ -75,7 +75,7 @@ function parseCoordsFromText(value = '') {
     return null;
 }
 
-function haversineKm(origin = {}, destination = {}) {
+export function haversineKm(origin = {}, destination = {}) {
     const start = coordPair(origin);
     const end = coordPair(destination);
     if (!start || !end) return null;
@@ -116,7 +116,7 @@ function paymentModalityLabel(zone = {}) {
     return '';
 }
 
-function formatDistance(value) {
+export function formatDistance(value) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return '';
     return `${parsed.toFixed(parsed >= 10 ? 1 : 2)} km`;
@@ -130,14 +130,14 @@ function formatEstimatedTime(value) {
     return `${hours} horas`;
 }
 
-function carrierKey(value = '') {
+export function carrierKey(value = '') {
     const normalized = text(value).toLowerCase();
     if (normalized.includes('shalom')) return 'shalom';
     if (normalized.includes('marvisur')) return 'marvisur';
     return 'agency';
 }
 
-function carrierLabel(value = '') {
+export function carrierLabel(value = '') {
     const key = carrierKey(value);
     if (key === 'shalom') return 'Shalom';
     if (key === 'marvisur') return 'Marvisur';
@@ -264,7 +264,7 @@ function latestCustomerLocationSource(messagesRef = null, fallbackMessages = [])
     return null;
 }
 
-function agencyListFromDecision(agencies) {
+export function agencyListFromDecision(agencies) {
     if (!agencies) return [];
     const source = Array.isArray(agencies)
         ? agencies
@@ -281,14 +281,14 @@ function agencyListFromDecision(agencies) {
         .filter(Boolean);
 }
 
-function agencyCoords(agency = {}) {
+export function agencyCoords(agency = {}) {
     return coordPair({
         lat: agency.latitude ?? agency.lat,
         lng: agency.longitude ?? agency.lng
     });
 }
 
-function agencyMapUrl(agency = {}) {
+export function agencyMapUrl(agency = {}) {
     const coords = agencyCoords(agency);
     if (!coords) return '';
     return `https://maps.google.com/?daddr=${coords.lat},${coords.lng}`;
@@ -304,7 +304,7 @@ function buildGoogleMapsScriptUrl(apiKey = '') {
     return `https://maps.googleapis.com/maps/api/js?${params.toString()}`;
 }
 
-function useGoogleMapsLoader(apiKey = '') {
+export function useGoogleMapsLoader(apiKey = '') {
     const [state, setState] = useState({
         loaded: Boolean(window.google?.maps?.places),
         error: ''
@@ -352,7 +352,7 @@ function useGoogleMapsLoader(apiKey = '') {
     return state;
 }
 
-function CoverageMap({
+export function CoverageMap({
     google,
     coords,
     agencies = [],
