@@ -13,7 +13,7 @@ import {
     saveMessages as saveCachedMessages
 } from '../services/chatLocalCache.service';
 import { mergeTemplateMessageContent } from '../helpers/templateMessages.helpers';
-import { wasRecentlyRead } from '../services/chatReadState.service';
+import { clearRecentlyRead, wasRecentlyRead } from '../services/chatReadState.service';
 
 function toTitleCaseChatText(value = '') {
     return String(value || '')
@@ -1408,6 +1408,9 @@ export default function useSocketChatConversationEvents({
         socket.on('message', (msg) => {
             const relatedChatId = String(msg?.chatId || (msg.fromMe ? msg.to : msg.from) || '').trim();
             if (!isVisibleChatId(relatedChatId)) return;
+            if (!msg?.fromMe) {
+                clearRecentlyRead(relatedChatId);
+            }
             const relatedWindowExpiresAt = !msg?.fromMe && Number(msg?.timestamp || 0) > 0
                 ? new Date((Number(msg.timestamp) * 1000) + (24 * 60 * 60 * 1000)).toISOString()
                 : null;
@@ -1552,10 +1555,6 @@ export default function useSocketChatConversationEvents({
                 const parsedCanonicalId = parseScopedChatId(canonicalId);
                 const canonicalScopeModuleId = String(parsedCanonicalId?.scopeModuleId || incomingScopeModuleId || existing?.scopeModuleId || existing?.lastMessageModuleId || '').trim().toLowerCase() || null;
                 const baseChatId = String(parsedCanonicalId?.baseChatId || existing?.baseChatId || relatedChatId).trim() || null;
-                const isActiveChat = chatIdsReferSameConversation(canonicalId, String(activeChatIdRef.current || ''));
-                const shouldMarkActiveChatRead = isActiveChat
-                    && typeof canMarkChatAsReadRef.current === 'function'
-                    && canMarkChatAsReadRef.current(canonicalId);
                 const nextChat = {
                     ...(existing || { id: canonicalId, baseChatId, scopeModuleId: canonicalScopeModuleId, name: safeName, phone: isLikelyPhoneDigits(fallbackDigits) ? fallbackDigits : null, subtitle: null, labels: [] }),
                     id: canonicalId,
@@ -1573,7 +1572,7 @@ export default function useSocketChatConversationEvents({
                     isMyContact: existing?.isMyContact === true,
                     unreadCount: msg.fromMe
                         ? 0
-                        : (shouldMarkActiveChatRead ? 0 : (Number(existing?.unreadCount || 0) || 0) + 1),
+                        : (Number(existing?.unreadCount || 0) || 0) + 1,
                     manuallyMarkedUnread: false,
                     manuallyMarkedUnreadAt: null,
                     windowOpen: msg.fromMe ? existing?.windowOpen : true,

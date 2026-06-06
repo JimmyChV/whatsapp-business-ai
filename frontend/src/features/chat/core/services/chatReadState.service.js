@@ -43,6 +43,12 @@ export function markAsRecentlyRead(chatId = '') {
   recentlyReadChats.set(key, Date.now());
 }
 
+export function clearRecentlyRead(chatId = '') {
+  const key = readMemoryKey(chatId);
+  if (!key) return;
+  recentlyReadChats.delete(key);
+}
+
 export function wasRecentlyRead(chatId = '', withinMs = RECENTLY_READ_WINDOW_MS) {
   const key = readMemoryKey(chatId);
   if (!key) return false;
