@@ -16,6 +16,7 @@ function registerHttpRoutes({
     registerTenantWaModuleAdminHttpRoutes,
     registerTenantCustomerHttpRoutes,
     registerOperationsHttpRoutes,
+    registerOperationsOrdersHttpRoutes,
     registerOperationsReportsHttpRoutes,
     registerTenantRuntimeSettingsHttpRoutes,
     registerTenantLabelsQuickRepliesHttpRoutes,
@@ -281,6 +282,18 @@ function registerHttpRoutes({
         emitCommercialStatusUpdated: socketManager?.emitCommercialStatusUpdated?.bind(socketManager) || null,
         emitToTenant: socketManager?.emitToTenant?.bind(socketManager) || null
     });
+
+    if (typeof registerOperationsOrdersHttpRoutes === 'function') {
+        registerOperationsOrdersHttpRoutes({
+            app,
+            authService,
+            conversationOpsService,
+            chatCommercialStatusService,
+            chatAssignmentPolicyService,
+            normalizeScopeModuleId,
+            emitCommercialStatusUpdated: socketManager?.emitCommercialStatusUpdated?.bind(socketManager) || null
+        });
+    }
 
     if (typeof registerOperationsReportsHttpRoutes === 'function') {
         registerOperationsReportsHttpRoutes({

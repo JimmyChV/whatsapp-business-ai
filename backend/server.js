@@ -83,6 +83,7 @@ const {
     globalLabelsService,
     opsTelemetry,
     registerOperationsHttpRoutes,
+    registerOperationsOrdersHttpRoutes,
     registerOperationsReportsHttpRoutes,
     registerOperationsUtilityHttpRoutes,
     registerOperationsHealthHttpRoutes
@@ -488,6 +489,7 @@ registerHttpRoutes({
     registerTenantWaModuleAdminHttpRoutes,
     registerTenantCustomerHttpRoutes,
     registerOperationsHttpRoutes,
+    registerOperationsOrdersHttpRoutes,
     registerOperationsReportsHttpRoutes,
     registerTenantRuntimeSettingsHttpRoutes,
     registerTenantLabelsQuickRepliesHttpRoutes,
