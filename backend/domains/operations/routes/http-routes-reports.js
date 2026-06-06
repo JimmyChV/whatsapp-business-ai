@@ -673,16 +673,31 @@ SELECT
 
     const { rows } = await queryPostgres(sql, reportParams(ctx));
     const row = rows[0] || {};
+    const nuevo = toNumber(row.nuevo);
+    const enConversacion = toNumber(row.en_conversacion);
+    const cotizado = toNumber(row.cotizado);
+    const aceptado = toNumber(row.aceptado);
+    const programado = toNumber(row.programado);
+    const atendido = toNumber(row.atendido);
+    const vendido = toNumber(row.vendido);
+    const perdido = toNumber(row.perdido);
+    const expirado = toNumber(row.expirado);
     return {
-        nuevo: toNumber(row.nuevo),
-        enConversacion: toNumber(row.en_conversacion),
-        cotizado: toNumber(row.cotizado),
-        aceptado: toNumber(row.aceptado),
-        programado: toNumber(row.programado),
-        atendido: toNumber(row.atendido),
-        vendido: toNumber(row.vendido),
-        perdido: toNumber(row.perdido),
-        expirado: toNumber(row.expirado),
+        nuevo,
+        enConversacion,
+        cotizado,
+        aceptado,
+        programado,
+        atendido,
+        vendido,
+        perdido,
+        expirado,
+        tasaAceptacion: cotizado > 0 ? roundNumber((aceptado / cotizado) * 100) : 0,
+        tasaProgresion: aceptado > 0 ? roundNumber((atendido / aceptado) * 100) : 0,
+        proyeccionVentas: programado + atendido + vendido,
+        fugaCotizadoAceptado: Math.max(0, cotizado - aceptado - perdido),
+        fugaAceptadoProgramado: Math.max(0, aceptado - programado - perdido),
+        fugaAceptadoAtendido: Math.max(0, aceptado - atendido - perdido),
         porDia: Array.isArray(row.por_dia) ? row.por_dia : []
     };
 }
@@ -1002,6 +1017,49 @@ campaign_scope AS (
             OR LOWER(COALESCE(c.scope_module_id, '')) = LOWER($5::text)
             OR LOWER(COALESCE(c.module_id, '')) = LOWER($5::text)
        )
+),
+${SCOPED_CHATS_CTE},
+campaign_chat_status AS (
+    SELECT
+        o.campaign_id,
+        o.chat_id,
+        s.status
+      FROM tenant_chat_origins o
+      JOIN scoped_chats sc ON sc.chat_id = o.chat_id
+      LEFT JOIN tenant_chat_commercial_status s
+        ON s.tenant_id = o.tenant_id
+       AND s.chat_id = o.chat_id
+       AND LOWER(COALESCE(s.scope_module_id, '')) = LOWER(COALESCE(o.scope_module_id, ''))
+      CROSS JOIN bounds b
+     WHERE o.tenant_id = $1
+       AND COALESCE(o.origin_source, o.origin_type, '') = 'campaign'
+       AND COALESCE(o.detected_at, o.created_at) >= b.starts_at
+       AND COALESCE(o.detected_at, o.created_at) < b.ends_at
+       AND ($5::text IS NULL OR LOWER(COALESCE(o.scope_module_id, '')) = LOWER($5::text))
+),
+campaign_status_counts AS (
+    SELECT
+        campaign_id,
+        COUNT(DISTINCT chat_id) AS respondieron,
+        COUNT(DISTINCT chat_id) FILTER (WHERE status = 'cotizado') AS cotizados,
+        COUNT(DISTINCT chat_id) FILTER (WHERE status = 'aceptado') AS aceptados,
+        COUNT(DISTINCT chat_id) FILTER (WHERE status IN ('programado', 'atendido', 'vendido')) AS proyeccion_ventas,
+        COUNT(DISTINCT chat_id) FILTER (WHERE status IN ('atendido', 'vendido')) AS ventas_confirmadas
+      FROM campaign_chat_status
+     GROUP BY campaign_id
+),
+campaign_quote_counts AS (
+    SELECT
+        ccs.campaign_id,
+        COUNT(DISTINCT q.quote_id) AS cotizaciones
+      FROM campaign_chat_status ccs
+      JOIN tenant_quotes q
+        ON q.tenant_id = $1
+       AND q.chat_id = ccs.chat_id
+       AND q.created_at >= (SELECT starts_at FROM bounds)
+       AND q.created_at < (SELECT ends_at FROM bounds)
+       AND ($5::text IS NULL OR LOWER(COALESCE(q.scope_module_id, '')) = LOWER($5::text))
+     GROUP BY ccs.campaign_id
 )
 SELECT
     c.campaign_id,
@@ -1016,28 +1074,15 @@ SELECT
            AND COALESCE(r.sent_at, r.created_at) >= (SELECT starts_at FROM bounds)
            AND COALESCE(r.sent_at, r.created_at) < (SELECT ends_at FROM bounds)
     ), 0) AS enviados,
-    COALESCE((
-        SELECT COUNT(DISTINCT o.chat_id)
-          FROM tenant_chat_origins o
-         WHERE o.tenant_id = c.tenant_id
-           AND o.campaign_id = c.campaign_id
-           AND COALESCE(o.origin_source, o.origin_type, '') = 'campaign'
-           AND COALESCE(o.detected_at, o.created_at) >= (SELECT starts_at FROM bounds)
-           AND COALESCE(o.detected_at, o.created_at) < (SELECT ends_at FROM bounds)
-    ), 0) AS respondieron,
-    COALESCE((
-        SELECT COUNT(DISTINCT q.quote_id)
-          FROM tenant_chat_origins o
-          JOIN tenant_quotes q
-            ON q.tenant_id = o.tenant_id
-           AND q.chat_id = o.chat_id
-         WHERE o.tenant_id = c.tenant_id
-           AND o.campaign_id = c.campaign_id
-           AND COALESCE(o.origin_source, o.origin_type, '') = 'campaign'
-           AND q.created_at >= (SELECT starts_at FROM bounds)
-           AND q.created_at < (SELECT ends_at FROM bounds)
-    ), 0) AS cotizaciones
+    COALESCE(csc.respondieron, 0) AS respondieron,
+    COALESCE(cqc.cotizaciones, 0) AS cotizaciones,
+    COALESCE(csc.cotizados, 0) AS cotizados,
+    COALESCE(csc.aceptados, 0) AS aceptados,
+    COALESCE(csc.proyeccion_ventas, 0) AS proyeccion_ventas,
+    COALESCE(csc.ventas_confirmadas, 0) AS ventas_confirmadas
   FROM campaign_scope c
+  LEFT JOIN campaign_status_counts csc ON csc.campaign_id = c.campaign_id
+  LEFT JOIN campaign_quote_counts cqc ON cqc.campaign_id = c.campaign_id
  ORDER BY c.updated_at DESC, c.created_at DESC`;
 
     const { rows } = await queryPostgres(sql, reportParams(ctx));
@@ -1051,7 +1096,13 @@ SELECT
             enviados,
             respondieron,
             cotizaciones: toNumber(row.cotizaciones),
-            tasaRespuesta: enviados > 0 ? roundNumber((respondieron / enviados) * 100) : 0
+            cotizados: toNumber(row.cotizados),
+            aceptados: toNumber(row.aceptados),
+            proyeccionVentas: toNumber(row.proyeccion_ventas),
+            ventasConfirmadas: toNumber(row.ventas_confirmadas),
+            tasaRespuesta: enviados > 0 ? roundNumber((respondieron / enviados) * 100) : 0,
+            conversionProyeccion: respondieron > 0 ? roundNumber((toNumber(row.proyeccion_ventas) / respondieron) * 100) : 0,
+            conversionConfirmada: respondieron > 0 ? roundNumber((toNumber(row.ventas_confirmadas) / respondieron) * 100) : 0
         };
     });
 }

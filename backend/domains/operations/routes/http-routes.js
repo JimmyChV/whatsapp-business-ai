@@ -1891,6 +1891,7 @@ function registerOperationsHttpRoutes({
                 source: 'manual',
                 reason: reason || ('manual_mark_' + targetStatus),
                 changedByUserId: actorUserId,
+                actorRole: resolveActorRole(req, tenantId),
                 metadata
             });
 

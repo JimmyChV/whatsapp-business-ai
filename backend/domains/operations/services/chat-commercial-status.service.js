@@ -11,6 +11,7 @@ const {
 } = require('../../../config/persistence-runtime');
 const customerModuleContextsService = require('./customer-module-contexts.service');
 const customerLifecycleService = require('./customer-lifecycle.service');
+const conversationOpsService = require('./conversation-ops.service');
 const metaTemplatesService = require('./meta-templates.service');
 const templateVariablesService = require('./template-variables.service');
 const tenantAutomationService = require('../../tenant/services/tenant-automation.service');
@@ -1178,6 +1179,29 @@ async function clearSalesState(tenantId = DEFAULT_TENANT_ID, chatId = '', scopeM
     });
 }
 
+async function recordCommercialStatusEvent(tenantId = DEFAULT_TENANT_ID, next = null, previous = null, source = {}) {
+    const fromStatus = toText(previous?.status || '') || null;
+    const toStatus = toText(next?.status || '') || null;
+    if (!next?.chatId || fromStatus === toStatus) return;
+    try {
+        await conversationOpsService.recordConversationEvent(tenantId, {
+            chatId: next.chatId,
+            scopeModuleId: next.scopeModuleId || '',
+            actorUserId: toText(source?.changedByUserId || source?.changed_by_user_id || next?.changedByUserId || '') || null,
+            actorRole: toText(source?.actorRole || source?.actor_role || source?.changedByRole || source?.changed_by_role || '') || null,
+            eventType: 'chat.state.updated',
+            eventSource: 'system',
+            payload: {
+                fromStatus,
+                toStatus,
+                reason: toText(next?.reason || source?.reason || '') || null
+            }
+        });
+    } catch (_) {
+        // Status persistence must not fail because analytics events are unavailable.
+    }
+}
+
 async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload = {}) {
     const cleanTenantId = resolveTenantId(tenantId);
     const source = payload && typeof payload === 'object' ? payload : {};
@@ -1225,6 +1249,7 @@ async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload 
             .map((entry) => normalizeRecord(entry))
             .filter((entry) => entry.chatId);
         await writeTenantJsonFile(STORE_FILE, { items: normalizedItems }, { tenantId: cleanTenantId });
+        await recordCommercialStatusEvent(cleanTenantId, next, previous, source);
         try {
             const moduleId = toText(next.scopeModuleId || '');
             if (moduleId) {
@@ -1317,6 +1342,8 @@ async function upsertChatCommercialStatus(tenantId = DEFAULT_TENANT_ID, payload 
             row.updated_at
         ]
     );
+
+    await recordCommercialStatusEvent(cleanTenantId, next, previous, source);
 
     try {
         const moduleId = toText(next.scopeModuleId || '');

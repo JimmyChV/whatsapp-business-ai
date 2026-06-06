@@ -1232,6 +1232,27 @@
   text-align: right;
 }
 
+.saas-reports-funnel__insights {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--saas-accent-warning, #f59e0b) 28%, var(--saas-border-color));
+  border-radius: var(--saas-radius-md);
+  background: color-mix(in srgb, var(--saas-accent-warning, #f59e0b) 9%, transparent);
+  color: var(--saas-text-secondary);
+  font-size: 0.84rem;
+}
+
+.saas-reports-funnel__insights strong {
+  color: var(--saas-text-primary);
+}
+
+.saas-reports-funnel__insights em {
+  color: var(--saas-accent-warning, #f59e0b);
+  font-style: normal;
+  font-weight: 700;
+}
+
 .saas-test-contacts-add-row {
   display: grid;
   grid-template-columns: minmax(260px, 1fr) auto;

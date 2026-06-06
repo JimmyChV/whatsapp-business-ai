@@ -31,13 +31,13 @@ const KPI_DEFS = [
     { key: 'revenueEstimado', label: 'Revenue estimado', type: 'currency', improve: 'up' }
 ];
 const FUNNEL_STAGES = [
-    { key: 'nuevo', label: 'Nuevo', color: '#cbd5e1', group: 'positive' },
-    { key: 'enConversacion', label: 'En conv.', color: '#3b82f6', group: 'positive' },
-    { key: 'cotizado', label: 'Cotizado', color: '#f59e0b', group: 'positive' },
-    { key: 'aceptado', label: 'Aceptado', color: '#fb923c', group: 'positive' },
-    { key: 'programado', label: 'Programado', color: '#86efac', group: 'positive' },
-    { key: 'atendido', label: 'Atendido', color: '#1D9E75', group: 'positive' },
-    { key: 'vendido', label: 'Vendido', color: '#059669', group: 'positive' },
+    { key: 'nuevo', label: 'Nuevo', color: '#9CA3AF', group: 'positive' },
+    { key: 'enConversacion', label: 'En conv.', color: '#3B82F6', group: 'positive', rateFromKey: 'nuevo' },
+    { key: 'cotizado', label: 'Cotizado', color: '#F59E0B', group: 'positive', rateFromKey: 'enConversacion' },
+    { key: 'aceptado', label: 'Aceptado', color: '#F97316', group: 'positive', rateFromKey: 'cotizado', rateSuffix: 'de cotizados' },
+    { key: 'programado', label: 'Programado', color: '#86EFAC', group: 'positive', rateFromKey: 'aceptado', rateSuffix: 'de aceptados' },
+    { key: 'atendido', label: 'Atendido', color: '#22C55E', group: 'positive', rateFromKey: 'programado', rateSuffix: 'de programados' },
+    { key: 'vendido', label: 'Vendido', color: '#15803D', group: 'positive', rateFromKey: 'atendido' },
     { key: 'perdido', label: 'Perdido', color: '#ef4444', group: 'negative' },
     { key: 'expirado', label: 'Expirado', color: '#6b7280', group: 'negative' }
 ];
@@ -47,15 +47,15 @@ const TEMPORAL_LINES = [
     { key: 'cotizaciones', label: 'Cotizaciones', color: '#f59e0b' }
 ];
 const FUNNEL_LINES = [
-    { key: 'nuevo', label: 'Nuevo', color: '#94a3b8' },
-    { key: 'enConversacion', label: 'En conv.', color: '#3b82f6' },
-    { key: 'cotizado', label: 'Cotizado', color: '#f59e0b' },
-    { key: 'aceptado', label: 'Aceptado', color: '#fb923c' },
+    { key: 'nuevo', label: 'Nuevo', color: '#9CA3AF' },
+    { key: 'enConversacion', label: 'En conv.', color: '#3B82F6' },
+    { key: 'cotizado', label: 'Cotizado', color: '#F59E0B' },
+    { key: 'aceptado', label: 'Aceptado', color: '#F97316' },
     { key: 'programado', label: 'Programado', color: '#86efac' },
-    { key: 'atendido', label: 'Atendido', color: '#1D9E75' },
-    { key: 'vendido', label: 'Vendido', color: '#059669' },
-    { key: 'perdido', label: 'Perdido', color: '#ef4444' },
-    { key: 'expirado', label: 'Expirado', color: '#6b7280' }
+    { key: 'atendido', label: 'Atendido', color: '#22C55E' },
+    { key: 'vendido', label: 'Vendido', color: '#15803D' },
+    { key: 'perdido', label: 'Perdido', color: '#EF4444' },
+    { key: 'expirado', label: 'Expirado', color: '#6B7280' }
 ];
 const ROLE_LABELS = {
     owner: 'Owner',
@@ -256,12 +256,27 @@ function buildReportExportTables({
             title: 'Embudo de ventas',
             columns: [
                 { key: 'stage', label: 'Etapa' },
-                { key: 'total', label: 'Total' }
+                { key: 'total', label: 'Total' },
+                { key: 'rate', label: 'Conversion' }
             ],
-            rows: FUNNEL_STAGES.map((stage) => ({
-                stage: stage.label,
-                total: formatInt(funnel?.[stage.key])
-            }))
+            rows: [
+                ...FUNNEL_STAGES.map((stage, index) => {
+                    const value = number(funnel?.[stage.key]);
+                    const baseKey = stage.rateFromKey || FUNNEL_STAGES[index - 1]?.key;
+                    const base = index === 0 ? value : number(funnel?.[baseKey]);
+                    const rate = index === 0 ? 'Base' : percent(base > 0 ? (value / base) * 100 : 0, 0);
+                    return {
+                        stage: stage.label,
+                        total: formatInt(value),
+                        rate: stage.rateSuffix && index > 0 ? `${rate} ${stage.rateSuffix}` : rate
+                    };
+                }),
+                { stage: 'Tasa aceptacion', total: percent(funnel.tasaAceptacion, 1), rate: 'Aceptado / cotizado' },
+                { stage: 'Tasa progresion', total: percent(funnel.tasaProgresion, 1), rate: 'Atendido / aceptado' },
+                { stage: 'Proyeccion ventas', total: formatInt(funnel.proyeccionVentas), rate: 'Programado + atendido + vendido' },
+                { stage: 'Fuga cotizado a aceptado', total: formatInt(funnel.fugaCotizadoAceptado), rate: 'Pendientes entre cotizado y aceptado' },
+                { stage: 'Fuga aceptado a atendido', total: formatInt(funnel.fugaAceptadoAtendido), rate: 'Pendientes entre aceptado y atendido' }
+            ]
         },
         {
             title: 'Actividad temporal',
@@ -358,11 +373,19 @@ function buildReportExportTables({
                 { key: 'enviados', label: 'Enviados' },
                 { key: 'respondieron', label: 'Respondieron' },
                 { key: 'cotizaciones', label: 'Cotizaciones' },
-                { key: 'tasaRespuesta', label: 'Tasa respuesta' }
+                { key: 'cotizados', label: 'Cotizados' },
+                { key: 'aceptados', label: 'Aceptados' },
+                { key: 'proyeccionVentas', label: 'Proyeccion' },
+                { key: 'ventasConfirmadas', label: 'Confirmadas' },
+                { key: 'tasaRespuesta', label: 'Tasa respuesta' },
+                { key: 'conversionProyeccion', label: 'Conversion proyeccion' },
+                { key: 'conversionConfirmada', label: 'Conversion confirmada' }
             ],
             rows: toArray(campaignRows).map((row) => ({
                 ...row,
-                tasaRespuesta: percent(row.tasaRespuesta, 1)
+                tasaRespuesta: percent(row.tasaRespuesta, 1),
+                conversionProyeccion: percent(row.conversionProyeccion, 1),
+                conversionConfirmada: percent(row.conversionConfirmada, 1)
             }))
         }
     ];
@@ -455,13 +478,18 @@ function KpiCard({ def, current = {}, previous = {} }) {
 
 function FunnelChart({ data = {} }) {
     const max = Math.max(...FUNNEL_STAGES.map((stage) => number(data?.[stage.key])), 1);
+    const projection = number(data?.proyeccionVentas);
+    const fugaCotizadoAceptado = number(data?.fugaCotizadoAceptado);
+    const fugaAceptadoAtendido = number(data?.fugaAceptadoAtendido);
     return (
         <div className="saas-reports-funnel">
             {FUNNEL_STAGES.map((stage, index) => {
                 const value = number(data?.[stage.key]);
-                const previous = index === 0 ? max : Math.max(number(data?.[FUNNEL_STAGES[index - 1]?.key]), 1);
+                const baseKey = stage.rateFromKey || FUNNEL_STAGES[index - 1]?.key;
+                const previous = index === 0 ? value : number(data?.[baseKey]);
                 const width = Math.max(5, (value / max) * 100);
-                const rate = index === 0 ? 100 : (value / previous) * 100;
+                const rate = index === 0 ? 100 : (previous > 0 ? (value / previous) * 100 : 0);
+                const rateLabel = index === 0 ? 'Base' : `${percent(rate, 0)}${stage.rateSuffix ? ` ${stage.rateSuffix}` : ''}`;
                 return (
                     <div className={`saas-reports-funnel__row ${stage.group === 'negative' ? 'saas-reports-funnel__row--negative' : ''}`} key={stage.key}>
                         <span>{stage.label}</span>
@@ -469,10 +497,16 @@ function FunnelChart({ data = {} }) {
                         <div className="saas-reports-funnel__bar">
                             <i style={{ width: `${width}%`, background: stage.color }} />
                         </div>
-                        <em>{index === 0 ? 'Base' : percent(rate, 0)}</em>
+                        <em>{rateLabel}</em>
                     </div>
                 );
             })}
+            <div className="saas-reports-funnel__insights">
+                <strong>Proyeccion de ventas: {formatInt(projection)} pedidos</strong>
+                <span>Programado + atendido + vendido</span>
+                <em>Fuga Cotizado-&gt;Aceptado: {formatInt(fugaCotizadoAceptado)} clientes</em>
+                <em>Fuga Aceptado-&gt;Atendido: {formatInt(fugaAceptadoAtendido)} clientes</em>
+            </div>
         </div>
     );
 }
@@ -1100,7 +1134,20 @@ export default function ReportsDashboardPage(props = {}) {
                     <ReportCard title="Campanas WhatsApp" subtitle="Rendimiento de campanas en el periodo.">
                         <div className="saas-reports-table-wrap">
                             <table className="saas-reports-table">
-                                <thead><tr><th>Campana</th><th>Enviados</th><th>Respondieron</th><th>Cotizaciones</th><th>Tasa respuesta</th></tr></thead>
+                                <thead>
+                                    <tr>
+                                        <th>Campana</th>
+                                        <th>Env.</th>
+                                        <th>Resp.</th>
+                                        <th>Cotiz.</th>
+                                        <th>Acept.</th>
+                                        <th>Proy.</th>
+                                        <th>Conf.</th>
+                                        <th>T.Resp.</th>
+                                        <th>Conv. proy.</th>
+                                        <th>Conv. conf.</th>
+                                    </tr>
+                                </thead>
                                 <tbody>
                                     {campaignRows.map((row) => (
                                         <tr key={row.campaignId}>
@@ -1108,7 +1155,12 @@ export default function ReportsDashboardPage(props = {}) {
                                             <td>{formatInt(row.enviados)}</td>
                                             <td>{formatInt(row.respondieron)}</td>
                                             <td>{formatInt(row.cotizaciones)}</td>
+                                            <td>{formatInt(row.aceptados)}</td>
+                                            <td>{formatInt(row.proyeccionVentas)}</td>
+                                            <td>{formatInt(row.ventasConfirmadas)}</td>
                                             <td>{percent(row.tasaRespuesta, 1)}</td>
+                                            <td>{percent(row.conversionProyeccion, 1)}</td>
+                                            <td>{percent(row.conversionConfirmada, 1)}</td>
                                         </tr>
                                     ))}
                                 </tbody>
