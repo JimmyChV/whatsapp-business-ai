@@ -126,9 +126,6 @@ function resolveTenant({ tenantId = '', tenantSlug = '', authContext = null } = 
     const bySlug = findTenantBySlug(tenantSlug);
     if (bySlug) return bySlug;
 
-    if (process.env.NODE_ENV !== 'production') {
-        console.debug('[TenantCore] tenant null');
-    }
     return null;
 }
 

@@ -98,6 +98,7 @@ export default function useWorkspaceResetOnTenantChange({
     const previousTenant = String(tenantScopeRef?.current || '').trim() || 'default';
     if (previousTenant === tenantScopeId) return;
     if (tenantScopeRef) tenantScopeRef.current = tenantScopeId;
+    if (previousTenant === 'default' && tenantScopeId && tenantScopeId !== 'default') return;
     resetWorkspaceState();
   }, [tenantScopeId, tenantScopeRef, resetWorkspaceState]);
 

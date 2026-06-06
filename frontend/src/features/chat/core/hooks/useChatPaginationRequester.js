@@ -12,6 +12,7 @@ export default function useChatPaginationRequester({
   setIsLoadingMoreChats
 }) {
   const requestChatsPage = useCallback(({ reset = false } = {}) => {
+    if (chatPagingRef.current.loading && reset && Number(chatPagingRef.current.offset || 0) === 0) return;
     if (chatPagingRef.current.loading && !reset) return;
     if (!reset && !chatPagingRef.current.hasMore) return;
 
