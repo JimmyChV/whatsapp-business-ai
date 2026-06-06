@@ -861,10 +861,7 @@ export default function useSocketChatConversationEvents({
             }
         });
 
-        socket.on('chat_unread_state_updated', (data = {}) => {
-            console.log('[Unread] state update recibido:',
-                JSON.stringify(data));
-            const { items = [] } = data || {};
+        socket.on('chat_unread_state_updated', ({ items = [] } = {}) => {
             const normalizedItems = (Array.isArray(items) ? items : [])
                 .map((item) => {
                     const rawChatId = String(item?.chatId || item?.baseChatId || '').trim();
@@ -1715,7 +1712,6 @@ export default function useSocketChatConversationEvents({
 
             if (!msg?.fromMe && chatIdsReferSameConversation(relatedChatId, String(activeChatIdRef.current || ''))) {
                 shouldInstantScrollRef.current = true;
-                emitChatFocus(relatedChatId, 'active_inbound');
             }
         });
 
