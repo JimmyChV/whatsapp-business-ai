@@ -726,7 +726,6 @@ export default function useSocketChatConversationEvents({
             const parsedFinal = parseScopedChatId(finalId || incomingChatId);
             const scopeModuleId = String(parsedFinal?.scopeModuleId || incomingScopeModuleId || previousScopeModuleId || '').trim().toLowerCase() || null;
             const baseChatId = String(parsedFinal?.baseChatId || chat?.baseChatId || previous?.baseChatId || incomingChatId).trim() || null;
-            const unreadState = resolveUnreadState({}, previous);
             const hydrated = {
                 ...chat,
                 id: finalId || incomingChatId,
@@ -759,9 +758,11 @@ export default function useSocketChatConversationEvents({
                 lastMessageModuleName: String(chat?.lastMessageModuleName || chat?.sentViaModuleName || previous?.lastMessageModuleName || '').trim() || null,
                 lastMessageModuleImageUrl: normalizeModuleImageUrl(chat?.lastMessageModuleImageUrl || chat?.sentViaModuleImageUrl || previous?.lastMessageModuleImageUrl || '') || null,
                 lastMessageTransport: String(chat?.lastMessageTransport || chat?.sentViaTransport || previous?.lastMessageTransport || '').trim().toLowerCase() || null,
-                lastMessageChannelType: String(chat?.lastMessageChannelType || chat?.sentViaChannelType || previous?.lastMessageChannelType || '').trim().toLowerCase() || null,
-                ...unreadState
+                lastMessageChannelType: String(chat?.lastMessageChannelType || chat?.sentViaChannelType || previous?.lastMessageChannelType || '').trim().toLowerCase() || null
             };
+            delete hydrated.unreadCount;
+            delete hydrated.manuallyMarkedUnread;
+            delete hydrated.manuallyMarkedUnreadAt;
             const safeHydrated = hydrated;
 
             if (!chatMatchesQuery(safeHydrated, chatSearchRef.current) || !chatMatchesFilters(safeHydrated, chatFiltersRef.current)) {
