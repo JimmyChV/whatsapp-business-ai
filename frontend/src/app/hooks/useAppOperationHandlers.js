@@ -439,6 +439,8 @@ export default function useAppOperationHandlers({
     handleOpenSaasAdminWorkspace,
     setOpenCompanyProfileToken,
     chats,
+    setChats,
+    labelDefinitions,
     setPendingOrderCartLoad
   });
 

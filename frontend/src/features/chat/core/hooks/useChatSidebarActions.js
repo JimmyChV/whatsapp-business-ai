@@ -30,6 +30,8 @@ export default function useChatSidebarActions({
   handleOpenSaasAdminWorkspace,
   setOpenCompanyProfileToken,
   chats = [],
+  setChats,
+  labelDefinitions = [],
   setPendingOrderCartLoad
 } = {}) {
   const { notify } = useUiFeedback();
@@ -214,6 +216,45 @@ export default function useChatSidebarActions({
           .filter(Boolean),
         idStr
       ];
+
+    if (typeof setChats === 'function') {
+      const definition = (Array.isArray(labelDefinitions) ? labelDefinitions : [])
+        .find((label) => String(label?.id || label?.labelId || '') === idStr) || {};
+      const byId = new Map(
+        current
+          .map((label) => {
+            const id = String(label?.id || label?.labelId || '').trim();
+            return id ? [id, label] : null;
+          })
+          .filter(Boolean)
+      );
+      if (!has) {
+        byId.set(idStr, {
+          id: idStr,
+          labelId: idStr,
+          name: definition?.name || definition?.label || idStr,
+          color: definition?.color || null
+        });
+      } else {
+        byId.delete(idStr);
+      }
+      const nextLabels = nextIds.map((id) => {
+        const existing = byId.get(id) || {};
+        const fallbackDefinition = (Array.isArray(labelDefinitions) ? labelDefinitions : [])
+          .find((label) => String(label?.id || label?.labelId || '') === id) || {};
+        return {
+          id,
+          labelId: id,
+          name: existing?.name || fallbackDefinition?.name || fallbackDefinition?.label || id,
+          color: existing?.color || fallbackDefinition?.color || null
+        };
+      });
+      setChats((prev) => (Array.isArray(prev) ? prev : []).map((item) => (
+        String(item?.id || '') === String(chatId || '')
+          ? { ...item, labels: nextLabels }
+          : item
+      )));
+    }
 
     socket.emit('set_chat_labels', { chatId, labelIds: nextIds });
   };

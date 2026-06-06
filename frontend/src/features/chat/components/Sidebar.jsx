@@ -197,6 +197,7 @@ const Sidebar = ({
     const [bulkLabelMenu, setBulkLabelMenu] = React.useState(null);
     const [bulkLabelQuery, setBulkLabelQuery] = React.useState('');
     const [bulkLabelMenuPosition, setBulkLabelMenuPosition] = React.useState(null);
+    const [bulkSelectedLabelIds, setBulkSelectedLabelIds] = React.useState(() => new Set());
     const visibleChats = React.useMemo(() => {
         const items = Array.isArray(filteredChats) ? [...filteredChats] : [];
         return items.sort((a, b) => {
@@ -213,9 +214,28 @@ const Sidebar = ({
         Array.from(selectedChatIds).filter((chatId) => visibleChatIds.includes(chatId))
     ), [selectedChatIds, visibleChatIds]);
     const selectedChatCount = selectedChatIdList.length;
+    const labelsInSelectedChats = React.useMemo(() => {
+        const selectedSet = new Set(selectedChatIdList);
+        const labelIds = new Set();
+        (Array.isArray(chats) ? chats : []).forEach((chat) => {
+            const chatId = String(chat?.id || '').trim();
+            if (!chatId || !selectedSet.has(chatId)) return;
+            (Array.isArray(chat?.labels) ? chat.labels : []).forEach((label) => {
+                const labelId = String(label?.id || label?.labelId || '').trim();
+                if (labelId) labelIds.add(labelId);
+            });
+        });
+
+        return (Array.isArray(labelDefinitions) ? labelDefinitions : [])
+            .filter((label) => {
+                const labelId = String(label?.id || label?.labelId || '').trim();
+                return labelId && labelIds.has(labelId);
+            });
+    }, [chats, labelDefinitions, selectedChatIdList]);
     const bulkLabelOptions = React.useMemo(() => {
         const query = normalizeSearchText(bulkLabelQuery);
-        return (Array.isArray(labelDefinitions) ? labelDefinitions : [])
+        const source = bulkLabelMenu === 'remove' ? labelsInSelectedChats : labelDefinitions;
+        return (Array.isArray(source) ? source : [])
             .filter((label) => {
                 const labelId = String(label?.id || label?.labelId || '').trim();
                 const name = String(label?.name || label?.label || labelId || '').trim();
@@ -223,7 +243,7 @@ const Sidebar = ({
                 if (!query) return true;
                 return normalizeSearchText(`${name} ${labelId}`).includes(query);
             });
-    }, [bulkLabelQuery, labelDefinitions]);
+    }, [bulkLabelMenu, bulkLabelQuery, labelDefinitions, labelsInSelectedChats]);
 
     React.useEffect(() => {
         const handlePointerDown = (event) => {
@@ -233,6 +253,7 @@ const Sidebar = ({
             if (!insideBulkToolbar && !insideBulkPortal) {
                 setBulkLabelMenu(null);
                 setBulkLabelMenuPosition(null);
+                setBulkSelectedLabelIds(new Set());
             }
             if (assigneeMenuRef.current && !assigneeMenuRef.current.contains(target)) {
                 setShowAssigneeFilterMenu(false);
@@ -422,6 +443,7 @@ const Sidebar = ({
         setBulkLabelMenu(null);
         setBulkLabelMenuPosition(null);
         setBulkLabelQuery('');
+        setBulkSelectedLabelIds(new Set());
     }, []);
 
     const toggleSelectionMode = React.useCallback(() => {
@@ -431,6 +453,7 @@ const Sidebar = ({
                 setSelectedChatIds(new Set());
                 setBulkLabelMenu(null);
                 setBulkLabelMenuPosition(null);
+                setBulkSelectedLabelIds(new Set());
             } else {
                 setShowAdvancedFilters(false);
                 setMobileFilterMode(null);
@@ -462,6 +485,7 @@ const Sidebar = ({
         setSelectedChatIds(new Set());
         setBulkLabelMenu(null);
         setBulkLabelMenuPosition(null);
+        setBulkSelectedLabelIds(new Set());
     }, []);
 
     const toggleBulkLabelMenu = React.useCallback((menuType = '', event = null) => {
@@ -470,6 +494,7 @@ const Sidebar = ({
         if (bulkLabelMenu === nextMenu) {
             setBulkLabelMenu(null);
             setBulkLabelMenuPosition(null);
+            setBulkSelectedLabelIds(new Set());
             return;
         }
 
@@ -489,6 +514,7 @@ const Sidebar = ({
             setBulkLabelMenuPosition(null);
         }
         setBulkLabelQuery('');
+        setBulkSelectedLabelIds(new Set());
         setBulkLabelMenu(nextMenu);
     }, [bulkLabelMenu]);
 
@@ -530,26 +556,47 @@ const Sidebar = ({
         }
     }, [exitSelectionMode, notify, postBulkAction, selectedChatCount, selectedChatIdList]);
 
-    const handleBulkLabelAction = React.useCallback(async (label = null) => {
+    const toggleBulkLabelSelection = React.useCallback((label = null) => {
         const labelId = String(label?.id || label?.labelId || '').trim();
-        if (!selectedChatCount || !labelId || !bulkLabelMenu) return;
+        if (!labelId) return;
+        setBulkSelectedLabelIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(labelId)) next.delete(labelId);
+            else next.add(labelId);
+            return next;
+        });
+    }, []);
+
+    const cancelBulkLabelMenu = React.useCallback(() => {
+        setBulkLabelMenu(null);
+        setBulkLabelMenuPosition(null);
+        setBulkLabelQuery('');
+        setBulkSelectedLabelIds(new Set());
+    }, []);
+
+    const handleApplyBulkLabelAction = React.useCallback(async () => {
+        const labelIds = Array.from(bulkSelectedLabelIds).map((value) => String(value || '').trim()).filter(Boolean);
+        if (!selectedChatCount || !labelIds.length || !bulkLabelMenu) return;
         setBulkActionBusy(`label-${bulkLabelMenu}`);
         try {
-            const payload = await postBulkAction('/api/tenant/chats/bulk/label', {
-                chatIds: selectedChatIdList,
-                labelId,
-                action: bulkLabelMenu
-            });
-            const updated = Number(payload?.updated || 0) || 0;
-            const verb = bulkLabelMenu === 'remove' ? 'quitada' : 'aplicada';
-            notify({ type: 'success', message: `Etiqueta ${verb} a ${updated} chats.` });
+            let updated = 0;
+            for (const labelId of labelIds) {
+                const payload = await postBulkAction('/api/tenant/chats/bulk/label', {
+                    chatIds: selectedChatIdList,
+                    labelId,
+                    action: bulkLabelMenu
+                });
+                updated = Math.max(updated, Number(payload?.updated || 0) || 0);
+            }
+            const verb = bulkLabelMenu === 'remove' ? 'quitadas' : 'aplicadas';
+            notify({ type: 'success', message: `${labelIds.length} etiquetas ${verb} a ${updated} chats.` });
             exitSelectionMode();
         } catch (error) {
             notify({ type: 'error', message: String(error?.message || 'Error al ejecutar la accion.') });
         } finally {
             setBulkActionBusy('');
         }
-    }, [bulkLabelMenu, exitSelectionMode, notify, postBulkAction, selectedChatCount, selectedChatIdList]);
+    }, [bulkLabelMenu, bulkSelectedLabelIds, exitSelectionMode, notify, postBulkAction, selectedChatCount, selectedChatIdList]);
 
     const bulkLabelMenuPortal = bulkLabelMenu && typeof document !== 'undefined'
         ? createPortal((
@@ -558,6 +605,9 @@ const Sidebar = ({
                 className="sidebar-bulk-label-menu sidebar-bulk-label-menu--portal"
                 style={bulkLabelMenuPosition || undefined}
             >
+                <div className="sidebar-bulk-label-title">
+                    {bulkLabelMenu === 'remove' ? 'Quitar etiquetas' : 'Seleccionar etiquetas'}
+                </div>
                 <input
                     type="search"
                     value={bulkLabelQuery}
@@ -571,18 +621,36 @@ const Sidebar = ({
                     ) : bulkLabelOptions.map((label) => {
                         const labelId = String(label?.id || label?.labelId || '').trim();
                         const labelName = String(label?.name || label?.label || labelId).trim();
+                        const isSelected = bulkSelectedLabelIds.has(labelId);
                         return (
-                            <button
+                            <label
                                 key={labelId || labelName}
-                                type="button"
-                                className="sidebar-bulk-label-option"
-                                onClick={() => handleBulkLabelAction(label)}
+                                className={`sidebar-bulk-label-option ${isSelected ? 'selected' : ''}`}
                             >
+                                <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => toggleBulkLabelSelection(label)}
+                                />
                                 <span className="sidebar-label-color" style={{ background: label?.color || 'var(--chat-control-text-soft)' }} />
                                 <span>{labelName}</span>
-                            </button>
+                            </label>
                         );
                     })}
+                </div>
+                <div className="sidebar-bulk-label-footer">
+                    <button type="button" className="sidebar-bulk-label-cancel" onClick={cancelBulkLabelMenu}>
+                        Cancelar
+                    </button>
+                    <button
+                        type="button"
+                        className="sidebar-bulk-label-apply"
+                        onClick={handleApplyBulkLabelAction}
+                        disabled={bulkSelectedLabelIds.size === 0 || Boolean(bulkActionBusy)}
+                    >
+                        {bulkActionBusy ? <Loader2 size={13} className="spin" /> : null}
+                        <span>Aplicar ({bulkSelectedLabelIds.size})</span>
+                    </button>
                 </div>
             </div>
         ), document.body)
