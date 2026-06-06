@@ -60,6 +60,7 @@ const {
 } = require('./domains/tenant');
 const {
     messageHistoryService,
+    chatReadStateService,
     conversationOpsService,
     customerConsentService,
     templateWebhookEventsService,
@@ -589,6 +590,7 @@ registerHttpRoutes({
     addProduct,
     updateProduct,
     messageHistoryService,
+    chatReadStateService,
     parseCsvEnv,
     resolveAndValidatePublicHost,
     logger,

@@ -54,7 +54,9 @@ function createSocketWaEventsBridgeService({
     customerConsentService = customerConsentServiceFallback,
     pushNotificationService = pushNotificationServiceFallback,
     tenantScheduleService = tenantScheduleServiceFallback,
-    auditLogService = auditLogServiceFallback
+    auditLogService = auditLogServiceFallback,
+    chatReadStateService = null,
+    emitToTenant = null
 } = {}) {
     const text = (value = '') => String(value ?? '').trim();
 
@@ -946,6 +948,20 @@ function createSocketWaEventsBridgeService({
                             updatedAt: new Date().toISOString()
                         });
                     }
+                    let skipUnreadIncrement = false;
+                    if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase && chatReadStateService?.shouldIncrementInbound) {
+                        try {
+                            skipUnreadIncrement = !(await chatReadStateService.shouldIncrementInbound({
+                                tenantId: historyTenantId,
+                                chatId: relatedChatIdBase,
+                                scopeModuleId: cleanScopeModuleId,
+                                conversationOpsService
+                            }));
+                        } catch (error) {
+                            console.warn('[ChatReadState] No se pudo evaluar presencia inbound:', error?.message || error);
+                        }
+                    }
+
                     await persistMessageHistory(historyTenantId, {
                         msg,
                         senderMeta,
@@ -954,8 +970,30 @@ function createSocketWaEventsBridgeService({
                         location,
                         quotedMessage: effectiveQuotedMessage,
                         agentMeta,
-                        moduleContext: effectiveModuleContext
+                        moduleContext: effectiveModuleContext,
+                        skipUnreadIncrement
                     });
+
+                    if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase && chatReadStateService?.getUnreadState) {
+                        try {
+                            await chatReadStateService.clearManualUnreadFlag?.(historyTenantId, {
+                                chatId: relatedChatIdBase,
+                                scopeModuleId: cleanScopeModuleId
+                            });
+                            const unreadItem = await chatReadStateService.getUnreadState(historyTenantId, {
+                                chatId: relatedChatIdBase,
+                                scopeModuleId: cleanScopeModuleId
+                            });
+                            chatReadStateService.emitUnreadState?.({
+                                emitToTenant,
+                                tenantId: historyTenantId,
+                                items: unreadItem ? [unreadItem] : [],
+                                aliases: ['chats_unread_updated']
+                            });
+                        } catch (error) {
+                            console.warn('[ChatReadState] No se pudo emitir estado unread inbound:', error?.message || error);
+                        }
+                    }
 
                     if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase) {
                         await handleQuoteButtonReply({

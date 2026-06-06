@@ -89,7 +89,8 @@ function normalizeMessageRecord(input = {}) {
         orderPayload: input.orderPayload && typeof input.orderPayload === 'object' ? input.orderPayload : null,
         locationPayload: input.locationPayload && typeof input.locationPayload === 'object' ? input.locationPayload : null,
         metadata: input.metadata && typeof input.metadata === 'object' ? input.metadata : {},
-        chat: normalizeChatPatch(input.chat || { id: chatId })
+        chat: normalizeChatPatch(input.chat || { id: chatId }),
+        skipUnreadIncrement: toSafeBoolean(input.skipUnreadIncrement, false)
     };
 }
 
@@ -153,6 +154,12 @@ async function ensurePostgresMessageColumns() {
         await queryPostgres(
             `CREATE INDEX IF NOT EXISTS idx_tenant_chats_updated
              ON tenant_chats(tenant_id, updated_at DESC)`
+        );
+        await queryPostgres('ALTER TABLE IF EXISTS tenant_chats ADD COLUMN IF NOT EXISTS manually_marked_unread BOOLEAN NOT NULL DEFAULT FALSE');
+        await queryPostgres('ALTER TABLE IF EXISTS tenant_chats ADD COLUMN IF NOT EXISTS manually_marked_unread_at TIMESTAMPTZ NULL');
+        await queryPostgres(
+            `CREATE INDEX IF NOT EXISTS idx_tenant_chats_unread_state
+             ON tenant_chats(tenant_id, unread_count, manually_marked_unread, updated_at DESC)`
         );
     })();
 
@@ -258,7 +265,11 @@ function upsertMessageInMemory(store, record) {
         ...(record.chat || { id: record.chatId }),
         unreadCount: record.fromMe
             ? 0
-            : (existing ? (Number(currentChat.unreadCount || 0) || 0) : (Number(currentChat.unreadCount || 0) || 0) + 1),
+            : (
+                existing || record.skipUnreadIncrement === true
+                    ? (Number(currentChat.unreadCount || 0) || 0)
+                    : (Number(currentChat.unreadCount || 0) || 0) + 1
+            ),
         metadata: {
             ...((record.chat?.metadata && typeof record.chat.metadata === 'object') ? record.chat.metadata : {}),
             manuallyMarkedUnread: false
@@ -464,7 +475,7 @@ async function upsertMessage(tenantId = DEFAULT_TENANT_ID, input = {}) {
 
     if (getStorageDriver() === 'postgres') {
         const skipUnreadIncrement = record.fromMe === false
-            ? await messageExistsPostgres(cleanTenant, record.messageId)
+            ? (record.skipUnreadIncrement === true || await messageExistsPostgres(cleanTenant, record.messageId))
             : false;
         await upsertChatPostgres(cleanTenant, record.chat, {
             ...record,

@@ -11,6 +11,7 @@ const planLimitsService = require('../../security/services/plan-limits.service')
 const aiUsageService = require('../../tenant/services/ai-usage.service');
 const aiChatHistoryService = require('../../operations/services/ai-chat-history.service');
 const messageHistoryService = require('../../operations/services/message-history.service');
+const chatReadStateService = require('../../operations/services/chat-read-state.service');
 const waModuleService = require('../../tenant/services/wa-modules.service');
 const tenantCatalogService = require('../../tenant/services/tenant-catalog.service');
 const customerService = require('../../tenant/services/customers.service');
@@ -783,7 +784,8 @@ class SocketManager {
         location = null,
         quotedMessage = null,
         agentMeta = null,
-        moduleContext = null
+        moduleContext = null,
+        skipUnreadIncrement = false
     } = {}) {
         try {
             if (!msg) return;
@@ -861,7 +863,8 @@ class SocketManager {
                     displayName: senderMeta?.notifyName || null,
                     phone: senderMeta?.senderPhone || null,
                     subtitle: senderMeta?.senderPushname || null
-                }
+                },
+                skipUnreadIncrement: Boolean(skipUnreadIncrement)
             });
 
             const customerPhone = coerceHumanPhone(
@@ -2000,15 +2003,6 @@ class SocketManager {
                 }
             });
 
-
-
-            socket.on('mark_chat_read', async (payload = '') => {
-                const data = payload && typeof payload === 'object' && !Array.isArray(payload)
-                    ? payload
-                    : { chatId: payload };
-                console.warn('[DEPRECATED] mark_chat_read via socket called by:', socket?.data?.userId || authContext?.userId || 'unknown', 'chat:', data?.chatId || data?.baseChatId || '', '- use API instead');
-            });
-
             // --- AI ---
             this.aiAssistantService.registerAiAssistantHandlers({
                 socket,
@@ -2047,6 +2041,13 @@ class SocketManager {
             this.sessionPresenceService.registerSessionPresenceHandlers({
                 socket,
                 authzAudit
+            });
+            chatReadStateService.registerSocketHandlers({
+                socket,
+                tenantId,
+                authContext,
+                conversationOpsService,
+                emitToTenant: this.emitToTenant.bind(this)
             });
         });
     }
@@ -2088,7 +2089,9 @@ class SocketManager {
             extractOrderInfo,
             extractLocationInfo,
             tenantScheduleService,
-            auditLogService
+            auditLogService,
+            chatReadStateService,
+            emitToTenant: this.emitToTenant.bind(this)
         });
         waEventsBridge.registerWaProviderEvents();
         waClient.on('template_webhook_event', async (event = {}) => {

@@ -397,8 +397,9 @@ function createSocketChatListService({
                         unread_count,
                         archived,
                         pinned,
-                        COALESCE(metadata->>'manuallyMarkedUnread', 'false') = 'true' AS manually_marked_unread,
-                        metadata->>'manuallyMarkedUnreadAt' AS manually_marked_unread_at
+                        (COALESCE(manually_marked_unread, FALSE)
+                            OR COALESCE(metadata->>'manuallyMarkedUnread', 'false') = 'true') AS manually_marked_unread,
+                        COALESCE(manually_marked_unread_at::text, metadata->>'manuallyMarkedUnreadAt') AS manually_marked_unread_at
                    FROM tenant_chats
                   WHERE tenant_id = $1
                     AND chat_id = ANY($2::text[])`,
@@ -841,10 +842,10 @@ function createSocketChatListService({
             const persisted = persistedStateByChatId.get(chatId) || {};
             const unreadCount = hasPersisted
                 ? Number(persisted?.unreadCount || 0) || 0
-                : Number(chat?.unreadCount || 0) || 0;
+                : 0;
             const manuallyMarkedUnread = hasPersisted
                 ? Boolean(persisted?.manuallyMarkedUnread)
-                : Boolean(chat?.manuallyMarkedUnread);
+                : false;
             if (unreadOnly && unreadCount <= 0 && !manuallyMarkedUnread) return;
 
             // El filtro Guardados/No guardados depende del vínculo CRM enriquecido

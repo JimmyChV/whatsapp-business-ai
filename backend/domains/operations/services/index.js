@@ -1,5 +1,6 @@
 module.exports = {
     messageHistoryService: require('./message-history.service'),
+    chatReadStateService: require('./chat-read-state.service'),
     conversationOpsService: require('./conversation-ops.service'),
     chatCommercialStatusService: require('./chat-commercial-status.service'),
     customerConsentService: require('./customer-consent.service'),

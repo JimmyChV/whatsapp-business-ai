@@ -214,6 +214,7 @@ function registerOperationsHttpRoutes({
     globalLabelsService,
     tenantLabelService,
     messageHistoryService,
+    chatReadStateService,
     accessPolicyService,
     hasPermission,
     isTenantAllowedForUser,
@@ -1512,8 +1513,8 @@ function registerOperationsHttpRoutes({
             if (!hasChatOperateAccess(req, tenantId)) {
                 return res.status(403).json({ ok: false, error: 'No autorizado.' });
             }
-            if (!messageHistoryService || typeof messageHistoryService.bulkMarkChatsUnread !== 'function') {
-                return res.status(500).json({ ok: false, error: 'Servicio de historial no disponible.' });
+            if (!chatReadStateService || typeof chatReadStateService.markUnread !== 'function') {
+                return res.status(500).json({ ok: false, error: 'Servicio de estado de lectura no disponible.' });
             }
 
             const targets = normalizeBulkChatTargets(req.body?.chatIds || []);
@@ -1524,27 +1525,7 @@ function registerOperationsHttpRoutes({
                 return res.status(403).json({ ok: false, error: 'No hay chats autorizados para actualizar.' });
             }
 
-            const result = await messageHistoryService.bulkMarkChatsUnread(
-                tenantId,
-                allowedTargets.map((target) => target.baseChatId)
-            );
-            const updatedByBaseId = new Map(
-                (Array.isArray(result?.items) ? result.items : [])
-                    .map((item) => [toText(item.chatId), item])
-            );
-            const items = allowedTargets
-                .filter((target) => updatedByBaseId.has(target.baseChatId))
-                .map((target) => {
-                    const updated = updatedByBaseId.get(target.baseChatId) || {};
-                    return {
-                        chatId: target.scopedChatId,
-                        baseChatId: target.baseChatId,
-                        scopeModuleId: target.scopeModuleId || null,
-                        unreadCount: Number.isFinite(Number(updated?.unreadCount)) ? Number(updated.unreadCount) : 0,
-                        manuallyMarkedUnread: updated?.manuallyMarkedUnread === true,
-                        manuallyMarkedUnreadAt: String(updated?.manuallyMarkedUnreadAt || '').trim() || null
-                    };
-                });
+            const items = await chatReadStateService.markUnread(tenantId, allowedTargets);
 
             const payload = {
                 tenantId,
@@ -1552,7 +1533,12 @@ function registerOperationsHttpRoutes({
                 items
             };
             if (typeof emitToTenant === 'function' && items.length > 0) {
-                emitToTenant(tenantId, 'chats_unread_updated', payload);
+                chatReadStateService.emitUnreadState({
+                    emitToTenant,
+                    tenantId,
+                    items,
+                    aliases: ['chats_unread_updated']
+                });
             }
 
             return res.json({
@@ -1577,8 +1563,8 @@ function registerOperationsHttpRoutes({
             if (!hasChatOperateAccess(req, tenantId)) {
                 return res.status(403).json({ ok: false, error: 'No autorizado.' });
             }
-            if (!messageHistoryService || typeof messageHistoryService.updateChatState !== 'function') {
-                return res.status(500).json({ ok: false, error: 'Servicio de historial no disponible.' });
+            if (!chatReadStateService || typeof chatReadStateService.clearUnread !== 'function') {
+                return res.status(500).json({ ok: false, error: 'Servicio de estado de lectura no disponible.' });
             }
 
             const targets = normalizeBulkChatTargets(req.body?.chatIds || []);
@@ -1591,28 +1577,17 @@ function registerOperationsHttpRoutes({
 
             const items = [];
             for (const target of allowedTargets) {
-                const result = await messageHistoryService.updateChatState(tenantId, {
-                    chatId: target.baseChatId,
-                    unreadCount: 0,
-                    metadata: {
-                        manuallyMarkedUnread: false
-                    }
-                });
-                if (result?.ok === false) continue;
-                const item = {
-                    ok: true,
-                    tenantId,
-                    chatId: target.scopedChatId,
-                    baseChatId: target.baseChatId,
-                    scopeModuleId: target.scopeModuleId || null,
-                    unreadCount: 0,
-                    manuallyMarkedUnread: false,
-                    manuallyMarkedUnreadAt: null
-                };
+                const item = await chatReadStateService.clearUnread(tenantId, target);
+                if (!item) continue;
                 items.push(item);
-                if (typeof emitToTenant === 'function') {
-                    emitToTenant(tenantId, 'chat_read_updated', item);
-                }
+            }
+            if (typeof emitToTenant === 'function' && items.length > 0) {
+                chatReadStateService.emitUnreadState({
+                    emitToTenant,
+                    tenantId,
+                    items,
+                    aliases: ['chat_read_updated']
+                });
             }
 
             return res.json({
