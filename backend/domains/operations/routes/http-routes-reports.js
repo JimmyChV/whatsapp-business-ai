@@ -1008,6 +1008,13 @@ campaign_scope AS (
                    AND r.campaign_id = c.campaign_id
                    AND COALESCE(r.sent_at, r.created_at) >= (SELECT starts_at FROM bounds)
                    AND COALESCE(r.sent_at, r.created_at) < (SELECT ends_at FROM bounds)
+                   AND NOT EXISTS (
+                        SELECT 1
+                          FROM tenant_test_contacts tc
+                         WHERE tc.tenant_id = r.tenant_id
+                           AND regexp_replace(COALESCE(r.phone, ''), '[^0-9]', '', 'g')
+                               LIKE '%' || regexp_replace(COALESCE(tc.phone_e164, ''), '[^0-9]', '', 'g') || '%'
+                   )
             )
        )
        AND c.created_at < (SELECT ends_at FROM bounds)
@@ -1073,6 +1080,13 @@ SELECT
            AND (r.status = 'sent' OR r.sent_at IS NOT NULL)
            AND COALESCE(r.sent_at, r.created_at) >= (SELECT starts_at FROM bounds)
            AND COALESCE(r.sent_at, r.created_at) < (SELECT ends_at FROM bounds)
+           AND NOT EXISTS (
+                SELECT 1
+                  FROM tenant_test_contacts tc
+                 WHERE tc.tenant_id = r.tenant_id
+                   AND regexp_replace(COALESCE(r.phone, ''), '[^0-9]', '', 'g')
+                       LIKE '%' || regexp_replace(COALESCE(tc.phone_e164, ''), '[^0-9]', '', 'g') || '%'
+           )
     ), 0) AS enviados,
     COALESCE(csc.respondieron, 0) AS respondieron,
     COALESCE(cqc.cotizaciones, 0) AS cotizaciones,
