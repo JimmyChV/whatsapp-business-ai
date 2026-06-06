@@ -1201,7 +1201,13 @@ function createSocketWaEventsBridgeService({
                                 scopeChannelType: String(effectiveModuleContext?.channelType || '').trim().toLowerCase() || null,
                                 scopeTransport: String(effectiveModuleContext?.transportMode || '').trim().toLowerCase() || null
                             });
-                            if (summary) emitToRuntimeContext('chat_updated', summary);
+                            if (summary) {
+                                const chatUpdatedSummary = { ...summary };
+                                delete chatUpdatedSummary.unreadCount;
+                                delete chatUpdatedSummary.manuallyMarkedUnread;
+                                delete chatUpdatedSummary.manuallyMarkedUnreadAt;
+                                emitToRuntimeContext('chat_updated', chatUpdatedSummary);
+                            }
                         }
                     } catch (e) {
                         // silent: message delivery should not fail by chat refresh issues
@@ -1372,7 +1378,13 @@ function createSocketWaEventsBridgeService({
                         scopeChannelType: String(effectiveModuleContext?.channelType || '').trim().toLowerCase() || null,
                         scopeTransport: String(effectiveModuleContext?.transportMode || '').trim().toLowerCase() || null
                     });
-                    if (summary) emitToRuntimeContext('chat_updated', summary);
+                    if (summary) {
+                        const chatUpdatedSummary = { ...summary };
+                        delete chatUpdatedSummary.unreadCount;
+                        delete chatUpdatedSummary.manuallyMarkedUnread;
+                        delete chatUpdatedSummary.manuallyMarkedUnreadAt;
+                        emitToRuntimeContext('chat_updated', chatUpdatedSummary);
+                    }
                 }
             } catch (e) { }
         });
@@ -1429,7 +1441,13 @@ function createSocketWaEventsBridgeService({
                     scopeChannelType: String(runtimeModuleContext?.channelType || '').trim().toLowerCase() || null,
                     scopeTransport: String(runtimeModuleContext?.transportMode || '').trim().toLowerCase() || null
                 });
-                if (summary) emitToRuntimeContext('chat_updated', summary);
+                if (summary) {
+                    const chatUpdatedSummary = { ...summary };
+                    delete chatUpdatedSummary.unreadCount;
+                    delete chatUpdatedSummary.manuallyMarkedUnread;
+                    delete chatUpdatedSummary.manuallyMarkedUnreadAt;
+                    emitToRuntimeContext('chat_updated', chatUpdatedSummary);
+                }
             } catch (e) { }
         });
 

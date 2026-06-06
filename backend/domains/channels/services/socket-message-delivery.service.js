@@ -250,7 +250,13 @@ function createSocketMessageDeliveryService({
                          scopeChannelType: String(moduleContext?.channelType || '').trim().toLowerCase() || null,
                          scopeTransport: String(moduleContext?.transportMode || '').trim().toLowerCase() || null
                      });
-                     if (summary) emitToRuntimeContext('chat_updated', summary);
+                     if (summary) {
+                         const chatUpdatedSummary = { ...summary };
+                         delete chatUpdatedSummary.unreadCount;
+                         delete chatUpdatedSummary.manuallyMarkedUnread;
+                         delete chatUpdatedSummary.manuallyMarkedUnreadAt;
+                         emitToRuntimeContext('chat_updated', chatUpdatedSummary);
+                     }
                  } catch (_) { }
              });
          };

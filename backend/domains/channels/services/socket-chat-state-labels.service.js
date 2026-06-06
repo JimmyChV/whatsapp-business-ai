@@ -125,6 +125,9 @@ function createSocketChatStateLabelsService({
                         archived: hasArchived ? patch.archived : Boolean(summary.archived),
                         pinned: hasPinned ? patch.pinned : Boolean(summary.pinned)
                     };
+                    delete nextSummary.unreadCount;
+                    delete nextSummary.manuallyMarkedUnread;
+                    delete nextSummary.manuallyMarkedUnreadAt;
                     emitToTenant(tenantId, 'chat_updated', nextSummary);
                 }
 

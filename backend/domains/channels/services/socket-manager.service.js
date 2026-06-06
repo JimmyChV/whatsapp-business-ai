@@ -1776,7 +1776,11 @@ class SocketManager {
                         const summary = await this.toChatSummary(chat, { includeHeavyMeta: true, ...scopeSummaryOptions });
                         if (summary) {
                             canonicalChatId = String(summary.baseChatId || parseScopedChatId(summary.id).chatId || canonicalChatId || '').trim() || canonicalChatId;
-                            this.io.emit('chat_updated', summary);
+                            const chatUpdatedSummary = { ...summary };
+                            delete chatUpdatedSummary.unreadCount;
+                            delete chatUpdatedSummary.manuallyMarkedUnread;
+                            delete chatUpdatedSummary.manuallyMarkedUnreadAt;
+                            this.io.emit('chat_updated', chatUpdatedSummary);
                         }
                     } catch (e) {
                         try {
@@ -1784,7 +1788,11 @@ class SocketManager {
                             const fallbackSummary = await this.toChatSummary(fallbackChat, { includeHeavyMeta: true, ...scopeSummaryOptions });
                             if (fallbackSummary) {
                                 canonicalChatId = String(fallbackSummary.baseChatId || parseScopedChatId(fallbackSummary.id).chatId || directChatId || '').trim() || directChatId;
-                                this.io.emit('chat_updated', fallbackSummary);
+                                const chatUpdatedSummary = { ...fallbackSummary };
+                                delete chatUpdatedSummary.unreadCount;
+                                delete chatUpdatedSummary.manuallyMarkedUnread;
+                                delete chatUpdatedSummary.manuallyMarkedUnreadAt;
+                                this.io.emit('chat_updated', chatUpdatedSummary);
                             }
                         } catch (fallbackErr) { }
                     }

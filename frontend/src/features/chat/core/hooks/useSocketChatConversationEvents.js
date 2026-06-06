@@ -13,6 +13,7 @@ import {
     saveMessages as saveCachedMessages
 } from '../services/chatLocalCache.service';
 import { mergeTemplateMessageContent } from '../helpers/templateMessages.helpers';
+import { wasRecentlyRead } from '../services/chatReadState.service';
 
 function toTitleCaseChatText(value = '') {
     return String(value || '')
@@ -87,15 +88,27 @@ function normalizeUnreadCount(value = 0) {
     return Math.max(0, Number.isFinite(Number(value)) ? Number(value) : 0);
 }
 
-function mergeUnreadState(incoming = {}, previous = {}) {
-    const unreadCount = hasOwn(incoming, 'unreadCount')
-        ? normalizeUnreadCount(incoming.unreadCount)
-        : normalizeUnreadCount(previous?.unreadCount);
-    const manuallyMarkedUnread = unreadCount > 0
+function mergeUnreadState(incoming = {}, previous = {}, options = {}) {
+    const incomingHasUnread = hasOwn(incoming, 'unreadCount');
+    const incomingUnreadCount = incomingHasUnread ? normalizeUnreadCount(incoming.unreadCount) : null;
+    const previousUnreadCount = normalizeUnreadCount(previous?.unreadCount);
+    const shouldSuppressRuntimeUnread = Boolean(options?.suppressRecentlyRead)
+        && incomingHasUnread
+        && incomingUnreadCount > 0
+        && previousUnreadCount === 0
+        && wasRecentlyRead(options?.chatId || incoming?.id || incoming?.baseChatId || previous?.id || previous?.baseChatId || '');
+    const unreadCount = shouldSuppressRuntimeUnread
+        ? 0
+        : incomingHasUnread
+            ? incomingUnreadCount
+            : previousUnreadCount;
+    const manuallyMarkedUnread = shouldSuppressRuntimeUnread
         ? false
-        : (hasOwn(incoming, 'manuallyMarkedUnread')
-            ? incoming?.manuallyMarkedUnread === true
-            : previous?.manuallyMarkedUnread === true);
+        : unreadCount > 0
+            ? false
+            : (hasOwn(incoming, 'manuallyMarkedUnread')
+                ? incoming?.manuallyMarkedUnread === true
+                : previous?.manuallyMarkedUnread === true);
     return {
         unreadCount,
         manuallyMarkedUnread,
@@ -707,7 +720,10 @@ export default function useSocketChatConversationEvents({
             const parsedFinal = parseScopedChatId(finalId || incomingChatId);
             const scopeModuleId = String(parsedFinal?.scopeModuleId || incomingScopeModuleId || previousScopeModuleId || '').trim().toLowerCase() || null;
             const baseChatId = String(parsedFinal?.baseChatId || chat?.baseChatId || previous?.baseChatId || incomingChatId).trim() || null;
-            const unreadState = mergeUnreadState(chat, previous);
+            const unreadState = mergeUnreadState(chat, previous, {
+                chatId: baseChatId || finalId || incomingChatId,
+                suppressRecentlyRead: true
+            });
             const hydrated = {
                 ...chat,
                 id: finalId || incomingChatId,

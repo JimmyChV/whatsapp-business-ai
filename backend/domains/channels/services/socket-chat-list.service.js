@@ -950,7 +950,6 @@ function createSocketChatListService({
             name: resolveChatDisplayName({ ...effectiveChat, erpCustomer }),
             phone,
             subtitle,
-            unreadCount: chat.unreadCount,
             timestamp: chat.timestamp,
             lastMessage: resolveLastMessagePreview(chat),
             lastMessageFromMe: chat.lastMessage ? chat.lastMessage.fromMe : false,
@@ -1251,7 +1250,11 @@ function createSocketChatListService({
                                 const summary = await toChatSummary(chat, { includeHeavyMeta: true, ...summaryScopeOptions });
                                 if (summary) {
                                     const enrichedSummary = await enrichWithChatListData(summary, tenantId, activeScopeModuleId || '');
-                                    socket.emit('chat_updated', enrichedSummary);
+                                    const chatUpdatedSummary = { ...enrichedSummary };
+                                    delete chatUpdatedSummary.unreadCount;
+                                    delete chatUpdatedSummary.manuallyMarkedUnread;
+                                    delete chatUpdatedSummary.manuallyMarkedUnreadAt;
+                                    socket.emit('chat_updated', chatUpdatedSummary);
                                 }
                             } catch (_) { }
                         }

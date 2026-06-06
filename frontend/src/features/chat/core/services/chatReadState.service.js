@@ -2,6 +2,8 @@ import { API_URL } from '../../../../config/runtime';
 
 const trimText = (value = '') => String(value || '').trim();
 const CHAT_SCOPE_SEPARATOR = '::mod::';
+const RECENTLY_READ_WINDOW_MS = 10000;
+const recentlyReadChats = new Map();
 
 function parseChatIdentity(value = '') {
   const raw = trimText(value);
@@ -18,6 +20,36 @@ function chatIdsReferSameConversation(left = '', right = '') {
   const leftBase = parseChatIdentity(left).baseChatId;
   const rightBase = parseChatIdentity(right).baseChatId;
   return Boolean(leftBase && rightBase && leftBase === rightBase);
+}
+
+function readMemoryKey(value = '') {
+  const source = value && typeof value === 'object' && !Array.isArray(value)
+    ? value.chatId || value.baseChatId || value.id || ''
+    : value;
+  return parseChatIdentity(trimText(source)).baseChatId;
+}
+
+function pruneRecentlyRead(now = Date.now(), withinMs = RECENTLY_READ_WINDOW_MS) {
+  recentlyReadChats.forEach((timestamp, chatId) => {
+    if (now - Number(timestamp || 0) > withinMs) {
+      recentlyReadChats.delete(chatId);
+    }
+  });
+}
+
+export function markAsRecentlyRead(chatId = '') {
+  const key = readMemoryKey(chatId);
+  if (!key) return;
+  recentlyReadChats.set(key, Date.now());
+}
+
+export function wasRecentlyRead(chatId = '', withinMs = RECENTLY_READ_WINDOW_MS) {
+  const key = readMemoryKey(chatId);
+  if (!key) return false;
+  const now = Date.now();
+  pruneRecentlyRead(now, withinMs);
+  const timestamp = Number(recentlyReadChats.get(key) || 0);
+  return Boolean(timestamp && now - timestamp < withinMs);
 }
 
 export async function markChatsRead({
@@ -50,6 +82,13 @@ export async function markChatsRead({
   if (!response.ok || payload?.ok === false) {
     throw new Error(String(payload?.error || 'No se pudo marcar el chat como leido.'));
   }
+  const readItems = Array.isArray(payload?.items) && payload.items.length > 0
+    ? payload.items
+    : safeChatIds;
+  readItems.forEach((item) => {
+    markAsRecentlyRead(item?.chatId || item?.baseChatId || item?.id || item);
+    markAsRecentlyRead(item?.baseChatId || '');
+  });
   return payload;
 }
 
