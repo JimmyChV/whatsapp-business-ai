@@ -572,7 +572,6 @@ function registerSocketHandlers({
     socket.on('chat_focus', async (payload = {}) => {
         try {
             const source = toText(payload?.source || '').toLowerCase();
-            if (source === 'active_inbound') return;
             const userId = getUserIdFromSocket(socket, authContext);
             const target = normalizeTarget({
                 chatId: payload?.chatId || payload?.baseChatId || '',
@@ -585,6 +584,7 @@ function registerSocketHandlers({
                 chatId: target.baseChatId,
                 scopeModuleId: target.scopeModuleId || ''
             });
+            if (source !== 'chat_open') return;
             const result = await clearUnreadForActor(cleanTenant, target, {
                 userId,
                 conversationOpsService
