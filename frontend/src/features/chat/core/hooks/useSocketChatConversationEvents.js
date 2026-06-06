@@ -263,6 +263,20 @@ export default function useSocketChatConversationEvents({
         return Boolean(leftBase && rightBase && leftBase === rightBase);
     };
 
+    const resolveChatLikeBaseId = (chat = {}) => {
+        const rawId = String(chat?.id || chat?.chatId || '').trim();
+        return String(chat?.baseChatId || resolveBaseChatId(parseScopedChatId, rawId)).trim();
+    };
+
+    const chatEntriesReferSameConversation = (left = {}, right = {}) => {
+        const leftId = String(left?.id || left?.chatId || '').trim();
+        const rightId = String(right?.id || right?.chatId || '').trim();
+        if (leftId && rightId && chatIdsReferSameConversation(leftId, rightId)) return true;
+        const leftBase = resolveChatLikeBaseId(left);
+        const rightBase = resolveChatLikeBaseId(right);
+        return Boolean(leftBase && rightBase && leftBase === rightBase);
+    };
+
     useEffect(() => {
         const syncWindowAttentionState = () => {
             try {
@@ -643,6 +657,7 @@ export default function useSocketChatConversationEvents({
                 const freshChat = hydrated.find((candidate) => (
                     String(candidate?.id || '') === String(chat?.id || '')
                     || chatIdentityKey(candidate) === chatIdentityKey(chat)
+                    || chatEntriesReferSameConversation(candidate, chat)
                 ));
                 if (!freshChat) return chat;
                 const hasFreshWindowOpen = Object.prototype.hasOwnProperty.call(freshChat || {}, 'windowOpen');
@@ -848,17 +863,21 @@ export default function useSocketChatConversationEvents({
 
         socket.on('chat_unread_state_updated', ({ items = [] } = {}) => {
             const normalizedItems = (Array.isArray(items) ? items : [])
-                .map((item) => ({
-                    chatId: normalizeChatScopedId(item?.chatId || item?.baseChatId || '', item?.scopeModuleId || ''),
-                    unreadCount: normalizeUnreadCount(item?.unreadCount),
-                    manuallyMarkedUnread: item?.manuallyMarkedUnread === true,
-                    manuallyMarkedUnreadAt: item?.manuallyMarkedUnreadAt || null
-                }))
+                .map((item) => {
+                    const rawChatId = String(item?.chatId || item?.baseChatId || '').trim();
+                    return {
+                        chatId: normalizeChatScopedId(rawChatId, item?.scopeModuleId || ''),
+                        baseChatId: String(item?.baseChatId || resolveBaseChatId(parseScopedChatId, rawChatId)).trim() || null,
+                        unreadCount: normalizeUnreadCount(item?.unreadCount),
+                        manuallyMarkedUnread: item?.manuallyMarkedUnread === true,
+                        manuallyMarkedUnreadAt: item?.manuallyMarkedUnreadAt || null
+                    };
+                })
                 .filter((item) => item.chatId);
             if (!normalizedItems.length) return;
 
             setChats((prev) => prev.map((chat) => {
-                const match = normalizedItems.find((item) => chatIdsReferSameConversation(String(chat?.id || ''), item.chatId));
+                const match = normalizedItems.find((item) => chatEntriesReferSameConversation(chat, item));
                 if (!match) return chat;
                 return {
                     ...chat,
