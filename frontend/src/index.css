@@ -2922,6 +2922,35 @@ body {
   white-space: nowrap;
 }
 
+.location-message-mini-map {
+  height: 118px;
+  min-height: 118px;
+  width: 100%;
+  pointer-events: none;
+}
+
+.location-message-mini-fallback {
+  display: grid;
+  place-items: center;
+  gap: 3px;
+  height: 118px;
+  padding: 12px;
+  color: #047857;
+  text-align: center;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(37, 211, 102, 0.18), transparent 28%),
+    linear-gradient(135deg, #ecfdf5 0%, #dff7ed 100%);
+}
+
+.location-message-mini-fallback span {
+  font-weight: 900;
+}
+
+.location-message-mini-fallback small {
+  color: #64748b;
+  font-weight: 700;
+}
+
 .business-header-row {
   cursor: pointer;
 }

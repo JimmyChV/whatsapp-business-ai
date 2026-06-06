@@ -14,11 +14,16 @@ import useMessageBubbleAttachmentActions from './hooks/useMessageBubbleAttachmen
 import useMessageBubbleLinkPreview from './hooks/useMessageBubbleLinkPreview';
 import useMessageBubbleDerivedModel from './hooks/useMessageBubbleDerivedModel';
 import { buildRenderedTemplateMessage } from '../../core/helpers/templateMessages.helpers';
+import { API_URL } from '../../../../config/runtime';
+import {
+    CoverageMap,
+    coordPair,
+    useGoogleMapsLoader
+} from '../../business/sections/BusinessCoverageTabSection';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const GLOBAL_SKIN_TONE_STORAGE_KEY = 'chat-emoji-skin-tone:global';
-let staticMapsApiKeyPromise = null;
-let staticMapsApiKeyCache = '';
+let locationMapsApiKeyPromise = null;
+let locationMapsApiKeyCache = '';
 const REACTION_TONE_VARIANTS = {
     '👍': {
         '1f3fb': '👍🏻',
@@ -46,36 +51,21 @@ const formatOrderCardTitle = (value = '') => {
 
 const isRenderableTemplateHeaderImageSrc = (value = '') => /^(https?:\/\/|data:image\/|blob:|\/)/i.test(String(value || '').trim());
 
-const loadStaticMapsApiKey = async (buildApiHeaders) => {
-    if (staticMapsApiKeyCache) return staticMapsApiKeyCache;
-    if (!staticMapsApiKeyPromise) {
-        staticMapsApiKeyPromise = fetch(`${API_URL}/api/tenant/config/maps-api-key`, {
+const loadLocationMapsApiKey = async (buildApiHeaders) => {
+    if (locationMapsApiKeyCache) return locationMapsApiKeyCache;
+    if (!locationMapsApiKeyPromise) {
+        locationMapsApiKeyPromise = fetch(`${API_URL}/api/tenant/config/maps-api-key`, {
             headers: typeof buildApiHeaders === 'function' ? buildApiHeaders({ includeJson: true }) : undefined
         })
             .then((response) => response.json().then((body) => ({ response, body })).catch(() => ({ response, body: {} })))
             .then(({ response, body }) => {
                 if (!response.ok || body?.ok === false) return '';
-                staticMapsApiKeyCache = String(body?.apiKey || '').trim();
-                return staticMapsApiKeyCache;
+                locationMapsApiKeyCache = String(body?.apiKey || '').trim();
+                return locationMapsApiKeyCache;
             })
             .catch(() => '');
     }
-    return staticMapsApiKeyPromise;
-};
-
-const buildStaticLocationMapUrl = ({ latitude, longitude, apiKey }) => {
-    const lat = Number(latitude);
-    const lng = Number(longitude);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng) || !apiKey) return '';
-    const params = new URLSearchParams();
-    params.set('center', `${lat},${lng}`);
-    params.set('zoom', '15');
-    params.set('size', '520x180');
-    params.set('scale', '2');
-    params.set('maptype', 'roadmap');
-    params.append('markers', `color:red|label:C|${lat},${lng}`);
-    params.set('key', apiKey);
-    return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
+    return locationMapsApiKeyPromise;
 };
 
 const MessageBubble = ({
@@ -234,8 +224,7 @@ const MessageBubble = ({
     const [showReactionPicker, setShowReactionPicker] = useState(false);
     const [preferredSkinTone, setPreferredSkinTone] = useState('neutral');
     const [templateHeaderImageFailed, setTemplateHeaderImageFailed] = useState(false);
-    const [staticMapsApiKey, setStaticMapsApiKey] = useState(staticMapsApiKeyCache);
-    const [staticMapFailed, setStaticMapFailed] = useState(false);
+    const [locationMapsApiKey, setLocationMapsApiKey] = useState(locationMapsApiKeyCache);
     const bubbleRef = useRef(null);
     const reactionOptions = ['👍', '❤️', '😂', '😮', '😢', '🙏'].map((emoji) => {
         const variants = REACTION_TONE_VARIANTS[emoji];
@@ -352,26 +341,23 @@ const MessageBubble = ({
     const locationMapQuery = hasLocationCoords
         ? `${locationData.latitude},${locationData.longitude}`
         : String(locationData?.mapUrl || locationData?.label || '');
-    const locationStaticMapUrl = buildStaticLocationMapUrl({
-        latitude: locationData?.latitude,
-        longitude: locationData?.longitude,
-        apiKey: staticMapsApiKey
+    const locationPreviewCoords = coordPair({
+        lat: locationData?.latitude,
+        lng: locationData?.longitude
     });
-
-    useEffect(() => {
-        setStaticMapFailed(false);
-    }, [msg?.id, locationData?.latitude, locationData?.longitude]);
+    const locationMapsState = useGoogleMapsLoader(isLocationMessage && hasLocationCoords ? locationMapsApiKey : '');
+    const locationPreviewGoogle = locationMapsState.loaded ? window.google : null;
 
     useEffect(() => {
         let cancelled = false;
-        if (!isLocationMessage || !hasLocationCoords || staticMapsApiKey) return undefined;
-        loadStaticMapsApiKey(buildApiHeaders).then((apiKey) => {
-            if (!cancelled) setStaticMapsApiKey(apiKey);
+        if (!isLocationMessage || !hasLocationCoords || locationMapsApiKey) return undefined;
+        loadLocationMapsApiKey(buildApiHeaders).then((apiKey) => {
+            if (!cancelled) setLocationMapsApiKey(apiKey);
         });
         return () => {
             cancelled = true;
         };
-    }, [buildApiHeaders, hasLocationCoords, isLocationMessage, staticMapsApiKey]);
+    }, [buildApiHeaders, hasLocationCoords, isLocationMessage, locationMapsApiKey]);
 
     const getAckLabel = (ackValue) => {
         const ack = Number.isFinite(Number(ackValue)) ? Number(ackValue) : 0;
@@ -874,7 +860,7 @@ const MessageBubble = ({
                 {isLocationMessage && (
                     <div style={{
                         border: '1px solid rgba(0,168,132,0.38)',
-                        background: 'rgba(0,0,0,0.16)',
+                        background: 'rgba(255,255,255,0.72)',
                         borderRadius: '9px',
                         padding: '8px',
                         marginBottom: '6px'
@@ -895,30 +881,31 @@ const MessageBubble = ({
                                     overflow: 'hidden',
                                     padding: 0,
                                     cursor: 'pointer',
-                                    background: '#17242d'
+                                    background: '#eef7f2'
                                 }}
                             >
-                                {locationStaticMapUrl && !staticMapFailed ? (
-                                    <img
-                                        src={locationStaticMapUrl}
-                                        alt="Vista previa de ubicacion"
-                                        style={{ display: 'block', width: '100%', height: '118px', objectFit: 'cover' }}
-                                        loading="lazy"
-                                        onError={() => setStaticMapFailed(true)}
+                                {locationPreviewCoords && locationPreviewGoogle?.maps ? (
+                                    <CoverageMap
+                                        google={locationPreviewGoogle}
+                                        coords={locationPreviewCoords}
+                                        agencies={[]}
+                                        className="location-message-mini-map"
                                     />
                                 ) : (
-                                    <div style={{ height: '118px', display: 'grid', placeItems: 'center', color: '#cfefff', fontWeight: 800 }}>
-                                        Ver mapa de ubicacion
+                                    <div className="location-message-mini-fallback">
+                                        <MapPin size={22} />
+                                        <span>Ubicacion compartida</span>
+                                        <small>{locationMapQuery}</small>
                                     </div>
                                 )}
                             </button>
                         )}
 
-                        <div style={{ fontSize: '0.84rem', color: '#e4edf2', marginTop: '6px' }}>
+                        <div style={{ fontSize: '0.84rem', color: '#1f2937', marginTop: '6px', fontWeight: 700 }}>
                             {locationData?.label || 'Ubicacion'}
                         </div>
                         {(locationData?.latitude !== null && locationData?.longitude !== null) && (
-                            <div style={{ fontSize: '0.72rem', color: '#97aab4', marginTop: '2px' }}>
+                            <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>
                                 {locationData.latitude.toFixed(6)}, {locationData.longitude.toFixed(6)}
                             </div>
                         )}
