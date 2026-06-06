@@ -987,8 +987,7 @@ function createSocketWaEventsBridgeService({
                             chatReadStateService.emitUnreadState?.({
                                 emitToTenant,
                                 tenantId: historyTenantId,
-                                items: unreadItem ? [unreadItem] : [],
-                                aliases: ['chats_unread_updated']
+                                items: unreadItem ? [unreadItem] : []
                             });
                         } catch (error) {
                             console.warn('[ChatReadState] No se pudo emitir estado unread inbound:', error?.message || error);

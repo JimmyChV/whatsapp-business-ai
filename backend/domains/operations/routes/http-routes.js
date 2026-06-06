@@ -1536,8 +1536,7 @@ function registerOperationsHttpRoutes({
                 chatReadStateService.emitUnreadState({
                     emitToTenant,
                     tenantId,
-                    items,
-                    aliases: ['chats_unread_updated']
+                    items
                 });
             }
 
@@ -1585,8 +1584,7 @@ function registerOperationsHttpRoutes({
                 chatReadStateService.emitUnreadState({
                     emitToTenant,
                     tenantId,
-                    items,
-                    aliases: ['chat_read_updated']
+                    items
                 });
             }
 

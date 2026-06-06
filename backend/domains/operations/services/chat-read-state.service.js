@@ -433,22 +433,12 @@ function buildUnreadStatePayload(tenantId = DEFAULT_TENANT_ID, items = []) {
 function emitUnreadState({
     emitToTenant = null,
     tenantId = DEFAULT_TENANT_ID,
-    items = [],
-    aliases = []
+    items = []
 } = {}) {
     if (typeof emitToTenant !== 'function') return;
     const payload = buildUnreadStatePayload(tenantId, items);
     if (!payload.items.length) return;
     emitToTenant(payload.tenantId, 'chat_unread_state_updated', payload);
-    (Array.isArray(aliases) ? aliases : []).forEach((eventName) => {
-        const safeEvent = toText(eventName);
-        if (!safeEvent) return;
-        if (safeEvent === 'chat_read_updated') {
-            payload.items.forEach((item) => emitToTenant(payload.tenantId, safeEvent, item));
-            return;
-        }
-        emitToTenant(payload.tenantId, safeEvent, payload);
-    });
 }
 
 function getUserIdFromSocket(socket = null, authContext = {}) {
@@ -495,8 +485,7 @@ function registerSocketHandlers({
                 emitUnreadState({
                     emitToTenant,
                     tenantId: cleanTenant,
-                    items: [result.item],
-                    aliases: result.ok ? ['chat_read_updated'] : []
+                    items: [result.item]
                 });
             }
         } catch (error) {
