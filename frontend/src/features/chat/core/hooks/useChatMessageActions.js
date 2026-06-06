@@ -280,6 +280,16 @@ export default function useChatMessageActions({
   }, []);
 
   const handleExitActiveChat = useCallback(() => {
+    const previousActiveChatId = String(activeChatIdRef.current || '').trim();
+    if (previousActiveChatId && socket?.emit) {
+      const parsedPrevious = parseScopedChatId(previousActiveChatId);
+      socket.emit('chat_blur', {
+        chatId: previousActiveChatId,
+        baseChatId: parsedPrevious?.baseChatId || previousActiveChatId,
+        scopeModuleId: parsedPrevious?.scopeModuleId || undefined,
+        source: 'chat_exit'
+      });
+    }
     templateSendSubmittingRef.current = false;
     activeChatIdRef.current = null;
     setActiveChatId(null);
@@ -305,6 +315,7 @@ export default function useChatMessageActions({
     removeAttachment();
   }, [
     activeChatIdRef,
+    socket,
     prevMessagesMetaRef,
     suppressSmoothScrollUntilRef,
     setActiveChatId,

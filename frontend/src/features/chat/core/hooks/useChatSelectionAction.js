@@ -27,8 +27,7 @@ export default function useChatSelectionAction({
   setReplyingMessage,
   setShowClientProfile,
   setClientContact,
-  setQuickReplyDraft,
-  markChatRead
+  setQuickReplyDraft
 } = {}) {
   const emitQuickRepliesRequest = (moduleId = '') => {
     const cleanModuleId = String(moduleId || '').trim().toLowerCase();
@@ -100,6 +99,17 @@ export default function useChatSelectionAction({
       }
     }
 
+    const previousActiveChatId = String(activeChatIdRef.current || '').trim();
+    if (previousActiveChatId && previousActiveChatId !== resolvedChatId && socket?.emit) {
+      const parsedPrevious = parseScopedChatId(previousActiveChatId);
+      socket.emit('chat_blur', {
+        chatId: previousActiveChatId,
+        baseChatId: parsedPrevious?.baseChatId || previousActiveChatId,
+        scopeModuleId: parsedPrevious?.scopeModuleId || undefined,
+        source: 'chat_switch'
+      });
+    }
+
     activeChatIdRef.current = resolvedChatId;
     setActiveChatId(resolvedChatId);
     shouldInstantScrollRef.current = true;
@@ -119,16 +129,12 @@ export default function useChatSelectionAction({
     setClientContact(null);
     setQuickReplyDraft(null);
     socket.emit('get_chat_history', resolvedChatId);
-    const readPayload = {
+    socket.emit('chat_focus', {
       chatId: resolvedChatId,
+      baseChatId: parseScopedChatId(resolvedChatId)?.baseChatId || resolvedChatId,
       scopeModuleId: resolvedScopeModuleId || undefined,
       source: 'chat_open'
-    };
-    if (typeof markChatRead === 'function') {
-      void markChatRead(readPayload);
-    } else {
-      socket.emit('mark_chat_read', readPayload);
-    }
+    });
     socket.emit('get_contact_info', resolvedChatId);
   };
 

@@ -42,9 +42,7 @@ import {
   resolveScopedCatalogSelection,
   normalizeBusinessDataPayload,
   normalizeQuickRepliesSocketPayload,
-  normalizeProfilePayload,
-  markChatsRead,
-  applyReadItemsToChats
+  normalizeProfilePayload
 } from '../../features/chat/core';
 
 export default function useAppChatSocketRuntime({
@@ -321,34 +319,6 @@ export default function useAppChatSocketRuntime({
     currentUserId: String(saasSession?.user?.userId || saasSession?.user?.id || '').trim()
   });
 
-  const canMarkChatAsRead = (chatId = '') => {
-    return typeof chatAssignmentState?.isAssignedToMe === 'function'
-      ? chatAssignmentState.isAssignedToMe(chatId)
-      : false;
-  };
-
-  const markChatRead = useCallback(async (payload = {}) => {
-    const safePayload = payload && typeof payload === 'object' && !Array.isArray(payload)
-      ? payload
-      : { chatId: payload };
-    const chatId = String(safePayload?.chatId || safePayload?.baseChatId || '').trim();
-    if (!chatId) return;
-    try {
-      const result = await markChatsRead({
-        baseApiUrl,
-        buildApiHeaders,
-        tenantId: activeTenantId,
-        chatIds: [safePayload]
-      });
-      const items = Array.isArray(result?.items) ? result.items : [];
-      if (items.length > 0) {
-        setChats((prev) => applyReadItemsToChats(prev, items, chatIdsReferSameScope));
-      }
-    } catch (error) {
-      console.warn('[ChatRead] API mark-read failed:', String(error?.message || error || ''));
-    }
-  }, [activeTenantId, baseApiUrl, buildApiHeaders, chatIdsReferSameScope, setChats]);
-
   useSocketChatConversationEvents({
     socket,
     chatSearchRef,
@@ -400,9 +370,7 @@ export default function useAppChatSocketRuntime({
     setClientContact,
     isInternalIdentifier,
     setToasts,
-    tenantScopeId: activeTenantId,
-    canMarkChatAsRead,
-    markChatRead
+    tenantScopeId: activeTenantId
   });
 
   const chatCommercialStatusState = useChatCommercialStatusState({

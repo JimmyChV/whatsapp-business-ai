@@ -131,8 +131,23 @@ function normalizeChat(chat = {}, tenantId = _activeTenantId) {
   const id = String(chat?.id || chat?.chatId || '').trim();
   if (!id) return null;
   const safeTenantId = String(chat?.tenantId || chat?.tenant_id || chat?.cacheTenantId || tenantId || '').trim();
+  const {
+    unreadCount,
+    unread_count,
+    manuallyMarkedUnread,
+    manually_marked_unread,
+    manuallyMarkedUnreadAt,
+    manually_marked_unread_at,
+    ...cacheableChat
+  } = chat || {};
+  void unreadCount;
+  void unread_count;
+  void manuallyMarkedUnread;
+  void manually_marked_unread;
+  void manuallyMarkedUnreadAt;
+  void manually_marked_unread_at;
   return {
-    ...chat,
+    ...cacheableChat,
     id,
     tenantId: safeTenantId,
     name: String(chat?.name || ''),
@@ -141,9 +156,6 @@ function normalizeChat(chat = {}, tenantId = _activeTenantId) {
     timestamp: toTimestamp(chat?.timestamp || chat?.lastMessageAt || chat?.updatedAt),
     lastMessage: chat?.lastMessage || chat?.lastMessageBody || '',
     labels: Array.isArray(chat?.labels) ? chat.labels : [],
-    unreadCount: Number(chat?.unreadCount || 0) || 0,
-    manuallyMarkedUnread: chat?.manuallyMarkedUnread === true,
-    manuallyMarkedUnreadAt: chat?.manuallyMarkedUnreadAt || null,
     lastCustomerMessageAt: chat?.lastCustomerMessageAt || null,
     windowOpen: typeof chat?.windowOpen === 'boolean' ? chat.windowOpen : null,
     windowExpiresAt: chat?.windowExpiresAt || null,
@@ -155,6 +167,26 @@ function normalizeChat(chat = {}, tenantId = _activeTenantId) {
     adOrigin: chat?.adOrigin && typeof chat.adOrigin === 'object' ? chat.adOrigin : null,
     cachedAt: Date.now()
   };
+}
+
+function stripCachedUnreadState(chat = {}) {
+  if (!chat || typeof chat !== 'object') return chat;
+  const {
+    unreadCount,
+    unread_count,
+    manuallyMarkedUnread,
+    manually_marked_unread,
+    manuallyMarkedUnreadAt,
+    manually_marked_unread_at,
+    ...rest
+  } = chat;
+  void unreadCount;
+  void unread_count;
+  void manuallyMarkedUnread;
+  void manually_marked_unread;
+  void manuallyMarkedUnreadAt;
+  void manually_marked_unread_at;
+  return rest;
 }
 
 function normalizeMessage(chatId, message = {}, tenantId = _activeTenantId) {
@@ -436,6 +468,7 @@ export async function getChats() {
     }
     return chats
       .filter((chat) => String(chat?.tenantId || '').trim() === activeTenantId)
+      .map(stripCachedUnreadState)
       .sort((a, b) => Number(b?.timestamp || 0) - Number(a?.timestamp || 0));
   } catch (_error) {
     return [];

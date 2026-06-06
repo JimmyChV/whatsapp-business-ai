@@ -18,9 +18,7 @@ import {
   sanitizeDisplayText,
   normalizeChatFilters,
   normalizeQuickReplyDraft,
-  parseScopedChatId,
-  markChatsRead,
-  applyReadItemsToChats
+  parseScopedChatId
 } from '../../features/chat/core';
 import useUiFeedback from '../ui-feedback/useUiFeedback';
 
@@ -212,28 +210,6 @@ export default function useAppOperationHandlers({
     chats
   });
 
-  const markChatRead = useCallback(async (payload = {}) => {
-    const safePayload = payload && typeof payload === 'object' && !Array.isArray(payload)
-      ? payload
-      : { chatId: payload };
-    const chatId = String(safePayload?.chatId || safePayload?.baseChatId || '').trim();
-    if (!chatId) return;
-    try {
-      const result = await markChatsRead({
-        baseApiUrl: API_URL,
-        buildApiHeaders,
-        tenantId: tenantScopeId,
-        chatIds: [safePayload]
-      });
-      const items = Array.isArray(result?.items) ? result.items : [];
-      if (items.length > 0) {
-        setChats((prev) => applyReadItemsToChats(prev, items, chatIdsReferSameScope));
-      }
-    } catch (error) {
-      console.warn('[ChatRead] API mark-read failed:', String(error?.message || error || ''));
-    }
-  }, [buildApiHeaders, chatIdsReferSameScope, tenantScopeId, setChats]);
-
   const requestAiSuggestion = useCallback((customPromptArg) => {
     requestAiSuggestionForChat({
       socket,
@@ -300,8 +276,7 @@ export default function useAppOperationHandlers({
     setClientContact,
     setQuickReplyDraft,
     setChats,
-    chatIdsReferSameScope,
-    markChatRead
+    chatIdsReferSameScope
   });
 
   useEffect(() => {

@@ -40,8 +40,4 @@ export {
   listApprovedIndividualTemplates,
   getTemplateVariablesPreview
 } from './services/templateMessages.service';
-export {
-  markChatsRead,
-  applyReadItemsToChats
-} from './services/chatReadState.service';
 export * from './helpers/appChat.helpers';

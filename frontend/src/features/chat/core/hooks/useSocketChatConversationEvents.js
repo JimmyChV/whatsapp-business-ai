@@ -13,7 +13,6 @@ import {
     saveMessages as saveCachedMessages
 } from '../services/chatLocalCache.service';
 import { mergeTemplateMessageContent } from '../helpers/templateMessages.helpers';
-import { clearRecentlyRead, wasRecentlyRead } from '../services/chatReadState.service';
 
 function toTitleCaseChatText(value = '') {
     return String(value || '')
@@ -80,35 +79,23 @@ function resolveHighestAck(nextAck = 0, currentAck = 0) {
     return Math.max(safeNext, safeCurrent);
 }
 
-function hasOwn(source = {}, key = '') {
-    return Object.prototype.hasOwnProperty.call(source || {}, key);
-}
-
 function normalizeUnreadCount(value = 0) {
     return Math.max(0, Number.isFinite(Number(value)) ? Number(value) : 0);
 }
 
-function mergeUnreadState(incoming = {}, previous = {}, options = {}) {
-    const incomingHasUnread = hasOwn(incoming, 'unreadCount');
-    const incomingUnreadCount = incomingHasUnread ? normalizeUnreadCount(incoming.unreadCount) : null;
-    const previousUnreadCount = normalizeUnreadCount(previous?.unreadCount);
-    const shouldSuppressRuntimeUnread = Boolean(options?.suppressRecentlyRead)
-        && incomingHasUnread
-        && incomingUnreadCount > 0
-        && previousUnreadCount === 0
-        && wasRecentlyRead(options?.chatId || incoming?.id || incoming?.baseChatId || previous?.id || previous?.baseChatId || '');
-    const unreadCount = shouldSuppressRuntimeUnread
-        ? 0
-        : incomingHasUnread
-            ? incomingUnreadCount
-            : previousUnreadCount;
-    const manuallyMarkedUnread = shouldSuppressRuntimeUnread
+function hasPayloadField(source = {}, key = '') {
+    return Object.prototype.hasOwnProperty.call(source || {}, key);
+}
+
+function resolveUnreadState(incoming = {}, previous = {}) {
+    const hasUnreadCount = hasPayloadField(incoming, 'unreadCount');
+    const unreadCount = hasUnreadCount
+        ? normalizeUnreadCount(incoming.unreadCount)
+        : normalizeUnreadCount(previous?.unreadCount);
+    const hasManualFlag = hasPayloadField(incoming, 'manuallyMarkedUnread');
+    const manuallyMarkedUnread = unreadCount > 0
         ? false
-        : unreadCount > 0
-            ? false
-            : (hasOwn(incoming, 'manuallyMarkedUnread')
-                ? incoming?.manuallyMarkedUnread === true
-                : previous?.manuallyMarkedUnread === true);
+        : (hasManualFlag ? incoming?.manuallyMarkedUnread === true : previous?.manuallyMarkedUnread === true);
     return {
         unreadCount,
         manuallyMarkedUnread,
@@ -204,16 +191,12 @@ export default function useSocketChatConversationEvents({
     setClientContact,
     isInternalIdentifier,
     setToasts,
-    tenantScopeId = '',
-    canMarkChatAsRead,
-    markChatRead
+    tenantScopeId = ''
 }) {
     const { notify } = useUiFeedback();
     const recentInboundNotificationsRef = useRef(new Map());
     const windowFocusedRef = useRef(true);
     const pageVisibleRef = useRef(true);
-    const canMarkChatAsReadRef = useRef(canMarkChatAsRead);
-    const markChatReadRef = useRef(markChatRead);
     const desktopNotificationSummaryRef = useRef({
         totalMessages: 0,
         chats: new Map(),
@@ -223,15 +206,7 @@ export default function useSocketChatConversationEvents({
         latestPreview: ''
     });
 
-    useEffect(() => {
-        canMarkChatAsReadRef.current = canMarkChatAsRead;
-    }, [canMarkChatAsRead]);
-
-    useEffect(() => {
-        markChatReadRef.current = markChatRead;
-    }, [markChatRead]);
-
-    const resolveMarkReadPayload = (chatId = '', source = 'active_chat') => {
+    const resolveChatPresencePayload = (chatId = '', source = 'active_chat') => {
         const rawChatId = String(chatId || '').trim();
         if (!rawChatId) return null;
 
@@ -269,14 +244,16 @@ export default function useSocketChatConversationEvents({
         };
     };
 
-    const emitMarkChatRead = (chatId = '', source = 'active_chat') => {
-        const payload = resolveMarkReadPayload(chatId, source);
+    const emitChatFocus = (chatId = '', source = 'active_chat') => {
+        const payload = resolveChatPresencePayload(chatId, source);
         if (!payload) return;
-        if (typeof markChatReadRef.current === 'function') {
-            void markChatReadRef.current(payload);
-            return;
-        }
-        socket.emit('mark_chat_read', payload);
+        socket.emit('chat_focus', payload);
+    };
+
+    const emitChatBlur = (chatId = '', source = 'active_chat') => {
+        const payload = resolveChatPresencePayload(chatId, source);
+        if (!payload) return;
+        socket.emit('chat_blur', payload);
     };
 
     const chatIdsReferSameConversation = (left = '', right = '') => {
@@ -315,13 +292,20 @@ export default function useSocketChatConversationEvents({
                 latestTitle: '',
                 latestPreview: ''
             };
+            emitChatFocus(activeChatIdRef.current, 'window_focus');
         };
         const handleWindowBlur = () => {
             windowFocusedRef.current = false;
             syncWindowAttentionState();
+            emitChatBlur(activeChatIdRef.current, 'window_blur');
         };
         const handleVisibilityChange = () => {
             syncWindowAttentionState();
+            if (pageVisibleRef.current) {
+                emitChatFocus(activeChatIdRef.current, 'visibility_visible');
+            } else {
+                emitChatBlur(activeChatIdRef.current, 'visibility_hidden');
+            }
         };
 
         syncWindowAttentionState();
@@ -601,7 +585,7 @@ export default function useSocketChatConversationEvents({
                     const parsedFinal = parseScopedChatId(finalId || incomingChatId);
                     const scopeModuleId = String(parsedFinal?.scopeModuleId || incomingScopeModuleId || previousScopeModuleId || '').trim().toLowerCase() || null;
                     const baseChatId = String(parsedFinal?.baseChatId || chat?.baseChatId || previous?.baseChatId || incomingChatId).trim() || null;
-                    const unreadState = mergeUnreadState(chat, previous);
+                    const unreadState = resolveUnreadState(chat, previous);
                     const hydratedChat = {
                         ...chat,
                         id: finalId || incomingChatId,
@@ -667,7 +651,7 @@ export default function useSocketChatConversationEvents({
                 const hasFreshLaboralMinutes = Object.prototype.hasOwnProperty.call(freshChat || {}, 'laboralMinutesRemaining');
                 const hasFreshMeasuredAt = Object.prototype.hasOwnProperty.call(freshChat || {}, 'laboralWindowMeasuredAt');
                 const hasFreshLastCustomer = Object.prototype.hasOwnProperty.call(freshChat || {}, 'lastCustomerMessageAt');
-                const unreadState = mergeUnreadState(freshChat, chat);
+                const unreadState = resolveUnreadState(freshChat, chat);
                 return {
                     ...chat,
                     windowOpen: hasFreshWindowOpen ? Boolean(freshChat.windowOpen) : chat.windowOpen,
@@ -720,10 +704,7 @@ export default function useSocketChatConversationEvents({
             const parsedFinal = parseScopedChatId(finalId || incomingChatId);
             const scopeModuleId = String(parsedFinal?.scopeModuleId || incomingScopeModuleId || previousScopeModuleId || '').trim().toLowerCase() || null;
             const baseChatId = String(parsedFinal?.baseChatId || chat?.baseChatId || previous?.baseChatId || incomingChatId).trim() || null;
-            const unreadState = mergeUnreadState(chat, previous, {
-                chatId: baseChatId || finalId || incomingChatId,
-                suppressRecentlyRead: true
-            });
+            const unreadState = resolveUnreadState({}, previous);
             const hydrated = {
                 ...chat,
                 id: finalId || incomingChatId,
@@ -865,13 +846,13 @@ export default function useSocketChatConversationEvents({
             }
         });
 
-        socket.on('chats_unread_updated', ({ items = [] } = {}) => {
+        socket.on('chat_unread_state_updated', ({ items = [] } = {}) => {
             const normalizedItems = (Array.isArray(items) ? items : [])
                 .map((item) => ({
                     chatId: normalizeChatScopedId(item?.chatId || item?.baseChatId || '', item?.scopeModuleId || ''),
                     unreadCount: normalizeUnreadCount(item?.unreadCount),
                     manuallyMarkedUnread: item?.manuallyMarkedUnread === true,
-                    manuallyMarkedUnreadAt: item?.manuallyMarkedUnreadAt || new Date().toISOString()
+                    manuallyMarkedUnreadAt: item?.manuallyMarkedUnreadAt || null
                 }))
                 .filter((item) => item.chatId);
             if (!normalizedItems.length) return;
@@ -879,33 +860,11 @@ export default function useSocketChatConversationEvents({
             setChats((prev) => prev.map((chat) => {
                 const match = normalizedItems.find((item) => chatIdsReferSameConversation(String(chat?.id || ''), item.chatId));
                 if (!match) return chat;
-                const unreadState = mergeUnreadState(match, chat);
                 return {
                     ...chat,
-                    ...unreadState
+                    ...resolveUnreadState(match, chat)
                 };
             }));
-        });
-
-        socket.on('chat_read_updated', ({
-            chatId,
-            baseChatId,
-            scopeModuleId,
-            unreadCount = 0
-        } = {}) => {
-            const normalizedChatId = normalizeChatScopedId(chatId || baseChatId || '', scopeModuleId || '');
-            if (!normalizedChatId) return;
-            const nextUnreadCount = normalizeUnreadCount(unreadCount);
-            setChats((prev) => prev.map((chat) => (
-                chatIdsReferSameConversation(String(chat?.id || ''), normalizedChatId)
-                    ? {
-                        ...chat,
-                        unreadCount: nextUnreadCount,
-                        manuallyMarkedUnread: false,
-                        manuallyMarkedUnreadAt: null
-                    }
-                    : chat
-            )));
         });
 
         socket.on('chat_labels_error', (msg) => {
@@ -933,7 +892,7 @@ export default function useSocketChatConversationEvents({
             if (resolvedChatId && !chatIdsReferSameConversation(resolvedChatId, active)) {
                 activeChatIdRef.current = resolvedChatId;
                 setActiveChatId(resolvedChatId);
-                emitMarkChatRead(resolvedChatId, 'chat_open');
+                emitChatFocus(resolvedChatId, 'chat_history');
                 socket.emit('get_contact_info', resolvedChatId);
             }
 
@@ -1394,7 +1353,7 @@ export default function useSocketChatConversationEvents({
                     windowOpen: typeof normalizedContact?.windowOpen === 'boolean' ? normalizedContact.windowOpen : existing?.windowOpen,
                     windowExpiresAt: normalizedContact?.windowExpiresAt || existing?.windowExpiresAt || null,
                     windowStatus: normalizedContact?.windowStatus || existing?.windowStatus || null,
-                    ...mergeUnreadState({}, existing)
+                    ...resolveUnreadState({}, existing)
                 };
 
                 if (!chatMatchesQuery(nextChat, chatSearchRef.current) || !chatMatchesFilters(nextChat, chatFiltersRef.current)) {
@@ -1408,9 +1367,6 @@ export default function useSocketChatConversationEvents({
         socket.on('message', (msg) => {
             const relatedChatId = String(msg?.chatId || (msg.fromMe ? msg.to : msg.from) || '').trim();
             if (!isVisibleChatId(relatedChatId)) return;
-            if (!msg?.fromMe) {
-                clearRecentlyRead(relatedChatId);
-            }
             const relatedWindowExpiresAt = !msg?.fromMe && Number(msg?.timestamp || 0) > 0
                 ? new Date((Number(msg.timestamp) * 1000) + (24 * 60 * 60 * 1000)).toISOString()
                 : null;
@@ -1570,11 +1526,7 @@ export default function useSocketChatConversationEvents({
                     lastMessageFromMe: !!msg.fromMe,
                     ack: msg.ack || 0,
                     isMyContact: existing?.isMyContact === true,
-                    unreadCount: msg.fromMe
-                        ? 0
-                        : (Number(existing?.unreadCount || 0) || 0) + 1,
-                    manuallyMarkedUnread: false,
-                    manuallyMarkedUnreadAt: null,
+                    ...resolveUnreadState({}, existing),
                     windowOpen: msg.fromMe ? existing?.windowOpen : true,
                     windowExpiresAt: msg.fromMe ? (existing?.windowExpiresAt || null) : relatedWindowExpiresAt,
                     windowStatus: msg.fromMe ? (existing?.windowStatus || null) : null,
@@ -1741,7 +1693,7 @@ export default function useSocketChatConversationEvents({
 
             if (!msg?.fromMe && chatIdsReferSameConversation(relatedChatId, String(activeChatIdRef.current || ''))) {
                 shouldInstantScrollRef.current = true;
-                emitMarkChatRead(relatedChatId, 'active_inbound');
+                emitChatFocus(relatedChatId, 'active_inbound');
             }
         });
 
@@ -1809,6 +1761,7 @@ export default function useSocketChatConversationEvents({
         });
 
         return () => {
+            emitChatBlur(activeChatIdRef.current, 'events_cleanup');
             if (typeof window !== 'undefined') {
                 window.removeEventListener('focus', handleWindowFocus);
                 window.removeEventListener('blur', handleWindowBlur);
@@ -1832,8 +1785,7 @@ export default function useSocketChatConversationEvents({
                 'start_new_chat_error',
                 'chat_labels_updated',
                 'chats_labels_updated',
-                'chats_unread_updated',
-                'chat_read_updated',
+                'chat_unread_state_updated',
                 'chat_labels_error',
                 'chat_labels_saved',
                 'contact_info',
