@@ -8,6 +8,7 @@ import EmailTemplatesSettingsDetailPane from './modules-config/EmailTemplatesSet
 import GeneralSettingsDetailPane from './modules-config/GeneralSettingsDetailPane';
 import ModulesConfigModuleDetailPane from './modules-config/ModulesConfigModuleDetailPane';
 import SmtpSettingsDetailPane from './modules-config/SmtpSettingsDetailPane';
+import TestContactsSettingsDetailPane from './modules-config/TestContactsSettingsDetailPane';
 
 const CONFIG_KEYS = {
     TENANT_SETTINGS: 'tenant_settings',
@@ -16,7 +17,8 @@ const CONFIG_KEYS = {
     EMAIL_BRAND: 'email_brand',
     EMAIL_TEMPLATES: 'email_templates',
     DEVICE_AUTHORIZERS: 'device_authorizers',
-    AUDIT_LOGS: 'audit_logs'
+    AUDIT_LOGS: 'audit_logs',
+    TEST_CONTACTS: 'test_contacts'
 };
 
 function ModulesConfigSection(props = {}) {
@@ -32,6 +34,7 @@ function ModulesConfigSection(props = {}) {
     tenantOptions,
     busy,
     canEditModules,
+    canEditTenantSettings = false,
     canViewModules = canEditModules,
     canViewTenantSettings = true,
     canViewOwnDevices = true,
@@ -160,7 +163,16 @@ function ModulesConfigSection(props = {}) {
                 defaultLabel: 'No',
                 assignedUsers: '-',
                 updatedAt: '-'
-            } : null].filter(Boolean);
+            } : null, {
+                id: CONFIG_KEYS.TEST_CONTACTS,
+                name: 'Numeros de prueba',
+                phone: 'Excluir de reportes',
+                status: canEditTenantSettings ? 'Editable' : 'Solo lectura',
+                channel: 'Reportes',
+                defaultLabel: 'No',
+                assignedUsers: '-',
+                updatedAt: '-'
+            }].filter(Boolean);
         }
         return (Array.isArray(waModules) ? waModules : []).map((module) => ({
             id: module?.moduleId || module?.id || module?.code,
@@ -173,7 +185,7 @@ function ModulesConfigSection(props = {}) {
             updatedAt: formatDateTimeLabel?.(module?.updatedAt) || '-',
             raw: module
         }));
-    }, [MODULE_KEYS, canManageBrand, canManageEmailTemplates, canViewAuditLogs, canViewBrand, canViewEmailTemplates, canViewOwnDevices, formatDateTimeLabel, isGeneralConfigSection, tenantSettings, waModules]);
+    }, [MODULE_KEYS, canEditTenantSettings, canManageBrand, canManageEmailTemplates, canViewAuditLogs, canViewBrand, canViewEmailTemplates, canViewOwnDevices, formatDateTimeLabel, isGeneralConfigSection, tenantSettings, waModules]);
 
     const columns = React.useMemo(() => [
         { key: 'name', label: 'Nombre', width: '32%', minWidth: '240px', sortable: true },
@@ -323,6 +335,14 @@ function ModulesConfigSection(props = {}) {
                 canViewAuditLogs={canViewAuditLogs}
             />
 
+            <TestContactsSettingsDetailPane
+                settingsTenantId={settingsTenantId}
+                isGeneralConfigSection={isGeneralConfigSection}
+                selectedConfigKey={selectedConfigKey}
+                requestJson={requestJson}
+                canEditTenantSettings={canEditTenantSettings}
+            />
+
             <ModulesConfigModuleDetailPane
                 context={{
                     settingsTenantId,
@@ -378,6 +398,7 @@ function ModulesConfigSection(props = {}) {
         buildInitials,
         busy,
         canEditModules,
+        canEditTenantSettings,
         canRevokeAllDevices,
         canRevokeOwnDevices,
         canManageBrand,
@@ -483,6 +504,8 @@ function ModulesConfigSection(props = {}) {
                         setSelectedConfigKey?.(CONFIG_KEYS.DEVICE_AUTHORIZERS);
                     } else if (row?.id === CONFIG_KEYS.AUDIT_LOGS && canViewAuditLogs) {
                         setSelectedConfigKey?.(CONFIG_KEYS.AUDIT_LOGS);
+                    } else if (row?.id === CONFIG_KEYS.TEST_CONTACTS) {
+                        setSelectedConfigKey?.(CONFIG_KEYS.TEST_CONTACTS);
                     } else {
                         openConfigSettingsView?.();
                     }
@@ -524,6 +547,9 @@ function ModulesConfigSection(props = {}) {
                     : null,
                 isGeneralConfigSection && canViewAuditLogs
                     ? { label: 'Auditoria', onClick: () => setSelectedConfigKey?.(CONFIG_KEYS.AUDIT_LOGS), disabled: busy || !settingsTenantId }
+                    : null,
+                isGeneralConfigSection
+                    ? { label: 'Numeros de prueba', onClick: () => setSelectedConfigKey?.(CONFIG_KEYS.TEST_CONTACTS), disabled: busy || !settingsTenantId }
                     : null
             ].filter(Boolean)}
             detailTitle={isModulesSection

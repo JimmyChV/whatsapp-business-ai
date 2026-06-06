@@ -1215,6 +1215,12 @@
   font-size: 0.82rem;
 }
 
+.saas-reports-funnel__row--negative {
+  border-top: 1px solid var(--saas-border-color);
+  padding-top: 10px;
+  margin-top: 2px;
+}
+
 .saas-reports-funnel__row strong {
   color: var(--saas-text-primary);
   text-align: right;

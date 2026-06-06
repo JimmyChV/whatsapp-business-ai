@@ -63,6 +63,13 @@ scoped_chats AS (
     SELECT c.chat_id
       FROM tenant_chats c
      WHERE c.tenant_id = $1
+       AND NOT EXISTS (
+            SELECT 1
+              FROM tenant_test_contacts tc
+             WHERE tc.tenant_id = c.tenant_id
+               AND regexp_replace(COALESCE(c.chat_id, ''), '[^0-9]', '', 'g')
+                   LIKE '%' || regexp_replace(COALESCE(tc.phone_e164, ''), '[^0-9]', '', 'g') || '%'
+       )
        AND (
             $4::text IS NULL
             OR EXISTS (
@@ -138,6 +145,17 @@ function nullableText(value = '') {
     return clean ? clean : null;
 }
 
+function normalizePhoneE164(value = '') {
+    const raw = cleanText(value);
+    const digits = raw.replace(/\D/g, '');
+    if (!digits) return '';
+    return `+${digits}`;
+}
+
+function normalizePhoneDigits(value = '') {
+    return cleanText(value).replace(/\D/g, '');
+}
+
 function getDateLabelInTimeZone(date = new Date(), timeZone = REPORT_TIME_ZONE) {
     const safeDate = date instanceof Date ? date : new Date(date);
     if (Number.isNaN(safeDate.getTime())) return '';
@@ -202,6 +220,27 @@ function canReadReports(req, tenantId, {
     ]);
 }
 
+function canReadTestContacts(req, tenantId, deps = {}) {
+    if (canReadReports(req, tenantId, deps)) return true;
+    const { accessPolicyService, hasAnyPermission } = deps;
+    if (!accessPolicyService || typeof hasAnyPermission !== 'function') return true;
+    return hasAnyPermission(req, [
+        accessPolicyService.PERMISSIONS.TENANT_SETTINGS_READ,
+        accessPolicyService.PERMISSIONS.TENANT_SETTINGS_MANAGE
+    ].filter(Boolean));
+}
+
+function canManageTestContacts(req, tenantId, deps = {}) {
+    const { accessPolicyService, isTenantAllowedForUser, hasAnyPermission } = deps;
+    if (typeof isTenantAllowedForUser === 'function' && !isTenantAllowedForUser(req, tenantId)) {
+        return false;
+    }
+    if (!accessPolicyService || typeof hasAnyPermission !== 'function') return true;
+    return hasAnyPermission(req, [
+        accessPolicyService.PERMISSIONS.TENANT_SETTINGS_MANAGE
+    ].filter(Boolean));
+}
+
 function buildReportContext(req, res, deps = {}) {
     if (!ensureAuthenticated(req, res, deps.authService)) return null;
     const tenantId = resolveTenantId(req);
@@ -261,6 +300,107 @@ function assertPostgresReports() {
     if (getStorageDriver() !== 'postgres') {
         throw new Error('Los reportes operativos requieren SAAS_STORAGE_DRIVER=postgres.');
     }
+}
+
+async function listTestContacts(tenantId) {
+    const { rows } = await queryPostgres(
+        `SELECT phone_e164, label, added_at
+           FROM tenant_test_contacts
+          WHERE tenant_id = $1
+          ORDER BY added_at DESC, label NULLS LAST, phone_e164`,
+        [tenantId]
+    );
+    return rows.map((row) => ({
+        phoneE164: row.phone_e164,
+        label: row.label || '',
+        addedAt: row.added_at || null
+    }));
+}
+
+async function searchTestContactCandidates(tenantId, query = '') {
+    const clean = cleanText(query);
+    if (clean.length < 2) return [];
+    const digits = normalizePhoneDigits(clean);
+    const like = `%${clean.toLowerCase()}%`;
+    const digitLike = digits ? `%${digits}%` : '';
+    const { rows } = await queryPostgres(
+        `WITH candidates AS (
+            SELECT DISTINCT
+                COALESCE(NULLIF(c.phone_e164, ''), NULLIF(c.phone_alt, '')) AS phone,
+                COALESCE(
+                    NULLIF(c.contact_name, ''),
+                    NULLIF(TRIM(CONCAT_WS(' ', c.first_name, c.last_name_paternal, c.last_name_maternal)), ''),
+                    NULLIF(c.email, ''),
+                    c.customer_id
+                ) AS label,
+                1 AS priority
+              FROM tenant_customers c
+             WHERE c.tenant_id = $1
+               AND (
+                    LOWER(CONCAT_WS(' ', c.contact_name, c.first_name, c.last_name_paternal, c.last_name_maternal, c.email, c.customer_id)) LIKE $2
+                    OR ($3::text <> '' AND regexp_replace(COALESCE(c.phone_e164, c.phone_alt, ''), '[^0-9]', '', 'g') LIKE $3)
+               )
+            UNION ALL
+            SELECT DISTINCT
+                regexp_replace(split_part(ch.chat_id, '@', 1), '[^0-9]', '', 'g') AS phone,
+                COALESCE(NULLIF(ch.display_name, ''), ch.chat_id) AS label,
+                2 AS priority
+              FROM tenant_chats ch
+             WHERE ch.tenant_id = $1
+               AND (
+                    LOWER(COALESCE(ch.display_name, ch.chat_id, '')) LIKE $2
+                    OR ($3::text <> '' AND regexp_replace(COALESCE(ch.chat_id, ''), '[^0-9]', '', 'g') LIKE $3)
+               )
+        )
+        SELECT phone, label
+          FROM candidates
+         WHERE COALESCE(phone, '') <> ''
+         ORDER BY priority, label NULLS LAST, phone
+         LIMIT 12`,
+        [tenantId, like, digitLike]
+    );
+    const seen = new Set();
+    return rows.map((row) => ({
+        phoneE164: normalizePhoneE164(row.phone),
+        label: cleanText(row.label)
+    })).filter((item) => {
+        if (!item.phoneE164 || seen.has(item.phoneE164)) return false;
+        seen.add(item.phoneE164);
+        return true;
+    });
+}
+
+async function upsertTestContact(tenantId, payload = {}) {
+    const phoneE164 = normalizePhoneE164(payload.phone || payload.phoneE164 || payload.phone_e164);
+    if (!phoneE164) throw new Error('Telefono invalido.');
+    const label = nullableText(payload.label);
+    const { rows } = await queryPostgres(
+        `INSERT INTO tenant_test_contacts (tenant_id, phone_e164, label)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (tenant_id, phone_e164)
+         DO UPDATE SET label = EXCLUDED.label,
+                       added_at = tenant_test_contacts.added_at
+         RETURNING phone_e164, label, added_at`,
+        [tenantId, phoneE164, label]
+    );
+    const row = rows[0] || {};
+    return {
+        phoneE164: row.phone_e164,
+        label: row.label || '',
+        addedAt: row.added_at || null
+    };
+}
+
+async function deleteTestContact(tenantId, phone = '') {
+    const phoneE164 = normalizePhoneE164(phone);
+    if (!phoneE164) throw new Error('Telefono invalido.');
+    await queryPostgres(
+        `DELETE FROM tenant_test_contacts
+          WHERE tenant_id = $1
+            AND phone_e164 = $2`,
+        [tenantId, phoneE164]
+    );
+    return phoneE164;
 }
 
 function toNumber(value = 0) {
@@ -488,8 +628,12 @@ daily AS (
         COUNT(DISTINCT sr.chat_id) FILTER (WHERE sr.status = 'nuevo') AS nuevo,
         COUNT(DISTINCT sr.chat_id) FILTER (WHERE sr.status = 'en_conversacion') AS en_conversacion,
         COUNT(DISTINCT sr.chat_id) FILTER (WHERE sr.status = 'cotizado') AS cotizado,
+        COUNT(DISTINCT sr.chat_id) FILTER (WHERE sr.status = 'aceptado') AS aceptado,
+        COUNT(DISTINCT sr.chat_id) FILTER (WHERE sr.status = 'programado') AS programado,
+        COUNT(DISTINCT sr.chat_id) FILTER (WHERE sr.status = 'atendido') AS atendido,
         COUNT(DISTINCT sr.chat_id) FILTER (WHERE sr.status = 'vendido') AS vendido,
-        COUNT(DISTINCT sr.chat_id) FILTER (WHERE sr.status = 'perdido') AS perdido
+        COUNT(DISTINCT sr.chat_id) FILTER (WHERE sr.status = 'perdido') AS perdido,
+        COUNT(DISTINCT sr.chat_id) FILTER (WHERE sr.status = 'expirado') AS expirado
       FROM days d
       LEFT JOIN status_rows sr ON sr.day = d.day
      GROUP BY d.day
@@ -499,6 +643,9 @@ SELECT
     COALESCE((SELECT total FROM counts WHERE status = 'nuevo'), 0) AS nuevo,
     COALESCE((SELECT total FROM counts WHERE status = 'en_conversacion'), 0) AS en_conversacion,
     COALESCE((SELECT total FROM counts WHERE status = 'cotizado'), 0) AS cotizado,
+    COALESCE((SELECT total FROM counts WHERE status = 'aceptado'), 0) AS aceptado,
+    COALESCE((SELECT total FROM counts WHERE status = 'programado'), 0) AS programado,
+    COALESCE((SELECT total FROM counts WHERE status = 'atendido'), 0) AS atendido,
     COALESCE((SELECT total FROM counts WHERE status = 'vendido'), 0) AS vendido,
     COALESCE((SELECT total FROM counts WHERE status = 'perdido'), 0) AS perdido,
     COALESCE((SELECT total FROM counts WHERE status = 'expirado'), 0) AS expirado,
@@ -510,8 +657,12 @@ SELECT
                     'nuevo', nuevo,
                     'enConversacion', en_conversacion,
                     'cotizado', cotizado,
+                    'aceptado', aceptado,
+                    'programado', programado,
+                    'atendido', atendido,
                     'vendido', vendido,
-                    'perdido', perdido
+                    'perdido', perdido,
+                    'expirado', expirado
                 )
                 ORDER BY day
             )
@@ -526,6 +677,9 @@ SELECT
         nuevo: toNumber(row.nuevo),
         enConversacion: toNumber(row.en_conversacion),
         cotizado: toNumber(row.cotizado),
+        aceptado: toNumber(row.aceptado),
+        programado: toNumber(row.programado),
+        atendido: toNumber(row.atendido),
         vendido: toNumber(row.vendido),
         perdido: toNumber(row.perdido),
         expirado: toNumber(row.expirado),
@@ -556,6 +710,7 @@ tenant_users AS (
 hours AS (
     SELECT generate_series(0, 23) AS hour
 ),
+${SCOPED_CHATS_CTE},
 user_activity AS (
     SELECT
         tu.user_id,
@@ -571,6 +726,7 @@ user_activity AS (
        AND msg.created_at >= (SELECT starts_at FROM bounds)
        AND msg.created_at < (SELECT ends_at FROM bounds)
        AND ($5::text IS NULL OR ${MESSAGE_MODULE_SQL.replaceAll('m.', 'msg.')} = LOWER($5::text))
+       AND EXISTS (SELECT 1 FROM scoped_chats sc WHERE sc.chat_id = msg.chat_id)
      GROUP BY tu.user_id, h.hour
 )
 SELECT
@@ -581,6 +737,7 @@ SELECT
     COALESCE((
         SELECT COUNT(DISTINCT a.chat_id)
           FROM tenant_chat_assignments a
+          JOIN scoped_chats sc ON sc.chat_id = a.chat_id
          WHERE a.tenant_id = $1
            AND a.assignee_user_id = tu.user_id
            AND COALESCE(a.status, 'active') <> 'inactive'
@@ -589,6 +746,7 @@ SELECT
     COALESCE((
         SELECT COUNT(DISTINCT s.chat_id)
           FROM tenant_chat_commercial_status s
+          JOIN scoped_chats sc ON sc.chat_id = s.chat_id
           JOIN tenant_chat_assignments a
             ON a.tenant_id = s.tenant_id
            AND a.chat_id = s.chat_id
@@ -602,6 +760,7 @@ SELECT
     COALESCE((
         SELECT COUNT(DISTINCT q.quote_id)
           FROM tenant_quotes q
+          JOIN scoped_chats sc ON sc.chat_id = q.chat_id
          WHERE q.tenant_id = $1
            AND q.created_by_user_id = tu.user_id
            AND q.created_at >= (SELECT starts_at FROM bounds)
@@ -611,6 +770,7 @@ SELECT
     COALESCE((
         SELECT COUNT(DISTINCT q.quote_id)
           FROM tenant_quotes q
+          JOIN scoped_chats sc ON sc.chat_id = q.chat_id
          WHERE q.tenant_id = $1
            AND q.created_by_user_id = tu.user_id
            AND q.status IN ('chosen', 'sent')
@@ -621,6 +781,7 @@ SELECT
     COALESCE((
         SELECT COUNT(*)
           FROM tenant_messages m
+          JOIN scoped_chats sc ON sc.chat_id = m.chat_id
          WHERE m.tenant_id = $1
            AND m.from_me = true
            AND ${SENT_BY_USER_SQL} = tu.user_id
@@ -631,6 +792,7 @@ SELECT
     COALESCE((
         SELECT AVG(EXTRACT(EPOCH FROM (s.first_agent_response_at - s.first_customer_message_at)) / 60)
           FROM tenant_chat_commercial_status s
+          JOIN scoped_chats sc ON sc.chat_id = s.chat_id
           JOIN tenant_chat_assignments a
             ON a.tenant_id = s.tenant_id
            AND a.chat_id = s.chat_id
@@ -1169,6 +1331,60 @@ function registerOperationsReportsHttpRoutes({
             });
         }
     }
+
+    app.get('/api/tenant/test-contacts', async (req, res) => {
+        try {
+            assertPostgresReports();
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantId(req);
+            if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+            if (!canReadTestContacts(req, tenantId, deps)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+            const query = cleanText(req.query?.q || req.query?.query);
+            const [items, candidates] = await Promise.all([
+                listTestContacts(tenantId),
+                query ? searchTestContactCandidates(tenantId, query) : Promise.resolve([])
+            ]);
+            return res.json({ ok: true, tenantId, items, candidates });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron cargar numeros de prueba.') });
+        }
+    });
+
+    app.post('/api/tenant/test-contacts', async (req, res) => {
+        try {
+            assertPostgresReports();
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantId(req);
+            if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+            if (!canManageTestContacts(req, tenantId, deps)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+            const item = await upsertTestContact(tenantId, req.body || {});
+            const items = await listTestContacts(tenantId);
+            return res.json({ ok: true, tenantId, item, items });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar el numero de prueba.') });
+        }
+    });
+
+    app.delete('/api/tenant/test-contacts/:phone', async (req, res) => {
+        try {
+            assertPostgresReports();
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantId(req);
+            if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+            if (!canManageTestContacts(req, tenantId, deps)) {
+                return res.status(403).json({ ok: false, error: 'No autorizado.' });
+            }
+            const phoneE164 = await deleteTestContact(tenantId, req.params?.phone);
+            const items = await listTestContacts(tenantId);
+            return res.json({ ok: true, tenantId, phoneE164, items });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo quitar el numero de prueba.') });
+        }
+    });
 
     app.get('/api/tenant/reports/kpis', (req, res) => handleReport(req, res, getReportKpis));
     app.get('/api/tenant/reports/funnel', (req, res) => handleReport(req, res, getReportFunnel));

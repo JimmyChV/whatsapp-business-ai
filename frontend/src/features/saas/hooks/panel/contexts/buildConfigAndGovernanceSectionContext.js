@@ -56,6 +56,7 @@ export default function buildConfigAndGovernanceSectionContext(c) {
         deleteSchedule: c.deleteSchedule,
         canViewModules: c.canViewModules,
         canViewTenantSettings: c.canViewTenantSettings,
+        canEditTenantSettings: c.canEditTenantSettings,
         canViewOwnDevices: c.canViewOwnDevices,
         canRevokeOwnDevices: c.canRevokeOwnDevices,
         canViewAllDevices: c.canViewAllDevices,

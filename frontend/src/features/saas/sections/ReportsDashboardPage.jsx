@@ -31,11 +31,15 @@ const KPI_DEFS = [
     { key: 'revenueEstimado', label: 'Revenue estimado', type: 'currency', improve: 'up' }
 ];
 const FUNNEL_STAGES = [
-    { key: 'nuevo', label: 'Nuevo', color: '#3b82f6' },
-    { key: 'enConversacion', label: 'En conv.', color: '#1D9E75' },
-    { key: 'cotizado', label: 'Cotizado', color: '#f59e0b' },
-    { key: 'vendido', label: 'Vendido', color: '#059669' },
-    { key: 'perdido', label: 'Perdido', color: '#ef4444' }
+    { key: 'nuevo', label: 'Nuevo', color: '#cbd5e1', group: 'positive' },
+    { key: 'enConversacion', label: 'En conv.', color: '#3b82f6', group: 'positive' },
+    { key: 'cotizado', label: 'Cotizado', color: '#f59e0b', group: 'positive' },
+    { key: 'aceptado', label: 'Aceptado', color: '#fb923c', group: 'positive' },
+    { key: 'programado', label: 'Programado', color: '#86efac', group: 'positive' },
+    { key: 'atendido', label: 'Atendido', color: '#1D9E75', group: 'positive' },
+    { key: 'vendido', label: 'Vendido', color: '#059669', group: 'positive' },
+    { key: 'perdido', label: 'Perdido', color: '#ef4444', group: 'negative' },
+    { key: 'expirado', label: 'Expirado', color: '#6b7280', group: 'negative' }
 ];
 const TEMPORAL_LINES = [
     { key: 'chatsNuevos', label: 'Chats nuevos', color: '#1D9E75' },
@@ -43,11 +47,15 @@ const TEMPORAL_LINES = [
     { key: 'cotizaciones', label: 'Cotizaciones', color: '#f59e0b' }
 ];
 const FUNNEL_LINES = [
-    { key: 'nuevo', label: 'Nuevo', color: '#3b82f6' },
-    { key: 'enConversacion', label: 'En conv.', color: '#1D9E75' },
+    { key: 'nuevo', label: 'Nuevo', color: '#94a3b8' },
+    { key: 'enConversacion', label: 'En conv.', color: '#3b82f6' },
     { key: 'cotizado', label: 'Cotizado', color: '#f59e0b' },
+    { key: 'aceptado', label: 'Aceptado', color: '#fb923c' },
+    { key: 'programado', label: 'Programado', color: '#86efac' },
+    { key: 'atendido', label: 'Atendido', color: '#1D9E75' },
     { key: 'vendido', label: 'Vendido', color: '#059669' },
-    { key: 'perdido', label: 'Perdido', color: '#ef4444' }
+    { key: 'perdido', label: 'Perdido', color: '#ef4444' },
+    { key: 'expirado', label: 'Expirado', color: '#6b7280' }
 ];
 const ROLE_LABELS = {
     owner: 'Owner',
@@ -455,7 +463,7 @@ function FunnelChart({ data = {} }) {
                 const width = Math.max(5, (value / max) * 100);
                 const rate = index === 0 ? 100 : (value / previous) * 100;
                 return (
-                    <div className="saas-reports-funnel__row" key={stage.key}>
+                    <div className={`saas-reports-funnel__row ${stage.group === 'negative' ? 'saas-reports-funnel__row--negative' : ''}`} key={stage.key}>
                         <span>{stage.label}</span>
                         <strong>{formatInt(value)}</strong>
                         <div className="saas-reports-funnel__bar">

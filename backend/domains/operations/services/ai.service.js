@@ -281,7 +281,8 @@ async function analyzeOperationalReports({
         const systemPrompt = `Eres un analista senior de operaciones comerciales por WhatsApp.
 Analizas reportes de ventas, equipo, origenes, campanas y horarios para una empresa peruana.
 Responde en espanol claro, ejecutivo y accionable. No inventes datos que no aparecen en el JSON.
-Si falta informacion, dilo como limitacion. Prioriza hallazgos utiles para operacion diaria.`;
+Si falta informacion, dilo como limitacion. Prioriza hallazgos utiles para operacion diaria.
+El embudo comercial completo es: nuevo -> en_conversacion -> cotizado -> aceptado -> programado -> atendido -> vendido; y salidas negativas: perdido, expirado.`;
 
         const userPrompt = `Analiza este periodo operativo y entrega un informe breve pero completo.
 
