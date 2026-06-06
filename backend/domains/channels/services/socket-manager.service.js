@@ -1995,80 +1995,10 @@ class SocketManager {
 
 
             socket.on('mark_chat_read', async (payload = '') => {
-                try {
-                    const isObjectPayload = payload && typeof payload === 'object' && !Array.isArray(payload);
-                    const requestedChatId = String(isObjectPayload ? payload.chatId : payload || '').trim();
-                    if (!requestedChatId) return;
-                    const requestedBaseChatId = String(isObjectPayload ? payload.baseChatId || '' : '').trim();
-                    const requestedScopeModuleId = normalizeScopedModuleId(isObjectPayload ? payload.scopeModuleId || payload.moduleId || '' : '');
-                    const fallbackScopeModuleId = normalizeScopedModuleId(socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
-                    const scopedTarget = resolveScopedChatTarget(requestedChatId, requestedScopeModuleId || fallbackScopeModuleId);
-                    const safeChatId = String(scopedTarget.baseChatId || requestedBaseChatId || '').trim();
-                    if (!safeChatId) return;
-                    const scopeModuleId = normalizeScopedModuleId(scopedTarget.moduleId || requestedScopeModuleId || fallbackScopeModuleId || '');
-                    const actorUserIds = Array.from(new Set([
-                        authContext?.userId,
-                        authContext?.user?.userId,
-                        authContext?.user?.id
-                    ].map((entry) => String(entry || '').trim()).filter(Boolean)));
-                    let isAssignedToActor = false;
-                    if (actorUserIds.length > 0) {
-                        const candidateScopes = Array.from(new Set([scopeModuleId, '']));
-                        let assignment = null;
-                        for (const candidateScope of candidateScopes) {
-                            assignment = await conversationOpsService.getChatAssignment(tenantId, {
-                                chatId: safeChatId,
-                                scopeModuleId: candidateScope
-                            });
-                            if (assignment) break;
-                        }
-                        const assignedUserId = String(
-                            assignment?.assigneeUserId
-                            || assignment?.assignedUserId
-                            || assignment?.assignee_user_id
-                            || ''
-                        ).trim();
-                        const assignmentStatus = String(assignment?.status || 'active').trim().toLowerCase();
-                        isAssignedToActor = actorUserIds.includes(assignedUserId) && assignmentStatus !== 'released';
-                    }
-                    if (!isAssignedToActor) return;
-                    let readStateResult = null;
-                    if (typeof messageHistoryService?.updateChatState === 'function') {
-                        readStateResult = await messageHistoryService.updateChatState(tenantId, {
-                            chatId: safeChatId,
-                            unreadCount: 0,
-                            metadata: {
-                                manuallyMarkedUnread: false
-                            }
-                        });
-                    }
-                    let whatsappReadOk = true;
-                    try {
-                        await waClient.markAsRead(safeChatId);
-                    } catch (error) {
-                        whatsappReadOk = false;
-                        console.warn('[SocketManager] mark_chat_read: WhatsApp markAsRead failed, app state already cleared', {
-                            tenantId,
-                            chatId: safeChatId,
-                            scopeModuleId: scopeModuleId || null,
-                            error: String(error?.message || error || '')
-                        });
-                    }
-                    const payload = {
-                        ok: true,
-                        tenantId,
-                        chatId: scopedTarget.scopedChatId || requestedChatId,
-                        baseChatId: safeChatId,
-                        scopeModuleId: scopeModuleId || null,
-                        unreadCount: Number(readStateResult?.unreadCount || 0) || 0,
-                        manuallyMarkedUnread: false,
-                        whatsappReadOk
-                    };
-                    socket.emit('mark_chat_read_result', payload);
-                    if (typeof this.emitToTenant === 'function') {
-                        this.emitToTenant(tenantId, 'chat_read_updated', payload);
-                    }
-                } catch (e) { }
+                const data = payload && typeof payload === 'object' && !Array.isArray(payload)
+                    ? payload
+                    : { chatId: payload };
+                console.warn('[DEPRECATED] mark_chat_read via socket called by:', socket?.data?.userId || authContext?.userId || 'unknown', 'chat:', data?.chatId || data?.baseChatId || '', '- use API instead');
             });
 
             // --- AI ---

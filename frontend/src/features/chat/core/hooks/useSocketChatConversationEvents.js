@@ -105,6 +105,15 @@ function mergeUnreadState(incoming = {}, previous = {}) {
     };
 }
 
+function resolveBaseChatId(parseScopedChatId, value = '') {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const parsed = typeof parseScopedChatId === 'function'
+        ? parseScopedChatId(raw)
+        : { baseChatId: raw };
+    return String(parsed?.baseChatId || raw).trim();
+}
+
 function mergeRealtimeSenderAttribution(existingMessage = null, incomingMessage = null) {
     const safeExisting = existingMessage && typeof existingMessage === 'object' ? existingMessage : {};
     const safeIncoming = incomingMessage && typeof incomingMessage === 'object' ? incomingMessage : {};
@@ -257,6 +266,13 @@ export default function useSocketChatConversationEvents({
         socket.emit('mark_chat_read', payload);
     };
 
+    const chatIdsReferSameConversation = (left = '', right = '') => {
+        if (chatIdsReferSameScope(left, right)) return true;
+        const leftBase = resolveBaseChatId(parseScopedChatId, left);
+        const rightBase = resolveBaseChatId(parseScopedChatId, right);
+        return Boolean(leftBase && rightBase && leftBase === rightBase);
+    };
+
     useEffect(() => {
         const syncWindowAttentionState = () => {
             try {
@@ -378,7 +394,7 @@ export default function useSocketChatConversationEvents({
 
         const syncActiveMessages = (chatId, updater) => {
             const activeChatId = String(activeChatIdRef.current || '').trim();
-            if (!chatId || !activeChatId || !chatIdsReferSameScope(chatId, activeChatId)) return;
+            if (!chatId || !activeChatId || !chatIdsReferSameConversation(chatId, activeChatId)) return;
             setMessages((prev) => {
                 const next = typeof updater === 'function' ? updater(Array.isArray(prev) ? prev : []) : prev;
                 return Array.isArray(next) ? next : prev;
@@ -465,7 +481,7 @@ export default function useSocketChatConversationEvents({
                 if (!message.optimistic || !message.fromMe) continue;
 
                 const messageChatId = String(message?.chatId || '').trim();
-                if (messageChatId && safeIncomingChatId && !chatIdsReferSameScope(messageChatId, safeIncomingChatId)) continue;
+                if (messageChatId && safeIncomingChatId && !chatIdsReferSameConversation(messageChatId, safeIncomingChatId)) continue;
 
                 const messageTimestamp = Number(message?.timestamp || 0) || 0;
                 if (incomingTimestamp && messageTimestamp && Math.abs(incomingTimestamp - messageTimestamp) > 30) continue;
@@ -656,7 +672,7 @@ export default function useSocketChatConversationEvents({
                 if (pageOffset <= 0) {
                     const cachedVisibleChats = (Array.isArray(prev) ? prev : [])
                         .filter((chat) => chatMatchesQuery(chat, chatSearchRef.current) && chatMatchesFilters(chat, chatFiltersRef.current));
-                    return dedupeChats([...cachedVisibleChats, ...hydrated])
+                    return dedupeChats([...hydrated, ...cachedVisibleChats])
                         .map(applyFreshWindowFields)
                         .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
                 }
@@ -684,7 +700,7 @@ export default function useSocketChatConversationEvents({
             const previous = (Array.isArray(chatsRef.current) ? chatsRef.current : []).find((entry) => {
                 if (!entry?.id) return false;
                 if (String(entry.id) === String(normalizedIncomingId || incomingChatId)) return true;
-                return chatIdsReferSameScope(String(entry.id), String(normalizedIncomingId || incomingChatId));
+                return chatIdsReferSameConversation(String(entry.id), String(normalizedIncomingId || incomingChatId));
             }) || null;
             const previousScopeModuleId = String(previous?.scopeModuleId || previous?.lastMessageModuleId || '').trim().toLowerCase();
             const finalId = normalizeChatScopedId(normalizedIncomingId || incomingChatId, incomingScopeModuleId || previousScopeModuleId || '');
@@ -750,7 +766,7 @@ export default function useSocketChatConversationEvents({
             const safePhone = normalizeDigits(phone || '');
 
             setChats((prev) => {
-                if ((Array.isArray(prev) ? prev : []).some((entry) => chatIdsReferSameScope(String(entry?.id || ''), targetChatId))) {
+                if ((Array.isArray(prev) ? prev : []).some((entry) => chatIdsReferSameConversation(String(entry?.id || ''), targetChatId))) {
                     return prev;
                 }
 
@@ -845,7 +861,7 @@ export default function useSocketChatConversationEvents({
             if (!normalizedItems.length) return;
 
             setChats((prev) => prev.map((chat) => {
-                const match = normalizedItems.find((item) => chatIdsReferSameScope(String(chat?.id || ''), item.chatId));
+                const match = normalizedItems.find((item) => chatIdsReferSameConversation(String(chat?.id || ''), item.chatId));
                 if (!match) return chat;
                 const unreadState = mergeUnreadState(match, chat);
                 return {
@@ -865,7 +881,7 @@ export default function useSocketChatConversationEvents({
             if (!normalizedChatId) return;
             const nextUnreadCount = normalizeUnreadCount(unreadCount);
             setChats((prev) => prev.map((chat) => (
-                chatIdsReferSameScope(String(chat?.id || ''), normalizedChatId)
+                chatIdsReferSameConversation(String(chat?.id || ''), normalizedChatId)
                     ? {
                         ...chat,
                         unreadCount: nextUnreadCount,
@@ -893,10 +909,12 @@ export default function useSocketChatConversationEvents({
             const resolvedChatId = String(data?.chatId || requestedChatId || '');
             const active = String(activeChatIdRef.current || '');
             const matchesActiveByScope = chatIdsReferSameScope(resolvedChatId, active)
-                || chatIdsReferSameScope(requestedChatId, active);
+                || chatIdsReferSameScope(requestedChatId, active)
+                || chatIdsReferSameConversation(resolvedChatId, active)
+                || chatIdsReferSameConversation(requestedChatId, active);
             if (!matchesActiveByScope) return;
 
-            if (resolvedChatId && !chatIdsReferSameScope(resolvedChatId, active)) {
+            if (resolvedChatId && !chatIdsReferSameConversation(resolvedChatId, active)) {
                 activeChatIdRef.current = resolvedChatId;
                 setActiveChatId(resolvedChatId);
                 emitMarkChatRead(resolvedChatId, 'chat_open');
@@ -1020,7 +1038,7 @@ export default function useSocketChatConversationEvents({
                 ? data.origin
                 : null;
             setChats((prev) => prev.map((chat) => (
-                chatIdsReferSameScope(String(chat?.id || ''), resolvedChatId)
+                chatIdsReferSameConversation(String(chat?.id || ''), resolvedChatId)
                     ? {
                         ...chat,
                         timestamp: latestHistoryTimestamp || Number(chat?.timestamp || 0) || 0,
@@ -1060,7 +1078,7 @@ export default function useSocketChatConversationEvents({
         socket.on('chat_media', ({ chatId, messageId, mediaData, mimetype, filename, fileSizeBytes }) => {
             const active = String(activeChatIdRef.current || '');
             const incoming = String(chatId || '').trim();
-            if (!incoming || !chatIdsReferSameScope(incoming, active)) return;
+            if (!incoming || !chatIdsReferSameConversation(incoming, active)) return;
             if (!messageId || !mediaData) return;
             const nextFilename = normalizeMessageFilename(filename);
             const nextSize = Number.isFinite(Number(fileSizeBytes)) ? Number(fileSizeBytes) : null;
@@ -1096,7 +1114,7 @@ export default function useSocketChatConversationEvents({
 
             const incomingChatId = normalizeChatScopedId(chatId || '', scopeModuleId || '');
             const active = String(activeChatIdRef.current || '');
-            if (incomingChatId && active && !chatIdsReferSameScope(incomingChatId, active)) return;
+            if (incomingChatId && active && !chatIdsReferSameConversation(incomingChatId, active)) return;
 
             const nextFilename = normalizeMessageFilename(filename);
             const nextSize = Number.isFinite(Number(fileSizeBytes)) ? Number(fileSizeBytes) : null;
@@ -1164,7 +1182,7 @@ export default function useSocketChatConversationEvents({
 
             const incomingChatId = normalizeChatScopedId(chatId || baseChatId || '', scopeModuleId || '');
             const active = String(activeChatIdRef.current || '');
-            if (incomingChatId && active && !chatIdsReferSameScope(incomingChatId, active)) return;
+            if (incomingChatId && active && !chatIdsReferSameConversation(incomingChatId, active)) return;
 
             syncActiveMessages(incomingChatId, (prev) => prev.map((message) => {
                 if (String(message?.id || '').trim() !== safeMessageId) return message;
@@ -1215,7 +1233,7 @@ export default function useSocketChatConversationEvents({
 
             const incomingChatId = normalizeChatScopedId(chatId || baseChatId || '', scopeModuleId || '');
             const active = String(activeChatIdRef.current || '');
-            if (incomingChatId && active && !chatIdsReferSameScope(incomingChatId, active)) return;
+            if (incomingChatId && active && !chatIdsReferSameConversation(incomingChatId, active)) return;
 
             const sessionSenderIdentity = resolveSessionSenderIdentity();
             const safeSenderId = String(
@@ -1332,7 +1350,7 @@ export default function useSocketChatConversationEvents({
             });
 
             setChats((prev) => {
-                const existing = prev.find((c) => chatIdsReferSameScope(String(c?.id || ''), contactId));
+                const existing = prev.find((c) => chatIdsReferSameConversation(String(c?.id || ''), contactId));
                 if (!existing) return prev;
 
                 const fallbackName = sanitizeDisplayText(erpDisplayName || toTitleCaseChatText(contact?.name || contact?.pushname || contact?.shortName || existing?.name || ''));
@@ -1384,7 +1402,7 @@ export default function useSocketChatConversationEvents({
             const isAttentionOutsideApp = !pageVisibleRef.current || !windowFocusedRef.current;
             const incomingPreview = getMessagePreviewText(msg);
             const existingChat = (Array.isArray(chatsRef.current) ? chatsRef.current : []).find((chat) => (
-                chatIdsReferSameScope(String(chat?.id || ''), relatedChatId)
+                chatIdsReferSameConversation(String(chat?.id || ''), relatedChatId)
             )) || null;
             const toastId = String(relatedChatId || msg?.from || msg?.id || Date.now()).trim();
             const toastTitle = sanitizeDisplayText(
@@ -1464,7 +1482,7 @@ export default function useSocketChatConversationEvents({
                         try {
                             window.focus?.();
                         } catch (_) { }
-                        if (chatIdsReferSameScope(String(activeChatIdRef.current || ''), targetChatId)) {
+                        if (chatIdsReferSameConversation(String(activeChatIdRef.current || ''), targetChatId)) {
                             handleChatSelect?.(targetChatId, { clearSearch: true });
                         }
                         desktopNotificationSummaryRef.current = {
@@ -1489,7 +1507,7 @@ export default function useSocketChatConversationEvents({
             } else if (
                 !msg.fromMe
                 && shouldRaiseIncomingNotification
-                && !chatIdsReferSameScope(relatedChatId, String(activeChatIdRef.current || ''))
+                && !chatIdsReferSameConversation(relatedChatId, String(activeChatIdRef.current || ''))
             ) {
                 pushGroupedToast({
                     toastId,
@@ -1513,12 +1531,12 @@ export default function useSocketChatConversationEvents({
 
                 const incomingScopeModuleId = String(msg?.scopeModuleId || msg?.sentViaModuleId || '').trim().toLowerCase();
                 const incomingIdentity = `id:${normalizeChatScopedId(relatedChatId, incomingScopeModuleId || '')}`;
-                const existing = prev.find((c) => chatIdsReferSameScope(String(c?.id || ''), relatedChatId));
+                const existing = prev.find((c) => chatIdsReferSameConversation(String(c?.id || ''), relatedChatId));
                 const canonicalId = normalizeChatScopedId(existing?.id || relatedChatId, incomingScopeModuleId || '');
                 const parsedCanonicalId = parseScopedChatId(canonicalId);
                 const canonicalScopeModuleId = String(parsedCanonicalId?.scopeModuleId || incomingScopeModuleId || existing?.scopeModuleId || existing?.lastMessageModuleId || '').trim().toLowerCase() || null;
                 const baseChatId = String(parsedCanonicalId?.baseChatId || existing?.baseChatId || relatedChatId).trim() || null;
-                const isActiveChat = chatIdsReferSameScope(canonicalId, String(activeChatIdRef.current || ''));
+                const isActiveChat = chatIdsReferSameConversation(canonicalId, String(activeChatIdRef.current || ''));
                 const shouldMarkActiveChatRead = isActiveChat
                     && typeof canMarkChatAsReadRef.current === 'function'
                     && canMarkChatAsReadRef.current(canonicalId);
@@ -1600,7 +1618,7 @@ export default function useSocketChatConversationEvents({
                 status: Number(enrichedIncoming?.ack || 0) >= 3 ? 'read' : Number(enrichedIncoming?.ack || 0) >= 2 ? 'delivered' : Number(enrichedIncoming?.ack || 0) >= 1 ? 'sent' : 'sending'
             };
 
-            if (!msg?.fromMe && chatIdsReferSameScope(relatedChatId, String(activeChatIdRef.current || ''))) {
+            if (!msg?.fromMe && chatIdsReferSameConversation(relatedChatId, String(activeChatIdRef.current || ''))) {
                 setClientContact((prev) => {
                     const safePrev = prev && typeof prev === 'object' ? prev : {};
                     return {
@@ -1706,7 +1724,7 @@ export default function useSocketChatConversationEvents({
                 return [...prev, mergeTemplateMessageContent(null, normalizedIncoming)];
             });
 
-            if (!msg?.fromMe && chatIdsReferSameScope(relatedChatId, String(activeChatIdRef.current || ''))) {
+            if (!msg?.fromMe && chatIdsReferSameConversation(relatedChatId, String(activeChatIdRef.current || ''))) {
                 shouldInstantScrollRef.current = true;
                 emitMarkChatRead(relatedChatId, 'active_inbound');
             }
@@ -1763,7 +1781,7 @@ export default function useSocketChatConversationEvents({
                     };
                 });
             };
-            if (activeChatId && (!incomingChatId || chatIdsReferSameScope(incomingChatId, activeChatId))) {
+            if (activeChatId && (!incomingChatId || chatIdsReferSameConversation(incomingChatId, activeChatId))) {
                 setMessages(updateQuoteMessage);
             }
             if (incomingChatId) {

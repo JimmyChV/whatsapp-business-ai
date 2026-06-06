@@ -344,12 +344,10 @@ export default function useAppChatSocketRuntime({
       if (items.length > 0) {
         setChats((prev) => applyReadItemsToChats(prev, items, chatIdsReferSameScope));
       }
-    } catch (_) {
-      if (socket && typeof socket.emit === 'function') {
-        socket.emit('mark_chat_read', safePayload);
-      }
+    } catch (error) {
+      console.warn('[ChatRead] API mark-read failed:', String(error?.message || error || ''));
     }
-  }, [activeTenantId, baseApiUrl, buildApiHeaders, chatIdsReferSameScope, setChats, socket]);
+  }, [activeTenantId, baseApiUrl, buildApiHeaders, chatIdsReferSameScope, setChats]);
 
   useSocketChatConversationEvents({
     socket,

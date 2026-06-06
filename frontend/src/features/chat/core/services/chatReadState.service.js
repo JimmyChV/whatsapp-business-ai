@@ -1,6 +1,24 @@
 import { API_URL } from '../../../../config/runtime';
 
 const trimText = (value = '') => String(value || '').trim();
+const CHAT_SCOPE_SEPARATOR = '::mod::';
+
+function parseChatIdentity(value = '') {
+  const raw = trimText(value);
+  if (!raw) return { baseChatId: '', scopeModuleId: '' };
+  const idx = raw.lastIndexOf(CHAT_SCOPE_SEPARATOR);
+  if (idx < 0) return { baseChatId: raw, scopeModuleId: '' };
+  const baseChatId = trimText(raw.slice(0, idx));
+  const scopeModuleId = trimText(raw.slice(idx + CHAT_SCOPE_SEPARATOR.length)).toLowerCase();
+  if (!baseChatId || !scopeModuleId) return { baseChatId: raw, scopeModuleId: '' };
+  return { baseChatId, scopeModuleId };
+}
+
+function chatIdsReferSameConversation(left = '', right = '') {
+  const leftBase = parseChatIdentity(left).baseChatId;
+  const rightBase = parseChatIdentity(right).baseChatId;
+  return Boolean(leftBase && rightBase && leftBase === rightBase);
+}
 
 export async function markChatsRead({
   baseApiUrl = API_URL,
@@ -46,9 +64,12 @@ export function applyReadItemsToChats(chats = [], items = [], chatIdsReferSameSc
 
   return (Array.isArray(chats) ? chats : []).map((chat) => {
     const chatId = trimText(chat?.id || '');
-    const baseChatId = trimText(chat?.baseChatId || '');
+    const baseChatId = trimText(chat?.baseChatId || parseChatIdentity(chatId).baseChatId || '');
     const match = safeItems.find((item) => {
       if (typeof chatIdsReferSameScope === 'function' && item.chatId && chatId && chatIdsReferSameScope(chatId, item.chatId)) {
+        return true;
+      }
+      if (item.chatId && chatId && chatIdsReferSameConversation(chatId, item.chatId)) {
         return true;
       }
       return item.chatId === chatId

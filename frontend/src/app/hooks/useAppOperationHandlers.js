@@ -229,12 +229,10 @@ export default function useAppOperationHandlers({
       if (items.length > 0) {
         setChats((prev) => applyReadItemsToChats(prev, items, chatIdsReferSameScope));
       }
-    } catch (_) {
-      if (socket && typeof socket.emit === 'function') {
-        socket.emit('mark_chat_read', safePayload);
-      }
+    } catch (error) {
+      console.warn('[ChatRead] API mark-read failed:', String(error?.message || error || ''));
     }
-  }, [buildApiHeaders, chatIdsReferSameScope, socket, tenantScopeId, setChats]);
+  }, [buildApiHeaders, chatIdsReferSameScope, tenantScopeId, setChats]);
 
   const requestAiSuggestion = useCallback((customPromptArg) => {
     requestAiSuggestionForChat({
