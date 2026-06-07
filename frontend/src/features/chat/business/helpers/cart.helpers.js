@@ -4,50 +4,124 @@ const asNumber = (value, fallback = 0) => {
     return Number.isFinite(fallback) ? fallback : 0;
 };
 
+export const floorMoney1 = (value = 0) => {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return 0;
+    return Math.floor(num * 10) / 10;
+};
+
+export const formatQuoteMoney1 = (value = 0) => `S/ ${floorMoney1(value).toFixed(1)}`;
+
+export const calcQuoteItem = (item = {}) => {
+    const source = item && typeof item === 'object' ? item : {};
+    const qty = Math.max(1, Math.trunc(asNumber(source.qty ?? source.quantity, 1)) || 1);
+    const unitPrice = asNumber(source.unitPrice ?? source.price, 0);
+    const regularPrice = asNumber(source.regularPrice ?? source.regular_price, unitPrice);
+    const base = floorMoney1(unitPrice);
+    const linDiscountPct = Math.min(100, Math.max(0, asNumber(
+        source.linDiscountPct
+        ?? source.lineDiscountPct
+        ?? (source.lineDiscountType === 'percent' || source.lineDiscountEnabled ? source.lineDiscountValue : 0),
+        0
+    )));
+    const descAmt = floorMoney1(base * linDiscountPct / 100);
+    const finalPrice = floorMoney1(Math.max(0, base - descAmt));
+    const subtotal = floorMoney1(finalPrice * qty);
+
+    return {
+        ...source,
+        qty,
+        quantity: qty,
+        base,
+        unitPrice: base,
+        regularPrice: floorMoney1(regularPrice || unitPrice),
+        linDiscountPct,
+        linDiscountAmt: descAmt,
+        descAmt,
+        finalPrice,
+        subtotal,
+        excludeFromGlobal: source.excludeFromGlobal === true
+    };
+};
+
+export const calcQuoteTotals = (items = [], globalDiscPct = 0, globalOnRegular = false, delivery = 0) => {
+    const calcedItems = (Array.isArray(items) ? items : []).map(calcQuoteItem);
+    const participants = calcedItems.filter((item) => !item.excludeFromGlobal);
+    const excluded = calcedItems.filter((item) => item.excludeFromGlobal);
+    const safeGlobalPct = Math.min(100, Math.max(0, asNumber(globalDiscPct, 0)));
+
+    const baseGlobal = globalOnRegular
+        ? floorMoney1(participants.reduce((acc, item) => acc + floorMoney1((item.regularPrice || item.unitPrice) * item.qty), 0))
+        : floorMoney1(participants.reduce((acc, item) => acc + item.subtotal, 0));
+
+    const globalDiscAmt = floorMoney1(baseGlobal * safeGlobalPct / 100);
+    const subtotalParticipants = floorMoney1(participants.reduce((acc, item) => acc + item.subtotal, 0));
+    const subtotalExcluded = floorMoney1(excluded.reduce((acc, item) => acc + item.subtotal, 0));
+    const subtotal = floorMoney1(subtotalParticipants + subtotalExcluded);
+    const deliveryAmt = floorMoney1(delivery || 0);
+    const total = floorMoney1(Math.max(0, subtotal - globalDiscAmt + deliveryAmt));
+
+    return {
+        calcedItems,
+        participants,
+        excluded,
+        baseGlobal,
+        subtotalParticipants,
+        subtotalExcluded,
+        subtotal,
+        globalDiscPct: safeGlobalPct,
+        globalDiscAmt,
+        globalOnRegular: Boolean(globalOnRegular),
+        deliveryAmt,
+        total
+    };
+};
+
 export const getCartLineBreakdown = (
     item = {},
     {
         parseMoney = asNumber,
-        roundMoney = (value) => Math.ceil((Number(value) || 0) * 10) / 10,
+        roundMoney = floorMoney1,
         clampNumber = (value, min = 0, max = 100) => Math.min(max, Math.max(min, Number(value) || 0))
     } = {}
 ) => {
-    const qty = Math.max(1, Math.trunc(parseMoney(item.qty, 1)) || 1);
-    const unitPrice = Math.max(0, parseMoney(item.price, 0));
-    const regularUnitCandidate = Math.max(0, parseMoney(item.regularPrice, unitPrice));
-    const regularUnit = regularUnitCandidate > 0 ? regularUnitCandidate : unitPrice;
-
-    const regularSubtotal = roundMoney(regularUnit * qty);
-    const baseSubtotal = roundMoney(unitPrice * qty);
+    const safeItem = item && typeof item === 'object' ? item : {};
+    const unitPrice = Math.max(0, parseMoney(safeItem.price ?? safeItem.unitPrice, 0));
+    const regularUnit = Math.max(0, parseMoney(safeItem.regularPrice, unitPrice));
+    const lineDiscountPct = clampNumber(parseMoney(
+        safeItem.linDiscountPct
+        ?? safeItem.lineDiscountPct
+        ?? (safeItem.lineDiscountEnabled ? safeItem.lineDiscountValue : 0),
+        0
+    ), 0, 100);
+    const calced = calcQuoteItem({
+        ...safeItem,
+        unitPrice,
+        regularPrice: regularUnit || unitPrice,
+        linDiscountPct: lineDiscountPct
+    });
+    const baseSubtotal = roundMoney(calced.base * calced.qty);
+    const regularSubtotal = roundMoney(calced.regularPrice * calced.qty);
     const includedDiscount = roundMoney(Math.max(regularSubtotal - baseSubtotal, 0));
-
-    const lineDiscountEnabled = Boolean(item.lineDiscountEnabled);
-    const lineDiscountType = item.lineDiscountType === 'amount' ? 'amount' : 'percent';
-    const rawLineDiscountValue = Math.max(0, parseMoney(item.lineDiscountValue, 0));
-    const normalizedLineDiscountValue = lineDiscountType === 'percent'
-        ? clampNumber(rawLineDiscountValue, 0, 100)
-        : rawLineDiscountValue;
-
-    const additionalDiscountApplied = lineDiscountEnabled
-        ? (lineDiscountType === 'amount'
-            ? Math.min(baseSubtotal, normalizedLineDiscountValue)
-            : baseSubtotal * (normalizedLineDiscountValue / 100))
-        : 0;
-
-    const lineFinal = roundMoney(Math.max(0, baseSubtotal - additionalDiscountApplied));
+    const additionalDiscountApplied = roundMoney(calced.linDiscountAmt * calced.qty);
 
     return {
-        qty,
-        unitPrice,
-        regularUnit,
+        qty: calced.qty,
+        unitPrice: calced.base,
+        regularUnit: calced.regularPrice,
         regularSubtotal,
         baseSubtotal,
         includedDiscount,
-        lineDiscountEnabled,
-        lineDiscountType,
-        lineDiscountValue: normalizedLineDiscountValue,
-        additionalDiscountApplied: roundMoney(additionalDiscountApplied),
-        lineFinal
+        lineDiscountEnabled: calced.linDiscountPct > 0,
+        lineDiscountType: 'percent',
+        lineDiscountValue: calced.linDiscountPct,
+        lineDiscountPct: calced.linDiscountPct,
+        lineDiscountAmount: additionalDiscountApplied,
+        additionalDiscountApplied,
+        lineFinal: calced.subtotal,
+        finalPrice: calced.finalPrice,
+        subtotal: calced.subtotal,
+        excludeFromGlobal: calced.excludeFromGlobal
     };
 };
 
@@ -56,10 +130,11 @@ export const calculateCartPricing = ({
     globalDiscountEnabled = false,
     globalDiscountType = 'percent',
     globalDiscountValue = 0,
+    globalOnRegular = false,
     deliveryType = 'free',
     deliveryAmount = 0,
     parseMoney = asNumber,
-    roundMoney = (value) => Math.ceil((Number(value) || 0) * 10) / 10,
+    roundMoney = floorMoney1,
     clampNumber = (value, min = 0, max = 100) => Math.min(max, Math.max(min, Number(value) || 0))
 } = {}) => {
     const safeCart = Array.isArray(cart) ? cart : [];
@@ -68,37 +143,43 @@ export const calculateCartPricing = ({
         ...getCartLineBreakdown(item, { parseMoney, roundMoney, clampNumber })
     }));
 
-    const regularSubtotalTotal = roundMoney(lineBreakdowns.reduce((sum, line) => sum + line.regularSubtotal, 0));
-    const subtotalProducts = roundMoney(lineBreakdowns.reduce((sum, line) => sum + line.lineFinal, 0));
-
-    const rawGlobalDiscountValue = Math.max(0, parseMoney(globalDiscountValue, 0));
-    const normalizedGlobalDiscountValue = globalDiscountType === 'amount'
-        ? rawGlobalDiscountValue
-        : clampNumber(rawGlobalDiscountValue, 0, 100);
-
-    const globalDiscountApplied = globalDiscountEnabled
-        ? roundMoney(Math.min(
-            subtotalProducts,
-            globalDiscountType === 'amount'
-                ? normalizedGlobalDiscountValue
-                : subtotalProducts * (normalizedGlobalDiscountValue / 100)
-        ))
+    const normalizedGlobalDiscountValue = globalDiscountEnabled
+        ? clampNumber(parseMoney(globalDiscountValue, 0), 0, 100)
         : 0;
-
-    const subtotalAfterGlobal = roundMoney(subtotalProducts - globalDiscountApplied);
-    const totalDiscountForQuote = roundMoney(Math.max(0, regularSubtotalTotal - subtotalAfterGlobal));
-
     const safeDeliveryAmount = Math.max(0, parseMoney(deliveryAmount, 0));
-    const deliveryFee = deliveryType === 'amount' ? safeDeliveryAmount : 0;
-    const cartTotal = roundMoney(subtotalAfterGlobal + deliveryFee);
+    const deliveryFee = deliveryType === 'amount' ? roundMoney(safeDeliveryAmount) : 0;
+    const totals = calcQuoteTotals(
+        lineBreakdowns.map(({ item, ...line }) => ({
+            ...item,
+            qty: line.qty,
+            unitPrice: line.unitPrice,
+            regularPrice: line.regularUnit,
+            linDiscountPct: line.lineDiscountPct,
+            excludeFromGlobal: line.excludeFromGlobal
+        })),
+        normalizedGlobalDiscountValue,
+        Boolean(globalOnRegular),
+        deliveryFee
+    );
+    const regularSubtotalTotal = roundMoney(lineBreakdowns.reduce((sum, line) => sum + line.regularSubtotal, 0));
+    const subtotalProducts = totals.subtotal;
+    const globalDiscountApplied = totals.globalDiscAmt;
+    const subtotalAfterGlobal = roundMoney(subtotalProducts - globalDiscountApplied);
+    const lineDiscountTotal = roundMoney(lineBreakdowns.reduce((sum, line) => sum + line.additionalDiscountApplied + line.includedDiscount, 0));
+    const totalDiscountForQuote = roundMoney(lineDiscountTotal + globalDiscountApplied);
+    const cartTotal = totals.total;
 
     return {
         lineBreakdowns,
         regularSubtotalTotal,
         subtotalProducts,
-        rawGlobalDiscountValue,
+        rawGlobalDiscountValue: normalizedGlobalDiscountValue,
         normalizedGlobalDiscountValue,
         globalDiscountApplied,
+        globalOnRegular: Boolean(globalOnRegular),
+        subtotalParticipants: totals.subtotalParticipants,
+        subtotalExcluded: totals.subtotalExcluded,
+        baseGlobal: totals.baseGlobal,
         subtotalAfterGlobal,
         totalDiscountForQuote,
         safeDeliveryAmount,
@@ -117,27 +198,32 @@ export const buildCartSnapshotPayload = ({
     deliveryFee = 0,
     deliveryType = 'free',
     globalDiscountEnabled = false,
-    globalDiscountType = 'percent',
-    normalizedGlobalDiscountValue = 0
+    normalizedGlobalDiscountValue = 0,
+    globalOnRegular = false
 } = {}) => ({
     chatId: String(activeChatId || '').trim() || null,
-    items: (Array.isArray(lineBreakdowns) ? lineBreakdowns : []).map(({ item, qty, unitPrice, lineDiscountEnabled, lineDiscountType, lineDiscountValue }) => ({
+    items: (Array.isArray(lineBreakdowns) ? lineBreakdowns : []).map(({ item, qty, unitPrice, regularUnit, lineDiscountPct, additionalDiscountApplied, finalPrice, subtotal, excludeFromGlobal }) => ({
         id: item?.id || null,
         title: item?.title || null,
         qty,
         price: Number(unitPrice || 0),
-        regularPrice: Number(parseMoney(item?.regularPrice, unitPrice) || 0),
+        regularPrice: Number(parseMoney(item?.regularPrice, regularUnit || unitPrice) || 0),
         category: item?.category || item?.categoryName || null,
-        lineDiscountEnabled: Boolean(lineDiscountEnabled),
-        lineDiscountType: lineDiscountType === 'amount' ? 'amount' : 'percent',
-        lineDiscountValue: Number(lineDiscountValue || 0)
+        lineDiscountEnabled: Number(lineDiscountPct || 0) > 0,
+        lineDiscountType: 'percent',
+        lineDiscountValue: Number(lineDiscountPct || 0),
+        linDiscountPct: Number(lineDiscountPct || 0),
+        linDiscountAmt: Number(additionalDiscountApplied || 0),
+        finalPrice: Number(finalPrice || 0),
+        subtotal: Number(subtotal || 0),
+        excludeFromGlobal: Boolean(excludeFromGlobal)
     })),
     subtotal: Number(subtotalProducts || 0),
     discount: Number(totalDiscountForQuote || 0),
     total: Number(cartTotal || 0),
     delivery: Number(deliveryFee || 0),
     currency: 'PEN',
-    notes: `delivery=${deliveryType}; globalDiscount=${globalDiscountEnabled ? `${globalDiscountType}:${normalizedGlobalDiscountValue}` : 'none'}`
+    notes: `delivery=${deliveryType}; globalDiscount=${globalDiscountEnabled ? `percent:${normalizedGlobalDiscountValue}` : 'none'}; globalOnRegular=${Boolean(globalOnRegular)}`
 });
 
 export const buildQuoteMessageFromCart = ({
@@ -145,7 +231,7 @@ export const buildQuoteMessageFromCart = ({
     getLineBreakdown,
     regularSubtotalTotal = 0,
     totalDiscountForQuote = 0,
-    subtotalAfterGlobal = 0,
+    subtotalProducts = 0,
     deliveryFee = 0,
     cartTotal = 0,
     quoteId = null,
@@ -157,31 +243,37 @@ export const buildQuoteMessageFromCart = ({
 
     const moneyCompact = typeof formatMoneyCompact === 'function'
         ? formatMoneyCompact
-        : ((value) => Number(value || 0).toFixed(1));
+        : ((value) => floorMoney1(value).toFixed(1).replace(/\.0$/, ''));
     const formatTitle = typeof formatQuoteProductTitle === 'function'
         ? formatQuoteProductTitle
         : ((value) => String(value || 'Producto'));
 
     const separator = '---------------------------------------------';
-    const productRows = safeCart.map((item) => {
+    const productRows = safeCart.flatMap((item) => {
         const line = typeof getLineBreakdown === 'function' ? getLineBreakdown(item) : { qty: Math.max(1, Number(item?.qty || 1)) };
-        return `\u25AA\uFE0F *${line.qty}* ${formatTitle(item?.title)}`;
+        const rows = [
+            `*${formatTitle(item?.title)}* x ${line.qty}        S/ ${moneyCompact(line.lineFinal || line.subtotal || 0)}`,
+            item?.sku ? `SKU: ${String(item.sku).trim()}` : ''
+        ].filter(Boolean);
+        if (Number(line.lineDiscountPct || 0) > 0) {
+            rows.push(`Desc. linea (${line.lineDiscountPct}%): -S/ ${moneyCompact(line.additionalDiscountApplied || line.lineDiscountAmount || 0)}`);
+        }
+        return rows;
     });
 
     const paymentRows = [
-        `\uD83E\uDDFE Subtotal: S/ ${moneyCompact(regularSubtotalTotal)}`,
+        `Subtotal: S/ ${moneyCompact(subtotalProducts || regularSubtotalTotal)}`,
     ];
 
     if (Number(totalDiscountForQuote || 0) > 0) {
-        paymentRows.push(`\uD83C\uDFF7\uFE0F *DESCUENTO: S/ ${moneyCompact(totalDiscountForQuote)}*`);
-    paymentRows.push(`💹 Total con Descuento: S/ ${moneyCompact(subtotalAfterGlobal)}`);
+        paymentRows.push(`Ahorro: -S/ ${moneyCompact(totalDiscountForQuote)}`);
     }
 
-    paymentRows.push(`\uD83D\uDE9A Delivery: ${deliveryFee > 0 ? `S/ ${moneyCompact(deliveryFee)}` : 'Gratuito'}`);
-    paymentRows.push(`\uD83D\uDCB3 *TOTAL A PAGAR: S/ ${moneyCompact(cartTotal)}*`);
+    paymentRows.push(`Delivery: ${deliveryFee > 0 ? `S/ ${moneyCompact(deliveryFee)}` : 'Gratuito'}`);
+    paymentRows.push(`*TOTAL A PAGAR: S/ ${moneyCompact(cartTotal)}*`);
 
     return [
-        quoteId ? `*\uD83D\uDED2 COTIZACION ${String(quoteId).toUpperCase()} \uD83D\uDED2*` : `*\uD83D\uDED2 COTIZACION \uD83D\uDED2*`,
+        quoteId ? `*COTIZACION ${String(quoteId).toUpperCase()}*` : '*COTIZACION*',
         separator,
         '*_DETALLE DE PRODUCTOS:_*',
         separator,

@@ -20,18 +20,16 @@ function toFiniteNumberOrNull(value) {
 }
 
 function formatSoles(value) {
-    const num = toFiniteNumberOrNull(value) ?? 0;
-    return 'S/ ' + Math.max(0, num).toFixed(2);
+    return 'S/ ' + roundMoney(value).toFixed(1);
 }
 
 function roundMoney(value) {
     const num = toFiniteNumberOrNull(value) ?? 0;
-    return Math.round(num * 100) / 100;
+    return Math.floor(num * 10) / 10;
 }
 
 function formatCompactSoles(value) {
-    const num = toFiniteNumberOrNull(value) ?? 0;
-    return `S/ ${Math.max(0, num).toFixed(1)}`;
+    return `S/ ${roundMoney(value).toFixed(1)}`;
 }
 
 function toTitleCase(value = '') {
@@ -58,46 +56,110 @@ function buildQuoteHeader(quote = {}, sourceType = 'quote') {
 
 function resolveQuoteDisplayUnitPrice(item = {}, qty = 1) {
     const safeQty = Math.max(1, toFiniteNumberOrNull(qty) ?? 1);
-    const lineSubtotal = toFiniteNumberOrNull(item?.lineSubtotal ?? item?.subtotal);
+    const lineSubtotal = toFiniteNumberOrNull(item?.subtotal ?? item?.lineSubtotal);
     if (lineSubtotal !== null && lineSubtotal > 0) {
         return roundMoney(lineSubtotal / safeQty);
     }
     return roundMoney(
         toFiniteNumberOrNull(
-            item?.regularPrice
+            item?.finalPrice
+            ?? item?.unitPrice
+            ?? item?.price
+            ?? item?.regularPrice
             ?? item?.regular_price
             ?? item?.metadata?.regularPrice
             ?? item?.metadata?.regular_price
-            ?? item?.unitPrice
-            ?? item?.price
         ) ?? 0
     );
+}
+
+function calcQuoteItem(item = {}) {
+    const source = isPlainObject(item) ? item : {};
+    const quantity = Math.max(1, Math.trunc(toFiniteNumberOrNull(source.qty ?? source.quantity) ?? 1) || 1);
+    const unitSource = toFiniteNumberOrNull(source.unitPrice ?? source.price) ?? 0;
+    const regularSource = toFiniteNumberOrNull(source.regularPrice ?? source.regular_price) ?? unitSource;
+    const unitPrice = roundMoney(unitSource);
+    const regularPrice = roundMoney(regularSource || unitSource);
+    const linDiscountPct = Math.min(100, Math.max(0, toFiniteNumberOrNull(
+        source.linDiscountPct
+        ?? source.lineDiscountPct
+        ?? (source.lineDiscountType === 'percent' || source.lineDiscountEnabled ? source.lineDiscountValue : 0)
+    ) ?? 0));
+    const linDiscountAmt = roundMoney(unitPrice * linDiscountPct / 100);
+    const finalPrice = roundMoney(Math.max(0, unitPrice - linDiscountAmt));
+    const subtotal = roundMoney(finalPrice * quantity);
+
+    return {
+        quantity,
+        unitPrice,
+        regularPrice,
+        linDiscountPct,
+        linDiscountAmt,
+        finalPrice,
+        subtotal,
+        excludeFromGlobal: source.excludeFromGlobal === true
+    };
+}
+
+function calcQuoteTotals(items = [], globalDiscPct = 0, globalOnRegular = false, delivery = 0) {
+    const normalizedItems = (Array.isArray(items) ? items : []).map(calcQuoteItem);
+    const participants = normalizedItems.filter((item) => !item.excludeFromGlobal);
+    const excluded = normalizedItems.filter((item) => item.excludeFromGlobal);
+    const safeGlobalPct = Math.min(100, Math.max(0, toFiniteNumberOrNull(globalDiscPct) ?? 0));
+    const baseGlobal = roundMoney(participants.reduce((sum, item) => {
+        const base = globalOnRegular
+            ? roundMoney((item.regularPrice || item.unitPrice) * item.quantity)
+            : item.subtotal;
+        return sum + base;
+    }, 0));
+    const globalDiscAmt = roundMoney(baseGlobal * safeGlobalPct / 100);
+    const subtotalParticipants = roundMoney(participants.reduce((sum, item) => sum + item.subtotal, 0));
+    const subtotalExcluded = roundMoney(excluded.reduce((sum, item) => sum + item.subtotal, 0));
+    const subtotal = roundMoney(subtotalParticipants + subtotalExcluded);
+    const deliveryAmt = roundMoney(delivery);
+    const totalPayable = roundMoney(Math.max(0, subtotal - globalDiscAmt + deliveryAmt));
+
+    return {
+        subtotalParticipants,
+        subtotalExcluded,
+        subtotal,
+        globalDiscPct: safeGlobalPct,
+        globalDiscAmt,
+        globalOnRegular: Boolean(globalOnRegular),
+        deliveryAmt,
+        totalPayable
+    };
 }
 
 function normalizeQuoteItem(item = {}, index = 0, currency = 'PEN') {
     const source = isPlainObject(item) ? item : {};
     const itemId = toNullableText(source.itemId || source.id || source.productId || ('item_' + (index + 1)));
     const productId = toNullableText(source.productId || source.id || source.itemId);
-    const quantity = toFiniteNumberOrNull(source.qty ?? source.quantity) ?? 1;
-    const unitPrice = toFiniteNumberOrNull(source.unitPrice ?? source.price) ?? 0;
-    const lineSubtotal = toFiniteNumberOrNull(source.lineSubtotal ?? (quantity * unitPrice)) ?? 0;
-    const lineDiscountValue = toFiniteNumberOrNull(source.lineDiscountValue) ?? 0;
-    const lineDiscountAmount = toFiniteNumberOrNull(source.lineDiscountAmount) ?? 0;
-    const lineTotal = toFiniteNumberOrNull(source.lineTotal ?? (lineSubtotal - lineDiscountAmount)) ?? 0;
+    const calced = calcQuoteItem(source);
+    const quantity = calced.quantity;
+    const lineDiscountAmount = roundMoney(calced.linDiscountAmt * quantity);
 
     return {
         itemId,
         productId,
         sku: toNullableText(source.sku),
+        productName: toText(source.productName || source.title || source.name || 'Producto'),
         title: toText(source.title || source.name || source.productName || 'Producto'),
         unit: toText(source.unit || 'unidad') || 'unidad',
         qty: quantity,
-        unitPrice,
-        lineSubtotal,
-        lineDiscountType: toNullableText(source.lineDiscountType || source.discountType),
-        lineDiscountValue,
+        quantity,
+        unitPrice: calced.unitPrice,
+        regularPrice: calced.regularPrice,
+        linDiscountPct: calced.linDiscountPct,
+        linDiscountAmt: calced.linDiscountAmt,
+        finalPrice: calced.finalPrice,
+        subtotal: calced.subtotal,
+        excludeFromGlobal: calced.excludeFromGlobal,
+        lineSubtotal: calced.subtotal,
+        lineDiscountType: calced.linDiscountPct > 0 ? 'percent' : null,
+        lineDiscountValue: calced.linDiscountPct,
         lineDiscountAmount,
-        lineTotal,
+        lineTotal: calced.subtotal,
         currency: toText(source.currency || currency || 'PEN') || 'PEN',
         metadata: isPlainObject(source.metadata) ? source.metadata : {}
     };
@@ -108,32 +170,43 @@ function normalizeQuoteSummary(summary = {}, items = [], currency = 'PEN') {
     const itemCount = Number.isInteger(Number(source.itemCount))
         ? Number(source.itemCount)
         : items.length;
-    const subtotal = toFiniteNumberOrNull(source.subtotal)
-        ?? items.reduce((acc, item) => acc + (toFiniteNumberOrNull(item?.lineSubtotal) || 0), 0);
-    const discount = toFiniteNumberOrNull(source.discount) ?? 0;
-    const totalAfterDiscount = toFiniteNumberOrNull(source.totalAfterDiscount)
-        ?? Math.max(0, (subtotal || 0) - discount);
-    const deliveryAmount = toFiniteNumberOrNull(source.deliveryAmount) ?? 0;
-    const deliveryFree = Boolean(source.deliveryFree) || deliveryAmount <= 0;
-    const totalPayable = toFiniteNumberOrNull(source.totalPayable)
-        ?? Math.max(0, (totalAfterDiscount || 0) + (deliveryFree ? 0 : deliveryAmount));
+    const globalDiscount = isPlainObject(source.globalDiscount) ? source.globalDiscount : {};
+    const globalDiscPct = toFiniteNumberOrNull(source.globalDiscPct ?? globalDiscount.value) ?? 0;
+    const deliveryType = toText(source.deliveryType || source.delivery_type || (source.deliveryFree ? 'gratuito' : 'amount')).toLowerCase();
+    const deliveryAmount = toFiniteNumberOrNull(source.deliveryAmt ?? source.deliveryAmount) ?? 0;
+    const deliveryAmt = deliveryType === 'amount' ? deliveryAmount : 0;
+    const totals = calcQuoteTotals(
+        items,
+        globalDiscPct,
+        Boolean(source.globalOnRegular ?? globalDiscount.onRegular),
+        deliveryAmt
+    );
+    const subtotal = totals.subtotal;
+    const globalDiscAmt = toFiniteNumberOrNull(source.globalDiscAmt ?? globalDiscount.applied) ?? totals.globalDiscAmt;
+    const totalAfterDiscount = roundMoney(Math.max(0, subtotal - globalDiscAmt));
+    const totalPayable = toFiniteNumberOrNull(source.totalPayable) ?? roundMoney(totalAfterDiscount + totals.deliveryAmt);
+    const deliveryFree = deliveryType !== 'amount' || totals.deliveryAmt <= 0;
 
     return {
         itemCount,
         subtotal,
-        discount,
+        globalDiscPct: totals.globalDiscPct,
+        globalDiscAmt: roundMoney(globalDiscAmt),
+        globalOnRegular: totals.globalOnRegular,
+        deliveryType: deliveryFree ? 'gratuito' : 'amount',
+        deliveryAmt: totals.deliveryAmt,
+        totalPayable: roundMoney(totalPayable),
+        discount: roundMoney(globalDiscAmt),
         totalAfterDiscount,
-        deliveryAmount,
+        deliveryAmount: totals.deliveryAmt,
         deliveryFree,
-        totalPayable,
-        globalDiscount: isPlainObject(source.globalDiscount)
-            ? {
-                enabled: Boolean(source.globalDiscount.enabled),
-                type: String(source.globalDiscount.type || 'none').trim().toLowerCase() || 'none',
-                value: toFiniteNumberOrNull(source.globalDiscount.value) ?? 0,
-                applied: toFiniteNumberOrNull(source.globalDiscount.applied) ?? 0
-            }
-            : { enabled: false, type: 'none', value: 0, applied: 0 },
+        globalDiscount: {
+            enabled: totals.globalDiscPct > 0,
+            type: totals.globalDiscPct > 0 ? 'percent' : 'none',
+            value: totals.globalDiscPct,
+            applied: roundMoney(globalDiscAmt),
+            onRegular: totals.globalOnRegular
+        },
         currency: toText(source.currency || currency || 'PEN') || 'PEN',
         metadata: isPlainObject(source.metadata) ? source.metadata : {}
     };
@@ -223,38 +296,46 @@ function buildQuoteMessageBody(quote = {}, fallbackBody = '') {
     const items = Array.isArray(quote?.items) ? quote.items : [];
     const summary = isPlainObject(quote?.summary) ? quote.summary : {};
     const lines = items.flatMap((item) => {
-        const title = toTitleCase(item?.title || item?.name || item?.sku || 'Producto') || 'Producto';
+        const title = toTitleCase(item?.productName || item?.title || item?.name || item?.sku || 'Producto') || 'Producto';
         const qty = Math.max(1, toFiniteNumberOrNull(item?.qty ?? item?.quantity) ?? 1);
-        const unitPrice = resolveQuoteDisplayUnitPrice(item, qty);
-        const lineSubtotal = roundMoney(qty * unitPrice);
-        return [
+        const finalPrice = roundMoney(toFiniteNumberOrNull(item?.finalPrice) ?? resolveQuoteDisplayUnitPrice(item, qty));
+        const lineSubtotal = roundMoney(toFiniteNumberOrNull(item?.subtotal ?? item?.lineTotal ?? item?.lineSubtotal) ?? (qty * finalPrice));
+        const rows = [
             `*${title}*`,
-            `${qty} x ${formatSoles(unitPrice)} = ${formatSoles(lineSubtotal)}`
+            `${qty} x ${formatSoles(finalPrice)} = ${formatSoles(lineSubtotal)}`
         ];
+        if (item?.sku) {
+            rows.push(`SKU: ${toText(item.sku)}`);
+        }
+        if (Number(item?.linDiscountPct || item?.lineDiscountValue || 0) > 0) {
+            rows.push(`Desc. linea: ${Number(item.linDiscountPct || item.lineDiscountValue || 0)}%`);
+        }
+        if (item?.excludeFromGlobal === true) {
+            rows.push('No participa del descuento global');
+        }
+        return rows;
     });
 
     const subtotal = roundMoney(lines.length > 0
         ? items.reduce((acc, item) => {
-            const qty = Math.max(1, toFiniteNumberOrNull(item?.qty ?? item?.quantity) ?? 1);
-            const unitPrice = resolveQuoteDisplayUnitPrice(item, qty);
-            return acc + roundMoney(qty * unitPrice);
+            return acc + roundMoney(toFiniteNumberOrNull(item?.subtotal ?? item?.lineTotal ?? item?.lineSubtotal) ?? 0);
         }, 0)
         : (toFiniteNumberOrNull(summary?.subtotal) ?? 0));
-    const discount = roundMoney(toFiniteNumberOrNull(summary?.discount) ?? Math.max(0, subtotal - (toFiniteNumberOrNull(summary?.totalAfterDiscount) ?? subtotal)));
-    const deliveryAmount = toFiniteNumberOrNull(summary?.deliveryAmount) ?? 0;
-    const deliveryLabel = Boolean(summary?.deliveryFree) || deliveryAmount <= 0
+    const discount = roundMoney(toFiniteNumberOrNull(summary?.globalDiscAmt ?? summary?.discount) ?? 0);
+    const deliveryAmount = toFiniteNumberOrNull(summary?.deliveryAmt ?? summary?.deliveryAmount) ?? 0;
+    const deliveryLabel = Boolean(summary?.deliveryFree) || summary?.deliveryType === 'gratuito' || deliveryAmount <= 0
         ? 'Gratuito'
         : formatSoles(deliveryAmount);
     const totalPayable = toFiniteNumberOrNull(summary?.totalPayable)
-        ?? Math.max(0, (toFiniteNumberOrNull(summary?.totalAfterDiscount) ?? 0) + (Boolean(summary?.deliveryFree) ? 0 : deliveryAmount));
+        ?? Math.max(0, subtotal - discount + (Boolean(summary?.deliveryFree) ? 0 : deliveryAmount));
 
-    const separator = '------------';
+    const separator = '---------------------------------------------';
     const totalLines = [
         separator,
         `Subtotal:         ${formatSoles(subtotal)}`
     ];
     if (discount > 0) {
-        totalLines.push(`*Descuento:       - ${formatSoles(discount)}*`);
+        totalLines.push(`Ahorro global:    - ${formatSoles(discount)}`);
     }
     totalLines.push(`Delivery:         ${deliveryLabel}`);
     totalLines.push(separator);
@@ -377,16 +458,22 @@ function buildOutgoingOrderPayload(quote = {}) {
     const quoteSummary = {
         itemCount: Number.isInteger(Number(summary?.itemCount)) ? Number(summary.itemCount) : items.length,
         subtotal: toFiniteNumberOrNull(summary?.subtotal),
-        discount: toFiniteNumberOrNull(summary?.discount),
+        globalDiscPct: toFiniteNumberOrNull(summary?.globalDiscPct) ?? toFiniteNumberOrNull(summary?.globalDiscount?.value) ?? 0,
+        globalDiscAmt: toFiniteNumberOrNull(summary?.globalDiscAmt) ?? toFiniteNumberOrNull(summary?.globalDiscount?.applied) ?? 0,
+        globalOnRegular: Boolean(summary?.globalOnRegular ?? summary?.globalDiscount?.onRegular),
+        deliveryType: toText(summary?.deliveryType || (summary?.deliveryFree ? 'gratuito' : 'amount')) || 'gratuito',
+        deliveryAmt: toFiniteNumberOrNull(summary?.deliveryAmt ?? summary?.deliveryAmount) ?? 0,
+        discount: toFiniteNumberOrNull(summary?.discount ?? summary?.globalDiscAmt),
         totalAfterDiscount: toFiniteNumberOrNull(summary?.totalAfterDiscount),
-        deliveryAmount: toFiniteNumberOrNull(summary?.deliveryAmount),
+        deliveryAmount: toFiniteNumberOrNull(summary?.deliveryAmount ?? summary?.deliveryAmt),
         deliveryFree: Boolean(summary?.deliveryFree),
         totalPayable: toFiniteNumberOrNull(summary?.totalPayable),
         globalDiscount: summary?.globalDiscount && typeof summary.globalDiscount === 'object'
             ? {
                 type: String(summary.globalDiscount.type || 'none').trim().toLowerCase() || 'none',
                 value: toFiniteNumberOrNull(summary.globalDiscount.value) ?? 0,
-                applied: toFiniteNumberOrNull(summary.globalDiscount.applied) ?? 0
+                applied: toFiniteNumberOrNull(summary.globalDiscount.applied) ?? 0,
+                onRegular: Boolean(summary.globalDiscount.onRegular)
             }
             : { type: 'none', value: 0, applied: 0 },
         currency

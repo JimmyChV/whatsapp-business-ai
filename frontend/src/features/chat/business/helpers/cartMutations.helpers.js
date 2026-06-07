@@ -104,3 +104,14 @@ export const setCartItemDiscountValueState = (previous = [], id = '', value = 0,
         return { ...entry, lineDiscountValue: safeValue };
     });
 };
+
+export const setCartItemExcludeFromGlobalState = (previous = [], id = '', excluded = false) => {
+    const safePrevious = Array.isArray(previous) ? previous : [];
+    const targetId = safeId(id);
+    if (!targetId) return safePrevious;
+    return safePrevious.map((entry) => (
+        safeId(entry?.id) === targetId
+            ? { ...entry, excludeFromGlobal: Boolean(excluded) }
+            : entry
+    ));
+};

@@ -21,8 +21,10 @@ export const usePendingOrderCartImport = ({
     setGlobalDiscountEnabled,
     setGlobalDiscountType,
     setGlobalDiscountValue,
+    setGlobalOnRegular = null,
     setDeliveryType,
     setDeliveryAmount,
+    setCartWizardStep = null,
     setCartOpenReason = null,
     updateDraft = null,
     formatMoney
@@ -63,12 +65,18 @@ export const usePendingOrderCartImport = ({
                 if (typeof showAdjustments === 'boolean') {
                     patch.showOrderAdjustments = showAdjustments;
                 }
+                if (options.cartWizardStep) {
+                    patch.cartWizardStep = options.cartWizardStep;
+                }
                 return patch;
             });
             if (patched) return;
             setCart(nextCart);
             if (typeof showAdjustments === 'boolean') {
                 setShowOrderAdjustments(showAdjustments);
+            }
+            if (options.cartWizardStep && typeof setCartWizardStep === 'function') {
+                setCartWizardStep(options.cartWizardStep);
             }
         };
 
@@ -265,16 +273,14 @@ export const usePendingOrderCartImport = ({
                 ? 1
                 : Math.max(1, Math.round(Number.isFinite(qtyRaw) ? qtyRaw : 1));
             const linePrice = parseMoney(line.price ?? line.unitPrice ?? line.unit_price ?? line.itemPrice ?? line.item_price ?? 0, 0);
-            const lineTotal = parseMoney(line.lineTotal ?? line.line_total ?? line.total ?? line.totalPrice ?? line.total_price ?? 0, 0);
+            const lineTotal = parseMoney(line.subtotal ?? line.lineTotal ?? line.line_total ?? line.total ?? line.totalPrice ?? line.total_price ?? 0, 0);
             const lineSubtotal = parseMoney(line.lineSubtotal ?? line.line_subtotal ?? line.subtotal ?? line.subtotalPrice ?? line.subtotal_price ?? (qty * linePrice), 0);
-            const lineDiscountAmount = Math.max(0, parseMoney(line.lineDiscountAmount ?? 0, 0));
+            const lineDiscountAmount = Math.max(0, parseMoney(line.lineDiscountAmount ?? ((line.linDiscountAmt || 0) * qty) ?? 0, 0));
             const rawLineDiscountType = String(line.lineDiscountType || line.discountType || '').trim().toLowerCase();
-            const lineDiscountType = rawLineDiscountType === 'amount' ? 'amount' : 'percent';
-            let lineDiscountValue = Math.max(0, parseMoney(line.lineDiscountValue ?? 0, 0));
-            if (lineDiscountAmount > 0 && lineDiscountValue <= 0) {
-                lineDiscountValue = lineDiscountType === 'amount'
-                    ? lineDiscountAmount
-                    : Math.min(100, (lineSubtotal > 0 ? (lineDiscountAmount / lineSubtotal) * 100 : 0));
+            const lineDiscountType = 'percent';
+            let lineDiscountValue = Math.max(0, parseMoney(line.linDiscountPct ?? line.lineDiscountValue ?? 0, 0));
+            if ((lineDiscountAmount > 0 && lineDiscountValue <= 0) || rawLineDiscountType === 'amount') {
+                lineDiscountValue = Math.min(100, (lineSubtotal > 0 ? (lineDiscountAmount / lineSubtotal) * 100 : 0));
             }
             const lineDiscountEnabled = lineDiscountAmount > 0 || lineDiscountValue > 0;
             const derivedUnitPrice = parseMoney(line.unitPrice, (lineTotal > 0 && qty > 0 ? (lineTotal / qty) : linePrice));
@@ -300,7 +306,9 @@ export const usePendingOrderCartImport = ({
                     lineDiscountEnabled,
                     lineDiscountType,
                     lineDiscountValue,
-                    lineDiscountAmount: roundMoney(lineDiscountAmount)
+                    lineDiscountAmount: roundMoney(lineDiscountAmount),
+                    linDiscountPct: lineDiscountValue,
+                    excludeFromGlobal: line.excludeFromGlobal === true
                 };
             } else {
                 baseLine = {
@@ -319,7 +327,9 @@ export const usePendingOrderCartImport = ({
                     lineDiscountEnabled,
                     lineDiscountType,
                     lineDiscountValue,
-                    lineDiscountAmount: roundMoney(lineDiscountAmount)
+                    lineDiscountAmount: roundMoney(lineDiscountAmount),
+                    linDiscountPct: lineDiscountValue,
+                    excludeFromGlobal: line.excludeFromGlobal === true
                 };
             }
 
@@ -389,9 +399,9 @@ export const usePendingOrderCartImport = ({
                 });
 
                 return Array.from(map.values());
-            }, { showOrderAdjustments: true });
+            }, { showOrderAdjustments: true, cartWizardStep: isQuoteImport ? 4 : 1 });
         } else {
-            applyCartChange(importedCart, { showOrderAdjustments: true });
+            applyCartChange(importedCart, { showOrderAdjustments: true, cartWizardStep: isQuoteImport ? 4 : 1 });
         }
         if (token && lastImportedOrderRef) {
             lastImportedOrderRef.current = dedupeKey;
@@ -430,29 +440,37 @@ export const usePendingOrderCartImport = ({
 
             reconstructedGlobalDiscount = roundMoney(Math.max(0, quoteDiscountAmount - importedLineDiscountTotal));
 
-            const quoteDeliveryAmount = Math.max(0, parseMoney(quoteSummary?.deliveryAmount ?? 0, 0));
+            const quoteDeliveryAmount = Math.max(0, parseMoney(quoteSummary?.deliveryAmt ?? quoteSummary?.deliveryAmount ?? 0, 0));
             const quoteDeliveryFree = Boolean(quoteSummary?.deliveryFree) || quoteDeliveryAmount <= 0;
 
             const summaryGlobalDiscountType = String(quoteSummary?.globalDiscount?.type || '').trim().toLowerCase();
-            const summaryGlobalDiscountValue = Math.max(0, parseMoney(quoteSummary?.globalDiscount?.value ?? 0, 0));
+            const summaryGlobalDiscountValue = Math.max(0, parseMoney(quoteSummary?.globalDiscPct ?? quoteSummary?.globalDiscount?.value ?? 0, 0));
             const hasSummaryGlobalDiscount = (summaryGlobalDiscountType === 'percent' || summaryGlobalDiscountType === 'amount')
                 && summaryGlobalDiscountValue > 0;
             const quotePatch = {
                 globalDiscountEnabled: hasSummaryGlobalDiscount ? true : reconstructedGlobalDiscount > 0,
-                globalDiscountType: hasSummaryGlobalDiscount ? summaryGlobalDiscountType : 'amount',
+                globalDiscountType: hasSummaryGlobalDiscount ? summaryGlobalDiscountType : 'percent',
                 globalDiscountValue: hasSummaryGlobalDiscount
                     ? summaryGlobalDiscountValue
                     : (reconstructedGlobalDiscount > 0 ? reconstructedGlobalDiscount : 0),
+                globalOnRegular: Boolean(quoteSummary?.globalOnRegular ?? quoteSummary?.globalDiscount?.onRegular),
                 deliveryType: quoteDeliveryFree ? 'free' : 'amount',
-                deliveryAmount: quoteDeliveryFree ? 0 : quoteDeliveryAmount
+                deliveryAmount: quoteDeliveryFree ? 0 : quoteDeliveryAmount,
+                cartWizardStep: 4
             };
             const patched = applyDraftPatch(quotePatch);
             if (!patched) {
                 setGlobalDiscountEnabled(quotePatch.globalDiscountEnabled);
                 setGlobalDiscountType(quotePatch.globalDiscountType);
                 setGlobalDiscountValue(quotePatch.globalDiscountValue);
+                if (typeof setGlobalOnRegular === 'function') {
+                    setGlobalOnRegular(quotePatch.globalOnRegular);
+                }
                 setDeliveryType(quotePatch.deliveryType);
                 setDeliveryAmount(quotePatch.deliveryAmount);
+                if (typeof setCartWizardStep === 'function') {
+                    setCartWizardStep(4);
+                }
             }
         }
 
@@ -488,8 +506,10 @@ export const usePendingOrderCartImport = ({
         setGlobalDiscountEnabled,
         setGlobalDiscountType,
         setGlobalDiscountValue,
+        setGlobalOnRegular,
         setDeliveryType,
         setDeliveryAmount,
+        setCartWizardStep,
         setCartOpenReason,
         updateDraft,
         formatMoney

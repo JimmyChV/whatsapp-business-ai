@@ -7512,6 +7512,17 @@ body {
   }
 }
 
+@keyframes cartWizardFade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 :root[data-theme="light"] .sidebar {
   background: var(--saas-sidebar-bg);
   border-right: 1px solid var(--saas-border-color);

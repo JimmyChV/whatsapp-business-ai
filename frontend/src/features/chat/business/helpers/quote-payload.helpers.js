@@ -1,10 +1,12 @@
+import { floorMoney1 } from './cart.helpers';
+
 const parseMoney = (value, fallback = 0) => {
     const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
     if (Number.isFinite(parsed)) return parsed;
     return Number.isFinite(fallback) ? fallback : 0;
 };
 
-export const toMoney1 = (value) => Math.ceil((Number(value) || 0) * 10) / 10;
+export const toMoney1 = floorMoney1;
 
 export const buildQuoteItemFromCartLine = ({ item = {}, line = {}, index = 0, currency = 'PEN' } = {}) => {
     const safeItem = item && typeof item === 'object' ? item : {};
@@ -20,39 +22,37 @@ export const buildQuoteItemFromCartLine = ({ item = {}, line = {}, index = 0, cu
 
     const productIdRaw = String(safeItem.productId || safeItem.id || '').trim();
     const skuRaw = String(safeItem.sku || '').trim();
-    const titleRaw = String(safeItem.title || safeItem.name || 'Producto').trim();
+    const titleRaw = String(safeItem.title || safeItem.name || safeItem.productName || 'Producto').trim();
     const unitRaw = String(safeItem.unit || 'unidad').trim();
-
-    const qty = Math.max(1, Math.trunc(parseMoney(safeLine.qty, 1)) || 1);
-    const unitPrice = toMoney1(parseMoney(safeLine.unitPrice, 0));
-    const lineSubtotal = toMoney1(parseMoney(safeLine.regularSubtotal, 0));
-
-    const lineDiscountEnabled = Boolean(safeLine.lineDiscountEnabled);
-    const lineDiscountType = lineDiscountEnabled
-        ? (safeLine.lineDiscountType === 'amount' ? 'amount' : 'percent')
-        : null;
-    const lineDiscountValue = lineDiscountEnabled ? toMoney1(parseMoney(safeLine.lineDiscountValue, 0)) : 0;
-
-    const includedDiscount = parseMoney(safeLine.includedDiscount, 0);
-    const additionalDiscountApplied = parseMoney(safeLine.additionalDiscountApplied, 0);
-    const lineDiscountAmount = lineDiscountEnabled
-        ? toMoney1(Math.max(0, includedDiscount + additionalDiscountApplied))
-        : 0;
-    const lineTotal = toMoney1(parseMoney(safeLine.lineFinal, 0));
+    const qty = Math.max(1, Math.trunc(parseMoney(safeLine.qty ?? safeItem.qty, 1)) || 1);
+    const unitPrice = toMoney1(parseMoney(safeLine.unitPrice ?? safeItem.price ?? safeItem.unitPrice, 0));
+    const regularPrice = toMoney1(parseMoney(safeLine.regularUnit ?? safeItem.regularPrice, unitPrice));
+    const linDiscountPct = Math.max(0, Math.min(100, parseMoney(safeLine.lineDiscountPct ?? safeLine.lineDiscountValue ?? safeItem.linDiscountPct, 0)));
+    const linDiscountAmt = toMoney1(parseMoney(safeLine.lineDiscountAmount ?? safeLine.additionalDiscountApplied, 0) / qty);
+    const finalPrice = toMoney1(parseMoney(safeLine.finalPrice, unitPrice - linDiscountAmt));
+    const subtotal = toMoney1(parseMoney(safeLine.subtotal ?? safeLine.lineFinal, finalPrice * qty));
 
     return {
         itemId,
         productId: productIdRaw || null,
+        productName: titleRaw || 'Producto',
         sku: skuRaw || null,
         title: titleRaw || 'Producto',
         unit: unitRaw || 'unidad',
+        quantity: qty,
         qty,
         unitPrice,
-        lineSubtotal,
-        lineDiscountType,
-        lineDiscountValue,
-        lineDiscountAmount,
-        lineTotal,
+        regularPrice,
+        linDiscountPct,
+        linDiscountAmt,
+        finalPrice,
+        subtotal,
+        excludeFromGlobal: safeLine.excludeFromGlobal === true || safeItem.excludeFromGlobal === true,
+        lineSubtotal: toMoney1(regularPrice * qty),
+        lineDiscountType: linDiscountPct > 0 ? 'percent' : null,
+        lineDiscountValue: linDiscountPct,
+        lineDiscountAmount: toMoney1(linDiscountAmt * qty),
+        lineTotal: subtotal,
         currency: normalizedCurrency,
         metadata: {
             catalogId: String(safeItem.catalogId || '').trim() || null,
@@ -64,36 +64,43 @@ export const buildQuoteItemFromCartLine = ({ item = {}, line = {}, index = 0, cu
 
 export const buildQuoteSummaryFromCart = ({
     cart = [],
-    regularSubtotalTotal = 0,
-    totalDiscountForQuote = 0,
+    subtotalProducts = 0,
+    globalDiscountApplied = 0,
     subtotalAfterGlobal = 0,
     deliveryFee = 0,
     cartTotal = 0,
     deliveryType = 'none',
     globalDiscountEnabled = false,
-    globalDiscountType = 'percent',
     globalDiscountValue = 0,
+    globalOnRegular = false,
     currency = 'PEN'
 } = {}) => {
     const safeCart = Array.isArray(cart) ? cart : [];
     const normalizedCurrency = String(currency || 'PEN').trim() || 'PEN';
     const normalizedDeliveryType = String(deliveryType || 'none').trim().toLowerCase() || 'none';
     const normalizedDeliveryAmount = toMoney1(parseMoney(deliveryFee, 0));
-    const discount = toMoney1(parseMoney(totalDiscountForQuote, 0));
+    const globalPct = globalDiscountEnabled ? Math.max(0, Math.min(100, parseMoney(globalDiscountValue, 0))) : 0;
+    const globalDiscAmt = toMoney1(parseMoney(globalDiscountApplied, 0));
 
     return {
         itemCount: safeCart.length,
-        subtotal: toMoney1(parseMoney(regularSubtotalTotal, 0)),
-        discount,
+        subtotal: toMoney1(parseMoney(subtotalProducts, 0)),
+        globalDiscPct: globalPct,
+        globalDiscAmt,
+        globalOnRegular: Boolean(globalOnRegular),
+        deliveryType: normalizedDeliveryType === 'amount' ? 'amount' : 'gratuito',
+        deliveryAmt: normalizedDeliveryAmount,
+        totalPayable: toMoney1(parseMoney(cartTotal, 0)),
+        discount: globalDiscAmt,
         totalAfterDiscount: toMoney1(parseMoney(subtotalAfterGlobal, 0)),
         deliveryAmount: normalizedDeliveryAmount,
         deliveryFree: normalizedDeliveryType !== 'amount' || normalizedDeliveryAmount <= 0,
-        totalPayable: toMoney1(parseMoney(cartTotal, 0)),
         globalDiscount: {
             enabled: Boolean(globalDiscountEnabled),
-            type: globalDiscountEnabled ? (globalDiscountType === 'amount' ? 'amount' : 'percent') : 'none',
-            value: globalDiscountEnabled ? Math.max(0, parseMoney(globalDiscountValue, 0)) : 0,
-            applied: toMoney1(parseMoney(discount, 0))
+            type: globalDiscountEnabled ? 'percent' : 'none',
+            value: globalPct,
+            applied: globalDiscAmt,
+            onRegular: Boolean(globalOnRegular)
         },
         currency: normalizedCurrency,
         metadata: {
@@ -107,8 +114,9 @@ export const buildStructuredQuotePayloadFromCart = ({
     activeChatId = '',
     activeChatPhone = '',
     cart = [],
-    regularSubtotalTotal = 0,
+    subtotalProducts = 0,
     totalDiscountForQuote = 0,
+    globalDiscountApplied = 0,
     subtotalAfterGlobal = 0,
     deliveryFee = 0,
     cartTotal = 0,
@@ -116,6 +124,7 @@ export const buildStructuredQuotePayloadFromCart = ({
     globalDiscountEnabled = false,
     globalDiscountType = 'percent',
     globalDiscountValue = 0,
+    globalOnRegular = false,
     getLineBreakdown = null,
     buildQuoteMessageFromCart = null,
     formatQuoteProductTitle = null,
@@ -152,8 +161,8 @@ export const buildStructuredQuotePayloadFromCart = ({
 
     const summary = buildQuoteSummaryFromCart({
         cart: safeCart,
-        regularSubtotalTotal,
-        totalDiscountForQuote,
+        subtotalProducts,
+        globalDiscountApplied,
         subtotalAfterGlobal,
         deliveryFee,
         cartTotal,
@@ -161,6 +170,7 @@ export const buildStructuredQuotePayloadFromCart = ({
         globalDiscountEnabled,
         globalDiscountType,
         globalDiscountValue,
+        globalOnRegular,
         currency: normalizedCurrency
     });
 
@@ -168,7 +178,7 @@ export const buildStructuredQuotePayloadFromCart = ({
         ? String(buildQuoteMessageFromCart({
             cart: safeCart,
             getLineBreakdown,
-            regularSubtotalTotal,
+            subtotalProducts,
             totalDiscountForQuote,
             subtotalAfterGlobal,
             deliveryFee,

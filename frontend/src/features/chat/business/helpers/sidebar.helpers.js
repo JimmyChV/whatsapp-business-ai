@@ -27,7 +27,10 @@ export const parseMoney = (value, fallback = 0) => {
     return Number.isFinite(fallback) ? fallback : 0;
 };
 
-export const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
+export const roundMoney = (value) => {
+    const num = Number(value) || 0;
+    return Math.floor(num * 10) / 10;
+};
 
 export const clampNumber = (value, min = 0, max = 100) => Math.min(max, Math.max(min, Number(value) || 0));
 

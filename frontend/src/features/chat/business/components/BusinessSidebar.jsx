@@ -24,6 +24,7 @@ import {
     removeItemFromCartState,
     roundMoney,
     setCartItemDiscountEnabledState,
+    setCartItemExcludeFromGlobalState,
     setCartItemDiscountTypeState,
     setCartItemDiscountValueState,
     updateCartItemQtyState
@@ -241,11 +242,13 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     const cart = activeDraft.cart || [];
     const showOrderAdjustments = activeDraft.showOrderAdjustments || false;
     const globalDiscountEnabled = activeDraft.globalDiscountEnabled || false;
-    const globalDiscountType = activeDraft.globalDiscountType || 'percentage';
+    const globalDiscountType = activeDraft.globalDiscountType || 'percent';
     const globalDiscountValue = activeDraft.globalDiscountValue || 0;
-    const deliveryType = activeDraft.deliveryType || 'none';
+    const globalOnRegular = activeDraft.globalOnRegular || false;
+    const deliveryType = activeDraft.deliveryType || 'free';
     const deliveryAmount = activeDraft.deliveryAmount || 0;
     const showCartTotalsBreakdown = activeDraft.showCartTotalsBreakdown || false;
+    const cartWizardStep = Math.max(1, Math.min(4, Number(activeDraft.cartWizardStep || 1) || 1));
     const sourceOrder = activeDraft.sourceOrder && typeof activeDraft.sourceOrder === 'object'
         ? activeDraft.sourceOrder
         : null;
@@ -380,6 +383,14 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         });
     }, [updateDraft]);
 
+    const setGlobalOnRegular = useCallback((nextValue) => {
+        updateDraft((previousDraft) => {
+            const previous = Boolean(previousDraft?.globalOnRegular || false);
+            const resolved = typeof nextValue === 'function' ? nextValue(previous) : nextValue;
+            return { globalOnRegular: Boolean(resolved) };
+        });
+    }, [updateDraft]);
+
     const setDeliveryType = useCallback((nextValue) => {
         updateDraft((previousDraft) => {
             const previous = String(previousDraft?.deliveryType || 'none');
@@ -402,6 +413,14 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             const previous = Boolean(previousDraft?.showCartTotalsBreakdown || false);
             const resolved = typeof nextValue === 'function' ? nextValue(previous) : nextValue;
             return { showCartTotalsBreakdown: Boolean(resolved) };
+        });
+    }, [updateDraft]);
+
+    const setCartWizardStep = useCallback((nextValue) => {
+        updateDraft((previousDraft) => {
+            const previous = Math.max(1, Math.min(4, Number(previousDraft?.cartWizardStep || 1) || 1));
+            const resolved = typeof nextValue === 'function' ? nextValue(previous) : nextValue;
+            return { cartWizardStep: Math.max(1, Math.min(4, Number(resolved || 1) || 1)) };
         });
     }, [updateDraft]);
 
@@ -706,8 +725,10 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         setGlobalDiscountEnabled,
         setGlobalDiscountType,
         setGlobalDiscountValue,
+        setGlobalOnRegular,
         setDeliveryType,
         setDeliveryAmount,
+        setCartWizardStep,
         setCartOpenReason,
         updateDraft,
         formatMoney
@@ -848,6 +869,9 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         regularSubtotalTotal,
         subtotalProducts,
         normalizedGlobalDiscountValue,
+        subtotalParticipants,
+        subtotalExcluded,
+        globalDiscountApplied,
         subtotalAfterGlobal,
         totalDiscountForQuote,
         safeDeliveryAmount,
@@ -858,6 +882,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         globalDiscountEnabled,
         globalDiscountType,
         globalDiscountValue,
+        globalOnRegular,
         deliveryType,
         deliveryAmount,
         parseMoney,
@@ -868,6 +893,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         globalDiscountEnabled,
         globalDiscountType,
         globalDiscountValue,
+        globalOnRegular,
         deliveryType,
         deliveryAmount
     ]);
@@ -886,7 +912,8 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         deliveryType,
         globalDiscountEnabled,
         globalDiscountType,
-        normalizedGlobalDiscountValue
+        normalizedGlobalDiscountValue,
+        globalOnRegular
     }), [
         activeChatId,
         lineBreakdowns,
@@ -897,7 +924,8 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         deliveryType,
         globalDiscountEnabled,
         globalDiscountType,
-        normalizedGlobalDiscountValue
+        normalizedGlobalDiscountValue,
+        globalOnRegular
     ]);
 
     useEffect(() => {
@@ -1073,10 +1101,12 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             sourceQuote: null,
             sourceType: null,
             globalDiscountEnabled: false,
-            globalDiscountType: 'percentage',
+            globalDiscountType: 'percent',
             globalDiscountValue: 0,
-            deliveryType: 'none',
-            deliveryAmount: 0
+            globalOnRegular: false,
+            deliveryType: 'free',
+            deliveryAmount: 0,
+            cartWizardStep: 1
         });
         setOrderImportStatus({
             level: 'ok',
@@ -1111,31 +1141,39 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         const importedCart = quoteItems.map((item, index) => {
             const qty = Math.max(1, Number(item?.qty ?? item?.quantity ?? 1) || 1);
             const unitPrice = Math.max(0, Number(item?.unitPrice ?? item?.price ?? 0) || 0);
-            const regularPrice = Math.max(unitPrice, Number(item?.lineSubtotal || 0) > 0 ? Number(item.lineSubtotal) / qty : unitPrice);
-            const lineDiscountAmount = Math.max(0, Number(item?.lineDiscountAmount || 0) || 0);
+            const regularCandidate = Number(item?.regularPrice ?? 0);
+            const legacyLineSubtotal = Number(item?.lineSubtotal ?? 0);
+            const regularPrice = Math.max(
+                unitPrice,
+                Number.isFinite(regularCandidate) && regularCandidate > 0
+                    ? regularCandidate
+                    : (Number.isFinite(legacyLineSubtotal) && legacyLineSubtotal > 0 ? legacyLineSubtotal / qty : unitPrice)
+            );
+            const lineDiscountPct = Math.max(0, Math.min(100, Number(item?.linDiscountPct ?? item?.lineDiscountValue ?? 0) || 0));
             return {
                 id: String(item?.productId || item?.itemId || item?.sku || `quote_${normalized.quoteId}_${index + 1}`),
                 productId: String(item?.productId || item?.itemId || '').trim() || null,
                 sku: String(item?.sku || '').trim() || null,
-                title: String(item?.title || item?.name || item?.sku || `Producto ${index + 1}`).trim() || `Producto ${index + 1}`,
+                title: String(item?.productName || item?.title || item?.name || item?.sku || `Producto ${index + 1}`).trim() || `Producto ${index + 1}`,
                 unit: String(item?.unit || 'unidad').trim() || 'unidad',
                 qty,
                 price: unitPrice.toFixed(2),
                 regularPrice: regularPrice.toFixed(2),
                 salePrice: null,
-                discountPct: 0,
+                discountPct: lineDiscountPct,
                 description: 'Producto cargado desde cotizacion enviada.',
                 imageUrl: null,
                 source: 'quote_history',
                 stockStatus: null,
-                lineDiscountEnabled: lineDiscountAmount > 0 || Number(item?.lineDiscountValue || 0) > 0,
-                lineDiscountType: String(item?.lineDiscountType || '').trim().toLowerCase() === 'amount' ? 'amount' : 'percent',
-                lineDiscountValue: Math.max(0, Number(item?.lineDiscountValue || 0) || 0),
-                lineDiscountAmount
+                lineDiscountEnabled: lineDiscountPct > 0,
+                lineDiscountType: 'percent',
+                lineDiscountValue: lineDiscountPct,
+                linDiscountPct: lineDiscountPct,
+                excludeFromGlobal: item?.excludeFromGlobal === true
             };
         });
         const summary = normalized.summaryJson && typeof normalized.summaryJson === 'object' ? normalized.summaryJson : {};
-        const deliveryAmountValue = Math.max(0, Number(summary?.deliveryAmount || 0) || 0);
+        const deliveryAmountValue = Math.max(0, Number((summary?.deliveryAmt ?? summary?.deliveryAmount) || 0) || 0);
         const deliveryFree = summary?.deliveryFree !== false || deliveryAmountValue <= 0;
         const globalDiscount = summary?.globalDiscount && typeof summary.globalDiscount === 'object'
             ? summary.globalDiscount
@@ -1151,9 +1189,11 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             },
             sourceType: 'quote',
             showOrderAdjustments: true,
-            globalDiscountEnabled: Boolean(globalDiscount?.enabled || Number(globalDiscount?.applied || 0) > 0),
-            globalDiscountType: String(globalDiscount?.type || 'amount').trim().toLowerCase() === 'percent' ? 'percent' : 'amount',
-            globalDiscountValue: Math.max(0, Number(globalDiscount?.value ?? globalDiscount?.applied ?? 0) || 0),
+            cartWizardStep: 4,
+            globalDiscountEnabled: Boolean(globalDiscount?.enabled || Number(summary?.globalDiscPct || 0) > 0),
+            globalDiscountType: 'percent',
+            globalDiscountValue: Math.max(0, Number(summary?.globalDiscPct ?? globalDiscount?.value ?? 0) || 0),
+            globalOnRegular: Boolean(summary?.globalOnRegular ?? globalDiscount?.onRegular),
             deliveryType: deliveryFree ? 'free' : 'amount',
             deliveryAmount: deliveryFree ? 0 : deliveryAmountValue
         });
@@ -1191,7 +1231,9 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             activeChatPhone,
             cart,
             regularSubtotalTotal,
+            subtotalProducts,
             totalDiscountForQuote,
+            globalDiscountApplied,
             subtotalAfterGlobal,
             deliveryFee,
             cartTotal,
@@ -1199,6 +1241,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             globalDiscountEnabled,
             globalDiscountType,
             globalDiscountValue,
+            globalOnRegular,
             getLineBreakdown,
             buildQuoteMessageFromCart,
             formatQuoteProductTitle,
@@ -1276,9 +1319,9 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         const pricing = calculateCartPricing({
             cart: tempCart,
             globalDiscountEnabled: false,
-            globalDiscountType: 'percentage',
+            globalDiscountType: 'percent',
             globalDiscountValue: 0,
-            deliveryType: 'none',
+            deliveryType: 'free',
             deliveryAmount: 0,
             parseMoney,
             roundMoney,
@@ -1294,14 +1337,16 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             activeChatPhone,
             cart: tempCart,
             regularSubtotalTotal: pricing.regularSubtotalTotal,
+            subtotalProducts: pricing.subtotalProducts,
             totalDiscountForQuote: pricing.totalDiscountForQuote,
             subtotalAfterGlobal: pricing.subtotalAfterGlobal,
             deliveryFee: pricing.deliveryFee,
             cartTotal: pricing.cartTotal,
-            deliveryType: 'none',
+            deliveryType: 'free',
             globalDiscountEnabled: false,
-            globalDiscountType: 'percentage',
+            globalDiscountType: 'percent',
             globalDiscountValue: 0,
+            globalOnRegular: false,
             getLineBreakdown: getTempLineBreakdown,
             buildQuoteMessageFromCart,
             formatQuoteProductTitle,
@@ -1432,6 +1477,18 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             return;
         }
         setCart((previous) => setCartItemDiscountValueState(previous, id, value, parseMoney));
+    };
+
+    const updateItemExcludeFromGlobal = (id, excluded) => {
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
+            return;
+        }
+        if (!conversationWindowOpen) {
+            notifyWindowLock();
+            return;
+        }
+        setCart((previous) => setCartItemExcludeFromGlobalState(previous, id, excluded));
     };
     const handleSendQuickReply = useCallback((quickReply) => {
         if (!canWriteByAssignment) {
@@ -1625,12 +1682,15 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     orderImportStatus={orderImportStatus}
                     sourceOrder={sourceOrder}
                     sourceQuote={sourceQuote}
+                    cartWizardStep={cartWizardStep}
+                    setCartWizardStep={setCartWizardStep}
                     getLineBreakdown={getLineBreakdown}
                     removeFromCart={removeFromCart}
                     updateQty={updateQty}
                     updateItemDiscountEnabled={updateItemDiscountEnabled}
                     updateItemDiscountValue={updateItemDiscountValue}
                     updateItemDiscountType={updateItemDiscountType}
+                    updateItemExcludeFromGlobal={updateItemExcludeFromGlobal}
                     showOrderAdjustments={showOrderAdjustments}
                     setShowOrderAdjustments={setShowOrderAdjustments}
                     globalDiscountEnabled={globalDiscountEnabled}
@@ -1639,6 +1699,8 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     setGlobalDiscountType={setGlobalDiscountType}
                     normalizedGlobalDiscountValue={normalizedGlobalDiscountValue}
                     setGlobalDiscountValue={setGlobalDiscountValue}
+                    globalOnRegular={globalOnRegular}
+                    setGlobalOnRegular={setGlobalOnRegular}
                     parseMoney={parseMoney}
                     deliveryType={deliveryType}
                     setDeliveryType={setDeliveryType}
@@ -1648,6 +1710,10 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     setShowCartTotalsBreakdown={setShowCartTotalsBreakdown}
                     formatMoney={formatMoney}
                     regularSubtotalTotal={regularSubtotalTotal}
+                    subtotalProducts={subtotalProducts}
+                    subtotalParticipants={subtotalParticipants}
+                    subtotalExcluded={subtotalExcluded}
+                    globalDiscountApplied={globalDiscountApplied}
                     totalDiscountForQuote={totalDiscountForQuote}
                     subtotalAfterGlobal={subtotalAfterGlobal}
                     deliveryFee={deliveryFee}
