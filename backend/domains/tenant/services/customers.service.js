@@ -7,6 +7,7 @@ const {
     writeTenantJsonFile,
     queryPostgres
 } = require('../../../config/persistence-runtime');
+const crypto = require('crypto');
 const { assertValidTenant } = require('../helpers/tenant-guard.helpers');
 const {
     toText,
@@ -202,6 +203,10 @@ async function ensurePostgresSchema() {
         await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS notes TEXT NULL`);
         await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS erp_id TEXT NULL`);
         await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS erp_employee_id TEXT NULL`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS erp_row_hash TEXT NULL`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS erp_last_seen_at TIMESTAMPTZ NULL`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS erp_last_import_id TEXT NULL`);
+        await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS erp_source_payload JSONB DEFAULT '{}'::jsonb`);
         await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS referral_customer_id TEXT NULL`);
         await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS marketing_opt_in_status TEXT NOT NULL DEFAULT 'unknown'`);
         await queryPostgres(`ALTER TABLE tenant_customers ADD COLUMN IF NOT EXISTS marketing_opt_in_updated_at TIMESTAMPTZ NULL`);
@@ -233,6 +238,10 @@ async function ensurePostgresSchema() {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_customers_erp_unique
             ON tenant_customers(tenant_id, erp_id)
             WHERE erp_id IS NOT NULL AND erp_id <> ''
+        `);
+        await queryPostgres(`
+            CREATE INDEX IF NOT EXISTS idx_customers_erp_hash
+            ON tenant_customers(tenant_id, erp_row_hash)
         `);
         await queryPostgres(`
             CREATE INDEX IF NOT EXISTS idx_tenant_customers_updated
@@ -290,6 +299,12 @@ async function ensurePostgresSchema() {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_customer_addresses_primary_unique
             ON tenant_customer_addresses(tenant_id, customer_id)
             WHERE is_primary = TRUE
+        `);
+        await queryPostgres(`ALTER TABLE tenant_customer_addresses ADD COLUMN IF NOT EXISTS erp_address_id TEXT NULL`);
+        await queryPostgres(`ALTER TABLE tenant_customer_addresses ADD COLUMN IF NOT EXISTS erp_row_hash TEXT NULL`);
+        await queryPostgres(`
+            CREATE INDEX IF NOT EXISTS idx_addresses_erp_id
+            ON tenant_customer_addresses(tenant_id, erp_address_id)
         `);
         await queryPostgres(`
             CREATE TABLE IF NOT EXISTS tenant_customer_identities (
@@ -1323,18 +1338,24 @@ function buildAppSheetCustomerPreview(candidate = {}) {
 function buildAppSheetCustomerCandidate(row = {}, moduleId = '') {
     const erpId = normalizeImportTextUpper(getAppSheetField(row, 'Código de Cliente', 'Codigo de Cliente'));
     const contactType = toUpper(getAppSheetField(row, 'TipoContacto')) || 'PROSPECTO';
+    const displayName = normalizeImportTextUpper(getAppSheetField(row, 'Cliente'));
     const firstName = normalizeImportTextUpper(getAppSheetField(row, 'Nombres'));
     const lastNamePaternal = normalizeImportTextUpper(getAppSheetField(row, 'Apellido Paterno o Razón Social', 'Apellido Paterno o Razon Social'));
     const lastNameMaternal = normalizeImportTextUpper(getAppSheetField(row, 'Apellido Materno'));
-    const contactName = normalizeImportTextUpper(getAppSheetField(row, 'Nombre de Pila'));
+    const contactName = normalizeImportTextUpper(getAppSheetField(row, 'Nombre de Pila')) || displayName;
     const documentNumber = normalizeImportTextUpper(getAppSheetField(row, 'N° de Documento', 'Nro de Documento', 'No de Documento'));
     const phoneE164 = normalizeAppSheetPhone(getAppSheetField(row, 'Teléfono', 'Telefono'));
     const phoneAlt = normalizeAppSheetPhone(getAppSheetField(row, 'Teléfono 2', 'Telefono 2'));
     const email = normalizeImportEmail(getAppSheetField(row, 'Email'));
-    const treatmentId = resolveAppSheetTreatment(getAppSheetField(row, 'Tratamiento'));
+    const treatmentLabel = normalizeImportTextUpper(getAppSheetField(row, 'Tratamiento'));
+    const treatmentId = resolveAppSheetTreatment(treatmentLabel);
     const documentTypeId = resolveAppSheetDocumentType(getAppSheetField(row, 'Tipo de Documento'));
     const customerTypeId = resolveAppSheetCustomerType(getAppSheetField(row, 'Tipo de Cliente'));
     const acquisitionSourceId = resolveAppSheetSource(getAppSheetField(row, 'Fuente'));
+    const erpEmployeeId = normalizeImportTextUpper(getAppSheetField(row, 'Responsable'));
+    const ubigeo = normalizeImportTextUpper(getAppSheetField(row, 'Ubigeo'));
+    const plusCode = normalizeImportTextUpper(getAppSheetField(row, 'PlusCode'));
+    const locationLabel = String(getAppSheetField(row, 'Ubicacion') || '').trim();
     const createdAt = parseAppSheetDate(getAppSheetField(row, 'Fecha de Registro'));
     const marketingOptInStatus = normalizeAppSheetOptInStatus(getAppSheetField(row, 'Autorizacion'));
     const notes = getAppSheetField(row, 'ObservacionCliente') || null;
@@ -1356,6 +1377,7 @@ function buildAppSheetCustomerCandidate(row = {}, moduleId = '') {
     const rangoCompras = getAppSheetField(row, 'RangoCompras') || null;
     const fullName = [lastNamePaternal, lastNameMaternal, firstName].filter(Boolean).join(' ').trim()
         || [lastNamePaternal, firstName].filter(Boolean).join(' ').trim()
+        || displayName
         || contactName
         || erpId
         || '';
@@ -1388,10 +1410,12 @@ function buildAppSheetCustomerCandidate(row = {}, moduleId = '') {
         document_number: documentNumber
     });
 
-    return {
+    const candidate = {
         rowNumber,
         erpId,
+        displayName,
         treatmentId,
+        treatmentLabel,
         firstName: dbFields.first_name || null,
         lastNamePaternal: dbFields.last_name_paternal || null,
         lastNameMaternal: dbFields.last_name_maternal || null,
@@ -1401,11 +1425,14 @@ function buildAppSheetCustomerCandidate(row = {}, moduleId = '') {
         phoneAlt: dbFields.phone_alt || null,
         email,
         documentTypeId,
-        erpEmployeeId: null,
+        erpEmployeeId: erpEmployeeId || null,
         customerTypeId,
         acquisitionSourceId,
         referralCustomerId: null,
         contactType,
+        ubigeo,
+        plusCode,
+        locationLabel,
         createdAt: createdAt ? `${createdAt}T00:00:00.000Z` : null,
         marketingOptInStatus,
         moduleId: toText(moduleId || '') || null,
@@ -1429,10 +1456,14 @@ function buildAppSheetCustomerCandidate(row = {}, moduleId = '') {
         rangoCompras,
         errors
     };
+    candidate.erpSourcePayload = buildAppSheetCustomerSourcePayload(candidate);
+    candidate.erpRowHash = calcCustomerHash(candidate);
+    return candidate;
 }
 
 function buildErpAddressCandidate(row = {}, customerMatch = null) {
     const rowNumber = Number(row?.__rowNumber || 0) || 0;
+    const addressErpId = normalizeErpMatchValue(getErpAddressField(row, 'IdDireccion'));
     const erpId = normalizeErpMatchValue(getErpAddressField(row, 'IdCliente'));
     const street = normalizeImportTextUpper(getErpAddressField(row, 'Direccion'));
     const reference = normalizeImportTextUpper(getErpAddressField(row, 'Referencia'));
@@ -1444,8 +1475,9 @@ function buildErpAddressCandidate(row = {}, customerMatch = null) {
     const tipoVia = normalizeImportTextUpper(getErpAddressField(row, 'TipoVia'));
     const customerId = String(customerMatch?.customerId || '').trim() || null;
 
-    return {
+    const candidate = {
         rowNumber,
+        addressErpId,
         erpId,
         customerId,
         street,
@@ -1457,6 +1489,8 @@ function buildErpAddressCandidate(row = {}, customerMatch = null) {
         tipoZona,
         tipoVia
     };
+    candidate.erpRowHash = calcAddressHash(candidate, candidate.isPrimary);
+    return candidate;
 }
 
 function buildAddressSignature(address = {}) {
@@ -1483,6 +1517,11 @@ function buildAppSheetCustomerMetadata(candidate = {}) {
             importedAt: nowIso(),
             source: 'appsheet_csv',
             erpId: candidate.erpId || null,
+            displayName: candidate.displayName || null,
+            responsable: candidate.erpEmployeeId || null,
+            ubigeo: candidate.ubigeo || null,
+            plusCode: candidate.plusCode || null,
+            ubicacion: candidate.locationLabel || null,
             diasUltimaCompra: candidate.diasUltimaCompra,
             ultimoPedidoId: candidate.ultimoPedidoId,
             ultimaFechaCompra: candidate.ultimaFechaCompra,
@@ -1501,6 +1540,212 @@ function buildAppSheetCustomerMetadata(candidate = {}) {
             rangoCompras: candidate.rangoCompras
         }
     };
+}
+
+function toHashValue(value = '') {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '';
+    if (typeof value === 'boolean') return value ? 'true' : 'false';
+    return String(value || '').trim();
+}
+
+function createMd5Hash(values = []) {
+    const source = (Array.isArray(values) ? values : [])
+        .map((value) => toHashValue(value))
+        .join('|');
+    return crypto.createHash('md5').update(source).digest('hex');
+}
+
+function buildAppSheetCustomerSourcePayload(candidate = {}) {
+    return {
+        erp_id: candidate.erpId || null,
+        display_name: candidate.displayName || candidate.fullName || candidate.contactName || null,
+        contact_name: candidate.contactName || null,
+        first_name: candidate.firstName || null,
+        last_name_paternal: candidate.lastNamePaternal || null,
+        last_name_maternal: candidate.lastNameMaternal || null,
+        phone_e164: candidate.phoneE164 || null,
+        phone2_e164: candidate.phoneAlt || null,
+        email: candidate.email || null,
+        document_number: candidate.documentNumber || null,
+        document_type: candidate.documentTypeId || null,
+        customer_type: candidate.customerTypeId || null,
+        source: candidate.acquisitionSourceId || null,
+        erp_employee_id: candidate.erpEmployeeId || null,
+        treatment: candidate.treatmentLabel || candidate.treatmentId || null,
+        ubigeo: candidate.ubigeo || null,
+        plus_code: candidate.plusCode || null,
+        location_label: candidate.locationLabel || null,
+        dias_ultima_compra: candidate.diasUltimaCompra ?? null,
+        ultimo_pedido_id: candidate.ultimoPedidoId || null,
+        ultima_fecha_compra: candidate.ultimaFechaCompra || null,
+        primera_fecha_compra: candidate.primeraFechaCompra || null,
+        primer_pedido_id: candidate.primerPedidoId || null,
+        compras_total: candidate.comprasTotal ?? null,
+        compras_120: candidate.compras120 ?? null,
+        monto_120: candidate.monto120 ?? null,
+        compras_180: candidate.compras180 ?? null,
+        monto_180: candidate.monto180 ?? null,
+        ticket_prom_180: candidate.ticketProm180 ?? null,
+        monto_acumulado: candidate.montoAcumulado ?? null,
+        segmento: candidate.segmento || null,
+        realizo_compra: candidate.realizoCompra ?? null,
+        cadencia_prom_dias: candidate.cadenciaPromDias ?? null,
+        rango_compras: candidate.rangoCompras || null,
+        autorizacion: candidate.marketingOptInStatus || null
+    };
+}
+
+function calcCustomerHash(candidate = {}) {
+    const row = buildAppSheetCustomerSourcePayload(candidate);
+    return createMd5Hash([
+        row.erp_id,
+        row.display_name,
+        row.phone_e164,
+        row.phone2_e164,
+        row.email,
+        row.document_number,
+        row.customer_type,
+        row.source,
+        row.erp_employee_id,
+        row.ubigeo,
+        row.compras_total,
+        row.monto_acumulado,
+        row.segmento,
+        row.autorizacion
+    ]);
+}
+
+function getJsonField(value = {}, key = '') {
+    if (!value || typeof value !== 'object') return '';
+    return value?.[key];
+}
+
+function normalizeDiffValue(value = '') {
+    return toHashValue(value).toUpperCase();
+}
+
+const CUSTOMER_IMPORT_DIFF_FIELDS = [
+    ['display_name', 'Cliente', (existing) => existing?.erp_source_payload?.display_name || existing?.contact_name, (incoming) => incoming.displayName || incoming.fullName],
+    ['contact_name', 'Nombre de pila', (existing) => existing?.contact_name, (incoming) => incoming.contactName],
+    ['phone_e164', 'Telefono', (existing) => existing?.phone_e164, (incoming) => incoming.phoneE164],
+    ['phone_alt', 'Telefono 2', (existing) => existing?.phone_alt, (incoming) => incoming.phoneAlt],
+    ['email', 'Email', (existing) => existing?.email, (incoming) => incoming.email],
+    ['document_number', 'Documento', (existing) => existing?.document_number, (incoming) => incoming.documentNumber],
+    ['customer_type_id', 'Tipo de cliente', (existing) => existing?.customer_type_id, (incoming) => incoming.customerTypeId],
+    ['acquisition_source_id', 'Fuente', (existing) => existing?.acquisition_source_id, (incoming) => incoming.acquisitionSourceId],
+    ['erp_employee_id', 'Responsable', (existing) => existing?.erp_employee_id, (incoming) => incoming.erpEmployeeId],
+    ['ubigeo', 'Ubigeo', (existing) => getJsonField(existing?.erp_source_payload, 'ubigeo'), (incoming) => incoming.ubigeo],
+    ['plus_code', 'PlusCode', (existing) => getJsonField(existing?.erp_source_payload, 'plus_code'), (incoming) => incoming.plusCode],
+    ['location_label', 'Ubicacion', (existing) => getJsonField(existing?.erp_source_payload, 'location_label'), (incoming) => incoming.locationLabel],
+    ['compras_total', 'ComprasTotal', (existing) => existing?.compras_total, (incoming) => incoming.comprasTotal],
+    ['monto_120', 'Monto120', (existing) => existing?.monto_120, (incoming) => incoming.monto120],
+    ['monto_180', 'Monto180', (existing) => existing?.monto_180, (incoming) => incoming.monto180],
+    ['ultima_fecha_compra', 'UltimaFecha', (existing) => existing?.ultima_fecha_compra, (incoming) => incoming.ultimaFechaCompra],
+    ['segmento', 'Segmento final', (existing) => existing?.segmento, (incoming) => incoming.segmento],
+    ['monto_acumulado', 'MontoAcumulado', (existing) => existing?.monto_acumulado, (incoming) => incoming.montoAcumulado],
+    ['marketing_opt_in_status', 'Autorizacion', (existing) => existing?.marketing_opt_in_status, (incoming) => incoming.marketingOptInStatus]
+];
+
+function diffCustomerFields(existing = {}, incoming = {}) {
+    return CUSTOMER_IMPORT_DIFF_FIELDS
+        .map(([field, label, getCurrent, getIncoming]) => {
+            const currentValue = getCurrent(existing);
+            const incomingValue = getIncoming(incoming);
+            if (normalizeDiffValue(currentValue) === normalizeDiffValue(incomingValue)) return null;
+            return {
+                field,
+                label,
+                current: currentValue ?? null,
+                incoming: incomingValue ?? null
+            };
+        })
+        .filter(Boolean);
+}
+
+function buildAddressSourcePayload(address = {}, isPrimary = false) {
+    return {
+        erp_address_id: address.addressErpId || null,
+        erp_id: address.erpId || null,
+        street: address.street || null,
+        reference: address.reference || null,
+        maps_url: address.mapsUrl || null,
+        wkt: address.wkt || null,
+        district_id: address.districtId || null,
+        is_primary: Boolean(isPrimary),
+        tipo_zona: address.tipoZona || null,
+        tipo_via: address.tipoVia || null
+    };
+}
+
+function calcAddressHash(address = {}, isPrimary = false) {
+    const row = buildAddressSourcePayload(address, isPrimary);
+    return createMd5Hash([
+        row.erp_address_id,
+        row.erp_id,
+        row.street,
+        row.reference,
+        row.maps_url,
+        row.wkt,
+        row.district_id,
+        row.is_primary,
+        row.tipo_zona,
+        row.tipo_via
+    ]);
+}
+
+function buildCustomerImportSample(entry = {}, category = '') {
+    const candidate = entry?.candidate || entry || {};
+    const existing = entry?.existing || entry?.match || null;
+    return {
+        category,
+        erp_id: candidate.erpId || null,
+        customer_id: String(existing?.customer_id || entry?.customerId || '').trim() || null,
+        nombre_completo: candidate.fullName || candidate.displayName || candidate.contactName || null,
+        telefono: candidate.phoneE164 || candidate.phoneAlt || null,
+        tipo_cliente: candidate.customerTypeId || null,
+        fuente: candidate.acquisitionSourceId || null,
+        changes: Array.isArray(entry?.changes) ? entry.changes : []
+    };
+}
+
+function buildLinkableCustomerSample(entry = {}) {
+    const candidate = entry?.candidate || {};
+    const match = entry?.match || {};
+    return {
+        category: 'linkable',
+        erp_id: candidate.erpId || null,
+        phone_e164: candidate.phoneE164 || candidate.phoneAlt || null,
+        erp: {
+            name: candidate.fullName || candidate.displayName || candidate.contactName || null,
+            erpId: candidate.erpId || null
+        },
+        system: {
+            name: match.contactName || match.contact_name || match.first_name || null,
+            customerId: match.customerId || match.customer_id || null
+        },
+        recommendedAction: 'link'
+    };
+}
+
+function normalizeLinkDecisions(value = []) {
+    let source = value;
+    if (typeof source === 'string') {
+        try {
+            source = JSON.parse(source);
+        } catch (_) {
+            source = [];
+        }
+    }
+    const map = new Map();
+    (Array.isArray(source) ? source : []).forEach((item = {}) => {
+        const erpId = normalizeImportTextUpper(item?.erpId || item?.erp_id || '');
+        const customerId = String(item?.customerId || item?.customer_id || '').trim();
+        const action = String(item?.action || '').trim().toLowerCase();
+        if (!erpId || !['link', 'skip', 'separate'].includes(action)) return;
+        map.set(erpId, { erpId, customerId, action });
+    });
+    return map;
 }
 
 function toPgSavepointName(value = 'sp') {
@@ -1575,6 +1820,7 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
     const direccionesRows = Array.isArray(payload?.direccionesRows) ? payload.direccionesRows : [];
     const moduleId = toText(payload?.moduleId || '');
     const mode = String(payload?.mode || 'preview').trim().toLowerCase() || 'preview';
+    const linkDecisionMap = normalizeLinkDecisions(payload?.linkDecisions || payload?.link_decisions || []);
     console.log('[ERP-IMPORT][SERVICE] start importId=%s mode=%s tenant=%s clientes=%s direcciones=%s', importId, mode, cleanTenantId, clientesRows.length, direccionesRows.length);
 
     setErpImportProgress(importId, {
@@ -1650,7 +1896,7 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
         .filter(Boolean);
     const existingPhonesResult = allPhones.length > 0
         ? await queryPostgres(
-            `SELECT phone_e164, erp_id, customer_id
+            `SELECT phone_e164, erp_id, customer_id, contact_name, first_name, last_name_paternal, last_name_maternal
              FROM tenant_customers
              WHERE tenant_id = $1 AND phone_e164 = ANY($2::text[])`,
             [cleanTenantId, allPhones]
@@ -1661,7 +1907,13 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
             String(row?.phone_e164 || '').trim(),
             {
                 erpId: String(row?.erp_id || '').trim() || null,
-                customerId: String(row?.customer_id || '').trim() || null
+                customerId: String(row?.customer_id || '').trim() || null,
+                customer_id: String(row?.customer_id || '').trim() || null,
+                contactName: String(row?.contact_name || '').trim() || null,
+                contact_name: String(row?.contact_name || '').trim() || null,
+                first_name: String(row?.first_name || '').trim() || null,
+                last_name_paternal: String(row?.last_name_paternal || '').trim() || null,
+                last_name_maternal: String(row?.last_name_maternal || '').trim() || null
             }
         ])
     );
@@ -1675,6 +1927,10 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
         const existingOwnerCustomerId = String(existingPhone?.customerId || '').trim() || null;
         const currentCustomerId = String(existingCustomer?.customer_id || '').trim() || null;
         if (existingOwnerCustomerId && currentCustomerId && existingOwnerCustomerId === currentCustomerId) {
+            return;
+        }
+        if (existingOwnerCustomerId && !existingPhone.erpId && candidate.erpId) {
+            candidate.linkableMatch = existingPhone;
             return;
         }
         const existingOwner = existingPhone.erpId || existingPhone.customerId || null;
@@ -1691,17 +1947,55 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
 
     const errors = candidates.flatMap((candidate) => candidate.errors || []);
     const validCandidates = candidates.filter((candidate) => (candidate.errors || []).length === 0 && candidate.erpId);
-    const inserts = validCandidates.filter((candidate) => !existingByErpId.has(candidate.erpId));
-    const updates = validCandidates.filter((candidate) => existingByErpId.has(candidate.erpId));
-    console.log('[ERP-IMPORT][SERVICE] validation done importId=%s valid=%s inserts=%s updates=%s errors=%s', importId, validCandidates.length, inserts.length, updates.length, errors.length);
+    const categorizedCustomers = {
+        new: [],
+        updated: [],
+        unchanged: [],
+        linkable: []
+    };
+
+    validCandidates.forEach((candidate) => {
+        const existing = existingByErpId.get(candidate.erpId) || null;
+        if (!existing && candidate.linkableMatch) {
+            categorizedCustomers.linkable.push({ candidate, match: candidate.linkableMatch });
+            return;
+        }
+        if (!existing) {
+            categorizedCustomers.new.push({ candidate });
+            return;
+        }
+        if (String(existing?.erp_row_hash || '').trim() && String(existing.erp_row_hash || '').trim() === candidate.erpRowHash) {
+            categorizedCustomers.unchanged.push({ candidate, existing, changes: [] });
+            return;
+        }
+        const changes = diffCustomerFields(existing, candidate);
+        if (!String(existing?.erp_row_hash || '').trim() && changes.length === 0) {
+            categorizedCustomers.unchanged.push({ candidate, existing, changes: [] });
+            return;
+        }
+        categorizedCustomers.updated.push({ candidate, existing, changes });
+    });
+
+    const inserts = categorizedCustomers.new.map((entry) => entry.candidate);
+    const updates = categorizedCustomers.updated.map((entry) => entry.candidate);
+    console.log(
+        '[ERP-IMPORT][SERVICE] validation done importId=%s valid=%s new=%s updated=%s unchanged=%s linkable=%s errors=%s',
+        importId,
+        validCandidates.length,
+        categorizedCustomers.new.length,
+        categorizedCustomers.updated.length,
+        categorizedCustomers.unchanged.length,
+        categorizedCustomers.linkable.length,
+        errors.length
+    );
 
     const importedCustomerMap = new Map();
     let consentSyncTargets = [];
     validCandidates.forEach((candidate) => {
-        const existing = existingByErpId.get(candidate.erpId) || null;
+        const existing = existingByErpId.get(candidate.erpId) || candidate.linkableMatch || null;
         importedCustomerMap.set(candidate.erpId, {
             ...candidate,
-            customerId: String(existing?.customer_id || '').trim() || null
+            customerId: String(existing?.customer_id || existing?.customerId || '').trim() || null
         });
     });
 
@@ -1710,10 +2004,54 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
         return buildErpAddressCandidate(row, importedCustomerMap.get(direccionErpId) || null);
     });
     const previewMatchedAddressCandidates = addressCandidatesAll.filter((address) => address.erpId && importedCustomerMap.has(address.erpId));
+    const addressErpIds = previewMatchedAddressCandidates
+        .map((address) => String(address?.addressErpId || '').trim())
+        .filter(Boolean);
+    const existingAddressRows = addressErpIds.length > 0
+        ? await queryPostgres(
+            `SELECT *
+             FROM tenant_customer_addresses
+             WHERE tenant_id = $1
+               AND erp_address_id = ANY($2::text[])`,
+            [cleanTenantId, addressErpIds]
+        )
+        : { rows: [] };
+    const existingAddressByErpId = new Map(
+        (existingAddressRows?.rows || []).map((row) => [String(row?.erp_address_id || '').trim(), row])
+    );
+    const addressDeltaSummary = { new: 0, updated: 0, unchanged: 0 };
+    previewMatchedAddressCandidates.forEach((address) => {
+        const existingAddress = existingAddressByErpId.get(String(address?.addressErpId || '').trim()) || null;
+        if (!existingAddress) {
+            addressDeltaSummary.new += 1;
+            return;
+        }
+        if (String(existingAddress?.erp_row_hash || '').trim() && String(existingAddress.erp_row_hash || '').trim() === address.erpRowHash) {
+            addressDeltaSummary.unchanged += 1;
+            return;
+        }
+        const currentSignature = buildAddressSignature({
+            street: existingAddress.street,
+            reference: existingAddress.reference,
+            mapsUrl: existingAddress.maps_url,
+            wkt: existingAddress.wkt,
+            districtId: existingAddress.district_id,
+            isPrimary: existingAddress.is_primary
+        });
+        const nextSignature = buildAddressSignature(address);
+        if (!String(existingAddress?.erp_row_hash || '').trim() && currentSignature === nextSignature) {
+            addressDeltaSummary.unchanged += 1;
+            return;
+        }
+        addressDeltaSummary.updated += 1;
+    });
     const addressSummary = {
         total: direccionesRows.length,
         matched: previewMatchedAddressCandidates.length,
-        unmatched: Math.max(0, direccionesRows.length - previewMatchedAddressCandidates.length)
+        unmatched: Math.max(0, direccionesRows.length - previewMatchedAddressCandidates.length),
+        new: addressDeltaSummary.new,
+        updated: addressDeltaSummary.updated,
+        unchanged: addressDeltaSummary.unchanged
     };
     console.log('[ERP-IMPORT][SERVICE] addresses prepared importId=%s matched=%s unmatched=%s', importId, addressSummary.matched, addressSummary.unmatched);
 
@@ -1726,8 +2064,10 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
         counts: {
             totalRows: total,
             validRows: validCandidates.length,
-            insertRows: inserts.length,
-            updateRows: updates.length,
+            insertRows: categorizedCustomers.new.length,
+            updateRows: categorizedCustomers.updated.length,
+            unchangedRows: categorizedCustomers.unchanged.length,
+            linkableRows: categorizedCustomers.linkable.length,
             errorRows: errors.length,
             addressTotal: addressSummary.total,
             addressMatched: addressSummary.matched,
@@ -1748,27 +2088,44 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
             summary: {
                 total,
                 valid: validCandidates.length,
-                updates: updates.length,
-                inserts: inserts.length,
+                updates: categorizedCustomers.updated.length,
+                inserts: categorizedCustomers.new.length,
+                new: categorizedCustomers.new.length,
+                updated: categorizedCustomers.updated.length,
+                unchanged: categorizedCustomers.unchanged.length,
+                linkable: categorizedCustomers.linkable.length,
                 errors: errors.length
             },
             errors,
             preview: validCandidates.slice(0, 5).map(buildAppSheetCustomerPreview),
+            samples: {
+                new: categorizedCustomers.new.slice(0, 3).map((entry) => buildCustomerImportSample(entry, 'new')),
+                updated: categorizedCustomers.updated.slice(0, 3).map((entry) => buildCustomerImportSample(entry, 'updated')),
+                unchanged: categorizedCustomers.unchanged.slice(0, 3).map((entry) => buildCustomerImportSample(entry, 'unchanged')),
+                linkable: categorizedCustomers.linkable.map(buildLinkableCustomerSample),
+                errors
+            },
             addressSummary
         };
     }
 
     const existingIdsRows = await queryPostgres('SELECT customer_id FROM tenant_customers WHERE tenant_id = $1', [cleanTenantId]);
     const existingIds = new Set((existingIdsRows?.rows || []).map((row) => String(row?.customer_id || '').trim().toUpperCase()).filter(Boolean));
-    const customerCounts = { inserted: 0, updated: 0, errors: errors.length };
-    const addressCounts = { inserted: 0, updated: 0, errors: 0, unmatched: addressSummary.unmatched };
+    const customerCounts = {
+        inserted: 0,
+        updated: 0,
+        linked: 0,
+        skipped: categorizedCustomers.unchanged.length,
+        errors: errors.length
+    };
+    const addressCounts = { inserted: 0, updated: 0, skipped: 0, errors: 0, unmatched: addressSummary.unmatched };
     const client = await pool.connect();
     const totalWorkUnits = Math.max(1, validCandidates.length + previewMatchedAddressCandidates.length);
     let transactionCommitted = false;
 
     function updateCommitProgress(phase = 'running', message = '') {
         const processedCustomers = customerCounts.inserted + customerCounts.updated;
-        const processedAddresses = addressCounts.inserted + addressCounts.updated;
+        const processedAddresses = addressCounts.inserted + addressCounts.updated + addressCounts.skipped;
         const processedUnits = processedCustomers + processedAddresses;
         const percent = Math.max(2, Math.min(99, Math.round((processedUnits / totalWorkUnits) * 100)));
         setErpImportProgress(importId, {
@@ -1778,18 +2135,23 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
             counts: {
                 totalRows: total,
                 validRows: validCandidates.length,
-                insertRows: inserts.length,
-                updateRows: updates.length,
+                insertRows: categorizedCustomers.new.length,
+                updateRows: categorizedCustomers.updated.length,
+                unchangedRows: categorizedCustomers.unchanged.length,
+                linkableRows: categorizedCustomers.linkable.length,
                 errorRows: errors.length,
                 addressTotal: addressSummary.total,
                 addressMatched: addressSummary.matched,
                 addressUnmatched: addressSummary.unmatched,
-                customersProcessed: processedCustomers,
+                customersProcessed: processedCustomers + customerCounts.linked + customerCounts.skipped,
                 customersInserted: customerCounts.inserted,
                 customersUpdated: customerCounts.updated,
+                customersLinked: customerCounts.linked,
+                customersSkipped: customerCounts.skipped,
                 addressesProcessed: processedAddresses,
                 addressesInserted: addressCounts.inserted,
-                addressesUpdated: addressCounts.updated
+                addressesUpdated: addressCounts.updated,
+                addressesSkipped: addressCounts.skipped
             },
             percent
         });
@@ -1804,16 +2166,48 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
 
         const insertCandidates = [];
         const updateCandidates = [];
-        for (const candidate of validCandidates) {
-            const existing = existingByErpId.get(candidate.erpId) || null;
-            if (existing) {
-                updateCandidates.push({ candidate, existing });
-                continue;
-            }
+        const linkCandidates = [];
+
+        for (const { candidate } of categorizedCustomers.new) {
             const customerId = createCustomerId(existingIds);
             existingIds.add(customerId);
             importedCustomerMap.set(candidate.erpId, { ...candidate, customerId });
             insertCandidates.push({ candidate, customerId });
+        }
+
+        categorizedCustomers.updated.forEach(({ candidate, existing }) => {
+            updateCandidates.push({ candidate, existing });
+            importedCustomerMap.set(candidate.erpId, { ...candidate, customerId: existing.customer_id });
+        });
+
+        categorizedCustomers.unchanged.forEach(({ candidate, existing }) => {
+            importedCustomerMap.set(candidate.erpId, { ...candidate, customerId: existing.customer_id });
+        });
+
+        for (const entry of categorizedCustomers.linkable) {
+            const candidate = entry.candidate;
+            const match = entry.match || {};
+            const decision = linkDecisionMap.get(candidate.erpId) || { action: 'skip' };
+            if (decision.action === 'link') {
+                const customerId = String(decision.customerId || match.customerId || match.customer_id || '').trim();
+                if (!customerId) {
+                    errors.push({ row: candidate.rowNumber, erp_id: candidate.erpId, field: 'link', message: 'Decision de vinculacion sin customerId.' });
+                    customerCounts.errors += 1;
+                    continue;
+                }
+                linkCandidates.push({ candidate, customerId });
+                importedCustomerMap.set(candidate.erpId, { ...candidate, customerId });
+                continue;
+            }
+            if (decision.action === 'separate') {
+                const customerId = createCustomerId(existingIds);
+                existingIds.add(customerId);
+                importedCustomerMap.set(candidate.erpId, { ...candidate, customerId });
+                insertCandidates.push({ candidate, customerId });
+                continue;
+            }
+            importedCustomerMap.delete(candidate.erpId);
+            customerCounts.skipped += 1;
         }
 
         let insertChunkIndex = 0;
@@ -1830,7 +2224,7 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                         const candidate = entry.candidate;
                         const profile = buildAppSheetCustomerProfile(candidate);
                         const metadata = buildAppSheetCustomerMetadata(candidate);
-                        const offset = index * 38;
+                        const offset = index * 41;
                         values.push(
                             cleanTenantId,
                             entry.customerId,
@@ -1870,9 +2264,12 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                             candidate.segmento,
                             candidate.realizoCompra,
                             candidate.cadenciaPromDias,
-                            candidate.rangoCompras
+                            candidate.rangoCompras,
+                            candidate.erpRowHash,
+                            importId,
+                            JSON.stringify(candidate.erpSourcePayload || {})
                         );
-                        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13}, $${offset + 14}, $${offset + 15}, $${offset + 16}, '[]'::jsonb, $${offset + 17}::jsonb, $${offset + 18}::jsonb, TRUE, NULL, $${offset + 19}, NOW(), $${offset + 20}, $${offset + 21}, $${offset + 22}, $${offset + 23}, NOW(), 'appsheet_import', $${offset + 24}, $${offset + 25}, $${offset + 26}::date, $${offset + 27}::date, $${offset + 28}, $${offset + 29}, $${offset + 30}, $${offset + 31}, $${offset + 32}, $${offset + 33}, $${offset + 34}, $${offset + 35}, $${offset + 36}, $${offset + 37}, $${offset + 38})`;
+                        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13}, $${offset + 14}, $${offset + 15}, $${offset + 16}, '[]'::jsonb, $${offset + 17}::jsonb, $${offset + 18}::jsonb, TRUE, NULL, $${offset + 19}, NOW(), $${offset + 20}, $${offset + 21}, $${offset + 22}, $${offset + 23}, NOW(), 'appsheet_import', $${offset + 24}, $${offset + 25}, $${offset + 26}::date, $${offset + 27}::date, $${offset + 28}, $${offset + 29}, $${offset + 30}, $${offset + 31}, $${offset + 32}, $${offset + 33}, $${offset + 34}, $${offset + 35}, $${offset + 36}, $${offset + 37}, $${offset + 38}, $${offset + 39}, NOW(), $${offset + 40}, $${offset + 41}::jsonb)`;
                     });
                     await client.query(
                         `INSERT INTO tenant_customers (
@@ -1883,7 +2280,8 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                             referral_customer_id, marketing_opt_in_status, marketing_opt_in_updated_at, marketing_opt_in_source,
                             dias_ultima_compra, ultimo_pedido_id, ultima_fecha_compra, primera_fecha_compra,
                             primer_pedido_id, compras_total, compras_120, monto_120, compras_180, monto_180,
-                            ticket_prom_180, monto_acumulado, segmento, realizo_compra, cadencia_prom_dias, rango_compras
+                            ticket_prom_180, monto_acumulado, segmento, realizo_compra, cadencia_prom_dias, rango_compras,
+                            erp_row_hash, erp_last_seen_at, erp_last_import_id, erp_source_payload
                         ) VALUES ${placeholders.join(', ')}`,
                         values
                     );
@@ -1904,7 +2302,8 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                                 referral_customer_id, marketing_opt_in_status, marketing_opt_in_updated_at, marketing_opt_in_source,
                                 dias_ultima_compra, ultimo_pedido_id, ultima_fecha_compra, primera_fecha_compra,
                                 primer_pedido_id, compras_total, compras_120, monto_120, compras_180, monto_180,
-                                ticket_prom_180, monto_acumulado, segmento, realizo_compra, cadencia_prom_dias, rango_compras
+                                ticket_prom_180, monto_acumulado, segmento, realizo_compra, cadencia_prom_dias, rango_compras,
+                                erp_row_hash, erp_last_seen_at, erp_last_import_id, erp_source_payload
                             ) VALUES (
                                 $1, $2, $3, $4, $5, $6, $7,
                                 $8, $9, $10, $11, $12,
@@ -1913,7 +2312,8 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                                 $22, $23, NOW(), 'appsheet_import',
                                 $24, $25, $26::date, $27::date,
                                 $28, $29, $30, $31, $32, $33,
-                                $34, $35, $36, $37, $38, $39
+                                $34, $35, $36, $37, $38, $39,
+                                $40, NOW(), $41, $42::jsonb
                             )`,
                             [
                                 cleanTenantId, entry.customerId, candidate.moduleId, candidate.contactName, candidate.phoneE164, candidate.phoneAlt, candidate.email,
@@ -1923,7 +2323,8 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                                 candidate.referralCustomerId, candidate.marketingOptInStatus, candidate.diasUltimaCompra, candidate.ultimoPedidoId,
                                 candidate.ultimaFechaCompra, candidate.primeraFechaCompra, candidate.primerPedidoId, candidate.comprasTotal, candidate.compras120,
                                 candidate.monto120, candidate.compras180, candidate.monto180, candidate.ticketProm180, candidate.montoAcumulado,
-                                candidate.segmento, candidate.realizoCompra, candidate.cadenciaPromDias, candidate.rangoCompras
+                                candidate.segmento, candidate.realizoCompra, candidate.cadenciaPromDias, candidate.rangoCompras,
+                                candidate.erpRowHash, importId, JSON.stringify(candidate.erpSourcePayload || {})
                             ]
                         );
                         customerCounts.inserted += 1;
@@ -1936,6 +2337,40 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                     updateCommitProgress('customers', `Procesando clientes ${customerCounts.inserted + customerCounts.updated} de ${validCandidates.length}.`);
                 }
             );
+        }
+
+        for (const chunk of chunkArray(linkCandidates, ERP_IMPORT_BATCH_SIZE)) {
+            throwIfErpImportCancelled(importId);
+            const values = [];
+            const placeholders = chunk.map(({ candidate, customerId }, index) => {
+                const offset = index * 5;
+                values.push(
+                    customerId,
+                    candidate.erpId,
+                    candidate.erpRowHash,
+                    importId,
+                    JSON.stringify(candidate.erpSourcePayload || {})
+                );
+                return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}::jsonb)`;
+            });
+            await client.query(
+                `UPDATE tenant_customers AS customers
+                 SET
+                    erp_id = payload.erp_id,
+                    erp_row_hash = payload.erp_row_hash,
+                    erp_last_seen_at = NOW(),
+                    erp_last_import_id = payload.erp_last_import_id,
+                    erp_source_payload = payload.erp_source_payload,
+                    updated_at = NOW()
+                 FROM (
+                    VALUES ${placeholders.join(', ')}
+                 ) AS payload(customer_id, erp_id, erp_row_hash, erp_last_import_id, erp_source_payload)
+                 WHERE customers.tenant_id = $${values.length + 1}
+                   AND customers.customer_id = payload.customer_id`,
+                [...values, cleanTenantId]
+            );
+            customerCounts.linked += chunk.length;
+            updateCommitProgress('customers', `Vinculando clientes ${customerCounts.linked} de ${linkCandidates.length}.`);
         }
 
         const contextRows = [
@@ -2013,7 +2448,7 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                 async (entries) => {
                     const values = [];
                     const placeholders = entries.map(({ candidate, existing }, index) => {
-                        const offset = index * 39;
+                        const offset = index * 42;
                         const profile = buildAppSheetCustomerProfile(candidate);
                         const metadata = buildAppSheetCustomerMetadata(candidate);
                         values.push(
@@ -2055,7 +2490,10 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                             candidate.rangoCompras,
                             candidate.marketingOptInStatus,
                             nowIso(),
-                            'appsheet_import'
+                            'appsheet_import',
+                            candidate.erpRowHash,
+                            importId,
+                            JSON.stringify(candidate.erpSourcePayload || {})
                         );
                         return `(
                             $${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8},
@@ -2063,7 +2501,8 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                             $${offset + 16}::jsonb, $${offset + 17}::jsonb, $${offset + 18}, $${offset + 19}, $${offset + 20}, $${offset + 21},
                             $${offset + 22}, $${offset + 23}::date, $${offset + 24}::date, $${offset + 25}, $${offset + 26}, $${offset + 27},
                             $${offset + 28}, $${offset + 29}, $${offset + 30}, $${offset + 31}, $${offset + 32}, $${offset + 33}, $${offset + 34},
-                            $${offset + 35}, $${offset + 36}, $${offset + 37}, $${offset + 38}::timestamptz, $${offset + 39}
+                            $${offset + 35}, $${offset + 36}, $${offset + 37}, $${offset + 38}::timestamptz, $${offset + 39},
+                            $${offset + 40}, NOW(), $${offset + 41}, $${offset + 42}::jsonb
                         )`;
                     });
                     await client.query(
@@ -2107,6 +2546,10 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                             marketing_opt_in_status = payload.marketing_opt_in_status,
                             marketing_opt_in_updated_at = payload.marketing_opt_in_updated_at,
                             marketing_opt_in_source = payload.marketing_opt_in_source,
+                            erp_row_hash = payload.erp_row_hash,
+                            erp_last_seen_at = payload.erp_last_seen_at,
+                            erp_last_import_id = payload.erp_last_import_id,
+                            erp_source_payload = payload.erp_source_payload,
                             is_active = TRUE,
                             updated_at = NOW()
                          FROM (
@@ -2118,7 +2561,8 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                             dias_ultima_compra, ultimo_pedido_id, ultima_fecha_compra, primera_fecha_compra, primer_pedido_id,
                             compras_total, compras_120, monto_120, compras_180, monto_180, ticket_prom_180, monto_acumulado,
                             segmento, realizo_compra, cadencia_prom_dias, rango_compras,
-                            marketing_opt_in_status, marketing_opt_in_updated_at, marketing_opt_in_source
+                            marketing_opt_in_status, marketing_opt_in_updated_at, marketing_opt_in_source,
+                            erp_row_hash, erp_last_seen_at, erp_last_import_id, erp_source_payload
                          )
                          WHERE customers.tenant_id = $${values.length + 1}
                            AND customers.customer_id = payload.customer_id`,
@@ -2175,6 +2619,10 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                                 marketing_opt_in_status = $38,
                                 marketing_opt_in_updated_at = $39::timestamptz,
                                 marketing_opt_in_source = $40,
+                                erp_row_hash = $41,
+                                erp_last_seen_at = NOW(),
+                                erp_last_import_id = $42,
+                                erp_source_payload = $43::jsonb,
                                 is_active = TRUE,
                                 updated_at = NOW()
                              WHERE tenant_id = $1 AND customer_id = $2`,
@@ -2186,7 +2634,8 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                                 candidate.ultimoPedidoId, candidate.ultimaFechaCompra, candidate.primeraFechaCompra, candidate.primerPedidoId, candidate.comprasTotal,
                                 candidate.compras120, candidate.monto120, candidate.compras180, candidate.monto180, candidate.ticketProm180,
                                 candidate.montoAcumulado, candidate.segmento, candidate.realizoCompra, candidate.cadenciaPromDias, candidate.rangoCompras,
-                                candidate.marketingOptInStatus, nowIso(), 'appsheet_import'
+                                candidate.marketingOptInStatus, nowIso(), 'appsheet_import',
+                                candidate.erpRowHash, importId, JSON.stringify(candidate.erpSourcePayload || {})
                             ]
                         );
                         importedCustomerMap.set(candidate.erpId, { ...candidate, customerId: existing.customer_id });
@@ -2253,18 +2702,30 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                 };
                 const addressMetadata = {
                     erpImport: {
+                        erpAddressId: address.addressErpId,
                         tipoZona: address.tipoZona,
                         tipoVia: address.tipoVia
                     }
                 };
+                const incomingAddressHash = calcAddressHash({
+                    ...address,
+                    street: normalizedFields.street,
+                    reference: normalizedFields.reference,
+                    mapsUrl: normalizedFields.maps_url,
+                    wkt: normalizedFields.wkt,
+                    districtId: normalizedFields.district_id
+                }, effectiveIsPrimary);
                 const addressSignature = buildAddressSignature({
                     ...address,
                     ...normalizedFields,
                     isPrimary: effectiveIsPrimary
                 });
                 let target = null;
+                if (address.addressErpId) {
+                    target = existingAddresses.find((entry) => String(entry.erp_address_id || '').trim() === address.addressErpId) || null;
+                }
                 if (effectiveIsPrimary) {
-                    target = existingAddresses.find((entry) => entry.is_primary === true) || null;
+                    target = target || existingAddresses.find((entry) => entry.is_primary === true) || null;
                 }
                 if (!target) {
                     target = existingAddresses.find((entry) => buildAddressSignature({
@@ -2278,12 +2739,27 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                 }
 
                 if (target) {
+                    const currentHash = String(target?.erp_row_hash || '').trim();
+                    const currentSignature = buildAddressSignature({
+                        street: target.street,
+                        reference: target.reference,
+                        mapsUrl: target.maps_url,
+                        wkt: target.wkt,
+                        districtId: target.district_id,
+                        isPrimary: target.is_primary
+                    });
+                    if ((currentHash && currentHash === incomingAddressHash) || (!currentHash && currentSignature === addressSignature)) {
+                        addressCounts.skipped += 1;
+                        continue;
+                    }
                     addressUpdates.push({
                         address,
                         target,
                         normalizedFields,
                         addressMetadata,
-                        isPrimary: effectiveIsPrimary
+                        isPrimary: effectiveIsPrimary,
+                        erpAddressId: address.addressErpId,
+                        erpRowHash: incomingAddressHash
                     });
                 } else {
                     if (effectiveIsPrimary) primaryInsertCustomerIds.add(address.customerId);
@@ -2293,7 +2769,9 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                         addressType: effectiveIsPrimary ? 'delivery' : 'other',
                         normalizedFields,
                         addressMetadata,
-                        isPrimary: effectiveIsPrimary
+                        isPrimary: effectiveIsPrimary,
+                        erpAddressId: address.addressErpId,
+                        erpRowHash: incomingAddressHash
                     });
                 }
             }
@@ -2321,7 +2799,7 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                     async (entries) => {
                         const values = [];
                         const placeholders = entries.map((entry, index) => {
-                            const offset = index * 11;
+                            const offset = index * 13;
                             values.push(
                                 entry.addressId,
                                 cleanTenantId,
@@ -2333,19 +2811,21 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                                 entry.normalizedFields.wkt,
                                 entry.isPrimary,
                                 entry.normalizedFields.district_id,
-                                JSON.stringify(entry.addressMetadata)
+                                JSON.stringify(entry.addressMetadata),
+                                entry.erpAddressId,
+                                entry.erpRowHash
                             );
                             return `(
                                 $${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8},
                                 NULL, NULL, $${offset + 9}, $${offset + 10}, NULL, NULL, NULL,
-                                $${offset + 11}::jsonb, NOW(), NOW()
+                                $${offset + 11}::jsonb, NOW(), NOW(), $${offset + 12}, $${offset + 13}
                             )`;
                         });
                         await client.query(
                             `INSERT INTO tenant_customer_addresses (
                                 address_id, tenant_id, customer_id, address_type, street, reference, maps_url, wkt,
                                 latitude, longitude, is_primary, district_id, district_name, province_name, department_name,
-                                metadata, created_at, updated_at
+                                metadata, created_at, updated_at, erp_address_id, erp_row_hash
                             ) VALUES ${placeholders.join(', ')}`,
                             values
                         );
@@ -2358,11 +2838,11 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                                 `INSERT INTO tenant_customer_addresses (
                                     address_id, tenant_id, customer_id, address_type, street, reference, maps_url, wkt,
                                     latitude, longitude, is_primary, district_id, district_name, province_name, department_name,
-                                    metadata, created_at, updated_at
+                                    metadata, created_at, updated_at, erp_address_id, erp_row_hash
                                 ) VALUES (
                                     $1, $2, $3, $4, $5, $6, $7, $8,
                                     NULL, NULL, $9, $10, NULL, NULL, NULL,
-                                    $11::jsonb, NOW(), NOW()
+                                    $11::jsonb, NOW(), NOW(), $12, $13
                                 )`,
                                 [
                                     entry.addressId,
@@ -2375,7 +2855,9 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                                     entry.normalizedFields.wkt,
                                     entry.isPrimary,
                                     entry.normalizedFields.district_id,
-                                    JSON.stringify(entry.addressMetadata)
+                                    JSON.stringify(entry.addressMetadata),
+                                    entry.erpAddressId,
+                                    entry.erpRowHash
                                 ]
                             );
                             addressCounts.inserted += 1;
@@ -2419,6 +2901,8 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                                     is_primary = $9,
                                     district_id = $10,
                                     metadata = COALESCE(metadata, '{}'::jsonb) || $11::jsonb,
+                                    erp_address_id = $12,
+                                    erp_row_hash = $13,
                                     updated_at = NOW()
                                  WHERE tenant_id = $1 AND customer_id = $2 AND address_id = $3`,
                                 [
@@ -2432,7 +2916,9 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                                     entry.normalizedFields.wkt,
                                     entry.isPrimary,
                                     entry.normalizedFields.district_id,
-                                    JSON.stringify(entry.addressMetadata)
+                                    JSON.stringify(entry.addressMetadata),
+                                    entry.erpAddressId,
+                                    entry.erpRowHash
                                 ]
                             );
                             addressCounts.updated += 1;
@@ -2460,6 +2946,8 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                                     is_primary = $9,
                                     district_id = $10,
                                     metadata = COALESCE(metadata, '{}'::jsonb) || $11::jsonb,
+                                    erp_address_id = $12,
+                                    erp_row_hash = $13,
                                     updated_at = NOW()
                                  WHERE tenant_id = $1 AND customer_id = $2 AND address_id = $3`,
                                 [
@@ -2473,7 +2961,9 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
                                     entry.normalizedFields.wkt,
                                     entry.isPrimary,
                                     entry.normalizedFields.district_id,
-                                    JSON.stringify(entry.addressMetadata)
+                                    JSON.stringify(entry.addressMetadata),
+                                    entry.erpAddressId,
+                                    entry.erpRowHash
                                 ]
                             );
                             addressCounts.updated += 1;
@@ -2521,18 +3011,23 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
             counts: {
                 totalRows: total,
                 validRows: validCandidates.length,
-                insertRows: inserts.length,
-                updateRows: updates.length,
+                insertRows: categorizedCustomers.new.length,
+                updateRows: categorizedCustomers.updated.length,
+                unchangedRows: categorizedCustomers.unchanged.length,
+                linkableRows: categorizedCustomers.linkable.length,
                 errorRows: errors.length,
                 addressTotal: addressSummary.total,
                 addressMatched: addressSummary.matched,
                 addressUnmatched: addressSummary.unmatched,
-                customersProcessed: customerCounts.inserted + customerCounts.updated,
+                customersProcessed: customerCounts.inserted + customerCounts.updated + customerCounts.linked + customerCounts.skipped,
                 customersInserted: customerCounts.inserted,
                 customersUpdated: customerCounts.updated,
-                addressesProcessed: addressCounts.inserted + addressCounts.updated,
+                customersLinked: customerCounts.linked,
+                customersSkipped: customerCounts.skipped,
+                addressesProcessed: addressCounts.inserted + addressCounts.updated + addressCounts.skipped,
                 addressesInserted: addressCounts.inserted,
                 addressesUpdated: addressCounts.updated,
+                addressesSkipped: addressCounts.skipped,
                 consentsSynced: consentSyncTargets.length
             },
             percent: 100
@@ -2554,18 +3049,23 @@ async function importCustomersFromAppSheet(tenantId = DEFAULT_TENANT_ID, payload
             counts: {
                 totalRows: total,
                 validRows: validCandidates.length,
-                insertRows: inserts.length,
-                updateRows: updates.length,
+                insertRows: categorizedCustomers.new.length,
+                updateRows: categorizedCustomers.updated.length,
+                unchangedRows: categorizedCustomers.unchanged.length,
+                linkableRows: categorizedCustomers.linkable.length,
                 errorRows: errors.length,
                 addressTotal: addressSummary.total,
                 addressMatched: addressSummary.matched,
                 addressUnmatched: addressSummary.unmatched,
-                customersProcessed: customerCounts.inserted + customerCounts.updated,
+                customersProcessed: customerCounts.inserted + customerCounts.updated + customerCounts.linked + customerCounts.skipped,
                 customersInserted: customerCounts.inserted,
                 customersUpdated: customerCounts.updated,
-                addressesProcessed: addressCounts.inserted + addressCounts.updated,
+                customersLinked: customerCounts.linked,
+                customersSkipped: customerCounts.skipped,
+                addressesProcessed: addressCounts.inserted + addressCounts.updated + addressCounts.skipped,
                 addressesInserted: addressCounts.inserted,
-                addressesUpdated: addressCounts.updated
+                addressesUpdated: addressCounts.updated,
+                addressesSkipped: addressCounts.skipped
             }
         });
         throw error;

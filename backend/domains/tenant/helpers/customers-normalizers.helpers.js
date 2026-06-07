@@ -412,17 +412,30 @@ function parseCsvRows(raw = '', delimiterHint = '') {
 
 function mapCsvRow(headers = [], row = [], moduleId = '') {
     const map = {
+        codigodecliente: 'customerId',
         idcliente: 'customerId',
+        cliente: 'contactName',
         contacto: 'contactName',
         telefono: 'phoneE164',
         telefono2: 'phoneAlt',
         correoelectronico: 'email',
+        email: 'email',
         tags: 'tags',
         nombres: 'firstNames',
+        nombredepila: 'firstNames',
+        tratamiento: 'treatment',
         apellidopaterno: 'lastNamePaternal',
+        apellidopaternoorazonsocial: 'lastNamePaternal',
         apellidomaterno: 'lastNameMaternal',
         numerodocumentoidentidad: 'documentNumber',
+        ndedocumento: 'documentNumber',
         idtipocliente: 'customerTypeId',
+        tipodecliente: 'customerTypeId',
+        fuente: 'source',
+        responsable: 'erpEmployeeId',
+        ubigeo: 'ubigeo',
+        pluscode: 'plusCode',
+        ubicacion: 'locationLabel',
         observacioncliente: 'notes',
         autorizacion: 'marketingAuthorization'
     };

@@ -338,12 +338,21 @@ function registerTenantCustomerHttpRoutes({
                 console.log('[ERP-IMPORT][HTTP] parsed direcciones rows=%s importId=%s', direccionesRows.length, importId);
 
                 console.log('[ERP-IMPORT][HTTP] invoking service importId=%s mode=%s', importId, mode);
+                let linkDecisions = [];
+                if (req.body?.linkDecisions) {
+                    try {
+                        linkDecisions = JSON.parse(String(req.body.linkDecisions || '[]'));
+                    } catch (_) {
+                        linkDecisions = [];
+                    }
+                }
                 const result = await customerService.importCustomersFromAppSheet(tenantId, {
                     importId,
                     clientesRows,
                     direccionesRows,
                     moduleId: String(req.body?.moduleId || '').trim(),
-                    mode
+                    mode,
+                    linkDecisions
                 });
                 console.log('[ERP-IMPORT][HTTP] service completed importId=%s mode=%s', importId, mode);
                 if (mode === 'commit') {
