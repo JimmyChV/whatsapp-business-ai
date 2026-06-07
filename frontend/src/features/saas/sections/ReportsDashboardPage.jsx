@@ -6,7 +6,7 @@ const EMPTY_REPORTS = {
     kpis: null,
     funnel: null,
     equipo: [],
-    origenes: { porFuente: [], porAnuncioMeta: [] },
+    origenes: { porFuente: [], porAnuncioMeta: [], porCampaniaMeta: [] },
     campanas: [],
     actividadDiaria: [],
     horarios: { dentroHorario: 0, fueraHorario: 0, porHora: [], porDiaSemana: [] }
@@ -29,6 +29,10 @@ const KPI_DEFS = [
     { key: 'pedidosVendidos', label: 'Vendidos', type: 'integer', improve: 'up' },
     { key: 'tasaConversion', label: 'Tasa conversion', type: 'percent', improve: 'up' },
     { key: 'ticketPromedio', label: 'Ticket promedio', type: 'currency', improve: 'up' },
+    { key: 'inversionMeta', label: 'Inversion Meta', type: 'currency', improve: 'down' },
+    { key: 'roasMeta', label: 'ROAS Meta', type: 'ratio', improve: 'up' },
+    { key: 'roiMeta', label: 'ROI neto', type: 'percent', improve: 'up' },
+    { key: 'costoPorPedido', label: 'Costo por pedido', type: 'currency', improve: 'down' },
     { key: 'mensajesEnviados', label: 'Mensajes enviados', type: 'integer', improve: 'up' },
     { key: 'chatsActivos', label: 'Chats activos', type: 'integer', improve: 'up' },
     { key: 'revenueEstimado', label: 'Revenue por pedidos', type: 'currency', improve: 'up' }
@@ -94,6 +98,7 @@ const formatDateRangeLabel = (from = '', to = '') => `${formatDateShort(from)} -
 const formatKpiValue = (value, type = 'integer') => {
     if (type === 'currency') return formatCurrency(value);
     if (type === 'percent') return percent(value, 1);
+    if (type === 'ratio') return `${number(value).toFixed(2)}x`;
     if (type === 'minutes') return `${number(value).toFixed(number(value) >= 10 ? 0 : 1)} min`;
     return formatInt(value);
 };
@@ -233,6 +238,7 @@ function buildReportExportTables({
     temporalRows = [],
     sourceRows = [],
     metaAdRows = [],
+    metaCampaignRows = [],
     campaignRows = [],
     userLabel = '',
     moduleLabel = ''
@@ -323,13 +329,16 @@ function buildReportExportTables({
                 { key: 'source', label: 'Tipo' },
                 { key: 'total', label: 'Chats' },
                 { key: 'cotizaciones', label: 'Cotizaciones' },
-                { key: 'ventas', label: 'Pedidos' },
+                { key: 'pedidos', label: 'Pedidos' },
+                { key: 'revenue', label: 'Revenue' },
                 { key: 'conversion', label: 'Conversion' }
             ],
             rows: toArray(sourceRows).map((row) => ({
                 ...row,
                 label: row.label || row.source,
-                conversion: number(row.total) > 0 ? percent((number(row.ventas) / number(row.total)) * 100, 1) : '0.0%'
+                pedidos: row.pedidos ?? row.ventas,
+                revenue: formatCurrency(row.revenue),
+                conversion: number(row.total) > 0 ? percent((number(row.pedidos ?? row.ventas) / number(row.total)) * 100, 1) : '0.0%'
             }))
         },
         {
@@ -337,16 +346,48 @@ function buildReportExportTables({
             columns: [
                 { key: 'adName', label: 'Anuncio' },
                 { key: 'campaignName', label: 'Campana' },
+                { key: 'adsetName', label: 'Conjunto' },
                 { key: 'chats', label: 'Chats' },
                 { key: 'cotizaciones', label: 'Cotizaciones' },
-                { key: 'ventas', label: 'Pedidos' },
+                { key: 'pedidos', label: 'Pedidos' },
+                { key: 'revenue', label: 'Revenue' },
                 { key: 'inversion', label: 'Inversion' },
-                { key: 'costoPerChat', label: 'Costo por chat' }
+                { key: 'costoPerChat', label: 'Costo por chat' },
+                { key: 'costoPerPedido', label: 'Costo por pedido' },
+                { key: 'roas', label: 'ROAS' },
+                { key: 'roi', label: 'ROI neto' }
             ],
             rows: toArray(metaAdRows).map((row) => ({
                 ...row,
+                pedidos: row.pedidos ?? row.ventas,
+                revenue: formatCurrency(row.revenue),
                 inversion: formatCurrency(row.inversion),
-                costoPerChat: formatCurrency(row.costoPerChat)
+                costoPerChat: formatCurrency(row.costoPerChat),
+                costoPerPedido: formatCurrency(row.costoPerPedido),
+                roas: `${number(row.roas).toFixed(2)}x`,
+                roi: percent(row.roi, 1)
+            }))
+        },
+        {
+            title: 'Campanas Meta',
+            columns: [
+                { key: 'campaignName', label: 'Campana' },
+                { key: 'ads', label: 'Anuncios' },
+                { key: 'chats', label: 'Chats' },
+                { key: 'pedidos', label: 'Pedidos' },
+                { key: 'revenue', label: 'Revenue' },
+                { key: 'inversion', label: 'Inversion' },
+                { key: 'costoPerPedido', label: 'Costo por pedido' },
+                { key: 'roas', label: 'ROAS' },
+                { key: 'roi', label: 'ROI neto' }
+            ],
+            rows: toArray(metaCampaignRows).map((row) => ({
+                ...row,
+                revenue: formatCurrency(row.revenue),
+                inversion: formatCurrency(row.inversion),
+                costoPerPedido: formatCurrency(row.costoPerPedido),
+                roas: `${number(row.roas).toFixed(2)}x`,
+                roi: percent(row.roi, 1)
             }))
         },
         {
@@ -943,6 +984,7 @@ export default function ReportsDashboardPage(props = {}) {
     const sourceRows = toArray(reports.origenes?.porFuente);
     const allMetaAdRows = toArray(reports.origenes?.porAnuncioMeta);
     const metaAdRows = allMetaAdRows.slice(0, 5);
+    const metaCampaignRows = toArray(reports.origenes?.porCampaniaMeta);
     const campaignRows = toArray(reports.campanas);
     const hourRows = toArray(reports.horarios?.porHora).map((row) => ({ label: `${row.hora}`, value: row.mensajes }));
     const dayRows = toArray(reports.horarios?.porDiaSemana).map((row) => ({ label: row.dia, value: row.mensajes }));
@@ -959,6 +1001,7 @@ export default function ReportsDashboardPage(props = {}) {
                 temporalRows,
                 sourceRows,
                 metaAdRows: allMetaAdRows,
+                metaCampaignRows,
                 campaignRows,
                 userLabel: selectedUserLabel,
                 moduleLabel: selectedModuleLabel
@@ -1083,30 +1126,33 @@ export default function ReportsDashboardPage(props = {}) {
                     <ReportCard title="Fuentes y anuncios Meta" subtitle="Tabla de conversion y top anuncios.">
                         <div className="saas-reports-table-wrap">
                             <table className="saas-reports-table">
-                                <thead><tr><th>Fuente</th><th>Chats</th><th>Cotiz.</th><th>Pedidos</th><th>Conversion</th></tr></thead>
+                                <thead><tr><th>Fuente</th><th>Chats</th><th>Cotiz.</th><th>Pedidos</th><th>Revenue</th><th>Conversion</th></tr></thead>
                                 <tbody>
                                     {sourceRows.length ? sourceRows.map((row) => {
-                                        const conversion = number(row.total) > 0 ? (number(row.ventas) / number(row.total)) * 100 : 0;
+                                        const pedidos = number(row.pedidos ?? row.ventas);
+                                        const conversion = number(row.total) > 0 ? (pedidos / number(row.total)) * 100 : 0;
                                         return (
                                             <tr key={`${row.source}_${row.label}`}>
                                                 <td><strong>{row.label || row.source}</strong><span>{row.source}</span></td>
                                                 <td>{formatInt(row.total)}</td>
                                                 <td>{formatInt(row.cotizaciones)}</td>
-                                                <td>{formatInt(row.ventas)}</td>
+                                                <td>{formatInt(pedidos)}</td>
+                                                <td>{formatCurrency(row.revenue)}</td>
                                                 <td>{percent(conversion, 1)}</td>
                                             </tr>
                                         );
-                                    }) : <tr><td colSpan={5}><EmptyState /></td></tr>}
+                                    }) : <tr><td colSpan={6}><EmptyState /></td></tr>}
                                 </tbody>
                             </table>
                         </div>
                         {metaAdRows.length ? (
                             <div className="saas-reports-top-ads">
-                                <h4 className="saas-reports-subtitle">Top 5 anuncios por chats</h4>
+                                <h4 className="saas-reports-subtitle">Top 5 anuncios por pedidos y revenue</h4>
                                 {metaAdRows.map((row) => (
                                     <div key={row.adId} className="saas-reports-ad-row">
                                         <strong>{row.adName || row.adId}</strong>
                                         <span>{row.campaignName || 'Sin campana'}</span>
+                                        <em>{formatInt(row.pedidos ?? row.ventas)} pedidos · {formatCurrency(row.revenue)} revenue · {number(row.roas).toFixed(2)}x ROAS</em>
                                         <em>{formatInt(row.chats)} chats · {formatCurrency(row.inversion)} · {formatCurrency(row.costoPerChat)}/chat</em>
                                     </div>
                                 ))}
@@ -1114,6 +1160,97 @@ export default function ReportsDashboardPage(props = {}) {
                         ) : null}
                     </ReportCard>
                 </div>
+
+                {metaCampaignRows.length ? (
+                    <ReportCard title="Campanas Meta: retorno acumulado" subtitle="Detalle por campana para entender inversion, pedidos y ganancia estimada.">
+                        <div className="saas-reports-table-wrap">
+                            <table className="saas-reports-table saas-reports-table--wide">
+                                <thead>
+                                    <tr>
+                                        <th>Campana</th>
+                                        <th>Anuncios</th>
+                                        <th>Chats</th>
+                                        <th>Pedidos</th>
+                                        <th>Revenue</th>
+                                        <th>Inversion</th>
+                                        <th>Costo/pedido</th>
+                                        <th>ROAS</th>
+                                        <th>ROI neto</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {metaCampaignRows.map((row) => (
+                                        <tr key={row.campaignId || row.campaignName}>
+                                            <td><strong>{row.campaignName || 'Sin campana'}</strong><span>{row.campaignId}</span></td>
+                                            <td>{formatInt(row.ads)}</td>
+                                            <td>{formatInt(row.chats)}</td>
+                                            <td>{formatInt(row.pedidos)}</td>
+                                            <td>{formatCurrency(row.revenue)}</td>
+                                            <td>{formatCurrency(row.inversion)}</td>
+                                            <td>{formatCurrency(row.costoPerPedido)}</td>
+                                            <td>{number(row.roas).toFixed(2)}x</td>
+                                            <td>{percent(row.roi, 1)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </ReportCard>
+                ) : null}
+
+                <ReportCard title="Anuncios Meta: pedidos directos y costo" subtitle="Cada pedido queda asociado al anuncio del chat de origen cuando existe referral Meta.">
+                    <div className="saas-reports-table-wrap">
+                        <table className="saas-reports-table saas-reports-table--wide">
+                            <thead>
+                                <tr>
+                                    <th>Anuncio</th>
+                                    <th>Campana / conjunto</th>
+                                    <th>Chats</th>
+                                    <th>Cotiz.</th>
+                                    <th>Pedidos</th>
+                                    <th>Pedidos asociados</th>
+                                    <th>Revenue</th>
+                                    <th>Inversion</th>
+                                    <th>Costo/chat</th>
+                                    <th>Costo/pedido</th>
+                                    <th>ROAS</th>
+                                    <th>ROI neto</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {allMetaAdRows.length ? allMetaAdRows.map((row) => {
+                                    const orders = toArray(row.orders).slice(0, 4);
+                                    return (
+                                        <tr key={row.adId}>
+                                            <td><strong>{row.adName || row.adId}</strong><span>{row.status || row.adId}</span></td>
+                                            <td><strong>{row.campaignName || 'Sin campana'}</strong><span>{row.adsetName || 'Sin conjunto'}</span></td>
+                                            <td>{formatInt(row.chats)}</td>
+                                            <td>{formatInt(row.cotizaciones)}</td>
+                                            <td>{formatInt(row.pedidos ?? row.ventas)}</td>
+                                            <td>
+                                                {orders.length ? (
+                                                    <div className="saas-reports-order-list">
+                                                        {orders.map((order) => (
+                                                            <span key={order.orderId}>
+                                                                {order.orderId} · {formatCurrency(order.total)}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                ) : <span>Sin pedidos</span>}
+                                            </td>
+                                            <td>{formatCurrency(row.revenue)}</td>
+                                            <td>{formatCurrency(row.inversion)}</td>
+                                            <td>{formatCurrency(row.costoPerChat)}</td>
+                                            <td>{formatCurrency(row.costoPerPedido)}</td>
+                                            <td>{number(row.roas).toFixed(2)}x</td>
+                                            <td>{percent(row.roi, 1)}</td>
+                                        </tr>
+                                    );
+                                }) : <tr><td colSpan={12}><EmptyState text="Sin anuncios Meta en este periodo." /></td></tr>}
+                            </tbody>
+                        </table>
+                    </div>
+                </ReportCard>
 
                 <ReportCard title="Actividad temporal" subtitle="Chats, mensajes, cotizaciones y pedidos a lo largo del periodo.">
                     <div className="saas-reports-chart-toggle" role="group" aria-label="Agrupar por">

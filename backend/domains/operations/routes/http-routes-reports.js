@@ -442,7 +442,11 @@ function mapKpis(row = {}) {
         mensajesRecibidos: toNumber(row.mensajes_recibidos),
         tiempoRespuestaPromedio: roundNumber(row.tiempo_respuesta_promedio),
         chatsActivos: toNumber(row.chats_activos),
-        tasaConversion: roundNumber(row.tasa_conversion)
+        tasaConversion: roundNumber(row.tasa_conversion),
+        inversionMeta: roundNumber(row.inversion_meta),
+        roasMeta: roundNumber(row.roas_meta),
+        roiMeta: roundNumber(row.roi_meta),
+        costoPorPedido: roundNumber(row.costo_por_pedido)
     };
 }
 
@@ -458,11 +462,15 @@ WITH period_days AS (
 periods AS (
     SELECT
         'current'::text AS label,
+        $2::date AS date_from,
+        $3::date AS date_to,
         ($2::date::timestamp AT TIME ZONE '${REPORT_TIME_ZONE}') AS starts_at,
         (($3::date + 1)::timestamp AT TIME ZONE '${REPORT_TIME_ZONE}') AS ends_at
     UNION ALL
     SELECT
         'previous'::text AS label,
+        ($2::date - (SELECT days FROM period_days))::date AS date_from,
+        ($2::date - 1)::date AS date_to,
         (($2::date - (SELECT days FROM period_days))::timestamp AT TIME ZONE '${REPORT_TIME_ZONE}') AS starts_at,
         ($2::date::timestamp AT TIME ZONE '${REPORT_TIME_ZONE}') AS ends_at
 ),
@@ -612,6 +620,14 @@ kpis AS (
               ) order_totals
         ) AS revenue_estimado,
         (
+            SELECT COALESCE(SUM(COALESCE(i.spend, 0)), 0)
+              FROM tenant_meta_ads_insights i
+             WHERE i.tenant_id = $1
+               AND i.object_type = 'ad'
+               AND i.date_start >= p.date_from
+               AND i.date_stop <= p.date_to
+        ) AS inversion_meta,
+        (
             SELECT COUNT(*)
               FROM tenant_messages m
               JOIN scoped_chats sc ON sc.chat_id = m.chat_id
@@ -666,6 +682,19 @@ SELECT
     clientes_con_pedido,
     COALESCE(ticket_promedio, 0) AS ticket_promedio,
     COALESCE(revenue_estimado, 0) AS revenue_estimado,
+    COALESCE(inversion_meta, 0) AS inversion_meta,
+    CASE WHEN COALESCE(inversion_meta, 0) > 0
+        THEN ROUND((COALESCE(revenue_estimado, 0)::numeric / inversion_meta::numeric), 2)
+        ELSE 0
+    END AS roas_meta,
+    CASE WHEN COALESCE(inversion_meta, 0) > 0
+        THEN ROUND(((COALESCE(revenue_estimado, 0)::numeric - inversion_meta::numeric) / inversion_meta::numeric) * 100, 2)
+        ELSE 0
+    END AS roi_meta,
+    CASE WHEN pedidos_confirmados > 0
+        THEN ROUND((COALESCE(inversion_meta, 0)::numeric / pedidos_confirmados::numeric), 2)
+        ELSE 0
+    END AS costo_por_pedido,
     mensajes_enviados,
     mensajes_recibidos,
     COALESCE(tiempo_respuesta_promedio, 0) AS tiempo_respuesta_promedio,
@@ -956,11 +985,75 @@ origins AS (
     SELECT o.*
       FROM tenant_chat_origins o
       JOIN scoped_chats sc ON sc.chat_id = o.chat_id
-      CROSS JOIN bounds b
      WHERE o.tenant_id = $1
-       AND COALESCE(o.detected_at, o.created_at) >= b.starts_at
-       AND COALESCE(o.detected_at, o.created_at) < b.ends_at
        AND ($5::text IS NULL OR LOWER(COALESCE(o.scope_module_id, '')) = LOWER($5::text))
+),
+origins_period AS (
+    SELECT o.*
+      FROM origins o
+      CROSS JOIN bounds b
+     WHERE COALESCE(o.detected_at, o.created_at) >= b.starts_at
+       AND COALESCE(o.detected_at, o.created_at) < b.ends_at
+),
+quotes_by_chat AS (
+    SELECT
+        q.chat_id,
+        COUNT(DISTINCT q.quote_id) AS quote_count
+      FROM tenant_quotes q
+      JOIN scoped_chats sc ON sc.chat_id = q.chat_id
+      CROSS JOIN bounds b
+     WHERE q.tenant_id = $1
+       AND q.created_at >= b.starts_at
+       AND q.created_at < b.ends_at
+       AND ($4::text IS NULL OR q.created_by_user_id = $4::text)
+       AND ($5::text IS NULL OR LOWER(COALESCE(q.scope_module_id, '')) = LOWER($5::text))
+     GROUP BY q.chat_id
+),
+orders_in_period AS (
+    SELECT
+        ord.order_id,
+        ord.chat_id,
+        COALESCE(NULLIF(ord.customer_id, ''), ord.chat_id) AS customer_key,
+        ord.status,
+        COALESCE(ord.total_amount, 0) AS total_amount,
+        ord.source_type,
+        ord.source_id,
+        ord.created_at,
+        COALESCE(NULLIF(ch.display_name, ''), ord.chat_id) AS chat_label
+      FROM tenant_orders ord
+      JOIN scoped_chats sc ON sc.chat_id = ord.chat_id
+      LEFT JOIN tenant_chats ch
+        ON ch.tenant_id = ord.tenant_id
+       AND ch.chat_id = ord.chat_id
+      CROSS JOIN bounds b
+     WHERE ord.tenant_id = $1
+       AND ord.created_at >= b.starts_at
+       AND ord.created_at < b.ends_at
+       AND ord.status IN ${ORDER_REVENUE_STATUSES_SQL}
+       AND ($4::text IS NULL OR ord.created_by_user_id = $4::text OR ord.assigned_user_id = $4::text)
+       AND ($5::text IS NULL OR LOWER(COALESCE(ord.scope_module_id, '')) = LOWER($5::text))
+),
+orders_by_chat AS (
+    SELECT
+        chat_id,
+        COUNT(DISTINCT order_id) AS order_count,
+        COUNT(DISTINCT customer_key) AS customer_count,
+        SUM(total_amount) AS revenue,
+        json_agg(
+            json_build_object(
+                'orderId', order_id,
+                'chatId', chat_id,
+                'chatLabel', chat_label,
+                'status', status,
+                'total', total_amount,
+                'sourceType', source_type,
+                'sourceId', source_id,
+                'createdAt', created_at
+            )
+            ORDER BY created_at DESC
+        ) AS orders_json
+      FROM orders_in_period
+     GROUP BY chat_id
 ),
 source_rows AS (
     SELECT
@@ -974,24 +1067,15 @@ source_rows AS (
             'Sin origen'
         ) AS label,
         COUNT(DISTINCT o.chat_id) AS total,
-        COUNT(DISTINCT q.quote_id) AS cotizaciones,
-        COUNT(DISTINCT ord.chat_id) FILTER (WHERE ord.status IN ${ORDER_REVENUE_STATUSES_SQL}) AS ventas
-      FROM origins o
-      LEFT JOIN tenant_quotes q
-        ON q.tenant_id = o.tenant_id
-       AND q.chat_id = o.chat_id
-       AND q.created_at >= (SELECT starts_at FROM bounds)
-       AND q.created_at < (SELECT ends_at FROM bounds)
-      LEFT JOIN tenant_orders ord
-        ON ord.tenant_id = o.tenant_id
-       AND ord.chat_id = o.chat_id
-       AND ord.created_at >= (SELECT starts_at FROM bounds)
-       AND ord.created_at < (SELECT ends_at FROM bounds)
-       AND ($4::text IS NULL OR ord.created_by_user_id = $4::text OR ord.assigned_user_id = $4::text)
-       AND ($5::text IS NULL OR LOWER(COALESCE(ord.scope_module_id, '')) = LOWER($5::text))
+        SUM(COALESCE(qb.quote_count, 0)) AS cotizaciones,
+        SUM(COALESCE(ob.order_count, 0)) AS pedidos,
+        SUM(COALESCE(ob.revenue, 0)) AS revenue
+      FROM origins_period o
+      LEFT JOIN quotes_by_chat qb ON qb.chat_id = o.chat_id
+      LEFT JOIN orders_by_chat ob ON ob.chat_id = o.chat_id
      GROUP BY 1, 2
 ),
-ad_origins AS (
+ad_origins_all AS (
     SELECT DISTINCT
         o.chat_id,
         o.referral_source_id AS ad_id,
@@ -1000,12 +1084,59 @@ ad_origins AS (
         o.referral_source_url
       FROM origins o
      WHERE COALESCE(o.referral_source_id, '') <> ''
-       AND COALESCE(o.origin_source, o.origin_type, '') IN ('meta_ad', 'ad', 'meta')
+       AND (
+            COALESCE(o.origin_source, o.origin_type, '') IN ('meta_ad', 'ad', 'meta')
+            OR o.origin_type = 'meta_ad'
+       )
+),
+ad_chats_period AS (
+    SELECT
+        o.referral_source_id AS ad_id,
+        COUNT(DISTINCT o.chat_id) AS chats,
+        MAX(NULLIF(o.referral_source_url, '')) AS referral_source_url
+      FROM origins_period o
+     WHERE COALESCE(o.referral_source_id, '') <> ''
+       AND (
+            COALESCE(o.origin_source, o.origin_type, '') IN ('meta_ad', 'ad', 'meta')
+            OR o.origin_type = 'meta_ad'
+       )
+     GROUP BY o.referral_source_id
+),
+ad_quotes AS (
+    SELECT
+        ao.ad_id,
+        SUM(COALESCE(qb.quote_count, 0)) AS cotizaciones
+      FROM ad_origins_all ao
+      JOIN quotes_by_chat qb ON qb.chat_id = ao.chat_id
+     GROUP BY ao.ad_id
+),
+ad_orders AS (
+    SELECT
+        ao.ad_id,
+        COUNT(DISTINCT oi.order_id) AS pedidos,
+        COUNT(DISTINCT oi.customer_key) AS clientes_con_pedido,
+        SUM(oi.total_amount) AS revenue,
+        jsonb_agg(
+            jsonb_build_object(
+                'orderId', oi.order_id,
+                'chatId', oi.chat_id,
+                'chatLabel', oi.chat_label,
+                'status', oi.status,
+                'total', oi.total_amount,
+                'sourceType', oi.source_type,
+                'sourceId', oi.source_id,
+                'createdAt', oi.created_at
+            )
+            ORDER BY oi.created_at DESC
+        ) AS orders_json
+      FROM ad_origins_all ao
+      JOIN orders_in_period oi ON oi.chat_id = ao.chat_id
+     GROUP BY ao.ad_id
 ),
 ad_spend AS (
     SELECT
         i.object_id AS ad_id,
-        SUM(i.spend) AS spend
+        SUM(COALESCE(i.spend, 0)) AS spend
       FROM tenant_meta_ads_insights i
      WHERE i.tenant_id = $1
        AND i.object_type = 'ad'
@@ -1013,19 +1144,37 @@ ad_spend AS (
        AND i.date_stop <= $3::date
      GROUP BY i.object_id
 ),
+ad_ids AS (
+    SELECT ad_id FROM ad_chats_period
+    UNION
+    SELECT ad_id FROM ad_quotes
+    UNION
+    SELECT ad_id FROM ad_orders
+    UNION
+    SELECT ad_id FROM ad_spend
+),
 ad_rows AS (
     SELECT
-        ao.ad_id,
-        COALESCE(ad.object_name, MAX(ao.referral_headline), ao.ad_id) AS ad_name,
-        COALESCE(campaign.object_name, MAX(ao.campaign_id), '') AS campaign_name,
-        COUNT(DISTINCT ao.chat_id) AS chats,
-        COUNT(DISTINCT q.quote_id) AS cotizaciones,
-        COUNT(DISTINCT ord.chat_id) FILTER (WHERE ord.status IN ${ORDER_REVENUE_STATUSES_SQL}) AS ventas,
-        COALESCE(MAX(sp.spend), 0) AS inversion
-      FROM ad_origins ao
+        ids.ad_id,
+        COALESCE(ad.object_name, MAX(ao.referral_headline), ids.ad_id) AS ad_name,
+        COALESCE(adset.object_id, '') AS adset_id,
+        COALESCE(adset.object_name, '') AS adset_name,
+        COALESCE(campaign.object_id, MAX(NULLIF(ao.campaign_id, '')), '') AS campaign_id,
+        COALESCE(campaign.object_name, MAX(NULLIF(ao.campaign_id, '')), 'Sin campana') AS campaign_name,
+        COALESCE(ad.status, '') AS ad_status,
+        COALESCE(acp.chats, 0) AS chats,
+        COALESCE(aq.cotizaciones, 0) AS cotizaciones,
+        COALESCE(aoo.pedidos, 0) AS pedidos,
+        COALESCE(aoo.clientes_con_pedido, 0) AS clientes_con_pedido,
+        COALESCE(aoo.revenue, 0) AS revenue,
+        COALESCE(sp.spend, 0) AS inversion,
+        COALESCE(acp.referral_source_url, MAX(NULLIF(ao.referral_source_url, ''))) AS referral_source_url,
+        COALESCE(aoo.orders_json, '[]'::jsonb) AS orders_json
+      FROM ad_ids ids
+      LEFT JOIN ad_origins_all ao ON ao.ad_id = ids.ad_id
       LEFT JOIN tenant_meta_ads_structure ad
         ON ad.tenant_id = $1
-       AND ad.object_id = ao.ad_id
+       AND ad.object_id = ids.ad_id
        AND ad.object_type = 'ad'
       LEFT JOIN tenant_meta_ads_structure adset
         ON adset.tenant_id = $1
@@ -1035,20 +1184,40 @@ ad_rows AS (
         ON campaign.tenant_id = $1
        AND campaign.object_id = COALESCE(NULLIF(ao.campaign_id, ''), adset.parent_id)
        AND campaign.object_type = 'campaign'
-      LEFT JOIN ad_spend sp ON sp.ad_id = ao.ad_id
-      LEFT JOIN tenant_quotes q
-        ON q.tenant_id = $1
-       AND q.chat_id = ao.chat_id
-       AND q.created_at >= (SELECT starts_at FROM bounds)
-       AND q.created_at < (SELECT ends_at FROM bounds)
-      LEFT JOIN tenant_orders ord
-        ON ord.tenant_id = $1
-       AND ord.chat_id = ao.chat_id
-       AND ord.created_at >= (SELECT starts_at FROM bounds)
-       AND ord.created_at < (SELECT ends_at FROM bounds)
-       AND ($4::text IS NULL OR ord.created_by_user_id = $4::text OR ord.assigned_user_id = $4::text)
-       AND ($5::text IS NULL OR LOWER(COALESCE(ord.scope_module_id, '')) = LOWER($5::text))
-     GROUP BY ao.ad_id, ad.object_name, campaign.object_name
+      LEFT JOIN ad_chats_period acp ON acp.ad_id = ids.ad_id
+      LEFT JOIN ad_quotes aq ON aq.ad_id = ids.ad_id
+      LEFT JOIN ad_orders aoo ON aoo.ad_id = ids.ad_id
+      LEFT JOIN ad_spend sp ON sp.ad_id = ids.ad_id
+     GROUP BY ids.ad_id, ad.object_name, ad.status, adset.object_id, adset.object_name,
+              campaign.object_id, campaign.object_name, acp.chats, acp.referral_source_url,
+              aq.cotizaciones, aoo.pedidos, aoo.clientes_con_pedido, aoo.revenue,
+              aoo.orders_json, sp.spend
+),
+campaign_rows AS (
+    SELECT
+        COALESCE(NULLIF(campaign_id, ''), 'sin_campaign') AS campaign_id,
+        COALESCE(NULLIF(campaign_name, ''), 'Sin campana') AS campaign_name,
+        COUNT(DISTINCT ad_id) AS ads,
+        SUM(chats) AS chats,
+        SUM(cotizaciones) AS cotizaciones,
+        SUM(pedidos) AS pedidos,
+        SUM(clientes_con_pedido) AS clientes_con_pedido,
+        SUM(revenue) AS revenue,
+        SUM(inversion) AS inversion,
+        json_agg(
+            json_build_object(
+                'adId', ad_id,
+                'adName', ad_name,
+                'adsetName', adset_name,
+                'chats', chats,
+                'pedidos', pedidos,
+                'revenue', revenue,
+                'inversion', inversion
+            )
+            ORDER BY revenue DESC, chats DESC
+        ) AS ads_json
+      FROM ad_rows
+     GROUP BY COALESCE(NULLIF(campaign_id, ''), 'sin_campaign'), COALESCE(NULLIF(campaign_name, ''), 'Sin campana')
 )
 SELECT
     COALESCE((
@@ -1058,7 +1227,9 @@ SELECT
                 'label', label,
                 'total', total,
                 'cotizaciones', cotizaciones,
-                'ventas', ventas
+                'ventas', pedidos,
+                'pedidos', pedidos,
+                'revenue', revenue
             )
             ORDER BY total DESC, label
         )
@@ -1069,22 +1240,59 @@ SELECT
             json_build_object(
                 'adId', ad_id,
                 'adName', ad_name,
+                'adsetId', adset_id,
+                'adsetName', adset_name,
+                'campaignId', campaign_id,
                 'campaignName', campaign_name,
+                'status', ad_status,
                 'chats', chats,
                 'cotizaciones', cotizaciones,
-                'ventas', ventas,
+                'ventas', pedidos,
+                'pedidos', pedidos,
+                'clientesConPedido', clientes_con_pedido,
+                'revenue', revenue,
                 'inversion', inversion,
-                'costoPerChat', CASE WHEN chats > 0 THEN ROUND(inversion::numeric / chats::numeric, 2) ELSE 0 END
+                'costoPerChat', CASE WHEN chats > 0 THEN ROUND(inversion::numeric / chats::numeric, 2) ELSE 0 END,
+                'costoPerPedido', CASE WHEN pedidos > 0 THEN ROUND(inversion::numeric / pedidos::numeric, 2) ELSE 0 END,
+                'conversionPedido', CASE WHEN chats > 0 THEN ROUND((pedidos::numeric / chats::numeric) * 100, 2) ELSE 0 END,
+                'roas', CASE WHEN inversion > 0 THEN ROUND(revenue::numeric / inversion::numeric, 2) ELSE 0 END,
+                'roi', CASE WHEN inversion > 0 THEN ROUND(((revenue::numeric - inversion::numeric) / inversion::numeric) * 100, 2) ELSE 0 END,
+                'referralSourceUrl', referral_source_url,
+                'orders', orders_json
             )
-            ORDER BY chats DESC, inversion DESC, ad_name
+            ORDER BY revenue DESC, pedidos DESC, chats DESC, inversion DESC, ad_name
         )
           FROM ad_rows
-    ), '[]'::json) AS por_anuncio_meta`;
+    ), '[]'::json) AS por_anuncio_meta,
+    COALESCE((
+        SELECT json_agg(
+            json_build_object(
+                'campaignId', campaign_id,
+                'campaignName', campaign_name,
+                'ads', ads,
+                'chats', chats,
+                'cotizaciones', cotizaciones,
+                'pedidos', pedidos,
+                'clientesConPedido', clientes_con_pedido,
+                'revenue', revenue,
+                'inversion', inversion,
+                'costoPerChat', CASE WHEN chats > 0 THEN ROUND(inversion::numeric / chats::numeric, 2) ELSE 0 END,
+                'costoPerPedido', CASE WHEN pedidos > 0 THEN ROUND(inversion::numeric / pedidos::numeric, 2) ELSE 0 END,
+                'conversionPedido', CASE WHEN chats > 0 THEN ROUND((pedidos::numeric / chats::numeric) * 100, 2) ELSE 0 END,
+                'roas', CASE WHEN inversion > 0 THEN ROUND(revenue::numeric / inversion::numeric, 2) ELSE 0 END,
+                'roi', CASE WHEN inversion > 0 THEN ROUND(((revenue::numeric - inversion::numeric) / inversion::numeric) * 100, 2) ELSE 0 END,
+                'adsDetalle', ads_json
+            )
+            ORDER BY revenue DESC, pedidos DESC, inversion DESC, campaign_name
+        )
+          FROM campaign_rows
+    ), '[]'::json) AS por_campania_meta`;
 
     const { rows } = await queryPostgres(sql, reportParams(ctx));
     return {
         porFuente: Array.isArray(rows[0]?.por_fuente) ? rows[0].por_fuente : [],
-        porAnuncioMeta: Array.isArray(rows[0]?.por_anuncio_meta) ? rows[0].por_anuncio_meta : []
+        porAnuncioMeta: Array.isArray(rows[0]?.por_anuncio_meta) ? rows[0].por_anuncio_meta : [],
+        porCampaniaMeta: Array.isArray(rows[0]?.por_campania_meta) ? rows[0].por_campania_meta : []
     };
 }
 
