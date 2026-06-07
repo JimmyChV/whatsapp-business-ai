@@ -21,6 +21,7 @@ import {
     setCartItemDiscountEnabledState,
     setCartItemDiscountTypeState,
     setCartItemDiscountValueState,
+    setCartItemQtyState,
     updateCartItemQtyState
 } from '../helpers';
 import BusinessCartTabSection from './BusinessCartTabSection';
@@ -291,8 +292,10 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
     const currentOptionGlobalDiscountEnabled = Boolean(currentOption?.globalDiscountEnabled);
     const currentOptionGlobalDiscountType = currentOption?.globalDiscountType === 'amount' ? 'amount' : 'percent';
     const currentOptionGlobalDiscountValue = Number(currentOption?.globalDiscountValue || 0) || 0;
+    const currentOptionGlobalOnRegular = Boolean(currentOption?.globalOnRegular);
     const currentOptionDeliveryType = currentOption?.deliveryType === 'amount' ? 'amount' : 'free';
     const currentOptionDeliveryAmount = Number(currentOption?.deliveryAmount || 0) || 0;
+    const currentOptionCartWizardStep = Math.max(1, Math.min(4, Number(currentOption?.cartWizardStep || 1) || 1));
     const currentOptionShowOrderAdjustments = Boolean(currentOption?.showOrderAdjustments);
     const currentOptionShowCartTotalsBreakdown = currentOption?.showCartTotalsBreakdown !== false;
     const currentOptionPricing = calculateCartPricing({
@@ -300,6 +303,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
         globalDiscountEnabled: currentOptionGlobalDiscountEnabled,
         globalDiscountType: currentOptionGlobalDiscountType,
         globalDiscountValue: currentOptionGlobalDiscountValue,
+        globalOnRegular: currentOptionGlobalOnRegular,
         deliveryType: currentOptionDeliveryType,
         deliveryAmount: currentOptionDeliveryAmount,
         parseMoney,
@@ -357,10 +361,16 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
             globalDiscountEnabled: false,
             globalDiscountType: 'percent',
             globalDiscountValue: 0,
+            globalDiscountAmt: 0,
+            globalOnRegular: false,
             deliveryType: 'free',
             deliveryAmount: 0,
+            cartWizardStep: 1,
             showOrderAdjustments: false,
             showCartTotalsBreakdown: true,
+            subtotalParticipants: 0,
+            subtotalExcluded: 0,
+            globalDiscApplied: 0,
             total: 0,
             confirmada: false
         }));
@@ -396,6 +406,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                 globalDiscountEnabled: Boolean(option?.globalDiscountEnabled),
                 globalDiscountType: option?.globalDiscountType === 'amount' ? 'amount' : 'percent',
                 globalDiscountValue: Number(option?.globalDiscountValue || 0) || 0,
+                globalOnRegular: Boolean(option?.globalOnRegular),
                 deliveryType: option?.deliveryType === 'amount' ? 'amount' : 'free',
                 deliveryAmount: Number(option?.deliveryAmount || 0) || 0,
                 parseMoney,
@@ -404,6 +415,10 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
             });
             return {
                 productos: safeProducts,
+                subtotalParticipants: pricing.subtotalParticipants,
+                subtotalExcluded: pricing.subtotalExcluded,
+                globalDiscountAmt: pricing.globalDiscountApplied,
+                globalDiscApplied: pricing.globalDiscountApplied,
                 total: pricing.cartTotal,
                 confirmada: false
             };
@@ -422,6 +437,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                 globalDiscountEnabled: Boolean(nextOption.globalDiscountEnabled),
                 globalDiscountType: nextOption.globalDiscountType === 'amount' ? 'amount' : 'percent',
                 globalDiscountValue: Number(nextOption.globalDiscountValue || 0) || 0,
+                globalOnRegular: Boolean(nextOption.globalOnRegular),
                 deliveryType: nextOption.deliveryType === 'amount' ? 'amount' : 'free',
                 deliveryAmount: Number(nextOption.deliveryAmount || 0) || 0,
                 parseMoney,
@@ -430,6 +446,10 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
             });
             return {
                 ...nextOption,
+                subtotalParticipants: pricing.subtotalParticipants,
+                subtotalExcluded: pricing.subtotalExcluded,
+                globalDiscountAmt: pricing.globalDiscountApplied,
+                globalDiscApplied: pricing.globalDiscountApplied,
                 total: pricing.cartTotal
             };
         });
@@ -440,6 +460,9 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
     };
     const handleCurrentOptionQtyDelta = (id, delta) => {
         updateCurrentOptionProducts((previous) => updateCartItemQtyState(previous, id, delta));
+    };
+    const handleCurrentOptionQtySet = (id, quantity) => {
+        updateCurrentOptionProducts((previous) => setCartItemQtyState(previous, id, quantity));
     };
     const handleCurrentOptionRemove = (id) => {
         updateCurrentOptionProducts((previous) => removeItemFromCartState(previous, id));
@@ -459,9 +482,22 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
             notify({ type: 'warn', message: 'Agrega al menos un producto a esta opción.' });
             return;
         }
+        if (currentOptionCartWizardStep < 4) {
+            notify({ type: 'warn', message: 'Completa el resumen de esta opcion antes de confirmarla.' });
+            return;
+        }
         const nextOptions = wizardOptions.map((option, index) => (
             index === currentOptionIndex
-                ? { ...option, total: currentOptionPricing.cartTotal, confirmada: true }
+                ? {
+                    ...option,
+                    cartWizardStep: 4,
+                    subtotalParticipants: currentOptionPricing.subtotalParticipants,
+                    subtotalExcluded: currentOptionPricing.subtotalExcluded,
+                    globalDiscountAmt: currentOptionPricing.globalDiscountApplied,
+                    globalDiscApplied: currentOptionPricing.globalDiscountApplied,
+                    total: currentOptionPricing.cartTotal,
+                    confirmada: true
+                }
                 : option
         ));
         setWizardPatch({
@@ -480,6 +516,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                 globalDiscountEnabled: Boolean(option?.globalDiscountEnabled),
                 globalDiscountType: option?.globalDiscountType === 'amount' ? 'amount' : 'percent',
                 globalDiscountValue: Number(option?.globalDiscountValue || 0) || 0,
+                globalOnRegular: Boolean(option?.globalOnRegular),
                 deliveryType: option?.deliveryType === 'amount' ? 'amount' : 'free',
                 deliveryAmount: Number(option?.deliveryAmount || 0) || 0,
                 parseMoney,
@@ -506,6 +543,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                 globalDiscountType: option?.globalDiscountType === 'amount' ? 'amount' : 'percent',
                 globalDiscountValue: Number(option?.globalDiscountValue || 0) || 0,
                 globalDiscPct: pricing.globalDiscPct,
+                globalOnRegular: Boolean(option?.globalOnRegular),
                 currency: 'PEN'
             });
             return {
@@ -968,7 +1006,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                         quoteOptionsModeActive
                                         getLineBreakdown={getOptionLineBreakdown}
                                         removeFromCart={handleCurrentOptionRemove}
-                                        updateQty={handleCurrentOptionQtyDelta}
+                                        updateQty={handleCurrentOptionQtySet}
                                         updateItemDiscountEnabled={handleCurrentOptionDiscountEnabled}
                                         updateItemDiscountValue={handleCurrentOptionDiscountValue}
                                         updateItemDiscountType={handleCurrentOptionDiscountType}
@@ -996,6 +1034,12 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                                 ? value(currentOptionGlobalDiscountValue)
                                                 : Math.max(0, Number(value) || 0)
                                         })}
+                                        globalOnRegular={currentOptionGlobalOnRegular}
+                                        setGlobalOnRegular={(value) => updateCurrentOptionPricing({
+                                            globalOnRegular: typeof value === 'function'
+                                                ? Boolean(value(currentOptionGlobalOnRegular))
+                                                : Boolean(value)
+                                        })}
                                         parseMoney={parseMoney}
                                         deliveryType={currentOptionDeliveryType}
                                         setDeliveryType={(value) => updateCurrentOptionPricing({
@@ -1017,14 +1061,25 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                         })}
                                         formatMoney={formatMoney}
                                         regularSubtotalTotal={currentOptionPricing.regularSubtotalTotal}
+                                        subtotalProducts={currentOptionPricing.subtotalProducts}
+                                        subtotalParticipants={currentOptionPricing.subtotalParticipants}
+                                        subtotalExcluded={currentOptionPricing.subtotalExcluded}
+                                        globalDiscountApplied={currentOptionPricing.globalDiscountApplied}
                                         totalDiscountForQuote={currentOptionPricing.totalDiscountForQuote}
                                         subtotalAfterGlobal={currentOptionPricing.subtotalAfterGlobal}
                                         deliveryFee={currentOptionPricing.deliveryFee}
                                         cartTotal={currentOptionPricing.cartTotal}
+                                        cartWizardStep={currentOptionCartWizardStep}
+                                        setCartWizardStep={(value) => updateCurrentOptionPricing({
+                                            cartWizardStep: typeof value === 'function'
+                                                ? value(currentOptionCartWizardStep)
+                                                : Math.max(1, Math.min(4, Number(value || 1) || 1))
+                                        })}
                                         sendQuoteToChat={() => {}}
                                         canWriteByAssignment={canWriteByAssignment}
                                         showQuoteHistory={false}
                                         showSendQuoteAction={false}
+                                        onBackToCatalog={() => setWizardPatch({ phase: 'catalog', pasoActual: activeOptionNumber + 1 })}
                                     />
                                 </div>
 
@@ -1164,18 +1219,20 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                     </button>
                                     <button
                                         type="button"
-                                        disabled={currentOptionProducts.length === 0}
+                                        disabled={currentOptionProducts.length === 0 || currentOptionCartWizardStep < 4}
                                         onClick={confirmCurrentOptionAndContinue}
                                         style={{
                                             ...primaryActionStyle,
                                             justifyContent: 'center',
                                             padding: '9px 13px',
                                             borderRadius: '12px',
-                                            opacity: currentOptionProducts.length > 0 ? 1 : 0.55,
-                                            cursor: currentOptionProducts.length > 0 ? 'pointer' : 'not-allowed'
+                                            opacity: currentOptionProducts.length > 0 && currentOptionCartWizardStep >= 4 ? 1 : 0.55,
+                                            cursor: currentOptionProducts.length > 0 && currentOptionCartWizardStep >= 4 ? 'pointer' : 'not-allowed'
                                         }}
                                     >
-                                        {activeOptionNumber < safeTotalOpciones
+                                        {currentOptionCartWizardStep < 4
+                                            ? 'Completa el resumen'
+                                            : activeOptionNumber < safeTotalOpciones
                                             ? `Confirmar - pasar a Opción ${activeOptionNumber + 1}`
                                             : 'Confirmar - revisar todo'}
                                     </button>
