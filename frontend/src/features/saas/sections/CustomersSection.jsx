@@ -1148,6 +1148,7 @@ function CustomersSection(props = {}) {
     const [importNow, setImportNow] = useState(() => Date.now());
     const [importModuleId, setImportModuleId] = useState('');
     const [showAllImportErrors, setShowAllImportErrors] = useState(false);
+    const [importLinkDecisions, setImportLinkDecisions] = useState({});
     const importProgressPollRef = useRef(null);
     const importProgressStateRef = useRef(null);
     const customersRealtimeSyncTimeoutRef = useRef(null);
@@ -2658,6 +2659,7 @@ function CustomersSection(props = {}) {
         setImportStartedAt(0);
         setImportModuleId('');
         setShowAllImportErrors(false);
+        setImportLinkDecisions({});
         stopImportProgressPolling();
     }, [stopImportProgressPolling]);
 
@@ -2725,6 +2727,17 @@ function CustomersSection(props = {}) {
             setImportResult(null);
             setImportRequestId(String(response?.importId || '').trim());
             setImportProgress(null);
+            const linkableSamples = Array.isArray(response?.samples?.linkable) ? response.samples.linkable : [];
+            const nextLinkDecisions = {};
+            linkableSamples.forEach((item = {}) => {
+                const erpId = String(item.erp_id || item.erpId || item?.erp?.erpId || '').trim();
+                if (!erpId) return;
+                nextLinkDecisions[erpId] = {
+                    action: String(item.recommendedAction || 'link').trim() || 'link',
+                    customerId: String(item?.system?.customerId || item.customerId || '').trim()
+                };
+            });
+            setImportLinkDecisions(nextLinkDecisions);
             setImportStep(2);
         } catch (error) {
             const message = normalizeErpImportErrorMessage(error?.message || 'No se pudo analizar el archivo ERP.');
@@ -2759,6 +2772,14 @@ function CustomersSection(props = {}) {
         formData.append('mode', 'commit');
         const commitImportId = createImportRequestId('erpcommit');
         formData.append('importId', commitImportId);
+        const linkDecisionsPayload = Object.entries(importLinkDecisions || {})
+            .map(([erpId, decision = {}]) => ({
+                erpId,
+                action: String(decision.action || '').trim() || 'skip',
+                customerId: String(decision.customerId || '').trim()
+            }))
+            .filter((item) => item.erpId);
+        formData.append('linkDecisions', JSON.stringify(linkDecisionsPayload));
 
         setImportLoading(true);
         setImportErrorMessage('');
@@ -2778,6 +2799,8 @@ function CustomersSection(props = {}) {
                 validRows: Number(importPreview?.summary?.valid || 0),
                 insertRows: Number(importPreview?.summary?.inserts || 0),
                 updateRows: Number(importPreview?.summary?.updates || 0),
+                unchangedRows: Number(importPreview?.summary?.unchanged || 0),
+                linkableRows: Number(importPreview?.summary?.linkable || 0),
                 errorRows: Number(importPreview?.summary?.errors || 0),
                 addressTotal: Number(importPreview?.addressSummary?.total || 0),
                 addressMatched: Number(importPreview?.addressSummary?.matched || 0),
@@ -2798,7 +2821,7 @@ function CustomersSection(props = {}) {
             });
             await fetchImportProgress(String(response?.importId || commitImportId || '').trim());
             setImportResult(response || null);
-            setImportStep(3);
+            setImportStep(4);
             await refreshCustomersView({ forceFullReload: true, silent: false });
         } catch (error) {
             const message = normalizeErpImportErrorMessage(error?.message || 'No se pudo completar la importacion ERP.');
@@ -2822,7 +2845,19 @@ function CustomersSection(props = {}) {
             setImportPhase('');
             setImportStartedAt(0);
         }
-    }, [createImportRequestId, fetchImportProgress, importFileClientes, importFileDirecciones, importModuleId, importPreview?.addressSummary?.matched, importPreview?.addressSummary?.total, importPreview?.addressSummary?.unmatched, importPreview?.summary?.errors, importPreview?.summary?.inserts, importPreview?.summary?.total, importPreview?.summary?.updates, importPreview?.summary?.valid, notify, refreshCustomersView, requestJson, startImportProgressPolling, stopImportProgressPolling, tenantScopeId]);
+    }, [createImportRequestId, fetchImportProgress, importFileClientes, importFileDirecciones, importLinkDecisions, importModuleId, importPreview?.addressSummary?.matched, importPreview?.addressSummary?.total, importPreview?.addressSummary?.unmatched, importPreview?.summary?.errors, importPreview?.summary?.inserts, importPreview?.summary?.linkable, importPreview?.summary?.total, importPreview?.summary?.unchanged, importPreview?.summary?.updates, importPreview?.summary?.valid, notify, refreshCustomersView, requestJson, startImportProgressPolling, stopImportProgressPolling, tenantScopeId]);
+
+    const handleSetImportLinkDecision = useCallback((erpId, nextDecision = {}) => {
+        const cleanErpId = String(erpId || '').trim();
+        if (!cleanErpId) return;
+        setImportLinkDecisions((prev) => ({
+            ...(prev || {}),
+            [cleanErpId]: {
+                ...(prev?.[cleanErpId] || {}),
+                ...nextDecision
+            }
+        }));
+    }, []);
 
     const handleCancelImport = useCallback(async () => {
         if (!tenantScopeId || !importRequestId) return;
@@ -4843,6 +4878,7 @@ function CustomersSection(props = {}) {
             importFileClientes={importFileClientes}
             importFileDirecciones={importFileDirecciones}
             importLoading={importLoading}
+            importLinkDecisions={importLinkDecisions}
             importModuleId={importModuleId}
             importPreview={importPreview}
             importProgress={importProgress}
@@ -4864,6 +4900,7 @@ function CustomersSection(props = {}) {
             onSetFileDirecciones={setImportFileDirecciones}
             onSetImportModuleId={setImportModuleId}
             onSetImportStep={setImportStep}
+            onSetLinkDecision={handleSetImportLinkDecision}
             onToggleAllErrors={() => setShowAllImportErrors((prev) => !prev)}
         />
     ) : null;

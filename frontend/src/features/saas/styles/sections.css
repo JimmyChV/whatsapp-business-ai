@@ -11516,7 +11516,7 @@ textarea:focus {
 
 .saas-customers-import-stepper {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -11691,6 +11691,22 @@ textarea:focus {
   background: color-mix(in srgb, var(--saas-accent-primary) 7%, var(--saas-bg-surface));
 }
 
+.saas-customers-import-metric--warning {
+  border-color: color-mix(in srgb, var(--saas-accent-warning, #f59e0b) 42%, var(--saas-border-color));
+  background: color-mix(in srgb, var(--saas-accent-warning, #f59e0b) 10%, var(--saas-bg-surface));
+}
+
+.saas-customers-import-metric--neutral {
+  border-color: color-mix(in srgb, var(--saas-text-secondary) 18%, var(--saas-border-color));
+  background: color-mix(in srgb, var(--saas-text-secondary) 5%, var(--saas-bg-surface));
+}
+
+.saas-customers-import-metrics--compact .saas-customers-import-metric {
+  min-width: 132px;
+  flex-basis: 132px;
+  padding: 12px 14px;
+}
+
 .saas-customers-import-live-status {
   display: flex;
   flex-direction: column;
@@ -11756,6 +11772,93 @@ textarea:focus {
   width: 100%;
 }
 
+.saas-customers-import-table-wrap .saas-data-table td small {
+  display: block;
+  margin-top: 4px;
+  color: var(--saas-text-secondary);
+}
+
+.saas-customers-import-section-note {
+  margin: 0 0 12px;
+  color: var(--saas-text-secondary);
+}
+
+.saas-customers-import-linkable-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.saas-customers-import-linkable-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--saas-border-color);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--saas-bg-elevated) 76%, transparent);
+}
+
+.saas-customers-import-linkable-card__body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.saas-customers-import-linkable-card__body > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.saas-customers-import-linkable-card__body span {
+  color: var(--saas-text-secondary);
+  font-size: 0.78rem;
+  font-weight: var(--saas-font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.saas-customers-import-linkable-card__body strong,
+.saas-customers-import-linkable-card__body small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saas-customers-import-linkable-card__body small {
+  color: var(--saas-text-secondary);
+}
+
+.saas-customers-import-linkable-card__actions,
+.saas-customers-import-decision-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.saas-customers-import-linkable-card__actions label,
+.saas-customers-import-decision-summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--saas-border-color);
+  border-radius: 999px;
+  background: var(--saas-bg-surface);
+  color: var(--saas-text-primary);
+}
+
+.saas-customers-import-linkable-card__actions label {
+  cursor: pointer;
+}
+
+.saas-customers-import-empty {
+  padding: 18px;
+}
+
 .saas-customers-import-step--result .saas-admin-empty-state {
   margin-bottom: 14px;
 }
@@ -11778,7 +11881,8 @@ textarea:focus {
 @media (max-width: 900px) {
   .saas-customers-import-stepper,
   .saas-customers-import-upload-grid,
-  .saas-customers-import-grid {
+  .saas-customers-import-grid,
+  .saas-customers-import-linkable-card__body {
     grid-template-columns: 1fr;
   }
 
