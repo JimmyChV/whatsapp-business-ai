@@ -132,6 +132,33 @@ export const setCartItemDiscountValueState = (previous = [], id = '', value = 0,
     });
 };
 
+export const setCartItemDiscountConfigState = (previous = [], id = '', config = {}, parseMoney = asNumber) => {
+    const safePrevious = Array.isArray(previous) ? previous : [];
+    const targetId = safeId(id);
+    if (!targetId) return safePrevious;
+    const safeConfig = config && typeof config === 'object' ? config : {};
+    const safeType = safeConfig.type === 'amount' ? 'amount' : 'percent';
+    const rawValue = Math.max(0, parseMoney(safeConfig.value, 0));
+    const safeValue = safeType === 'percent' ? clampNumber(rawValue, 0, 100) : rawValue;
+    const isEnabled = safeConfig.enabled === undefined
+        ? safeValue > 0
+        : Boolean(safeConfig.enabled);
+
+    return safePrevious.map((entry) => (
+        safeId(entry?.id) === targetId
+            ? {
+                ...entry,
+                lineDiscountEnabled: isEnabled,
+                lineDiscountType: safeType,
+                lineDiscountValue: isEnabled ? safeValue : 0,
+                linDiscountType: safeType === 'amount' ? 'fixed' : 'pct',
+                linDiscountPct: isEnabled && safeType === 'percent' ? safeValue : 0,
+                linDiscountAmt: isEnabled && safeType === 'amount' ? safeValue : 0
+            }
+            : entry
+    ));
+};
+
 export const setCartItemExcludeFromGlobalState = (previous = [], id = '', excluded = false) => {
     const safePrevious = Array.isArray(previous) ? previous : [];
     const targetId = safeId(id);

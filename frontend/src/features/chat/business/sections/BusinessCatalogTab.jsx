@@ -18,6 +18,7 @@ import {
     parseMoney,
     removeItemFromCartState,
     roundMoney,
+    setCartItemDiscountConfigState,
     setCartItemDiscountEnabledState,
     setCartItemDiscountTypeState,
     setCartItemDiscountValueState,
@@ -476,6 +477,9 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
     };
     const handleCurrentOptionDiscountValue = (id, value) => {
         updateCurrentOptionProducts((previous) => setCartItemDiscountValueState(previous, id, value, parseMoney));
+    };
+    const handleCurrentOptionDiscountConfig = (id, config) => {
+        updateCurrentOptionProducts((previous) => setCartItemDiscountConfigState(previous, id, config, parseMoney));
     };
     const handleCurrentOptionExcludeFromGlobal = (id, excluded) => {
         updateCurrentOptionProducts((previous) => setCartItemExcludeFromGlobalState(previous, id, excluded));
@@ -1014,6 +1018,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                         updateItemDiscountEnabled={handleCurrentOptionDiscountEnabled}
                                         updateItemDiscountValue={handleCurrentOptionDiscountValue}
                                         updateItemDiscountType={handleCurrentOptionDiscountType}
+                                        updateItemDiscountConfig={handleCurrentOptionDiscountConfig}
                                         updateItemExcludeFromGlobal={handleCurrentOptionExcludeFromGlobal}
                                         showOrderAdjustments={currentOptionShowOrderAdjustments}
                                         setShowOrderAdjustments={(value) => updateCurrentOptionPricing({

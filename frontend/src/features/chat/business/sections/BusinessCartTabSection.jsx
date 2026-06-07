@@ -21,6 +21,7 @@ export default function BusinessCartTabSection({
     updateItemDiscountEnabled,
     updateItemDiscountValue,
     updateItemDiscountType,
+    updateItemDiscountConfig = null,
     updateItemExcludeFromGlobal = emptyFn,
     globalDiscountEnabled = false,
     globalDiscountType = 'percent',
@@ -98,6 +99,10 @@ export default function BusinessCartTabSection({
         const amount = resolvedType === 'amount'
             ? Math.max(0, Number(value) || 0)
             : clampPercent(value);
+        if (typeof updateItemDiscountConfig === 'function') {
+            updateItemDiscountConfig(item.id, { type: resolvedType, value: amount, enabled: amount > 0 });
+            return;
+        }
         updateItemDiscountType?.(item.id, resolvedType);
         updateItemDiscountEnabled?.(item.id, amount > 0);
         updateItemDiscountValue?.(item.id, amount);
@@ -105,9 +110,14 @@ export default function BusinessCartTabSection({
 
     const setLineDiscountType = (item, type, currentValue = 0) => {
         const resolvedType = normalizeDiscountType(type);
+        const amount = resolvedType === 'amount' ? Math.max(0, Number(currentValue) || 0) : clampPercent(currentValue);
+        if (typeof updateItemDiscountConfig === 'function') {
+            updateItemDiscountConfig(item.id, { type: resolvedType, value: amount, enabled: amount > 0 });
+            return;
+        }
         updateItemDiscountType?.(item.id, resolvedType);
-        updateItemDiscountValue?.(item.id, resolvedType === 'amount' ? Math.max(0, Number(currentValue) || 0) : clampPercent(currentValue));
-        updateItemDiscountEnabled?.(item.id, Number(currentValue || 0) > 0);
+        updateItemDiscountValue?.(item.id, amount);
+        updateItemDiscountEnabled?.(item.id, amount > 0);
     };
 
     const header = (
