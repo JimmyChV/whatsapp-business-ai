@@ -721,69 +721,78 @@ export default function useChatMessageActions({
 
     const draftQuickReply = normalizeQuickReplyDraft(quickReplyDraft);
     if (draftQuickReply && !attachment) {
-      const outboundText = String(text || draftQuickReply.text || '').trim();
+      const outboundText = String(text || '').trim();
       const draftMediaAssets = Array.isArray(draftQuickReply.mediaAssets) ? draftQuickReply.mediaAssets : [];
       const primaryAsset = draftMediaAssets[0] || null;
       const primaryMimeType = String(draftQuickReply.mediaMimeType || primaryAsset?.mimeType || '').trim().toLowerCase();
       const primaryFileName = String(draftQuickReply.mediaFileName || primaryAsset?.fileName || '').trim();
-      const quickReplyRetryPayload = {
-        eventName: 'send_quick_reply',
-        payload: {
+      const hasQuickReplyMedia = Boolean(
+        draftMediaAssets.length > 0
+        || String(draftQuickReply.mediaUrl || primaryAsset?.url || '').trim()
+      );
+
+      if (hasQuickReplyMedia) {
+        const quickReplyRetryPayload = {
+          eventName: 'send_quick_reply',
+          payload: {
+            quickReplyId: draftQuickReply.id || undefined,
+            quickReply: {
+              id: draftQuickReply.id || undefined,
+              label: draftQuickReply.label || undefined,
+              text: outboundText,
+              mediaAssets: draftMediaAssets,
+              mediaUrl: String(draftQuickReply.mediaUrl || primaryAsset?.url || '').trim() || null,
+              mediaMimeType: primaryMimeType || null,
+              mediaFileName: primaryFileName || null
+            },
+            to: activeChatId,
+            toPhone,
+            quotedMessageId
+          }
+        };
+        const optimisticQuickReplyMessage = insertOptimisticOutgoing({
+          chatId: activeChatId,
+          body: outboundText || primaryFileName || 'Adjunto',
+          hasMedia: draftMediaAssets.length > 0,
+          type: draftMediaAssets.length > 0
+            ? resolveOptimisticMediaType(primaryMimeType, primaryFileName)
+            : 'chat',
+          mimetype: draftMediaAssets.length > 0 ? (primaryMimeType || null) : null,
+          filename: draftMediaAssets.length > 0 ? (primaryFileName || null) : null,
+          mediaUrl: draftMediaAssets.length > 0
+            ? (String(draftQuickReply.mediaUrl || primaryAsset?.url || '').trim() || null)
+            : null,
+          quotedMessage,
+          retryPayload: quickReplyRetryPayload
+        });
+        const quickReplyClientTempId = String(optimisticQuickReplyMessage?.clientTempId || '').trim() || null;
+        if (quickReplyClientTempId) {
+          quickReplyRetryPayload.payload.clientTempId = quickReplyClientTempId;
+        }
+        socket.emit('send_quick_reply', {
           quickReplyId: draftQuickReply.id || undefined,
+          clientTempId: quickReplyClientTempId || undefined,
           quickReply: {
             id: draftQuickReply.id || undefined,
             label: draftQuickReply.label || undefined,
             text: outboundText,
             mediaAssets: draftMediaAssets,
-            mediaUrl: String(draftQuickReply.mediaUrl || primaryAsset?.url || '').trim() || null,
-            mediaMimeType: primaryMimeType || null,
-            mediaFileName: primaryFileName || null
+            mediaUrl: String(draftQuickReply.mediaUrl || draftMediaAssets[0]?.url || '').trim() || null,
+            mediaMimeType: String(draftQuickReply.mediaMimeType || draftMediaAssets[0]?.mimeType || '').trim().toLowerCase() || null,
+            mediaFileName: String(draftQuickReply.mediaFileName || draftMediaAssets[0]?.fileName || '').trim() || null
           },
           to: activeChatId,
           toPhone,
-          quotedMessageId
-        }
-      };
-      const optimisticQuickReplyMessage = insertOptimisticOutgoing({
-        chatId: activeChatId,
-        body: outboundText || primaryFileName || 'Adjunto',
-        hasMedia: draftMediaAssets.length > 0,
-        type: draftMediaAssets.length > 0
-          ? resolveOptimisticMediaType(primaryMimeType, primaryFileName)
-          : 'chat',
-        mimetype: draftMediaAssets.length > 0 ? (primaryMimeType || null) : null,
-        filename: draftMediaAssets.length > 0 ? (primaryFileName || null) : null,
-        mediaUrl: draftMediaAssets.length > 0
-          ? (String(draftQuickReply.mediaUrl || primaryAsset?.url || '').trim() || null)
-          : null,
-        quotedMessage,
-        retryPayload: quickReplyRetryPayload
-      });
-      const quickReplyClientTempId = String(optimisticQuickReplyMessage?.clientTempId || '').trim() || null;
-      if (quickReplyClientTempId) {
-        quickReplyRetryPayload.payload.clientTempId = quickReplyClientTempId;
+          quotedMessageId,
+          quotedMessage
+        });
+        setQuickReplyDraft(null);
+        setInputText('');
+        setReplyingMessage(null);
+        return;
       }
-      socket.emit('send_quick_reply', {
-        quickReplyId: draftQuickReply.id || undefined,
-        clientTempId: quickReplyClientTempId || undefined,
-        quickReply: {
-          id: draftQuickReply.id || undefined,
-          label: draftQuickReply.label || undefined,
-          text: outboundText,
-          mediaAssets: draftMediaAssets,
-          mediaUrl: String(draftQuickReply.mediaUrl || draftMediaAssets[0]?.url || '').trim() || null,
-          mediaMimeType: String(draftQuickReply.mediaMimeType || draftMediaAssets[0]?.mimeType || '').trim().toLowerCase() || null,
-          mediaFileName: String(draftQuickReply.mediaFileName || draftMediaAssets[0]?.fileName || '').trim() || null
-        },
-        to: activeChatId,
-        toPhone,
-        quotedMessageId,
-        quotedMessage
-      });
-      setQuickReplyDraft(null);
-      setInputText('');
-      setReplyingMessage(null);
-      return;
+
+      if (!outboundText) return;
     }
 
     if (attachment) {
@@ -836,6 +845,7 @@ export default function useChatMessageActions({
       if (textClientTempId) sendPayload.clientTempId = textClientTempId;
       socket.emit('send_message', sendPayload);
     }
+    setQuickReplyDraft(null);
     setInputText('');
     setReplyingMessage(null);
   }, [
