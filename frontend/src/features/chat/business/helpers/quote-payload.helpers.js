@@ -32,6 +32,7 @@ export const buildQuoteItemFromCartLine = ({ item = {}, line = {}, index = 0, cu
     const linDiscountAmt = toMoney1(parseMoney(safeLine.lineDiscountUnitAmount ?? safeItem.linDiscountAmt ?? ((safeLine.lineDiscountAmount ?? safeLine.additionalDiscountApplied ?? 0) / qty), 0));
     const finalPrice = toMoney1(parseMoney(safeLine.finalPrice, unitPrice - linDiscountAmt));
     const subtotal = toMoney1(parseMoney(safeLine.subtotal ?? safeLine.lineFinal, finalPrice * qty));
+    const lineDiscountInputValue = lineDiscountType === 'amount' ? linDiscountAmt : linDiscountPct;
 
     return {
         itemId,
@@ -53,6 +54,8 @@ export const buildQuoteItemFromCartLine = ({ item = {}, line = {}, index = 0, cu
         lineSubtotal: toMoney1(regularPrice * qty),
         lineDiscountType: linDiscountAmt > 0 ? lineDiscountType : null,
         lineDiscountValue: lineDiscountType === 'amount' ? linDiscountAmt : linDiscountPct,
+        lineDiscountInputType: lineDiscountType,
+        lineDiscountInputValue,
         lineDiscountAmount: toMoney1(linDiscountAmt * qty),
         lineTotal: subtotal,
         currency: normalizedCurrency,
@@ -89,6 +92,11 @@ export const buildQuoteSummaryFromCart = ({
     const globalDiscAmt = toMoney1(parseMoney(globalDiscountApplied, 0));
     const subtotalForCustomer = toMoney1(parseMoney(regularSubtotalTotal || subtotalProducts, 0));
     const totalDiscountForCustomer = toMoney1(parseMoney(totalDiscountForQuote || globalDiscAmt, 0));
+    const globalDiscountInputValue = globalDiscountEnabled
+        ? (normalizedGlobalDiscountType === 'amount'
+            ? toMoney1(parseMoney(globalDiscountValue, 0))
+            : Math.max(0, Math.min(100, parseMoney(globalDiscountValue, 0))))
+        : 0;
     const hasComputedGlobalPct = globalDiscPct !== null && globalDiscPct !== undefined && Number.isFinite(Number(globalDiscPct));
     const globalPct = globalDiscountEnabled
         ? (hasComputedGlobalPct
@@ -105,6 +113,8 @@ export const buildQuoteSummaryFromCart = ({
         globalDiscPct: globalPct,
         globalDiscAmt,
         globalDiscType: normalizedGlobalDiscountType === 'amount' ? 'fixed' : 'pct',
+        globalDiscountInputType: globalDiscountEnabled ? normalizedGlobalDiscountType : 'none',
+        globalDiscountInputValue,
         globalOnRegular: Boolean(globalOnRegular),
         deliveryType: normalizedDeliveryType === 'amount' ? 'amount' : 'gratuito',
         deliveryAmt: normalizedDeliveryAmount,
@@ -117,7 +127,9 @@ export const buildQuoteSummaryFromCart = ({
         globalDiscount: {
             enabled: Boolean(globalDiscountEnabled),
             type: globalDiscountEnabled ? normalizedGlobalDiscountType : 'none',
-            value: normalizedGlobalDiscountType === 'amount' ? globalDiscAmt : globalPct,
+            value: globalDiscountInputValue,
+            inputType: globalDiscountEnabled ? normalizedGlobalDiscountType : 'none',
+            inputValue: globalDiscountInputValue,
             applied: globalDiscAmt,
             onRegular: Boolean(globalOnRegular)
         },

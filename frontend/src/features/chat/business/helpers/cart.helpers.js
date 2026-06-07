@@ -235,21 +235,8 @@ export const calculateCartPricing = ({
     };
 };
 
-const roundPercent1 = (value = 0) => {
-    const num = Number(value);
-    if (!Number.isFinite(num)) return 0;
-    return Math.round(num * 10) / 10;
-};
-
-const snapLikelyIntegerPercent = (value = 0) => {
-    const rounded = roundPercent1(value);
-    const nearestInteger = Math.round(rounded);
-    return Math.abs(rounded - nearestInteger) <= 0.15 ? nearestInteger : rounded;
-};
-
 export const resolveImportedGlobalDiscount = ({
     summary = {},
-    cart = [],
     fallbackGlobalAmount = 0,
     parseMoney = asNumber
 } = {}) => {
@@ -257,27 +244,32 @@ export const resolveImportedGlobalDiscount = ({
     const globalDiscount = safeSummary.globalDiscount && typeof safeSummary.globalDiscount === 'object' && !Array.isArray(safeSummary.globalDiscount)
         ? safeSummary.globalDiscount
         : {};
-    const rawType = String(safeSummary.globalDiscType ?? globalDiscount.type ?? '').trim().toLowerCase();
+    const rawType = String(
+        safeSummary.globalDiscountInputType
+        ?? globalDiscount.inputType
+        ?? safeSummary.globalDiscType
+        ?? globalDiscount.type
+        ?? ''
+    ).trim().toLowerCase();
     const hasExplicitType = rawType === 'pct'
         || rawType === 'percent'
         || rawType === 'percentage'
         || rawType === 'amount'
         || rawType === 'fixed'
         || rawType === 's/';
-    const hasPctField = safeSummary.globalDiscPct !== null
-        && safeSummary.globalDiscPct !== undefined
-        && Number.isFinite(asNumber(safeSummary.globalDiscPct, NaN));
-    const globalDiscountType = normalizeDiscountType(hasExplicitType ? rawType : (hasPctField ? 'percent' : 'amount'));
+    const globalDiscountType = normalizeDiscountType(hasExplicitType ? rawType : (safeSummary.globalDiscPct !== undefined ? 'percent' : 'amount'));
     const globalOnRegular = Boolean(safeSummary.globalOnRegular ?? globalDiscount.onRegular);
-    const explicitGlobalAmount = Math.max(0, asNumber(
-        safeSummary.globalDiscAmt
-        ?? globalDiscount.applied
-        ?? (globalDiscountType === 'amount' ? globalDiscount.value : null)
-        ?? fallbackGlobalAmount,
-        0
-    ));
+    const inputValue = safeSummary.globalDiscountInputValue ?? globalDiscount.inputValue;
 
     if (globalDiscountType === 'amount') {
+        const explicitGlobalAmount = Math.max(0, asNumber(
+            inputValue
+            ?? safeSummary.globalDiscAmt
+            ?? globalDiscount.applied
+            ?? globalDiscount.value
+            ?? fallbackGlobalAmount,
+            0
+        ));
         return {
             enabled: explicitGlobalAmount > 0,
             type: 'amount',
@@ -286,24 +278,12 @@ export const resolveImportedGlobalDiscount = ({
         };
     }
 
-    const totalsWithoutGlobal = calcQuoteTotals(cart, 0, globalOnRegular, 0, 'percent');
-    const baseGlobal = Math.max(0, Number(totalsWithoutGlobal.baseGlobal || 0) || 0);
-    const derivedPctFromAmount = baseGlobal > 0 && explicitGlobalAmount > 0
-        ? snapLikelyIntegerPercent((explicitGlobalAmount / baseGlobal) * 100)
-        : 0;
-    const candidatePct = asNumber(
-        safeSummary.globalDiscPct
+    const resolvedPct = Math.min(100, Math.max(0, asNumber(
+        inputValue
+        ?? safeSummary.globalDiscPct
         ?? globalDiscount.value,
         0
-    );
-    const candidateLooksLikeAmount = explicitGlobalAmount > 0
-        && candidatePct > 0
-        && Math.abs(candidatePct - explicitGlobalAmount) <= 0.11
-        && derivedPctFromAmount > 0
-        && Math.abs(candidatePct - derivedPctFromAmount) > 0.5;
-    const resolvedPct = candidateLooksLikeAmount
-        ? derivedPctFromAmount
-        : (candidatePct > 0 ? Math.min(100, Math.max(0, candidatePct)) : derivedPctFromAmount);
+    )));
 
     return {
         enabled: resolvedPct > 0,

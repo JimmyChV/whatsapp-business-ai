@@ -37,7 +37,10 @@ test('tenant_quotes_service persists quote flow and tenant isolation in file dri
                     productId: 'prod_colchon_140',
                     title: 'Colchon Ortopedico 2p',
                     qty: 2,
-                    unitPrice: 49.9
+                    unitPrice: 49.9,
+                    lineDiscountInputType: 'percent',
+                    lineDiscountInputValue: 10,
+                    lineDiscountAmount: 9.9
                 },
                 {
                     lineId: 'line_02',
@@ -54,6 +57,18 @@ test('tenant_quotes_service persists quote flow and tenant isolation in file dri
                 subtotalProducts: 119.8,
                 totalDiscount: 29.9,
                 totalPayable: 122.3,
+                globalDiscountInputType: 'percent',
+                globalDiscountInputValue: 10,
+                globalDiscPct: 10,
+                globalDiscAmt: 12,
+                globalDiscount: {
+                    type: 'percent',
+                    value: 10,
+                    inputType: 'percent',
+                    inputValue: 10,
+                    applied: 12,
+                    onRegular: true
+                },
                 currency: 'PEN'
             },
             notes: 'Cotizacion inicial desde carrito',
@@ -70,12 +85,20 @@ test('tenant_quotes_service persists quote flow and tenant isolation in file dri
         assert.equal(quoteDraft.revisionNumber, 1);
         assert.equal(quoteDraft.itemsJson.length, 2);
         assert.equal(quoteDraft.summaryJson.itemCount, 2);
+        assert.equal(quoteDraft.itemsJson[0].lineDiscountInputType, 'percent');
+        assert.equal(quoteDraft.itemsJson[0].lineDiscountInputValue, 10);
+        assert.equal(quoteDraft.summaryJson.globalDiscountInputType, 'percent');
+        assert.equal(quoteDraft.summaryJson.globalDiscountInputValue, 10);
+        assert.equal(quoteDraft.summaryJson.globalDiscount.value, 10);
+        assert.equal(quoteDraft.summaryJson.globalDiscount.applied, 12);
 
         const storedDraft = await service.getQuoteById(tenantA, { quoteId: quoteDraft.quoteId });
         assert.ok(storedDraft, 'created quote should be retrievable by id');
         assert.equal(storedDraft.quoteId, quoteDraft.quoteId);
         assert.equal(storedDraft.status, 'draft');
         assert.equal(storedDraft.messageId, null);
+        assert.equal(storedDraft.summaryJson.globalDiscountInputValue, 10);
+        assert.equal(storedDraft.summaryJson.globalDiscount.applied, 12);
 
         const sentQuote = await service.markQuoteSent(tenantA, {
             quoteId: quoteDraft.quoteId,

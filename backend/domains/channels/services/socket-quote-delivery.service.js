@@ -188,6 +188,8 @@ function normalizeQuoteItem(item = {}, index = 0, currency = 'PEN') {
         lineSubtotal: roundMoney(calced.regularPrice * quantity),
         lineDiscountType: lineDiscountAmount > 0 ? calced.lineDiscountType : null,
         lineDiscountValue: calced.lineDiscountValue,
+        lineDiscountInputType: calced.lineDiscountType,
+        lineDiscountInputValue: calced.lineDiscountValue,
         lineDiscountAmount,
         lineTotal: calced.subtotal,
         currency: toText(source.currency || currency || 'PEN') || 'PEN',
@@ -201,10 +203,25 @@ function normalizeQuoteSummary(summary = {}, items = [], currency = 'PEN') {
         ? Number(source.itemCount)
         : items.length;
     const globalDiscount = isPlainObject(source.globalDiscount) ? source.globalDiscount : {};
-    const globalDiscountType = normalizeDiscountType(source.globalDiscType ?? globalDiscount.type ?? 'percent');
+    const rawGlobalInputType = toText(
+        source.globalDiscountInputType
+        ?? globalDiscount.inputType
+        ?? source.globalDiscType
+        ?? globalDiscount.type
+        ?? ''
+    ).toLowerCase();
+    const hasGlobalInputType = rawGlobalInputType === 'percent'
+        || rawGlobalInputType === 'pct'
+        || rawGlobalInputType === 'percentage'
+        || rawGlobalInputType === 'amount'
+        || rawGlobalInputType === 'fixed'
+        || rawGlobalInputType === 's/'
+        || rawGlobalInputType === 'soles';
+    const globalDiscountType = normalizeDiscountType(hasGlobalInputType ? rawGlobalInputType : 'percent');
+    const globalInputRaw = source.globalDiscountInputValue ?? globalDiscount.inputValue;
     const globalDiscValue = globalDiscountType === 'amount'
-        ? (toFiniteNumberOrNull(source.globalDiscAmt ?? globalDiscount.applied ?? globalDiscount.value) ?? 0)
-        : (toFiniteNumberOrNull(source.globalDiscPct ?? globalDiscount.value) ?? 0);
+        ? (toFiniteNumberOrNull(globalInputRaw ?? source.globalDiscAmt ?? globalDiscount.applied ?? globalDiscount.value) ?? 0)
+        : (toFiniteNumberOrNull(globalInputRaw ?? source.globalDiscPct ?? globalDiscount.value) ?? 0);
     const deliveryType = toText(source.deliveryType || source.delivery_type || (source.deliveryFree ? 'gratuito' : 'amount')).toLowerCase();
     const deliveryAmount = toFiniteNumberOrNull(source.deliveryAmt ?? source.deliveryAmount) ?? 0;
     const deliveryAmt = deliveryType === 'amount' ? deliveryAmount : 0;
@@ -225,6 +242,7 @@ function normalizeQuoteSummary(summary = {}, items = [], currency = 'PEN') {
         ?? totals.subtotal
     );
     const globalDiscAmt = totals.globalDiscAmt;
+    const hasGlobalDiscount = globalDiscValue > 0 && totals.globalDiscAmt > 0;
     const totalPayable = toFiniteNumberOrNull(source.totalPayable) ?? totals.totalPayable;
     const deliveryFree = deliveryType !== 'amount' || totals.deliveryAmt <= 0;
     const discount = roundMoney(
@@ -239,6 +257,10 @@ function normalizeQuoteSummary(summary = {}, items = [], currency = 'PEN') {
         globalDiscPct: totals.globalDiscPct,
         globalDiscType: totals.globalDiscType,
         globalDiscAmt: roundMoney(globalDiscAmt),
+        globalDiscountInputType: hasGlobalDiscount ? totals.globalDiscountType : 'none',
+        globalDiscountInputValue: hasGlobalDiscount
+            ? (totals.globalDiscountType === 'amount' ? roundMoney(globalDiscValue) : Math.min(100, Math.max(0, globalDiscValue)))
+            : 0,
         globalOnRegular: totals.globalOnRegular,
         deliveryType: deliveryFree ? 'gratuito' : 'amount',
         deliveryAmt: totals.deliveryAmt,
@@ -249,9 +271,15 @@ function normalizeQuoteSummary(summary = {}, items = [], currency = 'PEN') {
         deliveryAmount: totals.deliveryAmt,
         deliveryFree,
         globalDiscount: {
-            enabled: totals.globalDiscAmt > 0,
-            type: totals.globalDiscAmt > 0 ? totals.globalDiscountType : 'none',
-            value: totals.globalDiscountType === 'amount' ? totals.globalDiscAmt : totals.globalDiscPct,
+            enabled: hasGlobalDiscount,
+            type: hasGlobalDiscount ? totals.globalDiscountType : 'none',
+            value: hasGlobalDiscount
+                ? (totals.globalDiscountType === 'amount' ? roundMoney(globalDiscValue) : Math.min(100, Math.max(0, globalDiscValue)))
+                : 0,
+            inputType: hasGlobalDiscount ? totals.globalDiscountType : 'none',
+            inputValue: hasGlobalDiscount
+                ? (totals.globalDiscountType === 'amount' ? roundMoney(globalDiscValue) : Math.min(100, Math.max(0, globalDiscValue)))
+                : 0,
             applied: roundMoney(globalDiscAmt),
             onRegular: totals.globalOnRegular
         },
@@ -506,7 +534,26 @@ function buildOutgoingOrderPayload(quote = {}) {
     const optionGroupId = toNullableText(quote?.optionGroupId ?? quote?.option_group_id);
     const metadata = isPlainObject(quote?.metadata) ? quote.metadata : {};
     const sourceType = toText(metadata?.sourceType || metadata?.source_type || quote?.sourceType || 'quote').toLowerCase() || 'quote';
-    const summaryGlobalType = normalizeDiscountType(summary?.globalDiscType ?? summary?.globalDiscount?.type);
+    const summaryGlobalType = normalizeDiscountType(
+        summary?.globalDiscountInputType
+        ?? summary?.globalDiscount?.inputType
+        ?? summary?.globalDiscType
+        ?? summary?.globalDiscount?.type
+    );
+    const summaryGlobalInputValue = summaryGlobalType === 'amount'
+        ? (toFiniteNumberOrNull(
+            summary?.globalDiscountInputValue
+            ?? summary?.globalDiscount?.inputValue
+            ?? summary?.globalDiscAmt
+            ?? summary?.globalDiscount?.applied
+            ?? summary?.globalDiscount?.value
+        ) ?? 0)
+        : (toFiniteNumberOrNull(
+            summary?.globalDiscountInputValue
+            ?? summary?.globalDiscount?.inputValue
+            ?? summary?.globalDiscPct
+            ?? summary?.globalDiscount?.value
+        ) ?? 0);
     const quoteSummary = {
         itemCount: Number.isInteger(Number(summary?.itemCount)) ? Number(summary.itemCount) : items.length,
         subtotal: toFiniteNumberOrNull(summary?.subtotal),
@@ -515,6 +562,8 @@ function buildOutgoingOrderPayload(quote = {}) {
             ?? 0,
         globalDiscAmt: toFiniteNumberOrNull(summary?.globalDiscAmt) ?? toFiniteNumberOrNull(summary?.globalDiscount?.applied) ?? 0,
         globalDiscType: toText(summary?.globalDiscType || (summary?.globalDiscount?.type === 'amount' ? 'fixed' : 'pct')) || 'pct',
+        globalDiscountInputType: toText(summary?.globalDiscountInputType || summary?.globalDiscount?.inputType || (summaryGlobalInputValue > 0 ? summaryGlobalType : 'none')) || 'none',
+        globalDiscountInputValue: summaryGlobalInputValue,
         globalOnRegular: Boolean(summary?.globalOnRegular ?? summary?.globalDiscount?.onRegular),
         deliveryType: toText(summary?.deliveryType || (summary?.deliveryFree ? 'gratuito' : 'amount')) || 'gratuito',
         deliveryAmt: toFiniteNumberOrNull(summary?.deliveryAmt ?? summary?.deliveryAmount) ?? 0,
@@ -526,13 +575,13 @@ function buildOutgoingOrderPayload(quote = {}) {
         globalDiscount: summary?.globalDiscount && typeof summary.globalDiscount === 'object'
             ? {
                 type: String(summary.globalDiscount.type || 'none').trim().toLowerCase() || 'none',
-                value: normalizeDiscountType(summary.globalDiscount.type) === 'amount'
-                    ? (toFiniteNumberOrNull(summary.globalDiscount.applied ?? summary.globalDiscount.value) ?? 0)
-                    : (toFiniteNumberOrNull(summary.globalDiscount.value) ?? 0),
+                value: summaryGlobalInputValue,
+                inputType: toText(summary.globalDiscount.inputType || summary?.globalDiscountInputType || summaryGlobalType) || 'none',
+                inputValue: summaryGlobalInputValue,
                 applied: toFiniteNumberOrNull(summary.globalDiscount.applied) ?? 0,
                 onRegular: Boolean(summary.globalDiscount.onRegular)
             }
-            : { type: 'none', value: 0, applied: 0 },
+            : { type: 'none', value: 0, inputType: 'none', inputValue: 0, applied: 0 },
         currency
     };
 
