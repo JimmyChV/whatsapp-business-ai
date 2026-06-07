@@ -23,6 +23,7 @@ import {
     repairMojibake,
     renderAiMessageWithSendAction,
     removeItemFromCartState,
+    resolveImportedGlobalDiscount,
     roundMoney,
     setCartItemQtyState,
     setCartItemDiscountEnabledState,
@@ -1186,9 +1187,11 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         const summary = normalized.summaryJson && typeof normalized.summaryJson === 'object' ? normalized.summaryJson : {};
         const deliveryAmountValue = Math.max(0, Number((summary?.deliveryAmt ?? summary?.deliveryAmount) || 0) || 0);
         const deliveryFree = summary?.deliveryFree !== false || deliveryAmountValue <= 0;
-        const globalDiscount = summary?.globalDiscount && typeof summary.globalDiscount === 'object'
-            ? summary.globalDiscount
-            : {};
+        const importedGlobalDiscount = resolveImportedGlobalDiscount({
+            summary,
+            cart: importedCart,
+            parseMoney
+        });
         updateDraft({
             cart: importedCart,
             sourceOrder: null,
@@ -1201,14 +1204,10 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             sourceType: 'quote',
             showOrderAdjustments: true,
             cartWizardStep: 4,
-            globalDiscountEnabled: Boolean(globalDiscount?.enabled || Number(summary?.globalDiscPct || 0) > 0),
-            globalDiscountType: normalizeDiscountType(summary?.globalDiscType ?? globalDiscount?.type ?? 'percent'),
-            globalDiscountValue: Math.max(0, Number(
-                normalizeDiscountType(summary?.globalDiscType ?? globalDiscount?.type) === 'amount'
-                    ? (summary?.globalDiscAmt ?? globalDiscount?.applied ?? globalDiscount?.value)
-                    : (summary?.globalDiscPct ?? globalDiscount?.value)
-            ) || 0),
-            globalOnRegular: Boolean(summary?.globalOnRegular ?? globalDiscount?.onRegular),
+            globalDiscountEnabled: importedGlobalDiscount.enabled,
+            globalDiscountType: importedGlobalDiscount.type,
+            globalDiscountValue: importedGlobalDiscount.value,
+            globalOnRegular: importedGlobalDiscount.onRegular,
             deliveryType: deliveryFree ? 'free' : 'amount',
             deliveryAmount: deliveryFree ? 0 : deliveryAmountValue
         });

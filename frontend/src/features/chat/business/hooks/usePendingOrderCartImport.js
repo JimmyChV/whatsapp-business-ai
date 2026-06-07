@@ -5,6 +5,7 @@ import {
     normalizeTextKey,
     parseMoney,
     parseOrderTitleItems,
+    resolveImportedGlobalDiscount,
     roundMoney
 } from '../helpers';
 
@@ -449,23 +450,17 @@ export const usePendingOrderCartImport = ({
             const quoteDeliveryAmount = Math.max(0, parseMoney(quoteSummary?.deliveryAmt ?? quoteSummary?.deliveryAmount ?? 0, 0));
             const quoteDeliveryFree = Boolean(quoteSummary?.deliveryFree) || quoteDeliveryAmount <= 0;
 
-            const summaryGlobalDiscountType = String(quoteSummary?.globalDiscType || quoteSummary?.globalDiscount?.type || '').trim().toLowerCase();
-            const normalizedSummaryGlobalType = summaryGlobalDiscountType === 'fixed' || summaryGlobalDiscountType === 'amount' ? 'amount' : 'percent';
-            const summaryGlobalDiscountValue = Math.max(0, parseMoney(
-                normalizedSummaryGlobalType === 'amount'
-                    ? (quoteSummary?.globalDiscAmt ?? quoteSummary?.globalDiscount?.applied ?? quoteSummary?.globalDiscount?.value)
-                    : (quoteSummary?.globalDiscPct ?? quoteSummary?.globalDiscount?.value),
-                0
-            ));
-            const hasSummaryGlobalDiscount = (summaryGlobalDiscountType === 'percent' || summaryGlobalDiscountType === 'amount' || summaryGlobalDiscountType === 'fixed')
-                && summaryGlobalDiscountValue > 0;
+            const importedGlobalDiscount = resolveImportedGlobalDiscount({
+                summary: quoteSummary,
+                cart: importedCart,
+                fallbackGlobalAmount: reconstructedGlobalDiscount,
+                parseMoney
+            });
             const quotePatch = {
-                globalDiscountEnabled: hasSummaryGlobalDiscount ? true : reconstructedGlobalDiscount > 0,
-                globalDiscountType: hasSummaryGlobalDiscount ? normalizedSummaryGlobalType : 'percent',
-                globalDiscountValue: hasSummaryGlobalDiscount
-                    ? summaryGlobalDiscountValue
-                    : (reconstructedGlobalDiscount > 0 ? reconstructedGlobalDiscount : 0),
-                globalOnRegular: Boolean(quoteSummary?.globalOnRegular ?? quoteSummary?.globalDiscount?.onRegular),
+                globalDiscountEnabled: importedGlobalDiscount.enabled,
+                globalDiscountType: importedGlobalDiscount.type,
+                globalDiscountValue: importedGlobalDiscount.value,
+                globalOnRegular: importedGlobalDiscount.onRegular,
                 deliveryType: quoteDeliveryFree ? 'free' : 'amount',
                 deliveryAmount: quoteDeliveryFree ? 0 : quoteDeliveryAmount,
                 cartWizardStep: 4
