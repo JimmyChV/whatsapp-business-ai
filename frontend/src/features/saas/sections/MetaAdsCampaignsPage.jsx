@@ -299,6 +299,30 @@ function formatMetricInteger(value) {
     return hasMetricValue(value) ? formatInteger(value) : '-';
 }
 
+function formatRoas(value) {
+    return hasMetricValue(value) ? `${formatRatio(value)}x` : '-';
+}
+
+function formatRoi(value) {
+    return hasMetricValue(value) || toNumber(value) < 0 ? `${formatRatio(value)}%` : '-';
+}
+
+function todayInputValue() {
+    return toDateInputValue(new Date());
+}
+
+function normalizeExternalSale(item = {}) {
+    return {
+        saleId: String(item?.saleId || item?.sale_id || '').trim(),
+        adId: String(item?.adId || item?.ad_id || '').trim(),
+        saleDate: String(item?.saleDate || item?.sale_date || '').slice(0, 10),
+        amount: toNumber(item?.amount),
+        detail: String(item?.detail || '').trim(),
+        phone: String(item?.phone || '').trim(),
+        createdAt: item?.createdAt || item?.created_at || null
+    };
+}
+
 function formatDateLabel(value) {
     const text = String(value || '').trim();
     if (!text) return '-';
@@ -380,6 +404,8 @@ function normalizeInsightItems(payload) {
         is_manual_greeting: item?.is_manual_greeting === true,
         auto_greeting_text: String(item?.auto_greeting_text || '').trim(),
         autofill_message: String(item?.autofill_message || '').trim(),
+        is_external: item?.is_external === true,
+        external_channel: String(item?.external_channel || '').trim(),
         buttons_json: parseButtonsJson(item?.buttons_json),
         ctr: Number(item?.ctr),
         cpc: Number(item?.cpc),
@@ -423,6 +449,8 @@ function aggregateInsightRows(items = []) {
             is_manual_greeting: false,
             auto_greeting_text: '',
             autofill_message: '',
+            is_external: false,
+            external_channel: '',
             buttons_json: [],
             date_start: '',
             date_stop: '',
@@ -446,6 +474,8 @@ function aggregateInsightRows(items = []) {
         current.is_manual_greeting = current.is_manual_greeting || item?.is_manual_greeting === true;
         current.auto_greeting_text = String(current.auto_greeting_text || item?.auto_greeting_text || '').trim();
         current.autofill_message = String(current.autofill_message || item?.autofill_message || '').trim();
+        current.is_external = current.is_external || item?.is_external === true;
+        current.external_channel = String(current.external_channel || item?.external_channel || '').trim();
         current.buttons_json = current.buttons_json?.length ? current.buttons_json : parseButtonsJson(item?.buttons_json);
         current.days_active = Math.max(toNumber(current.days_active), toNumber(item?.days_active));
         current.date_start = current.date_start && item?.date_start
@@ -684,11 +714,25 @@ function MetaAdDetail({
     ad = null,
     stats = null,
     statsLoading = false,
+    externalSales = [],
+    externalSalesLoading = false,
+    externalSaleFormOpen = false,
+    externalSaleDraft = {},
+    externalSaleSaving = false,
+    canManageChannel = false,
+    canAddExternalSales = false,
+    canDeleteExternalSales = false,
+    channelSaving = false,
     onBack = null,
     onCopyAdId = null,
     onEditGreeting = null,
     onUseAutoGreeting = null,
-    onOpenChats = null
+    onOpenChats = null,
+    onChannelChange = null,
+    onToggleExternalSaleForm = null,
+    onExternalSaleDraftChange = null,
+    onSaveExternalSale = null,
+    onDeleteExternalSale = null
 }) {
     if (!ad) {
         return (
@@ -707,6 +751,22 @@ function MetaAdDetail({
     const showAutoGreeting = ad.is_manual_greeting === true
         && autoGreetingText
         && autoGreetingText !== greetingText;
+    const isExternal = ad.is_external === true || String(ad.external_channel || '').trim() === 'whatsapp_business';
+    const safeExternalSales = toArray(externalSales).map(normalizeExternalSale);
+    const systemOrders = toNumber(stats?.systemOrders);
+    const systemRevenue = toNumber(stats?.systemRevenue);
+    const externalOrders = safeExternalSales.length;
+    const externalRevenue = safeExternalSales.reduce((acc, sale) => acc + toNumber(sale.amount), 0);
+    const effectiveOrders = isExternal ? externalOrders : systemOrders;
+    const effectiveRevenue = isExternal ? externalRevenue : systemRevenue;
+    const totalRevenue = systemRevenue + externalRevenue;
+    const totalOrders = systemOrders + externalOrders;
+    const investment = toNumber(ad.spend);
+    const effectiveRoas = investment > 0 ? effectiveRevenue / investment : 0;
+    const effectiveRoi = investment > 0 ? ((effectiveRevenue - investment) / investment) * 100 : 0;
+    const totalRoas = investment > 0 ? totalRevenue / investment : 0;
+    const totalRoi = investment > 0 ? ((totalRevenue - investment) / investment) * 100 : 0;
+    const totalCostPerOrder = totalOrders > 0 ? investment / totalOrders : 0;
     return (
         <div className="saas-meta-ad-detail">
             <button type="button" className="saas-btn saas-btn-outline saas-meta-ad-detail__back" onClick={onBack}>
@@ -746,6 +806,147 @@ function MetaAdDetail({
                 ) : (
                     <div className="saas-admin-empty-inline">Sin datos en este periodo</div>
                 )}
+            </section>
+
+            {canManageChannel ? (
+                <section className="saas-admin-related-block saas-meta-ad-channel">
+                    <h4>Canal del anuncio</h4>
+                    <div className="saas-meta-ad-channel-options">
+                        <label className={!isExternal ? 'is-selected' : ''}>
+                            <input
+                                type="radio"
+                                name={`meta_ad_channel_${ad.ad_id}`}
+                                checked={!isExternal}
+                                disabled={channelSaving}
+                                onChange={() => onChannelChange?.(false)}
+                            />
+                            <span>
+                                <strong>Sistema (Cloud API)</strong>
+                                <small>Las ventas se registran automaticamente.</small>
+                            </span>
+                        </label>
+                        <label className={isExternal ? 'is-selected' : ''}>
+                            <input
+                                type="radio"
+                                name={`meta_ad_channel_${ad.ad_id}`}
+                                checked={isExternal}
+                                disabled={channelSaving}
+                                onChange={() => onChannelChange?.(true)}
+                            />
+                            <span>
+                                <strong>WhatsApp Business externo</strong>
+                                <small>Las ventas se ingresan manualmente.</small>
+                            </span>
+                        </label>
+                    </div>
+                </section>
+            ) : null}
+
+            <section className="saas-admin-related-block">
+                <h4>{isExternal ? 'Ventas externas' : 'Ventas en sistema'}</h4>
+                {isExternal ? (
+                    <>
+                        {externalSalesLoading ? (
+                            <div className="saas-admin-empty-inline">Cargando ventas externas...</div>
+                        ) : safeExternalSales.length ? (
+                            <div className="saas-meta-ad-sales-list">
+                                {safeExternalSales.map((sale) => (
+                                    <div key={sale.saleId} className="saas-meta-ad-sale-row">
+                                        <strong>{formatDateLabel(sale.saleDate)}</strong>
+                                        <span>{formatCurrencyLabel(sale.amount)}</span>
+                                        <em>{sale.detail || sale.phone || 'Venta externa'}</em>
+                                        {canDeleteExternalSales ? (
+                                            <button type="button" className="saas-btn-cancel" onClick={() => onDeleteExternalSale?.(sale.saleId)}>Eliminar</button>
+                                        ) : null}
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="saas-admin-empty-inline">Aun no hay ventas externas registradas para este anuncio.</div>
+                        )}
+                        <p className="saas-meta-ad-conversation-summary">
+                            {`${formatInteger(externalOrders)} pedidos - ${formatCurrencyLabel(externalRevenue)} - ROAS ${formatRoas(effectiveRoas)} - ROI ${formatRoi(effectiveRoi)}`}
+                        </p>
+                        {canAddExternalSales ? (
+                            <>
+                                <button type="button" className="saas-btn saas-btn-outline" onClick={onToggleExternalSaleForm}>
+                                    {externalSaleFormOpen ? 'Cerrar formulario' : 'Agregar venta externa'}
+                                </button>
+                                {externalSaleFormOpen ? (
+                                    <div className="saas-meta-ad-external-sale-form">
+                                        <label>
+                                            <span>Fecha</span>
+                                            <input
+                                                className="saas-input"
+                                                type="date"
+                                                value={externalSaleDraft.saleDate || todayInputValue()}
+                                                disabled={externalSaleSaving}
+                                                onChange={(event) => onExternalSaleDraftChange?.({ saleDate: event.target.value })}
+                                            />
+                                        </label>
+                                        <label>
+                                            <span>Monto</span>
+                                            <input
+                                                className="saas-input"
+                                                type="number"
+                                                min="0"
+                                                step="0.01"
+                                                value={externalSaleDraft.amount || ''}
+                                                disabled={externalSaleSaving}
+                                                onChange={(event) => onExternalSaleDraftChange?.({ amount: event.target.value })}
+                                                placeholder="S/ 0.00"
+                                            />
+                                        </label>
+                                        <label className="saas-meta-ad-external-sale-form__detail">
+                                            <span>Detalle</span>
+                                            <input
+                                                className="saas-input"
+                                                value={externalSaleDraft.detail || ''}
+                                                disabled={externalSaleSaving}
+                                                onChange={(event) => onExternalSaleDraftChange?.({ detail: event.target.value })}
+                                                placeholder="Producto, cliente o nota opcional"
+                                            />
+                                        </label>
+                                        <label>
+                                            <span>Telefono</span>
+                                            <input
+                                                className="saas-input"
+                                                value={externalSaleDraft.phone || ''}
+                                                disabled={externalSaleSaving}
+                                                onChange={(event) => onExternalSaleDraftChange?.({ phone: event.target.value })}
+                                                placeholder="+51999999999"
+                                            />
+                                        </label>
+                                        <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                            <button type="button" className="saas-btn saas-btn-outline" disabled={externalSaleSaving} onClick={onToggleExternalSaleForm}>Cancelar</button>
+                                            <button type="button" className="saas-btn" disabled={externalSaleSaving} onClick={onSaveExternalSale}>{externalSaleSaving ? 'Guardando...' : 'Guardar'}</button>
+                                        </div>
+                                    </div>
+                                ) : null}
+                            </>
+                        ) : null}
+                    </>
+                ) : (
+                    <>
+                        <p className="saas-meta-ad-conversation-summary">
+                            {`${formatInteger(systemOrders)} pedidos - ${formatCurrencyLabel(systemRevenue)} - ROAS ${formatRoas(effectiveRoas)} - ROI ${formatRoi(effectiveRoi)}`}
+                        </p>
+                        <div className="saas-admin-empty-inline">Estos pedidos se toman automaticamente de tenant_orders vinculados al origen del anuncio.</div>
+                    </>
+                )}
+            </section>
+
+            <section className="saas-admin-related-block">
+                <h4>Resumen total</h4>
+                <div className="saas-admin-detail-grid">
+                    <div className="saas-admin-detail-field"><span>Inversion Meta</span><strong>{formatCurrencyLabel(investment)}</strong></div>
+                    <div className="saas-admin-detail-field"><span>Ventas sistema</span><strong>{formatCurrencyLabel(systemRevenue)}</strong></div>
+                    <div className="saas-admin-detail-field"><span>Ventas externas</span><strong>{formatCurrencyLabel(externalRevenue)}</strong></div>
+                    <div className="saas-admin-detail-field"><span>Ventas totales</span><strong>{formatCurrencyLabel(totalRevenue)}</strong></div>
+                    <div className="saas-admin-detail-field"><span>ROAS</span><strong>{formatRoas(totalRoas)}</strong></div>
+                    <div className="saas-admin-detail-field"><span>ROI</span><strong>{formatRoi(totalRoi)}</strong></div>
+                    <div className="saas-admin-detail-field"><span>Costo/pedido</span><strong>{formatMetricCurrency(totalCostPerOrder)}</strong></div>
+                </div>
             </section>
 
             <section className="saas-admin-related-block">
@@ -835,6 +1036,14 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
             && String(membership?.role || '').trim().toLowerCase() === 'owner'
             && (!tenantId || String(membership?.tenantId || membership?.tenant_id || '').trim() === tenantId)
         ));
+    const canDeleteExternalSales = context?.isSuperAdmin === true
+        || currentUser?.isSuperAdmin === true
+        || ['superadmin', 'owner', 'admin'].includes(normalizedUserRole)
+        || (Array.isArray(currentUser?.memberships) ? currentUser.memberships : []).some((membership) => (
+            membership?.active !== false
+            && ['owner', 'admin'].includes(String(membership?.role || '').trim().toLowerCase())
+            && (!tenantId || String(membership?.tenantId || membership?.tenant_id || '').trim() === tenantId)
+        ));
     const columnPrefs = useSaasViewPreferences('meta_ads_campaigns_expanded', META_ADS_TABLE_COLUMNS, { requestJson });
     const [dateRange, setDateRange] = useState(() => readStoredDateRange(tenantId));
     const [searchValue, setSearchValue] = useState('');
@@ -851,6 +1060,12 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
     const [greetingModalOpen, setGreetingModalOpen] = useState(false);
     const [greetingDraft, setGreetingDraft] = useState('');
     const [savingGreeting, setSavingGreeting] = useState(false);
+    const [externalSales, setExternalSales] = useState([]);
+    const [externalSalesLoading, setExternalSalesLoading] = useState(false);
+    const [externalSaleFormOpen, setExternalSaleFormOpen] = useState(false);
+    const [externalSaleDraft, setExternalSaleDraft] = useState({ saleDate: todayInputValue(), amount: '', detail: '', phone: '' });
+    const [externalSaleSaving, setExternalSaleSaving] = useState(false);
+    const [channelSaving, setChannelSaving] = useState(false);
     const syncBusy = syncing || syncingCreatives;
 
     useEffect(() => {
@@ -931,6 +1146,11 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
     }, [selectedAd, selectedAdId]);
 
     useEffect(() => {
+        setExternalSaleFormOpen(false);
+        setExternalSaleDraft({ saleDate: todayInputValue(), amount: '', detail: '', phone: '' });
+    }, [selectedAdId]);
+
+    useEffect(() => {
         let cancelled = false;
         const adId = String(selectedAdId || '').trim();
         if (!requestJson || !tenantId || !adId) {
@@ -942,7 +1162,11 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
         }
         setAdStatsLoading(true);
         setAdStats(null);
-        const query = new URLSearchParams({ tenantId });
+        const query = new URLSearchParams({
+            tenantId,
+            dateStart: dateRange.dateStart,
+            dateStop: dateRange.dateStop
+        });
         requestJson(`/api/tenant/meta-ads/ad-stats/${encodeURIComponent(adId)}?${query.toString()}`, { tenantIdOverride: tenantId })
             .then((payload) => {
                 if (!cancelled) setAdStats(payload || null);
@@ -955,6 +1179,36 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
             })
             .finally(() => {
                 if (!cancelled) setAdStatsLoading(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [dateRange.dateStart, dateRange.dateStop, notify, requestJson, selectedAdId, tenantId]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const adId = String(selectedAdId || '').trim();
+        if (!requestJson || !tenantId || !adId) {
+            setExternalSales([]);
+            setExternalSalesLoading(false);
+            return () => {
+                cancelled = true;
+            };
+        }
+        setExternalSalesLoading(true);
+        const query = new URLSearchParams({ tenantId });
+        requestJson(`/api/meta-ads/ads/${encodeURIComponent(adId)}/external-sales?${query.toString()}`, { tenantIdOverride: tenantId })
+            .then((payload) => {
+                if (!cancelled) setExternalSales(toArray(payload?.items).map(normalizeExternalSale));
+            })
+            .catch((salesError) => {
+                if (!cancelled) {
+                    setExternalSales([]);
+                    notify({ type: 'error', message: String(salesError?.message || 'No se pudieron cargar ventas externas.') });
+                }
+            })
+            .finally(() => {
+                if (!cancelled) setExternalSalesLoading(false);
             });
         return () => {
             cancelled = true;
@@ -1136,6 +1390,95 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
         }
     }, [notify, requestJson, tenantId]);
 
+    const updateAdChannel = useCallback(async (isExternal) => {
+        const adId = String(selectedAd?.ad_id || '').trim();
+        if (!requestJson || !tenantId || !adId) return;
+        setChannelSaving(true);
+        try {
+            const payload = await requestJson(`/api/meta-ads/ads/${encodeURIComponent(adId)}/channel`, {
+                method: 'PATCH',
+                tenantIdOverride: tenantId,
+                headers: { 'Content-Type': 'application/json' },
+                body: {
+                    tenantId,
+                    isExternal,
+                    externalChannel: isExternal ? 'whatsapp_business' : null
+                }
+            });
+            setRows((currentRows) => currentRows.map((row) => (
+                String(row?.ad_id || '').trim() === adId
+                    ? {
+                        ...row,
+                        is_external: payload?.isExternal === true,
+                        external_channel: String(payload?.externalChannel || '').trim()
+                    }
+                    : row
+            )));
+            notify({ type: 'success', message: 'Canal actualizado.' });
+        } catch (channelError) {
+            notify({ type: 'error', message: String(channelError?.message || 'No se pudo actualizar el canal.') });
+        } finally {
+            setChannelSaving(false);
+        }
+    }, [notify, requestJson, selectedAd, tenantId]);
+
+    const toggleExternalSaleForm = useCallback(() => {
+        setExternalSaleFormOpen((current) => {
+            const nextOpen = !current;
+            if (nextOpen) setExternalSaleDraft({ saleDate: todayInputValue(), amount: '', detail: '', phone: '' });
+            return nextOpen;
+        });
+    }, []);
+
+    const updateExternalSaleDraft = useCallback((patch = {}) => {
+        setExternalSaleDraft((current) => ({ ...current, ...patch }));
+    }, []);
+
+    const saveExternalSale = useCallback(async () => {
+        const adId = String(selectedAd?.ad_id || '').trim();
+        if (!requestJson || !tenantId || !adId) return;
+        setExternalSaleSaving(true);
+        try {
+            const payload = await requestJson(`/api/meta-ads/ads/${encodeURIComponent(adId)}/external-sales`, {
+                method: 'POST',
+                tenantIdOverride: tenantId,
+                headers: { 'Content-Type': 'application/json' },
+                body: {
+                    tenantId,
+                    saleDate: externalSaleDraft.saleDate || todayInputValue(),
+                    amount: externalSaleDraft.amount,
+                    detail: externalSaleDraft.detail,
+                    phone: externalSaleDraft.phone
+                }
+            });
+            const nextSale = normalizeExternalSale(payload?.item);
+            setExternalSales((currentSales) => [nextSale, ...toArray(currentSales)]);
+            setExternalSaleFormOpen(false);
+            setExternalSaleDraft({ saleDate: todayInputValue(), amount: '', detail: '', phone: '' });
+            notify({ type: 'success', message: 'Venta externa registrada.' });
+        } catch (saleError) {
+            notify({ type: 'error', message: String(saleError?.message || 'No se pudo registrar la venta externa.') });
+        } finally {
+            setExternalSaleSaving(false);
+        }
+    }, [externalSaleDraft.amount, externalSaleDraft.detail, externalSaleDraft.phone, externalSaleDraft.saleDate, notify, requestJson, selectedAd, tenantId]);
+
+    const deleteExternalSale = useCallback(async (saleId = '') => {
+        const adId = String(selectedAd?.ad_id || '').trim();
+        const cleanSaleId = String(saleId || '').trim();
+        if (!requestJson || !tenantId || !adId || !cleanSaleId) return;
+        try {
+            await requestJson(`/api/meta-ads/ads/${encodeURIComponent(adId)}/external-sales/${encodeURIComponent(cleanSaleId)}?${new URLSearchParams({ tenantId }).toString()}`, {
+                method: 'DELETE',
+                tenantIdOverride: tenantId
+            });
+            setExternalSales((currentSales) => toArray(currentSales).filter((sale) => String(sale?.saleId || '').trim() !== cleanSaleId));
+            notify({ type: 'success', message: 'Venta externa eliminada.' });
+        } catch (saleError) {
+            notify({ type: 'error', message: String(saleError?.message || 'No se pudo eliminar la venta externa.') });
+        }
+    }, [notify, requestJson, selectedAd, tenantId]);
+
     const openChatsForAd = useCallback((adId = '') => {
         const cleanAdId = String(adId || '').trim();
         if (!cleanAdId) return;
@@ -1258,11 +1601,25 @@ export default function MetaAdsCampaignsPage({ context = {} }) {
                 ad={selectedAd}
                 stats={adStats}
                 statsLoading={adStatsLoading}
+                externalSales={externalSales}
+                externalSalesLoading={externalSalesLoading}
+                externalSaleFormOpen={externalSaleFormOpen}
+                externalSaleDraft={externalSaleDraft}
+                externalSaleSaving={externalSaleSaving}
+                canManageChannel={canSyncCreatives && canManageMetaAds}
+                canAddExternalSales={canManageMetaAds}
+                canDeleteExternalSales={canDeleteExternalSales}
+                channelSaving={channelSaving}
                 onBack={() => setSelectedAdId('')}
                 onCopyAdId={copyAdId}
                 onEditGreeting={openGreetingModal}
                 onUseAutoGreeting={useAutoGreeting}
                 onOpenChats={openChatsForAd}
+                onChannelChange={updateAdChannel}
+                onToggleExternalSaleForm={toggleExternalSaleForm}
+                onExternalSaleDraftChange={updateExternalSaleDraft}
+                onSaveExternalSale={saveExternalSale}
+                onDeleteExternalSale={deleteExternalSale}
             />
         </SaasDetailPanel>
     ) : (

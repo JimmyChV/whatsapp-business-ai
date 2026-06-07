@@ -52,6 +52,13 @@ function canEditMetaAdsCreative(req = {}, tenantId = '') {
     });
 }
 
+function getActorUserId(req = {}) {
+    const user = req?.authContext?.user && typeof req.authContext.user === 'object'
+        ? req.authContext.user
+        : {};
+    return String(user.userId || user.user_id || user.id || '').trim();
+}
+
 function registerTenantMetaAdsHttpRoutes({
     app,
     accessPolicyService,
@@ -155,7 +162,10 @@ function registerTenantMetaAdsHttpRoutes({
         }
 
         try {
-            const stats = await metaAdsSyncService.getMetaAdConversationStats(tenantId, adId);
+            const stats = await metaAdsSyncService.getMetaAdConversationStats(tenantId, adId, {
+                dateStart: req.query?.dateStart,
+                dateStop: req.query?.dateStop
+            });
             return res.json({ ok: true, tenantId, adId, ...stats });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron cargar estadisticas del anuncio.') });
@@ -183,6 +193,93 @@ function registerTenantMetaAdsHttpRoutes({
             return res.json({ ok: true });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar el greeting Meta.') });
+        }
+    });
+
+    app.patch('/api/meta-ads/ads/:adId/channel', async (req, res) => {
+        const source = req.body && typeof req.body === 'object' ? req.body : {};
+        const tenantId = String(source?.tenantId || req.query?.tenantId || '').trim();
+        const adId = String(req.params?.adId || '').trim();
+        if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+        if (!adId) return res.status(400).json({ ok: false, error: 'adId invalido.' });
+        if (!isTenantAllowedForUser(req, tenantId)
+            || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_META_ADS_MANAGE)
+            || !isOwnerForTenant(req, tenantId)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const result = await metaAdsSyncService.updateMetaAdChannel(tenantId, adId, {
+                isExternal: source?.isExternal,
+                externalChannel: source?.externalChannel
+            });
+            return res.json({ ok: true, ...result });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar el canal del anuncio.') });
+        }
+    });
+
+    app.get('/api/meta-ads/ads/:adId/external-sales', async (req, res) => {
+        const tenantId = String(req.query?.tenantId || '').trim();
+        const adId = String(req.params?.adId || '').trim();
+        if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+        if (!adId) return res.status(400).json({ ok: false, error: 'adId invalido.' });
+        if (!isTenantAllowedForUser(req, tenantId)
+            || !hasAnyPermission(req, [
+                accessPolicyService.PERMISSIONS.TENANT_META_ADS_READ,
+                accessPolicyService.PERMISSIONS.TENANT_META_ADS_MANAGE
+            ])) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const items = await metaAdsSyncService.listMetaAdExternalSales(tenantId, adId);
+            return res.json({ ok: true, tenantId, adId, items });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron cargar ventas externas del anuncio.') });
+        }
+    });
+
+    app.post('/api/meta-ads/ads/:adId/external-sales', async (req, res) => {
+        const source = req.body && typeof req.body === 'object' ? req.body : {};
+        const tenantId = String(source?.tenantId || req.query?.tenantId || '').trim();
+        const adId = String(req.params?.adId || '').trim();
+        if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+        if (!adId) return res.status(400).json({ ok: false, error: 'adId invalido.' });
+        if (!isTenantAllowedForUser(req, tenantId)
+            || !hasAnyPermission(req, [
+                accessPolicyService.PERMISSIONS.TENANT_META_ADS_READ,
+                accessPolicyService.PERMISSIONS.TENANT_META_ADS_MANAGE
+            ])) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const item = await metaAdsSyncService.createMetaAdExternalSale(tenantId, adId, source, getActorUserId(req));
+            return res.status(201).json({ ok: true, tenantId, adId, item });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo registrar venta externa del anuncio.') });
+        }
+    });
+
+    app.delete('/api/meta-ads/ads/:adId/external-sales/:saleId', async (req, res) => {
+        const tenantId = String(req.query?.tenantId || req.body?.tenantId || '').trim();
+        const adId = String(req.params?.adId || '').trim();
+        const saleId = String(req.params?.saleId || '').trim();
+        if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+        if (!adId) return res.status(400).json({ ok: false, error: 'adId invalido.' });
+        if (!saleId) return res.status(400).json({ ok: false, error: 'saleId invalido.' });
+        if (!isTenantAllowedForUser(req, tenantId)
+            || !hasPermission(req, accessPolicyService.PERMISSIONS.TENANT_META_ADS_MANAGE)
+            || !canEditMetaAdsCreative(req, tenantId)) {
+            return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        }
+
+        try {
+            const result = await metaAdsSyncService.deleteMetaAdExternalSale(tenantId, adId, saleId);
+            return res.json({ ok: true, ...result });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo eliminar la venta externa.') });
         }
     });
 }

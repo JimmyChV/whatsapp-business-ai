@@ -1977,6 +1977,95 @@
     font-weight: 800;
 }
 
+.saas-meta-ad-channel-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.saas-meta-ad-channel-options label {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-height: 74px;
+    padding: 12px;
+    border: 1px solid rgba(107, 114, 128, 0.2);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.72);
+    cursor: pointer;
+}
+
+.saas-meta-ad-channel-options label.is-selected {
+    border-color: rgba(29, 158, 117, 0.42);
+    background: rgba(236, 253, 245, 0.72);
+    box-shadow: 0 10px 24px rgba(29, 158, 117, 0.08);
+}
+
+.saas-meta-ad-channel-options input {
+    margin-top: 3px;
+    accent-color: #1d9e75;
+}
+
+.saas-meta-ad-channel-options span {
+    display: grid;
+    gap: 3px;
+}
+
+.saas-meta-ad-channel-options small {
+    color: var(--color-text-secondary, #6b7280);
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.saas-meta-ad-sales-list {
+    display: grid;
+    gap: 8px;
+    margin: 0 0 12px;
+}
+
+.saas-meta-ad-sale-row {
+    display: grid;
+    grid-template-columns: minmax(82px, 0.7fr) minmax(92px, 0.7fr) minmax(0, 1.4fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid rgba(107, 114, 128, 0.16);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.78);
+}
+
+.saas-meta-ad-sale-row em {
+    overflow: hidden;
+    color: var(--color-text-secondary, #6b7280);
+    font-style: normal;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.saas-meta-ad-external-sale-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid rgba(29, 158, 117, 0.18);
+    border-radius: 16px;
+    background: rgba(236, 253, 245, 0.44);
+}
+
+.saas-meta-ad-external-sale-form label {
+    display: grid;
+    gap: 6px;
+    color: var(--color-text-secondary, #6b7280);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.saas-meta-ad-external-sale-form__detail,
+.saas-meta-ad-external-sale-form .saas-admin-form-row--actions {
+    grid-column: 1 / -1;
+}
+
 .saas-meta-ad-greeting-modal .saas-template-builder-modal-shell {
     max-width: 620px;
 }
@@ -2007,6 +2096,20 @@
 
     .saas-meta-ad-metrics-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .saas-meta-ad-channel-options,
+    .saas-meta-ad-external-sale-form {
+        grid-template-columns: 1fr;
+    }
+
+    .saas-meta-ad-sale-row {
+        grid-template-columns: 1fr;
+        align-items: flex-start;
+    }
+
+    .saas-meta-ad-sale-row .saas-btn-cancel {
+        width: fit-content;
     }
 }
 

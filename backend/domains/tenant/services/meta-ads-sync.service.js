@@ -226,17 +226,37 @@ async function ensurePostgresSchema() {
               is_manual_greeting BOOLEAN DEFAULT FALSE,
               auto_greeting_text TEXT,
               autofill_message TEXT,
+              is_external BOOLEAN DEFAULT FALSE,
+              external_channel TEXT,
               buttons_json JSONB DEFAULT '[]'::jsonb,
               raw_creative JSONB DEFAULT '{}'::jsonb,
               synced_at TIMESTAMPTZ DEFAULT NOW(),
               PRIMARY KEY (tenant_id, ad_id)
             )
         `);
+        await queryPostgres(`
+            CREATE TABLE IF NOT EXISTS tenant_meta_ads_external_sales (
+              tenant_id TEXT NOT NULL,
+              sale_id TEXT NOT NULL DEFAULT 'EXT-' || UPPER(SUBSTR(MD5(RANDOM()::TEXT), 1, 8)),
+              ad_id TEXT NOT NULL,
+              sale_date DATE NOT NULL DEFAULT CURRENT_DATE,
+              amount NUMERIC(10,2) NOT NULL,
+              detail TEXT,
+              customer_id TEXT,
+              phone TEXT,
+              created_by TEXT,
+              created_at TIMESTAMPTZ DEFAULT NOW(),
+              PRIMARY KEY (tenant_id, sale_id)
+            )
+        `);
         await queryPostgres(`ALTER TABLE IF EXISTS tenant_meta_ads_creatives ADD COLUMN IF NOT EXISTS is_manual_greeting BOOLEAN DEFAULT FALSE`);
         await queryPostgres(`ALTER TABLE IF EXISTS tenant_meta_ads_creatives ADD COLUMN IF NOT EXISTS auto_greeting_text TEXT`);
+        await queryPostgres(`ALTER TABLE IF EXISTS tenant_meta_ads_creatives ADD COLUMN IF NOT EXISTS is_external BOOLEAN DEFAULT FALSE`);
+        await queryPostgres(`ALTER TABLE IF EXISTS tenant_meta_ads_creatives ADD COLUMN IF NOT EXISTS external_channel TEXT`);
         await queryPostgres(`CREATE INDEX IF NOT EXISTS idx_tenant_meta_ads_structure_tenant_type ON tenant_meta_ads_structure(tenant_id, object_type)`);
         await queryPostgres(`CREATE INDEX IF NOT EXISTS idx_tenant_meta_ads_insights_tenant_type_dates ON tenant_meta_ads_insights(tenant_id, object_type, date_start, date_stop)`);
         await queryPostgres(`CREATE INDEX IF NOT EXISTS idx_meta_ads_creatives_tenant ON tenant_meta_ads_creatives(tenant_id)`);
+        await queryPostgres(`CREATE INDEX IF NOT EXISTS idx_ext_sales_ad ON tenant_meta_ads_external_sales(tenant_id, ad_id)`);
     })().catch((error) => {
         schemaPromise = null;
         throw error;
@@ -1040,6 +1060,8 @@ async function listMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, { dateStart, da
             COALESCE(cr.is_manual_greeting, FALSE) AS is_manual_greeting,
             cr.auto_greeting_text AS auto_greeting_text,
             cr.autofill_message AS autofill_message,
+            COALESCE(cr.is_external, FALSE) AS is_external,
+            cr.external_channel AS external_channel,
             cr.buttons_json AS buttons_json,
             CASE WHEN SUM(i.impressions) > 0
               THEN ROUND(SUM(i.clicks)::numeric / SUM(i.impressions) * 100, 4)
@@ -1105,6 +1127,8 @@ async function listMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, { dateStart, da
             cr.is_manual_greeting,
             cr.auto_greeting_text,
             cr.autofill_message,
+            cr.is_external,
+            cr.external_channel,
             cr.buttons_json
          ORDER BY SUM(i.spend) DESC NULLS LAST,
             campaign_name NULLS LAST,
@@ -1135,6 +1159,8 @@ async function listMetaAdsInsights(tenantId = DEFAULT_TENANT_ID, { dateStart, da
             is_manual_greeting: row?.is_manual_greeting === true,
             auto_greeting_text: toNullableText(row?.auto_greeting_text),
             autofill_message: toNullableText(row?.autofill_message),
+            is_external: row?.is_external === true,
+            external_channel: toNullableText(row?.external_channel),
             buttons_json: Array.isArray(row?.buttons_json) ? row.buttons_json : [],
             ctr: toNumber(row?.ctr, 0, { decimals: 4 }),
             cpc: toNumber(row?.cpc, 0, { decimals: 4 }),
@@ -1202,28 +1228,170 @@ async function revertMetaAdCreativeGreetingToAuto(tenantId = DEFAULT_TENANT_ID, 
     };
 }
 
-async function getMetaAdConversationStats(tenantId = DEFAULT_TENANT_ID, adId = '') {
+function mapExternalSaleRow(row = {}) {
+    return {
+        saleId: toNullableText(row?.sale_id),
+        adId: toNullableText(row?.ad_id),
+        saleDate: normalizeDateInput(row?.sale_date),
+        amount: toNumber(row?.amount, 0, { decimals: 2 }),
+        detail: toNullableText(row?.detail),
+        customerId: toNullableText(row?.customer_id),
+        phone: toNullableText(row?.phone),
+        createdBy: toNullableText(row?.created_by),
+        createdAt: row?.created_at || null
+    };
+}
+
+function normalizeExternalChannel(isExternal = false, channel = '') {
+    if (!isExternal) return null;
+    const cleanChannel = toText(channel || 'whatsapp_business');
+    if (!cleanChannel || cleanChannel === 'whatsapp_business') return 'whatsapp_business';
+    throw new Error('Canal externo invalido.');
+}
+
+async function updateMetaAdChannel(tenantId = DEFAULT_TENANT_ID, adId = '', payload = {}) {
+    await ensurePostgresSchema();
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const cleanAdId = toText(adId);
+    if (!cleanAdId) throw new Error('adId requerido para actualizar canal Meta.');
+    const isExternal = payload?.isExternal === true || String(payload?.isExternal || '').trim().toLowerCase() === 'true';
+    const externalChannel = normalizeExternalChannel(isExternal, payload?.externalChannel);
+    const { rows } = await queryPostgres(
+        `INSERT INTO tenant_meta_ads_creatives (
+            tenant_id, ad_id, is_external, external_channel, buttons_json, raw_creative, synced_at
+        ) VALUES (
+            $1, $2, $3, $4, '[]'::jsonb, '{}'::jsonb, NOW()
+        )
+        ON CONFLICT (tenant_id, ad_id)
+        DO UPDATE SET
+            is_external = EXCLUDED.is_external,
+            external_channel = EXCLUDED.external_channel,
+            synced_at = NOW()
+        RETURNING ad_id, is_external, external_channel`,
+        [cleanTenantId, cleanAdId, isExternal, externalChannel]
+    );
+    const row = rows?.[0] || {};
+    return {
+        ok: true,
+        tenantId: cleanTenantId,
+        adId: toNullableText(row?.ad_id) || cleanAdId,
+        isExternal: row?.is_external === true,
+        externalChannel: toNullableText(row?.external_channel)
+    };
+}
+
+async function listMetaAdExternalSales(tenantId = DEFAULT_TENANT_ID, adId = '') {
+    await ensurePostgresSchema();
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const cleanAdId = toText(adId);
+    if (!cleanAdId) throw new Error('adId requerido para listar ventas externas.');
+    const { rows } = await queryPostgres(
+        `SELECT sale_id, ad_id, sale_date, amount, detail, customer_id, phone, created_by, created_at
+           FROM tenant_meta_ads_external_sales
+          WHERE tenant_id = $1
+            AND ad_id = $2
+          ORDER BY sale_date DESC, created_at DESC`,
+        [cleanTenantId, cleanAdId]
+    );
+    return (Array.isArray(rows) ? rows : []).map(mapExternalSaleRow);
+}
+
+async function createMetaAdExternalSale(tenantId = DEFAULT_TENANT_ID, adId = '', payload = {}, actorUserId = '') {
+    await ensurePostgresSchema();
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const cleanAdId = toText(adId);
+    if (!cleanAdId) throw new Error('adId requerido para registrar venta externa.');
+    const saleDate = normalizeDateInput(payload?.saleDate || payload?.sale_date, getTodayDateLabel());
+    if (!saleDate) throw new Error('Fecha de venta invalida.');
+    const amount = toNumber(payload?.amount, 0, { decimals: 2 });
+    if (amount <= 0) throw new Error('Monto de venta invalido.');
+    const detail = toNullableText(payload?.detail);
+    const phone = toNullableText(payload?.phone);
+    const customerId = toNullableText(payload?.customerId || payload?.customer_id);
+    const createdBy = toNullableText(actorUserId || payload?.createdBy || payload?.created_by);
+    const { rows } = await queryPostgres(
+        `INSERT INTO tenant_meta_ads_external_sales (
+            tenant_id, ad_id, sale_date, amount, detail, customer_id, phone, created_by
+        ) VALUES (
+            $1, $2, $3::date, $4, $5, $6, $7, $8
+        )
+        RETURNING sale_id, ad_id, sale_date, amount, detail, customer_id, phone, created_by, created_at`,
+        [cleanTenantId, cleanAdId, saleDate, amount, detail, customerId, phone, createdBy]
+    );
+    return mapExternalSaleRow(rows?.[0] || {});
+}
+
+async function deleteMetaAdExternalSale(tenantId = DEFAULT_TENANT_ID, adId = '', saleId = '') {
+    await ensurePostgresSchema();
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const cleanAdId = toText(adId);
+    const cleanSaleId = toText(saleId);
+    if (!cleanAdId) throw new Error('adId requerido para eliminar venta externa.');
+    if (!cleanSaleId) throw new Error('saleId requerido para eliminar venta externa.');
+    const { rowCount } = await queryPostgres(
+        `DELETE FROM tenant_meta_ads_external_sales
+          WHERE tenant_id = $1
+            AND ad_id = $2
+            AND sale_id = $3`,
+        [cleanTenantId, cleanAdId, cleanSaleId]
+    );
+    return {
+        ok: true,
+        deleted: rowCount > 0,
+        tenantId: cleanTenantId,
+        adId: cleanAdId,
+        saleId: cleanSaleId
+    };
+}
+
+async function getMetaAdConversationStats(tenantId = DEFAULT_TENANT_ID, adId = '', options = {}) {
     await ensurePostgresSchema();
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
     const cleanAdId = toText(adId);
     if (!cleanAdId) throw new Error('adId requerido para estadisticas Meta.');
+    const dateStart = normalizeDateInput(options?.dateStart, null);
+    const dateStop = normalizeDateInput(options?.dateStop, dateStart);
     try {
         const { rows } = await queryPostgres(
-            `SELECT
+            `WITH ad_chats AS (
+                SELECT DISTINCT o.chat_id
+                  FROM tenant_chat_origins o
+                 WHERE o.tenant_id = $1
+                   AND o.referral_source_id = $2
+            )
+            SELECT
                 COUNT(*)::INT AS total_conversations,
                 COUNT(*) FILTER (
                     WHERE tcs.status IN ('cotizado', 'aceptado', 'vendido')
                 )::INT AS converted,
                 MIN(o.detected_at) AS first_seen,
                 MAX(o.detected_at) AS last_seen,
-                MAX(NULLIF(o.referral_source_url, '')) AS source_url
+                MAX(NULLIF(o.referral_source_url, '')) AS source_url,
+                COALESCE((
+                    SELECT COUNT(DISTINCT ord.order_id)
+                      FROM tenant_orders ord
+                      JOIN ad_chats ac ON ac.chat_id = ord.chat_id
+                     WHERE ord.tenant_id = $1
+                       AND ord.status IN ('aceptado', 'programado', 'atendido', 'vendido')
+                       AND ($3::date IS NULL OR ord.created_at >= $3::date)
+                       AND ($4::date IS NULL OR ord.created_at < ($4::date + INTERVAL '1 day'))
+                ), 0)::INT AS system_orders,
+                COALESCE((
+                    SELECT SUM(COALESCE(ord.total_amount, 0))
+                      FROM tenant_orders ord
+                      JOIN ad_chats ac ON ac.chat_id = ord.chat_id
+                     WHERE ord.tenant_id = $1
+                       AND ord.status IN ('aceptado', 'programado', 'atendido', 'vendido')
+                       AND ($3::date IS NULL OR ord.created_at >= $3::date)
+                       AND ($4::date IS NULL OR ord.created_at < ($4::date + INTERVAL '1 day'))
+                ), 0) AS system_revenue
              FROM tenant_chat_origins o
              LEFT JOIN tenant_chat_commercial_status tcs
                ON tcs.tenant_id = o.tenant_id
               AND tcs.chat_id = o.chat_id
              WHERE o.tenant_id = $1
                AND o.referral_source_id = $2`,
-            [cleanTenantId, cleanAdId]
+            [cleanTenantId, cleanAdId, dateStart, dateStop]
         );
         const row = rows?.[0] || {};
         const total = toInteger(row?.total_conversations, 0);
@@ -1234,7 +1402,9 @@ async function getMetaAdConversationStats(tenantId = DEFAULT_TENANT_ID, adId = '
             conversionRate: total > 0 ? toNumber((converted / total) * 100, 0, { decimals: 2 }) : 0,
             firstSeen: row?.first_seen || null,
             lastSeen: row?.last_seen || null,
-            sourceUrl: toNullableText(row?.source_url)
+            sourceUrl: toNullableText(row?.source_url),
+            systemOrders: toInteger(row?.system_orders, 0),
+            systemRevenue: toNumber(row?.system_revenue, 0, { decimals: 2 })
         };
     } catch (error) {
         if (String(error?.code || '').trim() === '42P01') {
@@ -1474,6 +1644,10 @@ module.exports = {
     listMetaAdsInsights,
     updateMetaAdCreativeGreeting,
     revertMetaAdCreativeGreetingToAuto,
+    updateMetaAdChannel,
+    listMetaAdExternalSales,
+    createMetaAdExternalSale,
+    deleteMetaAdExternalSale,
     getMetaAdConversationStats,
     syncMetaAdsHistoricalCurrentYear,
     runMetaAdsDailySyncOnce,

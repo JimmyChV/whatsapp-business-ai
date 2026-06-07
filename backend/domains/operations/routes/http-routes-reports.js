@@ -438,6 +438,8 @@ function mapKpis(row = {}) {
         clientesConPedido: toNumber(row.clientes_con_pedido),
         ticketPromedio: roundNumber(row.ticket_promedio),
         revenueEstimado: roundNumber(row.revenue_estimado),
+        ventasExternasMeta: roundNumber(row.ventas_externas_meta),
+        revenueTotalMeta: roundNumber(row.revenue_total_meta),
         mensajesEnviados: toNumber(row.mensajes_enviados),
         mensajesRecibidos: toNumber(row.mensajes_recibidos),
         tiempoRespuestaPromedio: roundNumber(row.tiempo_respuesta_promedio),
@@ -628,6 +630,34 @@ kpis AS (
                AND i.date_stop <= p.date_to
         ) AS inversion_meta,
         (
+            SELECT COALESCE(SUM(COALESCE(es.amount, 0)), 0)
+              FROM tenant_meta_ads_external_sales es
+             WHERE es.tenant_id = $1
+               AND es.sale_date >= p.date_from
+               AND es.sale_date <= p.date_to
+               AND NOT EXISTS (
+                    SELECT 1
+                      FROM tenant_test_contacts tc
+                     WHERE tc.tenant_id = es.tenant_id
+                       AND regexp_replace(COALESCE(es.phone, ''), '[^0-9]', '', 'g')
+                           LIKE '%' || regexp_replace(COALESCE(tc.phone_e164, ''), '[^0-9]', '', 'g') || '%'
+               )
+        ) AS ventas_externas_meta,
+        (
+            SELECT COUNT(DISTINCT es.sale_id)
+              FROM tenant_meta_ads_external_sales es
+             WHERE es.tenant_id = $1
+               AND es.sale_date >= p.date_from
+               AND es.sale_date <= p.date_to
+               AND NOT EXISTS (
+                    SELECT 1
+                      FROM tenant_test_contacts tc
+                     WHERE tc.tenant_id = es.tenant_id
+                       AND regexp_replace(COALESCE(es.phone, ''), '[^0-9]', '', 'g')
+                           LIKE '%' || regexp_replace(COALESCE(tc.phone_e164, ''), '[^0-9]', '', 'g') || '%'
+               )
+        ) AS pedidos_externos_meta,
+        (
             SELECT COUNT(*)
               FROM tenant_messages m
               JOIN scoped_chats sc ON sc.chat_id = m.chat_id
@@ -682,17 +712,19 @@ SELECT
     clientes_con_pedido,
     COALESCE(ticket_promedio, 0) AS ticket_promedio,
     COALESCE(revenue_estimado, 0) AS revenue_estimado,
+    COALESCE(ventas_externas_meta, 0) AS ventas_externas_meta,
+    COALESCE(revenue_estimado, 0) + COALESCE(ventas_externas_meta, 0) AS revenue_total_meta,
     COALESCE(inversion_meta, 0) AS inversion_meta,
     CASE WHEN COALESCE(inversion_meta, 0) > 0
-        THEN ROUND((COALESCE(revenue_estimado, 0)::numeric / inversion_meta::numeric), 2)
+        THEN ROUND(((COALESCE(revenue_estimado, 0) + COALESCE(ventas_externas_meta, 0))::numeric / inversion_meta::numeric), 2)
         ELSE 0
     END AS roas_meta,
     CASE WHEN COALESCE(inversion_meta, 0) > 0
-        THEN ROUND(((COALESCE(revenue_estimado, 0)::numeric - inversion_meta::numeric) / inversion_meta::numeric) * 100, 2)
+        THEN ROUND((((COALESCE(revenue_estimado, 0) + COALESCE(ventas_externas_meta, 0))::numeric - inversion_meta::numeric) / inversion_meta::numeric) * 100, 2)
         ELSE 0
     END AS roi_meta,
-    CASE WHEN pedidos_confirmados > 0
-        THEN ROUND((COALESCE(inversion_meta, 0)::numeric / pedidos_confirmados::numeric), 2)
+    CASE WHEN (pedidos_confirmados + COALESCE(pedidos_externos_meta, 0)) > 0
+        THEN ROUND((COALESCE(inversion_meta, 0)::numeric / (pedidos_confirmados + COALESCE(pedidos_externos_meta, 0))::numeric), 2)
         ELSE 0
     END AS costo_por_pedido,
     mensajes_enviados,
@@ -1133,6 +1165,39 @@ ad_orders AS (
       JOIN orders_in_period oi ON oi.chat_id = ao.chat_id
      GROUP BY ao.ad_id
 ),
+external_sales AS (
+    SELECT
+        es.ad_id,
+        COUNT(DISTINCT es.sale_id) AS pedidos_externos,
+        SUM(COALESCE(es.amount, 0)) AS revenue_externo,
+        jsonb_agg(
+            jsonb_build_object(
+                'orderId', es.sale_id,
+                'saleId', es.sale_id,
+                'chatId', NULL,
+                'chatLabel', COALESCE(NULLIF(es.phone, ''), 'Venta externa'),
+                'status', 'externo',
+                'total', COALESCE(es.amount, 0),
+                'sourceType', 'external',
+                'sourceId', es.ad_id,
+                'detail', es.detail,
+                'createdAt', es.sale_date
+            )
+            ORDER BY es.sale_date DESC, es.created_at DESC
+        ) AS external_orders_json
+      FROM tenant_meta_ads_external_sales es
+     WHERE es.tenant_id = $1
+       AND es.sale_date >= $2::date
+       AND es.sale_date <= $3::date
+       AND NOT EXISTS (
+            SELECT 1
+              FROM tenant_test_contacts tc
+             WHERE tc.tenant_id = es.tenant_id
+               AND regexp_replace(COALESCE(es.phone, ''), '[^0-9]', '', 'g')
+                   LIKE '%' || regexp_replace(COALESCE(tc.phone_e164, ''), '[^0-9]', '', 'g') || '%'
+       )
+     GROUP BY es.ad_id
+),
 ad_spend AS (
     SELECT
         i.object_id AS ad_id,
@@ -1151,6 +1216,8 @@ ad_ids AS (
     UNION
     SELECT ad_id FROM ad_orders
     UNION
+    SELECT ad_id FROM external_sales
+    UNION
     SELECT ad_id FROM ad_spend
 ),
 ad_rows AS (
@@ -1164,12 +1231,16 @@ ad_rows AS (
         COALESCE(ad.status, '') AS ad_status,
         COALESCE(acp.chats, 0) AS chats,
         COALESCE(aq.cotizaciones, 0) AS cotizaciones,
-        COALESCE(aoo.pedidos, 0) AS pedidos,
+        COALESCE(aoo.pedidos, 0) AS pedidos_sistema,
+        COALESCE(es.pedidos_externos, 0) AS pedidos_externos,
+        COALESCE(aoo.pedidos, 0) + COALESCE(es.pedidos_externos, 0) AS pedidos,
         COALESCE(aoo.clientes_con_pedido, 0) AS clientes_con_pedido,
-        COALESCE(aoo.revenue, 0) AS revenue,
+        COALESCE(aoo.revenue, 0) AS revenue_sistema,
+        COALESCE(es.revenue_externo, 0) AS revenue_externo,
+        COALESCE(aoo.revenue, 0) + COALESCE(es.revenue_externo, 0) AS revenue,
         COALESCE(sp.spend, 0) AS inversion,
         COALESCE(acp.referral_source_url, MAX(NULLIF(ao.referral_source_url, ''))) AS referral_source_url,
-        COALESCE(aoo.orders_json, '[]'::jsonb) AS orders_json
+        COALESCE(aoo.orders_json, '[]'::jsonb) || COALESCE(es.external_orders_json, '[]'::jsonb) AS orders_json
       FROM ad_ids ids
       LEFT JOIN ad_origins_all ao ON ao.ad_id = ids.ad_id
       LEFT JOIN tenant_meta_ads_structure ad
@@ -1187,11 +1258,13 @@ ad_rows AS (
       LEFT JOIN ad_chats_period acp ON acp.ad_id = ids.ad_id
       LEFT JOIN ad_quotes aq ON aq.ad_id = ids.ad_id
       LEFT JOIN ad_orders aoo ON aoo.ad_id = ids.ad_id
+      LEFT JOIN external_sales es ON es.ad_id = ids.ad_id
       LEFT JOIN ad_spend sp ON sp.ad_id = ids.ad_id
      GROUP BY ids.ad_id, ad.object_name, ad.status, adset.object_id, adset.object_name,
               campaign.object_id, campaign.object_name, acp.chats, acp.referral_source_url,
               aq.cotizaciones, aoo.pedidos, aoo.clientes_con_pedido, aoo.revenue,
-              aoo.orders_json, sp.spend
+              aoo.orders_json, es.pedidos_externos, es.revenue_externo,
+              es.external_orders_json, sp.spend
 ),
 campaign_rows AS (
     SELECT
@@ -1201,8 +1274,12 @@ campaign_rows AS (
         SUM(chats) AS chats,
         SUM(cotizaciones) AS cotizaciones,
         SUM(pedidos) AS pedidos,
+        SUM(pedidos_sistema) AS pedidos_sistema,
+        SUM(pedidos_externos) AS pedidos_externos,
         SUM(clientes_con_pedido) AS clientes_con_pedido,
         SUM(revenue) AS revenue,
+        SUM(revenue_sistema) AS revenue_sistema,
+        SUM(revenue_externo) AS revenue_externo,
         SUM(inversion) AS inversion,
         json_agg(
             json_build_object(
@@ -1211,7 +1288,11 @@ campaign_rows AS (
                 'adsetName', adset_name,
                 'chats', chats,
                 'pedidos', pedidos,
+                'pedidosSistema', pedidos_sistema,
+                'pedidosExternos', pedidos_externos,
                 'revenue', revenue,
+                'revenueSistema', revenue_sistema,
+                'revenueExterno', revenue_externo,
                 'inversion', inversion
             )
             ORDER BY revenue DESC, chats DESC
@@ -1249,8 +1330,12 @@ SELECT
                 'cotizaciones', cotizaciones,
                 'ventas', pedidos,
                 'pedidos', pedidos,
+                'pedidosSistema', pedidos_sistema,
+                'pedidosExternos', pedidos_externos,
                 'clientesConPedido', clientes_con_pedido,
                 'revenue', revenue,
+                'revenueSistema', revenue_sistema,
+                'revenueExterno', revenue_externo,
                 'inversion', inversion,
                 'costoPerChat', CASE WHEN chats > 0 THEN ROUND(inversion::numeric / chats::numeric, 2) ELSE 0 END,
                 'costoPerPedido', CASE WHEN pedidos > 0 THEN ROUND(inversion::numeric / pedidos::numeric, 2) ELSE 0 END,
@@ -1273,8 +1358,12 @@ SELECT
                 'chats', chats,
                 'cotizaciones', cotizaciones,
                 'pedidos', pedidos,
+                'pedidosSistema', pedidos_sistema,
+                'pedidosExternos', pedidos_externos,
                 'clientesConPedido', clientes_con_pedido,
                 'revenue', revenue,
+                'revenueSistema', revenue_sistema,
+                'revenueExterno', revenue_externo,
                 'inversion', inversion,
                 'costoPerChat', CASE WHEN chats > 0 THEN ROUND(inversion::numeric / chats::numeric, 2) ELSE 0 END,
                 'costoPerPedido', CASE WHEN pedidos > 0 THEN ROUND(inversion::numeric / pedidos::numeric, 2) ELSE 0 END,
