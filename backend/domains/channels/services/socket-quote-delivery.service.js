@@ -245,10 +245,20 @@ function normalizeQuoteSummary(summary = {}, items = [], currency = 'PEN') {
     const hasGlobalDiscount = globalDiscValue > 0 && totals.globalDiscAmt > 0;
     const totalPayable = toFiniteNumberOrNull(source.totalPayable) ?? totals.totalPayable;
     const deliveryFree = deliveryType !== 'amount' || totals.deliveryAmt <= 0;
-    const discount = roundMoney(
-        toFiniteNumberOrNull(source.discount ?? source.totalDiscount)
-        ?? Math.max(0, subtotal - Math.max(0, totalPayable - (deliveryFree ? 0 : totals.deliveryAmt)))
-    );
+    const reflectedLineDiscountTotal = roundMoney(items.reduce((sum, item) => {
+        const isParticipantCoveredByRegularGlobal = totals.globalOnRegular && item?.excludeFromGlobal !== true;
+        if (isParticipantCoveredByRegularGlobal) return sum;
+        const qty = Math.max(1, toFiniteNumberOrNull(item?.qty ?? item?.quantity) ?? 1);
+        const regularLine = toFiniteNumberOrNull(item?.lineSubtotal)
+            ?? roundMoney((toFiniteNumberOrNull(item?.regularPrice) ?? toFiniteNumberOrNull(item?.unitPrice) ?? 0) * qty);
+        const finalLine = toFiniteNumberOrNull(item?.subtotal ?? item?.lineTotal)
+            ?? roundMoney((toFiniteNumberOrNull(item?.finalPrice) ?? toFiniteNumberOrNull(item?.unitPrice) ?? 0) * qty);
+        return sum + roundMoney(Math.max(0, regularLine - finalLine));
+    }, 0));
+    const computedDiscount = roundMoney(reflectedLineDiscountTotal + globalDiscAmt);
+    const fallbackDiscount = toFiniteNumberOrNull(source.discount ?? source.totalDiscount)
+        ?? Math.max(0, subtotal - Math.max(0, totalPayable - (deliveryFree ? 0 : totals.deliveryAmt)));
+    const discount = roundMoney(computedDiscount > 0 ? computedDiscount : fallbackDiscount);
     const totalAfterDiscount = roundMoney(Math.max(0, subtotal - discount));
 
     return {

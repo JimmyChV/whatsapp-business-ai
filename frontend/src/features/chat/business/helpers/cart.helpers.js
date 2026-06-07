@@ -210,8 +210,12 @@ export const calculateCartPricing = ({
     const globalDiscountApplied = totals.globalDiscAmt;
     const subtotalAfterGlobal = roundMoney(subtotalProducts - globalDiscountApplied);
     const cartTotal = totals.total;
-    const totalBeforeDelivery = Math.max(0, cartTotal - deliveryFee);
-    const totalDiscountForQuote = roundMoney(Math.max(0, regularSubtotalTotal - totalBeforeDelivery));
+    const reflectedLineDiscountTotal = roundMoney(lineBreakdowns.reduce((sum, line) => {
+        const isParticipantCoveredByRegularGlobal = Boolean(globalOnRegular) && !line.excludeFromGlobal;
+        if (isParticipantCoveredByRegularGlobal) return sum;
+        return sum + roundMoney(Number(line.includedDiscount || 0) + Number(line.additionalDiscountApplied || 0));
+    }, 0));
+    const totalDiscountForQuote = roundMoney(reflectedLineDiscountTotal + globalDiscountApplied);
 
     return {
         lineBreakdowns,
@@ -228,6 +232,7 @@ export const calculateCartPricing = ({
         subtotalExcluded: totals.subtotalExcluded,
         baseGlobal: totals.baseGlobal,
         subtotalAfterGlobal,
+        reflectedLineDiscountTotal,
         totalDiscountForQuote,
         safeDeliveryAmount,
         deliveryFee,
