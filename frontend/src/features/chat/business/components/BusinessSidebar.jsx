@@ -109,6 +109,14 @@ const normalizeQuoteItemsForOrder = (quote = {}) => {
     }];
 };
 
+const getTodayOrderDate = () => {
+    try {
+        return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+    } catch (_) {
+        return new Date().toISOString().slice(0, 10);
+    }
+};
+
 const buildQuoteOrderDraft = (quote = {}) => {
     const summary = quote?.summaryJson && typeof quote.summaryJson === 'object' ? quote.summaryJson : {};
     const quoteNumber = Number(quote?.quoteNumber || quote?.quote_number || 0) || null;
@@ -119,6 +127,7 @@ const buildQuoteOrderDraft = (quote = {}) => {
         items: normalizeQuoteItemsForOrder(quote),
         deliveryAmount: toOrderNumber(summary?.delivery ?? summary?.deliveryAmount ?? 0),
         discountAmount: toOrderNumber(summary?.discount ?? summary?.totalDiscount ?? 0),
+        orderDate: getTodayOrderDate(),
         notes: quote?.notes || ''
     };
 };
@@ -135,6 +144,7 @@ const buildCatalogOrderDraft = (payload = {}) => ({
     }],
     deliveryAmount: 0,
     discountAmount: 0,
+    orderDate: getTodayOrderDate(),
     notes: 'Cliente acepto producto enviado desde catalogo.'
 });
 
@@ -147,6 +157,7 @@ const buildManualOrderDraft = () => ({
     items: [],
     deliveryAmount: 0,
     discountAmount: 0,
+    orderDate: getTodayOrderDate(),
     notes: ''
 });
 
@@ -546,14 +557,13 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
     }, [activeChatId]);
     const openOrderDraft = useCallback((draft) => {
         if (!draft || typeof draft !== 'object') return;
-        if (!canUseMessageTools) {
-            if (!canWriteByAssignment) notifyAssignmentLock();
-            else notifyWindowLock();
+        if (!canWriteByAssignment) {
+            notifyAssignmentLock();
             return;
         }
         setOrderDraft(draft);
         openToolsPanel('orders');
-    }, [canUseMessageTools, canWriteByAssignment, notifyAssignmentLock, notifyWindowLock, openToolsPanel]);
+    }, [canWriteByAssignment, notifyAssignmentLock, openToolsPanel]);
     const handleOpenManualOrder = useCallback(() => {
         openOrderDraft(buildManualOrderDraft());
     }, [openOrderDraft]);
@@ -586,6 +596,8 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                 discountAmount: toOrderNumber(draftWithTotals.discountAmount),
                 notes: String(draftWithTotals.notes || '').trim()
             };
+            const orderDate = String(draftWithTotals.orderDate || draftWithTotals.order_date || '').trim();
+            if (orderDate) body.orderDate = orderDate;
             if (body.sourceType === 'manual') {
                 body.description = String(draftWithTotals.description || items[0]?.productName || '').trim();
                 body.amount = toOrderNumber(draftWithTotals.amount ?? items[0]?.unitPrice ?? 0);
@@ -1657,6 +1669,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     quoteOptionsModeActive={quoteOptionsModeActive}
                     formatMoney={formatMoney}
                     canWriteByAssignment={canUseMessageTools}
+                    canCreateOrder={canWriteByAssignment}
                 />
             )}
 
@@ -1669,7 +1682,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     onOpenManualOrder={handleOpenManualOrder}
                     onUpdateOrderStatus={handleUpdateOrderStatus}
                     formatMoney={formatMoney}
-                    canWriteByAssignment={canUseMessageTools}
+                    canWriteByAssignment={canWriteByAssignment}
                 />
             )}
 

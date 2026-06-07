@@ -64,6 +64,20 @@ function toMoney(value = 0) {
     return Math.round(toNumber(value) * 100) / 100;
 }
 
+function resolveOrderTimestamp(value = '') {
+    const raw = toText(value);
+    if (!raw) return new Date().toISOString();
+
+    const candidate = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+        ? `${raw}T00:00:00-05:00`
+        : raw;
+    const parsed = new Date(candidate);
+    if (Number.isNaN(parsed.getTime())) {
+        throw new Error('orderDate invalido.');
+    }
+    return parsed.toISOString();
+}
+
 function normalizeScope(normalizeScopeModuleId, value = '') {
     return typeof normalizeScopeModuleId === 'function'
         ? normalizeScopeModuleId(value || '')
@@ -343,16 +357,19 @@ function registerOperationsOrdersHttpRoutes({
             const actorUserId = resolveActorUserId(req);
             const actorRole = resolveActorRole(req, tenantId, chatAssignmentPolicyService);
             const context = await resolveOrderContext(tenantId, baseChatId, scopeModuleId, conversationOpsService);
+            const createdAt = resolveOrderTimestamp(body.orderDate || body.order_date || '');
 
             const insertResult = await queryPostgres(
                 `INSERT INTO tenant_orders (
                     tenant_id, chat_id, customer_id, phone, source_type, source_id, status,
                     items_json, subtotal, delivery_amount, discount_amount, total_amount,
-                    delivery_type, notes, scheduled_at, created_by_user_id, assigned_user_id, scope_module_id
+                    delivery_type, notes, scheduled_at, created_by_user_id, assigned_user_id, scope_module_id,
+                    created_at, updated_at
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, 'aceptado',
                     $7::jsonb, $8, $9, $10, $11,
-                    $12, $13, $14::timestamptz, $15, $16, $17
+                    $12, $13, $14::timestamptz, $15, $16, $17,
+                    $18::timestamptz, $18::timestamptz
                 )
                 RETURNING *`,
                 [
@@ -372,7 +389,8 @@ function registerOperationsOrdersHttpRoutes({
                     body.scheduledAt || body.scheduled_at || null,
                     actorUserId,
                     context.assignedUserId,
-                    scopeModuleId || ''
+                    scopeModuleId || '',
+                    createdAt
                 ]
             );
             const order = normalizeOrderRow(insertResult.rows[0]);

@@ -9,7 +9,8 @@ export default function BusinessQuotesTabSection({
     onStartNewQuote,
     quoteOptionsModeActive = false,
     formatMoney,
-    canWriteByAssignment = false
+    canWriteByAssignment = false,
+    canCreateOrder = canWriteByAssignment
 }) {
     const tone = {
         successSurface: 'var(--chat-success-surface)',
@@ -116,9 +117,9 @@ export default function BusinessQuotesTabSection({
                         {canConvertToOrder && (
                             <button
                                 type="button"
-                                disabled={!canWriteByAssignment}
+                                disabled={!canCreateOrder}
                                 onClick={() => typeof onConvertQuoteToOrder === 'function' && onConvertQuoteToOrder(quote)}
-                                style={{ border: `1px solid ${tone.successBorder}`, color: tone.successText, background: tone.successSurface, borderRadius: '999px', padding: '5px 9px', fontWeight: 900, fontSize: '0.72rem', cursor: canWriteByAssignment ? 'pointer' : 'not-allowed', opacity: canWriteByAssignment ? 1 : 0.65, whiteSpace: 'nowrap' }}
+                                style={{ border: `1px solid ${tone.successBorder}`, color: tone.successText, background: tone.successSurface, borderRadius: '999px', padding: '5px 9px', fontWeight: 900, fontSize: '0.72rem', cursor: canCreateOrder ? 'pointer' : 'not-allowed', opacity: canCreateOrder ? 1 : 0.65, whiteSpace: 'nowrap' }}
                             >
                                 Convertir en pedido
                             </button>

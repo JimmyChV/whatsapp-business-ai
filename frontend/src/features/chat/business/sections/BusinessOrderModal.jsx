@@ -41,6 +41,14 @@ const labelStyle = {
 
 const getItemName = (item = {}) => String(item.productName || item.product_name || item.name || item.title || item.description || 'Producto').trim();
 
+const getTodayDateInputValue = () => {
+    try {
+        return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+    } catch (_) {
+        return new Date().toISOString().slice(0, 10);
+    }
+};
+
 export default function BusinessOrderModal({
     draft = null,
     saving = false,
@@ -57,6 +65,7 @@ export default function BusinessOrderModal({
     const isManual = sourceType === 'manual';
     const isCatalog = sourceType === 'catalog';
     const readOnlyItems = sourceType === 'quote';
+    const orderDateValue = String(draft?.orderDate || draft?.order_date || '').trim() || getTodayDateInputValue();
 
     const totals = useMemo(() => {
         const subtotal = items.reduce((sum, item) => {
@@ -115,6 +124,19 @@ export default function BusinessOrderModal({
                 </div>
 
                 <div style={{ padding: '14px 18px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <label style={{ ...labelStyle, border: `1px solid ${tone.controlBorder}`, background: tone.cardSurfaceAlt, borderRadius: '12px', padding: '10px' }}>
+                        Fecha del pedido
+                        <input
+                            style={inputStyle}
+                            type="date"
+                            value={orderDateValue}
+                            onChange={(event) => patchDraft({ orderDate: event.target.value })}
+                        />
+                        <span style={{ color: tone.textMuted, fontSize: '0.68rem', fontWeight: 600, lineHeight: 1.35 }}>
+                            Por defecto hoy. Cambiala para regularizar pedidos de dias anteriores.
+                        </span>
+                    </label>
+
                     {isManual ? (
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 130px', gap: '10px' }}>
                             <label style={labelStyle}>
@@ -253,7 +275,7 @@ export default function BusinessOrderModal({
                     </button>
                     <button
                         type="button"
-                        onClick={() => typeof onSubmit === 'function' && onSubmit({ ...draft, totals })}
+                        onClick={() => typeof onSubmit === 'function' && onSubmit({ ...draft, orderDate: orderDateValue || undefined, totals })}
                         disabled={saving || totals.total <= 0 || items.length === 0}
                         style={{ border: `1px solid ${tone.successBorder}`, background: tone.successSurface, color: tone.successText, borderRadius: '999px', padding: '8px 14px', fontWeight: 900, cursor: (!saving && totals.total > 0 && items.length > 0) ? 'pointer' : 'not-allowed', opacity: (!saving && totals.total > 0 && items.length > 0) ? 1 : 0.65 }}
                     >
