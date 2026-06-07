@@ -20,6 +20,8 @@ const META_ADS_STATUS_OPTIONS = [
     { value: 'DELETED', label: 'DELETED' }
 ];
 
+const toArray = (value) => (Array.isArray(value) ? value : []);
+
 const META_ADS_COLUMNS = [
     { key: 'campaign_name', label: 'Campaña', minWidth: '220px', type: 'text', filterable: true },
     { key: 'adset_name', label: 'Conjunto', minWidth: '220px', type: 'text', filterable: true },
