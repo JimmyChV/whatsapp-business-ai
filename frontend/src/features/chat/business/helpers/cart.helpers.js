@@ -55,7 +55,9 @@ export const calcQuoteTotals = (items = [], globalDiscPct = 0, globalOnRegular =
         : floorMoney1(participants.reduce((acc, item) => acc + item.subtotal, 0));
 
     const globalDiscAmt = floorMoney1(baseGlobal * safeGlobalPct / 100);
-    const subtotalParticipants = floorMoney1(participants.reduce((acc, item) => acc + item.subtotal, 0));
+    const subtotalParticipants = globalOnRegular
+        ? baseGlobal
+        : floorMoney1(participants.reduce((acc, item) => acc + item.subtotal, 0));
     const subtotalExcluded = floorMoney1(excluded.reduce((acc, item) => acc + item.subtotal, 0));
     const subtotal = floorMoney1(subtotalParticipants + subtotalExcluded);
     const deliveryAmt = floorMoney1(delivery || 0);
@@ -231,6 +233,9 @@ export const buildQuoteMessageFromCart = ({
     getLineBreakdown,
     regularSubtotalTotal = 0,
     totalDiscountForQuote = 0,
+    globalDiscountApplied = 0,
+    normalizedGlobalDiscountValue = 0,
+    globalOnRegular = false,
     subtotalProducts = 0,
     deliveryFee = 0,
     cartTotal = 0,
@@ -262,10 +267,15 @@ export const buildQuoteMessageFromCart = ({
     });
 
     const paymentRows = [
-        `Subtotal: S/ ${moneyCompact(subtotalProducts || regularSubtotalTotal)}`,
+        `${globalOnRegular ? 'Subtotal (precio regular)' : 'Subtotal'}: S/ ${moneyCompact(subtotalProducts || regularSubtotalTotal)}`,
     ];
 
-    if (Number(totalDiscountForQuote || 0) > 0) {
+    if (Number(globalDiscountApplied || 0) > 0) {
+        const pctLabel = Number(normalizedGlobalDiscountValue || 0) > 0
+            ? ` (${Number(normalizedGlobalDiscountValue || 0)}%)`
+            : '';
+        paymentRows.push(`Descuento global${pctLabel}: -S/ ${moneyCompact(globalDiscountApplied)}`);
+    } else if (Number(totalDiscountForQuote || 0) > 0) {
         paymentRows.push(`Ahorro: -S/ ${moneyCompact(totalDiscountForQuote)}`);
     }
 

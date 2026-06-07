@@ -113,7 +113,9 @@ function calcQuoteTotals(items = [], globalDiscPct = 0, globalOnRegular = false,
         return sum + base;
     }, 0));
     const globalDiscAmt = roundMoney(baseGlobal * safeGlobalPct / 100);
-    const subtotalParticipants = roundMoney(participants.reduce((sum, item) => sum + item.subtotal, 0));
+    const subtotalParticipants = globalOnRegular
+        ? baseGlobal
+        : roundMoney(participants.reduce((sum, item) => sum + item.subtotal, 0));
     const subtotalExcluded = roundMoney(excluded.reduce((sum, item) => sum + item.subtotal, 0));
     const subtotal = roundMoney(subtotalParticipants + subtotalExcluded);
     const deliveryAmt = roundMoney(delivery);
@@ -182,7 +184,7 @@ function normalizeQuoteSummary(summary = {}, items = [], currency = 'PEN') {
         deliveryAmt
     );
     const subtotal = totals.subtotal;
-    const globalDiscAmt = toFiniteNumberOrNull(source.globalDiscAmt ?? globalDiscount.applied) ?? totals.globalDiscAmt;
+    const globalDiscAmt = totals.globalDiscAmt;
     const totalAfterDiscount = roundMoney(Math.max(0, subtotal - globalDiscAmt));
     const totalPayable = toFiniteNumberOrNull(source.totalPayable) ?? roundMoney(totalAfterDiscount + totals.deliveryAmt);
     const deliveryFree = deliveryType !== 'amount' || totals.deliveryAmt <= 0;
@@ -332,10 +334,13 @@ function buildQuoteMessageBody(quote = {}, fallbackBody = '') {
     const separator = '---------------------------------------------';
     const totalLines = [
         separator,
-        `Subtotal:         ${formatSoles(subtotal)}`
+        `${summary?.globalOnRegular ? 'Subtotal regular:' : 'Subtotal:'}     ${formatSoles(subtotal)}`
     ];
     if (discount > 0) {
-        totalLines.push(`Ahorro global:    - ${formatSoles(discount)}`);
+        const pctLabel = Number(summary?.globalDiscPct || summary?.globalDiscount?.value || 0) > 0
+            ? ` (${Number(summary?.globalDiscPct || summary?.globalDiscount?.value || 0)}%)`
+            : '';
+        totalLines.push(`Descuento global${pctLabel}: - ${formatSoles(discount)}`);
     }
     totalLines.push(`Delivery:         ${deliveryLabel}`);
     totalLines.push(separator);

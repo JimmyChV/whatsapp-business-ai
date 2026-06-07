@@ -288,7 +288,7 @@ export default function BusinessCartTabSection({
                                 </label>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', color: tone.textMuted, fontSize: '0.72rem' }}>
-                                <span>Subtotal</span>
+                    <span>{globalOnRegular ? 'Subtotal (precio regular)' : 'Subtotal'}</span>
                                 <strong style={{ color: tone.totalText }}>S/ {money(line.lineFinal ?? line.subtotal ?? 0)}</strong>
                             </div>
                         </div>
@@ -444,7 +444,7 @@ export default function BusinessCartTabSection({
                     </div>
                     {globalDiscountApplied > 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', color: tone.successText }}>
-                            <span>Ahorro global</span>
+                            <span>Descuento global{Number(normalizedGlobalDiscountValue || 0) > 0 ? ` (${Number(normalizedGlobalDiscountValue || 0)}%)` : ''}</span>
                             <strong>- S/ {money(globalDiscountApplied)}</strong>
                         </div>
                     )}
