@@ -59,6 +59,33 @@ const parseCatalogMoney = (value = 0) => {
     return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const cleanCatalogText = (value = '') => String(value || '')
+    .replace(/\*/g, '')
+    .replace(/\r/g, '')
+    .trim();
+
+const extractCatalogProductNameFromText = (value = '') => {
+    const lines = cleanCatalogText(value)
+        .split('\n')
+        .map((line) => line.replace(/\s+/g, ' ').trim())
+        .filter(Boolean);
+    return lines.find((line) => !/^(precio|descuento|precio final|detalle)\s*:/i.test(line)) || '';
+};
+
+const extractCatalogFinalPriceLabel = (value = '') => {
+    const clean = cleanCatalogText(value);
+    const finalMatch = clean.match(/(?:^|\n)\s*precio\s+final\s*:\s*(?:s\/\s*)?([0-9][0-9.,]*)/i);
+    if (finalMatch) return `S/ ${finalMatch[1]}`;
+    const priceMatch = clean.match(/(?:^|\n)\s*precio\s*:\s*(?:s\/\s*)?([0-9][0-9.,]*)/i);
+    return priceMatch ? `S/ ${priceMatch[1]}` : '';
+};
+
+const isCatalogProductCaption = (value = '') => {
+    const clean = cleanCatalogText(value);
+    return /(?:^|\n)\s*precio\s+final\s*:/i.test(clean)
+        && /(?:^|\n)\s*(precio|descuento|precio\s+final)\s*:/i.test(clean);
+};
+
 const loadLocationMapsApiKey = async (buildApiHeaders) => {
     if (locationMapsApiKeyCache) return locationMapsApiKeyCache;
     if (!locationMapsApiKeyPromise) {
@@ -161,6 +188,44 @@ const MessageBubble = ({
     const catalogMatch = isCatalogItem ? messageBodyText.match(/REF: (.*)\nPrecio: (.*)/) : null;
     const productTitle = catalogMatch ? catalogMatch[1] : null;
     const productPrice = catalogMatch ? catalogMatch[2] : null;
+    const rawMessageType = String(msg?.type || msg?.messageType || msg?.message_type || '').trim().toLowerCase();
+    const isMessageFromMe = Boolean(msg?.fromMe === true || msg?.from_me === true || isOut);
+    const isExplicitCatalogProduct = rawMessageType === 'catalog_product';
+    const isCatalogCaptionProduct = Boolean(
+        isMessageFromMe
+        && !isCatalogItem
+        && !hasOrder
+        && !isOrderActionable
+        && !isQuotePayload
+        && !isProductPayload
+        && !isOrderPayload
+        && isCatalogProductCaption(messageBodyText)
+    );
+    const catalogOrderProductName = String(
+        productTitle
+        || msg?.productName
+        || msg?.product_name
+        || msg?.productTitle
+        || msg?.product_title
+        || extractCatalogProductNameFromText(messageBodyText)
+        || 'Producto del catalogo'
+    ).trim();
+    const catalogOrderPriceLabel = productPrice || extractCatalogFinalPriceLabel(messageBodyText);
+    const canCreateCatalogOrder = Boolean(
+        isMessageFromMe
+        && typeof onCreateOrderFromCatalog === 'function'
+        && (isCatalogItem || isExplicitCatalogProduct || isCatalogCaptionProduct)
+    );
+    const handleCreateCatalogOrder = () => {
+        if (!canCreateCatalogOrder) return;
+        onCreateOrderFromCatalog({
+            messageId: String(msg?.id || '').trim() || null,
+            productId: String(msg?.productId || msg?.product_id || msg?.metadata?.productId || msg?.metadata?.product_id || '').trim() || null,
+            productName: catalogOrderProductName || 'Producto del catalogo',
+            unitPrice: parseCatalogMoney(catalogOrderPriceLabel),
+            sourceBody: messageBodyText
+        });
+    };
     const firstOrderItem = orderItems[0] || null;
     const orderIdentifier = String(
         isQuotePayload
@@ -548,14 +613,8 @@ const MessageBubble = ({
                     {isOut ? (
                         <button
                             className="catalog-card-btn"
-                            disabled={typeof onCreateOrderFromCatalog !== 'function'}
-                            onClick={() => typeof onCreateOrderFromCatalog === 'function' && onCreateOrderFromCatalog({
-                                messageId: String(msg?.id || '').trim() || null,
-                                productId: String(msg?.productId || msg?.product_id || '').trim() || null,
-                                productName: productTitle || 'Producto del catalogo',
-                                unitPrice: parseCatalogMoney(productPrice),
-                                sourceBody: messageBodyText
-                            })}
+                            disabled={!canCreateCatalogOrder}
+                            onClick={handleCreateCatalogOrder}
                         >
                             <ShoppingBag size={16} /> Cliente acepto
                         </button>
@@ -1060,6 +1119,21 @@ const MessageBubble = ({
                     >
                         {renderWhatsAppFormattedText(messageTextToRender)}
                     </span>
+                )}
+
+                {!isCatalogItem && canCreateCatalogOrder && (
+                    <button
+                        type="button"
+                        className="catalog-card-btn"
+                        onClick={handleCreateCatalogOrder}
+                        style={{
+                            marginTop: '8px',
+                            alignSelf: isOut ? 'flex-end' : 'flex-start',
+                            width: 'auto'
+                        }}
+                    >
+                        <ShoppingBag size={16} /> Cliente acepto
+                    </button>
                 )}
 
                 {phoneCandidates.length > 0 && typeof onOpenPhoneChat === 'function' && (
