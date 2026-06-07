@@ -117,7 +117,7 @@ export const getCartLineBreakdown = (
     const safeItem = item && typeof item === 'object' ? item : {};
     const unitPrice = Math.max(0, parseMoney(safeItem.price ?? safeItem.unitPrice, 0));
     const regularUnit = Math.max(0, parseMoney(safeItem.regularPrice, unitPrice));
-    const lineDiscountType = normalizeDiscountType(safeItem.linDiscountType ?? safeItem.lineDiscountType);
+    const lineDiscountType = normalizeDiscountType(safeItem.lineDiscountType ?? safeItem.linDiscountType);
     const lineDiscountValue = lineDiscountType === 'amount'
         ? Math.max(0, parseMoney(safeItem.linDiscountAmt ?? safeItem.lineDiscountValue, 0))
         : clampNumber(parseMoney(

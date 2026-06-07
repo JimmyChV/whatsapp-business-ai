@@ -21,6 +21,7 @@ import {
     setCartItemDiscountEnabledState,
     setCartItemDiscountTypeState,
     setCartItemDiscountValueState,
+    setCartItemExcludeFromGlobalState,
     setCartItemQtyState,
     updateCartItemQtyState
 } from '../helpers';
@@ -475,6 +476,9 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
     };
     const handleCurrentOptionDiscountValue = (id, value) => {
         updateCurrentOptionProducts((previous) => setCartItemDiscountValueState(previous, id, value, parseMoney));
+    };
+    const handleCurrentOptionExcludeFromGlobal = (id, excluded) => {
+        updateCurrentOptionProducts((previous) => setCartItemExcludeFromGlobalState(previous, id, excluded));
     };
     const confirmCurrentOptionAndContinue = () => {
         if (!currentOption) return;
@@ -1010,6 +1014,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                                         updateItemDiscountEnabled={handleCurrentOptionDiscountEnabled}
                                         updateItemDiscountValue={handleCurrentOptionDiscountValue}
                                         updateItemDiscountType={handleCurrentOptionDiscountType}
+                                        updateItemExcludeFromGlobal={handleCurrentOptionExcludeFromGlobal}
                                         showOrderAdjustments={currentOptionShowOrderAdjustments}
                                         setShowOrderAdjustments={(value) => updateCurrentOptionPricing({
                                             showOrderAdjustments: typeof value === 'function'
