@@ -7,7 +7,7 @@ const asNumber = (value, fallback = 0) => {
 export const floorMoney1 = (value = 0) => {
     const num = Number(value);
     if (!Number.isFinite(num)) return 0;
-    return Math.floor(num * 10) / 10;
+    return Math.floor((num + 1e-8) * 10) / 10;
 };
 
 export const formatQuoteMoney1 = (value = 0) => `S/ ${floorMoney1(value).toFixed(1)}`;
@@ -34,12 +34,12 @@ export const calcQuoteItem = (item = {}) => {
                 ?? (source.lineDiscountType === 'percent' || source.lineDiscountEnabled ? source.lineDiscountValue : 0)),
         0
     );
+    const linDiscountPct = linDiscountType === 'amount'
+        ? (base > 0 ? floorMoney1(Math.min(100, Math.max(0, (Math.min(base, Math.max(0, rawDiscountValue)) / base) * 100))) : 0)
+        : Math.min(100, Math.max(0, rawDiscountValue));
     const descAmt = linDiscountType === 'amount'
         ? floorMoney1(Math.min(base, Math.max(0, rawDiscountValue)))
-        : floorMoney1(base * Math.min(100, Math.max(0, rawDiscountValue)) / 100);
-    const linDiscountPct = base > 0
-        ? floorMoney1(Math.min(100, Math.max(0, (descAmt / base) * 100)))
-        : 0;
+        : floorMoney1(base * linDiscountPct / 100);
     const finalPrice = floorMoney1(Math.max(0, base - descAmt));
     const subtotal = floorMoney1(finalPrice * qty);
 
@@ -73,12 +73,12 @@ export const calcQuoteTotals = (items = [], globalDiscValue = 0, globalOnRegular
         ? floorMoney1(participants.reduce((acc, item) => acc + floorMoney1((item.regularPrice || item.unitPrice) * item.qty), 0))
         : floorMoney1(participants.reduce((acc, item) => acc + item.subtotal, 0));
 
+    const globalDiscPct = safeGlobalType === 'amount'
+        ? (baseGlobal > 0 ? floorMoney1(Math.min(100, Math.max(0, (Math.min(baseGlobal, safeGlobalValue) / baseGlobal) * 100))) : 0)
+        : Math.min(100, safeGlobalValue);
     const globalDiscAmt = safeGlobalType === 'amount'
         ? floorMoney1(Math.min(baseGlobal, safeGlobalValue))
-        : floorMoney1(baseGlobal * Math.min(100, safeGlobalValue) / 100);
-    const globalDiscPct = baseGlobal > 0
-        ? floorMoney1(Math.min(100, Math.max(0, (globalDiscAmt / baseGlobal) * 100)))
-        : 0;
+        : floorMoney1(baseGlobal * globalDiscPct / 100);
     const subtotalParticipants = globalOnRegular
         ? baseGlobal
         : floorMoney1(participants.reduce((acc, item) => acc + item.subtotal, 0));
@@ -209,9 +209,9 @@ export const calculateCartPricing = ({
     const subtotalProducts = totals.subtotal;
     const globalDiscountApplied = totals.globalDiscAmt;
     const subtotalAfterGlobal = roundMoney(subtotalProducts - globalDiscountApplied);
-    const lineDiscountTotal = roundMoney(lineBreakdowns.reduce((sum, line) => sum + line.additionalDiscountApplied + line.includedDiscount, 0));
-    const totalDiscountForQuote = roundMoney(lineDiscountTotal + globalDiscountApplied);
     const cartTotal = totals.total;
+    const totalBeforeDelivery = Math.max(0, cartTotal - deliveryFee);
+    const totalDiscountForQuote = roundMoney(Math.max(0, regularSubtotalTotal - totalBeforeDelivery));
 
     return {
         lineBreakdowns,
@@ -305,30 +305,21 @@ export const buildQuoteMessageFromCart = ({
     const separator = '---------------------------------------------';
     const productRows = safeCart.flatMap((item) => {
         const line = typeof getLineBreakdown === 'function' ? getLineBreakdown(item) : { qty: Math.max(1, Number(item?.qty || 1)) };
+        const unitForCustomer = Number(line.regularUnit ?? item?.regularPrice ?? line.unitPrice ?? item?.price ?? 0) || 0;
+        const lineSubtotalForCustomer = floorMoney1(unitForCustomer * (Number(line.qty || item?.qty || 1) || 1));
         const rows = [
-            `*${formatTitle(item?.title)}* x ${line.qty}        S/ ${moneyCompact(line.lineFinal || line.subtotal || 0)}`,
-            item?.sku ? `SKU: ${String(item.sku).trim()}` : ''
-        ].filter(Boolean);
-        if (Number(line.additionalDiscountApplied || line.lineDiscountAmount || 0) > 0) {
-            const label = normalizeDiscountType(line.lineDiscountType) === 'amount'
-                ? 'Desc. linea'
-                : `Desc. linea (${line.lineDiscountPct}%)`;
-            rows.push(`${label}: -S/ ${moneyCompact(line.additionalDiscountApplied || line.lineDiscountAmount || 0)}`);
-        }
+            `*${formatTitle(item?.title)}*`,
+            `${line.qty} x S/ ${moneyCompact(unitForCustomer)} = S/ ${moneyCompact(lineSubtotalForCustomer)}`
+        ];
         return rows;
     });
 
     const paymentRows = [
-        `${globalOnRegular ? 'Subtotal (precio regular)' : 'Subtotal'}: S/ ${moneyCompact(subtotalProducts || regularSubtotalTotal)}`,
+        `Subtotal:     S/ ${moneyCompact(regularSubtotalTotal || subtotalProducts)}`,
     ];
 
-    if (Number(globalDiscountApplied || 0) > 0) {
-        const pctLabel = normalizeDiscountType(globalDiscountType) === 'percent' && Number(normalizedGlobalDiscountValue || 0) > 0
-            ? ` (${Number(normalizedGlobalDiscountValue || 0)}%)`
-            : '';
-        paymentRows.push(`Descuento global${pctLabel}: -S/ ${moneyCompact(globalDiscountApplied)}`);
-    } else if (Number(totalDiscountForQuote || 0) > 0) {
-        paymentRows.push(`Ahorro: -S/ ${moneyCompact(totalDiscountForQuote)}`);
+    if (Number(totalDiscountForQuote || 0) > 0) {
+        paymentRows.push(`Descuento:    -S/ ${moneyCompact(totalDiscountForQuote)}`);
     }
 
     paymentRows.push(`Delivery: ${deliveryFee > 0 ? `S/ ${moneyCompact(deliveryFee)}` : 'Gratuito'}`);
@@ -337,13 +328,14 @@ export const buildQuoteMessageFromCart = ({
     return [
         quoteId ? `*COTIZACION ${String(quoteId).toUpperCase()}*` : '*COTIZACION*',
         separator,
-        '*_DETALLE DE PRODUCTOS:_*',
-        separator,
+        '',
         ...productRows,
-        separator,
-        '*_DETALLE DE PAGO:_*',
+        '',
         separator,
         ...paymentRows,
         separator,
+        '',
+        separator,
+        '_Lavitat(R) - La confianza que abraza tu hogar_',
     ].join('\n');
 };

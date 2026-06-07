@@ -66,7 +66,9 @@ export const buildQuoteItemFromCartLine = ({ item = {}, line = {}, index = 0, cu
 
 export const buildQuoteSummaryFromCart = ({
     cart = [],
+    regularSubtotalTotal = 0,
     subtotalProducts = 0,
+    totalDiscountForQuote = 0,
     globalDiscountApplied = 0,
     subtotalAfterGlobal = 0,
     deliveryFee = 0,
@@ -85,6 +87,8 @@ export const buildQuoteSummaryFromCart = ({
     const normalizedDeliveryAmount = toMoney1(parseMoney(deliveryFee, 0));
     const normalizedGlobalDiscountType = normalizeDiscountType(globalDiscountType);
     const globalDiscAmt = toMoney1(parseMoney(globalDiscountApplied, 0));
+    const subtotalForCustomer = toMoney1(parseMoney(regularSubtotalTotal || subtotalProducts, 0));
+    const totalDiscountForCustomer = toMoney1(parseMoney(totalDiscountForQuote || globalDiscAmt, 0));
     const hasComputedGlobalPct = globalDiscPct !== null && globalDiscPct !== undefined && Number.isFinite(Number(globalDiscPct));
     const globalPct = globalDiscountEnabled
         ? (hasComputedGlobalPct
@@ -96,7 +100,8 @@ export const buildQuoteSummaryFromCart = ({
 
     return {
         itemCount: safeCart.length,
-        subtotal: toMoney1(parseMoney(subtotalProducts, 0)),
+        subtotal: subtotalForCustomer,
+        productSubtotal: toMoney1(parseMoney(subtotalProducts, 0)),
         globalDiscPct: globalPct,
         globalDiscAmt,
         globalDiscType: normalizedGlobalDiscountType === 'amount' ? 'fixed' : 'pct',
@@ -104,8 +109,9 @@ export const buildQuoteSummaryFromCart = ({
         deliveryType: normalizedDeliveryType === 'amount' ? 'amount' : 'gratuito',
         deliveryAmt: normalizedDeliveryAmount,
         totalPayable: toMoney1(parseMoney(cartTotal, 0)),
-        discount: globalDiscAmt,
-        totalAfterDiscount: toMoney1(parseMoney(subtotalAfterGlobal, 0)),
+        discount: totalDiscountForCustomer,
+        totalDiscount: totalDiscountForCustomer,
+        totalAfterDiscount: toMoney1(Math.max(0, subtotalForCustomer - totalDiscountForCustomer)),
         deliveryAmount: normalizedDeliveryAmount,
         deliveryFree: normalizedDeliveryType !== 'amount' || normalizedDeliveryAmount <= 0,
         globalDiscount: {
@@ -127,6 +133,7 @@ export const buildStructuredQuotePayloadFromCart = ({
     activeChatId = '',
     activeChatPhone = '',
     cart = [],
+    regularSubtotalTotal = 0,
     subtotalProducts = 0,
     totalDiscountForQuote = 0,
     globalDiscountApplied = 0,
@@ -175,7 +182,9 @@ export const buildStructuredQuotePayloadFromCart = ({
 
     const summary = buildQuoteSummaryFromCart({
         cart: safeCart,
+        regularSubtotalTotal,
         subtotalProducts,
+        totalDiscountForQuote,
         globalDiscountApplied,
         subtotalAfterGlobal,
         deliveryFee,
@@ -193,6 +202,7 @@ export const buildStructuredQuotePayloadFromCart = ({
         ? String(buildQuoteMessageFromCart({
             cart: safeCart,
             getLineBreakdown,
+            regularSubtotalTotal,
             subtotalProducts,
             totalDiscountForQuote,
             globalDiscountApplied,

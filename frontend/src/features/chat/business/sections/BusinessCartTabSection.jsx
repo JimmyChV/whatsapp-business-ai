@@ -35,10 +35,12 @@ export default function BusinessCartTabSection({
     safeDeliveryAmount = 0,
     setDeliveryAmount = emptyFn,
     formatMoney,
+    regularSubtotalTotal = 0,
     subtotalProducts = 0,
     subtotalParticipants = 0,
     subtotalExcluded = 0,
     globalDiscountApplied = 0,
+    totalDiscountForQuote = 0,
     deliveryFee = 0,
     cartTotal = 0,
     cartWizardStep = 1,
@@ -490,13 +492,13 @@ export default function BusinessCartTabSection({
                 </div>
                 <div style={{ borderTop: '1px solid rgba(0,0,0,0.08)', paddingTop: '8px', display: 'grid', gap: '5px', fontSize: '0.75rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>{globalOnRegular ? 'Subtotal (precio regular)' : 'Subtotal'}</span>
-                        <strong>S/ {money(subtotalProducts)}</strong>
+                        <span>Subtotal</span>
+                        <strong>S/ {money(regularSubtotalTotal || subtotalProducts)}</strong>
                     </div>
-                    {globalDiscountApplied > 0 && (
+                    {totalDiscountForQuote > 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', color: tone.successText }}>
-                            <span>Descuento global{normalizeDiscountType(globalDiscountType) === 'percent' && Number(normalizedGlobalDiscountValue || 0) > 0 ? ` (${Number(normalizedGlobalDiscountValue || 0)}%)` : ''}</span>
-                            <strong>- S/ {money(globalDiscountApplied)}</strong>
+                            <span>Descuento</span>
+                            <strong>- S/ {money(totalDiscountForQuote)}</strong>
                         </div>
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>

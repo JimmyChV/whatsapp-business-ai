@@ -495,7 +495,9 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
             const summary = buildQuoteSummaryFromCart({
                 cart: products,
                 regularSubtotalTotal: pricing.regularSubtotalTotal,
+                subtotalProducts: pricing.subtotalProducts,
                 totalDiscountForQuote: pricing.totalDiscountForQuote,
+                globalDiscountApplied: pricing.globalDiscountApplied,
                 subtotalAfterGlobal: pricing.subtotalAfterGlobal,
                 deliveryFee: pricing.deliveryFee,
                 cartTotal: pricing.cartTotal,
@@ -503,6 +505,7 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
                 globalDiscountEnabled: Boolean(option?.globalDiscountEnabled),
                 globalDiscountType: option?.globalDiscountType === 'amount' ? 'amount' : 'percent',
                 globalDiscountValue: Number(option?.globalDiscountValue || 0) || 0,
+                globalDiscPct: pricing.globalDiscPct,
                 currency: 'PEN'
             });
             return {
