@@ -12,19 +12,34 @@ export const floorMoney1 = (value = 0) => {
 
 export const formatQuoteMoney1 = (value = 0) => `S/ ${floorMoney1(value).toFixed(1)}`;
 
+export const normalizeDiscountType = (value = 'percent') => {
+    const raw = String(value || '').trim().toLowerCase();
+    return raw === 'amount' || raw === 'fixed' || raw === 's/' || raw === 'soles'
+        ? 'amount'
+        : 'percent';
+};
+
 export const calcQuoteItem = (item = {}) => {
     const source = item && typeof item === 'object' ? item : {};
     const qty = Math.max(1, Math.trunc(asNumber(source.qty ?? source.quantity, 1)) || 1);
     const unitPrice = asNumber(source.unitPrice ?? source.price, 0);
     const regularPrice = asNumber(source.regularPrice ?? source.regular_price, unitPrice);
     const base = floorMoney1(unitPrice);
-    const linDiscountPct = Math.min(100, Math.max(0, asNumber(
-        source.linDiscountPct
-        ?? source.lineDiscountPct
-        ?? (source.lineDiscountType === 'percent' || source.lineDiscountEnabled ? source.lineDiscountValue : 0),
+    const linDiscountType = normalizeDiscountType(source.linDiscountType ?? source.lineDiscountType ?? source.discountType);
+    const rawDiscountValue = asNumber(
+        linDiscountType === 'amount'
+            ? (source.linDiscountAmt ?? source.lineDiscountUnitAmount ?? source.lineDiscountValue ?? 0)
+            : (source.linDiscountPct
+                ?? source.lineDiscountPct
+                ?? (source.lineDiscountType === 'percent' || source.lineDiscountEnabled ? source.lineDiscountValue : 0)),
         0
-    )));
-    const descAmt = floorMoney1(base * linDiscountPct / 100);
+    );
+    const descAmt = linDiscountType === 'amount'
+        ? floorMoney1(Math.min(base, Math.max(0, rawDiscountValue)))
+        : floorMoney1(base * Math.min(100, Math.max(0, rawDiscountValue)) / 100);
+    const linDiscountPct = base > 0
+        ? floorMoney1(Math.min(100, Math.max(0, (descAmt / base) * 100)))
+        : 0;
     const finalPrice = floorMoney1(Math.max(0, base - descAmt));
     const subtotal = floorMoney1(finalPrice * qty);
 
@@ -35,6 +50,9 @@ export const calcQuoteItem = (item = {}) => {
         base,
         unitPrice: base,
         regularPrice: floorMoney1(regularPrice || unitPrice),
+        linDiscountType: linDiscountType === 'amount' ? 'fixed' : 'pct',
+        lineDiscountType: linDiscountType,
+        lineDiscountValue: linDiscountType === 'amount' ? descAmt : linDiscountPct,
         linDiscountPct,
         linDiscountAmt: descAmt,
         descAmt,
@@ -44,17 +62,23 @@ export const calcQuoteItem = (item = {}) => {
     };
 };
 
-export const calcQuoteTotals = (items = [], globalDiscPct = 0, globalOnRegular = false, delivery = 0) => {
+export const calcQuoteTotals = (items = [], globalDiscValue = 0, globalOnRegular = false, delivery = 0, globalDiscType = 'percent') => {
     const calcedItems = (Array.isArray(items) ? items : []).map(calcQuoteItem);
     const participants = calcedItems.filter((item) => !item.excludeFromGlobal);
     const excluded = calcedItems.filter((item) => item.excludeFromGlobal);
-    const safeGlobalPct = Math.min(100, Math.max(0, asNumber(globalDiscPct, 0)));
+    const safeGlobalType = normalizeDiscountType(globalDiscType);
+    const safeGlobalValue = Math.max(0, asNumber(globalDiscValue, 0));
 
     const baseGlobal = globalOnRegular
         ? floorMoney1(participants.reduce((acc, item) => acc + floorMoney1((item.regularPrice || item.unitPrice) * item.qty), 0))
         : floorMoney1(participants.reduce((acc, item) => acc + item.subtotal, 0));
 
-    const globalDiscAmt = floorMoney1(baseGlobal * safeGlobalPct / 100);
+    const globalDiscAmt = safeGlobalType === 'amount'
+        ? floorMoney1(Math.min(baseGlobal, safeGlobalValue))
+        : floorMoney1(baseGlobal * Math.min(100, safeGlobalValue) / 100);
+    const globalDiscPct = baseGlobal > 0
+        ? floorMoney1(Math.min(100, Math.max(0, (globalDiscAmt / baseGlobal) * 100)))
+        : 0;
     const subtotalParticipants = globalOnRegular
         ? baseGlobal
         : floorMoney1(participants.reduce((acc, item) => acc + item.subtotal, 0));
@@ -71,7 +95,10 @@ export const calcQuoteTotals = (items = [], globalDiscPct = 0, globalOnRegular =
         subtotalParticipants,
         subtotalExcluded,
         subtotal,
-        globalDiscPct: safeGlobalPct,
+        globalDiscPct,
+        globalDiscType: safeGlobalType === 'amount' ? 'fixed' : 'pct',
+        globalDiscountType: safeGlobalType,
+        globalDiscountValue: safeGlobalType === 'amount' ? globalDiscAmt : globalDiscPct,
         globalDiscAmt,
         globalOnRegular: Boolean(globalOnRegular),
         deliveryAmt,
@@ -90,17 +117,22 @@ export const getCartLineBreakdown = (
     const safeItem = item && typeof item === 'object' ? item : {};
     const unitPrice = Math.max(0, parseMoney(safeItem.price ?? safeItem.unitPrice, 0));
     const regularUnit = Math.max(0, parseMoney(safeItem.regularPrice, unitPrice));
-    const lineDiscountPct = clampNumber(parseMoney(
-        safeItem.linDiscountPct
-        ?? safeItem.lineDiscountPct
-        ?? (safeItem.lineDiscountEnabled ? safeItem.lineDiscountValue : 0),
-        0
-    ), 0, 100);
+    const lineDiscountType = normalizeDiscountType(safeItem.linDiscountType ?? safeItem.lineDiscountType);
+    const lineDiscountValue = lineDiscountType === 'amount'
+        ? Math.max(0, parseMoney(safeItem.linDiscountAmt ?? safeItem.lineDiscountValue, 0))
+        : clampNumber(parseMoney(
+            safeItem.linDiscountPct
+            ?? safeItem.lineDiscountPct
+            ?? (safeItem.lineDiscountEnabled ? safeItem.lineDiscountValue : 0),
+            0
+        ), 0, 100);
     const calced = calcQuoteItem({
         ...safeItem,
         unitPrice,
         regularPrice: regularUnit || unitPrice,
-        linDiscountPct: lineDiscountPct
+        linDiscountType: lineDiscountType === 'amount' ? 'fixed' : 'pct',
+        lineDiscountType,
+        lineDiscountValue
     });
     const baseSubtotal = roundMoney(calced.base * calced.qty);
     const regularSubtotal = roundMoney(calced.regularPrice * calced.qty);
@@ -115,9 +147,11 @@ export const getCartLineBreakdown = (
         baseSubtotal,
         includedDiscount,
         lineDiscountEnabled: calced.linDiscountPct > 0,
-        lineDiscountType: 'percent',
-        lineDiscountValue: calced.linDiscountPct,
+        linDiscountType: calced.linDiscountType,
+        lineDiscountType: calced.lineDiscountType,
+        lineDiscountValue: calced.lineDiscountValue,
         lineDiscountPct: calced.linDiscountPct,
+        lineDiscountUnitAmount: calced.linDiscountAmt,
         lineDiscountAmount: additionalDiscountApplied,
         additionalDiscountApplied,
         lineFinal: calced.subtotal,
@@ -145,8 +179,11 @@ export const calculateCartPricing = ({
         ...getCartLineBreakdown(item, { parseMoney, roundMoney, clampNumber })
     }));
 
+    const normalizedGlobalDiscountType = normalizeDiscountType(globalDiscountType);
     const normalizedGlobalDiscountValue = globalDiscountEnabled
-        ? clampNumber(parseMoney(globalDiscountValue, 0), 0, 100)
+        ? (normalizedGlobalDiscountType === 'amount'
+            ? Math.max(0, parseMoney(globalDiscountValue, 0))
+            : clampNumber(parseMoney(globalDiscountValue, 0), 0, 100))
         : 0;
     const safeDeliveryAmount = Math.max(0, parseMoney(deliveryAmount, 0));
     const deliveryFee = deliveryType === 'amount' ? roundMoney(safeDeliveryAmount) : 0;
@@ -156,12 +193,17 @@ export const calculateCartPricing = ({
             qty: line.qty,
             unitPrice: line.unitPrice,
             regularPrice: line.regularUnit,
+            linDiscountType: line.linDiscountType,
+            lineDiscountType: line.lineDiscountType,
+            lineDiscountValue: line.lineDiscountValue,
             linDiscountPct: line.lineDiscountPct,
+            linDiscountAmt: line.lineDiscountUnitAmount,
             excludeFromGlobal: line.excludeFromGlobal
         })),
         normalizedGlobalDiscountValue,
         Boolean(globalOnRegular),
-        deliveryFee
+        deliveryFee,
+        normalizedGlobalDiscountType
     );
     const regularSubtotalTotal = roundMoney(lineBreakdowns.reduce((sum, line) => sum + line.regularSubtotal, 0));
     const subtotalProducts = totals.subtotal;
@@ -177,7 +219,10 @@ export const calculateCartPricing = ({
         subtotalProducts,
         rawGlobalDiscountValue: normalizedGlobalDiscountValue,
         normalizedGlobalDiscountValue,
+        normalizedGlobalDiscountType,
         globalDiscountApplied,
+        globalDiscPct: totals.globalDiscPct,
+        globalDiscType: totals.globalDiscType,
         globalOnRegular: Boolean(globalOnRegular),
         subtotalParticipants: totals.subtotalParticipants,
         subtotalExcluded: totals.subtotalExcluded,
@@ -201,10 +246,11 @@ export const buildCartSnapshotPayload = ({
     deliveryType = 'free',
     globalDiscountEnabled = false,
     normalizedGlobalDiscountValue = 0,
+    normalizedGlobalDiscountType = 'percent',
     globalOnRegular = false
 } = {}) => ({
     chatId: String(activeChatId || '').trim() || null,
-    items: (Array.isArray(lineBreakdowns) ? lineBreakdowns : []).map(({ item, qty, unitPrice, regularUnit, lineDiscountPct, additionalDiscountApplied, finalPrice, subtotal, excludeFromGlobal }) => ({
+    items: (Array.isArray(lineBreakdowns) ? lineBreakdowns : []).map(({ item, qty, unitPrice, regularUnit, linDiscountType, lineDiscountType, lineDiscountValue, lineDiscountPct, lineDiscountUnitAmount, additionalDiscountApplied, finalPrice, subtotal, excludeFromGlobal }) => ({
         id: item?.id || null,
         title: item?.title || null,
         qty,
@@ -212,10 +258,12 @@ export const buildCartSnapshotPayload = ({
         regularPrice: Number(parseMoney(item?.regularPrice, regularUnit || unitPrice) || 0),
         category: item?.category || item?.categoryName || null,
         lineDiscountEnabled: Number(lineDiscountPct || 0) > 0,
-        lineDiscountType: 'percent',
-        lineDiscountValue: Number(lineDiscountPct || 0),
+        linDiscountType: linDiscountType || 'pct',
+        lineDiscountType: lineDiscountType || 'percent',
+        lineDiscountValue: Number(lineDiscountValue || 0),
         linDiscountPct: Number(lineDiscountPct || 0),
-        linDiscountAmt: Number(additionalDiscountApplied || 0),
+        linDiscountAmt: Number(lineDiscountUnitAmount || 0),
+        lineDiscountAmount: Number(additionalDiscountApplied || 0),
         finalPrice: Number(finalPrice || 0),
         subtotal: Number(subtotal || 0),
         excludeFromGlobal: Boolean(excludeFromGlobal)
@@ -225,7 +273,7 @@ export const buildCartSnapshotPayload = ({
     total: Number(cartTotal || 0),
     delivery: Number(deliveryFee || 0),
     currency: 'PEN',
-    notes: `delivery=${deliveryType}; globalDiscount=${globalDiscountEnabled ? `percent:${normalizedGlobalDiscountValue}` : 'none'}; globalOnRegular=${Boolean(globalOnRegular)}`
+    notes: `delivery=${deliveryType}; globalDiscount=${globalDiscountEnabled ? `${normalizeDiscountType(normalizedGlobalDiscountType)}:${normalizedGlobalDiscountValue}` : 'none'}; globalOnRegular=${Boolean(globalOnRegular)}`
 });
 
 export const buildQuoteMessageFromCart = ({
@@ -235,6 +283,7 @@ export const buildQuoteMessageFromCart = ({
     totalDiscountForQuote = 0,
     globalDiscountApplied = 0,
     normalizedGlobalDiscountValue = 0,
+    globalDiscountType = 'percent',
     globalOnRegular = false,
     subtotalProducts = 0,
     deliveryFee = 0,
@@ -260,8 +309,11 @@ export const buildQuoteMessageFromCart = ({
             `*${formatTitle(item?.title)}* x ${line.qty}        S/ ${moneyCompact(line.lineFinal || line.subtotal || 0)}`,
             item?.sku ? `SKU: ${String(item.sku).trim()}` : ''
         ].filter(Boolean);
-        if (Number(line.lineDiscountPct || 0) > 0) {
-            rows.push(`Desc. linea (${line.lineDiscountPct}%): -S/ ${moneyCompact(line.additionalDiscountApplied || line.lineDiscountAmount || 0)}`);
+        if (Number(line.additionalDiscountApplied || line.lineDiscountAmount || 0) > 0) {
+            const label = normalizeDiscountType(line.lineDiscountType) === 'amount'
+                ? 'Desc. linea'
+                : `Desc. linea (${line.lineDiscountPct}%)`;
+            rows.push(`${label}: -S/ ${moneyCompact(line.additionalDiscountApplied || line.lineDiscountAmount || 0)}`);
         }
         return rows;
     });
@@ -271,7 +323,7 @@ export const buildQuoteMessageFromCart = ({
     ];
 
     if (Number(globalDiscountApplied || 0) > 0) {
-        const pctLabel = Number(normalizedGlobalDiscountValue || 0) > 0
+        const pctLabel = normalizeDiscountType(globalDiscountType) === 'percent' && Number(normalizedGlobalDiscountValue || 0) > 0
             ? ` (${Number(normalizedGlobalDiscountValue || 0)}%)`
             : '';
         paymentRows.push(`Descuento global${pctLabel}: -S/ ${moneyCompact(globalDiscountApplied)}`);

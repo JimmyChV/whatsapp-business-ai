@@ -32,7 +32,10 @@ export const addItemToCartState = (previous = [], item = {}, qtyToAdd = 1) => {
             qty: qtyDelta,
             lineDiscountEnabled: Boolean(safeItem.lineDiscountEnabled || false),
             lineDiscountType: safeItem.lineDiscountType === 'amount' ? 'amount' : 'percent',
-            lineDiscountValue: Math.max(0, asNumber(safeItem.lineDiscountValue, 0))
+            lineDiscountValue: Math.max(0, asNumber(safeItem.lineDiscountValue, 0)),
+            linDiscountType: safeItem.lineDiscountType === 'amount' || safeItem.linDiscountType === 'fixed' ? 'fixed' : 'pct',
+            linDiscountPct: Math.max(0, asNumber(safeItem.linDiscountPct, 0)),
+            linDiscountAmt: Math.max(0, asNumber(safeItem.linDiscountAmt, 0))
         }
     ];
 };
@@ -58,6 +61,19 @@ export const updateCartItemQtyState = (previous = [], id = '', delta = 0) => {
     });
 };
 
+export const setCartItemQtyState = (previous = [], id = '', quantity = 1) => {
+    const safePrevious = Array.isArray(previous) ? previous : [];
+    const targetId = safeId(id);
+    const nextQty = Math.max(1, Math.trunc(Number(quantity) || 1));
+    if (!targetId) return safePrevious;
+
+    return safePrevious.map((entry) => (
+        safeId(entry?.id) === targetId
+            ? { ...entry, qty: nextQty }
+            : entry
+    ));
+};
+
 export const setCartItemDiscountEnabledState = (previous = [], id = '', enabled = false, parseMoney = asNumber) => {
     const safePrevious = Array.isArray(previous) ? previous : [];
     const targetId = safeId(id);
@@ -69,7 +85,9 @@ export const setCartItemDiscountEnabledState = (previous = [], id = '', enabled 
         return {
             ...entry,
             lineDiscountEnabled: isEnabled,
-            lineDiscountValue: isEnabled ? Math.max(0, parseMoney(entry.lineDiscountValue, 0)) : 0
+            lineDiscountValue: isEnabled ? Math.max(0, parseMoney(entry.lineDiscountValue, 0)) : 0,
+            linDiscountPct: isEnabled ? Math.max(0, parseMoney(entry.linDiscountPct, 0)) : 0,
+            linDiscountAmt: isEnabled ? Math.max(0, parseMoney(entry.linDiscountAmt, 0)) : 0
         };
     });
 };
@@ -85,7 +103,10 @@ export const setCartItemDiscountTypeState = (previous = [], id = '', type = 'per
             ? {
                 ...entry,
                 lineDiscountType: safeType,
-                lineDiscountValue: 0
+                lineDiscountValue: 0,
+                linDiscountType: safeType === 'amount' ? 'fixed' : 'pct',
+                linDiscountPct: 0,
+                linDiscountAmt: 0
             }
             : entry
     ));
@@ -101,7 +122,13 @@ export const setCartItemDiscountValueState = (previous = [], id = '', value = 0,
         const safeType = entry.lineDiscountType === 'amount' ? 'amount' : 'percent';
         const rawValue = Math.max(0, parseMoney(value, 0));
         const safeValue = safeType === 'percent' ? clampNumber(rawValue, 0, 100) : rawValue;
-        return { ...entry, lineDiscountValue: safeValue };
+        return {
+            ...entry,
+            lineDiscountValue: safeValue,
+            linDiscountType: safeType === 'amount' ? 'fixed' : 'pct',
+            linDiscountPct: safeType === 'percent' ? safeValue : 0,
+            linDiscountAmt: safeType === 'amount' ? safeValue : 0
+        };
     });
 };
 

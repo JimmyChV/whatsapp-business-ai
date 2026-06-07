@@ -1,6 +1,10 @@
 import { ClipboardList, Minus, Plus, Send, ShoppingCart, Tag, Trash2, Truck } from 'lucide-react';
 
 const clampPercent = (value) => Math.min(100, Math.max(0, Number(value) || 0));
+const normalizeDiscountType = (value = 'percent') => {
+    const raw = String(value || '').trim().toLowerCase();
+    return raw === 'amount' || raw === 'fixed' || raw === 's/' ? 'amount' : 'percent';
+};
 
 const stepNames = ['Productos', 'Descuentos', 'Delivery', 'Resumen'];
 
@@ -19,6 +23,7 @@ export default function BusinessCartTabSection({
     updateItemDiscountType,
     updateItemExcludeFromGlobal = emptyFn,
     globalDiscountEnabled = false,
+    globalDiscountType = 'percent',
     setGlobalDiscountEnabled = emptyFn,
     setGlobalDiscountType = emptyFn,
     normalizedGlobalDiscountValue = 0,
@@ -80,11 +85,27 @@ export default function BusinessCartTabSection({
     };
     const isDeliveryFree = deliveryType === 'free' || deliveryType === 'gratuito' || deliveryType === 'none';
 
-    const setLineDiscount = (item, value) => {
-        const pct = clampPercent(value);
-        updateItemDiscountType?.(item.id, 'percent');
-        updateItemDiscountEnabled?.(item.id, pct > 0);
-        updateItemDiscountValue?.(item.id, pct);
+    const handleQtyInput = (itemId, value) => {
+        const parsed = Number.parseInt(String(value || ''), 10);
+        if (!Number.isFinite(parsed) || parsed < 1) return;
+        updateQty?.(itemId, parsed);
+    };
+
+    const setLineDiscount = (item, value, type = null) => {
+        const resolvedType = normalizeDiscountType(type || item.lineDiscountType || item.linDiscountType);
+        const amount = resolvedType === 'amount'
+            ? Math.max(0, Number(value) || 0)
+            : clampPercent(value);
+        updateItemDiscountType?.(item.id, resolvedType);
+        updateItemDiscountEnabled?.(item.id, amount > 0);
+        updateItemDiscountValue?.(item.id, amount);
+    };
+
+    const setLineDiscountType = (item, type, currentValue = 0) => {
+        const resolvedType = normalizeDiscountType(type);
+        updateItemDiscountType?.(item.id, resolvedType);
+        updateItemDiscountValue?.(item.id, resolvedType === 'amount' ? Math.max(0, Number(currentValue) || 0) : clampPercent(currentValue));
+        updateItemDiscountEnabled?.(item.id, Number(currentValue || 0) > 0);
     };
 
     const header = (
@@ -229,7 +250,9 @@ export default function BusinessCartTabSection({
             </div>
             {cart.map((item) => {
                 const line = lineFor(item);
-                const discountPct = Number(line.lineDiscountPct ?? line.lineDiscountValue ?? item.linDiscountPct ?? 0) || 0;
+                const currentQty = Math.max(1, Number(line.qty || item.qty || 1) || 1);
+                const discountType = normalizeDiscountType(line.lineDiscountType ?? item.lineDiscountType ?? item.linDiscountType);
+                const discountValue = Number(line.lineDiscountValue ?? (discountType === 'amount' ? line.lineDiscountUnitAmount : line.lineDiscountPct) ?? 0) || 0;
                 const imageUrl = item.imageUrl || item.image_url || item.thumbnailUrl || item.thumbnail_url || '';
                 return (
                     <div key={item.id} style={{
@@ -266,29 +289,42 @@ export default function BusinessCartTabSection({
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '8px', alignItems: 'center' }}>
                                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: tone.controlSurface, border: `1px solid ${tone.controlBorder}`, borderRadius: '999px', padding: '4px' }}>
-                                    <button type="button" onClick={() => updateQty?.(item.id, Math.max(1, Number(item.qty || 1) - 1))} style={{ border: 'none', background: tone.controlSurfaceStrong, borderRadius: '999px', width: '24px', height: '24px', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                                    <button type="button" onClick={() => updateQty?.(item.id, Math.max(1, currentQty - 1))} style={{ border: 'none', background: tone.controlSurfaceStrong, borderRadius: '999px', width: '24px', height: '24px', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
                                         <Minus size={12} />
                                     </button>
-                                    <strong style={{ minWidth: '18px', textAlign: 'center' }}>{line.qty || item.qty || 1}</strong>
-                                    <button type="button" onClick={() => updateQty?.(item.id, Number(item.qty || 1) + 1)} style={{ border: 'none', background: tone.controlSurfaceStrong, borderRadius: '999px', width: '24px', height: '24px', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={currentQty}
+                                        onChange={(event) => handleQtyInput(item.id, event.target.value)}
+                                        style={{ width: '42px', border: 'none', background: 'transparent', textAlign: 'center', fontWeight: 900, color: 'var(--text-primary)' }}
+                                    />
+                                    <button type="button" onClick={() => updateQty?.(item.id, currentQty + 1)} style={{ border: 'none', background: tone.controlSurfaceStrong, borderRadius: '999px', width: '24px', height: '24px', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
                                         <Plus size={12} />
                                     </button>
                                 </div>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: tone.textSoft, fontSize: '0.72rem' }}>
+                                <label style={{ display: 'grid', gridTemplateColumns: 'auto 1fr 58px', alignItems: 'center', gap: '6px', color: tone.textSoft, fontSize: '0.72rem' }}>
                                     Desc. linea
                                     <input
                                         type="number"
                                         min="0"
-                                        max="100"
-                                        value={discountPct}
-                                        onChange={(event) => setLineDiscount(item, event.target.value)}
+                                        max={discountType === 'percent' ? '100' : undefined}
+                                        value={discountValue}
+                                        onChange={(event) => setLineDiscount(item, event.target.value, discountType)}
                                         style={{ minWidth: 0, flex: 1, border: `1px solid ${tone.controlBorder}`, borderRadius: '8px', padding: '6px 7px', background: tone.controlSurface, color: 'var(--text-primary)' }}
                                     />
-                                    %
+                                    <select
+                                        value={discountType}
+                                        onChange={(event) => setLineDiscountType(item, event.target.value, discountValue)}
+                                        style={{ border: `1px solid ${tone.controlBorder}`, borderRadius: '8px', padding: '6px 4px', background: tone.controlSurface, color: 'var(--text-primary)', fontWeight: 800 }}
+                                    >
+                                        <option value="percent">%</option>
+                                        <option value="amount">S/</option>
+                                    </select>
                                 </label>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', color: tone.textMuted, fontSize: '0.72rem' }}>
-                    <span>{globalOnRegular ? 'Subtotal (precio regular)' : 'Subtotal'}</span>
+                                <span>Subtotal</span>
                                 <strong style={{ color: tone.totalText }}>S/ {money(line.lineFinal ?? line.subtotal ?? 0)}</strong>
                             </div>
                         </div>
@@ -333,25 +369,34 @@ export default function BusinessCartTabSection({
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)', fontWeight: 800 }}>
                     <input type="checkbox" checked={Boolean(globalDiscountEnabled)} onChange={(event) => {
                         setGlobalDiscountEnabled(event.target.checked);
-                        setGlobalDiscountType('percent');
                     }} />
                     Descuento global
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: tone.textSoft, fontSize: '0.74rem' }}>
-                    Porcentaje
+                <label style={{ display: 'grid', gridTemplateColumns: 'auto 1fr 64px', alignItems: 'center', gap: '8px', color: tone.textSoft, fontSize: '0.74rem' }}>
+                    Descuento
                     <input
                         type="number"
                         min="0"
-                        max="100"
+                        max={normalizeDiscountType(globalDiscountType) === 'percent' ? '100' : undefined}
                         value={Number(normalizedGlobalDiscountValue || 0)}
                         disabled={!globalDiscountEnabled}
                         onChange={(event) => {
-                            setGlobalDiscountType('percent');
-                            setGlobalDiscountValue(clampPercent(event.target.value));
+                            const type = normalizeDiscountType(globalDiscountType);
+                            setGlobalDiscountValue(type === 'amount'
+                                ? Math.max(0, Number(event.target.value) || 0)
+                                : clampPercent(event.target.value));
                         }}
                         style={{ flex: 1, border: `1px solid ${tone.controlBorder}`, borderRadius: '8px', padding: '7px 8px', background: tone.controlSurface, color: 'var(--text-primary)' }}
                     />
-                    %
+                    <select
+                        value={normalizeDiscountType(globalDiscountType)}
+                        disabled={!globalDiscountEnabled}
+                        onChange={(event) => setGlobalDiscountType(normalizeDiscountType(event.target.value))}
+                        style={{ border: `1px solid ${tone.controlBorder}`, borderRadius: '8px', padding: '7px 4px', background: tone.controlSurface, color: 'var(--text-primary)', fontWeight: 800 }}
+                    >
+                        <option value="percent">%</option>
+                        <option value="amount">S/</option>
+                    </select>
                 </label>
                 <div style={{ display: 'grid', gap: '6px' }}>
                     <label style={{ display: 'flex', gap: '7px', alignItems: 'center', color: tone.textSoft, fontSize: '0.72rem' }}>
@@ -370,7 +415,7 @@ export default function BusinessCartTabSection({
                     <strong>S/ {money(subtotalParticipants)}</strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: tone.successText }}>
-                    <span>Descuento global</span>
+                    <span>Descuento global{normalizeDiscountType(globalDiscountType) === 'percent' && Number(normalizedGlobalDiscountValue || 0) > 0 ? ` (${Number(normalizedGlobalDiscountValue || 0)}%)` : ''}</span>
                     <strong>- S/ {money(globalDiscountApplied)}</strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -425,12 +470,18 @@ export default function BusinessCartTabSection({
                     {cart.map((item) => {
                         const line = lineFor(item);
                         const discountPct = Number(line.lineDiscountPct || 0) || 0;
+                        const discountAmount = Number(line.lineDiscountAmount || line.additionalDiscountApplied || 0) || 0;
+                        const discountType = normalizeDiscountType(line.lineDiscountType);
                         const excluded = Boolean(line.excludeFromGlobal || item.excludeFromGlobal);
                         return (
                             <div key={item.id} style={{ background: 'rgba(255,255,255,0.58)', borderRadius: '12px', padding: '9px', display: 'grid', gap: '4px' }}>
                                 <strong style={{ fontSize: '0.78rem' }}>{item.title || item.productName || 'Producto'} x {line.qty || item.qty || 1}</strong>
                                 {item.sku && <small style={{ color: tone.textMuted }}>SKU: {item.sku}</small>}
-                                {discountPct > 0 && <small style={{ color: tone.successText }}>Desc. linea: {discountPct}%</small>}
+                                {discountAmount > 0 && (
+                                    <small style={{ color: tone.successText }}>
+                                        {discountType === 'amount' ? 'Desc. linea' : `Desc. linea: ${discountPct}%`}
+                                    </small>
+                                )}
                                 {excluded && <small style={{ color: tone.warningText }}>No participa del descuento global</small>}
                                 <strong style={{ justifySelf: 'end', color: tone.totalText }}>S/ {money(line.lineFinal ?? line.subtotal ?? 0)}</strong>
                             </div>
@@ -439,12 +490,12 @@ export default function BusinessCartTabSection({
                 </div>
                 <div style={{ borderTop: '1px solid rgba(0,0,0,0.08)', paddingTop: '8px', display: 'grid', gap: '5px', fontSize: '0.75rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Subtotal</span>
+                        <span>{globalOnRegular ? 'Subtotal (precio regular)' : 'Subtotal'}</span>
                         <strong>S/ {money(subtotalProducts)}</strong>
                     </div>
                     {globalDiscountApplied > 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', color: tone.successText }}>
-                            <span>Descuento global{Number(normalizedGlobalDiscountValue || 0) > 0 ? ` (${Number(normalizedGlobalDiscountValue || 0)}%)` : ''}</span>
+                            <span>Descuento global{normalizeDiscountType(globalDiscountType) === 'percent' && Number(normalizedGlobalDiscountValue || 0) > 0 ? ` (${Number(normalizedGlobalDiscountValue || 0)}%)` : ''}</span>
                             <strong>- S/ {money(globalDiscountApplied)}</strong>
                         </div>
                     )}

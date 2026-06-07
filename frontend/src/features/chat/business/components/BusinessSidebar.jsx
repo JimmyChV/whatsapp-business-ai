@@ -16,6 +16,7 @@ import {
     formatMoneyCompact,
     formatQuoteProductTitle,
     getCartLineBreakdown,
+    normalizeDiscountType,
     normalizeCatalogItem,
     parseAiScopedChatId,
     parseMoney,
@@ -23,6 +24,7 @@ import {
     renderAiMessageWithSendAction,
     removeItemFromCartState,
     roundMoney,
+    setCartItemQtyState,
     setCartItemDiscountEnabledState,
     setCartItemExcludeFromGlobalState,
     setCartItemDiscountTypeState,
@@ -368,9 +370,9 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
 
     const setGlobalDiscountType = useCallback((nextValue) => {
         updateDraft((previousDraft) => {
-            const previous = String(previousDraft?.globalDiscountType || 'percentage');
+            const previous = normalizeDiscountType(previousDraft?.globalDiscountType || 'percent');
             const resolved = typeof nextValue === 'function' ? nextValue(previous) : nextValue;
-            return { globalDiscountType: String(resolved || 'percentage') };
+            return { globalDiscountType: normalizeDiscountType(resolved || 'percent') };
         });
     }, [updateDraft]);
 
@@ -869,6 +871,8 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         regularSubtotalTotal,
         subtotalProducts,
         normalizedGlobalDiscountValue,
+        normalizedGlobalDiscountType,
+        globalDiscPct,
         subtotalParticipants,
         subtotalExcluded,
         globalDiscountApplied,
@@ -913,6 +917,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         globalDiscountEnabled,
         globalDiscountType,
         normalizedGlobalDiscountValue,
+        normalizedGlobalDiscountType,
         globalOnRegular
     }), [
         activeChatId,
@@ -925,6 +930,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         globalDiscountEnabled,
         globalDiscountType,
         normalizedGlobalDiscountValue,
+        normalizedGlobalDiscountType,
         globalOnRegular
     ]);
 
@@ -1149,7 +1155,10 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                     ? regularCandidate
                     : (Number.isFinite(legacyLineSubtotal) && legacyLineSubtotal > 0 ? legacyLineSubtotal / qty : unitPrice)
             );
-            const lineDiscountPct = Math.max(0, Math.min(100, Number(item?.linDiscountPct ?? item?.lineDiscountValue ?? 0) || 0));
+            const lineDiscountType = normalizeDiscountType(item?.linDiscountType ?? item?.lineDiscountType);
+            const lineDiscountPct = Math.max(0, Math.min(100, Number(item?.linDiscountPct ?? (lineDiscountType === 'percent' ? item?.lineDiscountValue : 0) ?? 0) || 0));
+            const lineDiscountAmt = Math.max(0, Number(item?.linDiscountAmt ?? (lineDiscountType === 'amount' ? item?.lineDiscountValue : 0) ?? 0) || 0);
+            const lineDiscountValue = lineDiscountType === 'amount' ? lineDiscountAmt : lineDiscountPct;
             return {
                 id: String(item?.productId || item?.itemId || item?.sku || `quote_${normalized.quoteId}_${index + 1}`),
                 productId: String(item?.productId || item?.itemId || '').trim() || null,
@@ -1165,10 +1174,12 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
                 imageUrl: null,
                 source: 'quote_history',
                 stockStatus: null,
-                lineDiscountEnabled: lineDiscountPct > 0,
-                lineDiscountType: 'percent',
-                lineDiscountValue: lineDiscountPct,
+                lineDiscountEnabled: lineDiscountValue > 0,
+                lineDiscountType,
+                lineDiscountValue,
+                linDiscountType: lineDiscountType === 'amount' ? 'fixed' : 'pct',
                 linDiscountPct: lineDiscountPct,
+                linDiscountAmt: lineDiscountAmt,
                 excludeFromGlobal: item?.excludeFromGlobal === true
             };
         });
@@ -1191,8 +1202,12 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             showOrderAdjustments: true,
             cartWizardStep: 4,
             globalDiscountEnabled: Boolean(globalDiscount?.enabled || Number(summary?.globalDiscPct || 0) > 0),
-            globalDiscountType: 'percent',
-            globalDiscountValue: Math.max(0, Number(summary?.globalDiscPct ?? globalDiscount?.value ?? 0) || 0),
+            globalDiscountType: normalizeDiscountType(summary?.globalDiscType ?? globalDiscount?.type ?? 'percent'),
+            globalDiscountValue: Math.max(0, Number(
+                normalizeDiscountType(summary?.globalDiscType ?? globalDiscount?.type) === 'amount'
+                    ? (summary?.globalDiscAmt ?? globalDiscount?.applied ?? globalDiscount?.value)
+                    : (summary?.globalDiscPct ?? globalDiscount?.value)
+            ) || 0),
             globalOnRegular: Boolean(summary?.globalOnRegular ?? globalDiscount?.onRegular),
             deliveryType: deliveryFree ? 'free' : 'amount',
             deliveryAmount: deliveryFree ? 0 : deliveryAmountValue
@@ -1241,6 +1256,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             globalDiscountEnabled,
             globalDiscountType,
             globalDiscountValue,
+            globalDiscPct,
             globalOnRegular,
             getLineBreakdown,
             buildQuoteMessageFromCart,
@@ -1419,7 +1435,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         });
     };
 
-    const updateQty = (id, delta) => {
+    const updateQty = (id, quantity) => {
         if (!canWriteByAssignment) {
             notifyAssignmentLock();
             return;
@@ -1428,7 +1444,7 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
             notifyWindowLock();
             return;
         }
-        setCart((previous) => updateCartItemQtyState(previous, id, delta));
+        setCart((previous) => setCartItemQtyState(previous, id, quantity));
     };
 
     const updateCatalogQty = (id, delta) => {

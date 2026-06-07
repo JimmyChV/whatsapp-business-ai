@@ -277,9 +277,11 @@ export const usePendingOrderCartImport = ({
             const lineSubtotal = parseMoney(line.lineSubtotal ?? line.line_subtotal ?? line.subtotal ?? line.subtotalPrice ?? line.subtotal_price ?? (qty * linePrice), 0);
             const lineDiscountAmount = Math.max(0, parseMoney(line.lineDiscountAmount ?? ((line.linDiscountAmt || 0) * qty) ?? 0, 0));
             const rawLineDiscountType = String(line.lineDiscountType || line.discountType || '').trim().toLowerCase();
-            const lineDiscountType = 'percent';
+            const lineDiscountType = rawLineDiscountType === 'amount' || line.linDiscountType === 'fixed' ? 'amount' : 'percent';
             let lineDiscountValue = Math.max(0, parseMoney(line.linDiscountPct ?? line.lineDiscountValue ?? 0, 0));
-            if ((lineDiscountAmount > 0 && lineDiscountValue <= 0) || rawLineDiscountType === 'amount') {
+            if (lineDiscountType === 'amount') {
+                lineDiscountValue = Math.max(0, parseMoney(line.linDiscountAmt ?? line.lineDiscountValue ?? (qty > 0 ? lineDiscountAmount / qty : lineDiscountAmount), 0));
+            } else if (lineDiscountAmount > 0 && lineDiscountValue <= 0) {
                 lineDiscountValue = Math.min(100, (lineSubtotal > 0 ? (lineDiscountAmount / lineSubtotal) * 100 : 0));
             }
             const lineDiscountEnabled = lineDiscountAmount > 0 || lineDiscountValue > 0;
@@ -307,7 +309,9 @@ export const usePendingOrderCartImport = ({
                     lineDiscountType,
                     lineDiscountValue,
                     lineDiscountAmount: roundMoney(lineDiscountAmount),
-                    linDiscountPct: lineDiscountValue,
+                    linDiscountType: lineDiscountType === 'amount' ? 'fixed' : 'pct',
+                    linDiscountPct: lineDiscountType === 'percent' ? lineDiscountValue : 0,
+                    linDiscountAmt: lineDiscountType === 'amount' ? lineDiscountValue : 0,
                     excludeFromGlobal: line.excludeFromGlobal === true
                 };
             } else {
@@ -328,7 +332,9 @@ export const usePendingOrderCartImport = ({
                     lineDiscountType,
                     lineDiscountValue,
                     lineDiscountAmount: roundMoney(lineDiscountAmount),
-                    linDiscountPct: lineDiscountValue,
+                    linDiscountType: lineDiscountType === 'amount' ? 'fixed' : 'pct',
+                    linDiscountPct: lineDiscountType === 'percent' ? lineDiscountValue : 0,
+                    linDiscountAmt: lineDiscountType === 'amount' ? lineDiscountValue : 0,
                     excludeFromGlobal: line.excludeFromGlobal === true
                 };
             }
@@ -443,13 +449,19 @@ export const usePendingOrderCartImport = ({
             const quoteDeliveryAmount = Math.max(0, parseMoney(quoteSummary?.deliveryAmt ?? quoteSummary?.deliveryAmount ?? 0, 0));
             const quoteDeliveryFree = Boolean(quoteSummary?.deliveryFree) || quoteDeliveryAmount <= 0;
 
-            const summaryGlobalDiscountType = String(quoteSummary?.globalDiscount?.type || '').trim().toLowerCase();
-            const summaryGlobalDiscountValue = Math.max(0, parseMoney(quoteSummary?.globalDiscPct ?? quoteSummary?.globalDiscount?.value ?? 0, 0));
-            const hasSummaryGlobalDiscount = (summaryGlobalDiscountType === 'percent' || summaryGlobalDiscountType === 'amount')
+            const summaryGlobalDiscountType = String(quoteSummary?.globalDiscType || quoteSummary?.globalDiscount?.type || '').trim().toLowerCase();
+            const normalizedSummaryGlobalType = summaryGlobalDiscountType === 'fixed' || summaryGlobalDiscountType === 'amount' ? 'amount' : 'percent';
+            const summaryGlobalDiscountValue = Math.max(0, parseMoney(
+                normalizedSummaryGlobalType === 'amount'
+                    ? (quoteSummary?.globalDiscAmt ?? quoteSummary?.globalDiscount?.applied ?? quoteSummary?.globalDiscount?.value)
+                    : (quoteSummary?.globalDiscPct ?? quoteSummary?.globalDiscount?.value),
+                0
+            ));
+            const hasSummaryGlobalDiscount = (summaryGlobalDiscountType === 'percent' || summaryGlobalDiscountType === 'amount' || summaryGlobalDiscountType === 'fixed')
                 && summaryGlobalDiscountValue > 0;
             const quotePatch = {
                 globalDiscountEnabled: hasSummaryGlobalDiscount ? true : reconstructedGlobalDiscount > 0,
-                globalDiscountType: hasSummaryGlobalDiscount ? summaryGlobalDiscountType : 'percent',
+                globalDiscountType: hasSummaryGlobalDiscount ? normalizedSummaryGlobalType : 'percent',
                 globalDiscountValue: hasSummaryGlobalDiscount
                     ? summaryGlobalDiscountValue
                     : (reconstructedGlobalDiscount > 0 ? reconstructedGlobalDiscount : 0),

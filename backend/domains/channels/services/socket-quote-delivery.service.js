@@ -32,6 +32,13 @@ function formatCompactSoles(value) {
     return `S/ ${roundMoney(value).toFixed(1)}`;
 }
 
+function normalizeDiscountType(value = 'percent') {
+    const raw = toText(value).toLowerCase();
+    return raw === 'amount' || raw === 'fixed' || raw === 's/' || raw === 'soles'
+        ? 'amount'
+        : 'percent';
+}
+
 function toTitleCase(value = '') {
     return toText(value)
         .toLocaleLowerCase('es-PE')
@@ -80,12 +87,20 @@ function calcQuoteItem(item = {}) {
     const regularSource = toFiniteNumberOrNull(source.regularPrice ?? source.regular_price) ?? unitSource;
     const unitPrice = roundMoney(unitSource);
     const regularPrice = roundMoney(regularSource || unitSource);
-    const linDiscountPct = Math.min(100, Math.max(0, toFiniteNumberOrNull(
-        source.linDiscountPct
-        ?? source.lineDiscountPct
-        ?? (source.lineDiscountType === 'percent' || source.lineDiscountEnabled ? source.lineDiscountValue : 0)
-    ) ?? 0));
-    const linDiscountAmt = roundMoney(unitPrice * linDiscountPct / 100);
+    const linDiscountType = normalizeDiscountType(source.linDiscountType ?? source.lineDiscountType ?? source.discountType);
+    const rawDiscountValue = toFiniteNumberOrNull(
+        linDiscountType === 'amount'
+            ? (source.linDiscountAmt ?? source.lineDiscountUnitAmount ?? source.lineDiscountValue ?? 0)
+            : (source.linDiscountPct
+                ?? source.lineDiscountPct
+                ?? (source.lineDiscountType === 'percent' || source.lineDiscountEnabled ? source.lineDiscountValue : 0))
+    ) ?? 0;
+    const linDiscountAmt = linDiscountType === 'amount'
+        ? roundMoney(Math.min(unitPrice, Math.max(0, rawDiscountValue)))
+        : roundMoney(unitPrice * Math.min(100, Math.max(0, rawDiscountValue)) / 100);
+    const linDiscountPct = unitPrice > 0
+        ? roundMoney(Math.min(100, Math.max(0, (linDiscountAmt / unitPrice) * 100)))
+        : 0;
     const finalPrice = roundMoney(Math.max(0, unitPrice - linDiscountAmt));
     const subtotal = roundMoney(finalPrice * quantity);
 
@@ -93,6 +108,9 @@ function calcQuoteItem(item = {}) {
         quantity,
         unitPrice,
         regularPrice,
+        linDiscountType: linDiscountType === 'amount' ? 'fixed' : 'pct',
+        lineDiscountType: linDiscountType,
+        lineDiscountValue: linDiscountType === 'amount' ? linDiscountAmt : linDiscountPct,
         linDiscountPct,
         linDiscountAmt,
         finalPrice,
@@ -101,18 +119,24 @@ function calcQuoteItem(item = {}) {
     };
 }
 
-function calcQuoteTotals(items = [], globalDiscPct = 0, globalOnRegular = false, delivery = 0) {
+function calcQuoteTotals(items = [], globalDiscValue = 0, globalOnRegular = false, delivery = 0, globalDiscType = 'percent') {
     const normalizedItems = (Array.isArray(items) ? items : []).map(calcQuoteItem);
     const participants = normalizedItems.filter((item) => !item.excludeFromGlobal);
     const excluded = normalizedItems.filter((item) => item.excludeFromGlobal);
-    const safeGlobalPct = Math.min(100, Math.max(0, toFiniteNumberOrNull(globalDiscPct) ?? 0));
+    const safeGlobalType = normalizeDiscountType(globalDiscType);
+    const safeGlobalValue = Math.max(0, toFiniteNumberOrNull(globalDiscValue) ?? 0);
     const baseGlobal = roundMoney(participants.reduce((sum, item) => {
         const base = globalOnRegular
             ? roundMoney((item.regularPrice || item.unitPrice) * item.quantity)
             : item.subtotal;
         return sum + base;
     }, 0));
-    const globalDiscAmt = roundMoney(baseGlobal * safeGlobalPct / 100);
+    const globalDiscAmt = safeGlobalType === 'amount'
+        ? roundMoney(Math.min(baseGlobal, safeGlobalValue))
+        : roundMoney(baseGlobal * Math.min(100, safeGlobalValue) / 100);
+    const globalDiscPct = baseGlobal > 0
+        ? roundMoney(Math.min(100, Math.max(0, (globalDiscAmt / baseGlobal) * 100)))
+        : 0;
     const subtotalParticipants = globalOnRegular
         ? baseGlobal
         : roundMoney(participants.reduce((sum, item) => sum + item.subtotal, 0));
@@ -125,7 +149,10 @@ function calcQuoteTotals(items = [], globalDiscPct = 0, globalOnRegular = false,
         subtotalParticipants,
         subtotalExcluded,
         subtotal,
-        globalDiscPct: safeGlobalPct,
+        globalDiscPct,
+        globalDiscType: safeGlobalType === 'amount' ? 'fixed' : 'pct',
+        globalDiscountType: safeGlobalType,
+        globalDiscountValue: safeGlobalType === 'amount' ? globalDiscAmt : globalDiscPct,
         globalDiscAmt,
         globalOnRegular: Boolean(globalOnRegular),
         deliveryAmt,
@@ -152,14 +179,15 @@ function normalizeQuoteItem(item = {}, index = 0, currency = 'PEN') {
         quantity,
         unitPrice: calced.unitPrice,
         regularPrice: calced.regularPrice,
+        linDiscountType: calced.linDiscountType,
         linDiscountPct: calced.linDiscountPct,
         linDiscountAmt: calced.linDiscountAmt,
         finalPrice: calced.finalPrice,
         subtotal: calced.subtotal,
         excludeFromGlobal: calced.excludeFromGlobal,
         lineSubtotal: calced.subtotal,
-        lineDiscountType: calced.linDiscountPct > 0 ? 'percent' : null,
-        lineDiscountValue: calced.linDiscountPct,
+        lineDiscountType: lineDiscountAmount > 0 ? calced.lineDiscountType : null,
+        lineDiscountValue: calced.lineDiscountValue,
         lineDiscountAmount,
         lineTotal: calced.subtotal,
         currency: toText(source.currency || currency || 'PEN') || 'PEN',
@@ -173,15 +201,19 @@ function normalizeQuoteSummary(summary = {}, items = [], currency = 'PEN') {
         ? Number(source.itemCount)
         : items.length;
     const globalDiscount = isPlainObject(source.globalDiscount) ? source.globalDiscount : {};
-    const globalDiscPct = toFiniteNumberOrNull(source.globalDiscPct ?? globalDiscount.value) ?? 0;
+    const globalDiscountType = normalizeDiscountType(source.globalDiscType ?? globalDiscount.type ?? 'percent');
+    const globalDiscValue = globalDiscountType === 'amount'
+        ? (toFiniteNumberOrNull(source.globalDiscAmt ?? globalDiscount.applied ?? globalDiscount.value) ?? 0)
+        : (toFiniteNumberOrNull(source.globalDiscPct ?? globalDiscount.value) ?? 0);
     const deliveryType = toText(source.deliveryType || source.delivery_type || (source.deliveryFree ? 'gratuito' : 'amount')).toLowerCase();
     const deliveryAmount = toFiniteNumberOrNull(source.deliveryAmt ?? source.deliveryAmount) ?? 0;
     const deliveryAmt = deliveryType === 'amount' ? deliveryAmount : 0;
     const totals = calcQuoteTotals(
         items,
-        globalDiscPct,
+        globalDiscValue,
         Boolean(source.globalOnRegular ?? globalDiscount.onRegular),
-        deliveryAmt
+        deliveryAmt,
+        globalDiscountType
     );
     const subtotal = totals.subtotal;
     const globalDiscAmt = totals.globalDiscAmt;
@@ -193,6 +225,7 @@ function normalizeQuoteSummary(summary = {}, items = [], currency = 'PEN') {
         itemCount,
         subtotal,
         globalDiscPct: totals.globalDiscPct,
+        globalDiscType: totals.globalDiscType,
         globalDiscAmt: roundMoney(globalDiscAmt),
         globalOnRegular: totals.globalOnRegular,
         deliveryType: deliveryFree ? 'gratuito' : 'amount',
@@ -204,8 +237,8 @@ function normalizeQuoteSummary(summary = {}, items = [], currency = 'PEN') {
         deliveryFree,
         globalDiscount: {
             enabled: totals.globalDiscPct > 0,
-            type: totals.globalDiscPct > 0 ? 'percent' : 'none',
-            value: totals.globalDiscPct,
+            type: totals.globalDiscAmt > 0 ? totals.globalDiscountType : 'none',
+            value: totals.globalDiscountType === 'amount' ? totals.globalDiscAmt : totals.globalDiscPct,
             applied: roundMoney(globalDiscAmt),
             onRegular: totals.globalOnRegular
         },
@@ -309,8 +342,12 @@ function buildQuoteMessageBody(quote = {}, fallbackBody = '') {
         if (item?.sku) {
             rows.push(`SKU: ${toText(item.sku)}`);
         }
-        if (Number(item?.linDiscountPct || item?.lineDiscountValue || 0) > 0) {
-            rows.push(`Desc. linea: ${Number(item.linDiscountPct || item.lineDiscountValue || 0)}%`);
+        if (Number(item?.lineDiscountAmount || 0) > 0) {
+            const lineType = normalizeDiscountType(item?.lineDiscountType ?? item?.linDiscountType);
+            const label = lineType === 'amount'
+                ? 'Desc. linea'
+                : `Desc. linea (${Number(item.linDiscountPct || item.lineDiscountValue || 0)}%)`;
+            rows.push(`${label}: -${formatSoles(item.lineDiscountAmount)}`);
         }
         if (item?.excludeFromGlobal === true) {
             rows.push('No participa del descuento global');
@@ -337,7 +374,8 @@ function buildQuoteMessageBody(quote = {}, fallbackBody = '') {
         `${summary?.globalOnRegular ? 'Subtotal regular:' : 'Subtotal:'}     ${formatSoles(subtotal)}`
     ];
     if (discount > 0) {
-        const pctLabel = Number(summary?.globalDiscPct || summary?.globalDiscount?.value || 0) > 0
+        const globalType = normalizeDiscountType(summary?.globalDiscType ?? summary?.globalDiscount?.type);
+        const pctLabel = globalType === 'percent' && Number(summary?.globalDiscPct || summary?.globalDiscount?.value || 0) > 0
             ? ` (${Number(summary?.globalDiscPct || summary?.globalDiscount?.value || 0)}%)`
             : '';
         totalLines.push(`Descuento global${pctLabel}: - ${formatSoles(discount)}`);
@@ -460,11 +498,15 @@ function buildOutgoingOrderPayload(quote = {}) {
     const optionGroupId = toNullableText(quote?.optionGroupId ?? quote?.option_group_id);
     const metadata = isPlainObject(quote?.metadata) ? quote.metadata : {};
     const sourceType = toText(metadata?.sourceType || metadata?.source_type || quote?.sourceType || 'quote').toLowerCase() || 'quote';
+    const summaryGlobalType = normalizeDiscountType(summary?.globalDiscType ?? summary?.globalDiscount?.type);
     const quoteSummary = {
         itemCount: Number.isInteger(Number(summary?.itemCount)) ? Number(summary.itemCount) : items.length,
         subtotal: toFiniteNumberOrNull(summary?.subtotal),
-        globalDiscPct: toFiniteNumberOrNull(summary?.globalDiscPct) ?? toFiniteNumberOrNull(summary?.globalDiscount?.value) ?? 0,
+        globalDiscPct: toFiniteNumberOrNull(summary?.globalDiscPct)
+            ?? (summaryGlobalType === 'percent' ? toFiniteNumberOrNull(summary?.globalDiscount?.value) : null)
+            ?? 0,
         globalDiscAmt: toFiniteNumberOrNull(summary?.globalDiscAmt) ?? toFiniteNumberOrNull(summary?.globalDiscount?.applied) ?? 0,
+        globalDiscType: toText(summary?.globalDiscType || (summary?.globalDiscount?.type === 'amount' ? 'fixed' : 'pct')) || 'pct',
         globalOnRegular: Boolean(summary?.globalOnRegular ?? summary?.globalDiscount?.onRegular),
         deliveryType: toText(summary?.deliveryType || (summary?.deliveryFree ? 'gratuito' : 'amount')) || 'gratuito',
         deliveryAmt: toFiniteNumberOrNull(summary?.deliveryAmt ?? summary?.deliveryAmount) ?? 0,
@@ -476,7 +518,9 @@ function buildOutgoingOrderPayload(quote = {}) {
         globalDiscount: summary?.globalDiscount && typeof summary.globalDiscount === 'object'
             ? {
                 type: String(summary.globalDiscount.type || 'none').trim().toLowerCase() || 'none',
-                value: toFiniteNumberOrNull(summary.globalDiscount.value) ?? 0,
+                value: normalizeDiscountType(summary.globalDiscount.type) === 'amount'
+                    ? (toFiniteNumberOrNull(summary.globalDiscount.applied ?? summary.globalDiscount.value) ?? 0)
+                    : (toFiniteNumberOrNull(summary.globalDiscount.value) ?? 0),
                 applied: toFiniteNumberOrNull(summary.globalDiscount.applied) ?? 0,
                 onRegular: Boolean(summary.globalDiscount.onRegular)
             }
