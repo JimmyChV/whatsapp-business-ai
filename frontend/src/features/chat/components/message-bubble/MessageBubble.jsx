@@ -525,11 +525,24 @@ const MessageBubble = ({
     });
     const canReplyMessage = canReplyMessageBase && typeof onReplyMessage === 'function';
     const sourceMessageId = String(msg?.id || '').trim();
-    const copyableText = String(messageTextToRender || msg?.body || '').trim();
+    const copyableText = String(
+        messageTextToRender
+        || messageBodyText
+        || msg?.body
+        || msg?.text
+        || msg?.message
+        || msg?.caption
+        || ''
+    ).trim();
     const canCopyMessage = Boolean(copyableText);
+    const hasForwardableImage = Boolean(
+        isImageMedia
+        || (/image/i.test(String(msg?.mimetype || msg?.mimeType || '')) && (msg?.hasMedia || mediaImageSrc || mediaDataUrl || mediaUrl))
+        || /\.(png|jpe?g|webp|gif)(?:$|[?#])/i.test(String(mediaUrl || msg?.mediaUrl || msg?.media_url || ''))
+    );
     const canForwardContent = Boolean(
         copyableText
-        || (isImageMedia && (mediaImageSrc || mediaDataUrl || mediaUrl))
+        || hasForwardableImage
     );
     const isForwardBlockedPayload = Boolean(
         isAutoMessage

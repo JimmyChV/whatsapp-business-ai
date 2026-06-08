@@ -4206,26 +4206,26 @@ body {
 
 .message-actions-anchor {
   position: absolute;
-  top: 8px;
+  top: 50%;
   bottom: auto;
   width: auto;
   display: flex;
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transform: none;
+  transform: translateY(-50%);
   transition: opacity 0.14s ease, transform 0.14s ease;
   z-index: 4;
 }
 
 .message.in .message-actions-anchor {
-  left: 8px;
-  right: auto;
+  left: auto;
+  right: -36px;
 }
 
 .message.out .message-actions-anchor {
-  right: 8px;
-  left: auto;
+  left: -36px;
+  right: auto;
 }
 
 .message-actions-rail {
@@ -4279,7 +4279,7 @@ body {
 .message:hover .message-actions-anchor,
 .message-actions-anchor.open {
   opacity: 1;
-  transform: none;
+  transform: translateY(-50%);
 }
 
 .message-actions-toggle {
@@ -4328,12 +4328,13 @@ body {
 }
 
 .message-actions-menu.in {
-  left: 0;
-  right: auto;
+  left: auto;
+  right: 0;
 }
 
 .message-actions-menu.out {
-  right: 0;
+  left: 0;
+  right: auto;
 }
 
 .message-actions-item {
@@ -4845,22 +4846,23 @@ body {
 
 @media (max-width: 1180px) {
   .message.in .message-actions-anchor {
-    left: 8px;
-    right: auto;
+    left: auto;
+    right: -32px;
   }
 
   .message.out .message-actions-anchor {
-    right: 8px;
-    left: auto;
-  }
-
-  .message-actions-menu.in {
-    left: 0;
+    left: -32px;
     right: auto;
   }
 
-  .message-actions-menu.out {
+  .message-actions-menu.in {
+    left: auto;
     right: 0;
+  }
+
+  .message-actions-menu.out {
+    left: 0;
+    right: auto;
   }
 
   .message-reaction-picker.in {
