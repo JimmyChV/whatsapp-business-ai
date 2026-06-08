@@ -20,6 +20,7 @@ const waClient = require('../../channels/services/wa-provider.service');
 const { resolveAndValidatePublicHost } = require('../../security/helpers/security-utils');
 const { createLazySharpLoader } = require('../../channels/helpers/socket-runtime-bootstrap.helpers');
 const { createMessageMediaAssetsHelpers } = require('../../channels/helpers/message-media-assets.helpers');
+const { isRealQuickReplyMediaAsset } = require('../../channels/helpers/quick-reply-media-url.helpers');
 const {
     buildTemplateSendComponents,
     buildTemplatePreviewText,
@@ -478,12 +479,20 @@ async function sendAutomationQuickReply(cleanTenantId, {
     const quickReplyButtons = normalizeQuickReplyButtons(quickReply?.buttons || quickReply?.metadata?.buttons);
     const mediaAssets = (Array.isArray(quickReply?.mediaAssets) ? quickReply.mediaAssets : [])
         .map(normalizeQuickReplyAssetEntry)
-        .filter((entry) => Boolean(entry.url));
+        .filter(isRealQuickReplyMediaAsset);
 
     const legacyMediaUrl = toText(quickReply?.mediaUrl);
     const legacyMediaMimeType = toText(quickReply?.mediaMimeType).toLowerCase();
     const legacyMediaFileName = toText(quickReply?.mediaFileName || quickReply?.filename);
-    if (legacyMediaUrl && !mediaAssets.some((entry) => entry.url === legacyMediaUrl)) {
+    if (
+        legacyMediaUrl
+        && !mediaAssets.some((entry) => entry.url === legacyMediaUrl)
+        && isRealQuickReplyMediaAsset({
+            url: legacyMediaUrl,
+            mimeType: legacyMediaMimeType,
+            fileName: legacyMediaFileName
+        })
+    ) {
         mediaAssets.push({
             url: legacyMediaUrl,
             mimeType: legacyMediaMimeType,

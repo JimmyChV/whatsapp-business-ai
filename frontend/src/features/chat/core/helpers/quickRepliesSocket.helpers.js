@@ -1,4 +1,9 @@
-import { repairMojibake, sanitizeDisplayText } from './appChat.helpers';
+import {
+    isRealQuickReplyMediaAsset,
+    isRealQuickReplyMediaUrl,
+    repairMojibake,
+    sanitizeDisplayText
+} from './appChat.helpers';
 
 export function normalizeQuickRepliesSocketPayload(payload = {}) {
     const enabled = payload?.enabled !== false;
@@ -15,12 +20,13 @@ export function normalizeQuickRepliesSocketPayload(payload = {}) {
                         fileName: String(asset?.fileName || asset?.mediaFileName || '').trim() || null,
                         sizeBytes: Number.isFinite(Number(asset?.sizeBytes ?? asset?.mediaSizeBytes)) ? Number(asset?.sizeBytes ?? asset?.mediaSizeBytes) : null
                     }))
-                    .filter((asset) => Boolean(asset.url))
+                    .filter(isRealQuickReplyMediaAsset)
                 : [];
 
-            const mediaUrl = String(item?.mediaUrl || mediaAssets[0]?.url || '').trim() || null;
-            const mediaMimeType = String(item?.mediaMimeType || mediaAssets[0]?.mimeType || '').trim().toLowerCase() || null;
-            const mediaFileName = String(item?.mediaFileName || mediaAssets[0]?.fileName || '').trim() || null;
+            const rawMediaUrl = String(item?.mediaUrl || mediaAssets[0]?.url || '').trim();
+            const mediaUrl = isRealQuickReplyMediaUrl(rawMediaUrl) ? rawMediaUrl : (mediaAssets[0]?.url || null);
+            const mediaMimeType = mediaUrl ? (String(item?.mediaMimeType || mediaAssets[0]?.mimeType || '').trim().toLowerCase() || null) : null;
+            const mediaFileName = mediaUrl ? (String(item?.mediaFileName || mediaAssets[0]?.fileName || '').trim() || null) : null;
             const mediaSizeBytes = Number.isFinite(Number(item?.mediaSizeBytes))
                 ? Number(item.mediaSizeBytes)
                 : (Number.isFinite(Number(mediaAssets[0]?.sizeBytes)) ? Number(mediaAssets[0].sizeBytes) : null);

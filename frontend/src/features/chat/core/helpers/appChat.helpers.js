@@ -204,6 +204,36 @@ export const chatIdsReferSameScope = (left = '', right = '') => {
   if (leftBase !== rightBase) return false;
   return String(l.scopeModuleId || '') === String(r.scopeModuleId || '');
 };
+
+const QUICK_REPLY_MEDIA_EXTENSION_RE = /\.(jpe?g|png|gif|webp|avif|bmp|svg|mp4|mov|m4v|webm|mp3|wav|pdf|docx?|xlsx?|ogg|aac|amr|opus)(?:$|[?#])/i;
+
+export const isRealQuickReplyMediaUrl = (rawUrl = '') => {
+  const url = String(rawUrl || '').trim();
+  if (!url) return false;
+  if (/^data:(image|video|audio|application\/pdf|application\/msword|application\/vnd\.openxmlformats|application\/vnd\.ms-|application\/octet-stream)/i.test(url)) return true;
+  if (QUICK_REPLY_MEDIA_EXTENSION_RE.test(url)) return true;
+  const lowerUrl = url.toLowerCase();
+  return lowerUrl.includes('/wp-content/uploads/')
+    || lowerUrl.includes('/media/')
+    || lowerUrl.includes('/uploads/')
+    || lowerUrl.includes('/files/');
+};
+
+export const isRealQuickReplyMediaAsset = (asset = {}) => {
+  const url = String(asset?.url || asset?.mediaUrl || '').trim();
+  if (!url) return false;
+  if (isRealQuickReplyMediaUrl(url)) return true;
+  const mimeType = String(asset?.mimeType || asset?.mediaMimeType || '').trim().toLowerCase();
+  const fileName = String(asset?.fileName || asset?.mediaFileName || '').trim();
+  return Boolean(
+    mimeType.startsWith('image/')
+    || mimeType.startsWith('video/')
+    || mimeType.startsWith('audio/')
+    || mimeType === 'application/pdf'
+    || QUICK_REPLY_MEDIA_EXTENSION_RE.test(fileName)
+  );
+};
+
 export const extractPhoneFromText = (value = '') => {
   const text = String(value || '');
   if (!text) return null;
@@ -610,11 +640,12 @@ export const normalizeQuickReplyDraft = (value = null) => {
         fileName: String(asset?.fileName || asset?.mediaFileName || '').trim() || null,
         sizeBytes: Number.isFinite(Number(asset?.sizeBytes ?? asset?.mediaSizeBytes)) ? Number(asset?.sizeBytes ?? asset?.mediaSizeBytes) : null
       }))
-      .filter((asset) => Boolean(asset.url))
+      .filter(isRealQuickReplyMediaAsset)
     : [];
-  const mediaUrl = String(value?.mediaUrl || mediaAssets[0]?.url || '').trim() || null;
-  const mediaMimeType = String(value?.mediaMimeType || mediaAssets[0]?.mimeType || '').trim().toLowerCase() || null;
-  const mediaFileName = String(value?.mediaFileName || mediaAssets[0]?.fileName || '').trim() || null;
+  const rawMediaUrl = String(value?.mediaUrl || mediaAssets[0]?.url || '').trim();
+  const mediaUrl = isRealQuickReplyMediaUrl(rawMediaUrl) ? rawMediaUrl : (mediaAssets[0]?.url || null);
+  const mediaMimeType = mediaUrl ? (String(value?.mediaMimeType || mediaAssets[0]?.mimeType || '').trim().toLowerCase() || null) : null;
+  const mediaFileName = mediaUrl ? (String(value?.mediaFileName || mediaAssets[0]?.fileName || '').trim() || null) : null;
   const hasPayload = Boolean(textBody || mediaUrl || mediaAssets.length > 0 || id);
   if (!hasPayload) return null;
   return {

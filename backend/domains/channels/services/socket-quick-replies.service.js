@@ -1,4 +1,5 @@
 const templateVariablesService = require('../../operations/services/template-variables.service');
+const { isRealQuickReplyMediaAsset } = require('../helpers/quick-reply-media-url.helpers');
 
 function createSocketQuickRepliesService({
     waClient,
@@ -228,12 +229,20 @@ function createSocketQuickRepliesService({
                 const rawMediaAssets = Array.isArray(replyPayload?.mediaAssets) ? replyPayload.mediaAssets : [];
                 const mediaAssets = rawMediaAssets
                     .map(normalizeQuickReplyAssetEntry)
-                    .filter((entry) => Boolean(entry.url));
+                    .filter(isRealQuickReplyMediaAsset);
 
                 const legacyMediaUrl = String(replyPayload?.mediaUrl || '').trim();
                 const legacyMediaMimeType = String(replyPayload?.mediaMimeType || '').trim().toLowerCase();
                 const legacyMediaFileName = String(replyPayload?.mediaFileName || replyPayload?.filename || '').trim();
-                if (legacyMediaUrl && !mediaAssets.some((entry) => entry.url === legacyMediaUrl)) {
+                if (
+                    legacyMediaUrl
+                    && !mediaAssets.some((entry) => entry.url === legacyMediaUrl)
+                    && isRealQuickReplyMediaAsset({
+                        url: legacyMediaUrl,
+                        mimeType: legacyMediaMimeType,
+                        fileName: legacyMediaFileName
+                    })
+                ) {
                     mediaAssets.push({
                         url: legacyMediaUrl,
                         mimeType: legacyMediaMimeType,

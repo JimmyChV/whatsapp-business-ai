@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Smile, Bot, Sparkles, X, Paperclip, Send, MapPin, LayoutTemplate } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { EmojiStyle, SkinTonePickerLocation, SkinTones, SuggestionMode, Theme } from 'emoji-picker-react';
+import { isRealQuickReplyMediaAsset } from '../core/helpers/appChat.helpers';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const GLOBAL_SKIN_TONE_STORAGE_KEY = 'chat-emoji-skin-tone:global';
@@ -89,7 +90,7 @@ const ChatInput = ({
     const draftQuickReplyLabel = String(quickReplyDraft?.label || '').trim();
     const draftQuickReplyText = String(quickReplyDraft?.text || '').trim();
     const draftQuickReplyAssets = Array.isArray(quickReplyDraft?.mediaAssets)
-        ? quickReplyDraft.mediaAssets.filter((asset) => asset && typeof asset === 'object' && String(asset?.url || '').trim())
+        ? quickReplyDraft.mediaAssets.filter((asset) => asset && typeof asset === 'object' && isRealQuickReplyMediaAsset(asset))
         : [];
     const draftQuickReplyPreviewAssets = draftQuickReplyAssets.map((asset, index) => {
         const previewUrl = normalizeQuickReplyAssetPreviewUrl(asset?.url || '');
