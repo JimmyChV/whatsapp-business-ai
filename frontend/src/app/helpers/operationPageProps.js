@@ -46,6 +46,7 @@ export function buildOperationPageProps(input = {}) {
     setInputText: input.setInputText,
     handleSendMessage: input.handleSendMessage,
     handleSendCatalogProduct: input.handleSendCatalogProduct,
+    handleSendNativeCatalog: input.handleSendNativeCatalog,
     handleSendReaction: input.handleSendReaction,
     handleRetryMessage: input.handleRetryMessage,
     handleOpenDirectWhatsApp: input.handleOpenDirectWhatsApp,

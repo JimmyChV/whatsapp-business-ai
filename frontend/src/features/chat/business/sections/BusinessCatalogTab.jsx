@@ -179,6 +179,12 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
 
         const payload = {
             id: item.id || `catalog_${i}`,
+            itemId: item.itemId || item.item_id || item.id || `catalog_${i}`,
+            productId: item.productId || item.product_id || item.id || null,
+            sku: item.sku || item.metadata?.sku || item.id || '',
+            productRetailerId: item.productRetailerId || item.product_retailer_id || item.retailerId || item.retailer_id || item.sku || item.metadata?.sku || item.id || '',
+            catalogId: item.catalogId || item.catalog_id || activeCatalogId || '',
+            source: item.source || item.metadata?.source || effectiveCatalogSource || '',
             title: item.title || `Producto ${i + 1}`,
             price: item.price || '',
             regularPrice: item.regularPrice || item.price || '',
@@ -186,7 +192,8 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
             discountPct: item.discountPct || 0,
             description: item.description || '',
             imageUrl: item.imageUrl || '',
-            url: item.url || item.permalink || item.productUrl || item.link || ''
+            url: item.url || item.permalink || item.productUrl || item.link || '',
+            metadata: item.metadata && typeof item.metadata === 'object' ? item.metadata : {}
         };
 
         if (typeof onSendCatalogProduct === 'function') {

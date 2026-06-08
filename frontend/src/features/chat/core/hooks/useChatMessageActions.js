@@ -637,6 +637,22 @@ export default function useChatMessageActions({
       toPhone,
       product: {
         id: String(safeProduct?.id || safeProduct?.productId || '').trim() || null,
+        itemId: String(safeProduct?.itemId || safeProduct?.item_id || safeProduct?.id || '').trim() || null,
+        productId: String(safeProduct?.productId || safeProduct?.product_id || safeProduct?.id || '').trim() || null,
+        sku: String(safeProduct?.sku || safeProduct?.metadata?.sku || safeProduct?.id || '').trim() || null,
+        productRetailerId: String(
+          safeProduct?.productRetailerId
+          || safeProduct?.product_retailer_id
+          || safeProduct?.retailerId
+          || safeProduct?.retailer_id
+          || safeProduct?.sku
+          || safeProduct?.metadata?.sku
+          || safeProduct?.id
+          || ''
+        ).trim() || null,
+        catalogId: String(safeProduct?.catalogId || safeProduct?.catalog_id || '').trim() || null,
+        metaCatalogId: String(safeProduct?.metaCatalogId || safeProduct?.meta_catalog_id || '').trim() || null,
+        source: String(safeProduct?.source || safeProduct?.metadata?.source || '').trim() || null,
         title: productTitle,
         price: productPrice,
         regularPrice: safeProduct?.regularPrice || safeProduct?.price || '',
@@ -644,7 +660,8 @@ export default function useChatMessageActions({
         discountPct: safeProduct?.discountPct || 0,
         description: productDescription,
         imageUrl,
-        url: productUrl
+        url: productUrl,
+        metadata: safeProduct?.metadata && typeof safeProduct.metadata === 'object' ? safeProduct.metadata : {}
       }
     };
 
@@ -668,6 +685,42 @@ export default function useChatMessageActions({
     activeChatId,
     activeChatIdRef,
     buildCatalogProductCaptionPreview,
+    chatsRef,
+    insertOptimisticOutgoing,
+    normalizeDigits,
+    socket
+  ]);
+
+  const handleSendNativeCatalog = useCallback(() => {
+    const activeId = String(activeChatIdRef.current || activeChatId || '').trim();
+    if (!activeId || !socket || typeof socket.emit !== 'function') return false;
+
+    const activeChatForSend = chatsRef.current.find((chat) => String(chat?.id || '') === String(activeChatId || activeId));
+    const activeChatPhone = normalizeDigits(activeChatForSend?.phone || '');
+    const toPhone = activeChatPhone || null;
+    const bodyText = 'Te comparto nuestro catálogo de productos:';
+    const payload = {
+      to: activeId,
+      toPhone,
+      bodyText
+    };
+
+    insertOptimisticOutgoing({
+      chatId: activeId,
+      body: bodyText,
+      hasMedia: false,
+      type: 'interactive',
+      retryPayload: {
+        eventName: 'send_native_catalog',
+        payload
+      }
+    });
+
+    socket.emit('send_native_catalog', payload);
+    return true;
+  }, [
+    activeChatId,
+    activeChatIdRef,
     chatsRef,
     insertOptimisticOutgoing,
     normalizeDigits,
@@ -877,6 +930,7 @@ export default function useChatMessageActions({
     handleExitActiveChat,
     handleSendMessage,
     handleSendCatalogProduct,
+    handleSendNativeCatalog,
     handleRetryMessage,
     handleSendReaction,
     handleOpenSendTemplate,

@@ -64,6 +64,14 @@ const cleanCatalogText = (value = '') => String(value || '')
     .replace(/\r/g, '')
     .trim();
 
+const normalizeComparableText = (value = '') => String(value || '')
+    .toLocaleLowerCase('es-PE')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 const extractCatalogProductNameFromText = (value = '') => {
     const lines = cleanCatalogText(value)
         .split('\n')
@@ -293,6 +301,53 @@ const MessageBubble = ({
         ? '🛒 Resumen De Pedido'
         : `📋 Cotización${quoteCardNumberLabel}`;
     const displayQuoteCardTitle = isOptionQuote ? `Opcion${optionCardNumberLabel}` : quoteCardTitle;
+    const productSourceType = String(
+        actionOrder?.rawPreview?.sourceType
+        || actionOrder?.rawPreview?.source_type
+        || actionOrder?.sourceType
+        || actionOrder?.source_type
+        || ''
+    ).trim().toLowerCase();
+    const productSku = String(
+        firstOrderItem?.sku
+        || firstOrderItem?.productRetailerId
+        || firstOrderItem?.product_retailer_id
+        || actionOrder?.productRetailerId
+        || actionOrder?.product_retailer_id
+        || actionOrder?.rawPreview?.productRetailerId
+        || actionOrder?.rawPreview?.product_retailer_id
+        || actionOrder?.rawPreview?.sku
+        || ''
+    ).trim();
+    const productCatalogId = String(
+        firstOrderItem?.catalogId
+        || firstOrderItem?.catalog_id
+        || actionOrder?.catalogId
+        || actionOrder?.catalog_id
+        || actionOrder?.rawPreview?.catalogId
+        || actionOrder?.rawPreview?.catalog_id
+        || ''
+    ).trim();
+    const productCardTitle = isMessageFromMe
+        ? 'Producto enviado desde catalogo Meta'
+        : (productSourceType.includes('catalog_reference')
+            ? 'Cliente consulto este producto'
+            : 'Producto compartido');
+    const productCardHint = isMessageFromMe
+        ? 'Producto enviado como tarjeta nativa de WhatsApp.'
+        : 'Puedes anadir este producto al carrito para cotizarlo.';
+    const productTitleForDuplicateCheck = normalizeComparableText(firstOrderItem?.title || firstOrderItem?.name || '');
+    const productBodyForDuplicateCheck = normalizeComparableText(messageBodyText);
+    const shouldHideDuplicateProductBody = Boolean(
+        isProductPayload
+        && productBodyForDuplicateCheck
+        && (
+            productBodyForDuplicateCheck === productTitleForDuplicateCheck
+            || (productSku && productBodyForDuplicateCheck === normalizeComparableText(`SKU ${productSku}`))
+            || productBodyForDuplicateCheck === normalizeComparableText('Producto compartido')
+            || productBodyForDuplicateCheck === normalizeComparableText('Producto del catalogo Meta')
+        )
+    );
     const [selectedLocationText, setSelectedLocationText] = useState('');
     const [showActionsMenu, setShowActionsMenu] = useState(false);
     const [showReactionPicker, setShowReactionPicker] = useState(false);
@@ -311,7 +366,9 @@ const MessageBubble = ({
     const shouldHideBodyForOrder = isQuotePayload || (hasOrder && isOrderPayload) || (hasOrder && isLikelyBinaryBody(messageBodyText));
     const messageTextToRender = isCatalogItem
         ? 'Te gustaria que te lo separemos?'
-        : ((isLocationMessage && locationData?.source === 'native') ? '' : (shouldHideBodyForOrder ? '' : (msg.body || '')));
+        : ((isLocationMessage && locationData?.source === 'native')
+            ? ''
+            : ((shouldHideBodyForOrder || shouldHideDuplicateProductBody) ? '' : (msg.body || '')));
     const firstNonMapUrl = extractFirstNonMapUrlFromText(messageBodyText);
     const showWebPreview = Boolean(firstNonMapUrl && !isLocationMessage && !msg?.hasMedia && !hasOrder && !isCatalogItem && !isOrderActionable);
     const phoneCandidates = extractPhoneCandidatesFromText(messageTextToRender);
@@ -861,9 +918,19 @@ const MessageBubble = ({
                     {orderIdentifier && (
                         <div className="message-order-card__meta">ID: {orderIdentifier}</div>
                     )}
+                    {isProductPayload && productCardTitle !== 'Producto compartido' && (
+                        <div className="message-order-card__meta">{productCardTitle}</div>
+                    )}
                     {isProductPayload && (firstOrderItem?.title || firstOrderItem?.name) && (
                         <div className="message-order-card__product-name">
                             {firstOrderItem?.title || firstOrderItem?.name}
+                        </div>
+                    )}
+                    {isProductPayload && (productSku || productCatalogId) && (
+                        <div className="message-order-card__meta">
+                            {productSku ? `SKU: ${productSku}` : ''}
+                            {productSku && productCatalogId ? ' · ' : ''}
+                            {productCatalogId ? `Catalogo Meta: ${productCatalogId}` : ''}
                         </div>
                     )}
                     {orderSubtotalLabel && isProductPayload && (
@@ -871,7 +938,7 @@ const MessageBubble = ({
                     )}
                     {isProductPayload ? (
                         <div className="message-order-card__hint">
-                            Puedes anadir este producto al carrito para cotizarlo.
+                            {productCardHint}
                         </div>
                     ) : isQuotePayload ? (
                         <div className="message-order-card__quote-body">

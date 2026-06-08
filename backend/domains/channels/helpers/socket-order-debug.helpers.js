@@ -142,6 +142,8 @@ function createSocketOrderDebugHelpers({
                     price: item?.price ?? null,
                     lineTotal: item?.lineTotal ?? null,
                     sku: item?.sku || null,
+                    productRetailerId: item?.productRetailerId || item?.product_retailer_id || item?.sku || null,
+                    catalogId: item?.catalogId || item?.catalog_id || null,
                     currency: item?.currency || 'PEN'
                 }));
             } else {
@@ -219,9 +221,21 @@ function createSocketOrderDebugHelpers({
             if (!maybeOrderType) return null;
 
             const rawPreview = {
-                type: msg?.type || data?.type || null,
-                body: msg?.body || data?.body || null,
-                title: orderTitle || null,
+                type: msg?.order?.rawPreview?.type || msg?.order?.type || msg?.type || data?.type || null,
+                sourceType: msg?.order?.rawPreview?.sourceType
+                    || msg?.order?.sourceType
+                    || msg?.order?.source_type
+                    || data?.sourceType
+                    || data?.source_type
+                    || null,
+                body: msg?.order?.rawPreview?.body || msg?.body || data?.body || null,
+                title: msg?.order?.rawPreview?.title || orderTitle || null,
+                sku: msg?.order?.rawPreview?.sku || msg?.order?.sku || null,
+                productRetailerId: msg?.order?.rawPreview?.productRetailerId
+                    || msg?.order?.productRetailerId
+                    || msg?.order?.product_retailer_id
+                    || null,
+                catalogId: msg?.order?.rawPreview?.catalogId || msg?.order?.catalogId || msg?.order?.catalog_id || null,
                 itemCount: data?.itemCount
                     || data?.orderItemCount
                     || msg?.itemCount
@@ -249,6 +263,9 @@ function createSocketOrderDebugHelpers({
                 orderId,
                 currency,
                 subtotal: Number.isFinite(subtotal) ? subtotal : null,
+                sourceType: rawPreview.sourceType || null,
+                productRetailerId: rawPreview.productRetailerId || rawPreview.sku || null,
+                catalogId: rawPreview.catalogId || null,
                 products,
                 rawPreview
             };

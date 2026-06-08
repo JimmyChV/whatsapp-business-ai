@@ -46,6 +46,7 @@ const DEFAULT_INTEGRATIONS = Object.freeze({
     },
     metaAds: {
         businessId: null,
+        catalogId: null,
         adAccountId: null,
         accessToken: null,
         appSecret: null

@@ -397,6 +397,7 @@ class SocketManager {
         });
         this.catalogDeliveryService = createSocketCatalogDeliveryService({
             waClient,
+            tenantIntegrationsService,
             fetchCatalogProductImage: resolveCatalogProductMediaForSend,
             ensureCloudApiCompatibleCatalogImage,
             resolveSocketModuleContext,

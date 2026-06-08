@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Smile, Bot, Sparkles, X, Paperclip, Send, MapPin, LayoutTemplate } from 'lucide-react';
+import { Smile, Bot, Sparkles, X, Paperclip, Send, MapPin, LayoutTemplate, Store } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { EmojiStyle, SkinTonePickerLocation, SkinTones, SuggestionMode, Theme } from 'emoji-picker-react';
 import { isRealQuickReplyMediaAsset } from '../core/helpers/appChat.helpers';
@@ -75,6 +75,7 @@ const ChatInput = ({
     replyingMessage, onCancelReplyMessage,
     onOpenMapPicker,
     onOpenSendTemplate,
+    onSendNativeCatalog,
     buildApiHeaders,
     windowOpen = true,
     focusChatKey = ''
@@ -713,6 +714,15 @@ const ChatInput = ({
                     style={{ opacity: isTemplateOnlyMode ? 0.45 : 1, cursor: isTemplateOnlyMode ? 'not-allowed' : 'pointer' }}
                 >
                     <Smile size={26} />
+                </button>
+                <button
+                    className="btn-icon ui-icon-btn"
+                    onClick={() => onSendNativeCatalog && onSendNativeCatalog()}
+                    title="Enviar catálogo nativo de WhatsApp"
+                    disabled={disableFreeformComposer || typeof onSendNativeCatalog !== 'function'}
+                    style={{ opacity: disableFreeformComposer || typeof onSendNativeCatalog !== 'function' ? 0.45 : 1, cursor: disableFreeformComposer || typeof onSendNativeCatalog !== 'function' ? 'not-allowed' : 'pointer' }}
+                >
+                    <Store size={24} />
                 </button>
                 <button className="btn-icon ui-icon-btn" onClick={onFileClick} title="Adjuntar archivo" disabled={disableFreeformComposer} style={{ opacity: disableFreeformComposer ? 0.45 : 1, cursor: disableFreeformComposer ? 'not-allowed' : 'pointer' }}>
                     <Paperclip size={26} />

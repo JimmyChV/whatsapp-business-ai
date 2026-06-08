@@ -1,5 +1,140 @@
+function toCleanText(value = '') {
+    return String(value || '').trim();
+}
+
+function isMetaCatalogId(value = '') {
+    return /^\d{6,}$/.test(toCleanText(value));
+}
+
+function getProductMetadata(product = {}) {
+    return product?.metadata && typeof product.metadata === 'object' && !Array.isArray(product.metadata)
+        ? product.metadata
+        : {};
+}
+
+function firstCleanText(...values) {
+    for (const value of values) {
+        const text = toCleanText(value);
+        if (text) return text;
+    }
+    return '';
+}
+
+function resolveProductRetailerId(product = {}) {
+    const metadata = getProductMetadata(product);
+    return firstCleanText(
+        product?.productRetailerId,
+        product?.product_retailer_id,
+        product?.retailerId,
+        product?.retailer_id,
+        product?.sku,
+        product?.itemId,
+        product?.item_id,
+        metadata.productRetailerId,
+        metadata.product_retailer_id,
+        metadata.retailerId,
+        metadata.retailer_id,
+        metadata.sku,
+        metadata.itemId,
+        metadata.item_id,
+        product?.id,
+        product?.productId
+    );
+}
+
+function resolveMetaCatalogId({
+    product = {},
+    payload = {},
+    integrations = {},
+    moduleContext = null
+} = {}) {
+    const metadata = getProductMetadata(product);
+    const moduleMetadata = moduleContext?.metadata && typeof moduleContext.metadata === 'object'
+        ? moduleContext.metadata
+        : {};
+    const candidates = [
+        payload?.metaCatalogId,
+        payload?.meta_catalog_id,
+        payload?.nativeCatalogId,
+        payload?.native_catalog_id,
+        product?.metaCatalogId,
+        product?.meta_catalog_id,
+        product?.nativeCatalogId,
+        product?.native_catalog_id,
+        metadata.metaCatalogId,
+        metadata.meta_catalog_id,
+        metadata.nativeCatalogId,
+        metadata.native_catalog_id,
+        metadata.whatsappCatalogId,
+        metadata.whatsapp_catalog_id,
+        moduleMetadata.metaCatalogId,
+        moduleMetadata.meta_catalog_id,
+        moduleMetadata.nativeCatalogId,
+        moduleMetadata.native_catalog_id,
+        integrations?.metaAds?.catalogId,
+        integrations?.metaAds?.catalog_id,
+        integrations?.catalog?.metaCatalogId,
+        integrations?.catalog?.meta_catalog_id,
+        integrations?.catalog?.providers?.meta?.catalogId,
+        integrations?.catalog?.providers?.meta?.catalog_id
+    ];
+    return candidates.map(toCleanText).find(isMetaCatalogId) || '';
+}
+
+function buildNativeProductInteractive(product = {}, catalogId = '', productRetailerId = '') {
+    return {
+        type: 'product',
+        body: {
+            text: firstCleanText(product?.nativeBodyText, product?.bodyText, 'Te recomiendo este producto:')
+        },
+        action: {
+            catalog_id: catalogId,
+            product_retailer_id: productRetailerId
+        }
+    };
+}
+
+function buildNativeCatalogInteractive({
+    bodyText = '',
+    thumbnailProductRetailerId = ''
+} = {}) {
+    const action = { name: 'catalog_message' };
+    const thumbnail = toCleanText(thumbnailProductRetailerId);
+    if (thumbnail) {
+        action.parameters = { thumbnail_product_retailer_id: thumbnail };
+    }
+    return {
+        type: 'catalog_message',
+        body: {
+            text: firstCleanText(bodyText, 'Te comparto nuestro catálogo de productos:')
+        },
+        action
+    };
+}
+
+function buildSyntheticOutgoingMessage({
+    messageId = '',
+    chatId = '',
+    body = '',
+    type = 'chat',
+    metadata = null
+} = {}) {
+    return {
+        id: messageId ? { _serialized: messageId } : null,
+        to: chatId,
+        body,
+        fromMe: true,
+        timestamp: Math.floor(Date.now() / 1000),
+        ack: 1,
+        hasMedia: false,
+        type,
+        _data: metadata && typeof metadata === 'object' ? { metadata } : undefined
+    };
+}
+
 function createSocketCatalogDeliveryService({
     waClient,
+    tenantIntegrationsService,
     fetchCatalogProductImage,
     ensureCloudApiCompatibleCatalogImage,
     resolveSocketModuleContext,
@@ -34,6 +169,16 @@ function createSocketCatalogDeliveryService({
             await transportOrchestrator.ensureTransportForSelectedModule(selectedModule);
             return true;
         };
+        const loadRuntimeIntegrations = async () => {
+            if (!tenantIntegrationsService || typeof tenantIntegrationsService.getTenantIntegrations !== 'function') return {};
+            try {
+                return await tenantIntegrationsService.getTenantIntegrations(tenantId, { runtime: true });
+            } catch (error) {
+                console.warn('[WA][CatalogNative][integrations] ' + String(error?.message || error));
+                return {};
+            }
+        };
+
         socket.on('send_catalog_product', async (payload = {}) => {
             if (!guardRateLimit(socket, 'send_catalog_product')) return;
             if (!(await ensurePayloadModuleTransport(payload, 'error', 'enviar productos de catalogo'))) return;
@@ -78,10 +223,38 @@ function createSocketCatalogDeliveryService({
                 };
 
                 let sentWithImage = false;
+                let sentNativeCatalog = false;
+                let deliveryMode = 'fallback';
                 let sentResponse = null;
                 let catalogMediaPayload = null;
+                let nativeCatalogId = '';
+                let productRetailerId = '';
 
-                if (imageUrl) {
+                const integrations = await loadRuntimeIntegrations();
+                nativeCatalogId = resolveMetaCatalogId({ product, payload, integrations, moduleContext });
+                productRetailerId = resolveProductRetailerId(product);
+                if (nativeCatalogId && productRetailerId && waClient && typeof waClient.sendInteractiveMessage === 'function') {
+                    const nativeInteractive = buildNativeProductInteractive(product, nativeCatalogId, productRetailerId);
+                    try {
+                        sentResponse = await waClient.sendInteractiveMessage(target.targetChatId, nativeInteractive, {
+                            metadata: {
+                                ...baseSendMetadata,
+                                deliveryMode: 'native_catalog_product',
+                                metaCatalogId: nativeCatalogId,
+                                productRetailerId
+                            }
+                        });
+                        if (sentResponse) {
+                            sentNativeCatalog = true;
+                            deliveryMode = 'native_catalog_product';
+                        }
+                    } catch (nativeError) {
+                        console.warn('[WA][SendCatalogProduct][native] Meta no acepto el producto nativo; se usara fallback. ' + String(nativeError?.message || nativeError));
+                        sentResponse = null;
+                    }
+                }
+
+                if (!sentNativeCatalog && imageUrl) {
                     const maxCatalogImageBytes = Number(process.env.CATALOG_IMAGE_MAX_BYTES || 4 * 1024 * 1024);
                     const compatibleMedia = await fetchCatalogProductImage(imageUrl, {
                         tenantId,
@@ -107,6 +280,7 @@ function createSocketCatalogDeliveryService({
                         );
                         if (!sentResponse) return;
                         sentWithImage = true;
+                        deliveryMode = 'image_fallback';
                         catalogMediaPayload = {
                             mimetype: compatibleMedia.mimetype,
                             filename,
@@ -119,32 +293,39 @@ function createSocketCatalogDeliveryService({
                     }
                 }
 
-                if (!sentWithImage) {
+                if (!sentNativeCatalog && !sentWithImage) {
                     sentResponse = await waClient.sendMessage(target.targetChatId, caption, {
                         metadata: {
-                            ...baseSendMetadata
+                            ...baseSendMetadata,
+                            deliveryMode: 'text_fallback'
                         }
                     });
+                    deliveryMode = 'text_fallback';
                 }
                 if (!sentResponse) return;
 
                 const sentMessageId = getSerializedMessageId(sentResponse)
-                    || String(sentResponse?.messages?.[0]?.id || sentResponse?.message_id || '').trim();
+                    || String(sentResponse?.messages?.[0]?.id || sentResponse?.message_id || (typeof sentResponse === 'string' ? sentResponse : '')).trim();
                 if (sentMessageId && agentMeta) {
                     rememberOutgoingAgentMeta(sentMessageId, agentMeta);
                 }
+                const syntheticMessage = buildSyntheticOutgoingMessage({
+                    messageId: sentMessageId,
+                    chatId: target.targetChatId,
+                    body: sentNativeCatalog ? caption : '',
+                    type: sentNativeCatalog ? 'catalog_product' : 'chat',
+                    metadata: sentNativeCatalog
+                        ? {
+                            ...baseSendMetadata,
+                            deliveryMode,
+                            metaCatalogId: nativeCatalogId || null,
+                            productRetailerId: productRetailerId || null
+                        }
+                        : null
+                });
 
                 await emitRealtimeOutgoingMessage({
-                    sentMessage: sentResponse || {
-                        id: sentMessageId ? { _serialized: sentMessageId } : null,
-                        to: target.targetChatId,
-                        body: caption,
-                        fromMe: true,
-                        timestamp: Math.floor(Date.now() / 1000),
-                        ack: 1,
-                        hasMedia: sentWithImage,
-                        type: sentWithImage ? 'image' : 'chat'
-                    },
+                    sentMessage: sentResponse && typeof sentResponse === 'object' ? sentResponse : syntheticMessage,
                     fallbackChatId: target.targetChatId,
                     fallbackBody: caption,
                     moduleContext,
@@ -162,6 +343,10 @@ function createSocketCatalogDeliveryService({
                     scopeModuleId: target.scopeModuleId || null,
                     title: String(product?.title || product?.name || 'Producto'),
                     withImage: sentWithImage,
+                    nativeCatalog: sentNativeCatalog,
+                    deliveryMode,
+                    metaCatalogId: nativeCatalogId || null,
+                    productRetailerId: productRetailerId || null,
                     productId,
                     catalogId
                 });
@@ -178,6 +363,10 @@ function createSocketCatalogDeliveryService({
                                 productId,
                                 productTitle: String(product?.title || product?.name || '').trim() || null,
                                 withImage: sentWithImage,
+                                nativeCatalog: sentNativeCatalog,
+                                deliveryMode,
+                                metaCatalogId: nativeCatalogId || null,
+                                productRetailerId: productRetailerId || null,
                                 mediaUrl: String(catalogMediaPayload?.mediaUrl || '').trim() || null,
                                 catalogId
                             }
@@ -189,6 +378,131 @@ function createSocketCatalogDeliveryService({
             } catch (e) {
                 const detail = String(e?.message || e || 'No se pudo enviar el producto del catalogo.');
                 console.warn('[WA][SendCatalogProduct] ' + detail);
+                socket.emit('error', detail);
+            }
+        });
+
+        socket.on('send_native_catalog', async (payload = {}) => {
+            if (!guardRateLimit(socket, 'send_native_catalog')) return;
+            if (!(await ensurePayloadModuleTransport(payload, 'error', 'enviar catalogo nativo'))) return;
+            if (!transportOrchestrator.ensureTransportReady(socket, { action: 'enviar catalogo nativo', errorEvent: 'error' })) return;
+
+            const catalogEnabled = await isFeatureEnabledForTenant(tenantId, 'catalog');
+            if (!catalogEnabled) {
+                socket.emit('error', 'Catalogo deshabilitado para esta empresa o plan.');
+                return;
+            }
+
+            try {
+                const target = await resolveScopedSendTarget({
+                    rawChatId: payload?.to,
+                    rawPhone: payload?.toPhone,
+                    errorEvent: 'error',
+                    action: 'enviar catalogo nativo'
+                });
+                if (!target?.ok) return;
+
+                if (typeof checkOutboundConsent === 'function') {
+                    const consentResult = await checkOutboundConsent(tenantId, {
+                        phone: target.targetPhone || target.targetChatId,
+                        messageType: 'catalog'
+                    });
+                    if (!consentResult?.allowed) {
+                        socket.emit('error', 'El cliente no tiene consentimiento de marketing para recibir catalogos.');
+                        return;
+                    }
+                }
+
+                if (!waClient || typeof waClient.sendInteractiveMessage !== 'function') {
+                    socket.emit('error', 'El envio de catalogo nativo no esta disponible en esta sesion.');
+                    return;
+                }
+
+                const moduleContext = target.moduleContext || socket?.data?.waModule || null;
+                const integrations = await loadRuntimeIntegrations();
+                const metaCatalogId = resolveMetaCatalogId({ payload, integrations, moduleContext });
+                if (!metaCatalogId) {
+                    socket.emit('error', 'No hay catalogo Meta configurado para enviar el catalogo nativo.');
+                    return;
+                }
+
+                const thumbnailProductRetailerId = firstCleanText(
+                    payload?.thumbnailProductRetailerId,
+                    payload?.thumbnail_product_retailer_id,
+                    payload?.productRetailerId,
+                    payload?.product_retailer_id
+                );
+                const bodyText = firstCleanText(payload?.bodyText, payload?.text, 'Te comparto nuestro catálogo de productos:');
+                const interactive = buildNativeCatalogInteractive({
+                    bodyText,
+                    thumbnailProductRetailerId
+                });
+                const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
+                const sendMetadata = {
+                    tenantId,
+                    chatId: target.targetChatId,
+                    sendIdempotencyType: 'native_catalog',
+                    sendIdempotencyFingerprint: `${metaCatalogId}:${bodyText}`,
+                    deliveryMode: 'native_catalog_message',
+                    metaCatalogId
+                };
+
+                const sentResponse = await waClient.sendInteractiveMessage(target.targetChatId, interactive, {
+                    metadata: sendMetadata
+                });
+                if (!sentResponse) return;
+
+                const sentMessageId = getSerializedMessageId(sentResponse)
+                    || String(sentResponse?.messages?.[0]?.id || sentResponse?.message_id || (typeof sentResponse === 'string' ? sentResponse : '')).trim();
+                if (sentMessageId && agentMeta) {
+                    rememberOutgoingAgentMeta(sentMessageId, agentMeta);
+                }
+
+                await emitRealtimeOutgoingMessage({
+                    sentMessage: sentResponse && typeof sentResponse === 'object'
+                        ? sentResponse
+                        : buildSyntheticOutgoingMessage({
+                            messageId: sentMessageId,
+                            chatId: target.targetChatId,
+                            body: bodyText,
+                            type: 'interactive',
+                            metadata: sendMetadata
+                        }),
+                    fallbackChatId: target.targetChatId,
+                    fallbackBody: bodyText,
+                    moduleContext,
+                    agentMeta,
+                    mediaPayload: null
+                });
+
+                socket.emit('native_catalog_sent', {
+                    to: target.scopedChatId || target.targetChatId,
+                    chatId: target.scopedChatId || target.targetChatId,
+                    baseChatId: target.targetChatId,
+                    scopeModuleId: target.scopeModuleId || null,
+                    metaCatalogId
+                });
+
+                setImmediate(async () => {
+                    try {
+                        await recordConversationEvent({
+                            chatId: target.targetChatId,
+                            scopeModuleId: target.scopeModuleId,
+                            eventType: 'chat.message.outgoing.native_catalog',
+                            eventSource: 'socket',
+                            payload: {
+                                messageId: sentMessageId || null,
+                                metaCatalogId,
+                                bodyText
+                            }
+                        });
+                    } catch (recordError) {
+                        console.warn('[WA][SendNativeCatalog][recordConversationEvent] ' + String(recordError?.message || recordError));
+                    }
+                });
+            } catch (e) {
+                const detail = String(e?.message || e || 'No se pudo enviar el catalogo nativo.');
+                console.warn('[WA][SendNativeCatalog] ' + detail);
                 socket.emit('error', detail);
             }
         });

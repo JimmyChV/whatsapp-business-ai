@@ -427,6 +427,7 @@ function normalizeIntegrationsForStorage(input = {}, existing = {}) {
         },
         metaAds: {
             businessId: normalizeText(sourceMetaAds.businessId ?? currentMetaAds.businessId),
+            catalogId: normalizeText(sourceMetaAds.catalogId ?? sourceMetaAds.catalog_id ?? currentMetaAds.catalogId ?? currentMetaAds.catalog_id),
             adAccountId: normalizeText(sourceMetaAds.adAccountId ?? currentMetaAds.adAccountId),
             accessToken: metaAdsAccessToken,
             appSecret: metaAdsAppSecret
@@ -503,6 +504,7 @@ function toPublicConfig(stored = {}) {
         },
         metaAds: {
             businessId: normalizeText(metaAds.businessId),
+            catalogId: normalizeText(metaAds.catalogId),
             adAccountId: normalizeText(metaAds.adAccountId),
             hasAccessToken: Boolean(metaAds.accessToken),
             accessTokenMasked: metaAdsAccessTokenPlain ? maskSecret(metaAdsAccessTokenPlain) : null,
@@ -568,6 +570,7 @@ function toRuntimeConfig(stored = {}) {
         },
         metaAds: {
             businessId: normalizeText(metaAds.businessId),
+            catalogId: normalizeText(metaAds.catalogId),
             adAccountId: normalizeText(metaAds.adAccountId),
             accessToken: resolveSecretPlain(metaAds.accessToken) || normalizeText(metaAds.accessToken),
             appSecret: resolveSecretPlain(metaAds.appSecret) || normalizeText(metaAds.appSecret)

@@ -58,6 +58,7 @@ export default function OperationPage({
   setInputText,
   handleSendMessage,
   handleSendCatalogProduct,
+  handleSendNativeCatalog,
   handleSendReaction,
   handleRetryMessage,
   handleOpenDirectWhatsApp,
@@ -418,6 +419,7 @@ export default function OperationPage({
               inputText={inputText}
               setInputText={setInputText}
               onSendMessage={handleSendMessage}
+              onSendNativeCatalog={handleSendNativeCatalog}
               onSendReaction={handleSendReaction}
               onRetryMessage={handleRetryMessage}
               onFileClick={() => fileInputRef.current?.click()}

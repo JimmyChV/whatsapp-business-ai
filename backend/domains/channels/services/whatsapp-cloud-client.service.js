@@ -15,6 +15,133 @@ const {
     normalizeRuntimeCloudConfig
 } = require('../helpers/cloud-runtime.helpers');
 
+function extractReferredProductInfo(msg = {}) {
+    const context = msg?.context && typeof msg.context === 'object' ? msg.context : {};
+    const referred = context?.referred_product && typeof context.referred_product === 'object'
+        ? context.referred_product
+        : (context?.referredProduct && typeof context.referredProduct === 'object'
+            ? context.referredProduct
+            : (msg?.referred_product && typeof msg.referred_product === 'object'
+                ? msg.referred_product
+                : null));
+    if (!referred) return null;
+
+    const catalogId = String(
+        referred?.catalog_id
+        || referred?.catalogId
+        || referred?.catalog
+        || ''
+    ).trim();
+    const productRetailerId = String(
+        referred?.product_retailer_id
+        || referred?.productRetailerId
+        || referred?.retailer_id
+        || referred?.retailerId
+        || referred?.sku
+        || ''
+    ).trim();
+
+    if (!catalogId && !productRetailerId) return null;
+
+    return compactObject({
+        type: 'product',
+        sourceType: 'catalog_reference',
+        catalogId,
+        productRetailerId,
+        sku: productRetailerId || null
+    });
+}
+
+function buildCatalogProductPayload({
+    productPayload = {},
+    referredProduct = null,
+    msg = {},
+    fallbackTitle = 'Producto compartido',
+    sourceType = 'product',
+    body = ''
+} = {}) {
+    const title = String(
+        productPayload?.title
+        || productPayload?.name
+        || msg?.title
+        || msg?.product_name
+        || referredProduct?.title
+        || (referredProduct?.productRetailerId ? `SKU ${referredProduct.productRetailerId}` : '')
+        || fallbackTitle
+    ).trim();
+    const sku = String(
+        productPayload?.product_retailer_id
+        || productPayload?.productRetailerId
+        || productPayload?.retailer_id
+        || productPayload?.retailerId
+        || msg?.product_retailer_id
+        || msg?.sku
+        || referredProduct?.productRetailerId
+        || referredProduct?.sku
+        || ''
+    ).trim() || null;
+    const catalogId = String(
+        productPayload?.catalog_id
+        || productPayload?.catalogId
+        || msg?.catalog_id
+        || msg?.catalogId
+        || referredProduct?.catalogId
+        || ''
+    ).trim() || null;
+    const currency = String(
+        productPayload?.currency
+        || productPayload?.currency_code
+        || msg?.currency
+        || msg?.currency_code
+        || 'PEN'
+    ).trim() || 'PEN';
+    const price =
+        parseMoneyLike(productPayload?.price_amount_1000, { scaleHint: '1000' })
+        ?? parseMoneyLike(msg?.price_amount_1000, { scaleHint: '1000' })
+        ?? parseMoneyLike(msg?.priceAmount1000, { scaleHint: '1000' })
+        ?? parseMoneyLike(productPayload?.price)
+        ?? parseMoneyLike(msg?.price)
+        ?? null;
+
+    return {
+        title,
+        sku,
+        catalogId,
+        currency,
+        price,
+        orderPayload: compactObject({
+            type: 'product',
+            sourceType,
+            productId: productPayload?.id || msg?.product_id || msg?.productId || null,
+            title,
+            sku,
+            productRetailerId: sku,
+            catalogId,
+            currency,
+            price,
+            rawPreview: compactObject({
+                type: 'product',
+                sourceType,
+                title,
+                body,
+                sku,
+                productRetailerId: sku,
+                catalogId
+            })
+        }),
+        orderProducts: [{
+            name: title || (sku ? `SKU ${sku}` : fallbackTitle),
+            quantity: 1,
+            sku,
+            productRetailerId: sku,
+            catalogId,
+            price,
+            lineTotal: price,
+            currency
+        }]
+    };
+}
+
 class WhatsAppCloudClient extends EventEmitter {
     constructor() {
         super();
@@ -1482,6 +1609,14 @@ class WhatsAppCloudClient extends EventEmitter {
             });
         }
 
+        const referredProduct = extractReferredProductInfo(msg);
+        if (referredProduct) {
+            base.rawData = compactObject({
+                ...(base.rawData || {}),
+                referredProduct
+            });
+        }
+
         if (type === 'reaction') {
             const reaction = msg?.reaction && typeof msg.reaction === 'object' ? msg.reaction : {};
             const emoji = String(reaction?.emoji || '').trim();
@@ -1499,6 +1634,25 @@ class WhatsAppCloudClient extends EventEmitter {
         } else if (type === 'text') {
             base.type = 'chat';
             base.body = String(msg?.text?.body || '').trim();
+            if (referredProduct) {
+                const productInfo = buildCatalogProductPayload({
+                    referredProduct,
+                    msg,
+                    fallbackTitle: 'Producto del catalogo Meta',
+                    sourceType: 'catalog_reference',
+                    body: base.body
+                });
+                base.type = 'product';
+                base.order = productInfo.orderPayload;
+                base.orderProducts = productInfo.orderProducts;
+                base.rawData = compactObject({
+                    ...(base.rawData || {}),
+                    type: 'product',
+                    sourceType: 'catalog_reference',
+                    product: productInfo.orderPayload,
+                    referredProduct
+                });
+            }
         } else if (type === 'image') {
             base.type = 'image';
             base.body = String(msg?.image?.caption || '').trim();
@@ -1634,60 +1788,28 @@ class WhatsAppCloudClient extends EventEmitter {
             });
         } else if (type === 'product' || msg?.product || msg?.product_id || msg?.productId || msg?.price_amount_1000 || msg?.priceAmount1000) {
             const productPayload = msg?.product && typeof msg.product === 'object' ? msg.product : {};
-            const title = String(
-                productPayload?.title
-                || productPayload?.name
-                || msg?.title
-                || msg?.product_name
-                || 'Producto compartido'
-            ).trim();
-            const sku = String(
-                productPayload?.product_retailer_id
-                || productPayload?.retailer_id
-                || msg?.product_retailer_id
-                || msg?.sku
-                || ''
-            ).trim() || null;
-            const currency = String(
-                productPayload?.currency
-                || productPayload?.currency_code
-                || msg?.currency
-                || msg?.currency_code
-                || 'PEN'
-            ).trim() || 'PEN';
-            const price =
-                parseMoneyLike(productPayload?.price_amount_1000, { scaleHint: '1000' })
-                ?? parseMoneyLike(msg?.price_amount_1000, { scaleHint: '1000' })
-                ?? parseMoneyLike(msg?.priceAmount1000, { scaleHint: '1000' })
-                ?? parseMoneyLike(productPayload?.price)
-                ?? parseMoneyLike(msg?.price)
-                ?? null;
+            const productInfo = buildCatalogProductPayload({
+                productPayload,
+                msg,
+                fallbackTitle: 'Producto compartido',
+                sourceType: 'product',
+                body: String(productPayload?.text || msg?.text?.body || '').trim()
+            });
 
             base.type = 'product';
-            base.body = title || 'Producto compartido';
-            base.order = compactObject({
-                productId: productPayload?.id || msg?.product_id || msg?.productId || null,
-                title,
-                sku,
-                currency,
-                price
-            });
-            base.orderProducts = [{
-                name: title || (sku ? `SKU ${sku}` : 'Producto compartido'),
-                quantity: 1,
-                sku,
-                price,
-                lineTotal: price,
-                currency
-            }];
+            base.body = productInfo.title || 'Producto compartido';
+            base.order = productInfo.orderPayload;
+            base.orderProducts = productInfo.orderProducts;
             base.rawData = compactObject({
                 type: 'product',
-                title,
+                title: productInfo.title,
                 description: String(productPayload?.description || msg?.description || '').trim() || null,
                 productId: productPayload?.id || msg?.product_id || msg?.productId || null,
-                sku,
-                currencyCode: currency,
-                priceAmount1000: Number.isFinite(price) ? Math.round(price * 1000) : null,
+                sku: productInfo.sku,
+                productRetailerId: productInfo.sku,
+                catalogId: productInfo.catalogId,
+                currencyCode: productInfo.currency,
+                priceAmount1000: Number.isFinite(productInfo.price) ? Math.round(productInfo.price * 1000) : null,
                 url: String(productPayload?.url || msg?.url || '').trim() || null
             });
         } else {
