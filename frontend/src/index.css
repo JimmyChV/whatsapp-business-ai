@@ -4886,7 +4886,7 @@ body {
   .message-action-sheet-overlay {
     position: fixed;
     inset: 0;
-    z-index: 90;
+    z-index: 30000;
     display: flex;
     align-items: flex-end;
     justify-content: center;
@@ -4897,9 +4897,11 @@ body {
   .message-action-sheet {
     width: 100%;
     max-width: 540px;
+    max-height: calc(100dvh - 12px);
+    overflow-y: auto;
     border-radius: 18px 18px 0 0;
     background: #fff;
-    padding: 10px 16px 16px;
+    padding: 10px 16px calc(16px + env(safe-area-inset-bottom, 0px));
     box-shadow: 0 -22px 45px rgba(15, 23, 42, 0.22);
     animation: messageSheetUp 0.24s ease-out;
   }

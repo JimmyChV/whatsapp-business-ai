@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import moment from 'moment';
 import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, MoreHorizontal, Download, SmilePlus, Clock3, AlertCircle, RotateCcw, AlertTriangle, Copy } from 'lucide-react';
 import {
@@ -1387,7 +1388,7 @@ const MessageBubble = ({
                         )}
                     </div>
                 )}
-                {showActionsMenu && (
+                {showActionsMenu && (typeof document !== 'undefined' ? createPortal(
                     <div
                         className="message-action-sheet-overlay"
                         onClick={(event) => {
@@ -1474,7 +1475,7 @@ const MessageBubble = ({
                             </button>
                         </div>
                     </div>
-                )}
+                , document.body) : null)}
 
                 {showOutgoingAttribution && (
                     <div className="message-outgoing-attribution">
