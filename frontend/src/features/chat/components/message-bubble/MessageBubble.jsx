@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import moment from 'moment';
-import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, ChevronDown, Download, SmilePlus, Clock3, AlertCircle, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, ChevronDown, Download, SmilePlus, Clock3, AlertCircle, RotateCcw, AlertTriangle, Copy } from 'lucide-react';
 import {
     renderWhatsAppFormattedText,
     formatOrderMoney,
@@ -295,6 +295,7 @@ const MessageBubble = ({
     const [selectedLocationText, setSelectedLocationText] = useState('');
     const [showActionsMenu, setShowActionsMenu] = useState(false);
     const [showReactionPicker, setShowReactionPicker] = useState(false);
+    const [copyOk, setCopyOk] = useState(false);
     const [preferredSkinTone, setPreferredSkinTone] = useState('neutral');
     const [mediaImageFailed, setMediaImageFailed] = useState(false);
     const [templateHeaderImageFailed, setTemplateHeaderImageFailed] = useState(false);
@@ -546,8 +547,10 @@ const MessageBubble = ({
         : [];
     const hasReactionSummary = reactionSummary.length > 0;
     const canSendReaction = typeof onSendReaction === 'function' && Boolean(String(msg?.id || '').trim());
+    const copyableText = String(messageTextToRender || msg?.body || '').trim();
+    const canCopyMessage = Boolean(copyableText);
 
-    const hasMenuActions = Boolean(canReplyMessage || canForwardMessage || canEditMessage);
+    const hasMenuActions = Boolean(canReplyMessage || canForwardMessage || canEditMessage || canCopyMessage);
     const handleReplyClick = () => {
         if (!canReplyMessage) return;
         onReplyMessage({
@@ -566,6 +569,30 @@ const MessageBubble = ({
             onStartForwardMode(msg);
         }
         setShowActionsMenu(false);
+    };
+    const handleCopyClick = async () => {
+        if (!canCopyMessage) return;
+        try {
+            if (typeof navigator !== 'undefined' && navigator?.clipboard?.writeText) {
+                await navigator.clipboard.writeText(copyableText);
+            } else if (typeof document !== 'undefined') {
+                const textarea = document.createElement('textarea');
+                textarea.value = copyableText;
+                textarea.setAttribute('readonly', 'true');
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+            }
+            setCopyOk(true);
+            setTimeout(() => setCopyOk(false), 1200);
+        } catch (_) {
+            setCopyOk(false);
+        } finally {
+            setShowActionsMenu(false);
+        }
     };
     const openMapPopup = (payload = {}) => {
         if (typeof onOpenMap !== 'function') return;
@@ -1242,6 +1269,11 @@ const MessageBubble = ({
                                 {canReplyMessage && (
                                     <button type="button" className="message-actions-item" onClick={handleReplyClick}>
                                         <Reply size={13} /> Responder
+                                    </button>
+                                )}
+                                {canCopyMessage && (
+                                    <button type="button" className="message-actions-item" onClick={handleCopyClick}>
+                                        <Copy size={13} /> {copyOk ? 'Copiado' : 'Copiar'}
                                     </button>
                                 )}
                                 {canForwardMessage && (

@@ -4206,23 +4206,25 @@ body {
 
 .message-actions-anchor {
   position: absolute;
-  top: 50%;
-  width: 78px;
+  top: auto;
+  bottom: 18px;
+  width: auto;
   display: flex;
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transform: translateY(-50%);
+  transform: none;
   transition: opacity 0.14s ease, transform 0.14s ease;
   z-index: 4;
 }
 
 .message.in .message-actions-anchor {
-  right: -92px;
+  right: 8px;
 }
 
 .message.out .message-actions-anchor {
-  left: -92px;
+  right: 8px;
+  left: auto;
 }
 
 .message-actions-rail {
@@ -4276,7 +4278,7 @@ body {
 .message:hover .message-actions-anchor,
 .message-actions-anchor.open {
   opacity: 1;
-  transform: translateY(-50%);
+  transform: none;
 }
 
 .message-actions-toggle {
@@ -4309,7 +4311,8 @@ body {
 
 .message-actions-menu {
   position: absolute;
-  top: 50%;
+  top: calc(100% + 8px);
+  right: 0;
   min-width: 176px;
   border-radius: 12px;
   border: 1px solid var(--chat-pill-border);
@@ -4319,15 +4322,17 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  transform: translateY(-50%);
+  transform: none;
+  z-index: 12;
 }
 
 .message-actions-menu.in {
-  left: calc(100% + 22px);
+  right: 0;
+  left: auto;
 }
 
 .message-actions-menu.out {
-  right: calc(100% + 22px);
+  right: 0;
 }
 
 .message-actions-item {
@@ -4743,19 +4748,21 @@ body {
 
 @media (max-width: 1180px) {
   .message.in .message-actions-anchor {
-    right: -72px;
+    right: 8px;
   }
 
   .message.out .message-actions-anchor {
-    left: -72px;
+    right: 8px;
+    left: auto;
   }
 
   .message-actions-menu.in {
-    left: calc(100% + 16px);
+    right: 0;
+    left: auto;
   }
 
   .message-actions-menu.out {
-    right: calc(100% + 16px);
+    right: 0;
   }
 
   .message-reaction-picker.in {
@@ -4764,6 +4771,35 @@ body {
 
   .message-reaction-picker.out {
     right: calc(100% + 16px);
+  }
+}
+
+@media (max-width: 768px) {
+  .message.has-menu-actions .message-actions-anchor,
+  .message .message-actions-anchor.open {
+    opacity: 1;
+  }
+
+  .message-actions-rail {
+    gap: 4px;
+  }
+
+  .message-actions-toggle {
+    width: 30px;
+    height: 30px;
+    background: rgba(255, 255, 255, 0.92);
+    color: #4b5563;
+    border-color: rgba(15, 23, 42, 0.12);
+  }
+
+  .message-actions-menu {
+    min-width: 164px;
+    top: calc(100% + 7px);
+  }
+
+  .message-actions-item {
+    min-height: 40px;
+    font-size: 0.84rem;
   }
 }
 
