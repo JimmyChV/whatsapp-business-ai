@@ -96,10 +96,6 @@ class WhatsAppCloudClient extends EventEmitter {
             getContacts: async () => this.getContacts(),
             getContactById: async (id) => this.getContactById(id),
             getChatById: async (id) => this.getChatById(id),
-            getProfilePicUrl: async (id) => {
-                const contact = await this.getContactById(id);
-                return contact?.profilePicUrl || null;
-            },
             getNumberId: async (phone) => this.getNumberId(phone),
             addOrRemoveLabels: async () => [],
             logout: async () => {
@@ -459,7 +455,7 @@ class WhatsAppCloudClient extends EventEmitter {
         });
     }
 
-    ensureContact(chatId, { name = '', pushname = '', profilePicUrl = null } = {}) {
+    ensureContact(chatId, { name = '', pushname = '' } = {}) {
         const safeChatId = toChatId(chatId);
         if (!safeChatId) return null;
 
@@ -486,10 +482,8 @@ class WhatsAppCloudClient extends EventEmitter {
             isUser: true,
             isGroup: false,
             isPSA: false,
-            profilePicUrl: profilePicUrl || existing?.profilePicUrl || null,
             _about: existing?._about || null,
-            getAbout: async () => existing?._about || null,
-            getProfilePicUrl: async () => profilePicUrl || existing?.profilePicUrl || null
+            getAbout: async () => existing?._about || null
         };
 
         this.contacts.set(safeChatId, next);
@@ -1286,7 +1280,7 @@ class WhatsAppCloudClient extends EventEmitter {
     async getBusinessProfile() {
         if (!this.isConfigured()) return null;
         try {
-            const payload = await this.graphJson(`/${this.phoneNumberId}/whatsapp_business_profile?fields=about,address,description,email,profile_picture_url,websites,vertical`);
+            const payload = await this.graphJson(`/${this.phoneNumberId}/whatsapp_business_profile?fields=about,address,description,email,websites,vertical`);
             const row = Array.isArray(payload?.data) ? payload.data[0] : null;
             if (!row) return null;
             return {
@@ -1295,8 +1289,7 @@ class WhatsAppCloudClient extends EventEmitter {
                 email: row.email || null,
                 website: Array.isArray(row.websites) ? row.websites[0] : null,
                 websites: Array.isArray(row.websites) ? row.websites : [],
-                address: row.address || null,
-                profile_picture_url: row.profile_picture_url || null
+                address: row.address || null
             };
         } catch (e) {
             return null;
@@ -1448,8 +1441,7 @@ class WhatsAppCloudClient extends EventEmitter {
         const profileName = String(contactPayload?.profile?.name || '').trim();
         const contact = this.ensureContact(chatId, {
             name: profileName || `+${fromWa}`,
-            pushname: profileName || `+${fromWa}`,
-            profilePicUrl: null
+            pushname: profileName || `+${fromWa}`
         });
 
         this.ensureChat(chatId, contact);

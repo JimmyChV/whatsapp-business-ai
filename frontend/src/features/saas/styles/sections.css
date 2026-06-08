@@ -4334,6 +4334,182 @@
   line-height: 1.35;
 }
 
+.saas-customers-profile-hero {
+  border: 1px solid var(--saas-border-color);
+  border-radius: 18px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--saas-bg-elevated) 78%, transparent), rgba(29, 158, 117, 0.1));
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.saas-customers-profile-avatar {
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, #1d9e75 18%, var(--saas-bg-surface));
+  border: 1px solid color-mix(in srgb, #1d9e75 38%, var(--saas-border-color));
+  color: var(--saas-text-primary);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+.saas-customers-profile-main {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.saas-customers-profile-main > strong {
+  color: var(--saas-text-primary);
+  font-size: 1.05rem;
+  line-height: 1.2;
+}
+
+.saas-customers-profile-main > span {
+  color: var(--saas-text-secondary);
+  font-size: 0.84rem;
+}
+
+.saas-customers-profile-badges,
+.saas-customers-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.saas-customers-segment-badge,
+.saas-customers-state-chip,
+.saas-customers-tag-chip,
+.saas-customers-empty-chip,
+.saas-customers-order-status {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  max-width: 100%;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 0.68rem;
+  font-weight: 900;
+  border: 1px solid var(--saas-border-color);
+  white-space: nowrap;
+}
+
+.saas-customers-state-chip,
+.saas-customers-tag-chip {
+  background: rgba(29, 158, 117, 0.12);
+  border-color: color-mix(in srgb, #1d9e75 35%, var(--saas-border-color));
+  color: #047857;
+}
+
+.saas-customers-empty-chip {
+  background: color-mix(in srgb, var(--saas-bg-elevated) 70%, transparent);
+  color: var(--saas-text-secondary);
+}
+
+.saas-customers-segment-badge--nuevo {
+  background: rgba(107, 114, 128, 0.12);
+  border-color: rgba(107, 114, 128, 0.28);
+  color: #6b7280;
+}
+
+.saas-customers-segment-badge--frecuente {
+  background: rgba(29, 158, 117, 0.13);
+  border-color: rgba(29, 158, 117, 0.32);
+  color: #047857;
+}
+
+.saas-customers-segment-badge--vip {
+  background: rgba(234, 179, 8, 0.14);
+  border-color: rgba(234, 179, 8, 0.38);
+  color: #a16207;
+}
+
+.saas-customers-segment-badge--riesgo {
+  background: rgba(245, 158, 11, 0.13);
+  border-color: rgba(245, 158, 11, 0.34);
+  color: #b45309;
+}
+
+.saas-customers-segment-badge--perdido {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.34);
+  color: #b91c1c;
+}
+
+.saas-customers-segment-badge--neutral {
+  background: rgba(100, 116, 139, 0.12);
+  border-color: rgba(100, 116, 139, 0.28);
+  color: #475569;
+}
+
+.saas-customers-orders-list,
+.saas-customers-tags-block {
+  display: grid;
+  gap: 8px;
+}
+
+.saas-customers-order-item {
+  border: 1px solid var(--saas-border-color);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--saas-bg-elevated) 58%, transparent);
+  padding: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.saas-customers-order-item > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.saas-customers-order-item small {
+  color: var(--saas-text-secondary);
+  font-size: 0.72rem;
+}
+
+.saas-customers-order-status--aceptado,
+.saas-customers-order-status--atendido {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: #15803d;
+}
+
+.saas-customers-order-status--programado {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #2563eb;
+}
+
+.saas-customers-order-status--vendido {
+  background: rgba(5, 150, 105, 0.14);
+  border-color: rgba(5, 150, 105, 0.36);
+  color: #047857;
+}
+
+.saas-customers-order-status--perdido {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.34);
+  color: #b91c1c;
+}
+
+.saas-customers-order-status--cancelado,
+.saas-customers-order-status--neutral {
+  background: rgba(100, 116, 139, 0.12);
+  border-color: rgba(100, 116, 139, 0.28);
+  color: #475569;
+}
+
 .saas-customers-address-list,
 .saas-customers-context-list {
   display: grid;

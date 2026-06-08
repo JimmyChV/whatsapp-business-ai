@@ -100,8 +100,6 @@ const { createMessageMediaAssetsHelpers } = require('../helpers/message-media-as
 const {
     resolveChatDisplayName,
     resolveChatSubtitle,
-    buildProfilePicCandidates,
-    resolveProfilePic,
     truncateDisplayValue,
     snapshotSerializable,
     normalizeBusinessDetailsSnapshot,
@@ -318,7 +316,6 @@ class SocketManager {
             extractPhoneFromChat,
             isVisibleChatId,
             isLidIdentifier,
-            resolveProfilePic,
             coerceHumanPhone,
             resolveRegisteredNumber,
             toLabelTokenSet,
@@ -429,7 +426,6 @@ class SocketManager {
             customerService,
             customerAddressesService,
             messageHistoryService,
-            resolveProfilePic,
             normalizeBusinessDetailsSnapshot,
             extractContactSnapshot,
             extractChatSnapshot,
@@ -459,7 +455,6 @@ class SocketManager {
             loadCatalog,
             getWooCatalog,
             isWooConfigured,
-            resolveProfilePic,
             normalizeBusinessDetailsSnapshot,
             extractContactSnapshot,
             snapshotSerializable,
@@ -1070,7 +1065,6 @@ class SocketManager {
         const fallbackName = displayName || subtitle || (phone ? `+${phone}` : 'Contacto');
 
         const labels = this.normalizeHistoryLabels(metadata?.labels || []);
-        const profilePicUrl = String(metadata?.profilePicUrl || '').trim() || null;
 
         const lastMessageModuleId = String(entry?.lastMessageModuleId || metadata?.sentViaModuleId || '').trim().toLowerCase() || null;
         const lastMessageModuleName = String(entry?.lastMessageModuleName || metadata?.sentViaModuleName || '').trim() || null;
@@ -1103,7 +1097,6 @@ class SocketManager {
             lastMessageFromMe: Boolean(entry?.lastMessageFromMe),
             ack: Number.isFinite(Number(entry?.lastMessageAck)) ? Number(entry.lastMessageAck) : 0,
             labels,
-            profilePicUrl,
             isMyContact: Boolean(metadata?.isMyContact),
             lastMessageModuleId: scopeModuleId || lastMessageModuleId,
             lastMessageModuleName,

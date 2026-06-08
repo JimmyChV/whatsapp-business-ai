@@ -835,6 +835,98 @@ function buildLanguageLabel(customer = null) {
     return 'Espanol';
 }
 
+function formatCustomerDateLabel(value = '') {
+    const raw = String(value || '').trim();
+    if (!raw) return '-';
+    const dateOnlyMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnlyMatch) {
+        return `${dateOnlyMatch[3]}/${dateOnlyMatch[2]}/${dateOnlyMatch[1]}`;
+    }
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) return '-';
+    return date.toLocaleDateString('es-PE', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+    });
+}
+
+function formatCustomerMoneyLabel(value = null) {
+    if (value === null || value === undefined || value === '') return '-';
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return '-';
+    return `S/ ${parsed.toFixed(1)}`;
+}
+
+function formatCustomerNumberLabel(value = null) {
+    if (value === null || value === undefined || value === '') return '-';
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return '-';
+    return String(parsed);
+}
+
+function formatCustomerPhoneLabel(value = '') {
+    const raw = String(value || '').trim();
+    if (!raw) return '-';
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length === 11 && digits.startsWith('51')) {
+        return `+51 ${digits.slice(2, 5)} ${digits.slice(5, 8)} ${digits.slice(8)}`;
+    }
+    if (digits.length === 9) {
+        return `+51 ${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
+    }
+    return raw;
+}
+
+function buildCustomerChatIdFromPhone(value = '') {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (!digits || digits.length < 8) return '';
+    return `${digits}@c.us`;
+}
+
+function buildCustomerInitials(customer = null) {
+    const name = buildCustomerDisplayName(customer);
+    const parts = String(name || '').split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return 'CL';
+    const first = parts[0]?.[0] || '';
+    const second = parts.length > 1 ? parts[1]?.[0] : parts[0]?.[1];
+    return `${first}${second || ''}`.toUpperCase();
+}
+
+function buildMarketingOptInLabel(customer = null) {
+    const profile = customer?.profile && typeof customer.profile === 'object' ? customer.profile : {};
+    const status = String(customer?.marketingOptInStatus || customer?.marketing_opt_in_status || '').trim().toLowerCase();
+    if (status === 'opted_in') return 'Si';
+    if (status === 'opted_out') return 'No';
+    if (profile.marketingAuthorization === true) return 'Si';
+    if (profile.marketingAuthorization === false) return 'No';
+    return 'Sin definir';
+}
+
+function getSegmentBadgeClass(segment = '') {
+    const key = String(segment || '').trim().toUpperCase();
+    if (key === 'NUEVO') return 'saas-customers-segment-badge--nuevo';
+    if (key === 'FRECUENTE' || key.includes('RECURRENTE')) return 'saas-customers-segment-badge--frecuente';
+    if (key === 'VIP') return 'saas-customers-segment-badge--vip';
+    if (key === 'EN RIESGO' || key === 'DORMIDO') return 'saas-customers-segment-badge--riesgo';
+    if (key === 'PERDIDO') return 'saas-customers-segment-badge--perdido';
+    return 'saas-customers-segment-badge--neutral';
+}
+
+const CUSTOMER_ORDER_STATUS_META = {
+    aceptado: { label: 'Aceptado', className: 'saas-customers-order-status--aceptado' },
+    programado: { label: 'Programado', className: 'saas-customers-order-status--programado' },
+    atendido: { label: 'Atendido', className: 'saas-customers-order-status--atendido' },
+    vendido: { label: 'Vendido', className: 'saas-customers-order-status--vendido' },
+    perdido: { label: 'Perdido', className: 'saas-customers-order-status--perdido' },
+    cancelado: { label: 'Cancelado', className: 'saas-customers-order-status--cancelado' }
+};
+
+function getCustomerOrderStatusMeta(value = '') {
+    const key = String(value || '').trim().toLowerCase();
+    return CUSTOMER_ORDER_STATUS_META[key] || { label: key || '-', className: 'saas-customers-order-status--neutral' };
+}
+
 function buildAcquisitionSourceLabel(customer = null, labelMaps = {}) {
     if (!customer || typeof customer !== 'object') return '-';
     const profile = customer?.profile && typeof customer.profile === 'object' ? customer.profile : {};
@@ -1080,6 +1172,9 @@ function CustomersSection(props = {}) {
     const [customerAddresses, setCustomerAddresses] = useState([]);
     const [addressesLoading, setAddressesLoading] = useState(false);
     const [addressesError, setAddressesError] = useState('');
+    const [customerOrders, setCustomerOrders] = useState([]);
+    const [customerOrdersLoading, setCustomerOrdersLoading] = useState(false);
+    const [customerOrdersError, setCustomerOrdersError] = useState('');
     const [selectedAddressId, setSelectedAddressId] = useState('');
     const [addressPanelMode, setAddressPanelMode] = useState('customer');
     const [addressEditorMode, setAddressEditorMode] = useState('create');
@@ -1209,6 +1304,10 @@ function CustomersSection(props = {}) {
     const selectedCustomerPhone = useMemo(
         () => String(selectedCustomer?.phoneE164 || selectedCustomer?.phone || '').trim(),
         [selectedCustomer]
+    );
+    const selectedCustomerChatId = useMemo(
+        () => buildCustomerChatIdFromPhone(selectedCustomerPhone),
+        [selectedCustomerPhone]
     );
     const profileAddresses = useMemo(
         () => buildProfileAddressesFromCustomer(selectedCustomer),
@@ -2174,6 +2273,28 @@ function CustomersSection(props = {}) {
             setSelectedAddressId('');
         } finally {
             setAddressesLoading(false);
+        }
+    }, [requestJson]);
+
+    const loadCustomerOrdersByChat = useCallback(async (chatIdRaw = '') => {
+        const chatId = String(chatIdRaw || '').trim();
+        if (!chatId) {
+            setCustomerOrders([]);
+            setCustomerOrdersError('');
+            return;
+        }
+
+        setCustomerOrdersLoading(true);
+        setCustomerOrdersError('');
+        try {
+            const payload = await requestJson(`/api/tenant/orders?chatId=${encodeURIComponent(chatId)}`, { method: 'GET' });
+            const items = Array.isArray(payload?.items) ? payload.items : [];
+            setCustomerOrders(items);
+        } catch (error) {
+            setCustomerOrders([]);
+            setCustomerOrdersError(String(error?.message || 'No se pudieron cargar pedidos del cliente.'));
+        } finally {
+            setCustomerOrdersLoading(false);
         }
     }, [requestJson]);
 
@@ -4024,6 +4145,15 @@ function CustomersSection(props = {}) {
         resetAddressEditor();
     }, [resetAddressEditor, selectedCustomerIdResolved]);
 
+    useEffect(() => {
+        if (!isCustomersSection || customerPanelMode === 'create' || !selectedCustomerChatId) {
+            setCustomerOrders([]);
+            setCustomerOrdersError('');
+            return;
+        }
+        loadCustomerOrdersByChat(selectedCustomerChatId);
+    }, [customerPanelMode, isCustomersSection, loadCustomerOrdersByChat, selectedCustomerChatId]);
+
     if (!isCustomersSection) {
         return null;
     }
@@ -4131,6 +4261,61 @@ function CustomersSection(props = {}) {
                         <p>Este cliente no tiene direcciones registradas.</p>
                     </div>
                 )}
+            </div>
+        );
+    };
+
+    const renderCustomerOrdersContent = () => {
+        if (customerOrdersLoading) {
+            return <p>Cargando pedidos del cliente...</p>;
+        }
+        if (customerOrdersError) {
+            return <div className="saas-admin-inline-feedback error">{customerOrdersError}</div>;
+        }
+        if (!selectedCustomerChatId) {
+            return <p>No hay telefono valido para buscar pedidos en el sistema.</p>;
+        }
+        if (!customerOrders.length) {
+            return <p>Este cliente aun no tiene pedidos registrados en el sistema.</p>;
+        }
+
+        return (
+            <div className="saas-customers-orders-list">
+                {customerOrders.slice(0, 6).map((order) => {
+                    const statusMeta = getCustomerOrderStatusMeta(order?.status);
+                    return (
+                        <div key={order?.orderId || order?.order_id} className="saas-customers-order-item">
+                            <div>
+                                <strong>{order?.orderId || order?.order_id || 'Pedido'}</strong>
+                                <small>{formatCustomerDateLabel(order?.createdAt || order?.created_at)}</small>
+                            </div>
+                            <div>
+                                <strong>{formatCustomerMoneyLabel(order?.totalAmount ?? order?.total_amount)}</strong>
+                                <span className={`saas-customers-order-status ${statusMeta.className}`}>{statusMeta.label}</span>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    };
+
+    const renderCustomerTagsContent = () => {
+        const tags = Array.isArray(selectedCustomer?.tags)
+            ? selectedCustomer.tags.map((tag) => String(tag || '').trim()).filter(Boolean)
+            : [];
+        return (
+            <div className="saas-customers-tags-block">
+                <div className="saas-customers-tag-list">
+                    {tags.length > 0
+                        ? tags.map((tag) => <span key={`customer-tag-${tag}`} className="saas-customers-tag-chip">{tag}</span>)
+                        : <span className="saas-customers-empty-chip">Sin etiquetas</span>}
+                </div>
+                {canManageCustomers ? (
+                    <button type="button" className="saas-btn-cancel" disabled={busy} onClick={handleOpenCustomerEdit}>
+                        + Agregar etiqueta
+                    </button>
+                ) : null}
             </div>
         );
     };
@@ -4577,65 +4762,120 @@ function CustomersSection(props = {}) {
                         </div>
                     )}
                 >
-                    <SaasDetailPanelSection title="Datos personales" defaultOpen>
-                        {(() => {
-                            const nameParts = buildNamePartsFromCustomer(selectedCustomer);
-                            return (
-                                <div className="saas-customers-kv-grid">
-                                    <div><span>Nombre completo</span><strong>{buildCustomerDisplayName(selectedCustomer)}</strong></div>
-                                    <div><span>Nombres</span><strong>{nameParts.firstName || '-'}</strong></div>
-                                    <div><span>Apellido paterno</span><strong>{nameParts.lastNamePaternal || '-'}</strong></div>
-                                    <div><span>Apellido materno</span><strong>{nameParts.lastNameMaternal || '-'}</strong></div>
-                                    <div><span>Tipo de cliente</span><strong>{buildCustomerTypeLabel(selectedCustomer, customerLabelMaps)}</strong></div>
-                                    <div><span>Fuente</span><strong>{buildAcquisitionSourceLabel(selectedCustomer, customerLabelMaps)}</strong></div>
-                                    <div><span>Tratamiento</span><strong>{buildTreatmentLabel(selectedCustomer, customerLabelMaps)}</strong></div>
-                                    <div><span>Estado</span><strong>{selectedCustomer?.isActive === false ? 'Inactivo' : 'Activo'}</strong></div>
+                    {(() => {
+                        const nameParts = buildNamePartsFromCustomer(selectedCustomer);
+                        const segment = String(selectedCustomer?.segmento || selectedCustomer?.segmento_final || '').trim();
+                        const profile = selectedCustomer?.profile && typeof selectedCustomer.profile === 'object' ? selectedCustomer.profile : {};
+                        const metadata = selectedCustomer?.metadata && typeof selectedCustomer.metadata === 'object' ? selectedCustomer.metadata : {};
+                        const whatsappMeta = metadata.whatsapp && typeof metadata.whatsapp === 'object' ? metadata.whatsapp : {};
+                        const firstInteractionAt = (Array.isArray(moduleContexts) ? moduleContexts : [])
+                            .map((item) => String(item?.firstInteractionAt || '').trim())
+                            .filter(Boolean)
+                            .sort((a, b) => String(a).localeCompare(String(b)))[0] || selectedCustomer?.createdAt || selectedCustomer?.created_at || '';
+                        const archivedValue = selectedCustomer?.archived ?? metadata.archived ?? whatsappMeta.archived;
+                        const isMyContactValue = selectedCustomer?.isMyContact ?? metadata.isMyContact ?? whatsappMeta.isMyContact;
+                        return (
+                            <>
+                                <div className="saas-customers-profile-hero">
+                                    <div className="saas-customers-profile-avatar">{buildCustomerInitials(selectedCustomer)}</div>
+                                    <div className="saas-customers-profile-main">
+                                        <strong>{buildCustomerDisplayName(selectedCustomer)}</strong>
+                                        <span>{formatCustomerPhoneLabel(selectedCustomerPhone)}</span>
+                                        <div className="saas-customers-profile-badges">
+                                            {segment ? <span className={`saas-customers-segment-badge ${getSegmentBadgeClass(segment)}`}>{segment}</span> : null}
+                                            <span className="saas-customers-state-chip">{selectedCustomer?.isActive === false ? 'Inactivo' : 'Activo'}</span>
+                                        </div>
+                                    </div>
                                 </div>
-                            );
-                        })()}
-                    </SaasDetailPanelSection>
 
-                    <SaasDetailPanelSection title="Contacto" defaultOpen>
-                        <div className="saas-customers-kv-grid">
-                            <div><span>Telefono</span><strong>{selectedCustomer?.phoneE164 || '-'}</strong></div>
-                            <div><span>Telefono 2</span><strong>{selectedCustomer?.phoneAlt || '-'}</strong></div>
-                            <div><span>Email</span><strong>{selectedCustomer?.email || '-'}</strong></div>
-                            <div><span>Etiquetas</span><strong>{Array.isArray(selectedCustomer?.tags) ? selectedCustomer.tags.join(', ') : '-'}</strong></div>
-                            <div><span>Actualizado</span><strong>{formatDateTimeLabel(selectedCustomer?.updatedAt)}</strong></div>
-                        </div>
-                        <div className="saas-admin-form-row">
-                            <label className="saas-admin-module-toggle" style={{ minWidth: 220 }}>
-                                <span>Idioma preferido</span>
-                            </label>
-                            <select
-                                value={selectedPreferredLanguage}
-                                onChange={(event) => {
-                                    handlePreferredLanguageChange(event.target.value);
-                                }}
-                                disabled={busy || languageBusy || !canManageCustomers}
-                            >
-                                <option value="es">Espanol (es)</option>
-                                <option value="en">Ingles (en)</option>
-                                <option value="pt">Portugues (pt)</option>
-                            </select>
-                        </div>
-                    </SaasDetailPanelSection>
+                                <SaasDetailPanelSection title="Identificacion" defaultOpen>
+                                    <div className="saas-customers-kv-grid">
+                                        <div><span>Nombre completo</span><strong>{buildCustomerDisplayName(selectedCustomer)}</strong></div>
+                                        <div><span>Telefono principal</span><strong>{formatCustomerPhoneLabel(selectedCustomerPhone)}</strong></div>
+                                        <div><span>Codigo sistema</span><strong>{selectedCustomer?.customerId || '-'}</strong></div>
+                                        <div><span>Codigo ERP</span><strong>{selectedCustomer?.erpId || selectedCustomer?.erp_id || '-'}</strong></div>
+                                        <div><span>Nombre ERP</span><strong>{selectedCustomer?.contactName || '-'}</strong></div>
+                                        <div><span>Telefono ERP</span><strong>{formatCustomerPhoneLabel(selectedCustomer?.phoneE164 || selectedCustomer?.phone_e164 || '')}</strong></div>
+                                        <div><span>Nombres</span><strong>{nameParts.firstName || '-'}</strong></div>
+                                        <div><span>Apellidos</span><strong>{[nameParts.lastNamePaternal, nameParts.lastNameMaternal].filter((entry) => entry && entry !== '-').join(' ') || '-'}</strong></div>
+                                        <div><span>Documento</span><strong>{selectedCustomer?.documentNumber || readProfileValue(profile, 'documentNumber', 'numeroDocumentoIdentidad', 'document_number') || '-'}</strong></div>
+                                        <div><span>Tipo documento</span><strong>{buildDocumentTypeLabel(selectedCustomer, customerLabelMaps)}</strong></div>
+                                    </div>
+                                </SaasDetailPanelSection>
 
-                    <SaasDetailPanelSection title="Documento" defaultOpen>
-                        <div className="saas-customers-kv-grid">
-                            <div><span>Documento</span><strong>{selectedCustomer?.documentNumber || readProfileValue(selectedCustomer?.profile, 'documentNumber', 'numeroDocumentoIdentidad', 'document_number') || '-'}</strong></div>
-                            <div><span>Tipo documento</span><strong>{buildDocumentTypeLabel(selectedCustomer, customerLabelMaps)}</strong></div>
-                            <div><span>Notas</span><strong>{selectedCustomer?.notes || readProfileValue(selectedCustomer?.profile, 'notes', 'observacionCliente', 'observacion_cliente') || '-'}</strong></div>
-                        </div>
-                    </SaasDetailPanelSection>
+                                <SaasDetailPanelSection title="Historial de compras ERP" defaultOpen>
+                                    <div className="saas-customers-kv-grid">
+                                        <div><span>Ultima compra</span><strong>{formatCustomerDateLabel(selectedCustomer?.ultimaFechaCompra || selectedCustomer?.ultima_fecha_compra)}</strong></div>
+                                        <div><span>Ultimo pedido</span><strong>{selectedCustomer?.ultimoPedidoId || selectedCustomer?.ultimo_pedido_id || '-'}</strong></div>
+                                        <div><span>Total compras</span><strong>{formatCustomerNumberLabel(selectedCustomer?.comprasTotal ?? selectedCustomer?.compras_total)}</strong></div>
+                                        <div><span>Monto acumulado</span><strong>{formatCustomerMoneyLabel(selectedCustomer?.montoAcumulado ?? selectedCustomer?.monto_acumulado)}</strong></div>
+                                        <div><span>Ticket prom. 180d</span><strong>{formatCustomerMoneyLabel(selectedCustomer?.ticketProm180 ?? selectedCustomer?.ticket_prom_180)}</strong></div>
+                                        <div><span>Compras 120d</span><strong>{`${formatCustomerNumberLabel(selectedCustomer?.compras120 ?? selectedCustomer?.compras_120)} · ${formatCustomerMoneyLabel(selectedCustomer?.monto120 ?? selectedCustomer?.monto_120)}`}</strong></div>
+                                        <div><span>Compras 180d</span><strong>{`${formatCustomerNumberLabel(selectedCustomer?.compras180 ?? selectedCustomer?.compras_180)} · ${formatCustomerMoneyLabel(selectedCustomer?.monto180 ?? selectedCustomer?.monto_180)}`}</strong></div>
+                                        <div><span>Dias ult. compra</span><strong>{formatCustomerNumberLabel(selectedCustomer?.diasUltimaCompra ?? selectedCustomer?.dias_ultima_compra)}</strong></div>
+                                        <div><span>Segmento</span><strong>{segment ? <span className={`saas-customers-segment-badge ${getSegmentBadgeClass(segment)}`}>{segment}</span> : '-'}</strong></div>
+                                        <div><span>Cadencia prom.</span><strong>{formatCustomerNumberLabel(selectedCustomer?.cadenciaPromDias ?? selectedCustomer?.cadencia_prom_dias)}</strong></div>
+                                    </div>
+                                </SaasDetailPanelSection>
 
-                    <SaasDetailPanelSection title="Direcciones" defaultOpen>
-                        {renderAddressesContent()}
-                    </SaasDetailPanelSection>
+                                <SaasDetailPanelSection title="Contacto" defaultOpen>
+                                    <div className="saas-customers-kv-grid">
+                                        <div><span>Email</span><strong>{selectedCustomer?.email || '-'}</strong></div>
+                                        <div><span>Telefono 2</span><strong>{formatCustomerPhoneLabel(selectedCustomer?.phoneAlt || selectedCustomer?.phone_alt || '')}</strong></div>
+                                        <div><span>Idioma</span><strong>{buildLanguageLabel(selectedCustomer)}</strong></div>
+                                        <div><span>Tipo</span><strong>{buildCustomerTypeLabel(selectedCustomer, customerLabelMaps)}</strong></div>
+                                        <div><span>Fuente</span><strong>{buildAcquisitionSourceLabel(selectedCustomer, customerLabelMaps)}</strong></div>
+                                        <div><span>Responsable</span><strong>{selectedCustomer?.erpEmployeeId || selectedCustomer?.erp_employee_id || '-'}</strong></div>
+                                        <div><span>Autorizacion marketing</span><strong>{buildMarketingOptInLabel(selectedCustomer)}</strong></div>
+                                        <div><span>Actualizado</span><strong>{formatDateTimeLabel(selectedCustomer?.updatedAt)}</strong></div>
+                                        <div><span>Notas</span><strong>{selectedCustomer?.notes || readProfileValue(profile, 'notes', 'observacionCliente', 'observacion_cliente') || '-'}</strong></div>
+                                        <div><span>Tratamiento</span><strong>{buildTreatmentLabel(selectedCustomer, customerLabelMaps)}</strong></div>
+                                    </div>
+                                    <div className="saas-admin-form-row">
+                                        <label className="saas-admin-module-toggle" style={{ minWidth: 220 }}>
+                                            <span>Idioma preferido</span>
+                                        </label>
+                                        <select
+                                            value={selectedPreferredLanguage}
+                                            onChange={(event) => {
+                                                handlePreferredLanguageChange(event.target.value);
+                                            }}
+                                            disabled={busy || languageBusy || !canManageCustomers}
+                                        >
+                                            <option value="es">Espanol (es)</option>
+                                            <option value="en">Ingles (en)</option>
+                                            <option value="pt">Portugues (pt)</option>
+                                        </select>
+                                    </div>
+                                </SaasDetailPanelSection>
 
-                    <SaasDetailPanelSection title="Contextos por modulo" defaultOpen>
-                        {renderModuleContextsContent()}
-                    </SaasDetailPanelSection>
+                                <SaasDetailPanelSection title="Direcciones ERP" defaultOpen>
+                                    {renderAddressesContent()}
+                                </SaasDetailPanelSection>
+
+                                <SaasDetailPanelSection title="Pedidos en sistema" defaultOpen>
+                                    {renderCustomerOrdersContent()}
+                                </SaasDetailPanelSection>
+
+                                <SaasDetailPanelSection title="Etiquetas" defaultOpen>
+                                    {renderCustomerTagsContent()}
+                                </SaasDetailPanelSection>
+
+                                <SaasDetailPanelSection title="Estado del chat" defaultOpen>
+                                    <div className="saas-customers-kv-grid">
+                                        <div><span>Archivado</span><strong>{archivedValue === true ? 'Si' : archivedValue === false ? 'No' : '-'}</strong></div>
+                                        <div><span>Guardado en WA</span><strong>{isMyContactValue === true ? 'Si' : isMyContactValue === false ? 'No' : '-'}</strong></div>
+                                        <div><span>Primera interaccion</span><strong>{formatDateTimeLabel(firstInteractionAt)}</strong></div>
+                                        <div><span>ERP visto por ultima vez</span><strong>{formatDateTimeLabel(selectedCustomer?.erpLastSeenAt || selectedCustomer?.erp_last_seen_at)}</strong></div>
+                                    </div>
+                                </SaasDetailPanelSection>
+
+                                <SaasDetailPanelSection title="Contextos por modulo" defaultOpen>
+                                    {renderModuleContextsContent()}
+                                </SaasDetailPanelSection>
+                            </>
+                        );
+                    })()}
                 </SaasDetailPanel>
             ) : (
                 <SaasDetailPanel

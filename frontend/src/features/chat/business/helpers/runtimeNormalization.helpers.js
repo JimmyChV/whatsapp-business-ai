@@ -89,24 +89,6 @@ export const normalizeCatalogItem = (item = {}, index = 0) => {
   };
 };
 
-export const normalizeProfilePhotoUrl = (rawUrl = '', apiUrl = '') => {
-  const value = String(rawUrl || '').trim();
-  const baseApiUrl = String(apiUrl || '').trim();
-  if (!value) return null;
-  if (value.startsWith('data:') || value.startsWith('blob:')) return value;
-
-  if (value.includes('/api/profile-photo?url=')) {
-    if (/^https?:\/\//i.test(value)) return value;
-    if (!baseApiUrl) return value;
-    if (value.startsWith('/')) return `${baseApiUrl}${value}`;
-    return `${baseApiUrl}/${value}`;
-  }
-
-  if (!/^https?:\/\//i.test(value)) return value;
-  if (!baseApiUrl) return value;
-  return `${baseApiUrl}/api/profile-photo?url=${encodeURIComponent(value)}`;
-};
-
 export const normalizeModuleImageUrl = (rawUrl = '', apiUrl = '') => {
   const value = String(rawUrl || '').trim();
   const baseApiUrl = String(apiUrl || '').trim();
@@ -120,10 +102,7 @@ export const normalizeModuleImageUrl = (rawUrl = '', apiUrl = '') => {
 
 export const normalizeProfilePayload = (profile = null, apiUrl = '') => {
   if (!profile || typeof profile !== 'object') return null;
-  return {
-    ...profile,
-    profilePicUrl: normalizeProfilePhotoUrl(profile.profilePicUrl, apiUrl)
-  };
+  return { ...profile };
 };
 
 export const normalizeBusinessDataPayload = (data = {}, apiUrl = '') => {
@@ -156,8 +135,8 @@ export const normalizeWaModuleItem = (item = {}, apiUrl = '') => {
     isDefault: source.isDefault === true,
     isSelected: source.isSelected === true,
     channelType: String(source.channelType || source.channel || '').trim().toLowerCase() || null,
-    imageUrl: normalizeModuleImageUrl(source.imageUrl || source.logoUrl || source.avatarUrl || '', apiUrl) || null,
-    logoUrl: normalizeModuleImageUrl(source.logoUrl || source.imageUrl || source.avatarUrl || '', apiUrl) || null,
+    imageUrl: normalizeModuleImageUrl(source.imageUrl || source.logoUrl || '', apiUrl) || null,
+    logoUrl: normalizeModuleImageUrl(source.logoUrl || source.imageUrl || '', apiUrl) || null,
     scheduleId,
     aiConfig,
     metadata: {

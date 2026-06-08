@@ -20,7 +20,6 @@ function createSocketChatListService({
     extractPhoneFromChat,
     isVisibleChatId,
     isLidIdentifier,
-    resolveProfilePic,
     coerceHumanPhone,
     resolveRegisteredNumber,
     toLabelTokenSet,
@@ -581,17 +580,13 @@ function createSocketChatListService({
 
     const hydrateChatMeta = async (chat) => {
         const chatId = chat?.id?._serialized;
-        if (!chatId || !isVisibleChatId(chatId)) return { labels: [], profilePicUrl: null };
+        if (!chatId || !isVisibleChatId(chatId)) return { labels: [] };
 
         const cached = getCachedChatMeta(chatId);
-        if (cached) return { labels: Array.isArray(cached.labels) ? cached.labels : [], profilePicUrl: cached.profilePicUrl };
-
-        let profilePicUrl = null;
-        try { profilePicUrl = await resolveProfilePic(waClient.client, chatId); } catch (e) { }
+        if (cached) return { labels: Array.isArray(cached.labels) ? cached.labels : [] };
 
         const normalized = {
             labels: [],
-            profilePicUrl,
             updatedAt: Date.now()
         };
         const chatMetaCache = runtimeStore.get('chatMetaCache', new Map());
@@ -645,7 +640,6 @@ function createSocketChatListService({
                     lastMessageFromMe: false,
                     ack: 0,
                     labels: [],
-                    profilePicUrl: null,
                     isMyContact: Boolean(c?.isMyContact)
                 };
             })
@@ -887,11 +881,9 @@ function createSocketChatListService({
         if (!isVisibleChatId(chatId)) return null;
 
         const cached = getCachedChatMeta(chatId);
-        let profilePicUrl = cached?.profilePicUrl || null;
 
         if (includeHeavyMeta || !cached) {
-            const hydrated = await hydrateChatMeta(chat);
-            profilePicUrl = hydrated.profilePicUrl;
+            await hydrateChatMeta(chat);
         }
 
         let contact = chat?.contact || null;
@@ -956,7 +948,6 @@ function createSocketChatListService({
             lastMessageFromMe: chat.lastMessage ? chat.lastMessage.fromMe : false,
             ack: chat.lastMessage ? chat.lastMessage.ack : 0,
             labels,
-            profilePicUrl,
             isMyContact: Boolean(contact?.isMyContact),
             customerId: erpCustomer?.customerId || null,
             erpCustomerName: erpCustomer ? resolveChatDisplayName({ ...effectiveChat, erpCustomer }) : null,
@@ -1130,7 +1121,6 @@ function createSocketChatListService({
                                 lastMessageFromMe: false,
                                 ack: 0,
                                 labels: [],
-                                profilePicUrl: null,
                                 isMyContact: false
                             }];
                         }
@@ -1233,14 +1223,14 @@ function createSocketChatListService({
                     filterKey
                 });
 
-                // Hydrate photos/labels progressively in background to keep first paint fast.
+                // Hydrate tenant labels progressively in background to keep first paint fast.
                 const pendingMetaChats = page
                     .filter((chat) => {
                         const chatId = String(chat?.id?._serialized || '');
                         if (!chatId || !isVisibleChatId(chatId)) return false;
                         const cached = getCachedChatMeta(chatId);
                         if (!cached) return true;
-                        return !cached.profilePicUrl || !Array.isArray(cached.labels);
+                        return !Array.isArray(cached.labels);
                     })
                     .slice(0, 24);
 

@@ -98,60 +98,6 @@ function resolveChatDisplayName(chat) {
     return 'Sin nombre';
 }
 
-function buildProfilePicCandidates(rawId, extraCandidates = []) {
-    const out = [];
-    const push = (value) => {
-        const text = String(value || '').trim();
-        if (!text) return;
-        if (!out.includes(text)) out.push(text);
-        if (!text.includes('@')) {
-            const digits = text.replace(/\D/g, '');
-            if (digits && !out.includes(`${digits}@c.us`)) out.push(`${digits}@c.us`);
-        } else {
-            const localPart = text.split('@')[0] || '';
-            const digits = localPart.replace(/\D/g, '');
-            if (digits && !out.includes(`${digits}@c.us`)) out.push(`${digits}@c.us`);
-        }
-    };
-
-    push(rawId);
-    (Array.isArray(extraCandidates) ? extraCandidates : []).forEach(push);
-    return out;
-}
-
-async function resolveProfilePic(client, chatOrContactId, extraCandidates = []) {
-    const candidates = buildProfilePicCandidates(chatOrContactId, extraCandidates);
-
-    for (const candidate of candidates) {
-        try {
-            const direct = await client.getProfilePicUrl(candidate);
-            if (direct) return direct;
-        } catch (e) {}
-    }
-
-    for (const candidate of candidates) {
-        try {
-            const contact = await client.getContactById(candidate);
-            if (contact?.getProfilePicUrl) {
-                const fromContact = await contact.getProfilePicUrl();
-                if (fromContact) return fromContact;
-            }
-        } catch (e) {}
-    }
-
-    for (const candidate of candidates) {
-        try {
-            const chat = await client.getChatById(candidate);
-            if (chat?.contact?.getProfilePicUrl) {
-                const fromChatContact = await chat.contact.getProfilePicUrl();
-                if (fromChatContact) return fromChatContact;
-            }
-        } catch (e) {}
-    }
-
-    return null;
-}
-
 function truncateDisplayValue(value = '', maxLen = 260) {
     const text = String(value ?? '');
     if (text.length <= maxLen) return text;
@@ -305,8 +251,6 @@ module.exports = {
     buildPrimaryLocationLabel,
     resolveChatDisplayName,
     resolveChatSubtitle,
-    buildProfilePicCandidates,
-    resolveProfilePic,
     truncateDisplayValue,
     snapshotSerializable,
     normalizeBusinessDetailsSnapshot,

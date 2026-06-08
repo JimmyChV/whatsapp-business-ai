@@ -61,21 +61,6 @@ export const normalizeCatalogItem = (item = {}, index = 0) => {
   };
 };
 
-export const normalizeProfilePhotoUrl = (rawUrl = '') => {
-  const value = String(rawUrl || '').trim();
-  if (!value) return null;
-  if (value.startsWith('data:') || value.startsWith('blob:')) return value;
-
-  if (value.includes('/api/profile-photo?url=')) {
-    if (/^https?:\/\//i.test(value)) return value;
-    if (value.startsWith('/')) return `${API_URL}${value}`;
-    return `${API_URL}/${value}`;
-  }
-
-  if (!/^https?:\/\//i.test(value)) return value;
-  return `${API_URL}/api/profile-photo?url=${encodeURIComponent(value)}`;
-};
-
 export const normalizeModuleImageUrl = (rawUrl = '') => {
   const value = String(rawUrl || '').trim();
   if (!value) return null;
@@ -86,10 +71,7 @@ export const normalizeModuleImageUrl = (rawUrl = '') => {
 };
 export const normalizeProfilePayload = (profile = null) => {
   if (!profile || typeof profile !== 'object') return null;
-  return {
-    ...profile,
-    profilePicUrl: normalizeProfilePhotoUrl(profile.profilePicUrl)
-  };
+  return { ...profile };
 };
 
 export const normalizeBusinessDataPayload = (data = {}) => {
@@ -122,8 +104,8 @@ export const normalizeWaModuleItem = (item = {}) => {
     isDefault: source.isDefault === true,
     isSelected: source.isSelected === true,
     channelType: String(source.channelType || source.channel || '').trim().toLowerCase() || null,
-    imageUrl: normalizeModuleImageUrl(source.imageUrl || source.logoUrl || source.avatarUrl || '') || null,
-    logoUrl: normalizeModuleImageUrl(source.logoUrl || source.imageUrl || source.avatarUrl || '') || null,
+    imageUrl: normalizeModuleImageUrl(source.imageUrl || source.logoUrl || '') || null,
+    logoUrl: normalizeModuleImageUrl(source.logoUrl || source.imageUrl || '') || null,
     scheduleId,
     aiConfig,
     metadata: {

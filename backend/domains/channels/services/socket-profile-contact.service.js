@@ -4,7 +4,6 @@ function createSocketProfileContactService({
     customerService,
     customerAddressesService,
     messageHistoryService,
-    resolveProfilePic,
     normalizeBusinessDetailsSnapshot,
     extractContactSnapshot,
     extractChatSnapshot,
@@ -54,19 +53,11 @@ function createSocketProfileContactService({
                 const me = waClient.client.info || {};
                 const meId = me?.wid?._serialized || null;
                 let meContact = null;
-                let profilePicUrl = null;
                 let businessProfile = null;
                 let aboutStatus = null;
 
                 try {
                     if (meId) meContact = await waClient.client.getContactById(meId);
-                } catch (e) { }
-                try {
-                    profilePicUrl = await resolveProfilePic(waClient.client, meId, [
-                        me?.wid?.user,
-                        meContact?.id?._serialized,
-                        meContact?.number
-                    ]);
                 } catch (e) { }
                 try {
                     businessProfile = await waClient.getBusinessProfile(meId);
@@ -87,7 +78,6 @@ function createSocketProfileContactService({
                     phone: me?.wid?.user || meContact?.number || null,
                     id: meId,
                     platform: me?.platform || null,
-                    profilePicUrl,
                     status: aboutStatus || null,
                     isBusiness: Boolean(meContact?.isBusiness ?? true),
                     isEnterprise: Boolean(meContact?.isEnterprise),
@@ -123,7 +113,6 @@ function createSocketProfileContactService({
 
                 const contact = await waClient.client.getContactById(safeContactId);
                 let chat = null;
-                let profilePicUrl = null;
                 let status = null;
                 let businessProfile = null;
 
@@ -131,15 +120,6 @@ function createSocketProfileContactService({
                     chat = await waClient.client.getChatById(safeContactId);
                 } catch (e) { }
 
-                try {
-                    profilePicUrl = await resolveProfilePic(waClient.client, safeContactId, [
-                        contact?.id?._serialized,
-                        contact?.number,
-                        contact?.number ? `${contact.number}@c.us` : null,
-                        chat?.id?._serialized,
-                        chat?.contact?.id?._serialized
-                    ]);
-                } catch (e) { }
                 try {
                     const statusObj = await contact.getAbout();
                     status = statusObj;
@@ -203,8 +183,7 @@ function createSocketProfileContactService({
                     shortName: contact?.shortName || null,
                     verifiedName: contact?._data?.verifiedName || null,
                     verifiedLevel: contact?._data?.verifiedLevel || null,
-                    profilePicUrl,
-                    hasProfilePic: Boolean(profilePicUrl),
+                    hasProfilePic: false,
                     status,
                     isBusiness: Boolean(contact?.isBusiness),
                     isEnterprise: Boolean(contact?.isEnterprise),

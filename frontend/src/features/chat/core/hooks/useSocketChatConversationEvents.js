@@ -152,7 +152,6 @@ export default function useSocketChatConversationEvents({
     getMessagePreviewText = getMessagePreviewTextFallback,
     getBestChatPhone,
     normalizeChatLabels,
-    normalizeProfilePhotoUrl,
     normalizeModuleImageUrl,
     chatMatchesFilters,
     setChats,
@@ -639,7 +638,6 @@ export default function useSocketChatConversationEvents({
                             if (Array.isArray(existing) && existing.length > 0) return existing;
                             return Array.isArray(incoming) ? incoming : [];
                         })(),
-                        profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl || previous?.profilePicUrl || ''),
                         isMyContact: chat?.isMyContact === true || previous?.isMyContact === true,
                         customerId: String(chat?.customerId || previous?.customerId || '').trim() || null,
                         erpCustomerName: String(chat?.erpCustomerName || previous?.erpCustomerName || '').trim() || null,
@@ -751,7 +749,6 @@ export default function useSocketChatConversationEvents({
                     ? Number(chat?.ack)
                     : (Number.isFinite(Number(previous?.ack)) ? Number(previous?.ack) : 0),
                 labels: normalizeChatLabels(chat.labels),
-                profilePicUrl: normalizeProfilePhotoUrl(chat?.profilePicUrl || previous?.profilePicUrl || ''),
                 isMyContact: chat?.isMyContact === true || previous?.isMyContact === true,
                 customerId: String(chat?.customerId || previous?.customerId || '').trim() || null,
                 erpCustomerName: String(chat?.erpCustomerName || previous?.erpCustomerName || '').trim() || null,
@@ -1333,7 +1330,6 @@ export default function useSocketChatConversationEvents({
                 name: sanitizeDisplayText(erpDisplayName || toTitleCaseChatText(contact?.name || contact?.pushname || '')),
                 pushname: sanitizeDisplayText(toTitleCaseChatText(contact?.pushname || '')),
                 shortName: sanitizeDisplayText(toTitleCaseChatText(contact?.shortName || '')),
-                profilePicUrl: normalizeProfilePhotoUrl(contact?.profilePicUrl),
                 status: repairMojibake(contact?.status || ''),
                 windowOpen: Boolean(contact?.windowOpen),
                 windowExpiresAt: String(contact?.windowExpiresAt || '').trim() || null,
@@ -1374,7 +1370,6 @@ export default function useSocketChatConversationEvents({
                         : (existing?.name || (contactPhone ? ('+' + contactPhone) : 'Contacto')),
                     subtitle: subtitleName || existing?.subtitle || null,
                     status: normalizedContact.status || existing?.status || '',
-                    profilePicUrl: normalizedContact.profilePicUrl || existing?.profilePicUrl || null,
                     participants: normalizedContact.participants || existing?.participants || 0,
                     participantsList: normalizedContact.participantsList || existing?.participantsList || [],
                     customerId: erpCustomer?.customerId || existing?.customerId || null,

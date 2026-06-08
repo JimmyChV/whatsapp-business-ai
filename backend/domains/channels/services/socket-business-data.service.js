@@ -10,7 +10,6 @@ function createSocketBusinessDataService({
     loadCatalog,
     getWooCatalog,
     isWooConfigured,
-    resolveProfilePic,
     normalizeBusinessDetailsSnapshot,
     extractContactSnapshot,
     snapshotSerializable,
@@ -272,20 +271,12 @@ function createSocketBusinessDataService({
                 const me = waClient.client.info;
                 const meId = me.wid._serialized;
 
-                // Real profile from WA account info
+                // Business profile metadata only; WhatsApp profile photos are intentionally not exposed.
                 let meContact = null;
-                let profilePicUrl = null;
                 let businessProfile = null;
                 let aboutStatus = null;
                 try {
                     if (meId) meContact = await waClient.client.getContactById(meId);
-                } catch (e) { }
-                try {
-                    profilePicUrl = await resolveProfilePic(waClient.client, meId, [
-                        me?.wid?.user,
-                        meContact?.id?._serialized,
-                        meContact?.number
-                    ]);
                 } catch (e) { }
                 try { businessProfile = await waClient.getBusinessProfile(meId); } catch (e) { }
                 try {
@@ -309,7 +300,6 @@ function createSocketBusinessDataService({
                     isMe: Boolean(meContact?.isMe ?? true),
                     isWAContact: Boolean(meContact?.isWAContact ?? true),
                     status: aboutStatus || null,
-                    profilePicUrl,
                     businessHours: businessDetails?.businessHours || null,
                     category: businessDetails?.category || null,
                     email: businessDetails?.email || null,
