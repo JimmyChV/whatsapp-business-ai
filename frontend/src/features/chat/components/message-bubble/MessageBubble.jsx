@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import moment from 'moment';
-import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, ChevronDown, Download, SmilePlus, Clock3, AlertCircle, RotateCcw, AlertTriangle, Copy } from 'lucide-react';
+import { Check, CheckCheck, ShoppingBag, Pencil, MapPin, ExternalLink, Reply, Forward, MoreHorizontal, Download, SmilePlus, Clock3, AlertCircle, RotateCcw, AlertTriangle, Copy } from 'lucide-react';
 import {
     renderWhatsAppFormattedText,
     formatOrderMoney,
@@ -301,6 +301,7 @@ const MessageBubble = ({
     const [templateHeaderImageFailed, setTemplateHeaderImageFailed] = useState(false);
     const [locationMapsApiKey, setLocationMapsApiKey] = useState(locationMapsApiKeyCache);
     const bubbleRef = useRef(null);
+    const longPressTimerRef = useRef(null);
     const reactionOptions = ['👍', '❤️', '😂', '😮', '😢', '🙏'].map((emoji) => {
         const variants = REACTION_TONE_VARIANTS[emoji];
         return variants?.[preferredSkinTone] || emoji;
@@ -392,6 +393,13 @@ const MessageBubble = ({
             document.removeEventListener('keydown', handleEscape);
         };
     }, [showActionsMenu, showReactionPicker]);
+
+    useEffect(() => () => {
+        if (longPressTimerRef.current) {
+            window.clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+        }
+    }, []);
 
     useEffect(() => {
         if (typeof window === 'undefined') {
@@ -517,9 +525,30 @@ const MessageBubble = ({
     });
     const canReplyMessage = canReplyMessageBase && typeof onReplyMessage === 'function';
     const sourceMessageId = String(msg?.id || '').trim();
+    const copyableText = String(messageTextToRender || msg?.body || '').trim();
+    const canCopyMessage = Boolean(copyableText);
+    const canForwardContent = Boolean(
+        copyableText
+        || (isImageMedia && (mediaImageSrc || mediaDataUrl || mediaUrl))
+    );
+    const isForwardBlockedPayload = Boolean(
+        isAutoMessage
+        || isCatalogItem
+        || isExplicitCatalogProduct
+        || isCatalogCaptionProduct
+        || hasOrder
+        || isOrderActionable
+        || isProductPayload
+        || isOrderPayload
+        || isQuotePayload
+        || isUnrecognizedOrderPayload
+        || shouldRenderTemplateBubble
+    );
     const canForwardMessage = canForwardMessageBase
         && sourceMessageId
-        && typeof onStartForwardMode === 'function';
+        && typeof onStartForwardMode === 'function'
+        && canForwardContent
+        && !isForwardBlockedPayload;
 
     const handleEditClick = () => {
         if (!canEditMessage || typeof onEditMessage !== 'function') return;
@@ -547,10 +576,47 @@ const MessageBubble = ({
         : [];
     const hasReactionSummary = reactionSummary.length > 0;
     const canSendReaction = typeof onSendReaction === 'function' && Boolean(String(msg?.id || '').trim());
-    const copyableText = String(messageTextToRender || msg?.body || '').trim();
-    const canCopyMessage = Boolean(copyableText);
-
-    const hasMenuActions = Boolean(canReplyMessage || canForwardMessage || canEditMessage || canCopyMessage);
+    const hasMenuActions = Boolean(canReplyMessage || canForwardMessage || canEditMessage || canCopyMessage || canSendReaction);
+    const actionPreviewMediaSrc = isImageMedia ? (mediaImageSrc || mediaDataUrl || mediaUrl || '') : '';
+    const actionPreviewText = copyableText || (actionPreviewMediaSrc ? 'Imagen' : (isVideoMedia ? 'Video' : 'Mensaje'));
+    const isMobileViewport = () => (
+        typeof window !== 'undefined'
+        && typeof window.innerWidth === 'number'
+        && window.innerWidth < 769
+    );
+    const isInteractiveTarget = (target) => Boolean(
+        target?.closest?.('button,a,input,textarea,select,[role="button"],.message-action-sheet,.message-reaction-picker')
+    );
+    const clearMobileLongPress = () => {
+        if (longPressTimerRef.current && typeof window !== 'undefined') {
+            window.clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+        }
+    };
+    const openMobileActionSheet = () => {
+        if (!hasMenuActions || forwardMode) return;
+        setShowReactionPicker(false);
+        setShowActionsMenu(true);
+    };
+    const handleBubblePointerDown = (event) => {
+        if (!hasMenuActions || forwardMode || !isMobileViewport()) return;
+        if (event.pointerType && event.pointerType !== 'touch') return;
+        if (isInteractiveTarget(event.target)) return;
+        clearMobileLongPress();
+        longPressTimerRef.current = window.setTimeout(openMobileActionSheet, 500);
+    };
+    const handleBubbleContextMenu = (event) => {
+        if (!hasMenuActions || forwardMode || !isMobileViewport()) return;
+        event.preventDefault();
+        clearMobileLongPress();
+        openMobileActionSheet();
+    };
+    const handleBubbleClick = (event) => {
+        if (!forwardMode || !canForwardMessage) return;
+        if (isInteractiveTarget(event.target)) return;
+        event.stopPropagation();
+        if (typeof onToggleForwardMessage === 'function') onToggleForwardMessage(msg);
+    };
     const handleReplyClick = () => {
         if (!canReplyMessage) return;
         onReplyMessage({
@@ -561,6 +627,11 @@ const MessageBubble = ({
             type: String(msg?.type || 'chat')
         });
         setShowActionsMenu(false);
+    };
+    const handleReactionMenuClick = () => {
+        if (!canSendReaction) return;
+        setShowActionsMenu((prev) => (isMobileViewport() ? prev : false));
+        setShowReactionPicker((prev) => !prev);
     };
 
     const handleForwardClick = () => {
@@ -609,6 +680,7 @@ const MessageBubble = ({
         if (!messageId || !safeEmoji || typeof onSendReaction !== 'function') return;
         onSendReaction(messageId, safeEmoji);
         setShowReactionPicker(false);
+        setShowActionsMenu(false);
     };
 
     return (
@@ -616,8 +688,14 @@ const MessageBubble = ({
             ref={bubbleRef}
             className={`message ${isOut ? 'out' : 'in'}${hasMenuActions ? ' has-menu-actions' : ''}${hasReactionSummary ? ' has-reactions' : ''}${forwardMode ? ' forward-selectable' : ''}${isForwardSelected ? ' forward-selected' : ''}`}
             style={isHighlighted ? { outline: `2px solid ${isCurrentHighlighted ? '#00a884' : 'rgba(0,168,132,0.35)'}`, borderRadius: '10px', padding: '2px' } : undefined}
+            onPointerDown={handleBubblePointerDown}
+            onPointerUp={clearMobileLongPress}
+            onPointerLeave={clearMobileLongPress}
+            onPointerCancel={clearMobileLongPress}
+            onContextMenu={handleBubbleContextMenu}
+            onClick={handleBubbleClick}
         >
-            {forwardMode && sourceMessageId && (
+            {forwardMode && canForwardMessage && sourceMessageId && (
                 <button
                     type="button"
                     className={`message-forward-checkbox ${isForwardSelected ? 'checked' : ''}`}
@@ -1232,37 +1310,21 @@ const MessageBubble = ({
                         <RotateCcw size={12} /> Reintentar
                     </button>
                 )}
-                {(hasMenuActions || canSendReaction) && (
+                {hasMenuActions && (
                     <div className={`message-actions-anchor ${showActionsMenu ? 'open' : ''}`}>
                         <div className={`message-actions-rail ${isOut ? 'out' : 'in'}`}>
-                            {canSendReaction && (
-                                <button
-                                    type="button"
-                                    className={`message-actions-toggle reaction ${showReactionPicker ? 'open' : ''}`}
-                                    title="Reaccionar"
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        setShowActionsMenu(false);
-                                        setShowReactionPicker((prev) => !prev);
-                                    }}
-                                >
-                                    <SmilePlus size={13} />
-                                </button>
-                            )}
-                            {hasMenuActions && (
-                                <button
-                                    type="button"
-                                    className={`message-actions-toggle ${showActionsMenu ? 'open' : ''}`}
-                                    title="Opciones"
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        setShowReactionPicker(false);
-                                        setShowActionsMenu((prev) => !prev);
-                                    }}
-                                >
-                                    <ChevronDown size={13} />
-                                </button>
-                            )}
+                            <button
+                                type="button"
+                                className={`message-actions-toggle ${showActionsMenu ? 'open' : ''}`}
+                                title="Opciones"
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    setShowReactionPicker(false);
+                                    setShowActionsMenu((prev) => !prev);
+                                }}
+                            >
+                                <MoreHorizontal size={14} />
+                            </button>
                         </div>
                         {showActionsMenu && (
                             <div className={`message-actions-menu ${isOut ? 'out' : 'in'}`} onClick={(event) => event.stopPropagation()}>
@@ -1274,6 +1336,11 @@ const MessageBubble = ({
                                 {canCopyMessage && (
                                     <button type="button" className="message-actions-item" onClick={handleCopyClick}>
                                         <Copy size={13} /> {copyOk ? 'Copiado' : 'Copiar'}
+                                    </button>
+                                )}
+                                {canSendReaction && (
+                                    <button type="button" className="message-actions-item" onClick={handleReactionMenuClick}>
+                                        <SmilePlus size={13} /> Reaccionar
                                     </button>
                                 )}
                                 {canForwardMessage && (
@@ -1299,6 +1366,94 @@ const MessageBubble = ({
                                 )}
                             </div>
                         )}
+                    </div>
+                )}
+                {showActionsMenu && (
+                    <div
+                        className="message-action-sheet-overlay"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            setShowActionsMenu(false);
+                            setShowReactionPicker(false);
+                        }}
+                    >
+                        <div
+                            className="message-action-sheet"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label="Acciones del mensaje"
+                            onClick={(event) => event.stopPropagation()}
+                        >
+                            <div className="message-action-sheet__handle" />
+                            <div className="message-action-sheet__preview">
+                                {actionPreviewMediaSrc ? (
+                                    <img src={actionPreviewMediaSrc} alt="Vista previa del mensaje" />
+                                ) : (
+                                    <span>{actionPreviewText}</span>
+                                )}
+                            </div>
+                            <div className="message-action-sheet__actions">
+                                {canReplyMessage && (
+                                    <button type="button" className="message-action-sheet__item" onClick={handleReplyClick}>
+                                        <Reply size={18} /> Responder
+                                    </button>
+                                )}
+                                {canCopyMessage && (
+                                    <button type="button" className="message-action-sheet__item" onClick={handleCopyClick}>
+                                        <Copy size={18} /> {copyOk ? 'Copiado' : 'Copiar'}
+                                    </button>
+                                )}
+                                {canSendReaction && (
+                                    <>
+                                        <button type="button" className="message-action-sheet__item" onClick={handleReactionMenuClick}>
+                                            <SmilePlus size={18} /> Reaccionar
+                                        </button>
+                                        {showReactionPicker && (
+                                            <div className="message-action-sheet__reactions">
+                                                {reactionOptions.map((emoji) => (
+                                                    <button
+                                                        key={emoji}
+                                                        type="button"
+                                                        className="message-reaction-option"
+                                                        title={`Reaccionar con ${emoji}`}
+                                                        onClick={() => handleReactionSelect(emoji)}
+                                                    >
+                                                        {emoji}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                                {canForwardMessage && (
+                                    <button type="button" className="message-action-sheet__item" onClick={handleForwardClick}>
+                                        <Forward size={18} /> Reenviar
+                                    </button>
+                                )}
+                                {canEditMessage && (
+                                    <button
+                                        type="button"
+                                        className="message-action-sheet__item"
+                                        onClick={() => {
+                                            handleEditClick();
+                                            setShowActionsMenu(false);
+                                        }}
+                                    >
+                                        <Pencil size={18} /> Editar
+                                    </button>
+                                )}
+                            </div>
+                            <button
+                                type="button"
+                                className="message-action-sheet__cancel"
+                                onClick={() => {
+                                    setShowActionsMenu(false);
+                                    setShowReactionPicker(false);
+                                }}
+                            >
+                                Cancelar
+                            </button>
+                        </div>
                     </div>
                 )}
 

@@ -310,6 +310,7 @@ const ChatWindow = ({
     });
     const activeChatScopedId = String(activeChatDetails?.id || '').trim();
     const [forwardMode, setForwardMode] = React.useState(false);
+    const [forwardStep, setForwardStep] = React.useState('messages');
     const [forwardSelectedMessageIds, setForwardSelectedMessageIds] = React.useState([]);
     const [forwardSelectedChatIds, setForwardSelectedChatIds] = React.useState([]);
     const [forwardSearch, setForwardSearch] = React.useState('');
@@ -333,9 +334,14 @@ const ChatWindow = ({
             })
             .slice(0, 60)
     ), [activeChatScopedId, forwardChatOptions, forwardNeedle]);
+    const forwardVisibleCandidates = React.useMemo(
+        () => forwardCandidates.slice(0, forwardNeedle ? 60 : 10),
+        [forwardCandidates, forwardNeedle]
+    );
     const canForwardMessages = typeof onForwardMessage === 'function';
     const cancelForwardMode = React.useCallback(() => {
         setForwardMode(false);
+        setForwardStep('messages');
         setForwardSelectedMessageIds([]);
         setForwardSelectedChatIds([]);
         setForwardSearch('');
@@ -344,6 +350,7 @@ const ChatWindow = ({
         const messageId = String(message?.id || '').trim();
         if (!messageId || !canForwardMessages) return;
         setForwardMode(true);
+        setForwardStep('messages');
         setForwardSelectedMessageIds([messageId]);
         setForwardSelectedChatIds([]);
         setForwardSearch('');
@@ -358,6 +365,12 @@ const ChatWindow = ({
             return Array.from(current);
         });
     }, []);
+    const openForwardTargets = React.useCallback(() => {
+        if (!forwardMode || forwardSelectedMessageIds.length === 0) return;
+        setForwardStep('targets');
+        setForwardSelectedChatIds([]);
+        setForwardSearch('');
+    }, [forwardMode, forwardSelectedMessageIds.length]);
     const toggleForwardTarget = React.useCallback((chatId = '') => {
         const safeChatId = String(chatId || '').trim();
         if (!safeChatId) return;
@@ -381,6 +394,7 @@ const ChatWindow = ({
     useEffect(() => {
         if (forwardMode && forwardSelectedMessageIds.length === 0) {
             setForwardMode(false);
+            setForwardStep('messages');
         }
     }, [forwardMode, forwardSelectedMessageIds.length]);
     const activeChatAssignment = typeof chatAssignmentState?.getAssignment === 'function'
@@ -1026,8 +1040,30 @@ const ChatWindow = ({
             )}
 
             {/* Input Area */}
-            {forwardMode && (
-                <div className="chat-forward-panel">
+            {forwardMode && forwardStep === 'messages' && (
+                <div className="chat-forward-selection-bar">
+                    <div className="chat-forward-selection-bar__copy">
+                        <strong>Reenviar</strong>
+                        <span>{forwardSelectedMessageIds.length} mensaje{forwardSelectedMessageIds.length === 1 ? '' : 's'} seleccionado{forwardSelectedMessageIds.length === 1 ? '' : 's'}</span>
+                    </div>
+                    <div className="chat-forward-selection-bar__actions">
+                        <button type="button" className="chat-forward-selection-bar__cancel" onClick={cancelForwardMode}>
+                            Cancelar
+                        </button>
+                        <button
+                            type="button"
+                            className="chat-forward-selection-bar__next"
+                            disabled={forwardSelectedMessageIds.length === 0}
+                            onClick={openForwardTargets}
+                        >
+                            Siguiente
+                        </button>
+                    </div>
+                </div>
+            )}
+            {forwardMode && forwardStep === 'targets' && (
+                <div className="chat-forward-target-overlay" onClick={() => setForwardStep('messages')}>
+                <div className="chat-forward-panel chat-forward-panel--targets" onClick={(event) => event.stopPropagation()}>
                     <div className="chat-forward-panel__header">
                         <div>
                             <strong>↪ Reenviar mensaje</strong>
@@ -1042,8 +1078,11 @@ const ChatWindow = ({
                         value={forwardSearch}
                         onChange={(event) => setForwardSearch(event.target.value)}
                     />
+                    <div className="chat-forward-panel__section-label">
+                        {forwardNeedle ? 'Resultados' : 'Recientes'}
+                    </div>
                     <div className="chat-forward-panel__list">
-                        {forwardCandidates.length > 0 ? forwardCandidates.map((chat) => {
+                        {forwardVisibleCandidates.length > 0 ? forwardVisibleCandidates.map((chat) => {
                             const chatId = String(chat?.id || '').trim();
                             const selected = forwardSelectedChatSet.has(chatId);
                             return (
@@ -1075,6 +1114,7 @@ const ChatWindow = ({
                             Reenviar →
                         </button>
                     </div>
+                </div>
                 </div>
             )}
             {canWriteByAssignment ? (
