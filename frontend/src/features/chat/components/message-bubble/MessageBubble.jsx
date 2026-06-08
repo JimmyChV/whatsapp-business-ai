@@ -297,6 +297,7 @@ const MessageBubble = ({
     const [showActionsMenu, setShowActionsMenu] = useState(false);
     const [showReactionPicker, setShowReactionPicker] = useState(false);
     const [preferredSkinTone, setPreferredSkinTone] = useState('neutral');
+    const [mediaImageFailed, setMediaImageFailed] = useState(false);
     const [templateHeaderImageFailed, setTemplateHeaderImageFailed] = useState(false);
     const [locationMapsApiKey, setLocationMapsApiKey] = useState(locationMapsApiKeyCache);
     const bubbleRef = useRef(null);
@@ -410,6 +411,10 @@ const MessageBubble = ({
     useEffect(() => {
         setTemplateHeaderImageFailed(false);
     }, [msg?.id, msg?.templateHeaderImageUrl, msg?.templateHeaderType]);
+
+    useEffect(() => {
+        setMediaImageFailed(false);
+    }, [msg?.id, mediaImageSrc]);
 
     const hasLocationCoords = Number.isFinite(locationData?.latitude) && Number.isFinite(locationData?.longitude);
     const locationMapQuery = hasLocationCoords
@@ -626,7 +631,7 @@ const MessageBubble = ({
                 </div>
             )}
 
-            {shouldRenderStandaloneMedia && mediaImageSrc && (isImageMedia || isGifMedia) && (
+            {shouldRenderStandaloneMedia && mediaImageSrc && (isImageMedia || isGifMedia) && !mediaImageFailed && (
                 <img
                     src={mediaImageSrc}
                     className="message-media"
@@ -640,8 +645,30 @@ const MessageBubble = ({
                         cursor: 'zoom-in',
                         display: 'block'
                     }}
+                    onError={() => setMediaImageFailed(true)}
                     onClick={() => onOpenMedia && onOpenMedia({ src: mediaImageSrc, mimetype: msg.mimetype, messageId: msg.id })}
                 />
+            )}
+
+            {shouldRenderStandaloneMedia && mediaImageSrc && (isImageMedia || isGifMedia) && mediaImageFailed && (
+                <div
+                    className="message-media message-media--unavailable"
+                    style={{
+                        borderRadius: '8px',
+                        marginBottom: '4px',
+                        maxWidth: 'min(320px, 56vw)',
+                        minHeight: '120px',
+                        display: 'grid',
+                        placeItems: 'center',
+                        padding: '14px',
+                        background: 'rgba(17, 24, 39, 0.08)',
+                        color: 'var(--chat-control-text-soft)',
+                        fontSize: '0.82rem',
+                        textAlign: 'center'
+                    }}
+                >
+                    Imagen no disponible
+                </div>
             )}
 
             {shouldRenderStandaloneMedia && inlineVideoSrc && isVideoMedia && !isGifMedia && (

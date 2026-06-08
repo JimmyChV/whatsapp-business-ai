@@ -3835,6 +3835,43 @@ body {
   color: color-mix(in srgb, var(--saas-accent-primary) 20%, var(--saas-bg-surface));
 }
 
+.client-profile-segment {
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.client-profile-segment--frecuente {
+  border-color: rgba(29, 158, 117, 0.48);
+  background: rgba(29, 158, 117, 0.16);
+  color: #1d9e75;
+}
+
+.client-profile-segment--vip {
+  border-color: rgba(234, 179, 8, 0.54);
+  background: rgba(234, 179, 8, 0.18);
+  color: #b7791f;
+}
+
+.client-profile-segment--riesgo {
+  border-color: rgba(245, 158, 11, 0.54);
+  background: rgba(245, 158, 11, 0.18);
+  color: #c27803;
+}
+
+.client-profile-segment--perdido {
+  border-color: rgba(239, 68, 68, 0.48);
+  background: rgba(239, 68, 68, 0.14);
+  color: #ef4444;
+}
+
+.client-profile-segment--nuevo,
+.client-profile-segment--neutral {
+  border-color: rgba(107, 114, 128, 0.4);
+  background: rgba(107, 114, 128, 0.12);
+  color: #6b7280;
+}
+
 .client-profile-scroll {
   flex: 1;
   overflow-y: auto;
@@ -3881,6 +3918,17 @@ body {
   border-radius: 999px;
   padding: 3px 10px;
   font-size: 0.72rem;
+}
+
+.client-profile-label-chip--erp {
+  --label-color: #1d9e75;
+  font-weight: 700;
+}
+
+.client-profile-empty {
+  color: var(--saas-text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
 .client-profile-grid {
