@@ -30,6 +30,39 @@ const formatAssetBytes = (value) => {
     return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+const decodeHtmlEntities = (value = '') => String(value || '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#(\d+);/g, (_, code) => {
+        const parsed = Number(code);
+        return Number.isFinite(parsed) ? String.fromCharCode(parsed) : _;
+    });
+
+const htmlToWhatsAppFormat = (html = '') => {
+    const source = String(html || '');
+    if (!source.trim()) return '';
+    return decodeHtmlEntities(source)
+        .replace(/<style[\s\S]*?<\/style>/gi, '')
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/<(strong|b)\b[^>]*>([\s\S]*?)<\/\1>/gi, '*$2*')
+        .replace(/<(em|i)\b[^>]*>([\s\S]*?)<\/\1>/gi, '_$2_')
+        .replace(/<(s|del|strike)\b[^>]*>([\s\S]*?)<\/\1>/gi, '~$2~')
+        .replace(/<code\b[^>]*>([\s\S]*?)<\/code>/gi, '```$1```')
+        .replace(/<li\b[^>]*>([\s\S]*?)<\/li>/gi, '• $1\n')
+        .replace(/<\/p>/gi, '\n')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/div>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/\r/g, '')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+};
+
 
 const ChatInput = ({
     inputText, setInputText, onSendMessage, onKeyDown, onFileClick,
@@ -115,6 +148,42 @@ const ChatInput = ({
             inputRef.current.setSelectionRange(cursor, cursor);
             setSelectionState(null);
         });
+    };
+
+    const insertTextAtCursor = (text = '') => {
+        const insertion = String(text || '');
+        if (!insertion) return;
+        const el = inputRef.current;
+        if (!el) {
+            setInputText((prev) => `${prev}${insertion}`);
+            setShowCommands(false);
+            return;
+        }
+        const start = Number(el.selectionStart || 0);
+        const end = Number(el.selectionEnd || 0);
+        const current = String(inputText || '');
+        const next = `${current.slice(0, start)}${insertion}${current.slice(end)}`;
+        setInputText(next);
+        setShowCommands(next.startsWith('/'));
+        requestAnimationFrame(() => {
+            if (!inputRef.current) return;
+            const cursor = start + insertion.length;
+            inputRef.current.focus();
+            inputRef.current.setSelectionRange(cursor, cursor);
+            setSelectionState(null);
+        });
+    };
+
+    const handlePaste = (event) => {
+        if (disableFreeformComposer) return;
+        const clipboard = event.clipboardData;
+        if (!clipboard) return;
+        const plainText = clipboard.getData('text/plain');
+        const html = clipboard.getData('text/html');
+        if (!plainText && !html) return;
+        event.preventDefault();
+        const formatted = html ? htmlToWhatsAppFormat(html) : '';
+        insertTextAtCursor(formatted || plainText);
     };
 
     const handleSkinToneChange = (skinTone) => {
@@ -678,6 +747,7 @@ const ChatInput = ({
                     }
                     value={inputText}
                     onChange={handleInputChange}
+                    onPaste={handlePaste}
                     disabled={isTemplateOnlyMode}
                     onKeyDown={(e) => {
                         if (isTemplateOnlyMode && e.key === 'Enter' && !e.shiftKey && !e.altKey) {

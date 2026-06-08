@@ -65,8 +65,12 @@ export default function useSocketMessageLifecycleEvents({
             if (msg) notify({ type: 'error', message: msg });
         });
 
-        socket.on('message_forwarded', () => {
-            // El mensaje reenviado llega por el evento message cuando WhatsApp lo confirma.
+        socket.on('message_forwarded', ({ sentCount } = {}) => {
+            const count = Number(sentCount || 0);
+            notify({
+                type: 'success',
+                message: count > 1 ? `${count} mensajes reenviados.` : 'Mensaje reenviado.'
+            });
         });
 
         socket.on('forward_message_error', (msg) => {

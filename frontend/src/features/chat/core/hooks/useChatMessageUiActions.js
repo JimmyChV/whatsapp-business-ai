@@ -55,14 +55,18 @@ export default function useChatMessageUiActions({
     setReplyingMessage(null);
   };
 
-  const handleForwardMessage = (messageId, toChatId) => {
+  const handleForwardMessage = (messageIds, targetChatIds) => {
     if (!waCapabilities.messageForward) return;
-    const sourceMessageId = String(messageId || '').trim();
-    const targetChatId = String(toChatId || '').trim();
-    if (!sourceMessageId || !targetChatId) return;
+    const sourceMessageIds = (Array.isArray(messageIds) ? messageIds : [messageIds])
+      .map((entry) => String(entry || '').trim())
+      .filter(Boolean);
+    const targetIds = (Array.isArray(targetChatIds) ? targetChatIds : [targetChatIds])
+      .map((entry) => String(entry || '').trim())
+      .filter(Boolean);
+    if (sourceMessageIds.length === 0 || targetIds.length === 0) return;
     socket.emit('forward_message', {
-      messageId: sourceMessageId,
-      toChatId: targetChatId
+      messageIds: sourceMessageIds,
+      targetChatIds: targetIds
     });
   };
 

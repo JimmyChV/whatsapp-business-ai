@@ -614,34 +614,177 @@ function createSocketMessageDeliveryService({
                  socket.emit('error', detail);
              }
          });
-           socket.on('forward_message', async ({ messageId, toChatId }) => {
+        const normalizeForwardList = (primary, fallback) => {
+            const raw = Array.isArray(primary)
+                ? primary
+                : (primary ? [primary] : (fallback ? [fallback] : []));
+            return Array.from(new Set(raw.map((entry) => String(entry || '').trim()).filter(Boolean)));
+        };
+
+        const fetchForwardSourceMessages = async (messageIds = []) => {
+            const ids = normalizeForwardList(messageIds);
+            if (ids.length === 0) return [];
+            const { rows } = await queryPostgres(
+                `SELECT message_id, chat_id, body, message_type, has_media,
+                        media_mime, media_filename, media_size_bytes,
+                        order_payload, location_payload, metadata
+                   FROM tenant_messages
+                  WHERE tenant_id = $1
+                    AND message_id = ANY($2::text[])`,
+                [tenantId, ids]
+            );
+            const byId = new Map((rows || []).map((row) => [String(row?.message_id || '').trim(), row]));
+            return ids.map((id) => byId.get(id)).filter(Boolean);
+        };
+
+        const resolveForwardMediaPayload = async (sourceMessage = null) => {
+            const metadata = sourceMessage?.metadata && typeof sourceMessage.metadata === 'object'
+                ? sourceMessage.metadata
+                : {};
+            const mediaMeta = metadata?.media && typeof metadata.media === 'object'
+                ? metadata.media
+                : {};
+            const mediaUrl = String(mediaMeta?.url || metadata?.mediaUrl || metadata?.media_url || '').trim();
+            if (!sourceMessage?.has_media || !mediaUrl || typeof fetchQuickReplyMedia !== 'function') return null;
+            const fetchedMedia = await fetchQuickReplyMedia(mediaUrl, {
+                tenantId,
+                mimeHint: String(sourceMessage?.media_mime || '').trim() || 'application/octet-stream',
+                fileNameHint: String(sourceMessage?.media_filename || '').trim() || 'reenviado'
+            });
+            const mediaData = String(fetchedMedia?.mediaData || '').trim();
+            if (!mediaData) return null;
+            return {
+                data: mediaData,
+                mimetype: String(fetchedMedia?.mimetype || sourceMessage?.media_mime || 'application/octet-stream').trim(),
+                filename: String(fetchedMedia?.filename || sourceMessage?.media_filename || 'reenviado').trim(),
+                fileSizeBytes: Number(sourceMessage?.media_size_bytes || 0) || null,
+                mediaUrl: String(fetchedMedia?.publicUrl || fetchedMedia?.sourceUrl || mediaUrl).trim() || mediaUrl
+            };
+        };
+
+           socket.on('forward_message', async ({ messageId, messageIds, toChatId, targetChatIds } = {}) => {
              if (!guardRateLimit(socket, 'forward_message')) return;
              if (!authzAudit.requireRole(['owner', 'admin', 'seller'], { errorEvent: 'forward_message_error', action: 'reenviar mensajes' })) return;
              if (!transportOrchestrator.ensureTransportReady(socket, { action: 'reenviar mensajes', errorEvent: 'forward_message_error' })) return;
-             const caps = getWaCapabilities();
-             if (!caps.messageForward) {
-                 socket.emit('forward_message_error', 'Reenviar mensajes no esta disponible en este transporte.');
-                 return;
-             }
              try {
-                 const sourceMessageId = String(messageId || '').trim();
-                 const targetChatId = String(toChatId || '').trim();
-                 if (!sourceMessageId || !targetChatId) {
+                 const sourceMessageIds = normalizeForwardList(messageIds, messageId).slice(0, 20);
+                 const targetIds = normalizeForwardList(targetChatIds, toChatId).slice(0, 20);
+                 if (sourceMessageIds.length === 0 || targetIds.length === 0) {
                      socket.emit('forward_message_error', 'Datos invalidos para reenviar.');
                      return;
                  }
-                   await waClient.forwardMessage(sourceMessageId, targetChatId);
+                 const sourceMessages = await fetchForwardSourceMessages(sourceMessageIds);
+                 if (sourceMessages.length === 0) {
+                     socket.emit('forward_message_error', 'No se encontraron mensajes para reenviar.');
+                     return;
+                 }
+                 const enrichedAuthContext = await enrichAuthContextWithUserName(authContext);
+                 let sentCount = 0;
+                 let skippedClosedWindow = 0;
+                 let skippedUnavailableMedia = 0;
+                 for (const rawTargetChatId of targetIds) {
+                     const target = await resolveScopedSendTarget({
+                         rawChatId: rawTargetChatId,
+                         errorEvent: 'forward_message_error',
+                         action: 'reenviar mensajes'
+                     });
+                     if (!target?.ok) continue;
+                     const hasOpenWindow = await hasOpenCustomerCareWindow(target.targetChatId);
+                     if (!hasOpenWindow) {
+                         skippedClosedWindow += sourceMessages.length;
+                         continue;
+                     }
+                     const moduleContext = target.moduleContext || socket?.data?.waModule || null;
+                     const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(enrichedAuthContext, moduleContext));
+                     for (const sourceMessage of sourceMessages) {
+                         const sourceMessageId = String(sourceMessage?.message_id || '').trim();
+                         const body = String(sourceMessage?.body || '').trim();
+                         const sendMetadata = {
+                             tenantId,
+                             chatId: target.targetChatId,
+                             forwardedFromMessageId: sourceMessageId,
+                             forwardedFromChatId: String(sourceMessage?.chat_id || '').trim() || null
+                         };
+                         let sentMessage = null;
+                         let mediaPayload = null;
+                         if (sourceMessage?.has_media) {
+                             mediaPayload = await resolveForwardMediaPayload(sourceMessage);
+                             if (!mediaPayload?.data) {
+                                 skippedUnavailableMedia += 1;
+                                 if (!body) continue;
+                             }
+                         }
+                         if (mediaPayload?.data) {
+                             sentMessage = await waClient.sendMedia(
+                                 target.targetChatId,
+                                 mediaPayload.data,
+                                 mediaPayload.mimetype,
+                                 mediaPayload.filename,
+                                 body,
+                                 false,
+                                 null,
+                                 sendMetadata
+                             );
+                         } else {
+                             if (!body) continue;
+                             sentMessage = await waClient.sendMessage(target.targetChatId, body, {
+                                 metadata: sendMetadata
+                             });
+                         }
+                         if (!sentMessage) continue;
+                         const sentMessageId = getSerializedMessageId(sentMessage);
+                         if (sentMessageId && agentMeta) {
+                             rememberOutgoingAgentMeta(sentMessageId, agentMeta);
+                         }
+                         await emitRealtimeOutgoingMessage({
+                             sentMessage,
+                             fallbackChatId: target.targetChatId,
+                             fallbackBody: body,
+                             moduleContext,
+                             agentMeta,
+                             mediaPayload
+                         });
+                         sentCount += 1;
+                         await recordConversationEvent({
+                             chatId: target.targetChatId,
+                             scopeModuleId: target.scopeModuleId,
+                             eventType: mediaPayload?.data ? 'chat.message.forwarded.media' : 'chat.message.forwarded.text',
+                             eventSource: 'socket',
+                             payload: {
+                                 sourceMessageId,
+                                 sentMessageId: sentMessageId || null,
+                                 sourceChatId: String(sourceMessage?.chat_id || '').trim() || null
+                             }
+                         });
+                     }
+                 }
+                 if (sentCount === 0) {
+                     if (skippedClosedWindow > 0) {
+                         socket.emit('forward_message_error', 'No se pudo reenviar: la ventana de 24 horas esta cerrada en los destinos.');
+                         return;
+                     }
+                     if (skippedUnavailableMedia > 0) {
+                         socket.emit('forward_message_error', 'No se pudo reenviar: el adjunto original ya no esta disponible.');
+                         return;
+                     }
+                     socket.emit('forward_message_error', 'No se pudo reenviar el mensaje.');
+                     return;
+                 }
                  socket.emit('message_forwarded', {
-                     messageId: sourceMessageId,
-                     toChatId: targetChatId
+                     messageIds: sourceMessageIds,
+                     targetChatIds: targetIds,
+                     sentCount,
+                     skippedClosedWindow,
+                     skippedUnavailableMedia
                  });
                  await authzAudit.auditSocketAction('message.forwarded', {
                      resourceType: 'message',
-                     resourceId: sourceMessageId,
-                     payload: { toChatId: targetChatId }
+                     resourceId: sourceMessageIds[0] || null,
+                     payload: { messageIds: sourceMessageIds, targetChatIds: targetIds, sentCount }
                  });
              } catch (e) {
-                 socket.emit('forward_message_error', 'No se pudo reenviar el mensaje en esta version de WhatsApp.');
+                 console.warn('[WA][ForwardMessage] ' + String(e?.message || e || 'No se pudo reenviar.'));
+                 socket.emit('forward_message_error', 'No se pudo reenviar el mensaje.');
              }
          });
            socket.on('delete_message', async ({ chatId, messageId }) => {

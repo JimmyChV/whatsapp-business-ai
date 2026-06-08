@@ -5,7 +5,6 @@ import {
     renderWhatsAppFormattedText,
     formatOrderMoney,
     isLikelyBinaryBody,
-    normalizeSearchText,
     extractFirstNonMapUrlFromText,
     renderAttachmentIcon,
     extractPhoneCandidatesFromText
@@ -115,12 +114,14 @@ const MessageBubble = ({
     onOpenPhoneChat,
     onEditMessage,
     onReplyMessage,
-    onForwardMessage,
+    onStartForwardMode,
+    onToggleForwardMessage,
     onSendReaction,
     onRetryMessage,
     onJumpToMessage,
-    forwardChatOptions = [],
     activeChatId = null,
+    forwardMode = false,
+    isForwardSelected = false,
     canEditMessages = false,
     showSenderName = false,
     senderDisplayName = '',
@@ -292,8 +293,6 @@ const MessageBubble = ({
         : `📋 Cotización${quoteCardNumberLabel}`;
     const displayQuoteCardTitle = isOptionQuote ? `Opcion${optionCardNumberLabel}` : quoteCardTitle;
     const [selectedLocationText, setSelectedLocationText] = useState('');
-    const [showForwardPicker, setShowForwardPicker] = useState(false);
-    const [forwardSearch, setForwardSearch] = useState('');
     const [showActionsMenu, setShowActionsMenu] = useState(false);
     const [showReactionPicker, setShowReactionPicker] = useState(false);
     const [preferredSkinTone, setPreferredSkinTone] = useState('neutral');
@@ -369,20 +368,18 @@ const MessageBubble = ({
     });
 
     useEffect(() => {
-        if (!showActionsMenu && !showForwardPicker && !showReactionPicker) return;
+        if (!showActionsMenu && !showReactionPicker) return;
 
         const handleOutsideClick = (event) => {
             if (!bubbleRef.current) return;
             if (bubbleRef.current.contains(event.target)) return;
             setShowActionsMenu(false);
-            setShowForwardPicker(false);
             setShowReactionPicker(false);
         };
 
         const handleEscape = (event) => {
             if (event.key === 'Escape') {
                 setShowActionsMenu(false);
-                setShowForwardPicker(false);
                 setShowReactionPicker(false);
             }
         };
@@ -393,7 +390,7 @@ const MessageBubble = ({
             document.removeEventListener('mousedown', handleOutsideClick);
             document.removeEventListener('keydown', handleEscape);
         };
-    }, [showActionsMenu, showForwardPicker, showReactionPicker]);
+    }, [showActionsMenu, showReactionPicker]);
 
     useEffect(() => {
         if (typeof window === 'undefined') {
@@ -518,7 +515,10 @@ const MessageBubble = ({
         mediaDataUrl
     });
     const canReplyMessage = canReplyMessageBase && typeof onReplyMessage === 'function';
-    const canForwardMessage = canForwardMessageBase && typeof onForwardMessage === 'function';
+    const sourceMessageId = String(msg?.id || '').trim();
+    const canForwardMessage = canForwardMessageBase
+        && sourceMessageId
+        && typeof onStartForwardMode === 'function';
 
     const handleEditClick = () => {
         if (!canEditMessage || typeof onEditMessage !== 'function') return;
@@ -548,18 +548,6 @@ const MessageBubble = ({
     const canSendReaction = typeof onSendReaction === 'function' && Boolean(String(msg?.id || '').trim());
 
     const hasMenuActions = Boolean(canReplyMessage || canForwardMessage || canEditMessage);
-    const forwardNeedle = normalizeSearchText(forwardSearch);
-    const forwardCandidates = Array.isArray(forwardChatOptions)
-        ? forwardChatOptions.filter((chat) => {
-            const id = String(chat?.id || '').trim();
-            if (!id) return false;
-            if (id === String(activeChatId || '')) return false;
-            if (!forwardNeedle) return true;
-            const haystack = normalizeSearchText(`${chat?.name || ''} ${chat?.phone || ''} ${chat?.subtitle || ''}`);
-            return haystack.includes(forwardNeedle);
-        }).slice(0, 40)
-        : [];
-
     const handleReplyClick = () => {
         if (!canReplyMessage) return;
         onReplyMessage({
@@ -570,18 +558,14 @@ const MessageBubble = ({
             type: String(msg?.type || 'chat')
         });
         setShowActionsMenu(false);
-        setShowForwardPicker(false);
     };
 
-    const handleForwardSelect = (targetChatId) => {
+    const handleForwardClick = () => {
         if (!canForwardMessage) return;
-        const sourceMessageId = String(msg?.id || '').trim();
-        const chatId = String(targetChatId || '').trim();
-        if (!sourceMessageId || !chatId) return;
-        onForwardMessage(sourceMessageId, chatId);
-        setShowForwardPicker(false);
+        if (typeof onStartForwardMode === 'function') {
+            onStartForwardMode(msg);
+        }
         setShowActionsMenu(false);
-        setForwardSearch('');
     };
     const openMapPopup = (payload = {}) => {
         if (typeof onOpenMap !== 'function') return;
@@ -603,9 +587,22 @@ const MessageBubble = ({
     return (
         <div
             ref={bubbleRef}
-            className={`message ${isOut ? 'out' : 'in'}${hasMenuActions ? ' has-menu-actions' : ''}${hasReactionSummary ? ' has-reactions' : ''}`}
+            className={`message ${isOut ? 'out' : 'in'}${hasMenuActions ? ' has-menu-actions' : ''}${hasReactionSummary ? ' has-reactions' : ''}${forwardMode ? ' forward-selectable' : ''}${isForwardSelected ? ' forward-selected' : ''}`}
             style={isHighlighted ? { outline: `2px solid ${isCurrentHighlighted ? '#00a884' : 'rgba(0,168,132,0.35)'}`, borderRadius: '10px', padding: '2px' } : undefined}
         >
+            {forwardMode && sourceMessageId && (
+                <button
+                    type="button"
+                    className={`message-forward-checkbox ${isForwardSelected ? 'checked' : ''}`}
+                    aria-label={isForwardSelected ? 'Quitar de reenvio' : 'Seleccionar para reenviar'}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        if (typeof onToggleForwardMessage === 'function') onToggleForwardMessage(msg);
+                    }}
+                >
+                    {isForwardSelected ? <Check size={13} /> : null}
+                </button>
+            )}
             {isCatalogItem && (
                 <div className="catalog-card">
                     <div style={{ width: '100%', height: '72px', background: 'linear-gradient(120deg,#233138,#1a252b)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1219,7 +1216,6 @@ const MessageBubble = ({
                                     onClick={(event) => {
                                         event.stopPropagation();
                                         setShowActionsMenu(false);
-                                        setShowForwardPicker(false);
                                         setShowReactionPicker((prev) => !prev);
                                     }}
                                 >
@@ -1234,11 +1230,7 @@ const MessageBubble = ({
                                     onClick={(event) => {
                                         event.stopPropagation();
                                         setShowReactionPicker(false);
-                                        setShowActionsMenu((prev) => {
-                                            const next = !prev;
-                                            if (!next) setShowForwardPicker(false);
-                                            return next;
-                                        });
+                                        setShowActionsMenu((prev) => !prev);
                                     }}
                                 >
                                     <ChevronDown size={13} />
@@ -1256,10 +1248,7 @@ const MessageBubble = ({
                                     <button
                                         type="button"
                                         className="message-actions-item"
-                                        onClick={() => {
-                                            setShowForwardPicker((prev) => !prev);
-                                            setShowActionsMenu(false);
-                                        }}
+                                        onClick={handleForwardClick}
                                     >
                                         <Forward size={13} /> Reenviar
                                     </button>
@@ -1278,68 +1267,6 @@ const MessageBubble = ({
                                 )}
                             </div>
                         )}
-                    </div>
-                )}
-
-                {showForwardPicker && canForwardMessage && (
-                    <div style={{
-                        marginTop: '6px',
-                        border: '1px solid rgba(124,200,255,0.32)',
-                        background: 'rgba(15,26,34,0.96)',
-                        borderRadius: '10px',
-                        padding: '8px',
-                        minWidth: '220px',
-                        maxWidth: '320px',
-                        alignSelf: isOut ? 'flex-end' : 'flex-start'
-                    }}>
-                        <div style={{ fontSize: '0.72rem', color: '#7cc8ff', fontWeight: 700, marginBottom: '6px' }}>
-                            Reenviar a...
-                        </div>
-                        <input
-                            type="text"
-                            value={forwardSearch}
-                            onChange={(event) => setForwardSearch(event.target.value)}
-                            placeholder="Buscar chat"
-                            style={{
-                                width: '100%',
-                                borderRadius: '8px',
-                                border: '1px solid rgba(255,255,255,0.18)',
-                                background: 'rgba(255,255,255,0.04)',
-                                color: '#e8f1f6',
-                                padding: '5px 8px',
-                                fontSize: '0.75rem',
-                                marginBottom: '6px'
-                            }}
-                        />
-                        <div style={{ maxHeight: '170px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            {forwardCandidates.length > 0 ? forwardCandidates.map((chat) => (
-                                <button
-                                    key={chat.id}
-                                    type="button"
-                                    onClick={() => handleForwardSelect(chat.id)}
-                                    style={{
-                                        textAlign: 'left',
-                                        border: '1px solid rgba(255,255,255,0.1)',
-                                        background: 'rgba(255,255,255,0.02)',
-                                        color: '#e8f1f6',
-                                        borderRadius: '8px',
-                                        padding: '5px 7px',
-                                        cursor: 'pointer'
-                                    }}
-                                >
-                                    <div style={{ fontSize: '0.75rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {chat.name || chat.phone || 'Chat'}
-                                    </div>
-                                    {(chat.phone || chat.subtitle) && (
-                                        <div style={{ fontSize: '0.68rem', color: '#9db0ba', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                            {chat.phone || chat.subtitle}
-                                        </div>
-                                    )}
-                                </button>
-                            )) : (
-                                <div style={{ fontSize: '0.72rem', color: '#9db0ba' }}>No se encontraron chats.</div>
-                            )}
-                        </div>
                     </div>
                 )}
 

@@ -148,7 +148,7 @@ class WhatsAppCloudClient extends EventEmitter {
         return {
             messageEdit: false,
             messageEditSync: false,
-            messageForward: false,
+            messageForward: true,
             messageDelete: false,
             messageReply: true,
             quickReplies: false,
