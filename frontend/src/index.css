@@ -4206,25 +4206,25 @@ body {
 
 .message-actions-anchor {
   position: absolute;
-  top: 50%;
-  bottom: auto;
+  top: auto;
+  bottom: 12px;
   width: auto;
   display: flex;
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transform: translateY(-50%);
+  transform: translateY(4px);
   transition: opacity 0.14s ease, transform 0.14s ease;
   z-index: 4;
 }
 
 .message.in .message-actions-anchor {
   left: auto;
-  right: -36px;
+  right: -44px;
 }
 
 .message.out .message-actions-anchor {
-  left: -36px;
+  left: -44px;
   right: auto;
 }
 
@@ -4279,7 +4279,7 @@ body {
 .message:hover .message-actions-anchor,
 .message-actions-anchor.open {
   opacity: 1;
-  transform: translateY(-50%);
+  transform: translateY(0);
 }
 
 .message-actions-toggle {
@@ -4847,11 +4847,11 @@ body {
 @media (max-width: 1180px) {
   .message.in .message-actions-anchor {
     left: auto;
-    right: -32px;
+    right: -38px;
   }
 
   .message.out .message-actions-anchor {
-    left: -32px;
+    left: -38px;
     right: auto;
   }
 

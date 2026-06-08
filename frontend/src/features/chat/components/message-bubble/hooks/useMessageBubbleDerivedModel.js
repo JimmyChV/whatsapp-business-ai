@@ -23,6 +23,14 @@ const isQuoteButtonProductName = (value = '') => {
 
 const isPlainObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 
+const resolveMessageActionId = (message = {}) => String(
+    message?.id
+    || message?.messageId
+    || message?.message_id
+    || message?._id
+    || ''
+).trim();
+
 const normalizeOrderPayloadForDisplay = (payload = null) => {
     if (!isPlainObject(payload)) return null;
     const rawPreview = isPlainObject(payload.rawPreview) ? payload.rawPreview : {};
@@ -240,8 +248,9 @@ export default function useMessageBubbleDerivedModel({
             && String(safeMsg?.body || '').trim()
             && (isEditableQuoteMessage || safeMsg?.canEdit === true)
         );
-        const canReplyMessage = Boolean(safeMsg?.id);
-        const canForwardMessage = Boolean(safeMsg?.id);
+        const messageActionId = resolveMessageActionId(safeMsg);
+        const canReplyMessage = Boolean(messageActionId);
+        const canForwardMessage = Boolean(messageActionId);
 
         void activeChatId;
 

@@ -524,7 +524,13 @@ const MessageBubble = ({
         mediaDataUrl
     });
     const canReplyMessage = canReplyMessageBase && typeof onReplyMessage === 'function';
-    const sourceMessageId = String(msg?.id || '').trim();
+    const sourceMessageId = String(
+        msg?.id
+        || msg?.messageId
+        || msg?.message_id
+        || msg?._id
+        || ''
+    ).trim();
     const copyableText = String(
         messageTextToRender
         || messageBodyText
@@ -1006,7 +1012,7 @@ const MessageBubble = ({
                                             products: Array.isArray(actionOrder?.products) && actionOrder.products.length > 0
                                                 ? actionOrder.products
                                                 : orderItems,
-                                            sourceMessageId: String(msg?.id || '').trim() || actionOrder?.sourceMessageId || null
+                                            sourceMessageId: sourceMessageId || actionOrder?.sourceMessageId || null
                                         })
                                     : null;
                                 onLoadOrderToCart(orderForCart);
