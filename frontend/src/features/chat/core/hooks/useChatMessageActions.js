@@ -5,6 +5,72 @@ import { getTemplateVariablesPreview, listApprovedIndividualTemplates } from '..
 import { patchCachedMessages } from '../helpers/messageCache.helpers';
 import { getBestChatPhone, parseScopedChatId } from '../helpers/appChat.helpers';
 
+function parseCatalogMoneyValue(value, fallback = null) {
+  if (value === null || value === undefined || value === '') return fallback;
+  const parsed = Number.parseFloat(String(value).replace(/[^\d.,-]/g, '').replace(',', '.'));
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : fallback;
+}
+
+function buildNativeCatalogProductOrder(product = {}) {
+  const safeProduct = product && typeof product === 'object' ? product : {};
+  const title = String(safeProduct?.title || safeProduct?.name || safeProduct?.productName || 'Producto del catalogo Meta').trim();
+  const sku = String(
+    safeProduct?.productRetailerId
+    || safeProduct?.product_retailer_id
+    || safeProduct?.sku
+    || safeProduct?.metadata?.sku
+    || safeProduct?.id
+    || ''
+  ).trim() || null;
+  const catalogId = String(
+    safeProduct?.metaCatalogId
+    || safeProduct?.meta_catalog_id
+    || safeProduct?.catalogId
+    || safeProduct?.catalog_id
+    || ''
+  ).trim() || null;
+  const price = parseCatalogMoneyValue(
+    safeProduct?.price
+    ?? safeProduct?.salePrice
+    ?? safeProduct?.finalPrice
+    ?? safeProduct?.regularPrice,
+    null
+  );
+  const productLine = {
+    name: title,
+    title,
+    quantity: 1,
+    sku,
+    productRetailerId: sku,
+    catalogId,
+    price,
+    lineTotal: price,
+    currency: 'PEN'
+  };
+
+  return {
+    type: 'product',
+    sourceType: 'native_catalog_product',
+    title,
+    sku,
+    productRetailerId: sku,
+    catalogId,
+    currency: 'PEN',
+    price,
+    subtotal: price,
+    products: [productLine],
+    rawPreview: {
+      type: 'product',
+      sourceType: 'native_catalog_product',
+      title,
+      body: '',
+      sku,
+      productRetailerId: sku,
+      catalogId
+    }
+  };
+}
+
 export default function useChatMessageActions({
   socket,
   activeChatId,
@@ -234,11 +300,12 @@ export default function useChatMessageActions({
     if (String(activeChatIdRef.current || '').trim() === safeChatId) {
       setMessages((prev) => [...(Array.isArray(prev) ? prev : []), optimisticMessage]);
     }
+    const lastMessagePreview = String(extraFields?.lastMessagePreview || '').trim();
     setChats?.((prev) => prev.map((chat) => (
       String(chat?.id || '').trim() === safeChatId
         ? {
           ...chat,
-          lastMessage: hasMedia ? (String(body || '').trim() || 'Adjunto') : String(body || '').trim(),
+          lastMessage: lastMessagePreview || (hasMedia ? (String(body || '').trim() || 'Adjunto') : String(body || '').trim()),
           lastMessageFromMe: true,
           timestamp
         }
@@ -665,17 +732,23 @@ export default function useChatMessageActions({
       }
     };
 
-    const optimisticBody = buildCatalogProductCaptionPreview(payload.product);
+    const optimisticOrder = buildNativeCatalogProductOrder(payload.product);
+    const optimisticTitle = String(optimisticOrder?.title || productTitle || 'Producto del catalogo Meta').trim();
 
     insertOptimisticOutgoing({
       chatId: activeId,
-      body: optimisticBody || productTitle,
-      hasMedia: Boolean(imageUrl),
-      type: imageUrl ? 'image' : 'chat',
-      mediaUrl: imageUrl || null,
+      body: '',
+      hasMedia: false,
+      type: 'product',
+      mediaUrl: null,
       retryPayload: {
         eventName: 'send_catalog_product',
         payload
+      },
+      extraFields: {
+        order: optimisticOrder,
+        orderPayload: optimisticOrder,
+        lastMessagePreview: optimisticTitle
       }
     });
 
@@ -684,7 +757,6 @@ export default function useChatMessageActions({
   }, [
     activeChatId,
     activeChatIdRef,
-    buildCatalogProductCaptionPreview,
     chatsRef,
     insertOptimisticOutgoing,
     normalizeDigits,

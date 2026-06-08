@@ -331,11 +331,13 @@ const MessageBubble = ({
     const productCardTitle = isMessageFromMe
         ? 'Producto enviado desde catalogo Meta'
         : (productSourceType.includes('catalog_reference')
-            ? 'Cliente consulto este producto'
+            ? 'Producto referido del catalogo'
             : 'Producto compartido');
     const productCardHint = isMessageFromMe
         ? 'Producto enviado como tarjeta nativa de WhatsApp.'
-        : 'Puedes anadir este producto al carrito para cotizarlo.';
+        : (productSourceType.includes('catalog_reference')
+            ? 'El cliente escribio sobre este producto. Puedes anadirlo al carrito para cotizarlo.'
+            : 'Puedes anadir este producto al carrito para cotizarlo.');
     const productTitleForDuplicateCheck = normalizeComparableText(firstOrderItem?.title || firstOrderItem?.name || '');
     const productBodyForDuplicateCheck = normalizeComparableText(messageBodyText);
     const shouldHideDuplicateProductBody = Boolean(
@@ -913,13 +915,10 @@ const MessageBubble = ({
             {isOrderActionable && (
                 <div className={`message-order-card${isQuotePayload ? ' is-quote' : ''}${isProductPayload ? ' is-product' : ' is-order'}`}>
                     <div className="message-order-card__title">
-                        {isProductPayload ? 'Producto compartido' : (isQuotePayload ? displayQuoteCardTitle : '🛒 Pedido del cliente')}
+                        {isProductPayload ? productCardTitle : (isQuotePayload ? displayQuoteCardTitle : '🛒 Pedido del cliente')}
                     </div>
                     {orderIdentifier && (
                         <div className="message-order-card__meta">ID: {orderIdentifier}</div>
-                    )}
-                    {isProductPayload && productCardTitle !== 'Producto compartido' && (
-                        <div className="message-order-card__meta">{productCardTitle}</div>
                     )}
                     {isProductPayload && (firstOrderItem?.title || firstOrderItem?.name) && (
                         <div className="message-order-card__product-name">

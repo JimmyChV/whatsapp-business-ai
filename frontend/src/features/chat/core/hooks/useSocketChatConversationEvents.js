@@ -455,29 +455,34 @@ export default function useSocketChatConversationEvents({
             };
             const normalizedBody = String(
                 eventName === 'send_catalog_product'
-                    ? buildCatalogCaption(product)
+                    ? ''
                     : (data?.body || quickReply?.text || '')
             ).trim();
-            const mediaUrl = String(
-                data?.mediaUrl
-                || product?.imageUrl
-                || product?.image
-                || quickReply?.mediaUrl
-                || quickReply?.mediaAssets?.[0]?.url
-                || ''
-            ).trim() || null;
-            const hasMedia = Boolean(
-                data?.mediaData
-                || data?.mediaUrl
-                || data?.mimetype
-                || data?.filename
-                || product?.imageUrl
-                || product?.image
-                || quickReply?.mediaUrl
-                || quickReply?.mediaMimeType
-                || quickReply?.mediaFileName
-                || (Array.isArray(quickReply?.mediaAssets) && quickReply.mediaAssets.length > 0)
-            );
+            const isNativeCatalogProduct = eventName === 'send_catalog_product';
+            const mediaUrl = isNativeCatalogProduct
+                ? null
+                : (String(
+                    data?.mediaUrl
+                    || product?.imageUrl
+                    || product?.image
+                    || quickReply?.mediaUrl
+                    || quickReply?.mediaAssets?.[0]?.url
+                    || ''
+                ).trim() || null);
+            const hasMedia = isNativeCatalogProduct
+                ? false
+                : Boolean(
+                    data?.mediaData
+                    || data?.mediaUrl
+                    || data?.mimetype
+                    || data?.filename
+                    || product?.imageUrl
+                    || product?.image
+                    || quickReply?.mediaUrl
+                    || quickReply?.mediaMimeType
+                    || quickReply?.mediaFileName
+                    || (Array.isArray(quickReply?.mediaAssets) && quickReply.mediaAssets.length > 0)
+                );
 
             return {
                 eventName,
@@ -564,7 +569,7 @@ export default function useSocketChatConversationEvents({
                 );
                 const sameMediaKind = retryHasMedia === incomingHasMedia;
                 if (!sameBody && !bodyContained && !sameMediaUrl && !sameCatalogTitle && !(incomingHasMedia && !incomingBody && retryHasMedia)) continue;
-                if (!sameMediaKind) continue;
+                if (!sameMediaKind && !sameCatalogTitle) continue;
                 if (entry?.timeoutId) clearTimeout(entry.timeoutId);
                 pendingByChat.delete(clientTempId);
                 if (pendingByChat.size === 0) {

@@ -1069,22 +1069,55 @@ class WhatsAppCloudClient extends EventEmitter {
         const messageId = String(response?.messages?.[0]?.id || randomMessageId('cloud_out_interactive'));
         const chatId = `${waId}@c.us`;
         const interactiveBody = String(safeInteractive?.body?.text || '').trim();
+        const interactiveType = String(safeInteractive?.type || '').trim().toLowerCase();
+        const metadataOrderPayload = metadataObj?.nativeProductOrderPayload && typeof metadataObj.nativeProductOrderPayload === 'object' && !Array.isArray(metadataObj.nativeProductOrderPayload)
+            ? metadataObj.nativeProductOrderPayload
+            : null;
+        const isNativeProductInteractive = interactiveType === 'product';
+        const nativeProductInfo = isNativeProductInteractive
+            ? (metadataOrderPayload
+                ? {
+                    orderPayload: metadataOrderPayload,
+                    orderProducts: Array.isArray(metadataOrderPayload?.products) ? metadataOrderPayload.products : []
+                }
+                : buildCatalogProductPayload({
+                    productPayload: {
+                        title: metadataObj?.productTitle || metadataObj?.title || metadataObj?.productName || null,
+                        price: metadataObj?.productPrice ?? metadataObj?.price ?? null,
+                        currency: metadataObj?.currency || 'PEN',
+                        productRetailerId: metadataObj?.productRetailerId || safeInteractive?.action?.product_retailer_id || null,
+                        catalogId: metadataObj?.metaCatalogId || safeInteractive?.action?.catalog_id || null
+                    },
+                    msg: {
+                        product_retailer_id: metadataObj?.productRetailerId || safeInteractive?.action?.product_retailer_id || null,
+                        catalog_id: metadataObj?.metaCatalogId || safeInteractive?.action?.catalog_id || null,
+                        price: metadataObj?.productPrice ?? metadataObj?.price ?? null,
+                        currency: metadataObj?.currency || 'PEN'
+                    },
+                    fallbackTitle: 'Producto del catalogo Meta',
+                    sourceType: 'native_catalog_product',
+                    body: ''
+                }))
+            : null;
         const message = this.upsertMessage({
             id: messageId,
             chatId,
             from: this.selfChatId,
             to: chatId,
-            body: interactiveBody,
+            body: isNativeProductInteractive ? '' : interactiveBody,
             fromMe: true,
-            type: 'interactive',
+            type: isNativeProductInteractive ? 'product' : 'interactive',
             ack: 1,
             timestamp: safeTimestamp(),
             hasMedia: false,
             quotedMessageId,
+            order: nativeProductInfo?.orderPayload || null,
+            orderProducts: nativeProductInfo?.orderProducts || null,
             rawData: compactObject({
                 interactive: safeInteractive,
-                interactiveType: String(safeInteractive?.type || '').trim() || null,
-                metadata: Object.keys(metadataObj).length > 0 ? metadataObj : null
+                interactiveType: interactiveType || null,
+                metadata: Object.keys(metadataObj).length > 0 ? metadataObj : null,
+                product: nativeProductInfo?.orderPayload || null
             })
         }, { incoming: false, emitEvent: 'message_sent' });
 

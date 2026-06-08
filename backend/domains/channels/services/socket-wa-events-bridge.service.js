@@ -1272,7 +1272,9 @@ function createSocketWaEventsBridgeService({
             });
             const fileMeta = extractMessageFileMeta(msg, media);
             const quotedMessage = await extractQuotedMessageInfo(msg);
-            const isInteractive = String(msg?.type || msg?._data?.type || '').toLowerCase() === 'interactive';
+            const deliveryMode = String(rawMetadata?.deliveryMode || rawMetadata?.delivery_mode || '').trim().toLowerCase();
+            const isNativeCatalogProduct = deliveryMode === 'native_catalog_product';
+            const isInteractive = String(msg?.type || msg?._data?.type || '').toLowerCase() === 'interactive' && !isNativeCatalogProduct;
             const order = isInteractive ? null : extractOrderInfo(msg);
             const location = extractLocationInfo(msg);
             const enrichedOrder = order

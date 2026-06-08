@@ -20,6 +20,71 @@ function firstCleanText(...values) {
     return '';
 }
 
+function parseCatalogMoney(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? Math.round(value * 100) / 100 : null;
+    }
+    const normalized = String(value || '').trim().replace(/[^\d.,-]/g, '').replace(',', '.');
+    if (!normalized) return null;
+    const parsed = Number.parseFloat(normalized);
+    return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : null;
+}
+
+function buildNativeProductOrderPayload(product = {}, catalogId = '', productRetailerId = '') {
+    const metadata = getProductMetadata(product);
+    const title = firstCleanText(
+        product?.title,
+        product?.name,
+        product?.productName,
+        metadata.title,
+        metadata.name,
+        productRetailerId ? `SKU ${productRetailerId}` : 'Producto del catalogo Meta'
+    );
+    const price = parseCatalogMoney(
+        product?.price
+        ?? product?.salePrice
+        ?? product?.finalPrice
+        ?? product?.regularPrice
+        ?? metadata.price
+        ?? metadata.salePrice
+        ?? metadata.finalPrice
+    );
+    const productLine = {
+        name: title,
+        title,
+        quantity: 1,
+        sku: productRetailerId || null,
+        productRetailerId: productRetailerId || null,
+        catalogId: catalogId || null,
+        price,
+        lineTotal: price,
+        currency: 'PEN'
+    };
+
+    return {
+        type: 'product',
+        sourceType: 'native_catalog_product',
+        title,
+        sku: productRetailerId || null,
+        productRetailerId: productRetailerId || null,
+        catalogId: catalogId || null,
+        currency: 'PEN',
+        price,
+        subtotal: price,
+        products: [productLine],
+        rawPreview: {
+            type: 'product',
+            sourceType: 'native_catalog_product',
+            title,
+            body: '',
+            sku: productRetailerId || null,
+            productRetailerId: productRetailerId || null,
+            catalogId: catalogId || null
+        }
+    };
+}
+
 function resolveProductRetailerId(product = {}) {
     const metadata = getProductMetadata(product);
     return firstCleanText(
@@ -233,6 +298,9 @@ function createSocketCatalogDeliveryService({
                 const integrations = await loadRuntimeIntegrations();
                 nativeCatalogId = resolveMetaCatalogId({ product, payload, integrations, moduleContext });
                 productRetailerId = resolveProductRetailerId(product);
+                const nativeProductOrderPayload = nativeCatalogId && productRetailerId
+                    ? buildNativeProductOrderPayload(product, nativeCatalogId, productRetailerId)
+                    : null;
                 if (nativeCatalogId && productRetailerId && waClient && typeof waClient.sendInteractiveMessage === 'function') {
                     const nativeInteractive = buildNativeProductInteractive(product, nativeCatalogId, productRetailerId);
                     try {
@@ -241,7 +309,10 @@ function createSocketCatalogDeliveryService({
                                 ...baseSendMetadata,
                                 deliveryMode: 'native_catalog_product',
                                 metaCatalogId: nativeCatalogId,
-                                productRetailerId
+                                productRetailerId,
+                                productTitle: nativeProductOrderPayload?.title || firstCleanText(product?.title, product?.name),
+                                productPrice: nativeProductOrderPayload?.price ?? null,
+                                nativeProductOrderPayload
                             }
                         });
                         if (sentResponse) {
@@ -312,14 +383,15 @@ function createSocketCatalogDeliveryService({
                 const syntheticMessage = buildSyntheticOutgoingMessage({
                     messageId: sentMessageId,
                     chatId: target.targetChatId,
-                    body: sentNativeCatalog ? caption : '',
-                    type: sentNativeCatalog ? 'catalog_product' : 'chat',
+                    body: sentNativeCatalog ? '' : '',
+                    type: sentNativeCatalog ? 'product' : 'chat',
                     metadata: sentNativeCatalog
                         ? {
                             ...baseSendMetadata,
                             deliveryMode,
                             metaCatalogId: nativeCatalogId || null,
-                            productRetailerId: productRetailerId || null
+                            productRetailerId: productRetailerId || null,
+                            nativeProductOrderPayload
                         }
                         : null
                 });
@@ -327,10 +399,11 @@ function createSocketCatalogDeliveryService({
                 await emitRealtimeOutgoingMessage({
                     sentMessage: sentResponse && typeof sentResponse === 'object' ? sentResponse : syntheticMessage,
                     fallbackChatId: target.targetChatId,
-                    fallbackBody: caption,
+                    fallbackBody: sentNativeCatalog ? '' : caption,
                     moduleContext,
                     agentMeta,
-                    mediaPayload: catalogMediaPayload
+                    mediaPayload: catalogMediaPayload,
+                    orderPayload: sentNativeCatalog ? nativeProductOrderPayload : null
                 });
 
                 const productId = String(product?.id || product?.productId || '').trim() || null;
