@@ -148,8 +148,9 @@ function buildVariableCatalogHeaders(tenantId = '') {
     const headers = {};
     const session = loadStoredSaasSession();
     const accessToken = text(session?.accessToken);
+    const tokenType = text(session?.tokenType) || 'Bearer';
     const cleanTenantId = text(tenantId || session?.user?.tenantId);
-    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+    if (accessToken) headers.Authorization = `${tokenType} ${accessToken}`;
     if (cleanTenantId) headers['X-Tenant-Id'] = cleanTenantId;
     return headers;
 }
