@@ -431,6 +431,7 @@ function createSocketCatalogDeliveryService({
                 }
 
                 const product = payload?.product && typeof payload.product === 'object' ? payload.product : {};
+                const productRetailerIdCandidates = resolveProductRetailerIdCandidates(product);
                 const caption = buildCatalogProductCaption(product);
                 const imageUrl = String(product?.imageUrl || product?.image || '').trim();
                 const moduleContext = target.moduleContext || socket?.data?.waModule || null;
@@ -455,7 +456,6 @@ function createSocketCatalogDeliveryService({
                 if (!nativeCatalogId) {
                     nativeCatalogId = await loadNativeCatalogIdFromDb();
                 }
-                const productRetailerIdCandidates = resolveProductRetailerIdCandidates(product);
                 productRetailerId = productRetailerIdCandidates[0] || '';
                 const matchedCatalogItem = productRetailerIdCandidates.length
                     ? await resolveCatalogItemByCandidates(tenantId, productRetailerIdCandidates)
