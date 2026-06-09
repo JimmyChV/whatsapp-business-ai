@@ -53,6 +53,28 @@ function normalizeFilters(input = {}) {
     };
 }
 
+function stableNormalize(value) {
+    if (Array.isArray(value)) return value.map(stableNormalize);
+    if (!value || typeof value !== 'object') return value;
+    return Object.keys(value)
+        .sort()
+        .reduce((acc, key) => {
+            acc[key] = stableNormalize(value[key]);
+            return acc;
+        }, {});
+}
+
+function hashEstimatePayload(payload = {}) {
+    return JSON.stringify(stableNormalize({
+        moduleId: payload.moduleId || '',
+        scopeModuleId: payload.scopeModuleId || '',
+        templateName: payload.templateName || '',
+        templateLanguage: payload.templateLanguage || '',
+        filters: payload.filters || {},
+        audienceSelectionJson: payload.audienceSelectionJson || {}
+    }));
+}
+
 function sortCampaigns(items = []) {
     return [...items].sort((left, right) => {
         const leftUpdated = Date.parse(left?.updatedAt || left?.createdAt || 0) || 0;
@@ -110,6 +132,7 @@ export default function useSaasCampaignsController({
     const cacheRef = useRef(resolveCampaignsCache(requestJson, tenantCacheKey));
     const campaignsRef = useRef(cacheRef.current.items);
     const selectionRequestRef = useRef(0);
+    const inflightEstimatesRef = useRef(new Map());
     const [filters, setFilters] = useState(() => normalizeFilters({ ...DEFAULT_FILTERS, ...initialFilters }));
     const filtersRef = useRef(filters);
     const [campaigns, setCampaigns] = useState(() => cacheRef.current.items);
@@ -132,6 +155,10 @@ export default function useSaasCampaignsController({
     useEffect(() => {
         filtersRef.current = filters;
     }, [filters]);
+
+    useEffect(() => () => {
+        inflightEstimatesRef.current.clear();
+    }, []);
 
     useEffect(() => {
         campaignsRef.current = Array.isArray(campaigns) ? campaigns : [];
@@ -248,7 +275,18 @@ export default function useSaasCampaignsController({
         setEstimating(true);
         setError('');
         try {
-            const response = await estimateCampaignApi(requestJson, payload, { tenantId });
+            const estimateKey = hashEstimatePayload(payload);
+            let requestPromise = inflightEstimatesRef.current.get(estimateKey);
+            if (!requestPromise) {
+                requestPromise = estimateCampaignApi(requestJson, payload, { tenantId })
+                    .finally(() => {
+                        if (inflightEstimatesRef.current.get(estimateKey) === requestPromise) {
+                            inflightEstimatesRef.current.delete(estimateKey);
+                        }
+                    });
+                inflightEstimatesRef.current.set(estimateKey, requestPromise);
+            }
+            const response = await requestPromise;
             const estimate = response?.estimate && typeof response.estimate === 'object'
                 ? response.estimate
                 : null;
@@ -261,7 +299,7 @@ export default function useSaasCampaignsController({
         } finally {
             setEstimating(false);
         }
-    }, [requestJson]);
+    }, [requestJson, tenantId]);
 
     const selectCampaign = useCallback(async (campaignId = '', { loadDetail = true } = {}) => {
         const requestId = selectionRequestRef.current + 1;
