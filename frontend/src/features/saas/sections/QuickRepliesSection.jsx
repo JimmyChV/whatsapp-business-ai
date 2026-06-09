@@ -1,11 +1,9 @@
 import React from 'react';
-import EmojiPicker from 'emoji-picker-react';
-import { EmojiStyle, SkinTonePickerLocation, SkinTones, SuggestionMode, Theme } from 'emoji-picker-react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
+import AutoMessageEditor from '../components/AutoMessageEditor';
 import { SaasEntityPage } from '../components/layout';
 
 const text = (value) => String(value ?? '').trim();
-const QUICK_REPLY_EMOJI_SKIN_TONE_STORAGE_KEY = 'chat-emoji-skin-tone:global';
 const QUICK_REPLY_CATEGORIES = Object.freeze([
     { value: 'general', label: 'General' },
     { value: 'informacion', label: 'Informacion' },
@@ -22,143 +20,6 @@ function normalizeQuickReplyCategory(value = 'general') {
 function getQuickReplyCategoryLabel(value = 'general') {
     const clean = normalizeQuickReplyCategory(value);
     return QUICK_REPLY_CATEGORIES.find((entry) => entry.value === clean)?.label || 'General';
-}
-
-const QUICK_REPLY_FALLBACK_VARIABLE_CATEGORIES = Object.freeze([
-    {
-        id: 'cliente',
-        label: 'Cliente',
-        variables: [
-            { key: 'contacto_cliente', label: 'Nombre con tratamiento', description: 'Nombre con tratamiento', exampleValue: 'Sra. Luisa' },
-            { key: 'nombre_cliente', label: 'Nombre completo', description: 'Nombre completo', exampleValue: 'Maria Perez' },
-            { key: 'telefono_cliente', label: 'Teléfono', description: 'Teléfono del cliente', exampleValue: '+51941443776' },
-            { key: 'email_cliente', label: 'Email', description: 'Email', exampleValue: 'cliente@correo.com' },
-            { key: 'erp_id', label: 'Código ERP', description: 'Código ERP', exampleValue: 'CLI-000245' },
-            { key: 'tipo_cliente', label: 'Tipo de cliente', description: 'Tipo de cliente', exampleValue: 'Mayorista' },
-            { key: 'fecha_registro', label: 'Fecha de registro', description: 'Fecha de registro', exampleValue: '29/05/2026' }
-        ]
-    },
-    {
-        id: 'direccion',
-        label: 'Dirección',
-        variables: [
-            { key: 'direccion', label: 'Dirección', description: 'Dirección principal', exampleValue: 'Av. Los Ingenieros 245' },
-            { key: 'distrito', label: 'Distrito', description: 'Distrito', exampleValue: 'Rimac' },
-            { key: 'provincia', label: 'Provincia', description: 'Provincia', exampleValue: 'Lima' },
-            { key: 'departamento', label: 'Departamento', description: 'Departamento', exampleValue: 'Lima' },
-            { key: 'referencia', label: 'Referencia', description: 'Referencia', exampleValue: 'Frente al parque' }
-        ]
-    },
-    {
-        id: 'zona_envio',
-        label: 'Zona y envio',
-        variables: [
-            { key: 'zona_envio', label: 'Zona de envío', description: 'Zona de envío', exampleValue: 'Lima Norte' },
-            { key: 'tipo_envio', label: 'Tipo de envío', description: 'Tipo de envío', exampleValue: 'Delivery' },
-            { key: 'costo_envio', label: 'Costo de envío', description: 'Costo de envío', exampleValue: 'S/ 12.00' }
-        ]
-    },
-    {
-        id: 'agente',
-        label: 'Agente',
-        variables: [
-            { key: 'nombre_agente', label: 'Nombre del agente', description: 'Nombre del agente', exampleValue: 'Owner Lavitat' },
-            { key: 'rol_agente', label: 'Rol', description: 'Rol', exampleValue: 'seller' }
-        ]
-    },
-    {
-        id: 'campana',
-        label: 'Fecha',
-        variables: [
-            { key: 'fecha_inicio', label: 'Fecha de inicio', description: 'Fecha de inicio', exampleValue: '26 de mayo de 2026' },
-            { key: 'fecha_fin', label: 'Fecha límite', description: 'Fecha límite', exampleValue: '29 de mayo de 2026' }
-        ]
-    }
-]);
-
-function renderWhatsAppFormattedText(value) {
-    const raw = String(value || '');
-    if (!raw) return <span className="saas-quick-reply-preview-muted">El texto aparecera aqui...</span>;
-    const tokenRegex = /(\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~|`[^`\n]+`)/g;
-    return raw.split('\n').map((line, lineIndex) => {
-        const parts = [];
-        let lastIndex = 0;
-        line.replace(tokenRegex, (match, _token, offset) => {
-            if (offset > lastIndex) parts.push(line.slice(lastIndex, offset));
-            const content = match.slice(1, -1);
-            const key = `qr_fmt_${lineIndex}_${offset}`;
-            if (match.startsWith('*')) parts.push(<strong key={key}>{content}</strong>);
-            else if (match.startsWith('_')) parts.push(<em key={key}>{content}</em>);
-            else if (match.startsWith('~')) parts.push(<del key={key}>{content}</del>);
-            else parts.push(<code key={key}>{content}</code>);
-            lastIndex = offset + match.length;
-            return match;
-        });
-        if (lastIndex < line.length) parts.push(line.slice(lastIndex));
-        return (
-            <React.Fragment key={`qr_fmt_line_${lineIndex}`}>
-                {parts.length > 0 ? parts : ' '}
-                {lineIndex < raw.split('\n').length - 1 ? <br /> : null}
-            </React.Fragment>
-        );
-    });
-}
-
-function collectVariableCategories(payload = {}) {
-    const categories = Array.isArray(payload?.categories) ? payload.categories : [];
-    const normalizedCategories = categories
-        .map((category = {}) => ({
-            id: text(category?.id || category?.key).toLowerCase(),
-            label: text(category?.label || category?.id || category?.key),
-            variables: (Array.isArray(category?.variables) ? category.variables : [])
-                .map((variable = {}) => ({
-                    ...variable,
-                    key: text(variable?.key),
-                    label: text(variable?.label || variable?.key),
-                    description: text(variable?.description),
-                    exampleValue: text(variable?.exampleValue || variable?.previewValue)
-                }))
-                .filter((variable) => variable.key)
-        }))
-        .filter((category) => category.id && category.label && category.variables.length > 0);
-    if (normalizedCategories.length > 0) return normalizedCategories;
-
-    const variables = Array.isArray(payload?.variables) ? payload.variables : [];
-    if (variables.length > 0) {
-        const grouped = new Map();
-        variables.forEach((variable = {}) => {
-            const categoryId = text(variable?.categoryId || variable?.category || 'general').toLowerCase() || 'general';
-            const categoryLabel = text(variable?.categoryLabel || variable?.category || categoryId);
-            if (!grouped.has(categoryId)) grouped.set(categoryId, { id: categoryId, label: categoryLabel, variables: [] });
-            const key = text(variable?.key);
-            if (key) grouped.get(categoryId).variables.push({
-                ...variable,
-                key,
-                label: text(variable?.label || key),
-                description: text(variable?.description),
-                exampleValue: text(variable?.exampleValue || variable?.previewValue)
-            });
-        });
-        const groupedCategories = Array.from(grouped.values()).filter((category) => category.variables.length > 0);
-        if (groupedCategories.length > 0) return groupedCategories;
-    }
-
-    return QUICK_REPLY_FALLBACK_VARIABLE_CATEGORIES.map((category) => ({
-        ...category,
-        variables: category.variables.map((variable) => ({ ...variable }))
-    }));
-}
-
-function renderQuickReplyPreviewText(value, categories = []) {
-    const variableMap = new Map((Array.isArray(categories) ? categories : [])
-        .flatMap((category) => (Array.isArray(category?.variables) ? category.variables : []))
-        .map((variable) => [
-            text(variable?.key).toLowerCase(),
-            text(variable?.exampleValue || variable?.previewValue)
-        ]));
-    return String(value || '').replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (match, key) => (
-        variableMap.get(String(key || '').trim().toLowerCase()) || match
-    ));
 }
 
 export default function QuickRepliesSection(props = {}) {
@@ -197,11 +58,7 @@ export default function QuickRepliesSection(props = {}) {
         toggleModuleInQuickReplyLibraryForm,
         saveQuickReplyLibrary,
         cancelQuickReplyLibraryEdit,
-        QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL,
         visibleQuickReplyItemsForSelectedLibrary = [],
-        quickReplyUploadMaxMb,
-        quickReplyStorageQuotaMb,
-        normalizeQuickReplyMediaAssets,
         selectedQuickReplyItem,
         quickReplyItemPanelMode,
         openQuickReplyItemEdit,
@@ -222,8 +79,7 @@ export default function QuickRepliesSection(props = {}) {
         removeQuickReplyAssetAt,
         saveQuickReplyItem,
         cancelQuickReplyItemEdit,
-        openQuickReplyItemCreate,
-        requestJson
+        openQuickReplyItemCreate
     } = context;
     const lazySectionId = 'quick_replies';
     const sectionReloadToken = typeof getReloadToken === 'function' ? getReloadToken(lazySectionId) : 0;
@@ -257,24 +113,6 @@ export default function QuickRepliesSection(props = {}) {
         }
         return runAction?.(label, action);
     }, [runAction, runSectionAction]);
-    const quickReplyTextRef = React.useRef(null);
-    const [quickReplyVariableCategories, setQuickReplyVariableCategories] = React.useState(() => collectVariableCategories({}));
-    const [quickReplyVariableLoading, setQuickReplyVariableLoading] = React.useState(false);
-    const [quickReplyVariableError, setQuickReplyVariableError] = React.useState('');
-    const [quickReplyVariableSearch, setQuickReplyVariableSearch] = React.useState('');
-    const [quickReplyVariableCatalogLoaded, setQuickReplyVariableCatalogLoaded] = React.useState(false);
-    const [quickReplyExpandedVariableCategories, setQuickReplyExpandedVariableCategories] = React.useState({});
-    const [showQuickReplyVariablesPanel, setShowQuickReplyVariablesPanel] = React.useState(true);
-    const [showQuickReplyEmojiPicker, setShowQuickReplyEmojiPicker] = React.useState(false);
-    const [quickReplyEmojiSkinTone, setQuickReplyEmojiSkinTone] = React.useState(() => {
-        if (typeof window === 'undefined') return SkinTones.NEUTRAL;
-        try {
-            const stored = window.localStorage.getItem(QUICK_REPLY_EMOJI_SKIN_TONE_STORAGE_KEY);
-            return Object.values(SkinTones).includes(stored) ? stored : SkinTones.NEUTRAL;
-        } catch (_) {
-            return SkinTones.NEUTRAL;
-        }
-    });
     const selectedId = quickReplyLibraryPanelMode === 'create'
         ? '__create_quick_reply_library__'
         : text(selectedQuickReplyLibrary?.libraryId);
@@ -460,129 +298,6 @@ export default function QuickRepliesSection(props = {}) {
         waModules
     ]);
 
-    React.useEffect(() => {
-        if (!isItemEditing || quickReplyVariableCatalogLoaded || quickReplyVariableLoading || typeof requestJson !== 'function') return;
-        let cancelled = false;
-        setQuickReplyVariableLoading(true);
-        setQuickReplyVariableError('');
-        requestJson('/api/tenant/template-variables/catalog')
-            .then((payload) => {
-                if (cancelled) return;
-                setQuickReplyVariableCategories(collectVariableCategories(payload));
-                setQuickReplyVariableCatalogLoaded(true);
-            })
-            .catch(() => {
-                if (cancelled) return;
-                setQuickReplyVariableError('');
-                setQuickReplyVariableCategories(collectVariableCategories({}));
-                setQuickReplyVariableCatalogLoaded(true);
-            })
-            .finally(() => {
-                if (!cancelled) setQuickReplyVariableLoading(false);
-            });
-        return () => {
-            cancelled = true;
-        };
-    }, [isItemEditing, quickReplyVariableCatalogLoaded, quickReplyVariableLoading, requestJson]);
-
-    React.useEffect(() => {
-        setQuickReplyExpandedVariableCategories((prev) => {
-            const next = { ...(prev || {}) };
-            (Array.isArray(quickReplyVariableCategories) ? quickReplyVariableCategories : []).forEach((category) => {
-                const key = text(category?.id || category?.label).toLowerCase();
-                if (key && next[key] === undefined) next[key] = true;
-            });
-            return next;
-        });
-    }, [quickReplyVariableCategories]);
-
-    const wrapQuickReplySelection = React.useCallback((prefix, suffix = prefix) => {
-        const markerStart = String(prefix || '');
-        const markerEnd = String(suffix || markerStart);
-        const input = quickReplyTextRef.current;
-        const currentText = String(quickReplyItemForm.text || '');
-        const start = Number(input?.selectionStart ?? currentText.length);
-        const end = Number(input?.selectionEnd ?? currentText.length);
-        const selectedText = currentText.slice(start, end);
-        const nextText = `${currentText.slice(0, start)}${markerStart}${selectedText}${markerEnd}${currentText.slice(end)}`;
-        setQuickReplyItemForm?.((prev) => ({ ...prev, text: nextText }));
-        window.requestAnimationFrame?.(() => {
-            const nextInput = quickReplyTextRef.current;
-            if (!nextInput) return;
-            nextInput.focus();
-            const cursorStart = selectedText ? start : start + markerStart.length;
-            const cursorEnd = selectedText ? end + markerStart.length + markerEnd.length : cursorStart;
-            nextInput.setSelectionRange(cursorStart, cursorEnd);
-        });
-    }, [quickReplyItemForm.text, setQuickReplyItemForm]);
-
-    const insertQuickReplyEmoji = React.useCallback((emoji = '') => {
-        const safeEmoji = String(emoji || '');
-        if (!safeEmoji) return;
-        const input = quickReplyTextRef.current;
-        const currentText = String(quickReplyItemForm.text || '');
-        const start = Number(input?.selectionStart ?? currentText.length);
-        const end = Number(input?.selectionEnd ?? currentText.length);
-        const nextText = `${currentText.slice(0, start)}${safeEmoji}${currentText.slice(end)}`;
-        setQuickReplyItemForm?.((prev) => ({ ...prev, text: nextText }));
-        setShowQuickReplyEmojiPicker(false);
-        window.requestAnimationFrame?.(() => {
-            const nextInput = quickReplyTextRef.current;
-            if (!nextInput) return;
-            nextInput.focus();
-            const cursor = start + safeEmoji.length;
-            nextInput.setSelectionRange(cursor, cursor);
-        });
-    }, [quickReplyItemForm.text, setQuickReplyItemForm]);
-
-    const handleQuickReplyEmojiSkinToneChange = React.useCallback((skinTone) => {
-        const safeSkinTone = Object.values(SkinTones).includes(skinTone) ? skinTone : SkinTones.NEUTRAL;
-        setQuickReplyEmojiSkinTone(safeSkinTone);
-        if (typeof window === 'undefined') return;
-        try {
-            window.localStorage.setItem(QUICK_REPLY_EMOJI_SKIN_TONE_STORAGE_KEY, safeSkinTone);
-        } catch (_) { }
-    }, []);
-
-    const insertQuickReplyVariable = React.useCallback((variableKey = '') => {
-        const cleanKey = text(variableKey);
-        if (!cleanKey) return;
-        const token = `{{${cleanKey}}}`;
-        const input = quickReplyTextRef.current;
-        const currentText = String(quickReplyItemForm.text || '');
-        const start = Number(input?.selectionStart ?? currentText.length);
-        const end = Number(input?.selectionEnd ?? currentText.length);
-        const nextText = `${currentText.slice(0, start)}${token}${currentText.slice(end)}`;
-        setQuickReplyItemForm?.((prev) => ({ ...prev, text: nextText }));
-        window.requestAnimationFrame?.(() => {
-            const nextInput = quickReplyTextRef.current;
-            if (!nextInput) return;
-            nextInput.focus();
-            const cursor = start + token.length;
-            nextInput.setSelectionRange(cursor, cursor);
-        });
-    }, [quickReplyItemForm.text, setQuickReplyItemForm]);
-
-    const filteredQuickReplyVariableCategories = React.useMemo(() => {
-        const query = text(quickReplyVariableSearch).toLowerCase();
-        const categories = Array.isArray(quickReplyVariableCategories) ? quickReplyVariableCategories : [];
-        if (!query) return categories;
-        return categories
-            .map((category) => ({
-                ...category,
-                variables: (Array.isArray(category?.variables) ? category.variables : []).filter((variable) => (
-                    `${text(variable?.key)} ${text(variable?.label)} ${text(variable?.description)}`.toLowerCase().includes(query)
-                ))
-            }))
-            .filter((category) => Array.isArray(category.variables) && category.variables.length > 0);
-    }, [quickReplyVariableCategories, quickReplyVariableSearch]);
-
-    const toggleQuickReplyVariableCategory = React.useCallback((categoryKey = '') => {
-        const key = text(categoryKey).toLowerCase();
-        if (!key) return;
-        setQuickReplyExpandedVariableCategories((prev) => ({ ...(prev || {}), [key]: !prev?.[key] }));
-    }, []);
-
     const requestCloseQuickReplyItemBuilder = React.useCallback(async (requestClose = null) => {
         if (quickReplyItemHasChanges) {
             const ok = await confirm({
@@ -601,12 +316,6 @@ export default function QuickRepliesSection(props = {}) {
         const hasRequiredContent = Boolean(text(quickReplyItemForm.text) || quickReplyItemFormAssets.length > 0 || text(quickReplyItemForm.mediaUrl));
         const saveDisabled = busy || uploadingQuickReplyAssets || !canManageQuickReplies || !text(quickReplyItemForm.label) || !hasRequiredContent;
         const handleClose = () => { void requestCloseQuickReplyItemBuilder(requestClose); };
-        const previewAsset = quickReplyItemFormAssets[0] || null;
-        const previewMediaUrl = resolveQuickReplyAssetPreviewUrl(previewAsset?.url || quickReplyItemForm.mediaUrl || '');
-        const previewMediaName = text(previewAsset?.fileName || previewAsset?.filename || quickReplyItemForm.mediaFileName || 'Adjunto');
-        const previewIsImage = previewAsset
-            ? isQuickReplyImageAsset(previewAsset)
-            : /\.(png|jpe?g|gif|webp|avif|bmp|svg)(?:\?|#|$)/i.test(previewMediaUrl);
 
         return (
             <div className="saas-quick-reply-builder-overlay" onClick={handleClose}>
@@ -618,252 +327,45 @@ export default function QuickRepliesSection(props = {}) {
                         </div>
                         <button type="button" className="saas-btn-cancel" disabled={busy || uploadingQuickReplyAssets} onClick={handleClose}>Cerrar</button>
                     </div>
-                    <div className="saas-quick-reply-editor-layout">
-                        <section className="saas-quick-reply-editor-main saas-quick-reply-editor-main--form" aria-label="Formulario de respuesta rapida">
-                            <div className="saas-admin-form-row">
-                                <label>Etiqueta</label>
-                                <input value={quickReplyItemForm.label || ''} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, label: event.target.value }))} placeholder="Ej: Saludo inicial" disabled={busy || uploadingQuickReplyAssets} />
-                            </div>
-                            <div className="saas-admin-form-row">
-                                <label>Mensaje</label>
-                                <textarea ref={quickReplyTextRef} value={quickReplyItemForm.text || ''} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, text: event.target.value }))} rows={8} placeholder="Escribe el mensaje. Puedes insertar variables desde la columna central." disabled={busy || uploadingQuickReplyAssets} />
-                            </div>
-                            <div className="saas-admin-form-row">
-                                <label>Categoría</label>
-                                <select
-                                    value={normalizeQuickReplyCategory(quickReplyItemForm.category)}
-                                    onChange={(event) => {
-                                        const category = normalizeQuickReplyCategory(event.target.value);
-                                        setQuickReplyItemForm?.((prev) => ({
-                                            ...prev,
-                                            category,
-                                            availableForPatty: category === 'general' ? false : prev.availableForPatty === true
-                                        }));
-                                    }}
-                                    disabled={busy || uploadingQuickReplyAssets}
-                                >
-                                    {QUICK_REPLY_CATEGORIES.map((category) => (
-                                        <option key={`qr_category_${category.value}`} value={category.value}>{category.label}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            {normalizeQuickReplyCategory(quickReplyItemForm.category) !== 'general' ? (
-                                <label className="saas-admin-module-toggle">
-                                    <input
-                                        type="checkbox"
-                                        checked={quickReplyItemForm.availableForPatty === true}
-                                        onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, availableForPatty: event.target.checked }))}
-                                        disabled={busy || uploadingQuickReplyAssets}
-                                    />
-                                    <span>Disponible para Patty IA</span>
-                                </label>
-                            ) : null}
-                            <div className="saas-quick-reply-format-toolbar" aria-label="Formato WhatsApp">
-                                <span>Formato WhatsApp</span>
-                                <div className="saas-quick-reply-emoji-wrap">
-                                    <button
-                                        type="button"
-                                        disabled={busy || uploadingQuickReplyAssets}
-                                        onClick={() => setShowQuickReplyEmojiPicker((prev) => !prev)}
-                                        aria-label="Insertar emoji"
-                                    >
-                                        🙂
-                                    </button>
-                                    {showQuickReplyEmojiPicker ? (
-                                        <div className="saas-quick-reply-emoji-panel" onClick={(event) => event.stopPropagation()}>
-                                            <EmojiPicker
-                                                onEmojiClick={(emojiData) => insertQuickReplyEmoji(emojiData?.emoji)}
-                                                onSkinToneChange={handleQuickReplyEmojiSkinToneChange}
-                                                width="100%"
-                                                height={360}
-                                                lazyLoadEmojis
-                                                skinTonesDisabled={false}
-                                                searchDisabled={false}
-                                                searchPlaceHolder="Buscar emoji o gesto"
-                                                defaultSkinTone={quickReplyEmojiSkinTone}
-                                                suggestedEmojisMode={SuggestionMode.FREQUENT}
-                                                skinTonePickerLocation={SkinTonePickerLocation.SEARCH}
-                                                emojiStyle={EmojiStyle.APPLE}
-                                                previewConfig={{ showPreview: false }}
-                                                theme={Theme.AUTO}
-                                            />
-                                        </div>
-                                    ) : null}
-                                </div>
-                                <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => wrapQuickReplySelection('*')}><strong>B</strong></button>
-                                <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => wrapQuickReplySelection('_')}><em>I</em></button>
-                                <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => wrapQuickReplySelection('~')}><del>S</del></button>
-                                <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => wrapQuickReplySelection('`')}><code>M</code></button>
-                            </div>
-                            <div className="saas-admin-related-block">
-                                <h4>Adjunto</h4>
-                                <div className="saas-admin-form-row">
-                                    <input value={quickReplyItemForm.mediaUrl || ''} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, mediaUrl: event.target.value, mediaMimeType: prev.mediaMimeType || '' }))} placeholder="URL principal (opcional)" disabled={busy || uploadingQuickReplyAssets} />
-                                    <label className={`saas-admin-dropzone ${busy || uploadingQuickReplyAssets ? 'is-disabled' : ''}`.trim()} style={{ minHeight: 'auto', padding: '10px 12px' }}>
-                                        <input
-                                            type="file"
-                                            multiple
-                                            accept={QUICK_REPLY_ACCEPT_VALUE}
-                                            disabled={busy || uploadingQuickReplyAssets}
-                                            onChange={async (event) => {
-                                                const files = Array.from(event.target.files || []);
-                                                event.target.value = '';
-                                                if (files.length === 0) return;
-                                                try {
-                                                    await handleQuickReplyAssetSelection?.(files);
-                                                } catch (uploadError) {
-                                                    setError?.(String(uploadError?.message || uploadError || 'No se pudo subir adjunto de respuesta rapida.'));
-                                                }
-                                            }}
-                                        />
-                                        <strong>{uploadingQuickReplyAssets ? 'Subiendo adjuntos...' : 'Subir adjuntos'}</strong>
-                                        <small>Imágenes, PDF, Word, Excel, PowerPoint, ZIP, audio y MP4. Máx. 50 MB por archivo.</small>
-                                    </label>
-                                </div>
-                                {quickReplyItemFormAssets.length > 0 ? (
-                                    <div className="saas-admin-related-list">
-                                        {quickReplyItemFormAssets.map((asset, assetIdx) => {
-                                            const fileLabel = getQuickReplyAssetDisplayName(asset, assetIdx);
-                                            return (
-                                                <div key={`qr_item_asset_edit_${assetIdx}`} className="saas-admin-related-row" role="status">
-                                                    <span>{fileLabel}</span>
-                                                    <small>{asset.mimeType || 'archivo'}{asset.sizeBytes ? ` | ${formatBytes(asset.sizeBytes)}` : ''}</small>
-                                                    <button type="button" disabled={busy || uploadingQuickReplyAssets} onClick={() => removeQuickReplyAssetAt?.(assetIdx)}>Quitar</button>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                ) : null}
-                            </div>
-                            <div className="saas-quick-reply-flow-note">
-                                <strong>Botones y flujos</strong>
-                                <span>Configuralos desde Automatizaciones para definir intencion, demora y siguiente respuesta sin mezclarlo con el contenido reutilizable.</span>
-                            </div>
-                            <label className="saas-admin-module-toggle">
-                                <input type="checkbox" checked={quickReplyItemForm.isActive !== false} onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, isActive: event.target.checked }))} disabled={busy || uploadingQuickReplyAssets} />
-                                <span>Respuesta activa</span>
-                            </label>
-                            {!hasRequiredContent ? <small className="saas-meta-template-error">Agrega texto o un adjunto para guardar la respuesta.</small> : null}
-                            <div className="saas-admin-form-row saas-admin-form-row--actions saas-quick-reply-builder-actions">
-                                <button
-                                    type="button"
-                                    disabled={saveDisabled}
-                                    onClick={() => runQuickReplyAction('save_qr', quickReplyItemPanelMode === 'create' ? 'Respuesta rapida creada' : 'Respuesta rapida actualizada', async () => saveQuickReplyItem?.())}
-                                >
-                                    {quickReplyItemPanelMode === 'create' ? 'Guardar respuesta' : 'Actualizar respuesta'}
-                                </button>
-                                <button type="button" className="saas-btn-cancel" disabled={busy || uploadingQuickReplyAssets} onClick={handleClose}>Cancelar</button>
-                            </div>
-                        </section>
-                        <aside className="saas-quick-reply-variable-panel" aria-label="Variables disponibles">
-                            <div className="saas-quick-reply-variable-panel__head">
-                                <div className="saas-quick-reply-variable-panel__title">
-                                    <strong>Variables disponibles</strong>
-                                    <small>Haz click en cualquier variable para insertarla en el mensaje.</small>
-                                </div>
-                                <button
-                                    type="button"
-                                    className="saas-btn-cancel saas-quick-reply-variable-panel__toggle"
-                                    onClick={() => setShowQuickReplyVariablesPanel((prev) => !prev)}
-                                >
-                                    {showQuickReplyVariablesPanel ? 'Ocultar' : 'Mostrar'}
-                                </button>
-                            </div>
-                            {showQuickReplyVariablesPanel ? (
-                                <>
-                                    <input
-                                        className="saas-quick-reply-variable-panel__search"
-                                        value={quickReplyVariableSearch}
-                                        onChange={(event) => setQuickReplyVariableSearch(event.target.value)}
-                                        placeholder="Buscar variable..."
-                                        disabled={busy || quickReplyVariableLoading}
-                                    />
-                                    {quickReplyVariableLoading ? <small className="saas-quick-reply-preview-muted">Cargando variables...</small> : null}
-                                    {quickReplyVariableError ? <small className="saas-meta-template-error">{quickReplyVariableError}</small> : null}
-                                    {!quickReplyVariableLoading && !quickReplyVariableError ? (
-                                        <div className="saas-quick-reply-variable-list">
-                                    {filteredQuickReplyVariableCategories.map((category) => {
-                                        const categoryKey = text(category?.id || category?.label).toLowerCase();
-                                        const variables = Array.isArray(category?.variables) ? category.variables : [];
-                                        const isExpanded = quickReplyExpandedVariableCategories?.[categoryKey] !== false;
-                                        return (
-                                            <div key={`qr_var_group_${category?.id}`} className="saas-quick-reply-variable-group">
-                                                <button
-                                                    type="button"
-                                                    className="saas-meta-template-accordion-trigger"
-                                                    onClick={() => toggleQuickReplyVariableCategory(categoryKey)}
-                                                >
-                                                    <span className="saas-meta-template-accordion-title">
-                                                        {category?.label || category?.id}
-                                                        <small>{variables.length}</small>
-                                                    </span>
-                                                    <span className="saas-meta-template-accordion-caret">{isExpanded ? '▾' : '▸'}</span>
-                                                </button>
-                                                {isExpanded ? (
-                                                    <div className="saas-meta-template-var-list">
-                                                        {variables.map((variable) => (
-                                                            <button
-                                                                type="button"
-                                                                className="saas-meta-template-var-item saas-meta-template-var-item--interactive"
-                                                                key={`qr_var_${category?.id}_${variable?.key}`}
-                                                                disabled={busy || uploadingQuickReplyAssets}
-                                                                onClick={() => insertQuickReplyVariable(variable?.key)}
-                                                            >
-                                                                <span className="saas-meta-template-var-token">{`{{${variable?.key}}}`}</span>
-                                                                <div className="saas-meta-template-var-item-main">
-                                                                    <strong>{variable?.label || variable?.key}</strong>
-                                                                    <small>
-                                                                        {text(variable?.description).toLowerCase() !== text(variable?.label).toLowerCase()
-                                                                            ? text(variable?.description)
-                                                                            : text(variable?.exampleValue || variable?.description || variable?.key)}
-                                                                    </small>
-                                                                </div>
-                                                                <span className="saas-meta-template-var-insert-label" aria-hidden="true">+</span>
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                ) : null}
-                                            </div>
-                                        );
-                                    })}
-                                            {filteredQuickReplyVariableCategories.length === 0 ? <small className="saas-quick-reply-preview-muted">Sin variables para mostrar.</small> : null}
-                                        </div>
-                                    ) : null}
-                                </>
-                            ) : null}
-                        </aside>
-                        <aside className="saas-quick-reply-preview" aria-label="Preview WhatsApp">
-                            <h5>Preview WhatsApp</h5>
-                            <div className="saas-quick-reply-preview-phone">
-                                <div className="saas-quick-reply-preview-chatbar">
-                                    <span>Vista del cliente</span>
-                                    <small>WhatsApp</small>
-                                </div>
-                                <div className="saas-quick-reply-preview-bubble">
-                                    {previewMediaUrl ? (
-                                        previewIsImage ? (
-                                            <img className="saas-quick-reply-preview-image" src={previewMediaUrl} alt={previewMediaName || 'Imagen de respuesta rapida'} />
-                                        ) : (
-                                            <div className="saas-quick-reply-preview-file">
-                                                <span>Archivo adjunto</span>
-                                                <small>{previewMediaName}</small>
-                                            </div>
-                                        )
-                                    ) : null}
-                                    <div className="saas-quick-reply-preview-text">
-                                        {renderWhatsAppFormattedText(renderQuickReplyPreviewText(quickReplyItemForm.text, quickReplyVariableCategories))}
-                                    </div>
-                                    <small className="saas-quick-reply-preview-time">Ahora</small>
-                                </div>
-                            </div>
-                        </aside>
-                    </div>
+                    <AutoMessageEditor
+                        value={quickReplyItemForm.text || ''}
+                        onChange={(newText) => setQuickReplyItemForm?.((prev) => ({ ...prev, text: newText }))}
+                        disabled={busy || uploadingQuickReplyAssets}
+                        showMediaUpload={true}
+                        showPreview={true}
+                        tenantId={settingsTenantId}
+                        form={quickReplyItemForm}
+                        setForm={setQuickReplyItemForm}
+                        mode={quickReplyItemPanelMode}
+                        categoryOptions={QUICK_REPLY_CATEGORIES}
+                        normalizeCategory={normalizeQuickReplyCategory}
+                        acceptValue={QUICK_REPLY_ACCEPT_VALUE}
+                        mediaAssets={quickReplyItemFormAssets}
+                        mediaUrl={quickReplyItemForm.mediaUrl}
+                        onMediaUrlChange={(url) => setQuickReplyItemForm?.((prev) => ({ ...prev, mediaUrl: url }))}
+                        onUploadFiles={handleQuickReplyAssetSelection}
+                        onUploadError={(err) => setError?.(String(err?.message || err || 'No se pudo subir adjunto de respuesta rapida.'))}
+                        removeAssetAt={removeQuickReplyAssetAt}
+                        getAssetDisplayName={getQuickReplyAssetDisplayName}
+                        formatBytes={formatBytes}
+                        resolveAssetPreviewUrl={resolveQuickReplyAssetPreviewUrl}
+                        isImageAsset={isQuickReplyImageAsset}
+                        hasRequiredContent={hasRequiredContent}
+                        saveDisabled={saveDisabled}
+                        onSave={() => runQuickReplyAction(
+                            'save_qr',
+                            quickReplyItemPanelMode === 'create'
+                                ? 'Respuesta rapida creada'
+                                : 'Respuesta rapida actualizada',
+                            async () => saveQuickReplyItem?.()
+                        )}
+                        onCancel={handleClose}
+                    />
                 </div>
             </div>
         );
     }, [
         QUICK_REPLY_ACCEPT_VALUE,
-        QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL,
         busy,
         canManageQuickReplies,
         formatBytes,
@@ -872,30 +374,16 @@ export default function QuickRepliesSection(props = {}) {
         quickReplyItemForm,
         quickReplyItemFormAssets,
         quickReplyItemPanelMode,
-        quickReplyVariableCategories,
-        quickReplyExpandedVariableCategories,
-        filteredQuickReplyVariableCategories,
-        quickReplyVariableError,
-        quickReplyVariableLoading,
-        quickReplyVariableSearch,
-        quickReplyStorageQuotaMb,
-        quickReplyUploadMaxMb,
+        settingsTenantId,
         resolveQuickReplyAssetPreviewUrl,
         isQuickReplyImageAsset,
-        showQuickReplyEmojiPicker,
-        quickReplyEmojiSkinTone,
-        insertQuickReplyEmoji,
-        handleQuickReplyEmojiSkinToneChange,
         removeQuickReplyAssetAt,
         requestCloseQuickReplyItemBuilder,
         runQuickReplyAction,
         saveQuickReplyItem,
         setError,
         setQuickReplyItemForm,
-        insertQuickReplyVariable,
-        toggleQuickReplyVariableCategory,
-        uploadingQuickReplyAssets,
-        wrapQuickReplySelection
+        uploadingQuickReplyAssets
     ]);
 
     const renderDetail = React.useCallback(() => {
