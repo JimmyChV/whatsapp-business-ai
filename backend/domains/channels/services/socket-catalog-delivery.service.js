@@ -431,7 +431,6 @@ function createSocketCatalogDeliveryService({
                 }
 
                 const product = payload?.product && typeof payload.product === 'object' ? payload.product : {};
-                const productRetailerIdCandidates = resolveProductRetailerIdCandidates(product);
                 const caption = buildCatalogProductCaption(product);
                 const imageUrl = String(product?.imageUrl || product?.image || '').trim();
                 const moduleContext = target.moduleContext || socket?.data?.waModule || null;
@@ -450,15 +449,17 @@ function createSocketCatalogDeliveryService({
                 let catalogMediaPayload = null;
                 let nativeCatalogId = '';
                 let productRetailerId = '';
+                let productRetailerIds = [];
 
+                productRetailerIds = resolveProductRetailerIdCandidates(product);
                 const integrations = await loadRuntimeIntegrations();
                 nativeCatalogId = resolveMetaCatalogId({ product, payload, integrations, moduleContext });
                 if (!nativeCatalogId) {
                     nativeCatalogId = await loadNativeCatalogIdFromDb();
                 }
-                productRetailerId = productRetailerIdCandidates[0] || '';
-                const matchedCatalogItem = productRetailerIdCandidates.length
-                    ? await resolveCatalogItemByCandidates(tenantId, productRetailerIdCandidates)
+                productRetailerId = productRetailerIds[0] || '';
+                const matchedCatalogItem = productRetailerIds.length
+                    ? await resolveCatalogItemByCandidates(tenantId, productRetailerIds)
                     : null;
                 productRetailerId = matchedCatalogItem?.itemId || productRetailerId;
                 const finalOrderPayload = productRetailerId
