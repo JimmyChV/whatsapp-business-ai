@@ -157,6 +157,7 @@ function SchedulesSection(props = {}) {
     const [selectedScheduleId, setSelectedScheduleId] = React.useState('');
     const [panelMode, setPanelMode] = React.useState('view');
     const [form, setForm] = React.useState(() => normalizeForm(null));
+    const [autoMessageModal, setAutoMessageModal] = React.useState(null);
 
     const selectedSchedule = React.useMemo(
         () => schedules.find((item) => text(item?.scheduleId) === selectedScheduleId) || null,
@@ -306,6 +307,28 @@ function SchedulesSection(props = {}) {
             })
         }));
     }, []);
+
+    const openAutoMessageModal = React.useCallback((type) => {
+        const cleanType = type === 'away' ? 'away' : 'welcome';
+        setAutoMessageModal({
+            type: cleanType,
+            draft: cleanType === 'away' ? String(form.awayMessage || '') : String(form.welcomeMessage || '')
+        });
+    }, [form.awayMessage, form.welcomeMessage]);
+
+    const closeAutoMessageModal = React.useCallback(() => {
+        setAutoMessageModal(null);
+    }, []);
+
+    const saveAutoMessageModal = React.useCallback(() => {
+        if (!autoMessageModal) return;
+        const draft = String(autoMessageModal.draft || '').slice(0, MAX_AUTO_MESSAGE_LENGTH);
+        setForm((prev) => ({
+            ...prev,
+            [autoMessageModal.type === 'away' ? 'awayMessage' : 'welcomeMessage']: draft
+        }));
+        setAutoMessageModal(null);
+    }, [autoMessageModal]);
 
     const detailActions = React.useMemo(() => {
         if (!selectedSchedule || panelMode !== 'view' || !canManageSchedules) return null;
@@ -520,57 +543,69 @@ function SchedulesSection(props = {}) {
                 <h4>Mensajes automaticos</h4>
                 <div className="saas-admin-related-list">
                     <div className="saas-admin-related-row" role="group" aria-label="Mensaje de bienvenida">
-                        <div className="saas-admin-field" style={{ width: '100%' }}>
-                            <label className="saas-admin-module-toggle">
-                                <input
-                                    type="checkbox"
-                                    checked={form.welcomeEnabled === true}
-                                    disabled={busy}
-                                    onChange={(event) => setForm((prev) => ({ ...prev, welcomeEnabled: event.target.checked }))}
-                                />
-                                <span>Mensaje de bienvenida</span>
-                            </label>
-                            <small>Se envia cuando alguien escribe por primera vez durante el horario de atencion.</small>
-                            <AutoMessageEditor
-                                value={form.welcomeMessage}
-                                onChange={(value) => setForm((prev) => ({ ...prev, welcomeMessage: value.slice(0, MAX_AUTO_MESSAGE_LENGTH) }))}
+                        <label className="saas-admin-module-toggle">
+                            <input
+                                type="checkbox"
+                                checked={form.welcomeEnabled === true}
                                 disabled={busy}
-                                placeholder="Hola, gracias por escribirnos a Lavitat. En breve te atendemos..."
-                                maxLength={MAX_AUTO_MESSAGE_LENGTH}
-                                showMediaUpload={false}
-                                showPreview={true}
-                                tenantId={settingsTenantId}
+                                onChange={(event) => setForm((prev) => ({ ...prev, welcomeEnabled: event.target.checked }))}
                             />
-                            <small>{text(form.welcomeMessage).length}/{MAX_AUTO_MESSAGE_LENGTH}</small>
-                        </div>
+                            <span>Bienvenida</span>
+                        </label>
+                        <small>{form.welcomeMessage || 'Sin mensaje configurado.'}</small>
+                        <button type="button" disabled={busy} onClick={() => openAutoMessageModal('welcome')}>Configurar →</button>
                     </div>
                     <div className="saas-admin-related-row" role="group" aria-label="Mensaje de ausencia">
-                        <div className="saas-admin-field" style={{ width: '100%' }}>
-                            <label className="saas-admin-module-toggle">
-                                <input
-                                    type="checkbox"
-                                    checked={form.awayEnabled === true}
-                                    disabled={busy}
-                                    onChange={(event) => setForm((prev) => ({ ...prev, awayEnabled: event.target.checked }))}
-                                />
-                                <span>Mensaje de ausencia</span>
-                            </label>
-                            <small>Se envia automaticamente cuando alguien escribe fuera del horario de atencion.</small>
-                            <AutoMessageEditor
-                                value={form.awayMessage}
-                                onChange={(value) => setForm((prev) => ({ ...prev, awayMessage: value.slice(0, MAX_AUTO_MESSAGE_LENGTH) }))}
+                        <label className="saas-admin-module-toggle">
+                            <input
+                                type="checkbox"
+                                checked={form.awayEnabled === true}
                                 disabled={busy}
-                                placeholder="Gracias por escribirnos. Nuestro horario es de lunes a viernes de 9am a 7pm. Te responderemos a la brevedad..."
-                                maxLength={MAX_AUTO_MESSAGE_LENGTH}
-                                showMediaUpload={false}
-                                showPreview={true}
-                                tenantId={settingsTenantId}
+                                onChange={(event) => setForm((prev) => ({ ...prev, awayEnabled: event.target.checked }))}
                             />
-                            <small>{text(form.awayMessage).length}/{MAX_AUTO_MESSAGE_LENGTH}</small>
-                        </div>
+                            <span>Ausencia</span>
+                        </label>
+                        <small>{form.awayMessage || 'Sin mensaje configurado.'}</small>
+                        <button type="button" disabled={busy} onClick={() => openAutoMessageModal('away')}>Configurar →</button>
                     </div>
                 </div>
             </div>
+            {autoMessageModal ? (
+                <div className="saas-template-builder-modal-overlay" onClick={closeAutoMessageModal}>
+                    <div className="saas-template-builder-modal-shell" onClick={(event) => event.stopPropagation()}>
+                        <div className="saas-template-builder-modal-panel">
+                            <div className="saas-template-builder-modal-panel__body">
+                                <section className="saas-admin-related-block saas-admin-related-block--modal-form">
+                                    <div className="saas-admin-pane-header saas-admin-pane-header--modal">
+                                        <div>
+                                            <h4>{autoMessageModal.type === 'away' ? 'Mensaje de ausencia' : 'Mensaje de bienvenida'}</h4>
+                                            <small>{autoMessageModal.type === 'away' ? 'Se envia automaticamente fuera del horario de atencion.' : 'Se envia cuando alguien escribe por primera vez durante el horario de atencion.'}</small>
+                                        </div>
+                                        <button type="button" className="saas-btn-cancel saas-admin-modal-close" disabled={busy} onClick={closeAutoMessageModal}>Cerrar</button>
+                                    </div>
+                                    <AutoMessageEditor
+                                        value={autoMessageModal.draft}
+                                        onChange={(value) => setAutoMessageModal((prev) => prev ? ({ ...prev, draft: value.slice(0, MAX_AUTO_MESSAGE_LENGTH) }) : prev)}
+                                        disabled={busy}
+                                        placeholder={autoMessageModal.type === 'away'
+                                            ? 'Gracias por escribirnos. Nuestro horario es de lunes a viernes de 9am a 7pm. Te responderemos a la brevedad...'
+                                            : 'Hola, gracias por escribirnos a Lavitat. En breve te atendemos...'}
+                                        maxLength={MAX_AUTO_MESSAGE_LENGTH}
+                                        showMediaUpload={false}
+                                        showPreview={true}
+                                        tenantId={settingsTenantId}
+                                    />
+                                    <small>{text(autoMessageModal.draft).length}/{MAX_AUTO_MESSAGE_LENGTH}</small>
+                                    <div className="saas-admin-form-row saas-admin-form-row--actions">
+                                        <button type="button" disabled={busy} onClick={saveAutoMessageModal}>Guardar</button>
+                                        <button type="button" className="saas-btn-cancel" disabled={busy} onClick={closeAutoMessageModal}>Cancelar</button>
+                                    </div>
+                                </section>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
             <div className="saas-admin-form-row saas-admin-form-row--actions">
                 <button type="button" disabled={busy || !text(form.name)} onClick={saveSchedule}>
                     {panelMode === 'create' ? 'Guardar horario' : 'Actualizar horario'}
@@ -579,7 +614,7 @@ function SchedulesSection(props = {}) {
             </div>
         </>
         );
-    }, [busy, canManageSchedules, form, panelMode, saveSchedule, settingsTenantId, updateDay, updateHoliday]);
+    }, [autoMessageModal, busy, canManageSchedules, closeAutoMessageModal, form, openAutoMessageModal, panelMode, saveAutoMessageModal, saveSchedule, settingsTenantId, updateDay, updateHoliday]);
 
     if (!isSection) return null;
 
