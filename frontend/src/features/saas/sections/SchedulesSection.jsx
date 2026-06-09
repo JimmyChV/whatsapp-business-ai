@@ -1,4 +1,5 @@
 import React from 'react';
+import AutoMessageEditor from '../components/AutoMessageEditor';
 import { SaasEntityPage } from '../components/layout';
 
 const DAY_OPTIONS = [
@@ -530,14 +531,15 @@ function SchedulesSection(props = {}) {
                                 <span>Mensaje de bienvenida</span>
                             </label>
                             <small>Se envia cuando alguien escribe por primera vez durante el horario de atencion.</small>
-                            <textarea
-                                className="saas-input"
-                                rows={4}
-                                maxLength={MAX_AUTO_MESSAGE_LENGTH}
+                            <AutoMessageEditor
                                 value={form.welcomeMessage}
-                                placeholder="Hola, gracias por escribirnos a Lavitat. En breve te atendemos..."
+                                onChange={(value) => setForm((prev) => ({ ...prev, welcomeMessage: value.slice(0, MAX_AUTO_MESSAGE_LENGTH) }))}
                                 disabled={busy}
-                                onChange={(event) => setForm((prev) => ({ ...prev, welcomeMessage: event.target.value.slice(0, MAX_AUTO_MESSAGE_LENGTH) }))}
+                                placeholder="Hola, gracias por escribirnos a Lavitat. En breve te atendemos..."
+                                maxLength={MAX_AUTO_MESSAGE_LENGTH}
+                                showMediaUpload={false}
+                                showPreview={true}
+                                tenantId={settingsTenantId}
                             />
                             <small>{text(form.welcomeMessage).length}/{MAX_AUTO_MESSAGE_LENGTH}</small>
                         </div>
@@ -554,14 +556,15 @@ function SchedulesSection(props = {}) {
                                 <span>Mensaje de ausencia</span>
                             </label>
                             <small>Se envia automaticamente cuando alguien escribe fuera del horario de atencion.</small>
-                            <textarea
-                                className="saas-input"
-                                rows={4}
-                                maxLength={MAX_AUTO_MESSAGE_LENGTH}
+                            <AutoMessageEditor
                                 value={form.awayMessage}
-                                placeholder="Gracias por escribirnos. Nuestro horario es de lunes a viernes de 9am a 7pm. Te responderemos a la brevedad..."
+                                onChange={(value) => setForm((prev) => ({ ...prev, awayMessage: value.slice(0, MAX_AUTO_MESSAGE_LENGTH) }))}
                                 disabled={busy}
-                                onChange={(event) => setForm((prev) => ({ ...prev, awayMessage: event.target.value.slice(0, MAX_AUTO_MESSAGE_LENGTH) }))}
+                                placeholder="Gracias por escribirnos. Nuestro horario es de lunes a viernes de 9am a 7pm. Te responderemos a la brevedad..."
+                                maxLength={MAX_AUTO_MESSAGE_LENGTH}
+                                showMediaUpload={false}
+                                showPreview={true}
+                                tenantId={settingsTenantId}
                             />
                             <small>{text(form.awayMessage).length}/{MAX_AUTO_MESSAGE_LENGTH}</small>
                         </div>
@@ -576,7 +579,7 @@ function SchedulesSection(props = {}) {
             </div>
         </>
         );
-    }, [busy, canManageSchedules, form, panelMode, saveSchedule, updateDay, updateHoliday]);
+    }, [busy, canManageSchedules, form, panelMode, saveSchedule, settingsTenantId, updateDay, updateHoliday]);
 
     if (!isSection) return null;
 
