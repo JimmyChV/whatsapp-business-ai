@@ -51,6 +51,14 @@ const formatOrderCardTitle = (value = '') => {
 
 const isRenderableTemplateHeaderImageSrc = (value = '') => /^(https?:\/\/|data:image\/|blob:|\/)/i.test(String(value || '').trim());
 
+const normalizeRenderableImageSrc = (value = '') => {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    if (/^(https?:\/\/|data:image\/|blob:)/i.test(text)) return text;
+    if (text.startsWith('/')) return `${String(API_URL || '').replace(/\/+$/, '')}${text}`;
+    return text;
+};
+
 const parseCatalogMoney = (value = 0) => {
     const cleaned = String(value ?? '')
         .replace(/[^0-9,.-]/g, '')
@@ -382,6 +390,39 @@ const MessageBubble = ({
         });
         return map;
     }, [catalog]);
+    const matchedProductCatalogItem = productSku ? catalogBySku.get(String(productSku).trim().toUpperCase()) : null;
+    const productImageUrl = normalizeRenderableImageSrc(
+        firstOrderItem?.imageUrl
+        || firstOrderItem?.image_url
+        || firstOrderItem?.image
+        || firstOrderItem?.thumbnailUrl
+        || firstOrderItem?.thumbnail_url
+        || actionOrder?.imageUrl
+        || actionOrder?.image_url
+        || actionOrder?.rawPreview?.imageUrl
+        || actionOrder?.rawPreview?.image_url
+        || matchedProductCatalogItem?.imageUrl
+        || matchedProductCatalogItem?.image_url
+        || matchedProductCatalogItem?.image
+        || matchedProductCatalogItem?.thumbnailUrl
+        || matchedProductCatalogItem?.thumbnail_url
+        || ''
+    );
+    const nativeCatalogSourceType = String(
+        actionOrder?.rawPreview?.sourceType
+        || actionOrder?.rawPreview?.source_type
+        || actionOrder?.sourceType
+        || actionOrder?.source_type
+        || ''
+    ).trim().toLowerCase();
+    const isNativeCatalogCard = Boolean(
+        rawMessageType === 'native_catalog'
+        || nativeCatalogSourceType.includes('native_catalog_message')
+        || nativeCatalogSourceType.includes('native_catalog')
+    );
+    const nativeCatalogTitle = String(actionOrder?.title || actionOrder?.rawPreview?.title || 'Catalogo de productos').trim();
+    const nativeCatalogBody = String(actionOrder?.body || actionOrder?.rawPreview?.body || 'Tarjeta nativa de catalogo enviada por WhatsApp.').trim();
+    const nativeCatalogId = String(actionOrder?.catalogId || actionOrder?.catalog_id || actionOrder?.rawPreview?.catalogId || actionOrder?.rawPreview?.catalog_id || '').trim();
     const orderCardTotals = React.useMemo(() => {
         if (isProductPayload || isQuotePayload || !Array.isArray(orderItems) || orderItems.length === 0) {
             return { total: 0, savings: 0, totalLabel: '', savingsLabel: '' };
@@ -912,13 +953,41 @@ const MessageBubble = ({
                 </div>
             )}
 
-            {isOrderActionable && (
+            {isNativeCatalogCard && (
+                <div className="message-order-card is-native-catalog">
+                    <div className="message-order-card__native-catalog-hero">
+                        <div className="message-order-card__native-catalog-icon" aria-hidden="true">🛍️</div>
+                        <div>
+                            <div className="message-order-card__title">{nativeCatalogTitle}</div>
+                            <div className="message-order-card__hint">{nativeCatalogBody}</div>
+                        </div>
+                    </div>
+                    {nativeCatalogId && (
+                        <div className="message-order-card__meta">Catalogo Meta: {nativeCatalogId}</div>
+                    )}
+                    <div className="message-order-card__hint">
+                        El cliente recibe el catalogo nativo de WhatsApp para explorar productos.
+                    </div>
+                </div>
+            )}
+
+            {isOrderActionable && !isNativeCatalogCard && (
                 <div className={`message-order-card${isQuotePayload ? ' is-quote' : ''}${isProductPayload ? ' is-product' : ' is-order'}`}>
                     <div className="message-order-card__title">
                         {isProductPayload ? productCardTitle : (isQuotePayload ? displayQuoteCardTitle : '🛒 Pedido del cliente')}
                     </div>
                     {orderIdentifier && (
                         <div className="message-order-card__meta">ID: {orderIdentifier}</div>
+                    )}
+                    {isProductPayload && productImageUrl && (
+                        <div className="message-order-card__product-image-shell">
+                            <img
+                                src={productImageUrl}
+                                alt={firstOrderItem?.title || firstOrderItem?.name || productCardTitle}
+                                className="message-order-card__product-image"
+                                loading="lazy"
+                            />
+                        </div>
                     )}
                     {isProductPayload && (firstOrderItem?.title || firstOrderItem?.name) && (
                         <div className="message-order-card__product-name">

@@ -1274,7 +1274,8 @@ function createSocketWaEventsBridgeService({
             const quotedMessage = await extractQuotedMessageInfo(msg);
             const deliveryMode = String(rawMetadata?.deliveryMode || rawMetadata?.delivery_mode || '').trim().toLowerCase();
             const isNativeCatalogProduct = deliveryMode === 'native_catalog_product';
-            const isInteractive = String(msg?.type || msg?._data?.type || '').toLowerCase() === 'interactive' && !isNativeCatalogProduct;
+            const isNativeCatalogMessage = deliveryMode === 'native_catalog_message';
+            const isInteractive = String(msg?.type || msg?._data?.type || '').toLowerCase() === 'interactive' && !isNativeCatalogProduct && !isNativeCatalogMessage;
             const order = isInteractive ? null : extractOrderInfo(msg);
             const location = extractLocationInfo(msg);
             const enrichedOrder = order

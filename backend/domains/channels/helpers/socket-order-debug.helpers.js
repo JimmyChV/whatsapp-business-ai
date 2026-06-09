@@ -144,6 +144,7 @@ function createSocketOrderDebugHelpers({
                     sku: item?.sku || null,
                     productRetailerId: item?.productRetailerId || item?.product_retailer_id || item?.sku || null,
                     catalogId: item?.catalogId || item?.catalog_id || null,
+                    imageUrl: item?.imageUrl || item?.image_url || item?.image || null,
                     currency: item?.currency || 'PEN'
                 }));
             } else {
@@ -236,6 +237,13 @@ function createSocketOrderDebugHelpers({
                     || msg?.order?.product_retailer_id
                     || null,
                 catalogId: msg?.order?.rawPreview?.catalogId || msg?.order?.catalogId || msg?.order?.catalog_id || null,
+                imageUrl: msg?.order?.rawPreview?.imageUrl
+                    || msg?.order?.rawPreview?.image_url
+                    || msg?.order?.imageUrl
+                    || msg?.order?.image_url
+                    || products?.[0]?.imageUrl
+                    || products?.[0]?.image_url
+                    || null,
                 itemCount: data?.itemCount
                     || data?.orderItemCount
                     || msg?.itemCount
@@ -266,6 +274,7 @@ function createSocketOrderDebugHelpers({
                 sourceType: rawPreview.sourceType || null,
                 productRetailerId: rawPreview.productRetailerId || rawPreview.sku || null,
                 catalogId: rawPreview.catalogId || null,
+                imageUrl: rawPreview.imageUrl || null,
                 products,
                 rawPreview
             };

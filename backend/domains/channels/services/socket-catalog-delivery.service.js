@@ -50,6 +50,18 @@ function buildNativeProductOrderPayload(product = {}, catalogId = '', productRet
         ?? metadata.salePrice
         ?? metadata.finalPrice
     );
+    const imageUrl = firstCleanText(
+        product?.imageUrl,
+        product?.image_url,
+        product?.image,
+        product?.thumbnailUrl,
+        product?.thumbnail_url,
+        metadata.imageUrl,
+        metadata.image_url,
+        metadata.image,
+        metadata.thumbnailUrl,
+        metadata.thumbnail_url
+    );
     const productLine = {
         name: title,
         title,
@@ -57,6 +69,7 @@ function buildNativeProductOrderPayload(product = {}, catalogId = '', productRet
         sku: productRetailerId || null,
         productRetailerId: productRetailerId || null,
         catalogId: catalogId || null,
+        imageUrl: imageUrl || null,
         price,
         lineTotal: price,
         currency: 'PEN'
@@ -69,6 +82,7 @@ function buildNativeProductOrderPayload(product = {}, catalogId = '', productRet
         sku: productRetailerId || null,
         productRetailerId: productRetailerId || null,
         catalogId: catalogId || null,
+        imageUrl: imageUrl || null,
         currency: 'PEN',
         price,
         subtotal: price,
@@ -80,7 +94,8 @@ function buildNativeProductOrderPayload(product = {}, catalogId = '', productRet
             body: '',
             sku: productRetailerId || null,
             productRetailerId: productRetailerId || null,
-            catalogId: catalogId || null
+            catalogId: catalogId || null,
+            imageUrl: imageUrl || null
         }
     };
 }
@@ -147,16 +162,14 @@ function resolveMetaCatalogId({
 }
 
 function buildNativeProductInteractive(product = {}, catalogId = '', productRetailerId = '') {
-    return {
+    const interactive = {
         type: 'product',
-        body: {
-            text: firstCleanText(product?.nativeBodyText, product?.bodyText, 'Te recomiendo este producto:')
-        },
         action: {
             catalog_id: catalogId,
             product_retailer_id: productRetailerId
         }
     };
+    return interactive;
 }
 
 function buildNativeCatalogInteractive({
@@ -171,9 +184,32 @@ function buildNativeCatalogInteractive({
     return {
         type: 'catalog_message',
         body: {
-            text: firstCleanText(bodyText, 'Te comparto nuestro catálogo de productos:')
+            text: firstCleanText(bodyText, 'Catalogo de productos Lavitat')
         },
         action
+    };
+}
+
+function buildNativeCatalogPayload({
+    catalogId = '',
+    bodyText = '',
+    thumbnailProductRetailerId = ''
+} = {}) {
+    return {
+        type: 'native_catalog',
+        sourceType: 'native_catalog_message',
+        title: 'Catalogo de productos',
+        body: firstCleanText(bodyText, 'Catalogo de productos'),
+        catalogId: catalogId || null,
+        thumbnailProductRetailerId: thumbnailProductRetailerId || null,
+        rawPreview: {
+            type: 'native_catalog',
+            sourceType: 'native_catalog_message',
+            title: 'Catalogo de productos',
+            body: firstCleanText(bodyText, 'Catalogo de productos'),
+            catalogId: catalogId || null,
+            thumbnailProductRetailerId: thumbnailProductRetailerId || null
+        }
     };
 }
 
@@ -505,9 +541,14 @@ function createSocketCatalogDeliveryService({
                     payload?.productRetailerId,
                     payload?.product_retailer_id
                 );
-                const bodyText = firstCleanText(payload?.bodyText, payload?.text, 'Te comparto nuestro catálogo de productos:');
+                const catalogBodyText = firstCleanText(payload?.bodyText, payload?.text, 'Catalogo de productos Lavitat');
                 const interactive = buildNativeCatalogInteractive({
-                    bodyText,
+                    bodyText: catalogBodyText,
+                    thumbnailProductRetailerId
+                });
+                const nativeCatalogPayload = buildNativeCatalogPayload({
+                    catalogId: metaCatalogId,
+                    bodyText: catalogBodyText,
                     thumbnailProductRetailerId
                 });
                 const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
@@ -515,9 +556,10 @@ function createSocketCatalogDeliveryService({
                     tenantId,
                     chatId: target.targetChatId,
                     sendIdempotencyType: 'native_catalog',
-                    sendIdempotencyFingerprint: `${metaCatalogId}:${bodyText}`,
+                    sendIdempotencyFingerprint: `${metaCatalogId}:${catalogBodyText}`,
                     deliveryMode: 'native_catalog_message',
-                    metaCatalogId
+                    metaCatalogId,
+                    nativeCatalogPayload
                 };
 
                 const sentResponse = await waClient.sendInteractiveMessage(target.targetChatId, interactive, {
@@ -537,15 +579,16 @@ function createSocketCatalogDeliveryService({
                         : buildSyntheticOutgoingMessage({
                             messageId: sentMessageId,
                             chatId: target.targetChatId,
-                            body: bodyText,
-                            type: 'interactive',
+                            body: '',
+                            type: 'native_catalog',
                             metadata: sendMetadata
                         }),
                     fallbackChatId: target.targetChatId,
-                    fallbackBody: bodyText,
+                    fallbackBody: '',
                     moduleContext,
                     agentMeta,
-                    mediaPayload: null
+                    mediaPayload: null,
+                    orderPayload: nativeCatalogPayload
                 });
 
                 socket.emit('native_catalog_sent', {
@@ -566,7 +609,7 @@ function createSocketCatalogDeliveryService({
                             payload: {
                                 messageId: sentMessageId || null,
                                 metaCatalogId,
-                                bodyText
+                                bodyText: catalogBodyText
                             }
                         });
                     } catch (recordError) {

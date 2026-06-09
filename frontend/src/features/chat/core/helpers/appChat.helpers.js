@@ -417,11 +417,36 @@ export const normalizeQuotedMessage = (quoted = null) => {
 export const getMessagePreviewText = (msg = {}) => {
   const type = String(msg?.type || '').toLowerCase();
   const location = normalizeMessageLocation(msg?.location);
+  const orderPayload = msg?.order && typeof msg.order === 'object'
+    ? msg.order
+    : (msg?.orderPayload && typeof msg.orderPayload === 'object' ? msg.orderPayload : null);
+  const orderType = String(
+    orderPayload?.rawPreview?.type
+    || orderPayload?.type
+    || orderPayload?.rawPreview?.sourceType
+    || orderPayload?.sourceType
+    || ''
+  ).toLowerCase();
 
   if (type === 'location') {
     if (location?.label) return 'Ubicacion: ' + location.label;
     if (location?.text) return 'Ubicacion: ' + location.text;
     return 'Ubicacion';
+  }
+
+  if (type === 'native_catalog' || orderType.includes('native_catalog')) {
+    return 'Catalogo de productos';
+  }
+
+  if (type === 'product' || orderType.includes('product')) {
+    const title = String(
+      orderPayload?.title
+      || orderPayload?.rawPreview?.title
+      || orderPayload?.products?.[0]?.name
+      || orderPayload?.products?.[0]?.title
+      || ''
+    ).trim();
+    return title ? `Producto: ${title}` : 'Producto del catalogo';
   }
 
   const body = sanitizeDisplayText(msg?.body || '');
@@ -441,6 +466,8 @@ export const getMessagePreviewText = (msg = {}) => {
     location: 'Ubicacion',
     vcard: 'Contacto',
     order: 'Pedido',
+    product: 'Producto del catalogo',
+    native_catalog: 'Catalogo de productos',
     revoked: 'Mensaje eliminado'
   };
 

@@ -36,6 +36,17 @@ function buildNativeCatalogProductOrder(product = {}) {
     ?? safeProduct?.regularPrice,
     null
   );
+  const imageUrl = String(
+    safeProduct?.imageUrl
+    || safeProduct?.image_url
+    || safeProduct?.image
+    || safeProduct?.thumbnailUrl
+    || safeProduct?.thumbnail_url
+    || safeProduct?.metadata?.imageUrl
+    || safeProduct?.metadata?.image_url
+    || safeProduct?.metadata?.image
+    || ''
+  ).trim() || null;
   const productLine = {
     name: title,
     title,
@@ -43,6 +54,7 @@ function buildNativeCatalogProductOrder(product = {}) {
     sku,
     productRetailerId: sku,
     catalogId,
+    imageUrl,
     price,
     lineTotal: price,
     currency: 'PEN'
@@ -55,6 +67,7 @@ function buildNativeCatalogProductOrder(product = {}) {
     sku,
     productRetailerId: sku,
     catalogId,
+    imageUrl,
     currency: 'PEN',
     price,
     subtotal: price,
@@ -66,7 +79,25 @@ function buildNativeCatalogProductOrder(product = {}) {
       body: '',
       sku,
       productRetailerId: sku,
-      catalogId
+      catalogId,
+      imageUrl
+    }
+  };
+}
+
+function buildNativeCatalogMessageOrder({ catalogId = '', bodyText = '' } = {}) {
+  return {
+    type: 'native_catalog',
+    sourceType: 'native_catalog_message',
+    title: 'Catalogo de productos',
+    body: String(bodyText || 'Catalogo de productos').trim(),
+    catalogId: String(catalogId || '').trim() || null,
+    rawPreview: {
+      type: 'native_catalog',
+      sourceType: 'native_catalog_message',
+      title: 'Catalogo de productos',
+      body: String(bodyText || 'Catalogo de productos').trim(),
+      catalogId: String(catalogId || '').trim() || null
     }
   };
 }
@@ -770,21 +801,27 @@ export default function useChatMessageActions({
     const activeChatForSend = chatsRef.current.find((chat) => String(chat?.id || '') === String(activeChatId || activeId));
     const activeChatPhone = normalizeDigits(activeChatForSend?.phone || '');
     const toPhone = activeChatPhone || null;
-    const bodyText = 'Te comparto nuestro catálogo de productos:';
+    const catalogBodyText = 'Catalogo de productos Lavitat';
+    const optimisticOrder = buildNativeCatalogMessageOrder({ bodyText: catalogBodyText });
     const payload = {
       to: activeId,
       toPhone,
-      bodyText
+      bodyText: catalogBodyText
     };
 
     insertOptimisticOutgoing({
       chatId: activeId,
-      body: bodyText,
+      body: '',
       hasMedia: false,
-      type: 'interactive',
+      type: 'native_catalog',
       retryPayload: {
         eventName: 'send_native_catalog',
         payload
+      },
+      extraFields: {
+        order: optimisticOrder,
+        orderPayload: optimisticOrder,
+        lastMessagePreview: 'Catalogo de productos'
       }
     });
 

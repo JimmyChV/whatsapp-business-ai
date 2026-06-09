@@ -102,6 +102,17 @@ function buildCatalogProductPayload({
         ?? parseMoneyLike(productPayload?.price)
         ?? parseMoneyLike(msg?.price)
         ?? null;
+    const imageUrl = String(
+        productPayload?.image_url
+        || productPayload?.imageUrl
+        || productPayload?.image
+        || productPayload?.thumbnail_url
+        || productPayload?.thumbnailUrl
+        || msg?.image_url
+        || msg?.imageUrl
+        || msg?.image
+        || ''
+    ).trim() || null;
 
     return {
         title,
@@ -109,6 +120,7 @@ function buildCatalogProductPayload({
         catalogId,
         currency,
         price,
+        imageUrl,
         orderPayload: compactObject({
             type: 'product',
             sourceType,
@@ -119,6 +131,7 @@ function buildCatalogProductPayload({
             catalogId,
             currency,
             price,
+            imageUrl,
             rawPreview: compactObject({
                 type: 'product',
                 sourceType,
@@ -126,7 +139,8 @@ function buildCatalogProductPayload({
                 body,
                 sku,
                 productRetailerId: sku,
-                catalogId
+                catalogId,
+                imageUrl
             })
         }),
         orderProducts: [{
@@ -135,6 +149,7 @@ function buildCatalogProductPayload({
             sku,
             productRetailerId: sku,
             catalogId,
+            imageUrl,
             price,
             lineTotal: price,
             currency
@@ -1073,7 +1088,12 @@ class WhatsAppCloudClient extends EventEmitter {
         const metadataOrderPayload = metadataObj?.nativeProductOrderPayload && typeof metadataObj.nativeProductOrderPayload === 'object' && !Array.isArray(metadataObj.nativeProductOrderPayload)
             ? metadataObj.nativeProductOrderPayload
             : null;
+        const metadataNativeCatalogPayload = metadataObj?.nativeCatalogPayload && typeof metadataObj.nativeCatalogPayload === 'object' && !Array.isArray(metadataObj.nativeCatalogPayload)
+            ? metadataObj.nativeCatalogPayload
+            : null;
         const isNativeProductInteractive = interactiveType === 'product';
+        const deliveryMode = String(metadataObj?.deliveryMode || metadataObj?.delivery_mode || '').trim().toLowerCase();
+        const isNativeCatalogInteractive = interactiveType === 'catalog_message' && deliveryMode === 'native_catalog_message';
         const nativeProductInfo = isNativeProductInteractive
             ? (metadataOrderPayload
                 ? {
@@ -1099,25 +1119,42 @@ class WhatsAppCloudClient extends EventEmitter {
                     body: ''
                 }))
             : null;
+        const nativeCatalogPayload = isNativeCatalogInteractive
+            ? (metadataNativeCatalogPayload || compactObject({
+                type: 'native_catalog',
+                sourceType: 'native_catalog_message',
+                title: 'Catalogo de productos',
+                body: interactiveBody || 'Catalogo de productos',
+                catalogId: metadataObj?.metaCatalogId || safeInteractive?.action?.catalog_id || null,
+                rawPreview: {
+                    type: 'native_catalog',
+                    sourceType: 'native_catalog_message',
+                    title: 'Catalogo de productos',
+                    body: interactiveBody || 'Catalogo de productos',
+                    catalogId: metadataObj?.metaCatalogId || safeInteractive?.action?.catalog_id || null
+                }
+            }))
+            : null;
         const message = this.upsertMessage({
             id: messageId,
             chatId,
             from: this.selfChatId,
             to: chatId,
-            body: isNativeProductInteractive ? '' : interactiveBody,
+            body: (isNativeProductInteractive || isNativeCatalogInteractive) ? '' : interactiveBody,
             fromMe: true,
-            type: isNativeProductInteractive ? 'product' : 'interactive',
+            type: isNativeProductInteractive ? 'product' : (isNativeCatalogInteractive ? 'native_catalog' : 'interactive'),
             ack: 1,
             timestamp: safeTimestamp(),
             hasMedia: false,
             quotedMessageId,
-            order: nativeProductInfo?.orderPayload || null,
+            order: nativeProductInfo?.orderPayload || nativeCatalogPayload || null,
             orderProducts: nativeProductInfo?.orderProducts || null,
             rawData: compactObject({
                 interactive: safeInteractive,
                 interactiveType: interactiveType || null,
                 metadata: Object.keys(metadataObj).length > 0 ? metadataObj : null,
-                product: nativeProductInfo?.orderPayload || null
+                product: nativeProductInfo?.orderPayload || null,
+                nativeCatalog: nativeCatalogPayload || null
             })
         }, { incoming: false, emitEvent: 'message_sent' });
 
