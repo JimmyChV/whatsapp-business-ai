@@ -22,6 +22,20 @@ function firstCleanText(...values) {
     return '';
 }
 
+function uniqueCleanTexts(...values) {
+    const seen = new Set();
+    return values
+        .flat()
+        .map((value) => toCleanText(value))
+        .filter((value) => {
+            if (!value) return false;
+            const key = value.toUpperCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+}
+
 function parseCatalogMoney(value) {
     if (value === null || value === undefined || value === '') return null;
     if (typeof value === 'number') {
@@ -33,29 +47,31 @@ function parseCatalogMoney(value) {
     return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : null;
 }
 
-async function resolveCatalogItemBySku(tenantId = 'default', productSku = '') {
+async function resolveCatalogItemByCandidates(tenantId = 'default', productSkuCandidates = []) {
     const safeTenantId = toCleanText(tenantId) || 'default';
-    const safeSku = toCleanText(productSku);
-    if (!safeSku || getStorageDriver() !== 'postgres') return null;
+    const candidates = uniqueCleanTexts(productSkuCandidates).flatMap((value) => uniqueCleanTexts(value, value.toUpperCase()));
+    if (!candidates.length || getStorageDriver() !== 'postgres') return null;
     try {
         const result = await queryPostgres(
-            `SELECT title, price, image_url,
+            `SELECT item_id, title, price, image_url,
                     metadata->>'regular_price' as regular_price,
                     metadata->>'sale_price' as sale_price
                FROM catalog_items
               WHERE tenant_id = $1
-                AND item_id = $2
+                AND item_id = ANY($2::text[])
+              ORDER BY array_position($2::text[], item_id)
               LIMIT 1`,
-            [safeTenantId, safeSku]
+            [safeTenantId, candidates]
         );
         const row = result?.rows?.[0] || null;
         if (!row) return null;
         const regularPrice = parseCatalogMoney(row.regular_price);
         const salePrice = parseCatalogMoney(row.sale_price);
         const price = parseCatalogMoney(row.price);
+        const itemId = toCleanText(row.item_id);
         return {
-            itemId: safeSku,
-            sku: safeSku,
+            itemId,
+            sku: itemId,
             name: toCleanText(row.title),
             title: toCleanText(row.title),
             price,
@@ -70,6 +86,10 @@ async function resolveCatalogItemBySku(tenantId = 'default', productSku = '') {
         console.warn('[WA][CatalogNative][catalogItem] No se pudo resolver producto por SKU. ' + String(error?.message || error));
         return null;
     }
+}
+
+async function resolveCatalogItemBySku(tenantId = 'default', productSku = '') {
+    return resolveCatalogItemByCandidates(tenantId, [productSku]);
 }
 
 function buildNativeProductOrderPayload(product = {}, catalogId = '', productRetailerId = '', catalogItem = null) {
@@ -179,22 +199,26 @@ function buildNativeProductOrderPayload(product = {}, catalogId = '', productRet
 }
 
 function resolveProductRetailerId(product = {}) {
+    return firstCleanText(...resolveProductRetailerIdCandidates(product));
+}
+
+function resolveProductRetailerIdCandidates(product = {}) {
     const metadata = getProductMetadata(product);
-    return firstCleanText(
+    return uniqueCleanTexts(
         product?.productRetailerId,
         product?.product_retailer_id,
         product?.retailerId,
         product?.retailer_id,
-        product?.sku,
         product?.itemId,
         product?.item_id,
+        product?.sku,
         metadata.productRetailerId,
         metadata.product_retailer_id,
         metadata.retailerId,
         metadata.retailer_id,
-        metadata.sku,
         metadata.itemId,
         metadata.item_id,
+        metadata.sku,
         product?.id,
         product?.productId
     );
@@ -411,10 +435,12 @@ function createSocketCatalogDeliveryService({
 
                 const integrations = await loadRuntimeIntegrations();
                 nativeCatalogId = resolveMetaCatalogId({ product, payload, integrations, moduleContext });
-                productRetailerId = resolveProductRetailerId(product);
-                const matchedCatalogItem = productRetailerId
-                    ? await resolveCatalogItemBySku(tenantId, productRetailerId)
+                const productRetailerIdCandidates = resolveProductRetailerIdCandidates(product);
+                productRetailerId = productRetailerIdCandidates[0] || '';
+                const matchedCatalogItem = productRetailerIdCandidates.length
+                    ? await resolveCatalogItemByCandidates(tenantId, productRetailerIdCandidates)
                     : null;
+                productRetailerId = matchedCatalogItem?.itemId || productRetailerId;
                 const catalogProductOrderPayload = productRetailerId
                     ? buildNativeProductOrderPayload(product, nativeCatalogId || '', productRetailerId, matchedCatalogItem)
                     : null;

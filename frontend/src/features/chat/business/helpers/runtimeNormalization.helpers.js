@@ -70,7 +70,8 @@ export const normalizeCatalogItem = (item = {}, index = 0) => {
     .filter(Boolean);
 
   return {
-    id: safeItem.id || safeItem.product_id || `catalog_${index}`,
+    id: safeItem.id || safeItem.itemId || safeItem.item_id || safeItem.product_id || `catalog_${index}`,
+    itemId: safeItem.itemId || safeItem.item_id || safeItem.sku || safeItem.id || null,
     title: String(rawTitle || `Producto ${index + 1}`).trim(),
     price: Number.isFinite(finalNum) ? finalNum.toFixed(2) : '0.00',
     regularPrice: Number.isFinite(regularNum) ? regularNum.toFixed(2) : (Number.isFinite(finalNum) ? finalNum.toFixed(2) : '0.00'),
@@ -79,7 +80,7 @@ export const normalizeCatalogItem = (item = {}, index = 0) => {
     description: safeItem.description || safeItem.short_description || safeItem.descripcion || '',
     imageUrl: safeItem.imageUrl || safeItem.image || safeItem.image_url || safeItem.images?.[0]?.src || null,
     source: safeItem.source || 'unknown',
-    sku: safeItem.sku || null,
+    sku: safeItem.sku || safeItem.itemId || safeItem.item_id || null,
     stockStatus: safeItem.stockStatus || safeItem.stock_status || null,
     moduleId: String(safeItem.moduleId || safeItem.module_id || '').trim().toLowerCase() || null,
     catalogId: String(safeItem.catalogId || safeItem.catalog_id || '').trim().toUpperCase() || null,

@@ -761,25 +761,30 @@ export default function useChatMessageActions({
       safeProduct?.url || safeProduct?.permalink || safeProduct?.productUrl || safeProduct?.link || ''
     ).trim();
     const imageUrl = String(safeProduct?.imageUrl || safeProduct?.image || '').trim();
+    const productSku = String(
+      safeProduct?.productRetailerId
+      || safeProduct?.product_retailer_id
+      || safeProduct?.retailerId
+      || safeProduct?.retailer_id
+      || safeProduct?.itemId
+      || safeProduct?.item_id
+      || safeProduct?.sku
+      || safeProduct?.metadata?.item_id
+      || safeProduct?.metadata?.itemId
+      || safeProduct?.metadata?.sku
+      || safeProduct?.id
+      || ''
+    ).trim() || null;
 
     const payload = {
       to: activeId,
       toPhone,
       product: {
         id: String(safeProduct?.id || safeProduct?.productId || '').trim() || null,
-        itemId: String(safeProduct?.itemId || safeProduct?.item_id || safeProduct?.id || '').trim() || null,
+        itemId: String(safeProduct?.itemId || safeProduct?.item_id || productSku || safeProduct?.id || '').trim() || null,
         productId: String(safeProduct?.productId || safeProduct?.product_id || safeProduct?.id || '').trim() || null,
-        sku: String(safeProduct?.sku || safeProduct?.metadata?.sku || safeProduct?.id || '').trim() || null,
-        productRetailerId: String(
-          safeProduct?.productRetailerId
-          || safeProduct?.product_retailer_id
-          || safeProduct?.retailerId
-          || safeProduct?.retailer_id
-          || safeProduct?.sku
-          || safeProduct?.metadata?.sku
-          || safeProduct?.id
-          || ''
-        ).trim() || null,
+        sku: productSku,
+        productRetailerId: productSku,
         catalogId: String(safeProduct?.catalogId || safeProduct?.catalog_id || '').trim() || null,
         metaCatalogId: String(safeProduct?.metaCatalogId || safeProduct?.meta_catalog_id || '').trim() || null,
         source: String(safeProduct?.source || safeProduct?.metadata?.source || '').trim() || null,

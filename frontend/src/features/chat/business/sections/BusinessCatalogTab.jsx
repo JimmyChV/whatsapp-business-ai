@@ -177,12 +177,13 @@ const CatalogTab = ({ catalog, socket, addToCart, onCatalogQtyDelta, catalogMeta
             return;
         }
 
+        const itemSku = String(item.itemId || item.item_id || item.sku || item.metadata?.item_id || item.metadata?.sku || item.id || '').trim();
         const payload = {
             id: item.id || `catalog_${i}`,
-            itemId: item.itemId || item.item_id || item.id || `catalog_${i}`,
+            itemId: item.itemId || item.item_id || itemSku || `catalog_${i}`,
             productId: item.productId || item.product_id || item.id || null,
-            sku: item.sku || item.metadata?.sku || item.id || '',
-            productRetailerId: item.productRetailerId || item.product_retailer_id || item.retailerId || item.retailer_id || item.sku || item.metadata?.sku || item.id || '',
+            sku: itemSku,
+            productRetailerId: item.productRetailerId || item.product_retailer_id || item.retailerId || item.retailer_id || itemSku || '',
             catalogId: item.catalogId || item.catalog_id || activeCatalogId || '',
             source: item.source || item.metadata?.source || effectiveCatalogSource || '',
             title: item.title || `Producto ${i + 1}`,
