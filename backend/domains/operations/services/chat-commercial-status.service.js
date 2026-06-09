@@ -1538,6 +1538,7 @@ module.exports = {
     resumeExpiredPattyReviewModes,
     setNeedsAdvisor,
     clearNeedsAdvisor,
+    resolveQuickReplyVariables,
     getSalesState,
     updateSalesState,
     clearSalesState,

@@ -14,6 +14,13 @@ const tenantScheduleServiceFallback = require('../../tenant/services/tenant-sche
 const auditLogServiceFallback = require('../../security/services/audit-log.service');
 const pattyService = require('./patty.service');
 const { isValidOperationalTenant, warnInvalidTenant } = require('../../tenant/helpers/tenant-guard.helpers');
+const { resolveMessageSegments } = require('../../../src/services/message-variables.service');
+const { resolveQuickReplyVariables: resolveQuickReplyVariablesForTenant } = require('../../operations/services/chat-commercial-status.service');
+const {
+    buildNativeProductInteractive,
+    buildNativeCatalogInteractive,
+    resolveMetaCatalogId
+} = require('./socket-catalog-delivery.service');
 
 function createSocketWaEventsBridgeService({
     waClient,
@@ -223,6 +230,40 @@ function createSocketWaEventsBridgeService({
         return Boolean(rows?.[0]);
     };
 
+    const loadNativeCatalogIdFromDb = async (tenantId = '') => {
+        const cleanTenantId = text(tenantId);
+        if (!cleanTenantId || getStorageDriver() !== 'postgres') return '';
+        try {
+            const { rows } = await queryPostgres(
+                `SELECT config_json->'metaAds'->>'catalogId' as catalog_id
+                   FROM tenant_integrations
+                  WHERE tenant_id = $1
+                  LIMIT 1`,
+                [cleanTenantId]
+            );
+            return text(rows?.[0]?.catalog_id);
+        } catch (error) {
+            console.warn('[WA][AutoMessage] could not resolve native catalogId:', String(error?.message || error));
+            return '';
+        }
+    };
+
+    const resolveSentInteractiveId = (sentInteractive) => (
+        getSerializedMessageId(sentInteractive)
+        || text(sentInteractive?.messages?.[0]?.id || sentInteractive?.message_id || (typeof sentInteractive === 'string' ? sentInteractive : ''))
+    );
+
+    const resolveQuickReplyVariables = async ({
+        tenantId = '',
+        bodyText = '',
+        chatId = '',
+        customerId = ''
+    } = {}) => resolveQuickReplyVariablesForTenant(text(tenantId), {
+        bodyText,
+        chatId,
+        customerId
+    });
+
     const sendScheduleAutoMessage = async ({
         tenantId = '',
         chatId = '',
@@ -255,17 +296,95 @@ function createSocketWaEventsBridgeService({
             sentViaPhoneNumber: moduleAttributionMeta?.sentViaPhoneNumber || text(moduleContext?.phoneNumber || moduleContext?.phone) || null,
             sentViaChannelType: moduleAttributionMeta?.sentViaChannelType || text(moduleContext?.channelType).toLowerCase() || null
         };
-        const sentMessage = await waClient.sendMessage(cleanChatId, cleanBody, {
-            metadata: {
-                tenantId: cleanTenantId,
-                chatId: cleanChatId,
-                autoMessage: true,
-                autoMessageType: cleanType,
-                scheduleId: cleanScheduleId,
-                automationSource: `schedule_${cleanType}`,
-                agentMeta
-            }
+        const baseMetadata = {
+            tenantId: cleanTenantId,
+            chatId: cleanChatId,
+            autoMessage: true,
+            autoMessageType: cleanType,
+            scheduleId: cleanScheduleId,
+            automationSource: `schedule_${cleanType}`,
+            agentMeta
+        };
+        const resolvedBody = await resolveQuickReplyVariables({
+            tenantId: cleanTenantId,
+            bodyText: cleanBody,
+            chatId: cleanChatId
         });
+        const messageSegments = resolveMessageSegments(resolvedBody);
+        const isSingleTextSegment = messageSegments.length === 1 && messageSegments[0]?.type === 'text';
+        let sentMessage = null;
+
+        if (isSingleTextSegment) {
+            sentMessage = await waClient.sendMessage(cleanChatId, resolvedBody, {
+                metadata: {
+                    ...baseMetadata
+                }
+            });
+        } else {
+            const metaCatalogId = resolveMetaCatalogId({ moduleContext }) || await loadNativeCatalogIdFromDb(cleanTenantId);
+            for (const segment of messageSegments) {
+                if (!segment || !segment.type) continue;
+
+                if (segment.type === 'text') {
+                    const sentTextMessage = await waClient.sendMessage(cleanChatId, segment.content, {
+                        metadata: {
+                            ...baseMetadata
+                        }
+                    });
+                    if (!sentTextMessage) return null;
+                    if (!sentMessage) sentMessage = sentTextMessage;
+                    continue;
+                }
+
+                if (typeof waClient?.sendInteractiveMessage !== 'function') {
+                    console.warn('[WA][AutoMessage] interactive segment skipped: channel does not support interactive messages.');
+                    continue;
+                }
+
+                try {
+                    if (!metaCatalogId) {
+                        console.warn('[WA][AutoMessage] native catalog segment skipped: missing catalogId.');
+                        continue;
+                    }
+
+                    if (segment.type === 'catalog') {
+                        const sentInteractive = await waClient.sendInteractiveMessage(cleanChatId, buildNativeCatalogInteractive(), {
+                            metadata: {
+                                ...baseMetadata,
+                                deliveryMode: 'native_catalog_message',
+                                metaCatalogId
+                            }
+                        });
+                        if (!sentMessage && sentInteractive) sentMessage = sentInteractive;
+                        continue;
+                    }
+
+                    if (segment.type === 'product') {
+                        const productRetailerId = text(segment.sku);
+                        if (!productRetailerId) {
+                            console.warn('[WA][AutoMessage] product segment skipped: missing product sku.');
+                            continue;
+                        }
+                        const sentInteractive = await waClient.sendInteractiveMessage(
+                            cleanChatId,
+                            buildNativeProductInteractive({}, metaCatalogId, productRetailerId),
+                            {
+                                metadata: {
+                                    ...baseMetadata,
+                                    deliveryMode: 'native_catalog_product',
+                                    metaCatalogId,
+                                    productRetailerId
+                                }
+                            }
+                        );
+                        if (!sentMessage && sentInteractive) sentMessage = sentInteractive;
+                    }
+                } catch (interactiveError) {
+                    console.warn('[WA][AutoMessage] native catalog segment skipped:', String(interactiveError?.message || interactiveError));
+                }
+            }
+        }
+        if (!sentMessage) return null;
 
         try {
             await auditLogService?.writeAuditLog?.(cleanTenantId, {
@@ -280,7 +399,7 @@ function createSocketWaEventsBridgeService({
                     type: cleanType,
                     scheduleId: cleanScheduleId,
                     moduleId: scopeModuleId || null,
-                    messageId: getSerializedMessageId(sentMessage) || null
+                    messageId: getSerializedMessageId(sentMessage) || resolveSentInteractiveId(sentMessage) || null
                 }
             });
         } catch (auditError) {
