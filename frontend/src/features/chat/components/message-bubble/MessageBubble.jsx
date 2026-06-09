@@ -377,8 +377,17 @@ const MessageBubble = ({
     const catalogBySku = React.useMemo(() => {
         const map = new Map();
         (Array.isArray(catalog) ? catalog : []).forEach((item) => {
-            const sku = String(item?.sku || item?.id || '').trim().toUpperCase();
-            if (sku && !map.has(sku)) map.set(sku, item);
+            [
+                item?.sku,
+                item?.itemId,
+                item?.item_id,
+                item?.productRetailerId,
+                item?.product_retailer_id,
+                item?.id
+            ].forEach((value) => {
+                const sku = String(value || '').trim().toUpperCase();
+                if (sku && !map.has(sku)) map.set(sku, item);
+            });
         });
         return map;
     }, [catalog]);
@@ -500,7 +509,7 @@ const MessageBubble = ({
     const isNativeCatalogCard = Boolean(
         rawMessageType === 'native_catalog'
         || nativeCatalogSourceType.includes('native_catalog_message')
-        || nativeCatalogSourceType.includes('native_catalog')
+        || nativeCatalogSourceType === 'native_catalog'
     );
     const nativeCatalogTitle = String(actionOrder?.title || actionOrder?.rawPreview?.title || 'Catalogo de productos').trim();
     const nativeCatalogBody = String(actionOrder?.body || actionOrder?.rawPreview?.body || 'Tarjeta nativa de catalogo enviada por WhatsApp.').trim();
