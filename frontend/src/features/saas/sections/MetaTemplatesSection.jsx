@@ -88,6 +88,15 @@ const EMPTY_CREATE_FORM = {
 const toText = (value = '') => String(value || '').trim();
 const toLower = (value = '') => toText(value).toLowerCase();
 const toUpper = (value = '') => toText(value).toUpperCase();
+function sanitizeTemplateName(raw = '') {
+    return String(raw)
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9_]/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_|_$/g, '');
+}
 const normalizeFilterValue = (value = '') => toText(value).toLowerCase();
 const normalizeSortDirection = (value = 'asc') => (toLower(value) === 'desc' ? 'desc' : 'asc');
 const matchesTextFilter = (actual = '', expected = '', operator = 'contains') => {
@@ -474,7 +483,7 @@ function buildTemplatePayload(form = {}, {
     variableExamplesByToken = {},
     defaultExampleByToken = {}
 } = {}) {
-    const name = toText(form.name);
+    const name = sanitizeTemplateName(toText(form.name));
     const category = toLower(form.category || 'marketing') || 'marketing';
     const language = toLower(form.language || 'es') || 'es';
     const headerType = toLower(form.headerType || 'none');
@@ -484,7 +493,8 @@ function buildTemplatePayload(form = {}, {
     const footerText = toText(form.footerText);
     const buttons = mapButtonRowsToMeta(form.buttons);
 
-    if (!name) throw new Error('Nombre de la plantilla requerido.');
+    if (!name) throw new Error('Nombre inválido. Use solo letras minúsculas, números y guiones bajos.');
+    if (name.length > 512) throw new Error('Nombre demasiado largo (máx 512 caracteres).');
     if (!bodyText) throw new Error('Cuerpo de la plantilla requerido.');
 
     const headerVariableMap = buildSequentialPlaceholderMap(headerText);
@@ -1658,10 +1668,14 @@ function MetaTemplatesSection(props = {}) {
                                             <input
                                                 id="meta_template_form_name"
                                                 value={createForm.name}
-                                                onChange={(event) => setCreateForm((prev) => ({ ...prev, name: event.target.value }))}
+                                                onChange={(event) => setCreateForm((prev) => ({
+                                                    ...prev,
+                                                    name: sanitizeTemplateName(event.target.value)
+                                                }))}
                                                 placeholder="Ejemplo: promo_semana_limpieza"
                                                 disabled={templatesBusy || !canWrite}
                                             />
+                                            <small>Solo letras minúsculas, números y guiones bajos. Ej: promo_semana_limpieza</small>
                                         </div>
                                     </div>
 

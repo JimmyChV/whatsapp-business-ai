@@ -15,6 +15,9 @@ const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 500;
 const VALID_USE_CASES = new Set(['campaign', 'individual', 'both', 'optin']);
 const MULTIMEDIA_HEADER_FORMATS = new Set(['IMAGE', 'VIDEO', 'DOCUMENT']);
+const VALID_META_TEMPLATE_CATEGORIES = new Set(['MARKETING', 'UTILITY', 'AUTHENTICATION']);
+const VALID_META_TEMPLATE_LANGUAGES = new Set(['es', 'es_MX', 'es_AR', 'es_ES', 'en', 'en_US', 'en_GB', 'pt', 'pt_BR', 'pt_PT']);
+const VALID_META_TEMPLATE_BUTTON_TYPES = new Set(['QUICK_REPLY', 'URL', 'PHONE_NUMBER']);
 const DEFAULT_LIST_FIELDS = [
     'id',
     'name',
@@ -39,6 +42,16 @@ function toLower(value = '') {
 
 function toUpper(value = '') {
     return toText(value).toUpperCase();
+}
+
+function sanitizeTemplateName(raw = '') {
+    return String(raw)
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9_]/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_|_$/g, '');
 }
 
 function nowIso() {
@@ -149,7 +162,40 @@ function buildHeaderExampleFilename(format = '', mimetype = '') {
 
 async function prepareTemplatePayloadForMeta(runtime = {}, templatePayload = {}) {
     const clonedPayload = isPlainObject(templatePayload) ? cloneJson(templatePayload) : {};
+    const rawName = sanitizeTemplateName(clonedPayload?.name || '');
+    if (!rawName) {
+        throw new Error('Template name is required and must contain only lowercase letters, numbers and underscores.');
+    }
+    clonedPayload.name = rawName;
+
+    const rawCategory = String(clonedPayload?.category || '').toUpperCase().trim();
+    if (!VALID_META_TEMPLATE_CATEGORIES.has(rawCategory)) {
+        throw new Error(`Invalid category: ${rawCategory}. Must be MARKETING, UTILITY or AUTHENTICATION.`);
+    }
+    clonedPayload.category = rawCategory;
+
+    const rawLanguage = String(clonedPayload?.language || 'es').trim().toLowerCase();
+    const normalizedLanguage = rawLanguage.replace(
+        /^([a-z]{2})_([a-z]{2})$/,
+        (_, lang, region) => `${lang}_${region.toUpperCase()}`
+    );
+    if (!VALID_META_TEMPLATE_LANGUAGES.has(normalizedLanguage) && !VALID_META_TEMPLATE_LANGUAGES.has(rawLanguage)) {
+        throw new Error(`Invalid language: ${rawLanguage}.`);
+    }
+    clonedPayload.language = VALID_META_TEMPLATE_LANGUAGES.has(normalizedLanguage)
+        ? normalizedLanguage
+        : rawLanguage;
+
     const components = Array.isArray(clonedPayload?.components) ? clonedPayload.components : [];
+    const buttonsComponent = components.find((component) => toUpper(component?.type || '') === 'BUTTONS');
+    if (Array.isArray(buttonsComponent?.buttons) && buttonsComponent.buttons.length > 0) {
+        buttonsComponent.buttons = buttonsComponent.buttons
+            .map((button) => ({
+                ...button,
+                type: toUpper(button?.type || '')
+            }))
+            .filter((button) => VALID_META_TEMPLATE_BUTTON_TYPES.has(button.type) && toText(button.text));
+    }
     if (components.length === 0) return clonedPayload;
 
     for (const component of components) {
