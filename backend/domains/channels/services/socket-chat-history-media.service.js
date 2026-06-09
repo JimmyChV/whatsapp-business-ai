@@ -40,6 +40,7 @@ function createSocketChatHistoryMediaService({
     const HISTORY_FETCH_LIMIT = 300;
     const RUNTIME_FETCH_LIMIT = 120;
     const scheduleCache = new Map();
+    const catalogImageCache = new Map();
 
     const getActiveTenantSchedule = async (tenantId = 'default') => {
         const safeTenantId = String(tenantId || 'default').trim() || 'default';
@@ -111,6 +112,88 @@ function createSocketChatHistoryMediaService({
             laboralMinutesRemaining: laboralDisplay.laboralMinutesRemaining,
             windowStatus: laboralDisplay.windowStatus,
             laboralWindowMeasuredAt
+        };
+    };
+
+    const getOrderProductSku = (item = {}) => toText(
+        item?.sku
+        || item?.productRetailerId
+        || item?.product_retailer_id
+        || item?.retailerId
+        || item?.retailer_id
+        || item?.id
+    ).toUpperCase();
+
+    const getOrderImageUrl = (value = {}) => toText(
+        value?.imageUrl
+        || value?.image_url
+        || value?.image
+        || value?.thumbnailUrl
+        || value?.thumbnail_url
+        || value?.images?.[0]?.src
+        || value?.metadata?.imageUrl
+        || value?.metadata?.image_url
+        || value?.metadata?.image
+    );
+
+    const getCatalogImageUrlBySku = async (tenantId = 'default', sku = '') => {
+        const safeTenantId = toText(tenantId) || 'default';
+        const safeSku = toText(sku).toUpperCase();
+        if (!safeSku || getStorageDriver() !== 'postgres') return '';
+        const cacheKey = `${safeTenantId}:${safeSku}`;
+        if (catalogImageCache.has(cacheKey)) return catalogImageCache.get(cacheKey) || '';
+        try {
+            const result = await queryPostgres(
+                `SELECT image_url, metadata
+                   FROM catalog_items
+                  WHERE tenant_id = $1
+                    AND (
+                      UPPER(item_id) = $2
+                      OR UPPER(metadata->>'sku') = $2
+                      OR UPPER(metadata->>'productRetailerId') = $2
+                      OR UPPER(metadata->>'product_retailer_id') = $2
+                    )
+                  ORDER BY CASE WHEN image_url IS NULL OR image_url = '' THEN 1 ELSE 0 END
+                  LIMIT 1`,
+                [safeTenantId, safeSku]
+            );
+            const row = result?.rows?.[0] || null;
+            const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+            const imageUrl = toText(row?.image_url || metadata?.imageUrl || metadata?.image_url || metadata?.image);
+            catalogImageCache.set(cacheKey, imageUrl || '');
+            return imageUrl || '';
+        } catch (_) {
+            catalogImageCache.set(cacheKey, '');
+            return '';
+        }
+    };
+
+    const enrichOrderPayloadWithCatalogImages = async (tenantId = 'default', orderPayload = null) => {
+        if (!orderPayload || typeof orderPayload !== 'object' || Array.isArray(orderPayload)) return orderPayload || null;
+        const products = Array.isArray(orderPayload.products) ? orderPayload.products : [];
+        const rootSku = getOrderProductSku(orderPayload) || getOrderProductSku(orderPayload.rawPreview || {});
+        const rootImageUrl = getOrderImageUrl(orderPayload) || getOrderImageUrl(orderPayload.rawPreview || {});
+        const enrichedProducts = await Promise.all(products.map(async (item) => {
+            if (!item || typeof item !== 'object') return item;
+            const existingImage = getOrderImageUrl(item);
+            if (existingImage) return item;
+            const sku = getOrderProductSku(item);
+            const imageUrl = await getCatalogImageUrlBySku(tenantId, sku);
+            return imageUrl ? { ...item, imageUrl } : item;
+        }));
+        const firstProductImage = enrichedProducts.map(getOrderImageUrl).find(Boolean) || '';
+        const fallbackRootImage = rootImageUrl || firstProductImage || await getCatalogImageUrlBySku(tenantId, rootSku);
+        if (!fallbackRootImage && enrichedProducts === products) return orderPayload;
+        return {
+            ...orderPayload,
+            imageUrl: rootImageUrl || fallbackRootImage || orderPayload.imageUrl || null,
+            products: enrichedProducts,
+            rawPreview: orderPayload.rawPreview && typeof orderPayload.rawPreview === 'object'
+                ? {
+                    ...orderPayload.rawPreview,
+                    imageUrl: getOrderImageUrl(orderPayload.rawPreview) || fallbackRootImage || null
+                }
+                : orderPayload.rawPreview
         };
     };
 
@@ -243,8 +326,14 @@ function createSocketChatHistoryMediaService({
                 .map((row) => [String(row?.messageId || '').trim(), row])
                 .filter(([id]) => Boolean(id))
         );
-        const messages = sortedRows
-            .map((row) => toHistoryMessagePayload(row, resolvedChatId || requestedChatId, rowLookup))
+        const messages = (await Promise.all(sortedRows
+            .map(async (row) => {
+                const payload = toHistoryMessagePayload(row, resolvedChatId || requestedChatId, rowLookup);
+                if (payload?.order) {
+                    payload.order = await enrichOrderPayloadWithCatalogImages(tenantId, payload.order);
+                }
+                return payload;
+            })))
             .filter((msg) => Boolean(msg?.id));
 
         const conversationWindowState = await buildConversationWindowStateFromRows(tenantId, rows);
@@ -476,6 +565,10 @@ function createSocketChatHistoryMediaService({
                         || (m?.fromMe ? scopeModuleId : '')
                         || ''
                     ) || null;
+                    const orderPayload = await enrichOrderPayloadWithCatalogImages(
+                        tenantId,
+                        (persistedEntry?.orderPayload && typeof persistedEntry.orderPayload === 'object' ? persistedEntry.orderPayload : null) || extractOrderInfo(m)
+                    );
 
                     return ({
                         id: m.id._serialized,
@@ -502,7 +595,7 @@ function createSocketChatHistoryMediaService({
                         edited: Boolean(m?._data?.latestEditMsgKey || m?._data?.latestEditSenderTimestampMs || m?._data?.edited),
                         editedAt: Number(m?._data?.latestEditSenderTimestampMs || 0) > 0 ? Math.floor(Number(m._data.latestEditSenderTimestampMs) / 1000) : null,
                         canEdit: Boolean(editableMap[String(m?.id?._serialized || '')]),
-                        order: (persistedEntry?.orderPayload && typeof persistedEntry.orderPayload === 'object' ? persistedEntry.orderPayload : null) || extractOrderInfo(m),
+                        order: orderPayload,
                         location: extractLocationInfo(m),
                         quotedMessage: await extractQuotedMessageInfo(m),
                         reactions: Array.isArray(persistedMeta?.reactions) ? persistedMeta.reactions : [],

@@ -327,15 +327,6 @@ const MessageBubble = ({
         || actionOrder?.rawPreview?.sku
         || ''
     ).trim();
-    const productCatalogId = String(
-        firstOrderItem?.catalogId
-        || firstOrderItem?.catalog_id
-        || actionOrder?.catalogId
-        || actionOrder?.catalog_id
-        || actionOrder?.rawPreview?.catalogId
-        || actionOrder?.rawPreview?.catalog_id
-        || ''
-    ).trim();
     const productCardTitle = isMessageFromMe
         ? 'Producto enviado desde catalogo Meta'
         : (productSourceType.includes('catalog_reference')
@@ -395,18 +386,50 @@ const MessageBubble = ({
         firstOrderItem?.imageUrl
         || firstOrderItem?.image_url
         || firstOrderItem?.image
+        || firstOrderItem?.src
+        || firstOrderItem?.url
         || firstOrderItem?.thumbnailUrl
         || firstOrderItem?.thumbnail_url
+        || firstOrderItem?.images?.[0]?.src
+        || firstOrderItem?.metadata?.imageUrl
+        || firstOrderItem?.metadata?.image_url
+        || firstOrderItem?.metadata?.image
         || actionOrder?.imageUrl
         || actionOrder?.image_url
+        || actionOrder?.image
         || actionOrder?.rawPreview?.imageUrl
         || actionOrder?.rawPreview?.image_url
+        || actionOrder?.rawPreview?.image
         || matchedProductCatalogItem?.imageUrl
         || matchedProductCatalogItem?.image_url
         || matchedProductCatalogItem?.image
+        || matchedProductCatalogItem?.src
+        || matchedProductCatalogItem?.url
         || matchedProductCatalogItem?.thumbnailUrl
         || matchedProductCatalogItem?.thumbnail_url
+        || matchedProductCatalogItem?.images?.[0]?.src
+        || matchedProductCatalogItem?.metadata?.imageUrl
+        || matchedProductCatalogItem?.metadata?.image_url
+        || matchedProductCatalogItem?.metadata?.image
         || ''
+    );
+    const nativeCatalogImageUrl = normalizeRenderableImageSrc(
+        (Array.isArray(catalog) ? catalog : [])
+            .map((item) => (
+                item?.imageUrl
+                || item?.image_url
+                || item?.image
+                || item?.src
+                || item?.url
+                || item?.thumbnailUrl
+                || item?.thumbnail_url
+                || item?.images?.[0]?.src
+                || item?.metadata?.imageUrl
+                || item?.metadata?.image_url
+                || item?.metadata?.image
+                || ''
+            ))
+            .find((value) => String(value || '').trim()) || ''
     );
     const nativeCatalogSourceType = String(
         actionOrder?.rawPreview?.sourceType
@@ -422,7 +445,6 @@ const MessageBubble = ({
     );
     const nativeCatalogTitle = String(actionOrder?.title || actionOrder?.rawPreview?.title || 'Catalogo de productos').trim();
     const nativeCatalogBody = String(actionOrder?.body || actionOrder?.rawPreview?.body || 'Tarjeta nativa de catalogo enviada por WhatsApp.').trim();
-    const nativeCatalogId = String(actionOrder?.catalogId || actionOrder?.catalog_id || actionOrder?.rawPreview?.catalogId || actionOrder?.rawPreview?.catalog_id || '').trim();
     const orderCardTotals = React.useMemo(() => {
         if (isProductPayload || isQuotePayload || !Array.isArray(orderItems) || orderItems.length === 0) {
             return { total: 0, savings: 0, totalLabel: '', savingsLabel: '' };
@@ -956,15 +978,21 @@ const MessageBubble = ({
             {isNativeCatalogCard && (
                 <div className="message-order-card is-native-catalog">
                     <div className="message-order-card__native-catalog-hero">
-                        <div className="message-order-card__native-catalog-icon" aria-hidden="true">🛍️</div>
+                        {nativeCatalogImageUrl ? (
+                            <img
+                                src={nativeCatalogImageUrl}
+                                alt={nativeCatalogTitle}
+                                className="message-order-card__native-catalog-image"
+                                loading="lazy"
+                            />
+                        ) : (
+                            <div className="message-order-card__native-catalog-icon" aria-hidden="true">🛍️</div>
+                        )}
                         <div>
                             <div className="message-order-card__title">{nativeCatalogTitle}</div>
                             <div className="message-order-card__hint">{nativeCatalogBody}</div>
                         </div>
                     </div>
-                    {nativeCatalogId && (
-                        <div className="message-order-card__meta">Catalogo Meta: {nativeCatalogId}</div>
-                    )}
                     <div className="message-order-card__hint">
                         El cliente recibe el catalogo nativo de WhatsApp para explorar productos.
                     </div>
@@ -994,11 +1022,9 @@ const MessageBubble = ({
                             {firstOrderItem?.title || firstOrderItem?.name}
                         </div>
                     )}
-                    {isProductPayload && (productSku || productCatalogId) && (
+                    {isProductPayload && productSku && (
                         <div className="message-order-card__meta">
-                            {productSku ? `SKU: ${productSku}` : ''}
-                            {productSku && productCatalogId ? ' · ' : ''}
-                            {productCatalogId ? `Catalogo Meta: ${productCatalogId}` : ''}
+                            SKU: {productSku}
                         </div>
                     )}
                     {orderSubtotalLabel && isProductPayload && (
@@ -1162,13 +1188,6 @@ const MessageBubble = ({
                 </div>
             )}
 
-            {isUnrecognizedOrderPayload && !/^opci[oó]n\s+\d+/i.test(String(msg?.body || '').trim()) && (
-                <div className="message-order-card__hint">
-                    Formato de pedido no reconocido. Se muestra el contenido original.
-                </div>
-            )}
-
-            
             <div className={`message-content ${canEditMessage ? 'can-edit' : ''}${hasReactionSummary ? ' has-reactions' : ''}`} style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
                 {showReactionPicker && canSendReaction && (
                     <div className={`message-reaction-picker ${isOut ? 'out' : 'in'}`}>

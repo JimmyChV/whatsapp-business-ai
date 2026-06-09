@@ -11467,6 +11467,17 @@ body {
   font-size: 1.25rem;
 }
 
+.message-order-card__native-catalog-image {
+  width: 56px;
+  height: 56px;
+  flex: 0 0 auto;
+  border-radius: 14px;
+  object-fit: cover;
+  background: color-mix(in srgb, var(--chat-card-surface-alt) 86%, #ffffff);
+  border: 1px solid color-mix(in srgb, var(--chat-card-border) 70%, transparent);
+  box-shadow: 0 8px 18px color-mix(in srgb, #000000 12%, transparent);
+}
+
 .message-order-card__title {
   font-size: 0.95rem;
   font-weight: 800;
