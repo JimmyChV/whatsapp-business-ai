@@ -763,5 +763,8 @@ function createSocketCatalogDeliveryService({
 }
 
 module.exports = {
-    createSocketCatalogDeliveryService
+    createSocketCatalogDeliveryService,
+    buildNativeProductInteractive,
+    buildNativeCatalogInteractive,
+    resolveMetaCatalogId
 };

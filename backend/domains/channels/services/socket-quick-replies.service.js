@@ -1,5 +1,12 @@
 const templateVariablesService = require('../../operations/services/template-variables.service');
 const { isRealQuickReplyMediaAsset } = require('../helpers/quick-reply-media-url.helpers');
+const { getStorageDriver, queryPostgres } = require('../../../config/persistence-runtime');
+const { resolveMessageSegments } = require('../../../src/services/message-variables.service');
+const {
+    buildNativeProductInteractive,
+    buildNativeCatalogInteractive,
+    resolveMetaCatalogId
+} = require('./socket-catalog-delivery.service');
 
 function createSocketQuickRepliesService({
     waClient,
@@ -127,6 +134,28 @@ function createSocketQuickRepliesService({
             chatId
         };
     };
+
+    const loadNativeCatalogIdFromDb = async (tenantId = 'default') => {
+        if (getStorageDriver() !== 'postgres') return '';
+        try {
+            const result = await queryPostgres(
+                `SELECT config_json->'metaAds'->>'catalogId' as catalog_id
+                   FROM tenant_integrations
+                  WHERE tenant_id = $1
+                  LIMIT 1`,
+                [tenantId]
+            );
+            return String(result?.rows?.[0]?.catalog_id || '').trim();
+        } catch (error) {
+            console.warn('[quick-replies] could not resolve native catalogId:', error?.message);
+            return '';
+        }
+    };
+
+    const resolveSentInteractiveId = (sentInteractive) => (
+        getSerializedMessageId(sentInteractive)
+        || String(sentInteractive?.messages?.[0]?.id || sentInteractive?.message_id || (typeof sentInteractive === 'string' ? sentInteractive : '')).trim()
+    );
 
     const registerQuickReplyHandlers = ({
         socket,
@@ -383,37 +412,173 @@ function createSocketQuickRepliesService({
                         mediaPayload: null
                     });
                 } else if (mediaAssets.length === 0) {
-                    if (quoted) {
-                        sentMessage = await waClient.sendMessage(target.targetChatId, bodyText, {
+                    const messageSegments = resolveMessageSegments(bodyText);
+                    const isSingleTextSegment = messageSegments.length === 1 && messageSegments[0]?.type === 'text';
+                    if (isSingleTextSegment) {
+                        if (quoted) {
+                            sentMessage = await waClient.sendMessage(target.targetChatId, bodyText, {
+                                quotedMessageId: quoted,
+                                metadata: {
+                                    ...baseSendMetadata
+                                }
+                            });
+                        } else {
+                            sentMessage = await waClient.sendMessage(target.targetChatId, bodyText, {
+                                metadata: {
+                                    ...baseSendMetadata
+                                }
+                            });
+                        }
+                        if (!sentMessage) return;
+                        const sentMessageId = getSerializedMessageId(sentMessage);
+                        if (clientTempId && sentMessage && typeof sentMessage === 'object') {
+                            sentMessage.clientTempId = clientTempId;
+                        }
+                        if (sentMessageId && agentMeta) rememberOutgoingAgentMeta(sentMessageId, agentMeta);
+
+                        await emitRealtimeOutgoingMessage({
+                            sentMessage,
+                            fallbackChatId: target.targetChatId,
+                            fallbackBody: bodyText,
                             quotedMessageId: quoted,
-                            metadata: {
-                                ...baseSendMetadata
-                            }
+                            quotedMessage,
+                            moduleContext,
+                            agentMeta,
+                            mediaPayload
                         });
                     } else {
-                        sentMessage = await waClient.sendMessage(target.targetChatId, bodyText, {
-                            metadata: {
-                                ...baseSendMetadata
-                            }
-                        });
-                    }
-                    if (!sentMessage) return;
-                    const sentMessageId = getSerializedMessageId(sentMessage);
-                    if (clientTempId && sentMessage && typeof sentMessage === 'object') {
-                        sentMessage.clientTempId = clientTempId;
-                    }
-                    if (sentMessageId && agentMeta) rememberOutgoingAgentMeta(sentMessageId, agentMeta);
+                        const metaCatalogId = resolveMetaCatalogId({ moduleContext }) || await loadNativeCatalogIdFromDb(tenantId);
+                        let hasSentSegment = false;
+                        for (const segment of messageSegments) {
+                            if (!segment || !segment.type) continue;
 
-                    await emitRealtimeOutgoingMessage({
-                        sentMessage,
-                        fallbackChatId: target.targetChatId,
-                        fallbackBody: bodyText,
-                        quotedMessageId: quoted,
-                        quotedMessage,
-                        moduleContext,
-                        agentMeta,
-                        mediaPayload
-                    });
+                            if (segment.type === 'text') {
+                                const textOptions = {
+                                    metadata: {
+                                        ...baseSendMetadata
+                                    }
+                                };
+                                if (!hasSentSegment && quoted) {
+                                    textOptions.quotedMessageId = quoted;
+                                }
+                                const sentTextMessage = await waClient.sendMessage(target.targetChatId, segment.content, textOptions);
+                                if (!sentTextMessage) return;
+                                if (!sentMessage) sentMessage = sentTextMessage;
+                                if (clientTempId && !hasSentSegment && sentTextMessage && typeof sentTextMessage === 'object') {
+                                    sentTextMessage.clientTempId = clientTempId;
+                                }
+                                const sentTextMessageId = getSerializedMessageId(sentTextMessage);
+                                if (sentTextMessageId && agentMeta) rememberOutgoingAgentMeta(sentTextMessageId, agentMeta);
+                                await emitRealtimeOutgoingMessage({
+                                    sentMessage: sentTextMessage,
+                                    fallbackChatId: target.targetChatId,
+                                    fallbackBody: segment.content,
+                                    quotedMessageId: !hasSentSegment ? quoted : '',
+                                    quotedMessage: !hasSentSegment && quoted ? quotedMessage : null,
+                                    moduleContext,
+                                    agentMeta,
+                                    mediaPayload: null
+                                });
+                                hasSentSegment = true;
+                                continue;
+                            }
+
+                            if (typeof waClient?.sendInteractiveMessage !== 'function') {
+                                console.warn('[quick-replies] interactive segment skipped: channel does not support interactive messages.');
+                                continue;
+                            }
+
+                            try {
+                                if (!metaCatalogId) {
+                                    console.warn('[quick-replies] native catalog segment skipped: missing catalogId.');
+                                    continue;
+                                }
+
+                                if (segment.type === 'catalog') {
+                                    const sendMetadata = {
+                                        ...baseSendMetadata,
+                                        deliveryMode: 'native_catalog_message',
+                                        metaCatalogId
+                                    };
+                                    const interactive = buildNativeCatalogInteractive();
+                                    const sentInteractive = await waClient.sendInteractiveMessage(target.targetChatId, interactive, {
+                                        quotedMessageId: !hasSentSegment ? quoted : '',
+                                        metadata: sendMetadata
+                                    });
+                                    if (!sentInteractive) continue;
+                                    const sentInteractiveId = resolveSentInteractiveId(sentInteractive);
+                                    if (sentInteractiveId && agentMeta) rememberOutgoingAgentMeta(sentInteractiveId, agentMeta);
+                                    const syntheticMessage = buildSyntheticInteractiveSentMessage({
+                                        messageId: sentInteractiveId,
+                                        chatId: target.targetChatId,
+                                        body: '',
+                                        interactive,
+                                        quotedMessageId: !hasSentSegment ? quoted : '',
+                                        metadata: sendMetadata
+                                    });
+                                    await emitRealtimeOutgoingMessage({
+                                        sentMessage: sentInteractive && typeof sentInteractive === 'object' ? sentInteractive : syntheticMessage,
+                                        fallbackChatId: target.targetChatId,
+                                        fallbackBody: '',
+                                        quotedMessageId: !hasSentSegment ? quoted : '',
+                                        quotedMessage: !hasSentSegment && quoted ? quotedMessage : null,
+                                        moduleContext,
+                                        agentMeta,
+                                        mediaPayload: null
+                                    });
+                                    if (!sentMessage) sentMessage = sentInteractive && typeof sentInteractive === 'object' ? sentInteractive : syntheticMessage;
+                                    hasSentSegment = true;
+                                    continue;
+                                }
+
+                                if (segment.type === 'product') {
+                                    const productRetailerId = String(segment.sku || '').trim();
+                                    if (!productRetailerId) {
+                                        console.warn('[quick-replies] product segment skipped: missing product sku.');
+                                        continue;
+                                    }
+                                    const sendMetadata = {
+                                        ...baseSendMetadata,
+                                        deliveryMode: 'native_catalog_product',
+                                        metaCatalogId,
+                                        productRetailerId
+                                    };
+                                    const interactive = buildNativeProductInteractive({}, metaCatalogId, productRetailerId);
+                                    const sentInteractive = await waClient.sendInteractiveMessage(target.targetChatId, interactive, {
+                                        quotedMessageId: !hasSentSegment ? quoted : '',
+                                        metadata: sendMetadata
+                                    });
+                                    if (!sentInteractive) continue;
+                                    const sentInteractiveId = resolveSentInteractiveId(sentInteractive);
+                                    if (sentInteractiveId && agentMeta) rememberOutgoingAgentMeta(sentInteractiveId, agentMeta);
+                                    const syntheticMessage = buildSyntheticInteractiveSentMessage({
+                                        messageId: sentInteractiveId,
+                                        chatId: target.targetChatId,
+                                        body: '',
+                                        interactive,
+                                        quotedMessageId: !hasSentSegment ? quoted : '',
+                                        metadata: sendMetadata
+                                    });
+                                    await emitRealtimeOutgoingMessage({
+                                        sentMessage: sentInteractive && typeof sentInteractive === 'object' ? sentInteractive : syntheticMessage,
+                                        fallbackChatId: target.targetChatId,
+                                        fallbackBody: '',
+                                        quotedMessageId: !hasSentSegment ? quoted : '',
+                                        quotedMessage: !hasSentSegment && quoted ? quotedMessage : null,
+                                        moduleContext,
+                                        agentMeta,
+                                        mediaPayload: null
+                                    });
+                                    if (!sentMessage) sentMessage = sentInteractive && typeof sentInteractive === 'object' ? sentInteractive : syntheticMessage;
+                                    hasSentSegment = true;
+                                }
+                            } catch (interactiveError) {
+                                console.warn('[quick-replies] native catalog segment skipped:', interactiveError?.message || interactiveError);
+                            }
+                        }
+
+                        if (!sentMessage) return;
+                    }
                 }
 
                 socket.emit('quick_reply_sent', buildQuickReplySentPayload({
