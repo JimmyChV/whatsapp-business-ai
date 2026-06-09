@@ -35,37 +35,36 @@ function parseCatalogMoney(value) {
 
 async function resolveCatalogItemBySku(tenantId = 'default', productSku = '') {
     const safeTenantId = toCleanText(tenantId) || 'default';
-    const safeSku = toCleanText(productSku).toUpperCase();
+    const safeSku = toCleanText(productSku);
     if (!safeSku || getStorageDriver() !== 'postgres') return null;
     try {
         const result = await queryPostgres(
-            `SELECT item_id, title, price, image_url, metadata
+            `SELECT title, price, image_url,
+                    metadata->>'regular_price' as regular_price,
+                    metadata->>'sale_price' as sale_price
                FROM catalog_items
               WHERE tenant_id = $1
-                AND (
-                  UPPER(item_id) = $2
-                  OR UPPER(metadata->>'sku') = $2
-                  OR UPPER(metadata->>'productRetailerId') = $2
-                  OR UPPER(metadata->>'product_retailer_id') = $2
-                )
-              ORDER BY CASE WHEN image_url IS NULL OR image_url = '' THEN 1 ELSE 0 END
+                AND item_id = $2
               LIMIT 1`,
             [safeTenantId, safeSku]
         );
         const row = result?.rows?.[0] || null;
         if (!row) return null;
-        const metadata = row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
-            ? row.metadata
-            : {};
+        const regularPrice = parseCatalogMoney(row.regular_price);
+        const salePrice = parseCatalogMoney(row.sale_price);
+        const price = parseCatalogMoney(row.price);
         return {
-            itemId: toCleanText(row.item_id),
-            sku: toCleanText(metadata.sku || row.item_id).toUpperCase(),
-            name: toCleanText(row.title || metadata.name || metadata.title),
-            price: parseCatalogMoney(row.price ?? metadata.price),
-            salePrice: parseCatalogMoney(metadata.salePrice ?? metadata.sale_price ?? row.price),
-            regularPrice: parseCatalogMoney(metadata.regularPrice ?? metadata.regular_price ?? row.price),
-            discountPct: parseCatalogMoney(metadata.discountPct ?? metadata.discount_pct),
-            imageUrl: toCleanText(row.image_url || metadata.imageUrl || metadata.image_url || metadata.image)
+            itemId: safeSku,
+            sku: safeSku,
+            name: toCleanText(row.title),
+            title: toCleanText(row.title),
+            price,
+            salePrice,
+            regularPrice: regularPrice ?? price,
+            discountPct: regularPrice > 0 && salePrice > 0 && regularPrice - salePrice > 0.01
+                ? Math.round(((regularPrice - salePrice) / regularPrice) * 1000) / 10
+                : null,
+            imageUrl: toCleanText(row.image_url)
         };
     } catch (error) {
         console.warn('[WA][CatalogNative][catalogItem] No se pudo resolver producto por SKU. ' + String(error?.message || error));
@@ -416,8 +415,11 @@ function createSocketCatalogDeliveryService({
                 const matchedCatalogItem = productRetailerId
                     ? await resolveCatalogItemBySku(tenantId, productRetailerId)
                     : null;
+                const catalogProductOrderPayload = productRetailerId
+                    ? buildNativeProductOrderPayload(product, nativeCatalogId || '', productRetailerId, matchedCatalogItem)
+                    : null;
                 const nativeProductOrderPayload = nativeCatalogId && productRetailerId
-                    ? buildNativeProductOrderPayload(product, nativeCatalogId, productRetailerId, matchedCatalogItem)
+                    ? catalogProductOrderPayload
                     : null;
                 if (nativeCatalogId && productRetailerId && waClient && typeof waClient.sendInteractiveMessage === 'function') {
                     const nativeInteractive = buildNativeProductInteractive(product, nativeCatalogId, productRetailerId);
@@ -464,7 +466,8 @@ function createSocketCatalogDeliveryService({
                             null,
                             {
                                 ...baseSendMetadata,
-                                mediaUrl: String(compatibleMedia?.publicUrl || compatibleMedia?.sourceUrl || imageUrl || '').trim() || null
+                                mediaUrl: String(compatibleMedia?.publicUrl || compatibleMedia?.sourceUrl || imageUrl || '').trim() || null,
+                                catalogProductOrderPayload
                             }
                         );
                         if (!sentResponse) return;
@@ -486,7 +489,8 @@ function createSocketCatalogDeliveryService({
                     sentResponse = await waClient.sendMessage(target.targetChatId, caption, {
                         metadata: {
                             ...baseSendMetadata,
-                            deliveryMode: 'text_fallback'
+                            deliveryMode: 'text_fallback',
+                            catalogProductOrderPayload
                         }
                     });
                     deliveryMode = 'text_fallback';
@@ -503,13 +507,13 @@ function createSocketCatalogDeliveryService({
                     chatId: target.targetChatId,
                     body: sentNativeCatalog ? '' : '',
                     type: sentNativeCatalog ? 'product' : 'chat',
-                    metadata: sentNativeCatalog
+                    metadata: sentNativeCatalog || catalogProductOrderPayload
                         ? {
                             ...baseSendMetadata,
                             deliveryMode,
                             metaCatalogId: nativeCatalogId || null,
                             productRetailerId: productRetailerId || null,
-                            nativeProductOrderPayload
+                            nativeProductOrderPayload: catalogProductOrderPayload
                         }
                         : null
                 });
@@ -521,7 +525,7 @@ function createSocketCatalogDeliveryService({
                     moduleContext,
                     agentMeta,
                     mediaPayload: catalogMediaPayload,
-                    orderPayload: sentNativeCatalog ? nativeProductOrderPayload : null
+                    orderPayload: catalogProductOrderPayload || null
                 });
 
                 const productId = String(product?.id || product?.productId || '').trim() || null;

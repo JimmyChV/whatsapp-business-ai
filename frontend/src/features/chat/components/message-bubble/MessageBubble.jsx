@@ -414,26 +414,28 @@ const MessageBubble = ({
         || matchedProductCatalogItem?.metadata?.image
         || ''
     );
-    const productFinalPrice = parseCatalogMoney(
+    const rawProductSalePrice = parseCatalogMoney(
         firstOrderItem?.salePrice
         ?? firstOrderItem?.sale_price
-        ?? firstOrderItem?.price
-        ?? firstOrderItem?.lineTotal
         ?? actionOrder?.salePrice
         ?? actionOrder?.sale_price
-        ?? actionOrder?.price
-        ?? actionOrder?.subtotal
         ?? actionOrder?.rawPreview?.salePrice
         ?? actionOrder?.rawPreview?.sale_price
-        ?? actionOrder?.rawPreview?.price
         ?? matchedProductCatalogItem?.salePrice
         ?? matchedProductCatalogItem?.sale_price
-        ?? matchedProductCatalogItem?.price
         ?? matchedProductCatalogItem?.metadata?.salePrice
         ?? matchedProductCatalogItem?.metadata?.sale_price
+    );
+    const rawProductPrice = parseCatalogMoney(
+        firstOrderItem?.price
+        ?? firstOrderItem?.lineTotal
+        ?? actionOrder?.price
+        ?? actionOrder?.subtotal
+        ?? actionOrder?.rawPreview?.price
+        ?? matchedProductCatalogItem?.price
         ?? matchedProductCatalogItem?.metadata?.price
     );
-    const productRegularPrice = parseCatalogMoney(
+    const rawProductRegularPrice = parseCatalogMoney(
         firstOrderItem?.regularPrice
         ?? firstOrderItem?.regular_price
         ?? actionOrder?.regularPrice
@@ -444,8 +446,13 @@ const MessageBubble = ({
         ?? matchedProductCatalogItem?.regular_price
         ?? matchedProductCatalogItem?.metadata?.regularPrice
         ?? matchedProductCatalogItem?.metadata?.regular_price
-        ?? productFinalPrice
     );
+    const productFinalPrice = rawProductSalePrice > 0
+        ? rawProductSalePrice
+        : (rawProductPrice > 0 ? rawProductPrice : rawProductRegularPrice);
+    const productRegularPrice = rawProductSalePrice > 0
+        ? (rawProductRegularPrice > 0 ? rawProductRegularPrice : productFinalPrice)
+        : productFinalPrice;
     const explicitProductDiscountPct = parseCatalogMoney(
         firstOrderItem?.discountPct
         ?? firstOrderItem?.discount_pct

@@ -17,7 +17,11 @@ function buildNativeCatalogProductOrder(product = {}) {
   const sku = String(
     safeProduct?.productRetailerId
     || safeProduct?.product_retailer_id
+    || safeProduct?.item_id
+    || safeProduct?.itemId
     || safeProduct?.sku
+    || safeProduct?.metadata?.item_id
+    || safeProduct?.metadata?.itemId
     || safeProduct?.metadata?.sku
     || safeProduct?.id
     || ''
@@ -29,13 +33,31 @@ function buildNativeCatalogProductOrder(product = {}) {
     || safeProduct?.catalog_id
     || ''
   ).trim() || null;
-  const price = parseCatalogMoneyValue(
-    safeProduct?.price
-    ?? safeProduct?.salePrice
-    ?? safeProduct?.finalPrice
-    ?? safeProduct?.regularPrice,
+  const regularPrice = parseCatalogMoneyValue(
+    safeProduct?.regularPrice
+    ?? safeProduct?.regular_price
+    ?? safeProduct?.metadata?.regular_price
+    ?? safeProduct?.metadata?.regularPrice,
     null
   );
+  const salePrice = parseCatalogMoneyValue(
+    safeProduct?.salePrice
+    ?? safeProduct?.sale_price
+    ?? safeProduct?.metadata?.sale_price
+    ?? safeProduct?.metadata?.salePrice,
+    null
+  );
+  const price = parseCatalogMoneyValue(
+    salePrice
+    ?? safeProduct?.price
+    ?? safeProduct?.finalPrice
+    ?? safeProduct?.metadata?.price
+    ?? regularPrice,
+    null
+  );
+  const discountPct = regularPrice > 0 && salePrice > 0 && regularPrice - salePrice > 0.01
+    ? Math.round(((regularPrice - salePrice) / regularPrice) * 1000) / 10
+    : null;
   const imageUrl = String(
     safeProduct?.imageUrl
     || safeProduct?.image_url
@@ -56,6 +78,9 @@ function buildNativeCatalogProductOrder(product = {}) {
     catalogId,
     imageUrl,
     price,
+    salePrice,
+    regularPrice,
+    discountPct,
     lineTotal: price,
     currency: 'PEN'
   };
@@ -70,6 +95,9 @@ function buildNativeCatalogProductOrder(product = {}) {
     imageUrl,
     currency: 'PEN',
     price,
+    salePrice,
+    regularPrice,
+    discountPct,
     subtotal: price,
     products: [productLine],
     rawPreview: {
@@ -80,7 +108,11 @@ function buildNativeCatalogProductOrder(product = {}) {
       sku,
       productRetailerId: sku,
       catalogId,
-      imageUrl
+      imageUrl,
+      price,
+      salePrice,
+      regularPrice,
+      discountPct
     }
   };
 }
