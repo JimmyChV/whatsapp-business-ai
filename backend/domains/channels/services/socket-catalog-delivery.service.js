@@ -382,6 +382,23 @@ function createSocketCatalogDeliveryService({
             }
         };
 
+        const loadNativeCatalogIdFromDb = async () => {
+            if (getStorageDriver() !== 'postgres') return '';
+            try {
+                const result = await queryPostgres(
+                    `SELECT config_json->'metaAds'->>'catalogId' as catalog_id
+                       FROM tenant_integrations
+                      WHERE tenant_id = $1
+                      LIMIT 1`,
+                    [tenantId]
+                );
+                return toCleanText(result?.rows?.[0]?.catalog_id);
+            } catch (error) {
+                console.warn('[CatalogNative] No se pudo obtener catalogId: ' + String(error?.message || error));
+                return '';
+            }
+        };
+
         socket.on('send_catalog_product', async (payload = {}) => {
             if (!guardRateLimit(socket, 'send_catalog_product')) return;
             if (!(await ensurePayloadModuleTransport(payload, 'error', 'enviar productos de catalogo'))) return;
@@ -435,17 +452,20 @@ function createSocketCatalogDeliveryService({
 
                 const integrations = await loadRuntimeIntegrations();
                 nativeCatalogId = resolveMetaCatalogId({ product, payload, integrations, moduleContext });
+                if (!nativeCatalogId) {
+                    nativeCatalogId = await loadNativeCatalogIdFromDb();
+                }
                 const productRetailerIdCandidates = resolveProductRetailerIdCandidates(product);
                 productRetailerId = productRetailerIdCandidates[0] || '';
                 const matchedCatalogItem = productRetailerIdCandidates.length
                     ? await resolveCatalogItemByCandidates(tenantId, productRetailerIdCandidates)
                     : null;
                 productRetailerId = matchedCatalogItem?.itemId || productRetailerId;
-                const catalogProductOrderPayload = productRetailerId
+                const finalOrderPayload = productRetailerId
                     ? buildNativeProductOrderPayload(product, nativeCatalogId || '', productRetailerId, matchedCatalogItem)
                     : null;
                 const nativeProductOrderPayload = nativeCatalogId && productRetailerId
-                    ? catalogProductOrderPayload
+                    ? finalOrderPayload
                     : null;
                 if (nativeCatalogId && productRetailerId && waClient && typeof waClient.sendInteractiveMessage === 'function') {
                     const nativeInteractive = buildNativeProductInteractive(product, nativeCatalogId, productRetailerId);
@@ -493,7 +513,7 @@ function createSocketCatalogDeliveryService({
                             {
                                 ...baseSendMetadata,
                                 mediaUrl: String(compatibleMedia?.publicUrl || compatibleMedia?.sourceUrl || imageUrl || '').trim() || null,
-                                catalogProductOrderPayload
+                                catalogProductOrderPayload: finalOrderPayload
                             }
                         );
                         if (!sentResponse) return;
@@ -516,7 +536,7 @@ function createSocketCatalogDeliveryService({
                         metadata: {
                             ...baseSendMetadata,
                             deliveryMode: 'text_fallback',
-                            catalogProductOrderPayload
+                            catalogProductOrderPayload: finalOrderPayload
                         }
                     });
                     deliveryMode = 'text_fallback';
@@ -533,13 +553,13 @@ function createSocketCatalogDeliveryService({
                     chatId: target.targetChatId,
                     body: sentNativeCatalog ? '' : '',
                     type: sentNativeCatalog ? 'product' : 'chat',
-                    metadata: sentNativeCatalog || catalogProductOrderPayload
+                    metadata: sentNativeCatalog || finalOrderPayload
                         ? {
                             ...baseSendMetadata,
                             deliveryMode,
                             metaCatalogId: nativeCatalogId || null,
                             productRetailerId: productRetailerId || null,
-                            nativeProductOrderPayload: catalogProductOrderPayload
+                            nativeProductOrderPayload: finalOrderPayload
                         }
                         : null
                 });
@@ -551,7 +571,7 @@ function createSocketCatalogDeliveryService({
                     moduleContext,
                     agentMeta,
                     mediaPayload: catalogMediaPayload,
-                    orderPayload: catalogProductOrderPayload || null
+                    orderPayload: finalOrderPayload || null
                 });
 
                 const productId = String(product?.id || product?.productId || '').trim() || null;
