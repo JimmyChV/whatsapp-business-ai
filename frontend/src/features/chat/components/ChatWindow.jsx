@@ -906,6 +906,7 @@ const ChatWindow = ({
                                     // TODO(bug): flujo de importacion al carrito desde cotizacion puede fallar — revisar cadena onLoadOrderToCart -> cart state
                                     onLoadOrderToCart={inputProps?.onLoadOrderToCart}
                                     onCreateOrderFromCatalog={inputProps?.onCreateOrderFromCatalog}
+                                    onOpenCatalogPanel={inputProps?.onOpenCatalogPanel}
                                     onOpenMedia={setLightboxMedia}
                                     onOpenMap={openMapModal}
                                     onOpenPhoneChat={inputProps?.onStartNewChat}

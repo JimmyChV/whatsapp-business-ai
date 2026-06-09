@@ -199,6 +199,11 @@ export default function OperationPage({
     setMobileToolRequest({ tabId: 'orders', token });
     setMobilePanelWithHistory('tools');
   }, [activeChatId, setMobilePanelWithHistory]);
+  const handleOpenCatalogTool = useCallback(() => {
+    const token = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    setMobileToolRequest({ tabId: 'catalog', token });
+    setMobilePanelWithHistory('tools');
+  }, [setMobilePanelWithHistory]);
   const effectiveMobilePanel = activeChatId ? mobilePanel : 'list';
 
   useEffect(() => {
@@ -460,6 +465,7 @@ export default function OperationPage({
               onClearQuickReplyDraft={() => setQuickReplyDraft(null)}
               onLoadOrderToCart={handleMobileLoadOrderToCart}
               onCreateOrderFromCatalog={handleCreateOrderFromCatalogMessage}
+              onOpenCatalogPanel={handleOpenCatalogTool}
               onStartNewChat={handleStartNewChat}
               onCancelEditMessage={handleCancelEditMessage}
               onCancelReplyMessage={handleCancelReplyMessage}

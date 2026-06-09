@@ -124,6 +124,7 @@ const MessageBubble = ({
     onPrefillMessage,
     onLoadOrderToCart,
     onCreateOrderFromCatalog,
+    onOpenCatalogPanel,
     isHighlighted = false,
     isCurrentHighlighted = false,
     onOpenMedia,
@@ -333,7 +334,7 @@ const MessageBubble = ({
             ? 'Producto referido del catalogo'
             : 'Producto compartido');
     const productCardHint = isMessageFromMe
-        ? 'Producto enviado como tarjeta nativa de WhatsApp.'
+        ? 'Producto enviado como tarjeta nativa de WhatsApp ✓'
         : (productSourceType.includes('catalog_reference')
             ? 'El cliente escribio sobre este producto. Puedes anadirlo al carrito para cotizarlo.'
             : 'Puedes anadir este producto al carrito para cotizarlo.');
@@ -413,6 +414,57 @@ const MessageBubble = ({
         || matchedProductCatalogItem?.metadata?.image
         || ''
     );
+    const productFinalPrice = parseCatalogMoney(
+        firstOrderItem?.salePrice
+        ?? firstOrderItem?.sale_price
+        ?? firstOrderItem?.price
+        ?? firstOrderItem?.lineTotal
+        ?? actionOrder?.salePrice
+        ?? actionOrder?.sale_price
+        ?? actionOrder?.price
+        ?? actionOrder?.subtotal
+        ?? actionOrder?.rawPreview?.salePrice
+        ?? actionOrder?.rawPreview?.sale_price
+        ?? actionOrder?.rawPreview?.price
+        ?? matchedProductCatalogItem?.salePrice
+        ?? matchedProductCatalogItem?.sale_price
+        ?? matchedProductCatalogItem?.price
+        ?? matchedProductCatalogItem?.metadata?.salePrice
+        ?? matchedProductCatalogItem?.metadata?.sale_price
+        ?? matchedProductCatalogItem?.metadata?.price
+    );
+    const productRegularPrice = parseCatalogMoney(
+        firstOrderItem?.regularPrice
+        ?? firstOrderItem?.regular_price
+        ?? actionOrder?.regularPrice
+        ?? actionOrder?.regular_price
+        ?? actionOrder?.rawPreview?.regularPrice
+        ?? actionOrder?.rawPreview?.regular_price
+        ?? matchedProductCatalogItem?.regularPrice
+        ?? matchedProductCatalogItem?.regular_price
+        ?? matchedProductCatalogItem?.metadata?.regularPrice
+        ?? matchedProductCatalogItem?.metadata?.regular_price
+        ?? productFinalPrice
+    );
+    const explicitProductDiscountPct = parseCatalogMoney(
+        firstOrderItem?.discountPct
+        ?? firstOrderItem?.discount_pct
+        ?? actionOrder?.discountPct
+        ?? actionOrder?.discount_pct
+        ?? actionOrder?.rawPreview?.discountPct
+        ?? actionOrder?.rawPreview?.discount_pct
+        ?? matchedProductCatalogItem?.discountPct
+        ?? matchedProductCatalogItem?.discount_pct
+        ?? matchedProductCatalogItem?.metadata?.discountPct
+        ?? matchedProductCatalogItem?.metadata?.discount_pct
+    );
+    const computedProductDiscountPct = productRegularPrice > 0 && productFinalPrice > 0 && productRegularPrice - productFinalPrice > 0.01
+        ? Math.round(((productRegularPrice - productFinalPrice) / productRegularPrice) * 1000) / 10
+        : 0;
+    const productDiscountPct = explicitProductDiscountPct > 0 ? explicitProductDiscountPct : computedProductDiscountPct;
+    const hasProductDiscount = productRegularPrice > 0 && productFinalPrice > 0 && productRegularPrice - productFinalPrice > 0.01;
+    const productFinalPriceLabel = productFinalPrice > 0 ? formatOrderMoney(productFinalPrice, actionOrder?.currency || 'PEN') : '';
+    const productRegularPriceLabel = productRegularPrice > 0 ? formatOrderMoney(productRegularPrice, actionOrder?.currency || 'PEN') : '';
     const nativeCatalogImageUrl = normalizeRenderableImageSrc(
         (Array.isArray(catalog) ? catalog : [])
             .map((item) => (
@@ -996,6 +1048,15 @@ const MessageBubble = ({
                     <div className="message-order-card__hint">
                         El cliente recibe el catalogo nativo de WhatsApp para explorar productos.
                     </div>
+                    {typeof onOpenCatalogPanel === 'function' && (
+                        <button
+                            type="button"
+                            className="message-order-card__action-btn"
+                            onClick={onOpenCatalogPanel}
+                        >
+                            Ver catálogo →
+                        </button>
+                    )}
                 </div>
             )}
 
@@ -1007,19 +1068,34 @@ const MessageBubble = ({
                     {orderIdentifier && (
                         <div className="message-order-card__meta">ID: {orderIdentifier}</div>
                     )}
-                    {isProductPayload && productImageUrl && (
+                    {isProductPayload && (
                         <div className="message-order-card__product-image-shell">
-                            <img
-                                src={productImageUrl}
-                                alt={firstOrderItem?.title || firstOrderItem?.name || productCardTitle}
-                                className="message-order-card__product-image"
-                                loading="lazy"
-                            />
+                            {productImageUrl ? (
+                                <img
+                                    src={productImageUrl}
+                                    alt={firstOrderItem?.title || firstOrderItem?.name || productCardTitle}
+                                    className="message-order-card__product-image"
+                                    loading="lazy"
+                                />
+                            ) : (
+                                <div className="message-order-card__product-placeholder" aria-hidden="true">📦</div>
+                            )}
                         </div>
                     )}
                     {isProductPayload && (firstOrderItem?.title || firstOrderItem?.name) && (
                         <div className="message-order-card__product-name">
                             {firstOrderItem?.title || firstOrderItem?.name}
+                        </div>
+                    )}
+                    {isProductPayload && productFinalPriceLabel && (
+                        <div className="message-order-card__price-row">
+                            {hasProductDiscount && productRegularPriceLabel && (
+                                <span className="message-order-card__regular-price">{productRegularPriceLabel}</span>
+                            )}
+                            {hasProductDiscount && productDiscountPct > 0 && (
+                                <span className="message-order-card__discount-chip">-{productDiscountPct}%</span>
+                            )}
+                            <strong>{productFinalPriceLabel}</strong>
                         </div>
                     )}
                     {isProductPayload && productSku && (

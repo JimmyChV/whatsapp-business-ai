@@ -435,7 +435,7 @@ export const getMessagePreviewText = (msg = {}) => {
   }
 
   if (type === 'native_catalog' || orderType.includes('native_catalog')) {
-    return 'Catalogo de productos';
+    return '🛍️ Catalogo enviado';
   }
 
   if (type === 'product' || orderType.includes('product')) {
@@ -446,7 +446,7 @@ export const getMessagePreviewText = (msg = {}) => {
       || orderPayload?.products?.[0]?.title
       || ''
     ).trim();
-    return title ? `Producto: ${title}` : 'Producto del catalogo';
+    return title ? `🛍️ ${title}` : '🛍️ Producto nativo';
   }
 
   const body = sanitizeDisplayText(msg?.body || '');
@@ -466,8 +466,8 @@ export const getMessagePreviewText = (msg = {}) => {
     location: 'Ubicacion',
     vcard: 'Contacto',
     order: 'Pedido',
-    product: 'Producto del catalogo',
-    native_catalog: 'Catalogo de productos',
+    product: '🛍️ Producto nativo',
+    native_catalog: '🛍️ Catalogo enviado',
     revoked: 'Mensaje eliminado'
   };
 

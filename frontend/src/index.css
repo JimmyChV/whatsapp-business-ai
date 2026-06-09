@@ -11522,6 +11522,42 @@ body {
   padding: 8px;
 }
 
+.message-order-card__product-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  color: color-mix(in srgb, var(--saas-text-secondary) 72%, transparent);
+  font-size: 2.2rem;
+}
+
+.message-order-card__price-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--saas-text-primary);
+}
+
+.message-order-card__regular-price {
+  color: var(--saas-text-secondary);
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+
+.message-order-card__discount-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: color-mix(in srgb, var(--saas-accent-primary) 86%, #064e3b);
+  background: color-mix(in srgb, var(--saas-accent-primary) 14%, #ffffff);
+  border: 1px solid color-mix(in srgb, var(--saas-accent-primary) 28%, transparent);
+}
+
 .message-order-card__quote-body {
   display: flex;
   flex-direction: column;

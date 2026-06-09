@@ -136,15 +136,15 @@ function createSocketChatHistoryMediaService({
         || value?.metadata?.image
     );
 
-    const getCatalogImageUrlBySku = async (tenantId = 'default', sku = '') => {
+    const getCatalogItemBySku = async (tenantId = 'default', sku = '') => {
         const safeTenantId = toText(tenantId) || 'default';
         const safeSku = toText(sku).toUpperCase();
-        if (!safeSku || getStorageDriver() !== 'postgres') return '';
+        if (!safeSku || getStorageDriver() !== 'postgres') return null;
         const cacheKey = `${safeTenantId}:${safeSku}`;
-        if (catalogImageCache.has(cacheKey)) return catalogImageCache.get(cacheKey) || '';
+        if (catalogImageCache.has(cacheKey)) return catalogImageCache.get(cacheKey) || null;
         try {
             const result = await queryPostgres(
-                `SELECT image_url, metadata
+                `SELECT item_id, title, price, image_url, metadata
                    FROM catalog_items
                   WHERE tenant_id = $1
                     AND (
@@ -159,12 +159,21 @@ function createSocketChatHistoryMediaService({
             );
             const row = result?.rows?.[0] || null;
             const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
-            const imageUrl = toText(row?.image_url || metadata?.imageUrl || metadata?.image_url || metadata?.image);
-            catalogImageCache.set(cacheKey, imageUrl || '');
-            return imageUrl || '';
+            const catalogItem = row ? {
+                itemId: toText(row.item_id),
+                sku: toText(metadata.sku || row.item_id).toUpperCase(),
+                name: toText(row.title || metadata.name || metadata.title),
+                price: row.price ?? metadata.price ?? null,
+                salePrice: metadata.salePrice ?? metadata.sale_price ?? row.price ?? null,
+                regularPrice: metadata.regularPrice ?? metadata.regular_price ?? row.price ?? null,
+                discountPct: metadata.discountPct ?? metadata.discount_pct ?? null,
+                imageUrl: toText(row?.image_url || metadata?.imageUrl || metadata?.image_url || metadata?.image)
+            } : null;
+            catalogImageCache.set(cacheKey, catalogItem);
+            return catalogItem;
         } catch (_) {
-            catalogImageCache.set(cacheKey, '');
-            return '';
+            catalogImageCache.set(cacheKey, null);
+            return null;
         }
     };
 
@@ -176,22 +185,43 @@ function createSocketChatHistoryMediaService({
         const enrichedProducts = await Promise.all(products.map(async (item) => {
             if (!item || typeof item !== 'object') return item;
             const existingImage = getOrderImageUrl(item);
-            if (existingImage) return item;
             const sku = getOrderProductSku(item);
-            const imageUrl = await getCatalogImageUrlBySku(tenantId, sku);
-            return imageUrl ? { ...item, imageUrl } : item;
+            const catalogItem = await getCatalogItemBySku(tenantId, sku);
+            if (!catalogItem && existingImage) return item;
+            if (!catalogItem) return item;
+            return {
+                ...item,
+                name: toText(item.name || item.title) || catalogItem.name || item.name,
+                title: toText(item.title || item.name) || catalogItem.name || item.title,
+                imageUrl: existingImage || catalogItem.imageUrl || null,
+                price: item.price ?? catalogItem.price ?? catalogItem.salePrice ?? null,
+                salePrice: item.salePrice ?? item.sale_price ?? catalogItem.salePrice ?? null,
+                regularPrice: item.regularPrice ?? item.regular_price ?? catalogItem.regularPrice ?? null,
+                discountPct: item.discountPct ?? item.discount_pct ?? catalogItem.discountPct ?? null
+            };
         }));
         const firstProductImage = enrichedProducts.map(getOrderImageUrl).find(Boolean) || '';
-        const fallbackRootImage = rootImageUrl || firstProductImage || await getCatalogImageUrlBySku(tenantId, rootSku);
+        const rootCatalogItem = await getCatalogItemBySku(tenantId, rootSku);
+        const fallbackRootImage = rootImageUrl || firstProductImage || rootCatalogItem?.imageUrl || '';
         if (!fallbackRootImage && enrichedProducts === products) return orderPayload;
         return {
             ...orderPayload,
             imageUrl: rootImageUrl || fallbackRootImage || orderPayload.imageUrl || null,
+            name: toText(orderPayload.name || orderPayload.title) || rootCatalogItem?.name || orderPayload.name,
+            title: toText(orderPayload.title || orderPayload.name) || rootCatalogItem?.name || orderPayload.title,
+            price: orderPayload.price ?? rootCatalogItem?.price ?? rootCatalogItem?.salePrice ?? null,
+            salePrice: orderPayload.salePrice ?? orderPayload.sale_price ?? rootCatalogItem?.salePrice ?? null,
+            regularPrice: orderPayload.regularPrice ?? orderPayload.regular_price ?? rootCatalogItem?.regularPrice ?? null,
+            discountPct: orderPayload.discountPct ?? orderPayload.discount_pct ?? rootCatalogItem?.discountPct ?? null,
             products: enrichedProducts,
             rawPreview: orderPayload.rawPreview && typeof orderPayload.rawPreview === 'object'
                 ? {
                     ...orderPayload.rawPreview,
-                    imageUrl: getOrderImageUrl(orderPayload.rawPreview) || fallbackRootImage || null
+                    imageUrl: getOrderImageUrl(orderPayload.rawPreview) || fallbackRootImage || null,
+                    price: orderPayload.rawPreview.price ?? orderPayload.price ?? rootCatalogItem?.price ?? null,
+                    salePrice: orderPayload.rawPreview.salePrice ?? orderPayload.rawPreview.sale_price ?? orderPayload.salePrice ?? rootCatalogItem?.salePrice ?? null,
+                    regularPrice: orderPayload.rawPreview.regularPrice ?? orderPayload.rawPreview.regular_price ?? orderPayload.regularPrice ?? rootCatalogItem?.regularPrice ?? null,
+                    discountPct: orderPayload.rawPreview.discountPct ?? orderPayload.rawPreview.discount_pct ?? orderPayload.discountPct ?? rootCatalogItem?.discountPct ?? null
                 }
                 : orderPayload.rawPreview
         };

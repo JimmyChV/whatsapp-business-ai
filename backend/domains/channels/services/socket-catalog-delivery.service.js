@@ -1,3 +1,5 @@
+const { getStorageDriver, queryPostgres } = require('../../../config/persistence-runtime');
+
 function toCleanText(value = '') {
     return String(value || '').trim();
 }
@@ -31,9 +33,50 @@ function parseCatalogMoney(value) {
     return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : null;
 }
 
-function buildNativeProductOrderPayload(product = {}, catalogId = '', productRetailerId = '') {
+async function resolveCatalogItemBySku(tenantId = 'default', productSku = '') {
+    const safeTenantId = toCleanText(tenantId) || 'default';
+    const safeSku = toCleanText(productSku).toUpperCase();
+    if (!safeSku || getStorageDriver() !== 'postgres') return null;
+    try {
+        const result = await queryPostgres(
+            `SELECT item_id, title, price, image_url, metadata
+               FROM catalog_items
+              WHERE tenant_id = $1
+                AND (
+                  UPPER(item_id) = $2
+                  OR UPPER(metadata->>'sku') = $2
+                  OR UPPER(metadata->>'productRetailerId') = $2
+                  OR UPPER(metadata->>'product_retailer_id') = $2
+                )
+              ORDER BY CASE WHEN image_url IS NULL OR image_url = '' THEN 1 ELSE 0 END
+              LIMIT 1`,
+            [safeTenantId, safeSku]
+        );
+        const row = result?.rows?.[0] || null;
+        if (!row) return null;
+        const metadata = row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+            ? row.metadata
+            : {};
+        return {
+            itemId: toCleanText(row.item_id),
+            sku: toCleanText(metadata.sku || row.item_id).toUpperCase(),
+            name: toCleanText(row.title || metadata.name || metadata.title),
+            price: parseCatalogMoney(row.price ?? metadata.price),
+            salePrice: parseCatalogMoney(metadata.salePrice ?? metadata.sale_price ?? row.price),
+            regularPrice: parseCatalogMoney(metadata.regularPrice ?? metadata.regular_price ?? row.price),
+            discountPct: parseCatalogMoney(metadata.discountPct ?? metadata.discount_pct),
+            imageUrl: toCleanText(row.image_url || metadata.imageUrl || metadata.image_url || metadata.image)
+        };
+    } catch (error) {
+        console.warn('[WA][CatalogNative][catalogItem] No se pudo resolver producto por SKU. ' + String(error?.message || error));
+        return null;
+    }
+}
+
+function buildNativeProductOrderPayload(product = {}, catalogId = '', productRetailerId = '', catalogItem = null) {
     const metadata = getProductMetadata(product);
     const title = firstCleanText(
+        catalogItem?.name,
         product?.title,
         product?.name,
         product?.productName,
@@ -42,7 +85,9 @@ function buildNativeProductOrderPayload(product = {}, catalogId = '', productRet
         productRetailerId ? `SKU ${productRetailerId}` : 'Producto del catalogo Meta'
     );
     const price = parseCatalogMoney(
-        product?.price
+        catalogItem?.price
+        ?? catalogItem?.salePrice
+        ?? product?.price
         ?? product?.salePrice
         ?? product?.finalPrice
         ?? product?.regularPrice
@@ -50,7 +95,31 @@ function buildNativeProductOrderPayload(product = {}, catalogId = '', productRet
         ?? metadata.salePrice
         ?? metadata.finalPrice
     );
+    const regularPrice = parseCatalogMoney(
+        catalogItem?.regularPrice
+        ?? product?.regularPrice
+        ?? product?.regular_price
+        ?? metadata.regularPrice
+        ?? metadata.regular_price
+        ?? price
+    );
+    const salePrice = parseCatalogMoney(
+        catalogItem?.salePrice
+        ?? product?.salePrice
+        ?? product?.sale_price
+        ?? metadata.salePrice
+        ?? metadata.sale_price
+        ?? price
+    );
+    const discountPct = parseCatalogMoney(
+        catalogItem?.discountPct
+        ?? product?.discountPct
+        ?? product?.discount_pct
+        ?? metadata.discountPct
+        ?? metadata.discount_pct
+    );
     const imageUrl = firstCleanText(
+        catalogItem?.imageUrl,
         product?.imageUrl,
         product?.image_url,
         product?.image,
@@ -71,6 +140,9 @@ function buildNativeProductOrderPayload(product = {}, catalogId = '', productRet
         catalogId: catalogId || null,
         imageUrl: imageUrl || null,
         price,
+        salePrice,
+        regularPrice,
+        discountPct,
         lineTotal: price,
         currency: 'PEN'
     };
@@ -85,6 +157,9 @@ function buildNativeProductOrderPayload(product = {}, catalogId = '', productRet
         imageUrl: imageUrl || null,
         currency: 'PEN',
         price,
+        salePrice,
+        regularPrice,
+        discountPct,
         subtotal: price,
         products: [productLine],
         rawPreview: {
@@ -95,7 +170,11 @@ function buildNativeProductOrderPayload(product = {}, catalogId = '', productRet
             sku: productRetailerId || null,
             productRetailerId: productRetailerId || null,
             catalogId: catalogId || null,
-            imageUrl: imageUrl || null
+            imageUrl: imageUrl || null,
+            price,
+            salePrice,
+            regularPrice,
+            discountPct
         }
     };
 }
@@ -334,8 +413,11 @@ function createSocketCatalogDeliveryService({
                 const integrations = await loadRuntimeIntegrations();
                 nativeCatalogId = resolveMetaCatalogId({ product, payload, integrations, moduleContext });
                 productRetailerId = resolveProductRetailerId(product);
+                const matchedCatalogItem = productRetailerId
+                    ? await resolveCatalogItemBySku(tenantId, productRetailerId)
+                    : null;
                 const nativeProductOrderPayload = nativeCatalogId && productRetailerId
-                    ? buildNativeProductOrderPayload(product, nativeCatalogId, productRetailerId)
+                    ? buildNativeProductOrderPayload(product, nativeCatalogId, productRetailerId, matchedCatalogItem)
                     : null;
                 if (nativeCatalogId && productRetailerId && waClient && typeof waClient.sendInteractiveMessage === 'function') {
                     const nativeInteractive = buildNativeProductInteractive(product, nativeCatalogId, productRetailerId);
