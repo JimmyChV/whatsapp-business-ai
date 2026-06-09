@@ -9,6 +9,7 @@ const { parseScopedChatId } = require('../../channels/helpers/chat-scope.helpers
 const customerCatalogsService = require('../../tenant/services/customer-catalogs.service');
 const customerAddressesService = require('../../tenant/services/customer-addresses.service');
 const tenantZoneRulesService = require('../../tenant/services/tenant-zone-rules.service');
+const { loadCatalog } = require('../../tenant/services/catalog-manager.service');
 
 const CATALOG = Object.freeze([
     {
@@ -499,6 +500,75 @@ function asObject(value = null) {
 
 function cloneCatalog() {
     return JSON.parse(JSON.stringify(CATALOG));
+}
+
+function truncateText(value = '', maxLength = 40) {
+    const source = toText(value);
+    const limit = Math.max(0, Number(maxLength) || 0);
+    if (!limit || source.length <= limit) return source;
+    return source.slice(0, limit);
+}
+
+async function resolveMetaCatalogId(tenantId = DEFAULT_TENANT_ID) {
+    if (getStorageDriver() !== 'postgres') return '';
+    try {
+        const { rows } = await queryPostgres(
+            `SELECT config_json->'metaAds'->>'catalogId' AS catalog_id
+               FROM tenant_integrations
+              WHERE tenant_id = $1
+              LIMIT 1`,
+            [tenantId]
+        );
+        return toText(rows?.[0]?.catalog_id);
+    } catch (error) {
+        console.warn('[template-variables] catalog variables skipped:', error?.message || error);
+        return '';
+    }
+}
+
+async function buildCatalogVariableCategory(tenantId = DEFAULT_TENANT_ID) {
+    const catalogId = await resolveMetaCatalogId(tenantId);
+    if (!catalogId) return null;
+
+    let products = [];
+    try {
+        products = await loadCatalog({ tenantId, catalogId });
+    } catch (error) {
+        console.warn('[template-variables] catalog products skipped:', error?.message || error);
+        return null;
+    }
+
+    if (!Array.isArray(products) || products.length === 0) return null;
+
+    const productVariables = products
+        .map((item = {}) => {
+            const sku = toText(item.itemId || item.item_id || item.id || item.sku);
+            const title = toText(item.title || item.name);
+            if (!sku || !title) return null;
+            return {
+                key: `producto:${sku}`,
+                label: truncateText(title, 40),
+                description: 'Envia este producto por WhatsApp',
+                exampleValue: `[${truncateText(title, 20)}]`
+            };
+        })
+        .filter(Boolean);
+
+    if (productVariables.length === 0) return null;
+
+    return {
+        id: 'catalogo',
+        label: 'Catalogo',
+        variables: [
+            {
+                key: 'catalogo',
+                label: 'Catalogo completo',
+                description: 'Envia el catalogo completo de productos',
+                exampleValue: '[Catalogo]'
+            },
+            ...productVariables
+        ]
+    };
 }
 
 function normalizeChatContext(chatId = '') {
@@ -1110,11 +1180,14 @@ function formatCampaignDateLabel(value = '') {
 
 async function getCatalog(tenantId = DEFAULT_TENANT_ID) {
     const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const categories = cloneCatalog();
+    const catalogCategory = await buildCatalogVariableCategory(cleanTenantId);
+    if (catalogCategory) categories.push(catalogCategory);
     return {
         tenantId: cleanTenantId,
         generatedAt: nowIso(),
         placeholderFormat: '{{N}}',
-        categories: cloneCatalog()
+        categories
     };
 }
 
