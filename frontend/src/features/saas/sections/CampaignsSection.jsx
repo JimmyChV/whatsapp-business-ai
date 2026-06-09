@@ -923,6 +923,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const [localEstimate, setLocalEstimate] = useState(null);
     const [baseAudienceEstimate, setBaseAudienceEstimate] = useState(null);
     const [inclusionOnlyEstimate, setInclusionOnlyEstimate] = useState(null);
+    const [estimateLoadingVisible, setEstimateLoadingVisible] = useState(false);
     const [excludedCustomerIds, setExcludedCustomerIds] = useState([]);
     const [manualExclusionSearch, setManualExclusionSearch] = useState('');
     const [reviewSearch, setReviewSearch] = useState('');
@@ -953,6 +954,8 @@ export default React.memo(function CampaignsSection(props = {}) {
     const [templatePreviewError, setTemplatePreviewError] = useState('');
     const audienceRequestRef = useRef(0);
     const estimateRequestRef = useRef({ base: 0, full: 0, inclusion: 0 });
+    const estimateVersionRef = useRef(0);
+    const lastFilterChangeRef = useRef(0);
     const requestJsonRef = useRef(requestJson);
     const reviewAudienceRef = useRef([]);
     const previousWizardStepRef = useRef(1);
@@ -1242,11 +1245,12 @@ export default React.memo(function CampaignsSection(props = {}) {
         eligible: Math.max(0, toNumber(inclusionOnlyEstimate?.eligible, Array.isArray(inclusionOnlyEstimate?.items) ? inclusionOnlyEstimate.items.length : 0)),
         excluded: Math.max(0, toNumber(inclusionOnlyEstimate?.excluded))
     }), [inclusionOnlyEstimate]);
+    const showCalculating = estimating && estimateLoadingVisible && (Date.now() - lastFilterChangeRef.current > 800);
     const inclusionStepStatusText = useMemo(() => {
         if (!toText(form.moduleId)) return 'Selecciona un módulo en el Paso 1 para ver el alcance';
-        if (!reachEstimate) return estimating ? 'Calculando...' : 'Selecciona un módulo en el Paso 1 para ver el alcance';
+        if (!reachEstimate) return showCalculating ? 'Calculando...' : 'Selecciona un módulo en el Paso 1 para ver el alcance';
         return '';
-    }, [estimating, form.moduleId, reachEstimate]);
+    }, [form.moduleId, reachEstimate, showCalculating]);
     const estimatedAudienceItems = useMemo(() => (
         (Array.isArray(reachEstimate?.items) ? reachEstimate.items : [])
             .map(normalizeAudienceEstimateItem)
@@ -2096,7 +2100,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         };
     }, [buildCampaignPayload, form, labelOptions, zoneOptions]);
 
-    const runBaseAudienceEstimate = useCallback(async () => {
+    const runBaseAudienceEstimate = useCallback(async (isCurrent = () => true) => {
         if (typeof estimateReachAction !== 'function') return;
         const requestId = estimateRequestRef.current.base + 1;
         estimateRequestRef.current.base = requestId;
@@ -2113,12 +2117,12 @@ export default React.memo(function CampaignsSection(props = {}) {
         const estimate = response?.estimate && typeof response.estimate === 'object'
             ? response.estimate
             : null;
-        if (estimate && requestId === estimateRequestRef.current.base) {
+        if (estimate && requestId === estimateRequestRef.current.base && isCurrent()) {
             setBaseAudienceEstimate(estimate);
         }
     }, [buildEstimatePayload, estimateReachAction]);
 
-    const runEstimate = useCallback(async () => {
+    const runEstimate = useCallback(async (isCurrent = () => true) => {
         if (typeof estimateReachAction !== 'function') return;
         const requestId = estimateRequestRef.current.full + 1;
         estimateRequestRef.current.full = requestId;
@@ -2136,12 +2140,12 @@ export default React.memo(function CampaignsSection(props = {}) {
         const estimate = response?.estimate && typeof response.estimate === 'object'
             ? response.estimate
             : null;
-        if (estimate && requestId === estimateRequestRef.current.full) {
+        if (estimate && requestId === estimateRequestRef.current.full && isCurrent()) {
             setLocalEstimate(estimate);
         }
     }, [buildEstimatePayload, estimateReachAction]);
 
-    const runInclusionOnlyEstimate = useCallback(async () => {
+    const runInclusionOnlyEstimate = useCallback(async (isCurrent = () => true) => {
         if (typeof estimateReachAction !== 'function') return;
         const requestId = estimateRequestRef.current.inclusion + 1;
         estimateRequestRef.current.inclusion = requestId;
@@ -2158,13 +2162,17 @@ export default React.memo(function CampaignsSection(props = {}) {
         const estimate = response?.estimate && typeof response.estimate === 'object'
             ? response.estimate
             : null;
-        if (estimate && requestId === estimateRequestRef.current.inclusion) {
+        if (estimate && requestId === estimateRequestRef.current.inclusion && isCurrent()) {
             setInclusionOnlyEstimate(estimate);
         }
     }, [buildEstimatePayload, estimateReachAction]);
 
     useEffect(() => {
         if (panelMode !== 'create' && panelMode !== 'edit') return undefined;
+        estimateVersionRef.current += 1;
+        const currentVersion = estimateVersionRef.current;
+        lastFilterChangeRef.current = Date.now();
+        setEstimateLoadingVisible(false);
         if (!form.moduleId || !form.templateName) {
             estimateRequestRef.current.base += 1;
             estimateRequestRef.current.full += 1;
@@ -2190,14 +2198,24 @@ export default React.memo(function CampaignsSection(props = {}) {
             return undefined;
         }
         if (!toText(form.moduleId)) return undefined;
+        const loadingTimer = setTimeout(() => {
+            if (estimateVersionRef.current === currentVersion) {
+                setEstimateLoadingVisible(true);
+            }
+        }, 800);
         const timer = setTimeout(() => {
+            if (estimateVersionRef.current !== currentVersion) return;
+            const isCurrent = () => estimateVersionRef.current === currentVersion;
             Promise.all([
-                runBaseAudienceEstimate().catch(() => {}),
-                runEstimate().catch(() => {}),
-                runInclusionOnlyEstimate().catch(() => {})
+                runBaseAudienceEstimate(isCurrent).catch(() => {}),
+                runEstimate(isCurrent).catch(() => {}),
+                runInclusionOnlyEstimate(isCurrent).catch(() => {})
             ]).catch(() => {});
-        }, 400);
-        return () => clearTimeout(timer);
+        }, 1200);
+        return () => {
+            clearTimeout(loadingTimer);
+            clearTimeout(timer);
+        };
     }, [
         excludedCustomerIds,
         form.exclusionFilters,
