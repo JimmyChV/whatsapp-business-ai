@@ -1242,6 +1242,11 @@ export default React.memo(function CampaignsSection(props = {}) {
         eligible: Math.max(0, toNumber(inclusionOnlyEstimate?.eligible, Array.isArray(inclusionOnlyEstimate?.items) ? inclusionOnlyEstimate.items.length : 0)),
         excluded: Math.max(0, toNumber(inclusionOnlyEstimate?.excluded))
     }), [inclusionOnlyEstimate]);
+    const inclusionStepStatusText = useMemo(() => {
+        if (!toText(form.moduleId)) return 'Selecciona un módulo en el Paso 1 para ver el alcance';
+        if (!reachEstimate) return estimating ? 'Calculando...' : 'Selecciona un módulo en el Paso 1 para ver el alcance';
+        return '';
+    }, [estimating, form.moduleId, reachEstimate]);
     const estimatedAudienceItems = useMemo(() => (
         (Array.isArray(reachEstimate?.items) ? reachEstimate.items : [])
             .map(normalizeAudienceEstimateItem)
@@ -2184,6 +2189,7 @@ export default React.memo(function CampaignsSection(props = {}) {
             estimateRequestRef.current.inclusion += 1;
             return undefined;
         }
+        if (!toText(form.moduleId)) return undefined;
         const timer = setTimeout(() => {
             Promise.all([
                 runBaseAudienceEstimate().catch(() => {}),
@@ -3396,7 +3402,12 @@ export default React.memo(function CampaignsSection(props = {}) {
                                 </div>
                                 <div className="saas-admin-field">
                                     <label>Módulo</label>
-                                    <select value={form.moduleId} onChange={(e) => setForm((p) => ({ ...p, moduleId: e.target.value, templateId: '', templateName: '' }))}>
+                                    <select value={form.moduleId} onChange={(e) => {
+                                        setLocalEstimate(null);
+                                        setBaseAudienceEstimate(null);
+                                        setInclusionOnlyEstimate(null);
+                                        setForm((p) => ({ ...p, moduleId: e.target.value, templateId: '', templateName: '' }));
+                                    }}>
                                         <option value="">Selecciona modulo</option>
                                         {moduleOptions.map((m) => <option key={m.moduleId} value={m.moduleId}>{m.label}</option>)}
                                     </select>
@@ -3493,15 +3504,15 @@ export default React.memo(function CampaignsSection(props = {}) {
                 <SaasDetailPanelSection title="PASO 2 - INCLUSIÓN">
                     {renderAudienceStepPanel({
                         scope: 'inclusionFilters',
-                        baseCount: baseAudienceNumbers.eligible,
-                        filteredCount: inclusionAudienceNumbers.eligible || baseAudienceNumbers.eligible,
-                        subtitle: `de ${baseAudienceNumbers.eligible} base total del modulo`,
+                        baseCount: inclusionStepStatusText ? 0 : baseAudienceNumbers.eligible,
+                        filteredCount: inclusionStepStatusText ? 0 : (inclusionAudienceNumbers.eligible || baseAudienceNumbers.eligible),
+                        subtitle: inclusionStepStatusText || `de ${baseAudienceNumbers.eligible} base total del modulo`,
                         activeCriteria: activeInclusionCriteria,
                         criteriaGroups: inclusionCriteriaGroups,
                         controls: renderAudienceStepControls('inclusionFilters'),
                         bottomAction: (
                             <>
-                                <span>{inclusionAudienceNumbers.eligible || baseAudienceNumbers.eligible} clientes incluidos</span>
+                                <span>{inclusionStepStatusText || `${inclusionAudienceNumbers.eligible || baseAudienceNumbers.eligible} clientes incluidos`}</span>
                                 <span>{inclusionSelectionCount} filtros activos</span>
                                 <button type="button" disabled={!wizardCanAdvance || loading} onClick={goToNextWizardStep}>Siguiente →</button>
                             </>
