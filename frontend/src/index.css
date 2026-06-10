@@ -5876,7 +5876,7 @@ body {
   top: calc(100% + 8px);
   right: 0;
   min-width: min(172px, calc(100vw - 24px));
-  max-width: min(210px, calc(100vw - 24px));
+  max-width: min(240px, calc(100vw - 16px));
   max-height: none;
   overflow: visible;
   overscroll-behavior: contain;
@@ -6603,7 +6603,9 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px 8px;
+  min-width: 210px;
+  white-space: nowrap;
+  padding: 6px 8px 8px;
   font-size: 12px;
   color: var(--saas-text-secondary);
   border-top: 1px solid var(--saas-border-color);
