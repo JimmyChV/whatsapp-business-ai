@@ -4324,7 +4324,7 @@ body {
   flex-direction: column;
   gap: 2px;
   transform: none;
-  z-index: 12;
+  z-index: 9999;
 }
 
 .message-actions-menu.in {
@@ -6522,11 +6522,11 @@ body {
 }
 
 .sidebar-window-alert-banner {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  right: 10px;
-  z-index: 12;
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  width: 280px;
+  z-index: 9999;
   min-height: 54px;
   border: 1px solid color-mix(in srgb, var(--saas-accent-warning) 70%, var(--chat-card-border));
   border-radius: 12px;
@@ -6541,7 +6541,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px 12px;
+  padding: 12px 14px 14px;
   overflow: hidden;
   cursor: pointer;
   text-align: left;
@@ -6592,12 +6592,38 @@ body {
   height: 3px;
   width: 100%;
   background: var(--saas-accent-warning);
-  animation: sidebar-window-alert-progress 15000ms linear forwards;
+  animation: sidebar-window-alert-progress 60000ms linear forwards;
 }
 
 @keyframes sidebar-window-alert-progress {
   from { width: 100%; }
   to { width: 0%; }
+}
+
+.sidebar-window-custom-inputs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--saas-text-secondary);
+  border-top: 1px solid var(--saas-border-color);
+}
+
+.sidebar-window-custom-input {
+  width: 44px;
+  padding: 3px 4px;
+  border: 1px solid var(--saas-border-color);
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: center;
+  background: var(--saas-bg-elevated);
+  color: var(--saas-text-primary);
+}
+
+.sidebar-window-custom-input:focus {
+  outline: none;
+  border-color: var(--saas-accent-primary);
 }
 
 /* --- Chat visual refresh: list + header (2026-03-18) --- */

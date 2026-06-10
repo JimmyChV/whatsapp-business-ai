@@ -70,9 +70,21 @@ const normalizeFilters = (filters = {}, commercialStatusOptions = DEFAULT_COMMER
     onlyAssignedToMe: Boolean(filters?.onlyAssignedToMe),
     assigneeUserId: normalizeFilterToken(filters?.assigneeUserId || ''),
     commercialStatus: normalizeCommercialStatus(filters?.commercialStatus || 'all', commercialStatusOptions),
-    windowFilter: ['all', 'active', 'expiring', 'critical', 'expired'].includes(String(filters?.windowFilter || 'all').trim().toLowerCase())
+    windowFilter: [
+      'all',
+      'active',
+      'critical',
+      'urgent',
+      'normal',
+      'comfortable',
+      'expires_in_schedule',
+      'expires_out_schedule',
+      'expired',
+      'custom'
+    ].includes(String(filters?.windowFilter || 'all').trim().toLowerCase())
       ? String(filters?.windowFilter || 'all').trim().toLowerCase()
       : 'all',
+    windowFilterCustomMinutes: Math.max(0, Math.floor(Number(filters?.windowFilterCustomMinutes || 0) || 0)),
     contactMode,
     archivedMode,
     pinnedMode
@@ -328,8 +340,13 @@ const useSidebarFiltersController = ({
       chips.push(`Estado: ${commercialStatusLabelByValue[filters.commercialStatus] || filters.commercialStatus}`);
     }
     if (filters.windowFilter === 'active') chips.push('Ventana activa');
-    if (filters.windowFilter === 'expiring') chips.push('Por vencer');
     if (filters.windowFilter === 'critical') chips.push('Vence pronto');
+    if (filters.windowFilter === 'urgent') chips.push('Urgente');
+    if (filters.windowFilter === 'normal') chips.push('Normal');
+    if (filters.windowFilter === 'comfortable') chips.push('Holgado');
+    if (filters.windowFilter === 'expires_in_schedule') chips.push('Vence en horario');
+    if (filters.windowFilter === 'expires_out_schedule') chips.push('Vence fuera horario');
+    if (filters.windowFilter === 'custom') chips.push('Ventana personalizada');
     if (filters.windowFilter === 'expired') chips.push('Ventana vencida');
     if (filters.archivedMode === 'archived') chips.push('Archivados');
     if (filters.pinnedMode === 'pinned') chips.push('Fijados');
@@ -360,11 +377,34 @@ const useSidebarFiltersController = ({
       if (statusToken !== filters.commercialStatus) return false;
     }
     if (filters.windowFilter !== 'all') {
+      const wf = filters.windowFilter;
       const windowState = getWindowState(chat, windowTick);
-      if (filters.windowFilter === 'active' && !windowState.active) return false;
-      if (filters.windowFilter === 'expiring' && !windowState.expiring) return false;
-      if (filters.windowFilter === 'critical' && !(windowState.active && Number(windowState.laborMinutesRemaining ?? Infinity) <= 30)) return false;
-      if (filters.windowFilter === 'expired' && !windowState.expired) return false;
+      const labMin = Number(
+        windowState?.laboralMinutesRemaining
+        ?? windowState?.laborMinutesRemaining
+        ?? chat?.laboralMinutesRemaining
+        ?? -1
+      );
+      const wOpen = Boolean(windowState?.active);
+      const wStatus = String(chat?.windowStatus || '');
+      const expiresOutSchedule = wStatus === 'expires_out_schedule'
+        || wStatus === 'expires_outside_hours'
+        || windowState?.outsideHours === true
+        || windowState?.status === 'outside-hours';
+
+      if (wf === 'active' && !wOpen) return false;
+      if (wf === 'critical' && !(wOpen && labMin >= 0 && labMin <= 30)) return false;
+      if (wf === 'urgent' && !(wOpen && labMin > 30 && labMin <= 120)) return false;
+      if (wf === 'normal' && !(wOpen && labMin > 120 && labMin <= 720)) return false;
+      if (wf === 'comfortable' && !(wOpen && labMin > 720)) return false;
+      if (wf === 'expires_in_schedule' && !(wOpen && !expiresOutSchedule && wStatus !== 'expired')) return false;
+      if (wf === 'expires_out_schedule' && !expiresOutSchedule) return false;
+      if (wf === 'expired' && !windowState.expired) return false;
+      if (wf === 'custom') {
+        const maxMin = Number(filters.windowFilterCustomMinutes ?? 0);
+        if (maxMin <= 0) return true;
+        if (!wOpen || labMin < 0 || labMin > maxMin) return false;
+      }
     }
     if (filters.contactMode === 'my' && !isSavedCustomerChat(chat)) return false;
     if (filters.contactMode === 'unknown' && isSavedCustomerChat(chat)) return false;
@@ -404,6 +444,7 @@ const useSidebarFiltersController = ({
       assigneeUserId: '',
       commercialStatus: 'all',
       windowFilter: 'all',
+      windowFilterCustomMinutes: 0,
       contactMode: 'all',
       archivedMode: 'all',
       pinnedMode: 'all'

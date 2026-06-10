@@ -104,9 +104,14 @@ export function getWindowStatus(source = {}, nowMs = Date.now()) {
 export const WINDOW_FILTER_OPTIONS = [
   { value: 'all', label: 'Todas' },
   { value: 'active', label: 'Con ventana activa' },
-  { value: 'expiring', label: 'Por vencer (< 2h)' },
   { value: 'critical', label: 'Críticas (< 30m)' },
-  { value: 'expired', label: 'Vencida' }
+  { value: 'urgent', label: 'Urgente (30m - 2h)' },
+  { value: 'normal', label: 'Normal (2h - 12h)' },
+  { value: 'comfortable', label: 'Holgado (> 12h)' },
+  { value: 'expires_in_schedule', label: 'Vence en horario' },
+  { value: 'expires_out_schedule', label: 'Vence fuera horario' },
+  { value: 'expired', label: 'Vencida' },
+  { value: 'custom', label: 'Personalizado' }
 ];
 
 export const isValidWindowFilter = (value = '') => WINDOW_FILTER_OPTIONS.some((entry) => entry.value === String(value || '').trim().toLowerCase());

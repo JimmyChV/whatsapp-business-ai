@@ -18,7 +18,8 @@ const DEFAULT_CHAT_FILTERS = {
   contactMode: 'all',
   archivedMode: 'all',
   pinnedMode: 'all',
-  windowFilter: 'all'
+  windowFilter: 'all',
+  windowFilterCustomMinutes: 0
 };
 
 export default function useOperationWorkspaceState({

@@ -199,6 +199,8 @@ const Sidebar = ({
     const [bulkLabelMenuPosition, setBulkLabelMenuPosition] = React.useState(null);
     const [bulkSelectedLabelIds, setBulkSelectedLabelIds] = React.useState(() => new Set());
     const [windowAlertBanner, setWindowAlertBanner] = React.useState(null);
+    const [customWindowHours, setCustomWindowHours] = React.useState(0);
+    const [customWindowMinutes, setCustomWindowMinutes] = React.useState(0);
     const lastWindowAlertRef = React.useRef(0);
     const lastWindowCriticalCountRef = React.useRef(0);
     const visibleChats = React.useMemo(() => {
@@ -336,10 +338,16 @@ const Sidebar = ({
             setWindowAlertBanner((current) => (
                 current?.createdAt === now ? null : current
             ));
-        }, 15_000);
+        }, 60_000);
 
         return () => window.clearTimeout(timerId);
     }, [quickStats.windowCritical]);
+
+    React.useEffect(() => {
+        const totalMin = Math.max(0, Math.floor(Number(filters.windowFilterCustomMinutes || 0) || 0));
+        setCustomWindowHours(Math.min(23, Math.floor(totalMin / 60)));
+        setCustomWindowMinutes(Math.min(59, totalMin % 60));
+    }, [filters.windowFilterCustomMinutes]);
 
     const selectedAssigneeLabel = React.useMemo(() => {
         if (filters.assigneeUserId === '__unassigned__') return 'Sin asignar';
@@ -353,9 +361,18 @@ const Sidebar = ({
         return selected?.label || 'Todos';
     }, [commercialStatusOptions, filters.commercialStatus]);
     const selectedWindowFilterLabel = React.useMemo(() => {
+        if (filters.windowFilter === 'custom') {
+            const totalMin = Number(filters.windowFilterCustomMinutes || 0);
+            if (totalMin <= 0) return 'Personalizado';
+            const h = Math.floor(totalMin / 60);
+            const m = totalMin % 60;
+            if (h > 0 && m > 0) return `< ${h}h ${m}m`;
+            if (h > 0) return `< ${h}h`;
+            return `< ${m}m`;
+        }
         const selected = WINDOW_FILTER_OPTIONS.find((entry) => String(entry?.value || '') === String(filters.windowFilter || 'all'));
         return selected?.label || 'Todas';
-    }, [filters.windowFilter]);
+    }, [filters.windowFilter, filters.windowFilterCustomMinutes]);
     const mobileFilterPopoverClass = mobileFilterMode
         ? ` sidebar-filter-content--${mobileFilterMode}-popover`
         : '';
@@ -1185,14 +1202,51 @@ const Sidebar = ({
                                                     className={`sidebar-filter-pill-item ${String(filters.windowFilter || 'all') === String(entry.value) ? 'active' : ''}`}
                                                     onClick={() => {
                                                         updateFilters({ windowFilter: entry.value });
-                                                        setShowWindowFilterMenu(false);
-                                                        closeMobileAdvancedFilters();
+                                                        if (entry.value !== 'custom') {
+                                                            setShowWindowFilterMenu(false);
+                                                            closeMobileAdvancedFilters();
+                                                        }
                                                     }}
                                                 >
                                                     {String(filters.windowFilter || 'all') === String(entry.value) ? '● ' : '○ '}
                                                     {entry.label}
                                                 </button>
                                             ))}
+                                            {filters.windowFilter === 'custom' && (
+                                                <div className="sidebar-window-custom-inputs">
+                                                    <span>Menos de</span>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        max="23"
+                                                        value={customWindowHours}
+                                                        onChange={(event) => {
+                                                            const h = Math.max(0, Math.min(23, Number(event.target.value) || 0));
+                                                            setCustomWindowHours(h);
+                                                            updateFilters({
+                                                                windowFilterCustomMinutes: h * 60 + customWindowMinutes
+                                                            });
+                                                        }}
+                                                        className="sidebar-window-custom-input"
+                                                    />
+                                                    <span>h</span>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        max="59"
+                                                        value={customWindowMinutes}
+                                                        onChange={(event) => {
+                                                            const m = Math.max(0, Math.min(59, Number(event.target.value) || 0));
+                                                            setCustomWindowMinutes(m);
+                                                            updateFilters({
+                                                                windowFilterCustomMinutes: customWindowHours * 60 + m
+                                                            });
+                                                        }}
+                                                        className="sidebar-window-custom-input"
+                                                    />
+                                                    <span>min</span>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>

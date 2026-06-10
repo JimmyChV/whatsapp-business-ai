@@ -578,9 +578,21 @@ export const normalizeChatFilters = (filters = {}) => {
     : 'all';
   const rawCommercialStatus = String(filters?.commercialStatus || 'all').trim().toLowerCase();
   const commercialStatus = rawCommercialStatus || 'all';
-  const windowFilter = ['all', 'active', 'expiring', 'critical', 'expired'].includes(String(filters?.windowFilter || 'all').trim().toLowerCase())
+  const windowFilter = [
+    'all',
+    'active',
+    'critical',
+    'urgent',
+    'normal',
+    'comfortable',
+    'expires_in_schedule',
+    'expires_out_schedule',
+    'expired',
+    'custom'
+  ].includes(String(filters?.windowFilter || 'all').trim().toLowerCase())
     ? String(filters?.windowFilter || 'all').trim().toLowerCase()
     : 'all';
+  const windowFilterCustomMinutes = Math.max(0, Math.floor(Number(filters?.windowFilterCustomMinutes || 0) || 0));
 
   return {
     labelTokens,
@@ -592,7 +604,8 @@ export const normalizeChatFilters = (filters = {}) => {
     contactMode,
     archivedMode,
     pinnedMode,
-    windowFilter
+    windowFilter,
+    windowFilterCustomMinutes
   };
 };
 
