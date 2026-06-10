@@ -707,9 +707,14 @@ const MessageBubble = ({
         ? `data:${msg.mimetype || 'audio/ogg'};base64,${msg.mediaData}`
         : (mediaUrl || null);
     const hasAudioSrc = Boolean(audioSrc);
+    const isAudioMessage = msg.mimetype?.startsWith('audio/')
+        || msg.type === 'ptt'
+        || msg.type === 'audio';
     const audioSourceType = String(msg?.mimetype || '').trim().toLowerCase() === 'audio/ogg'
         ? 'audio/ogg; codecs=opus'
-        : (msg?.mimetype || 'audio/ogg; codecs=opus');
+        : (msg?.mimetype
+            ? msg.mimetype
+            : 'audio/ogg; codecs=opus');
     const {
         canOpenAttachmentAsPdf,
         handleOpenAttachment,
@@ -1004,7 +1009,7 @@ const MessageBubble = ({
                 />
             )}
 
-            {shouldRenderStandaloneMedia && hasAudioSrc && msg.mimetype?.startsWith('audio/') && (
+            {shouldRenderStandaloneMedia && hasAudioSrc && isAudioMessage && (
                 <audio
                     controls
                     className="media-audio"
