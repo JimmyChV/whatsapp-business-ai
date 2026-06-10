@@ -216,7 +216,7 @@ function createCampaignDispatcherJob({
     let timer = null;
     let running = false;
 
-    async function syncCampaignRecipientFromQueue(tenantId = '', queueJob = null, { reason = '', actorType = 'worker', actorId = '' } = {}) {
+    async function syncCampaignRecipientFromQueue(tenantId = '', queueJob = null, { reason = '', actorType = 'worker', actorId = '', skipStats = false } = {}) {
         if (!queueJob || !toText(queueJob.idempotencyKey)) return;
         if (!campaignsService || typeof campaignsService.applyQueueJobUpdate !== 'function') return;
         try {
@@ -224,7 +224,8 @@ function createCampaignDispatcherJob({
                 queueJob,
                 reason,
                 actorType,
-                actorId
+                actorId,
+                skipStats
             });
         } catch (error) {
             opsTelemetry?.recordInternalError?.('campaign_dispatcher_sync_recipient', error);
@@ -347,7 +348,7 @@ function createCampaignDispatcherJob({
                 idempotencyKey,
                 reason: 'module_unavailable'
             });
-            await syncCampaignRecipientFromQueue(tenantId, skippedJob, { reason: 'module_unavailable' });
+            await syncCampaignRecipientFromQueue(tenantId, skippedJob, { reason: 'module_unavailable', skipStats: true });
             return { status: 'skipped', reason: 'module_unavailable' };
         }
 
@@ -357,7 +358,7 @@ function createCampaignDispatcherJob({
                 idempotencyKey,
                 reason: 'consent_required'
             });
-            await syncCampaignRecipientFromQueue(tenantId, skippedJob, { reason: 'consent_required' });
+            await syncCampaignRecipientFromQueue(tenantId, skippedJob, { reason: 'consent_required', skipStats: true });
             return { status: 'skipped', reason: 'consent_required' };
         }
 
@@ -441,7 +442,7 @@ function createCampaignDispatcherJob({
             );
 
             const sentJob = await campaignQueueService.ackJob(tenantId, { idempotencyKey });
-            await syncCampaignRecipientFromQueue(tenantId, sentJob, { reason: 'sent' });
+            await syncCampaignRecipientFromQueue(tenantId, sentJob, { reason: 'sent', skipStats: true });
             return { status: 'sent' };
         } catch (error) {
             const code = extractErrorCode(error);
@@ -462,7 +463,7 @@ function createCampaignDispatcherJob({
                     idempotencyKey,
                     reason: `permanent_error_${code}`
                 });
-                await syncCampaignRecipientFromQueue(tenantId, skippedJob, { reason: `permanent_error_${code}` });
+                await syncCampaignRecipientFromQueue(tenantId, skippedJob, { reason: `permanent_error_${code}`, skipStats: true });
                 return { status: 'skipped', reason: 'permanent_error', code };
             }
 
@@ -476,7 +477,8 @@ function createCampaignDispatcherJob({
                 retryDelaySeconds
             });
             await syncCampaignRecipientFromQueue(tenantId, failedJob, {
-                reason: String(error?.message || (isTransient ? 'transient_dispatch_failed' : 'dispatch_failed'))
+                reason: String(error?.message || (isTransient ? 'transient_dispatch_failed' : 'dispatch_failed')),
+                skipStats: true
             });
             return { status: 'failed', reason: 'retry_scheduled', code };
         }
@@ -491,7 +493,7 @@ function createCampaignDispatcherJob({
         });
         const jobs = Array.isArray(claimedJobs) ? claimedJobs : [];
         for (const claimedJob of jobs) {
-            await syncCampaignRecipientFromQueue(tenantId, claimedJob, { reason: 'claimed', actorId: workerId });
+            await syncCampaignRecipientFromQueue(tenantId, claimedJob, { reason: 'claimed', actorId: workerId, skipStats: true });
         }
 
         let sent = 0;
@@ -502,6 +504,13 @@ function createCampaignDispatcherJob({
             if (result?.status === 'sent') sent += 1;
             else if (result?.status === 'failed') failed += 1;
             else if (result?.status === 'skipped') skipped += 1;
+        }
+
+        if (campaignsService && typeof campaignsService.recomputeCampaignStats === 'function') {
+            const campaignIds = Array.from(new Set(jobs.map((job) => toText(job?.campaignId || '')).filter(Boolean)));
+            for (const campaignId of campaignIds) {
+                await campaignsService.recomputeCampaignStats(tenantId, { campaignId, markCompleted: true });
+            }
         }
 
         return { claimed: jobs.length, sent, failed, skipped, recovered };

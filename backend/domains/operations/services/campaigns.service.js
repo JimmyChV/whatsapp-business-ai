@@ -3965,6 +3965,7 @@ async function applyQueueJobUpdate(tenantId = DEFAULT_TENANT_ID, options = {}) {
     );
 
     if (!changed) {
+        if (options.skipStats === true) return { campaign: null, recipient };
         return { campaign: await recomputeCampaignStats(cleanTenantId, { campaignId: recipient.campaignId, markCompleted: true }), recipient };
     }
 
@@ -4014,6 +4015,10 @@ async function applyQueueJobUpdate(tenantId = DEFAULT_TENANT_ID, options = {}) {
                 idempotencyKey
             }
         });
+    }
+
+    if (options.skipStats === true) {
+        return { campaign: null, recipient: persistedRecipient };
     }
 
     const recomputedCampaign = await recomputeCampaignStats(cleanTenantId, {
