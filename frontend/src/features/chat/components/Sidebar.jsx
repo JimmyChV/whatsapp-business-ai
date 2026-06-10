@@ -835,7 +835,7 @@ const Sidebar = ({
                             data-label="No leidos"
                         >
                             <CheckCheck size={18} />
-                            {quickStats.unread > 0 && <span className="sidebar-ribbon-badge">{quickStats.unread > 9 ? '9+' : quickStats.unread}</span>}
+                            {quickStats.unread > 0 && <span className="sidebar-ribbon-badge">{quickStats.unread > 99 ? '99+' : quickStats.unread}</span>}
                         </button>
                         <button
                             type="button"
@@ -863,7 +863,7 @@ const Sidebar = ({
                             data-label="Fijados"
                         >
                             <Pin size={18} />
-                            {quickStats.pinned > 0 && <span className="sidebar-ribbon-badge">{quickStats.pinned > 9 ? '9+' : quickStats.pinned}</span>}
+                            {quickStats.pinned > 0 && <span className="sidebar-ribbon-badge">{quickStats.pinned > 99 ? '99+' : quickStats.pinned}</span>}
                         </button>
                         <button
                             type="button"
@@ -882,7 +882,7 @@ const Sidebar = ({
                             data-label="No guardados"
                         >
                             <UserRoundX size={18} />
-                            {quickStats.unknown > 0 && <span className="sidebar-ribbon-badge">{quickStats.unknown > 9 ? '9+' : quickStats.unknown}</span>}
+                            {quickStats.unknown > 0 && <span className="sidebar-ribbon-badge">{quickStats.unknown > 99 ? '99+' : quickStats.unknown}</span>}
                         </button>
                         <button
                             type="button"
@@ -892,7 +892,7 @@ const Sidebar = ({
                             data-label="Solo mios"
                         >
                             <UserCheck size={18} />
-                            {quickStats.assignedToMe > 0 && <span className="sidebar-ribbon-badge">{quickStats.assignedToMe > 9 ? '9+' : quickStats.assignedToMe}</span>}
+                            {quickStats.assignedToMe > 0 && <span className="sidebar-ribbon-badge">{quickStats.assignedToMe > 99 ? '99+' : quickStats.assignedToMe}</span>}
                         </button>
                         <button
                             type="button"
@@ -912,7 +912,7 @@ const Sidebar = ({
                             data-label="Etiquetas"
                         >
                             <Tag size={18} />
-                            {selectedLabelCount > 0 && <span className="sidebar-ribbon-badge">{selectedLabelCount > 9 ? '9+' : selectedLabelCount}</span>}
+                            {selectedLabelCount > 0 && <span className="sidebar-ribbon-badge">{selectedLabelCount > 99 ? '99+' : selectedLabelCount}</span>}
                         </button>
                         <button
                             type="button"
