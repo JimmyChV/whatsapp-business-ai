@@ -1752,8 +1752,10 @@ function matchFiltersFromDeepFilterSet(filters = {}) {
 
 function normalizeZoneLabelIds(filters = {}) {
     return normalizeStringArray(
-        filters.zoneLabelIds
+        filters.zone_label_ids
+        || filters.zoneLabelIds
         || filters.zoneLabelId
+        || filters.zone_rule_ids
         || filters.zoneRuleIds
         || filters.zoneRuleId
         || filters.zoneIds

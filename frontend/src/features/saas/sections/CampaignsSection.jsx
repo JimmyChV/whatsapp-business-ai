@@ -956,6 +956,7 @@ export default React.memo(function CampaignsSection(props = {}) {
     const estimateRequestRef = useRef({ base: 0, full: 0, inclusion: 0 });
     const estimateVersionRef = useRef(0);
     const lastFilterChangeRef = useRef(0);
+    const lastSentPayloadRef = useRef(null);
     const requestJsonRef = useRef(requestJson);
     const reviewAudienceRef = useRef([]);
     const previousWizardStepRef = useRef(1);
@@ -2170,12 +2171,14 @@ export default React.memo(function CampaignsSection(props = {}) {
     const runBaseRef = useRef(runBaseAudienceEstimate);
     const runEstimateRef = useRef(runEstimate);
     const runInclusionRef = useRef(runInclusionOnlyEstimate);
+    const buildEstimatePayloadRef = useRef(buildEstimatePayload);
 
     useEffect(() => {
         runBaseRef.current = runBaseAudienceEstimate;
         runEstimateRef.current = runEstimate;
         runInclusionRef.current = runInclusionOnlyEstimate;
-    }, [runBaseAudienceEstimate, runEstimate, runInclusionOnlyEstimate]);
+        buildEstimatePayloadRef.current = buildEstimatePayload;
+    }, [buildEstimatePayload, runBaseAudienceEstimate, runEstimate, runInclusionOnlyEstimate]);
 
     useEffect(() => {
         if (panelMode !== 'create' && panelMode !== 'edit') return undefined;
@@ -2184,6 +2187,7 @@ export default React.memo(function CampaignsSection(props = {}) {
         lastFilterChangeRef.current = Date.now();
         setEstimateLoadingVisible(false);
         if (!form.moduleId || !form.templateName) {
+            lastSentPayloadRef.current = null;
             estimateRequestRef.current.base += 1;
             estimateRequestRef.current.full += 1;
             estimateRequestRef.current.inclusion += 1;
@@ -2193,6 +2197,7 @@ export default React.memo(function CampaignsSection(props = {}) {
             return undefined;
         }
         if (wizardStep < 2) {
+            lastSentPayloadRef.current = null;
             estimateRequestRef.current.base += 1;
             estimateRequestRef.current.full += 1;
             estimateRequestRef.current.inclusion += 1;
@@ -2216,6 +2221,10 @@ export default React.memo(function CampaignsSection(props = {}) {
         const timer = setTimeout(() => {
             if (estimateVersionRef.current !== currentVersion) return;
             const isCurrent = () => estimateVersionRef.current === currentVersion;
+            const currentPayload = buildEstimatePayloadRef.current();
+            const payloadHash = JSON.stringify(currentPayload);
+            if (lastSentPayloadRef.current === payloadHash) return;
+            lastSentPayloadRef.current = payloadHash;
             Promise.all([
                 runBaseRef.current(isCurrent).catch(() => {}),
                 runEstimateRef.current(isCurrent).catch(() => {}),
