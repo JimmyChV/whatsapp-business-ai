@@ -2366,86 +2366,16 @@ async function loadCandidateCustomers(tenantId = DEFAULT_TENANT_ID, campaign = {
                     cmc.marketing_opt_in_status,
                     cmc.commercial_status,
                     cmc.labels,
-                    COALESCE(cmc.assignment_user_id, latest_assignment.assignee_user_id, '') AS assignment_user_id,
-                    op_labels.operational_label_ids,
-                    COALESCE(chat.has_open_chat, FALSE) AS has_open_chat,
-                    tmpl_history.historical_template_names,
-                    tmpl.last_template_name,
-                    tmpl.last_template_sent_at,
-                    COALESCE(addr.has_address, FALSE) AS has_address,
-                    addr.department_names,
-                    addr.province_names,
-                    addr.district_names,
-                    addr.primary_department_name,
-                    addr.primary_province_name,
-                    addr.primary_district_name
+                    ${contextAssignmentSelect},
+                    ${contextOpLabelsSelect},
+                    ${contextChatSelect},
+                    ${contextTemplateSelect},
+                    ${contextAddressSelect}
                  FROM tenant_customer_module_contexts cmc
                  JOIN tenant_customers c
                    ON c.tenant_id = cmc.tenant_id
                   AND c.customer_id = cmc.customer_id
-                 LEFT JOIN LATERAL (
-                    SELECT
-                        COUNT(*) > 0 AS has_address,
-                        ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.department_name), '')), NULL) AS department_names,
-                        ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.province_name), '')), NULL) AS province_names,
-                        ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(BTRIM(a.district_name), '')), NULL) AS district_names,
-                        COALESCE(
-                            MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.department_name), '') END),
-                            MAX(NULLIF(BTRIM(a.department_name), ''))
-                        ) AS primary_department_name,
-                        COALESCE(
-                            MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.province_name), '') END),
-                            MAX(NULLIF(BTRIM(a.province_name), ''))
-                        ) AS primary_province_name,
-                        COALESCE(
-                            MAX(CASE WHEN a.is_primary THEN NULLIF(BTRIM(a.district_name), '') END),
-                            MAX(NULLIF(BTRIM(a.district_name), ''))
-                        ) AS primary_district_name
-                    FROM tenant_customer_addresses a
-                    WHERE a.tenant_id = c.tenant_id
-                      AND a.customer_id = c.customer_id
-                 ) addr ON TRUE
-                 LEFT JOIN LATERAL (
-                    ${buildOperationalLabelsLateralSql('cmc.module_id')}
-                 ) op_labels ON TRUE
-                 LEFT JOIN LATERAL (
-                    ${buildLatestAssignmentLateralSql('cmc.module_id')}
-                 ) latest_assignment ON TRUE
-                 LEFT JOIN LATERAL (
-                    SELECT TRUE AS has_open_chat
-                    FROM tenant_chats ch
-                    WHERE ch.tenant_id = c.tenant_id
-                      AND REGEXP_REPLACE(COALESCE(ch.phone, ''), '\D', '', 'g') = REGEXP_REPLACE(COALESCE(c.phone_e164, ''), '\D', '', 'g')
-                      AND COALESCE(ch.archived, FALSE) = FALSE
-                      AND (
-                        LOWER(COALESCE(ch.metadata->>'scopeModuleId', ch.metadata->>'moduleId', '')) = LOWER(cmc.module_id)
-                        OR COALESCE(ch.metadata->>'scopeModuleId', ch.metadata->>'moduleId', '') = ''
-                      )
-                    ORDER BY ch.updated_at DESC
-                    LIMIT 1
-                 ) chat ON TRUE
-                 LEFT JOIN LATERAL (
-                    ${buildTemplateHistoryLateralSql('c')}
-                 ) tmpl_history ON TRUE
-                 LEFT JOIN LATERAL (
-                    SELECT
-                        ${LAST_TEMPLATE_NAME_SQL} AS last_template_name,
-                        TO_TIMESTAMP(COALESCE(m.timestamp_unix, 0)) AT TIME ZONE 'UTC' AS last_template_sent_at
-                    FROM tenant_messages m
-                    WHERE m.tenant_id = c.tenant_id
-                      AND m.from_me = TRUE
-                      AND (
-                        LOWER(COALESCE(m.message_type, '')) = 'template'
-                        OR ${LAST_TEMPLATE_NAME_SQL} IS NOT NULL
-                      )
-                      AND (
-                        NULLIF(BTRIM(COALESCE(m.wa_phone_number, '')), '') = c.phone_e164
-                        OR NULLIF(BTRIM(COALESCE(m.sender_phone, '')), '') = c.phone_e164
-                        OR NULLIF(BTRIM(COALESCE(m.chat_id, '')), '') = c.phone_e164
-                      )
-                    ORDER BY COALESCE(m.timestamp_unix, 0) DESC, m.created_at DESC
-                    LIMIT 1
-                 ) tmpl ON TRUE
+                 ${contextLateralJoins}
                  WHERE cmc.tenant_id = $1
                    AND LOWER(cmc.module_id) = LOWER($2)
                    AND COALESCE(c.phone_e164, '') <> ''
@@ -2999,12 +2929,13 @@ async function estimateCampaign(tenantId = DEFAULT_TENANT_ID, options = {}) {
             moduleId: normalizeModuleId(source.moduleId || ''),
             templateName: toText(source.templateName || ''),
             templateLanguage: toLower(source.templateLanguage || 'es') || 'es'
-        };
+    };
 
+    const needsZoneLabels = normalizeZoneLabelIds(filters).length > 0;
     const candidates = await loadCandidateCustomers(
         cleanTenantId,
         campaignContext,
-        { ...filters, attachZoneLabels: true },
+        { ...filters, attachZoneLabels: needsZoneLabels },
         { estimateOnly: true }
     );
     const existingRecipients = campaign?.campaignId
