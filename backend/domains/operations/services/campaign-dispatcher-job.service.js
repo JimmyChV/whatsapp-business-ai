@@ -39,6 +39,25 @@ function sleep(ms = 0) {
     return new Promise((resolve) => setTimeout(resolve, safe));
 }
 
+async function runWithConcurrency(tasks = [], limit = 1) {
+    const results = [];
+    const executing = new Set();
+    const safeLimit = Math.max(1, Math.floor(Number(limit) || 1));
+    for (const task of tasks) {
+        const promise = Promise.resolve()
+            .then(() => task())
+            .finally(() => {
+                executing.delete(promise);
+            });
+        executing.add(promise);
+        results.push(promise);
+        if (executing.size >= safeLimit) {
+            await Promise.race(executing);
+        }
+    }
+    return Promise.all(results);
+}
+
 function buildFormalCustomerName(customer = {}) {
     const parts = [
         toText(customer?.lastNamePaternal || customer?.last_name_paternal || ''),
@@ -180,6 +199,17 @@ function isLikelyPermanentError(code = null, permanentCodes = new Set()) {
     return permanentCodes.has(Number(code));
 }
 
+function isRateLimitError(error = null, code = null) {
+    const candidates = [
+        code,
+        error?.status,
+        error?.statusCode,
+        error?.response?.status,
+        error?.payload?.error?.code
+    ].map((entry) => Number(entry));
+    return candidates.some((entry) => entry === 429 || entry === 130429);
+}
+
 function buildRetryDelaySeconds(attemptCount = 0, baseSeconds = 30, maxSeconds = 900) {
     const safeAttempt = Math.max(0, Number(attemptCount) || 0);
     const next = Math.max(1, Math.floor(baseSeconds)) * Math.pow(2, safeAttempt);
@@ -203,7 +233,8 @@ function createCampaignDispatcherJob({
     const intervalMs = Math.max(5_000, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_INTERVAL_MS, 10_000)));
     const batchSize = Math.max(1, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_BATCH_SIZE, 50)));
     const workerId = toText(process.env.CAMPAIGN_DISPATCHER_WORKER_ID || 'campaign-dispatcher');
-    const perModuleRpm = Math.max(1, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_PER_MODULE_RPM, 60)));
+    const perModuleRpm = Math.max(1, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_PER_MODULE_RPM, 200)));
+    const concurrency = Math.max(1, Math.min(10, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_CONCURRENCY, 3))));
     const minIntervalPerModuleMs = Math.max(1, Math.ceil(60000 / perModuleRpm));
     const retryBaseSeconds = Math.max(1, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_RETRY_BASE_SECONDS, 30)));
     const retryMaxSeconds = Math.max(retryBaseSeconds, Math.floor(toNumber(process.env.CAMPAIGN_DISPATCHER_RETRY_MAX_SECONDS, 900)));
@@ -213,6 +244,7 @@ function createCampaignDispatcherJob({
     const storageDriver = String(getStorageDriver() || 'file').trim().toLowerCase();
 
     const moduleNextAllowedAt = new Map();
+    const modulePacingLocks = new Map();
     let timer = null;
     let running = false;
 
@@ -259,12 +291,22 @@ function createCampaignDispatcherJob({
 
     async function enforceModulePacing(tenantId = '', moduleId = '') {
         const key = `${tenantId}::${moduleId}`;
-        const now = Date.now();
-        const nextAllowed = Number(moduleNextAllowedAt.get(key) || 0);
-        if (nextAllowed > now) {
-            await sleep(nextAllowed - now);
-        }
-        moduleNextAllowedAt.set(key, Date.now() + minIntervalPerModuleMs);
+        const previous = modulePacingLocks.get(key) || Promise.resolve();
+        const current = previous.catch(() => {}).then(async () => {
+            const now = Date.now();
+            const nextAllowed = Number(moduleNextAllowedAt.get(key) || 0);
+            if (nextAllowed > now) {
+                await sleep(nextAllowed - now);
+            }
+            moduleNextAllowedAt.set(key, Date.now() + minIntervalPerModuleMs);
+        });
+        const cleanup = current.finally(() => {
+            if (modulePacingLocks.get(key) === cleanup) {
+                modulePacingLocks.delete(key);
+            }
+        });
+        modulePacingLocks.set(key, cleanup);
+        await current;
     }
 
     function pauseModuleForRateLimit(tenantId = '', moduleId = '', cooldownMs = 60_000) {
@@ -454,7 +496,7 @@ function createCampaignDispatcherJob({
                 + ' code=' + String(code ?? '')
                 + ' error=' + String(error?.message || error)
                 + (error?.stack ? `\n${error.stack}` : ''));
-            if (Number(code) === 130429) {
+            if (isRateLimitError(error, code)) {
                 pauseModuleForRateLimit(tenantId, moduleId || 'default', 60_000);
                 await recordRateLimitEvent(tenantId, job, code);
             }
@@ -468,7 +510,7 @@ function createCampaignDispatcherJob({
             }
 
             const isTransient = Number.isFinite(Number(code)) ? transientCodes.has(Number(code)) : false;
-            const retryDelaySeconds = Number(code) === 130429
+            const retryDelaySeconds = isRateLimitError(error, code)
                 ? 60
                 : buildRetryDelaySeconds(job?.attemptCount || 0, retryBaseSeconds, retryMaxSeconds);
             const failedJob = await campaignQueueService.failJob(tenantId, {
@@ -499,8 +541,11 @@ function createCampaignDispatcherJob({
         let sent = 0;
         let failed = 0;
         let skipped = 0;
-        for (const job of jobs) {
-            const result = await dispatchSingleJob(tenantId, job);
+        const dispatchResults = await runWithConcurrency(
+            jobs.map((job) => () => dispatchSingleJob(tenantId, job)),
+            concurrency
+        );
+        for (const result of dispatchResults) {
             if (result?.status === 'sent') sent += 1;
             else if (result?.status === 'failed') failed += 1;
             else if (result?.status === 'skipped') skipped += 1;
@@ -565,7 +610,7 @@ function createCampaignDispatcherJob({
         }, intervalMs);
         if (typeof timer?.unref === 'function') timer.unref();
         runNow().catch(() => { });
-        logger?.info?.(`[Ops][CampaignDispatcher] started intervalMs=${intervalMs} batchSize=${batchSize} rpmPerModule=${perModuleRpm} claimTtlSeconds=${claimTtlSeconds}`);
+        logger?.info?.(`[Ops][CampaignDispatcher] started intervalMs=${intervalMs} batchSize=${batchSize} rpmPerModule=${perModuleRpm} concurrency=${concurrency} claimTtlSeconds=${claimTtlSeconds}`);
     }
 
     function stop() {
