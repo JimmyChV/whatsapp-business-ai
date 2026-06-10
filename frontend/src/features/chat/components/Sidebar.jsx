@@ -862,13 +862,22 @@ const Sidebar = ({
                             type="button"
                             className={`sidebar-ribbon-btn ${showAdvancedFilters || hasAnyFilter ? 'active' : ''}`}
                             onClick={() => {
-                                const shouldClose = showAdvancedFilters && mobileFilterMode === 'advanced';
-                                setShowAdvancedFilters(!shouldClose);
-                                setMobileFilterMode(shouldClose ? null : 'advanced');
-                                setShowLabelPanel(false);
-                                setShowWindowFilterMenu(false);
-                                setShowAssigneeFilterMenu(false);
-                                setShowCommercialFilterMenu(false);
+                                if (hasAnyFilter) {
+                                    resetFilters();
+                                    closeMobileAdvancedFilters();
+                                    setShowAdvancedFilters(false);
+                                    setShowWindowFilterMenu(false);
+                                    setShowAssigneeFilterMenu(false);
+                                    setShowCommercialFilterMenu(false);
+                                } else {
+                                    const shouldClose = showAdvancedFilters && mobileFilterMode === 'advanced';
+                                    setShowAdvancedFilters(!shouldClose);
+                                    setMobileFilterMode(shouldClose ? null : 'advanced');
+                                    setShowLabelPanel(false);
+                                    setShowWindowFilterMenu(false);
+                                    setShowAssigneeFilterMenu(false);
+                                    setShowCommercialFilterMenu(false);
+                                }
                             }}
                             title="Todos"
                             data-label="Filtros"
@@ -935,7 +944,16 @@ const Sidebar = ({
                         <button
                             type="button"
                             className={`sidebar-ribbon-btn ${filters.onlyAssignedToMe ? 'active' : ''}`}
-                            onClick={() => updateFilters({ onlyAssignedToMe: !filters.onlyAssignedToMe })}
+                            onClick={() => {
+                                const next = !filters.onlyAssignedToMe;
+                                updateFilters({
+                                    onlyAssignedToMe: next,
+                                    ...(next ? {
+                                        windowFilter: 'all',
+                                        windowFilterCustomMinutes: 0
+                                    } : {})
+                                });
+                            }}
                             title="Solo mis chats"
                             data-label="Solo mios"
                         >

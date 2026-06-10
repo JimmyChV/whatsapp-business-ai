@@ -15,6 +15,19 @@ const splitBulletParts = (value = '') => String(value || '')
   .filter(Boolean);
 
 const buildHeaderPreferredName = (chat = {}) => {
+  const customerTypeId = String(
+    chat?.erpCustomer?.customerTypeId
+    || chat?.erpCustomer?.customer_type_id
+    || ''
+  );
+  const isCompany = customerTypeId === '2';
+
+  const contactName = toTitleCaseChatText(chat?.contactName || chat?.contact_name || '');
+  const razonSocial = toTitleCaseChatText(
+    chat?.lastNamePaternal
+    || chat?.last_name_paternal
+    || ''
+  );
   const fullName = [
     chat?.firstName || chat?.first_name,
     chat?.lastNamePaternal || chat?.last_name_paternal,
@@ -30,6 +43,11 @@ const buildHeaderPreferredName = (chat = {}) => {
     || chat?.erpCustomer?.contact_name
     || ''
   );
+
+  if (isCompany && contactName && razonSocial && contactName.toLowerCase() !== razonSocial.toLowerCase()) {
+    return `${contactName} (${razonSocial})`;
+  }
+  if (isCompany && contactName) return contactName;
 
   return fullName || erpCustomerName || '';
 };

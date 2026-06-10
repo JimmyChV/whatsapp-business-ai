@@ -16,6 +16,12 @@ export const ClientProfilePanel = ({ contact, chats = [], onClose, onQuickAiActi
     if (!contact) return null;
 
     const toProfileText = (value = '') => String(value ?? '').trim();
+    const toTitleCaseProfileText = (value = '') => toProfileText(value)
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
     const firstProfileValue = (...values) => {
         for (const value of values) {
             const text = toProfileText(value);
@@ -139,6 +145,9 @@ export const ClientProfilePanel = ({ contact, chats = [], onClose, onQuickAiActi
 
     const identityRows = [
         ['Nombre', displayName],
+        (erpCustomer?.contactName
+            ? ['Nombre de pila', toTitleCaseProfileText(String(erpCustomer.contactName))]
+            : null),
         ['Telefono', displayPhone],
         ['Codigo sistema', firstProfileValue(erpCustomer?.customerId, erpCustomer?.customer_id)],
         ['Codigo ERP', firstProfileValue(erpCustomer?.erpId, erpCustomer?.erp_id)],
@@ -146,7 +155,7 @@ export const ClientProfilePanel = ({ contact, chats = [], onClose, onQuickAiActi
         ['Telefono ERP', formatPhoneForDisplay(firstProfileValue(erpCustomer?.phoneE164, erpCustomer?.phone_e164, rawPhone))],
         ['Documento', firstProfileValue(erpCustomer?.documentNumber, erpCustomer?.document_number)],
         ['Tipo documento', firstProfileValue(erpCustomer?.documentTypeId, erpCustomer?.document_type_id)]
-    ].filter(([, value]) => hasRealValue(value));
+    ].filter((row) => row && hasRealValue(row[1]));
 
     const purchaseRows = erpCustomer ? [
         ['Ultima compra', formatProfileDate(erpCustomer?.ultimaFechaCompra || erpCustomer?.ultima_fecha_compra)],
