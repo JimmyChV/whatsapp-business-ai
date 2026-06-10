@@ -469,24 +469,29 @@ async function uploadCampaignHeaderMedia(tenantId = DEFAULT_TENANT_ID, moduleId 
     );
 }
 
-async function buildTemplateComponentsForRecipient(tenantId = DEFAULT_TENANT_ID, campaign = {}, customer = {}) {
+async function buildTemplateComponentsForRecipient(tenantId = DEFAULT_TENANT_ID, campaign = {}, customer = {}, options = {}) {
     const cleanTenantId = normalizeTenant(tenantId);
     const cleanTemplateName = toText(campaign?.templateName || '');
     const cleanModuleId = toText(campaign?.moduleId || '');
     if (!cleanTemplateName || !cleanModuleId) return [];
 
-    const template = await metaTemplatesService.getTemplateRecord(cleanTenantId, {
-        templateName: cleanTemplateName,
-        moduleId: cleanModuleId,
-        templateLanguage: toLower(campaign?.templateLanguage || 'es') || 'es'
-    });
+    const template = Object.prototype.hasOwnProperty.call(options || {}, 'preloadedTemplate')
+        ? options.preloadedTemplate
+        : await metaTemplatesService.getTemplateRecord(cleanTenantId, {
+            templateName: cleanTemplateName,
+            moduleId: cleanModuleId,
+            templateLanguage: toLower(campaign?.templateLanguage || 'es') || 'es'
+        });
     const templateComponents = ensureArray(template?.componentsJson);
     if (templateComponents.length === 0) return [];
 
     const previewPayload = await templateVariablesService.getPreview(cleanTenantId, {
         customerId: toText(customer?.customerId || ''),
         validFrom: campaign?.validFrom || campaign?.scheduledAt || '',
-        validTo: campaign?.validTo || ''
+        validTo: campaign?.validTo || '',
+        preloadedCustomer: options?.preloadedCustomer || null,
+        preloadedTreatmentsMap: options?.preloadedTreatmentsMap || null,
+        preloadedCustomerTypesMap: options?.preloadedCustomerTypesMap || null
     });
     const headerMedia = normalizeCampaignHeaderMedia(campaign);
     const resolvedComponents = await buildTemplateSendComponents(template, previewPayload);
@@ -1032,6 +1037,106 @@ async function persistRecipientRecord(tenantId = DEFAULT_TENANT_ID, record = {})
         ]
     );
     return mapRecipientRow(result?.rows?.[0] || normalized);
+}
+
+function recipientInsertValues(cleanTenantId = DEFAULT_TENANT_ID, normalized = {}) {
+    return [
+        cleanTenantId,
+        normalized.campaignId,
+        normalized.recipientId,
+        normalized.customerId,
+        normalized.phone,
+        normalized.moduleId,
+        normalized.status,
+        normalized.idempotencyKey,
+        JSON.stringify(normalized.variablesJson || {}),
+        normalized.attemptCount,
+        normalized.maxAttempts,
+        normalized.nextAttemptAt,
+        normalized.claimedAt,
+        normalized.sentAt,
+        normalized.deliveredAt,
+        normalized.readAt,
+        normalized.failedAt,
+        normalized.skippedAt,
+        normalized.lastError,
+        normalized.skipReason,
+        normalized.metaMessageId,
+        normalized.createdAt,
+        normalized.updatedAt
+    ];
+}
+
+async function bulkPersistRecipientRecords(tenantId = DEFAULT_TENANT_ID, records = []) {
+    const cleanTenantId = normalizeTenant(tenantId);
+    const normalizedRecords = ensureArray(records).map((record) => sanitizeRecipient({ ...record, tenantId: cleanTenantId }));
+    for (const normalized of normalizedRecords) {
+        if (!normalized.campaignId) throw new Error('campaignId requerido en recipient.');
+        if (!normalized.phone) throw new Error('phone requerido en recipient.');
+    }
+    if (normalizedRecords.length === 0) return [];
+
+    if (getStorageDriver() !== 'postgres') {
+        const store = await readStore(cleanTenantId);
+        const recipients = [...store.recipients];
+        for (const normalized of normalizedRecords) {
+            const key = recipientKey(normalized);
+            const index = recipients.findIndex((item) => recipientKey(item) === key || item.idempotencyKey === normalized.idempotencyKey);
+            if (index >= 0) recipients[index] = normalized;
+            else recipients.push(normalized);
+        }
+        await writeStore(cleanTenantId, { ...store, recipients });
+        return normalizedRecords;
+    }
+
+    await ensurePostgresSchema();
+    const chunkSize = 500;
+    const columnCount = 23;
+    const insertedRecipients = [];
+    for (let index = 0; index < normalizedRecords.length; index += chunkSize) {
+        const chunk = normalizedRecords.slice(index, index + chunkSize);
+        const params = chunk.flatMap((normalized) => recipientInsertValues(cleanTenantId, normalized));
+        const valuesSql = chunk.map((_, rowIndex) => {
+            const offset = rowIndex * columnCount;
+            return `(
+                $${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8},
+                $${offset + 9}::jsonb, $${offset + 10}, $${offset + 11}, $${offset + 12}::timestamptz, $${offset + 13}::timestamptz, $${offset + 14}::timestamptz, $${offset + 15}::timestamptz,
+                $${offset + 16}::timestamptz, $${offset + 17}::timestamptz, $${offset + 18}::timestamptz, $${offset + 19}, $${offset + 20}, $${offset + 21}, $${offset + 22}::timestamptz, $${offset + 23}::timestamptz
+            )`;
+        }).join(', ');
+        const result = await queryPostgres(
+            `INSERT INTO tenant_campaign_recipients (
+                tenant_id, campaign_id, recipient_id, customer_id, phone, module_id, status, idempotency_key,
+                variables_json, attempt_count, max_attempts, next_attempt_at, claimed_at, sent_at, delivered_at,
+                read_at, failed_at, skipped_at, last_error, skip_reason, meta_message_id, created_at, updated_at
+            ) VALUES ${valuesSql}
+            ON CONFLICT (tenant_id, campaign_id, recipient_id)
+            DO UPDATE SET
+                customer_id = EXCLUDED.customer_id,
+                phone = EXCLUDED.phone,
+                module_id = EXCLUDED.module_id,
+                status = EXCLUDED.status,
+                idempotency_key = EXCLUDED.idempotency_key,
+                variables_json = EXCLUDED.variables_json,
+                attempt_count = EXCLUDED.attempt_count,
+                max_attempts = EXCLUDED.max_attempts,
+                next_attempt_at = EXCLUDED.next_attempt_at,
+                claimed_at = EXCLUDED.claimed_at,
+                sent_at = EXCLUDED.sent_at,
+                delivered_at = EXCLUDED.delivered_at,
+                read_at = EXCLUDED.read_at,
+                failed_at = EXCLUDED.failed_at,
+                skipped_at = EXCLUDED.skipped_at,
+                last_error = EXCLUDED.last_error,
+                skip_reason = EXCLUDED.skip_reason,
+                meta_message_id = EXCLUDED.meta_message_id,
+                updated_at = EXCLUDED.updated_at
+            RETURNING *`,
+            params
+        );
+        insertedRecipients.push(...ensureArray(result?.rows).map(mapRecipientRow));
+    }
+    return insertedRecipients;
 }
 
 async function persistEventRecord(tenantId = DEFAULT_TENANT_ID, record = {}) {
@@ -3732,12 +3837,28 @@ async function seedRecipientsFromFilters(tenantId = DEFAULT_TENANT_ID, options =
         });
     const eligibility = computeRecipientEligibility(filteredCandidates, existingRecipients.items);
 
-    const insertedRecipients = [];
-    for (const customer of eligibility.eligibleCustomers) {
+    const preloadedTemplate = eligibility.eligibleCustomers.length > 0
+        ? await metaTemplatesService.getTemplateRecord(cleanTenantId, {
+            templateName: campaign.templateName,
+            moduleId: campaign.moduleId,
+            templateLanguage: toLower(campaign.templateLanguage || 'es') || 'es'
+        })
+        : null;
+    const {
+        treatmentsMap: preloadedTreatmentsMap = null,
+        customerTypesMap: preloadedCustomerTypesMap = null
+    } = eligibility.eligibleCustomers.length > 0
+        ? await templateVariablesService.getPreviewStaticLookups()
+        : {};
+    const recipientRows = await Promise.all(eligibility.eligibleCustomers.map(async (customer) => {
         const phone = toText(customer.phone);
-        const resolvedTemplateComponents = await buildTemplateComponentsForRecipient(cleanTenantId, campaign, customer);
-
-        const recipient = await persistRecipientRecord(cleanTenantId, {
+        const resolvedTemplateComponents = await buildTemplateComponentsForRecipient(cleanTenantId, campaign, customer, {
+            preloadedTemplate,
+            preloadedCustomer: customer,
+            preloadedTreatmentsMap,
+            preloadedCustomerTypesMap
+        });
+        return {
             tenantId: cleanTenantId,
             campaignId: campaign.campaignId,
             recipientId: customer.customerId || randomId('rcp'),
@@ -3754,9 +3875,11 @@ async function seedRecipientsFromFilters(tenantId = DEFAULT_TENANT_ID, options =
             nextAttemptAt: campaign.scheduledAt || nowIso(),
             createdAt: nowIso(),
             updatedAt: nowIso()
-        });
-        insertedRecipients.push(recipient);
+        };
+    }));
+    const insertedRecipients = await bulkPersistRecipientRecords(cleanTenantId, recipientRows);
 
+    for (const recipient of insertedRecipients) {
         if (enqueueQueue) {
             const existingJob = await campaignQueueService.getJobByIdempotencyKey(cleanTenantId, recipient.idempotencyKey);
             const queueJob = await campaignQueueService.enqueueJob(cleanTenantId, {

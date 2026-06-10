@@ -651,6 +651,30 @@ function resolveCustomerTypeLabel(customerTypesMap = new Map(), customer = {}) {
     return naturalizeUppercaseWords(profile.type || profile.customerType || '');
 }
 
+function normalizePreviewCustomer(input = {}) {
+    const source = asObject(input);
+    const metadata = asObject(source.metadata);
+    const profile = asObject(source.profile);
+    return {
+        customerId: toText(source.customerId || source.customer_id || ''),
+        contactName: toText(source.contactName || source.contact_name || source.fullName || '') || null,
+        phoneE164: toText(source.phoneE164 || source.phone_e164 || source.phone || '') || null,
+        email: toText(source.email || '') || null,
+        tags: Array.isArray(source.tags) ? source.tags : [],
+        profile,
+        preferredLanguage: toText(source.preferredLanguage || source.preferred_language || '') || null,
+        treatmentId: toText(source.treatmentId || source.treatment_id || profile.treatmentId || '') || null,
+        firstName: toText(source.firstName || source.first_name || profile.firstNames || '') || null,
+        lastNamePaternal: toText(source.lastNamePaternal || source.last_name_paternal || '') || null,
+        lastNameMaternal: toText(source.lastNameMaternal || source.last_name_maternal || '') || null,
+        customerTypeId: toText(source.customerTypeId || source.customer_type_id || profile.customerTypeId || '') || null,
+        erpId: toText(source.erpId || source.erp_id || '') || null,
+        createdAt: toText(source.createdAt || source.created_at || '') || null,
+        metadata,
+        whatsappName: toText(source.whatsappName || metadata.whatsapp?.contactName || '') || null
+    };
+}
+
 function resolveShortContactName(customer = {}, treatmentLabel = '') {
     const profile = asObject(customer?.profile);
     const firstName = naturalizeUppercaseWords(customer?.firstName || customer?.first_name || profile.firstNames || profile.nombres || '');
@@ -1191,13 +1215,38 @@ async function getCatalog(tenantId = DEFAULT_TENANT_ID) {
     };
 }
 
-async function getPreview(tenantId = DEFAULT_TENANT_ID, { chatId = '', customerId = '', validFrom = '', validTo = '' } = {}) {
-    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
-    const context = await loadPreviewContext(cleanTenantId, { chatId, customerId });
+async function getPreviewStaticLookups() {
     const [treatmentsMap, customerTypesMap] = await Promise.all([
         buildTreatmentsMap(),
         buildCustomerTypesMap()
     ]);
+    return { treatmentsMap, customerTypesMap };
+}
+
+async function buildPreviewContextFromCustomer(tenantId = DEFAULT_TENANT_ID, customer = {}) {
+    const normalizedCustomer = normalizePreviewCustomer(customer);
+    const address = await resolvePrimaryAddress(tenantId, normalizedCustomer.customerId);
+    return {
+        chat: normalizeChatContext(''),
+        customer: normalizedCustomer,
+        assignment: null,
+        commercial: null,
+        quote: null,
+        origin: null,
+        chatMetadataScopeModuleId: null,
+        address,
+        zone: null
+    };
+}
+
+function buildPreviewResponse(cleanTenantId = DEFAULT_TENANT_ID, context = {}, {
+    treatmentsMap = new Map(),
+    customerTypesMap = new Map(),
+    validFrom = '',
+    validTo = '',
+    chatId = '',
+    customerId = ''
+} = {}) {
     const treatmentLabel = resolveTreatmentAbbreviation(
         treatmentsMap,
         toText(context?.customer?.treatmentId || context?.customer?.profile?.treatmentId || '')
@@ -1233,8 +1282,36 @@ async function getPreview(tenantId = DEFAULT_TENANT_ID, { chatId = '', customerI
     };
 }
 
+async function getPreview(tenantId = DEFAULT_TENANT_ID, {
+    chatId = '',
+    customerId = '',
+    validFrom = '',
+    validTo = '',
+    preloadedCustomer = null,
+    preloadedTreatmentsMap = null,
+    preloadedCustomerTypesMap = null
+} = {}) {
+    const cleanTenantId = normalizeTenantId(tenantId || DEFAULT_TENANT_ID);
+    const context = preloadedCustomer
+        ? await buildPreviewContextFromCustomer(cleanTenantId, preloadedCustomer)
+        : await loadPreviewContext(cleanTenantId, { chatId, customerId });
+    const [treatmentsMap, customerTypesMap] = await Promise.all([
+        preloadedTreatmentsMap || buildTreatmentsMap(),
+        preloadedCustomerTypesMap || buildCustomerTypesMap()
+    ]);
+    return buildPreviewResponse(cleanTenantId, context, {
+        treatmentsMap,
+        customerTypesMap,
+        validFrom,
+        validTo,
+        chatId,
+        customerId
+    });
+}
+
 module.exports = {
     getCatalog,
-    getPreview
+    getPreview,
+    getPreviewStaticLookups
 };
 
