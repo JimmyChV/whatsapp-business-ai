@@ -2167,6 +2167,16 @@ export default React.memo(function CampaignsSection(props = {}) {
         }
     }, [buildEstimatePayload, estimateReachAction]);
 
+    const runBaseRef = useRef(runBaseAudienceEstimate);
+    const runEstimateRef = useRef(runEstimate);
+    const runInclusionRef = useRef(runInclusionOnlyEstimate);
+
+    useEffect(() => {
+        runBaseRef.current = runBaseAudienceEstimate;
+        runEstimateRef.current = runEstimate;
+        runInclusionRef.current = runInclusionOnlyEstimate;
+    }, [runBaseAudienceEstimate, runEstimate, runInclusionOnlyEstimate]);
+
     useEffect(() => {
         if (panelMode !== 'create' && panelMode !== 'edit') return undefined;
         estimateVersionRef.current += 1;
@@ -2207,9 +2217,9 @@ export default React.memo(function CampaignsSection(props = {}) {
             if (estimateVersionRef.current !== currentVersion) return;
             const isCurrent = () => estimateVersionRef.current === currentVersion;
             Promise.all([
-                runBaseAudienceEstimate(isCurrent).catch(() => {}),
-                runEstimate(isCurrent).catch(() => {}),
-                runInclusionOnlyEstimate(isCurrent).catch(() => {})
+                runBaseRef.current(isCurrent).catch(() => {}),
+                runEstimateRef.current(isCurrent).catch(() => {}),
+                runInclusionRef.current(isCurrent).catch(() => {})
             ]).catch(() => {});
         }, 1200);
         return () => {
@@ -2223,9 +2233,6 @@ export default React.memo(function CampaignsSection(props = {}) {
         form.moduleId,
         form.templateName,
         panelMode,
-        runBaseAudienceEstimate,
-        runEstimate,
-        runInclusionOnlyEstimate,
         wizardStep
     ]);
 
