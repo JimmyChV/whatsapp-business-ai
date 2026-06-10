@@ -302,9 +302,7 @@ const MessageBubble = ({
         ?? quoteMetadata?.revision_number
         ?? 0
     );
-    const quoteCardNumberLabel = Number.isFinite(quoteNumber) && quoteNumber > 1
-        ? ` ${Math.trunc(quoteNumber)}${Number.isFinite(revisionNumber) && revisionNumber > 1 ? ` (Rev. ${Math.trunc(revisionNumber)})` : ''}`
-        : (Number.isFinite(revisionNumber) && revisionNumber > 1 ? ` (Rev. ${Math.trunc(revisionNumber)})` : '');
+    const quoteCardNumberLabel = '';
     const optionCardNumberLabel = Number.isFinite(optionNumber) && optionNumber > 0 ? ` ${Math.trunc(optionNumber)}` : '';
     const quoteCardTitle = quoteSourceType === 'order' || quoteHasSourceOrder
         ? '🛒 Resumen De Pedido'
