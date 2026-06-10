@@ -3506,13 +3506,21 @@ async function repairCampaignMessageHistory(tenantId = DEFAULT_TENANT_ID, option
 
 async function refreshCampaignBlockStatuses(tenantId = DEFAULT_TENANT_ID, campaign = {}) {
     const cleanTenantId = normalizeTenant(tenantId);
-    const config = normalizeBlocksConfig(campaign?.blocksConfigJson);
-    if (!config || config.blocks.length === 0) return campaign;
+    const campaignId = toText(
+        typeof campaign === 'string'
+            ? campaign
+            : campaign?.campaignId
+    );
+    const baseCampaign = campaign && typeof campaign === 'object' && campaign.blocksConfigJson !== undefined
+        ? campaign
+        : (campaignId ? await getCampaignById(cleanTenantId, campaignId) : campaign);
+    const config = normalizeBlocksConfig(baseCampaign?.blocksConfigJson);
+    if (!config || config.blocks.length === 0) return baseCampaign || campaign;
 
     const sendingBlocks = config.blocks.filter((block) => block.status === 'sending');
-    if (sendingBlocks.length === 0) return campaign;
+    if (sendingBlocks.length === 0) return baseCampaign || campaign;
 
-    const recipients = await listCampaignRecipientsOrderedForBlocks(cleanTenantId, { campaignId: campaign.campaignId });
+    const recipients = await listCampaignRecipientsOrderedForBlocks(cleanTenantId, { campaignId: baseCampaign.campaignId });
     let changed = false;
     const nextBlocks = config.blocks.map((block) => {
         if (block.status !== 'sending') return block;
@@ -3528,10 +3536,10 @@ async function refreshCampaignBlockStatuses(tenantId = DEFAULT_TENANT_ID, campai
             sentAt: nowIso()
         };
     });
-    if (!changed) return campaign;
+    if (!changed) return baseCampaign || campaign;
 
     const nextConfig = normalizeBlocksConfig({ ...config, blocks: nextBlocks });
-    const updated = await updateCampaignBlocksConfig(cleanTenantId, campaign, nextConfig);
+    const updated = await updateCampaignBlocksConfig(cleanTenantId, baseCampaign, nextConfig);
     const completedBlock = nextBlocks.find((block, index) => block.status !== config.blocks[index]?.status);
     if (completedBlock) {
         await recordCampaignEvent(cleanTenantId, {
@@ -4488,6 +4496,7 @@ module.exports = {
     recordCampaignEvent,
     listCampaignEvents,
     recomputeCampaignStats,
+    refreshCampaignBlockStatuses,
     hydrateCampaignReadOnlyState,
     hydrateCampaignRuntimeState,
     applyQueueJobUpdate,

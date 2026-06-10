@@ -555,6 +555,9 @@ function createCampaignDispatcherJob({
             const campaignIds = Array.from(new Set(jobs.map((job) => toText(job?.campaignId || '')).filter(Boolean)));
             for (const campaignId of campaignIds) {
                 await campaignsService.recomputeCampaignStats(tenantId, { campaignId, markCompleted: true });
+                if (typeof campaignsService.refreshCampaignBlockStatuses === 'function') {
+                    await campaignsService.refreshCampaignBlockStatuses(tenantId, { campaignId }).catch(() => {});
+                }
             }
         }
 
