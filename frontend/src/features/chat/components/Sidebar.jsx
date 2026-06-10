@@ -198,6 +198,9 @@ const Sidebar = ({
     const [bulkLabelQuery, setBulkLabelQuery] = React.useState('');
     const [bulkLabelMenuPosition, setBulkLabelMenuPosition] = React.useState(null);
     const [bulkSelectedLabelIds, setBulkSelectedLabelIds] = React.useState(() => new Set());
+    const [windowAlertBanner, setWindowAlertBanner] = React.useState(null);
+    const lastWindowAlertRef = React.useRef(0);
+    const lastWindowCriticalCountRef = React.useRef(0);
     const visibleChats = React.useMemo(() => {
         const items = Array.isArray(filteredChats) ? [...filteredChats] : [];
         return items.sort((a, b) => {
@@ -309,6 +312,34 @@ const Sidebar = ({
         }, 60_000);
         return () => window.clearInterval(timerId);
     }, []);
+
+    React.useEffect(() => {
+        const critical = Number(quickStats.windowCritical || 0);
+        if (critical <= 0) {
+            setWindowAlertBanner(null);
+            return undefined;
+        }
+
+        const now = Date.now();
+        const sinceLastAlert = now - Number(lastWindowAlertRef.current || 0);
+        const countChanged = critical !== Number(lastWindowCriticalCountRef.current || 0);
+        if (sinceLastAlert < 600_000 && !countChanged) return undefined;
+
+        lastWindowAlertRef.current = now;
+        lastWindowCriticalCountRef.current = critical;
+        setWindowAlertBanner({
+            count: critical,
+            createdAt: now
+        });
+
+        const timerId = window.setTimeout(() => {
+            setWindowAlertBanner((current) => (
+                current?.createdAt === now ? null : current
+            ));
+        }, 15_000);
+
+        return () => window.clearTimeout(timerId);
+    }, [quickStats.windowCritical]);
 
     const selectedAssigneeLabel = React.useMemo(() => {
         if (filters.assigneeUserId === '__unassigned__') return 'Sin asignar';
@@ -932,9 +963,35 @@ const Sidebar = ({
                             data-label="Ventana 24h"
                         >
                             <Clock3 size={18} />
+                            {quickStats.windowWarning > 0 && (
+                                <span className="sidebar-ribbon-badge">
+                                    {quickStats.windowWarning > 99 ? '99+' : quickStats.windowWarning}
+                                </span>
+                            )}
                         </button>
                     </div>
                     <div className="sidebar-main-column">
+                        {windowAlertBanner && (
+                            <button
+                                type="button"
+                                className="sidebar-window-alert-banner"
+                                onClick={() => {
+                                    updateFilters({ windowFilter: 'critical' });
+                                    setWindowAlertBanner(null);
+                                }}
+                            >
+                                <span className="sidebar-window-alert-banner__icon"><Clock3 size={16} /></span>
+                                <span className="sidebar-window-alert-banner__copy">
+                                    <strong>
+                                        {windowAlertBanner.count} conversación{windowAlertBanner.count > 1 ? 'es' : ''} por vencer
+                                    </strong>
+                                    <small>
+                                        Ven{windowAlertBanner.count > 1 ? 'cen' : 'ce'} en menos de 30 minutos. Toca para ver.
+                                    </small>
+                                </span>
+                                <span className="sidebar-window-alert-banner__progress" aria-hidden="true" />
+                            </button>
+                        )}
                         {selectionMode && (
                             <div className="sidebar-bulk-actions" onClick={(event) => event.stopPropagation()}>
                                 <div className="sidebar-bulk-actions-top">

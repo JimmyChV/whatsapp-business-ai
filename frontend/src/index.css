@@ -6513,11 +6513,91 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 .sidebar-main-column .chat-list {
   flex: 1;
   min-height: 0;
+}
+
+.sidebar-window-alert-banner {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  z-index: 12;
+  min-height: 54px;
+  border: 1px solid color-mix(in srgb, var(--saas-accent-warning) 70%, var(--chat-card-border));
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--saas-accent-warning) 18%, var(--chat-card-surface)) 0%,
+      color-mix(in srgb, var(--saas-accent-warning) 10%, var(--chat-card-surface-alt)) 100%);
+  color: var(--saas-text-primary);
+  box-shadow:
+    0 14px 30px color-mix(in srgb, var(--saas-accent-warning) 18%, transparent),
+    var(--chat-panel-shadow);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 12px;
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sidebar-window-alert-banner__icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--saas-accent-warning) 18%, var(--chat-control-surface));
+  color: var(--chat-warning-text-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.sidebar-window-alert-banner__copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-window-alert-banner__copy strong,
+.sidebar-window-alert-banner__copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-window-alert-banner__copy strong {
+  color: var(--saas-text-primary);
+  font-size: 0.84rem;
+  line-height: 1.15;
+}
+
+.sidebar-window-alert-banner__copy small {
+  color: var(--chat-warning-text-strong);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.sidebar-window-alert-banner__progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: 100%;
+  background: var(--saas-accent-warning);
+  animation: sidebar-window-alert-progress 15000ms linear forwards;
+}
+
+@keyframes sidebar-window-alert-progress {
+  from { width: 100%; }
+  to { width: 0%; }
 }
 
 /* --- Chat visual refresh: list + header (2026-03-18) --- */

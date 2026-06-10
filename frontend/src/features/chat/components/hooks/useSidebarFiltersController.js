@@ -70,7 +70,7 @@ const normalizeFilters = (filters = {}, commercialStatusOptions = DEFAULT_COMMER
     onlyAssignedToMe: Boolean(filters?.onlyAssignedToMe),
     assigneeUserId: normalizeFilterToken(filters?.assigneeUserId || ''),
     commercialStatus: normalizeCommercialStatus(filters?.commercialStatus || 'all', commercialStatusOptions),
-    windowFilter: ['all', 'active', 'expiring', 'expired'].includes(String(filters?.windowFilter || 'all').trim().toLowerCase())
+    windowFilter: ['all', 'active', 'expiring', 'critical', 'expired'].includes(String(filters?.windowFilter || 'all').trim().toLowerCase())
       ? String(filters?.windowFilter || 'all').trim().toLowerCase()
       : 'all',
     contactMode,
@@ -300,10 +300,18 @@ const useSidebarFiltersController = ({
     const unknown = chats.filter((c) => !isSavedCustomerChat(c)).length;
     const archived = chats.filter((c) => Boolean(c?.archived)).length;
     const pinned = chats.filter((c) => Boolean(c?.pinned)).length;
+    const windowWarning = chats.filter((c) => {
+      const min = Number(c?.laboralMinutesRemaining ?? -1);
+      return Boolean(c?.windowOpen) && min >= 0 && min <= 120;
+    }).length;
+    const windowCritical = chats.filter((c) => {
+      const min = Number(c?.laboralMinutesRemaining ?? -1);
+      return Boolean(c?.windowOpen) && min >= 0 && min <= 30;
+    }).length;
     const assignedToMe = assignmentsLoaded
       ? chats.filter((chat) => isAssignedToMeResolver(chat?.id)).length
       : 0;
-    return { unread, unlabeled, myContacts, unknown, archived, pinned, assignedToMe };
+    return { unread, unlabeled, myContacts, unknown, archived, pinned, assignedToMe, windowWarning, windowCritical };
   }, [assignmentsLoaded, chats, isAssignedToMeResolver]);
 
   const activeFilterChips = useMemo(() => {
@@ -321,6 +329,7 @@ const useSidebarFiltersController = ({
     }
     if (filters.windowFilter === 'active') chips.push('Ventana activa');
     if (filters.windowFilter === 'expiring') chips.push('Por vencer');
+    if (filters.windowFilter === 'critical') chips.push('Vence pronto');
     if (filters.windowFilter === 'expired') chips.push('Ventana vencida');
     if (filters.archivedMode === 'archived') chips.push('Archivados');
     if (filters.pinnedMode === 'pinned') chips.push('Fijados');
@@ -354,6 +363,7 @@ const useSidebarFiltersController = ({
       const windowState = getWindowState(chat, windowTick);
       if (filters.windowFilter === 'active' && !windowState.active) return false;
       if (filters.windowFilter === 'expiring' && !windowState.expiring) return false;
+      if (filters.windowFilter === 'critical' && !(windowState.active && Number(windowState.laborMinutesRemaining ?? Infinity) <= 30)) return false;
       if (filters.windowFilter === 'expired' && !windowState.expired) return false;
     }
     if (filters.contactMode === 'my' && !isSavedCustomerChat(chat)) return false;

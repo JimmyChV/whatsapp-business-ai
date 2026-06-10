@@ -105,6 +105,7 @@ export const WINDOW_FILTER_OPTIONS = [
   { value: 'all', label: 'Todas' },
   { value: 'active', label: 'Con ventana activa' },
   { value: 'expiring', label: 'Por vencer (< 2h)' },
+  { value: 'critical', label: 'Críticas (< 30m)' },
   { value: 'expired', label: 'Vencida' }
 ];
 
