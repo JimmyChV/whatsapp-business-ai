@@ -1285,6 +1285,84 @@ async function listCampaigns(tenantId = DEFAULT_TENANT_ID, options = {}) {
     }
 }
 
+async function getCampaignsByPhones(tenantId = DEFAULT_TENANT_ID, phones = []) {
+    const rawPhones = ensureArray(phones);
+    if (!rawPhones.length) return new Map();
+
+    const cleanTenantId = normalizeTenant(tenantId);
+    const normalizedPhones = Array.from(new Set(
+        rawPhones.flatMap((phone) => {
+            const digits = String(phone || '').replace(/\D/g, '');
+            return digits ? [`+${digits}`, digits] : [];
+        })
+    ));
+
+    if (!normalizedPhones.length) return new Map();
+
+    if (getStorageDriver() !== 'postgres') {
+        const normalizedPhoneSet = new Set(normalizedPhones);
+        const store = await readStore(cleanTenantId);
+        const campaignsById = new Map(
+            ensureArray(store.campaigns)
+                .filter((campaign) => ['completed', 'running'].includes(normalizeCampaignStatus(campaign?.status)))
+                .map((campaign) => [toText(campaign?.campaignId), campaign])
+        );
+        const map = new Map();
+        ensureArray(store.recipients)
+            .filter((recipient) => normalizeRecipientStatus(recipient?.status) === 'sent')
+            .filter((recipient) => normalizedPhoneSet.has(toText(recipient?.phone)))
+            .forEach((recipient) => {
+                const digits = String(recipient?.phone || '').replace(/\D/g, '');
+                const campaign = campaignsById.get(toText(recipient?.campaignId));
+                if (!digits || !campaign) return;
+                const current = map.get(digits) || [];
+                current.push({
+                    campaignId: toText(campaign?.campaignId),
+                    campaignName: toText(campaign?.campaignName)
+                });
+                map.set(digits, current);
+            });
+        return map;
+    }
+
+    try {
+        await ensurePostgresSchema();
+        const result = await queryPostgres(
+            `SELECT DISTINCT
+                    cr.phone,
+                    tc.campaign_id,
+                    tc.campaign_name,
+                    tc.status AS campaign_status
+               FROM tenant_campaign_recipients cr
+               JOIN tenant_campaigns tc
+                 ON tc.tenant_id = cr.tenant_id
+                AND tc.campaign_id = cr.campaign_id
+              WHERE cr.tenant_id = $1
+                AND cr.phone = ANY($2::text[])
+                AND cr.status = 'sent'
+                AND tc.status IN ('completed', 'running')
+              ORDER BY tc.campaign_id`,
+            [cleanTenantId, normalizedPhones]
+        );
+
+        const map = new Map();
+        for (const row of ensureArray(result?.rows)) {
+            const digits = String(row?.phone || '').replace(/\D/g, '');
+            if (!digits) continue;
+            const current = map.get(digits) || [];
+            current.push({
+                campaignId: toText(row?.campaign_id),
+                campaignName: toText(row?.campaign_name)
+            });
+            map.set(digits, current);
+        }
+        return map;
+    } catch (error) {
+        if (missingRelation(error)) return new Map();
+        throw error;
+    }
+}
+
 async function recordCampaignEvent(tenantId = DEFAULT_TENANT_ID, payload = {}) {
     return persistEventRecord(tenantId, payload);
 }
@@ -4483,6 +4561,7 @@ module.exports = {
     updateCampaign,
     getCampaignById,
     listCampaigns,
+    getCampaignsByPhones,
     startCampaign,
     sendCampaignBlock,
     pauseCampaign,
