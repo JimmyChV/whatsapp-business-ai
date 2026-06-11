@@ -46,10 +46,6 @@ function toLower(value = '') {
     return toText(value).toLowerCase();
 }
 
-function ensureArray(value = []) {
-    return Array.isArray(value) ? value : [];
-}
-
 function isPlainObject(value = null) {
     return value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -630,9 +626,6 @@ function registerOperationsHttpRoutes({
             customer_types: [],
             assigned_users: []
         });
-    const listSentCampaignFilterOptions = typeof campaignsApi.listSentCampaignFilterOptions === 'function'
-        ? campaignsApi.listSentCampaignFilterOptions.bind(campaignsApi)
-        : async () => [];
     const listCampaignGeographyOptions = typeof campaignsApi.listCampaignGeographyOptions === 'function'
         ? campaignsApi.listCampaignGeographyOptions.bind(campaignsApi)
         : async () => ({
@@ -2442,22 +2435,8 @@ function registerOperationsHttpRoutes({
             if (!canReadCampaigns(req, tenantId)) {
                 return res.status(403).json({ ok: false, error: 'No autorizado.' });
             }
-            const [options, sentCampaigns] = await Promise.all([
-                listCampaignFilterOptions(tenantId),
-                listSentCampaignFilterOptions(tenantId)
-            ]);
-            const campaignOptions = ensureArray(sentCampaigns)
-                .map((campaign) => ({
-                    campaignId: toText(campaign?.campaignId),
-                    campaignName: toText(campaign?.campaignName),
-                    moduleId: toText(campaign?.moduleId),
-                    scopeModuleId: toText(campaign?.scopeModuleId || campaign?.moduleId),
-                    status: toText(campaign?.status),
-                    lastSentAt: toText(campaign?.lastSentAt),
-                    sentCount: Number(campaign?.sentCount || 0) || 0
-                }))
-                .filter((campaign) => campaign.campaignId);
-            return res.json({ ok: true, tenantId, ...options, options: campaignOptions });
+            const options = await listCampaignFilterOptions(tenantId);
+            return res.json({ ok: true, tenantId, ...options });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron cargar opciones de filtros de campana.') });
         }

@@ -139,14 +139,6 @@ function normalizeCampaignStatus(value = '', fallback = 'draft') {
     return fallback;
 }
 
-function normalizeCampaignStatusFilters(value = '') {
-    return Array.from(new Set(
-        ensureArray(value)
-            .map((entry) => normalizeCampaignStatus(entry, ''))
-            .filter(Boolean)
-    ));
-}
-
 function normalizeRecipientStatus(value = '', fallback = 'pending') {
     const status = toLower(value || fallback);
     if (RECIPIENT_STATUSES.has(status)) return status;
@@ -1222,7 +1214,7 @@ async function listCampaigns(tenantId = DEFAULT_TENANT_ID, options = {}) {
     const cleanTenantId = normalizeTenant(tenantId);
     const scopeModuleId = normalizeScopeModuleId(options.scopeModuleId || '');
     const moduleId = toText(options.moduleId || '');
-    const statusFilters = normalizeCampaignStatusFilters(options.status || '');
+    const status = toText(options.status || '');
     const query = toLower(options.query || '');
     const limit = normalizeLimit(options.limit);
     const offset = normalizeOffset(options.offset);
@@ -1232,7 +1224,7 @@ async function listCampaigns(tenantId = DEFAULT_TENANT_ID, options = {}) {
         const filtered = store.campaigns
             .filter((item) => !scopeModuleId || normalizeScopeModuleId(item.scopeModuleId) === scopeModuleId)
             .filter((item) => !moduleId || toText(item.moduleId) === moduleId)
-            .filter((item) => statusFilters.length === 0 || statusFilters.includes(normalizeCampaignStatus(item.status)))
+            .filter((item) => !status || normalizeCampaignStatus(item.status) === normalizeCampaignStatus(status))
             .filter((item) => {
                 if (!query) return true;
                 const haystack = `${toLower(item.campaignName)} ${toLower(item.templateName)} ${toLower(item.campaignDescription || '')}`;
@@ -1260,12 +1252,9 @@ async function listCampaigns(tenantId = DEFAULT_TENANT_ID, options = {}) {
             params.push(moduleId);
             where.push(`module_id = $${params.length}`);
         }
-        if (statusFilters.length === 1) {
-            params.push(statusFilters[0]);
+        if (status) {
+            params.push(normalizeCampaignStatus(status));
             where.push(`status = $${params.length}`);
-        } else if (statusFilters.length > 1) {
-            params.push(statusFilters);
-            where.push(`status = ANY($${params.length}::text[])`);
         }
         if (query) {
             params.push(`%${query}%`);
@@ -1292,213 +1281,6 @@ async function listCampaigns(tenantId = DEFAULT_TENANT_ID, options = {}) {
         };
     } catch (error) {
         if (missingRelation(error)) return { items: [], total: 0, limit, offset };
-        throw error;
-    }
-}
-
-async function getCampaignsByPhones(tenantId = DEFAULT_TENANT_ID, phones = []) {
-    const rawPhones = ensureArray(phones);
-    if (!rawPhones.length) return new Map();
-
-    const cleanTenantId = normalizeTenant(tenantId);
-    const normalizedPhones = Array.from(new Set(
-        rawPhones.flatMap((phone) => {
-            const digits = String(phone || '').replace(/\D/g, '');
-            return digits ? [`+${digits}`, digits] : [];
-        })
-    ));
-
-    if (!normalizedPhones.length) return new Map();
-
-    if (getStorageDriver() !== 'postgres') {
-        const normalizedPhoneSet = new Set(normalizedPhones);
-        const store = await readStore(cleanTenantId);
-        const campaignsById = new Map(
-            ensureArray(store.campaigns)
-                .map((campaign) => [toText(campaign?.campaignId), campaign])
-        );
-        const map = new Map();
-        ensureArray(store.recipients)
-            .filter((recipient) => normalizeRecipientStatus(recipient?.status) === 'sent')
-            .filter((recipient) => normalizedPhoneSet.has(toText(recipient?.phone)))
-            .forEach((recipient) => {
-                const digits = String(recipient?.phone || '').replace(/\D/g, '');
-                const campaign = campaignsById.get(toText(recipient?.campaignId));
-                if (!digits || !campaign) return;
-                const current = map.get(digits) || [];
-                current.push({
-                    campaignId: toText(campaign?.campaignId),
-                    campaignName: toText(campaign?.campaignName),
-                    moduleId: normalizeModuleId(campaign?.moduleId || ''),
-                    scopeModuleId: normalizeScopeModuleId(campaign?.scopeModuleId || campaign?.moduleId || '')
-                });
-                map.set(digits, current);
-            });
-        return map;
-    }
-
-    try {
-        await ensurePostgresSchema();
-        const result = await queryPostgres(
-            `SELECT DISTINCT
-                    cr.phone,
-                    tc.campaign_id,
-                    tc.campaign_name,
-                    tc.module_id,
-                    tc.scope_module_id,
-                    tc.status AS campaign_status
-               FROM tenant_campaign_recipients cr
-               JOIN tenant_campaigns tc
-                 ON tc.tenant_id = cr.tenant_id
-                AND tc.campaign_id = cr.campaign_id
-              WHERE cr.tenant_id = $1
-                AND cr.phone = ANY($2::text[])
-                AND cr.status = 'sent'
-              ORDER BY tc.campaign_id`,
-            [cleanTenantId, normalizedPhones]
-        );
-
-        const map = new Map();
-        for (const row of ensureArray(result?.rows)) {
-            const digits = String(row?.phone || '').replace(/\D/g, '');
-            if (!digits) continue;
-            const current = map.get(digits) || [];
-            current.push({
-                campaignId: toText(row?.campaign_id),
-                campaignName: toText(row?.campaign_name),
-                moduleId: normalizeModuleId(row?.module_id || ''),
-                scopeModuleId: normalizeScopeModuleId(row?.scope_module_id || row?.module_id || '')
-            });
-            map.set(digits, current);
-        }
-        return map;
-    } catch (error) {
-        if (missingRelation(error)) return new Map();
-        throw error;
-    }
-}
-
-async function getPhonesByCampaign(
-    tenantId = DEFAULT_TENANT_ID,
-    campaignId = '',
-    moduleId = ''
-) {
-    const cleanCampaignId = toText(campaignId);
-    if (!cleanCampaignId) return new Set();
-
-    const cleanTenantId = normalizeTenant(tenantId);
-    const cleanModuleId = normalizeModuleId(moduleId || '');
-
-    if (getStorageDriver() !== 'postgres') {
-        const store = await readStore(cleanTenantId);
-        return new Set(
-            ensureArray(store.recipients)
-                .filter((recipient) => toText(recipient?.campaignId) === cleanCampaignId)
-                .filter((recipient) => normalizeRecipientStatus(recipient?.status) === 'sent')
-                .filter((recipient) => {
-                    if (!cleanModuleId) return true;
-                    return normalizeModuleId(recipient?.moduleId || '') === cleanModuleId;
-                })
-                .map((recipient) => String(recipient?.phone || '').replace(/\D/g, ''))
-                .filter(Boolean)
-        );
-    }
-
-    try {
-        await ensurePostgresSchema();
-        const params = [cleanTenantId, cleanCampaignId];
-        let moduleSql = '';
-        if (cleanModuleId) {
-            params.push(cleanModuleId);
-            moduleSql = `AND LOWER(module_id) = LOWER($${params.length})`;
-        }
-
-        const result = await queryPostgres(
-            `SELECT DISTINCT phone
-               FROM tenant_campaign_recipients
-              WHERE tenant_id = $1
-                AND campaign_id = $2
-                AND status = 'sent'
-                ${moduleSql}`,
-            params
-        );
-
-        return new Set(
-            ensureArray(result?.rows)
-                .map((row) => String(row?.phone || '').replace(/\D/g, ''))
-                .filter(Boolean)
-        );
-    } catch (error) {
-        if (missingRelation(error)) return new Set();
-        throw error;
-    }
-}
-
-async function listSentCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
-    const cleanTenantId = normalizeTenant(tenantId);
-
-    if (getStorageDriver() !== 'postgres') {
-        const store = await readStore(cleanTenantId);
-        const sentCampaignIds = new Set(
-            ensureArray(store.recipients)
-                .filter((recipient) => normalizeRecipientStatus(recipient?.status) === 'sent')
-                .map((recipient) => toText(recipient?.campaignId))
-                .filter(Boolean)
-        );
-        return ensureArray(store.campaigns)
-            .filter((campaign) => sentCampaignIds.has(toText(campaign?.campaignId)))
-            .map((campaign) => ({
-                campaignId: toText(campaign?.campaignId),
-                campaignName: toText(campaign?.campaignName),
-                moduleId: normalizeModuleId(campaign?.moduleId || ''),
-                scopeModuleId: normalizeScopeModuleId(campaign?.scopeModuleId || campaign?.moduleId || ''),
-                status: normalizeCampaignStatus(campaign?.status),
-                lastSentAt: toIso(campaign?.lastSentAt || campaign?.updatedAt || ''),
-                sentCount: ensureArray(store.recipients)
-                    .filter((recipient) => normalizeRecipientStatus(recipient?.status) === 'sent')
-                    .filter((recipient) => toText(recipient?.campaignId) === toText(campaign?.campaignId))
-                    .length
-            }))
-            .filter((campaign) => campaign.campaignId);
-    }
-
-    try {
-        await ensurePostgresSchema();
-        const result = await queryPostgres(
-            `SELECT
-                    tc.campaign_id,
-                    tc.campaign_name,
-                    tc.module_id,
-                    tc.scope_module_id,
-                    tc.status,
-                    MAX(cr.sent_at) AS last_sent_at,
-                    MAX(cr.updated_at) AS last_recipient_updated_at,
-                    COUNT(*)::INT AS sent_count
-               FROM tenant_campaign_recipients cr
-               JOIN tenant_campaigns tc
-                 ON tc.tenant_id = cr.tenant_id
-                AND tc.campaign_id = cr.campaign_id
-              WHERE cr.tenant_id = $1
-                AND cr.status = 'sent'
-              GROUP BY tc.campaign_id, tc.campaign_name, tc.module_id, tc.scope_module_id, tc.status
-              ORDER BY COALESCE(MAX(cr.sent_at), MAX(cr.updated_at)) DESC, tc.campaign_name ASC
-              LIMIT 200`,
-            [cleanTenantId]
-        );
-
-        return ensureArray(result?.rows)
-            .map((row) => ({
-                campaignId: toText(row?.campaign_id),
-                campaignName: toText(row?.campaign_name),
-                moduleId: normalizeModuleId(row?.module_id || ''),
-                scopeModuleId: normalizeScopeModuleId(row?.scope_module_id || row?.module_id || ''),
-                status: normalizeCampaignStatus(row?.status),
-                lastSentAt: toIso(row?.last_sent_at || row?.last_recipient_updated_at),
-                sentCount: toInt(row?.sent_count, 0, { min: 0 })
-            }))
-            .filter((campaign) => campaign.campaignId);
-    } catch (error) {
-        if (missingRelation(error)) return [];
         throw error;
     }
 }
@@ -4701,9 +4483,6 @@ module.exports = {
     updateCampaign,
     getCampaignById,
     listCampaigns,
-    getCampaignsByPhones,
-    getPhonesByCampaign,
-    listSentCampaignFilterOptions,
     startCampaign,
     sendCampaignBlock,
     pauseCampaign,

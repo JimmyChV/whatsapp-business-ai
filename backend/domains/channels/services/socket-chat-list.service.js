@@ -8,7 +8,6 @@ function createSocketChatListService({
     tenantScheduleService,
     customerService,
     customerAddressesService,
-    campaignsService,
     normalizeScopedModuleId,
     normalizePhoneDigits,
     normalizeFilterTokens,
@@ -802,14 +801,9 @@ function createSocketChatListService({
         const pinnedMode = ['all', 'pinned', 'unpinned'].includes(String(filters?.pinnedMode || 'all'))
             ? String(filters?.pinnedMode || 'all')
             : 'all';
-        const rawCampaignFilter = String(filters?.campaignFilter || '').trim();
-        const campaignFilterParts = rawCampaignFilter.split('::');
-        const campaignFilterId = String(campaignFilterParts[0] || '').trim();
-        const campaignFilterModuleId = normalizeScopedModuleId(campaignFilterParts[1] || '');
 
         const needsLabelFiltering = unlabeledOnly || selectedTokens.length > 0;
-        const needsCampaignFiltering = Boolean(campaignFilterId);
-        if (!unreadOnly && !needsLabelFiltering && !needsCampaignFiltering && contactMode === 'all' && archivedMode === 'all' && pinnedMode === 'all') return chats;
+        if (!unreadOnly && !needsLabelFiltering && contactMode === 'all' && archivedMode === 'all' && pinnedMode === 'all') return chats;
 
         const safeTenantId = String(tenantId || 'default').trim() || 'default';
         const safeScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
@@ -831,18 +825,6 @@ function createSocketChatListService({
                 const labels = labelsMap?.[buildLabelMapKey(chatId, safeScopeModuleId)] || [];
                 labelTokenSetByChatId.set(chatId, toLabelTokenSet(labels));
             });
-        }
-        let campaignPhoneSet = new Set();
-        if (needsCampaignFiltering && typeof campaignsService?.getPhonesByCampaign === 'function') {
-            try {
-                campaignPhoneSet = await campaignsService.getPhonesByCampaign(
-                    safeTenantId,
-                    campaignFilterId,
-                    campaignFilterModuleId
-                );
-            } catch (error) {
-                campaignPhoneSet = new Set();
-            }
         }
 
         const included = new Array(chats.length).fill(false);
@@ -878,10 +860,6 @@ function createSocketChatListService({
                 if (!unlabeledOnly && selectedTokens.length > 0 && !matchesTokenSet(labelTokenSet, selectedTokens)) {
                     return;
                 }
-            }
-            if (needsCampaignFiltering) {
-                const digits = normalizePhoneDigits(extractPhoneFromChat(chat) || '');
-                if (!digits || !campaignPhoneSet.has(digits)) return;
             }
 
             included[idx] = true;
@@ -1010,8 +988,7 @@ function createSocketChatListService({
                         : 'all',
                     pinnedMode: ['all', 'pinned', 'unpinned'].includes(String(incomingFilters?.pinnedMode || 'all'))
                         ? String(incomingFilters?.pinnedMode || 'all')
-                        : 'all',
-                    campaignFilter: String(incomingFilters?.campaignFilter || '').trim()
+                        : 'all'
                 };
 
                 const selectedModuleContext = socket?.data?.waModule || null;

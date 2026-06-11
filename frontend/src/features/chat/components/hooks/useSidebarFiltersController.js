@@ -42,24 +42,6 @@ const normalizeCommercialStatus = (value = 'all', options = DEFAULT_COMMERCIAL_S
   return allowed.has(clean) ? clean : 'all';
 };
 
-const normalizeCampaignOptions = (options = []) => (
-  (Array.isArray(options) ? options : [])
-    .map((entry) => ({
-      campaignId: String(entry?.campaignId || entry?.campaign_id || entry?.id || '').trim(),
-      campaignName: String(entry?.campaignName || entry?.campaign_name || entry?.name || '').trim(),
-      moduleId: String(entry?.moduleId || entry?.module_id || entry?.scopeModuleId || entry?.scope_module_id || '').trim().toLowerCase(),
-      moduleName: String(entry?.moduleName || entry?.module_name || '').trim(),
-      campaignFilter: String(entry?.campaignFilter || '').trim(),
-      label: String(entry?.label || '').trim()
-    }))
-    .filter((entry) => entry.campaignId)
-    .map((entry) => ({
-      ...entry,
-      campaignFilter: entry.campaignFilter || (entry.moduleId ? `${entry.campaignId}::${entry.moduleId}` : entry.campaignId),
-      label: entry.label || (entry.moduleName ? `${entry.campaignName || entry.campaignId} - ${entry.moduleName}` : (entry.campaignName || entry.campaignId))
-    }))
-);
-
 const normalizeFilters = (filters = {}, commercialStatusOptions = DEFAULT_COMMERCIAL_STATUS_OPTIONS) => {
   const rawTokens = Array.isArray(filters?.labelTokens) ? filters.labelTokens : [];
   const seen = new Set();
@@ -103,7 +85,6 @@ const normalizeFilters = (filters = {}, commercialStatusOptions = DEFAULT_COMMER
       ? String(filters?.windowFilter || 'all').trim().toLowerCase()
       : 'all',
     windowFilterCustomMinutes: Math.max(0, Math.floor(Number(filters?.windowFilterCustomMinutes || 0) || 0)),
-    campaignFilter: String(filters?.campaignFilter || '').trim(),
     contactMode,
     archivedMode,
     pinnedMode
@@ -166,7 +147,6 @@ const useSidebarFiltersController = ({
   chatAssignmentState = null,
   chatCommercialStatusState = null,
   commercialStatusOptions = DEFAULT_COMMERCIAL_STATUS_OPTIONS,
-  campaignOptions = [],
   onFiltersChange = null,
   searchQuery = '',
   windowTick = Date.now()
@@ -233,14 +213,6 @@ const useSidebarFiltersController = ({
       return acc;
     }, {})
   ), [safeCommercialStatusOptions]);
-  const safeCampaignOptions = useMemo(() => normalizeCampaignOptions(campaignOptions), [campaignOptions]);
-  const campaignLabelById = useMemo(() => (
-    safeCampaignOptions.reduce((acc, entry) => {
-      acc[entry.campaignFilter] = entry.label || entry.campaignName || entry.campaignId;
-      acc[entry.campaignId] = entry.label || entry.campaignName || entry.campaignId;
-      return acc;
-    }, {})
-  ), [safeCampaignOptions]);
 
   const filters = useMemo(() => normalizeFilters(activeFilters, safeCommercialStatusOptions), [activeFilters, safeCommercialStatusOptions]);
 
@@ -300,7 +272,6 @@ const useSidebarFiltersController = ({
     || filters.onlyAssignedToMe
     || Boolean(filters.assigneeUserId)
     || filters.commercialStatus !== 'all'
-    || Boolean(filters.campaignFilter)
     || filters.windowFilter !== 'all'
     || filters.contactMode !== 'all'
     || filters.archivedMode !== 'all'
@@ -368,9 +339,6 @@ const useSidebarFiltersController = ({
     if (filters.commercialStatus !== 'all') {
       chips.push(`Estado: ${commercialStatusLabelByValue[filters.commercialStatus] || filters.commercialStatus}`);
     }
-    if (filters.campaignFilter) {
-      chips.push(`Campana: ${campaignLabelById[filters.campaignFilter] || filters.campaignFilter}`);
-    }
     if (filters.windowFilter === 'active') chips.push('Ventana activa');
     if (filters.windowFilter === 'critical') chips.push('Vence pronto');
     if (filters.windowFilter === 'urgent') chips.push('Urgente');
@@ -386,7 +354,7 @@ const useSidebarFiltersController = ({
     if (filters.contactMode === 'unknown') chips.push('No guardados');
     if (filters.labelTokens.length > 0) chips.push(`Etiquetas (${filters.labelTokens.length})`);
     return chips;
-  }, [assignmentUserLabelById, campaignLabelById, commercialStatusLabelByValue, filters, hasAnyFilter]);
+  }, [assignmentUserLabelById, commercialStatusLabelByValue, filters, hasAnyFilter]);
 
   const localQuery = String(searchQuery || '');
   const filteredChats = useMemo(() => chats.filter((chat) => {
@@ -475,7 +443,6 @@ const useSidebarFiltersController = ({
       onlyAssignedToMe: false,
       assigneeUserId: '',
       commercialStatus: 'all',
-      campaignFilter: '',
       windowFilter: 'all',
       windowFilterCustomMinutes: 0,
       contactMode: 'all',
@@ -507,8 +474,7 @@ const useSidebarFiltersController = ({
     selectedLabelCount,
     hasAnyFilter,
     assignmentUserOptions,
-    commercialStatusOptions: safeCommercialStatusOptions,
-    campaignOptions: safeCampaignOptions
+    commercialStatusOptions: safeCommercialStatusOptions
   };
 };
 
