@@ -2,15 +2,11 @@ import { useMemo } from 'react';
 
 export default function useSaasPanelLoadingState({
     busy = false,
-    error = '',
     overview = null,
-    pendingRequests = 0
 } = {}) {
     const showPanelLoading = useMemo(() => {
-        const hasOverviewData = (Array.isArray(overview?.tenants) && overview.tenants.length > 0)
-            || (Array.isArray(overview?.users) && overview.users.length > 0);
-        return Boolean(busy || (!error && !hasOverviewData && pendingRequests > 0));
-    }, [busy, error, overview, pendingRequests]);
+        return Boolean(busy);
+    }, [busy]);
 
     const aiUsageByTenant = useMemo(() => {
         const map = new Map();

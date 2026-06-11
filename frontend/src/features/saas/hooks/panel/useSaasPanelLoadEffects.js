@@ -245,8 +245,10 @@ export default function useSaasPanelLoadEffects({
         }
 
         runActionFn('Carga inicial', async () => {
+            if (typeof refreshOverviewFn === 'function') {
+                refreshOverviewFn().catch(() => {});
+            }
             const tasks = [];
-            if (typeof refreshOverviewFn === 'function') tasks.push(refreshOverviewFn());
             if (canManageRoles && typeof loadAccessCatalogFn === 'function') {
                 tasks.push(
                     runPreloadTask({
