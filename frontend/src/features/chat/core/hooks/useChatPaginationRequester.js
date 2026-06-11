@@ -27,13 +27,19 @@ export default function useChatPaginationRequester({
       setChatsTotal(0);
     }
     setIsLoadingMoreChats(true);
+    const filterKey = buildFiltersKey(filters);
+    console.log('[socket-emit]', {
+      campaignFilter: filters?.campaignFilter,
+      filterKey,
+      reset
+    });
     socket.emit('get_chats', {
       offset,
       limit: chatPageSize,
       reset,
       query,
       filters,
-      filterKey: buildFiltersKey(filters)
+      filterKey
     });
   }, [
     buildFiltersKey,
