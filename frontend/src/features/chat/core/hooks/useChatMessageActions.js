@@ -873,42 +873,44 @@ export default function useChatMessageActions({
     socket
   ]);
 
-  const handleSendMessage = useCallback((event) => {
-    event?.preventDefault();
-    const text = inputText.trim();
+  const handleSendMessage = useCallback((eventOrText) => {
+    const isEvent = eventOrText && typeof eventOrText === 'object' && typeof eventOrText.preventDefault === 'function';
+    if (isEvent) eventOrText.preventDefault();
+    const messageText = typeof eventOrText === 'string' ? eventOrText : inputText;
+    const text = String(messageText || '').trim();
 
     if (editingMessage?.id) {
       if (!waCapabilities.messageEdit) {
         notify({ type: 'warn', message: 'La edicion de mensajes no esta disponible en esta sesion de WhatsApp.' });
-        return;
+        return false;
       }
       if (attachment) {
         notify({ type: 'warn', message: 'No puedes adjuntar archivos mientras editas un mensaje.' });
-        return;
+        return false;
       }
-      if (!text) return;
+      if (!text) return false;
 
       const original = String(editingMessage.originalBody || '').trim();
       if (text === original) {
         setEditingMessage(null);
         setInputText('');
-        return;
+        return true;
       }
 
       const activeId = String(activeChatIdRef.current || '');
-      if (!activeId) return;
+      if (!activeId) return false;
       socket.emit('edit_message', { chatId: activeId, messageId: String(editingMessage.id), body: text });
       setEditingMessage(null);
       setInputText('');
-      return;
+      return true;
     }
 
-    if (!text && !attachment && !quickReplyDraft) return;
+    if (!text && !attachment && !quickReplyDraft) return false;
 
     if (text === '/ayudar') {
       requestAiSuggestion();
       setInputText('');
-      return;
+      return true;
     }
 
     const quotedMessageId = String(replyingMessage?.id || '').trim() || null;
@@ -988,17 +990,17 @@ export default function useChatMessageActions({
         setQuickReplyDraft(null);
         setInputText('');
         setReplyingMessage(null);
-        return;
+        return true;
       }
 
-      if (!outboundText) return;
+      if (!outboundText) return false;
     }
 
     if (attachment) {
       const sendPayload = {
         to: activeChatId,
         toPhone,
-        body: inputText,
+        body: messageText,
         mediaData: attachment.data,
         mimetype: attachment.mimetype,
         filename: attachment.filename,
@@ -1007,7 +1009,7 @@ export default function useChatMessageActions({
       };
       const optimisticMediaMessage = insertOptimisticOutgoing({
         chatId: activeChatId,
-        body: String(inputText || '').trim() || String(attachment.filename || '').trim() || 'Adjunto',
+        body: String(messageText || '').trim() || String(attachment.filename || '').trim() || 'Adjunto',
         hasMedia: true,
         type: resolveOptimisticMediaType(attachment.mimetype, attachment.filename),
         mimetype: attachment.mimetype,
@@ -1027,13 +1029,13 @@ export default function useChatMessageActions({
       const sendPayload = {
         to: activeChatId,
         toPhone,
-        body: inputText,
+        body: messageText,
         quotedMessageId,
         quotedMessage
       };
       const optimisticTextMessage = insertOptimisticOutgoing({
         chatId: activeChatId,
-        body: inputText,
+        body: messageText,
         quotedMessage,
         retryPayload: {
           eventName: 'send_message',
@@ -1047,6 +1049,7 @@ export default function useChatMessageActions({
     setQuickReplyDraft(null);
     setInputText('');
     setReplyingMessage(null);
+    return true;
   }, [
     activeChatId,
     activeChatIdRef,

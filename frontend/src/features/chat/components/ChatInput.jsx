@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Smile, Bot, Sparkles, X, Paperclip, Send, MapPin, LayoutTemplate, Store } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { EmojiStyle, SkinTonePickerLocation, SkinTones, SuggestionMode, Theme } from 'emoji-picker-react';
@@ -86,8 +86,10 @@ const ChatInput = ({
     const [isLoadingPreview, setIsLoadingPreview] = useState(false);
     const [selectionState, setSelectionState] = useState(null);
     const [preferredSkinTone, setPreferredSkinTone] = useState(SkinTones.NEUTRAL);
+    const [localText, setLocalText] = useState(() => String(inputText || ''));
     const inputRef = useRef(null);
     const chatInputRef = useRef(null);
+    const lastExternalTextRef = useRef(String(inputText || ''));
     const draftQuickReplyLabel = String(quickReplyDraft?.label || '').trim();
     const draftQuickReplyText = String(quickReplyDraft?.text || '').trim();
     const draftQuickReplyAssets = Array.isArray(quickReplyDraft?.mediaAssets)
@@ -106,13 +108,24 @@ const ChatInput = ({
     const isTemplateOnlyMode = windowOpen === false;
     const isBlockedByEditState = Boolean(editingMessage?.id);
     const disableFreeformComposer = isTemplateOnlyMode || isBlockedByEditState;
-    const canSendFreeform = !isTemplateOnlyMode && (Boolean(inputText.trim()) || Boolean(attachment) || Boolean(hasDraftQuickReply));
+    const canSendFreeform = !isTemplateOnlyMode && (Boolean(localText.trim()) || Boolean(attachment) || Boolean(hasDraftQuickReply));
 
     const handleInputChange = (e) => {
         const val = e.target.value;
-        setInputText(val);
+        setLocalText(val);
         setShowCommands(val.startsWith('/'));
         if (showEmoji) setShowEmoji(false);
+    };
+
+    const handleSendLocalText = () => {
+        if (typeof onSendMessage !== 'function') return;
+        const handled = onSendMessage(localText);
+        if (handled === false) return;
+        setLocalText('');
+        setShowCommands(false);
+        setLinkPreview(null);
+        setIsLoadingPreview(false);
+        setSelectionState(null);
     };
 
     const updateSelectionState = () => {
@@ -133,15 +146,15 @@ const ChatInput = ({
     const insertEmoji = (emoji) => {
         const el = inputRef.current;
         if (!el) {
-            setInputText(prev => `${prev}${emoji}`);
+            setLocalText(prev => `${prev}${emoji}`);
             setShowEmoji(false);
             return;
         }
         const start = Number(el.selectionStart || 0);
         const end = Number(el.selectionEnd || 0);
-        const current = String(inputText || '');
+        const current = String(localText || '');
         const next = `${current.slice(0, start)}${emoji}${current.slice(end)}`;
-        setInputText(next);
+        setLocalText(next);
         setShowEmoji(false);
         requestAnimationFrame(() => {
             if (!inputRef.current) return;
@@ -157,15 +170,15 @@ const ChatInput = ({
         if (!insertion) return;
         const el = inputRef.current;
         if (!el) {
-            setInputText((prev) => `${prev}${insertion}`);
+            setLocalText((prev) => `${prev}${insertion}`);
             setShowCommands(false);
             return;
         }
         const start = Number(el.selectionStart || 0);
         const end = Number(el.selectionEnd || 0);
-        const current = String(inputText || '');
+        const current = String(localText || '');
         const next = `${current.slice(0, start)}${insertion}${current.slice(end)}`;
-        setInputText(next);
+        setLocalText(next);
         setShowCommands(next.startsWith('/'));
         requestAnimationFrame(() => {
             if (!inputRef.current) return;
@@ -203,11 +216,11 @@ const ChatInput = ({
         const start = Number(el.selectionStart || 0);
         const end = Number(el.selectionEnd || 0);
         if (end <= start) return;
-        const current = String(inputText || '');
+        const current = String(localText || '');
         const selected = current.slice(start, end);
         const wrapped = `${openToken}${selected}${closeToken}`;
         const next = `${current.slice(0, start)}${wrapped}${current.slice(end)}`;
-        setInputText(next);
+        setLocalText(next);
         requestAnimationFrame(() => {
             if (!inputRef.current) return;
             const selStart = start + openToken.length;
@@ -225,7 +238,7 @@ const ChatInput = ({
         const end = Number(el.selectionEnd || 0);
         if (end <= start) return;
 
-        const current = String(inputText || '');
+        const current = String(localText || '');
         const blockStart = current.lastIndexOf('\n', start - 1) + 1;
         const nextBreak = current.indexOf('\n', end);
         const blockEnd = nextBreak === -1 ? current.length : nextBreak;
@@ -242,7 +255,7 @@ const ChatInput = ({
             .join('\n');
 
         const next = `${current.slice(0, blockStart)}${formattedBlock}${current.slice(blockEnd)}`;
-        setInputText(next);
+        setLocalText(next);
         requestAnimationFrame(() => {
             if (!inputRef.current) return;
             inputRef.current.focus();
@@ -258,11 +271,11 @@ const ChatInput = ({
         const end = Number(el.selectionEnd || 0);
         if (end <= start) return;
 
-        const current = String(inputText || '');
+        const current = String(localText || '');
         const selected = current.slice(start, end);
         const wrapped = `\`\`\`\n${selected}\n\`\`\``;
         const next = `${current.slice(0, start)}${wrapped}${current.slice(end)}`;
-        setInputText(next);
+        setLocalText(next);
         requestAnimationFrame(() => {
             if (!inputRef.current) return;
             inputRef.current.focus();
@@ -278,7 +291,7 @@ const ChatInput = ({
         const end = Number(el.selectionEnd || 0);
         if (start !== end) return false;
 
-        const current = String(inputText || '');
+        const current = String(localText || '');
         const lineStart = current.lastIndexOf('\n', start - 1) + 1;
         const nextBreak = current.indexOf('\n', start);
         const lineEnd = nextBreak === -1 ? current.length : nextBreak;
@@ -300,7 +313,7 @@ const ChatInput = ({
         const insertion = `\n${continuation}`;
         const next = `${current.slice(0, start)}${insertion}${current.slice(end)}`;
         const nextCursor = start + insertion.length;
-        setInputText(next);
+        setLocalText(next);
         requestAnimationFrame(() => {
             if (!inputRef.current) return;
             inputRef.current.focus();
@@ -310,56 +323,59 @@ const ChatInput = ({
         return true;
     };
 
-    const normalizedSlashQuery = String(inputText || '').startsWith('/')
-        ? String(inputText || '').slice(1).trim().toLowerCase()
-        : '';
-    const slashTokens = normalizedSlashQuery
-        ? normalizedSlashQuery.split(/\s+/).map((entry) => entry.trim()).filter(Boolean)
-        : [];
+    const filteredQuickReplies = useMemo(() => {
+        const sourceText = String(localText || '');
+        if (!sourceText.startsWith('/')) return [];
 
-    const filteredQuickReplies = (Array.isArray(quickReplies) ? quickReplies : [])
-        .map((item) => {
-            const label = String(item?.label || '').trim().toLowerCase();
-            const text = String(item?.text || '').trim().toLowerCase();
-            const libraryName = String(item?.libraryName || '').trim().toLowerCase();
-            const haystack = `${label} ${libraryName} ${text}`.trim();
-            if (!slashTokens.length) {
-                return {
-                    item,
-                    rank: Number(label.length > 0) * 100 + Number(libraryName.length > 0) * 10
-                };
-            }
-            const containsAll = slashTokens.every((token) => haystack.includes(token));
-            if (!containsAll) return null;
+        const normalizedSlashQuery = sourceText.slice(1).trim().toLowerCase();
+        const slashTokens = normalizedSlashQuery
+            ? normalizedSlashQuery.split(/\s+/).map((entry) => entry.trim()).filter(Boolean)
+            : [];
 
-            let rank = 0;
-            if (normalizedSlashQuery && label.startsWith(normalizedSlashQuery)) rank += 400;
-            if (normalizedSlashQuery && libraryName.startsWith(normalizedSlashQuery)) rank += 280;
-            if (normalizedSlashQuery && text.startsWith(normalizedSlashQuery)) rank += 220;
-            slashTokens.forEach((token) => {
-                if (label.includes(token)) rank += 80;
-                if (libraryName.includes(token)) rank += 50;
-                if (text.includes(token)) rank += 20;
-            });
+        return (Array.isArray(quickReplies) ? quickReplies : [])
+            .map((item) => {
+                const label = String(item?.label || '').trim().toLowerCase();
+                const text = String(item?.text || '').trim().toLowerCase();
+                const libraryName = String(item?.libraryName || '').trim().toLowerCase();
+                const haystack = `${label} ${libraryName} ${text}`.trim();
+                if (!slashTokens.length) {
+                    return {
+                        item,
+                        rank: Number(label.length > 0) * 100 + Number(libraryName.length > 0) * 10
+                    };
+                }
+                const containsAll = slashTokens.every((token) => haystack.includes(token));
+                if (!containsAll) return null;
 
-            return { item, rank };
-        })
-        .filter(Boolean)
-        .sort((left, right) => {
-            const rankDelta = Number(right?.rank || 0) - Number(left?.rank || 0);
-            if (rankDelta !== 0) return rankDelta;
-            const leftLabel = String(left?.item?.label || '').trim();
-            const rightLabel = String(right?.item?.label || '').trim();
-            return leftLabel.localeCompare(rightLabel, 'es', { sensitivity: 'base' });
-        })
-        .slice(0, 10)
-        .map((entry) => entry.item);
+                let rank = 0;
+                if (normalizedSlashQuery && label.startsWith(normalizedSlashQuery)) rank += 400;
+                if (normalizedSlashQuery && libraryName.startsWith(normalizedSlashQuery)) rank += 280;
+                if (normalizedSlashQuery && text.startsWith(normalizedSlashQuery)) rank += 220;
+                slashTokens.forEach((token) => {
+                    if (label.includes(token)) rank += 80;
+                    if (libraryName.includes(token)) rank += 50;
+                    if (text.includes(token)) rank += 20;
+                });
+
+                return { item, rank };
+            })
+            .filter(Boolean)
+            .sort((left, right) => {
+                const rankDelta = Number(right?.rank || 0) - Number(left?.rank || 0);
+                if (rankDelta !== 0) return rankDelta;
+                const leftLabel = String(left?.item?.label || '').trim();
+                const rightLabel = String(right?.item?.label || '').trim();
+                return leftLabel.localeCompare(rightLabel, 'es', { sensitivity: 'base' });
+            })
+            .slice(0, 10)
+            .map((entry) => entry.item);
+    }, [localText, quickReplies]);
 
     const selectQuickReply = (item = {}) => {
         const entry = item && typeof item === 'object' ? item : null;
         if (!entry) return;
         if (typeof onSendQuickReply === 'function') onSendQuickReply(entry);
-        else setInputText(String(entry?.text || '').trim());
+        else setLocalText(String(entry?.text || '').trim());
         setShowCommands(false);
     };
 
@@ -370,12 +386,23 @@ const ChatInput = ({
 
 
     useEffect(() => {
+        const nextExternalText = String(inputText || '');
+        if (lastExternalTextRef.current === nextExternalText) return;
+        lastExternalTextRef.current = nextExternalText;
+        setLocalText(nextExternalText);
+        setShowCommands(nextExternalText.startsWith('/'));
+        setLinkPreview(null);
+        setIsLoadingPreview(false);
+        setSelectionState(null);
+    }, [inputText]);
+
+    useEffect(() => {
         const el = inputRef.current;
         if (!el) return;
         el.style.height = '24px';
         const next = Math.min(el.scrollHeight, 220);
         el.style.height = `${next}px`;
-    }, [inputText]);
+    }, [localText]);
 
     useEffect(() => {
         if (!editingMessage?.id) return;
@@ -391,11 +418,11 @@ const ChatInput = ({
 
     useEffect(() => {
         if (!selectionState) return;
-        const inputLen = String(inputText || '').length;
+        const inputLen = String(localText || '').length;
         if (selectionState.start >= inputLen || selectionState.end > inputLen) {
             setSelectionState(null);
         }
-    }, [inputText, selectionState]);
+    }, [localText, selectionState]);
 
     useEffect(() => {
         if (!showEmoji) return;
@@ -435,7 +462,7 @@ const ChatInput = ({
     }, []);
 
     useEffect(() => {
-        const url = extractFirstUrl(inputText);
+        const url = extractFirstUrl(localText);
         if (!url) {
             setLinkPreview(null);
             setIsLoadingPreview(false);
@@ -463,7 +490,7 @@ const ChatInput = ({
             cancelled = true;
             clearTimeout(timer);
         };
-    }, [inputText]);
+    }, [localText, buildApiHeaders]);
 
     return (
         <div className="chat-input-area chat-input-area-pro" style={{ position: 'relative' }} ref={chatInputRef}>
@@ -575,7 +602,8 @@ const ChatInput = ({
                     <button
                         type="button"
                         onClick={() => {
-                            setInputText('');
+                            setLocalText('');
+                            if (typeof setInputText === 'function') setInputText('');
                             onClearQuickReplyDraft && onClearQuickReplyDraft();
                         }}
                         className="chat-draft-banner__action"
@@ -756,7 +784,7 @@ const ChatInput = ({
                             ? 'Usa un template aprobado para contactar a este cliente...'
                             : (editingMessage?.id ? 'Edita el mensaje y presiona Enter...' : (replyingMessage?.id ? 'Escribe tu respuesta y presiona Enter...' : 'Escribe un mensaje...'))
                     }
-                    value={inputText}
+                    value={localText}
                     onChange={handleInputChange}
                     onPaste={handlePaste}
                     disabled={isTemplateOnlyMode}
@@ -780,6 +808,8 @@ const ChatInput = ({
                         if (!editingMessage?.id && !replyingMessage?.id && hasDraftQuickReply && e.key === 'Escape') {
                             e.preventDefault();
                             e.stopPropagation();
+                            setLocalText('');
+                            if (typeof setInputText === 'function') setInputText('');
                             onClearQuickReplyDraft && onClearQuickReplyDraft();
                             return;
                         }
@@ -790,7 +820,7 @@ const ChatInput = ({
                         if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
                             e.preventDefault();
                             if (isTemplateOnlyMode) return;
-                            onSendMessage();
+                            handleSendLocalText();
                             return;
                         }
                         onKeyDown && onKeyDown(e);
@@ -819,7 +849,7 @@ const ChatInput = ({
                     className="send-button send-button-modern"
                     onClick={() => {
                         if (!canSendFreeform) return;
-                        onSendMessage();
+                        handleSendLocalText();
                     }}
 
                     title={editingMessage?.id ? 'Guardar edicion' : (replyingMessage?.id ? 'Enviar respuesta' : 'Enviar')}
