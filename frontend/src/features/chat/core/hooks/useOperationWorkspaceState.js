@@ -19,7 +19,8 @@ const DEFAULT_CHAT_FILTERS = {
   archivedMode: 'all',
   pinnedMode: 'all',
   windowFilter: 'all',
-  windowFilterCustomMinutes: 0
+  windowFilterCustomMinutes: 0,
+  campaignFilter: ''
 };
 
 export default function useOperationWorkspaceState({

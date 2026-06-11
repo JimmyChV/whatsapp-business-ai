@@ -1539,6 +1539,51 @@ body {
   border: 1px solid rgba(8, 39, 31, 0.5);
 }
 
+.sidebar-ribbon-badge--active {
+  min-width: 16px;
+  height: 16px;
+  font-size: 0.68rem;
+}
+
+.sidebar-ribbon-menu-wrap {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.sidebar-ribbon-menu-wrap > .sidebar-ribbon-btn {
+  width: 100%;
+}
+
+.sidebar-campaign-menu {
+  top: 0;
+  left: calc(100% + 10px);
+  right: auto;
+  width: min(280px, calc(100vw - 96px));
+  min-width: min(220px, calc(100vw - 96px));
+  max-width: min(280px, calc(100vw - 96px));
+  max-height: min(56vh, 360px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 9999;
+}
+
+.sidebar-campaign-menu__title {
+  padding: 4px 7px 2px;
+  color: var(--saas-text-secondary);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.sidebar-filter-pill-empty {
+  padding: 8px 9px;
+  color: var(--saas-text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
 .sidebar-main-content .chat-list {
   border-left: 1px solid rgba(134, 150, 160, 0.1);
 }

@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck, UserCheck, ChevronDown, Moon, Sun, Clock3, CheckSquare, Square, Loader2 } from 'lucide-react';
+import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck, UserCheck, ChevronDown, Moon, Sun, Clock3, Megaphone, CheckSquare, Square, Loader2 } from 'lucide-react';
 import ChannelBrandIcon from './ChannelBrandIcon';
 import AssignmentBadge from './assignment/AssignmentBadge';
 import CommercialStatusBadge from './commercial/CommercialStatusBadge';
@@ -111,6 +111,7 @@ const Sidebar = ({
     } = useSidebarUiToggles();
     const [windowTick, setWindowTick] = React.useState(() => Date.now());
     const [globalCommercialStatusOptions, setGlobalCommercialStatusOptions] = React.useState([{ value: 'all', label: 'Todos' }]);
+    const [campaignOptions, setCampaignOptions] = React.useState([]);
     const [showAdvancedFilters, setShowAdvancedFilters] = React.useState(false);
     const [mobileFilterMode, setMobileFilterMode] = React.useState(null);
     const {
@@ -136,6 +137,7 @@ const Sidebar = ({
         chatAssignmentState,
         chatCommercialStatusState,
         commercialStatusOptions: globalCommercialStatusOptions,
+        campaignOptions,
         onFiltersChange,
         searchQuery,
         windowTick
@@ -176,6 +178,7 @@ const Sidebar = ({
     const [showAssigneeFilterMenu, setShowAssigneeFilterMenu] = React.useState(false);
     const [showCommercialFilterMenu, setShowCommercialFilterMenu] = React.useState(false);
     const [showWindowFilterMenu, setShowWindowFilterMenu] = React.useState(false);
+    const [showCampaignMenu, setShowCampaignMenu] = React.useState(false);
     const [customerSearchResults, setCustomerSearchResults] = React.useState([]);
     const [customerSearchLoading, setCustomerSearchLoading] = React.useState(false);
     const closeMobileAdvancedFilters = React.useCallback(() => {
@@ -187,6 +190,7 @@ const Sidebar = ({
     const assigneeMenuRef = React.useRef(null);
     const commercialMenuRef = React.useRef(null);
     const windowMenuRef = React.useRef(null);
+    const campaignMenuRef = React.useRef(null);
     const labelPanelRef = React.useRef(null);
     const bulkLabelMenuRef = React.useRef(null);
     const bulkLabelPortalRef = React.useRef(null);
@@ -270,6 +274,9 @@ const Sidebar = ({
                 setShowWindowFilterMenu(false);
                 if (mobileFilterMode === 'window') closeMobileAdvancedFilters();
             }
+            if (campaignMenuRef.current && !campaignMenuRef.current.contains(target)) {
+                setShowCampaignMenu(false);
+            }
             if (labelPanelRef.current && !labelPanelRef.current.contains(target) && !target.closest('.sidebar-ribbon-btn[data-label="Etiquetas"]')) {
                 setShowLabelPanel(false);
                 if (mobileFilterMode === 'label') closeMobileAdvancedFilters();
@@ -286,6 +293,7 @@ const Sidebar = ({
             setShowAssigneeFilterMenu(false);
             setShowCommercialFilterMenu(false);
             setShowWindowFilterMenu(false);
+            setShowCampaignMenu(false);
             setShowMenu(false);
             setShowAdvancedFilters(false);
             setMobileFilterMode(null);
@@ -360,6 +368,12 @@ const Sidebar = ({
         const selected = commercialStatusOptions.find((entry) => String(entry?.value || '') === String(filters.commercialStatus || 'all'));
         return selected?.label || 'Todos';
     }, [commercialStatusOptions, filters.commercialStatus]);
+    const selectedCampaignLabel = React.useMemo(() => {
+        const campaignId = String(filters.campaignFilter || '').trim();
+        if (!campaignId) return 'Todas';
+        const selected = campaignOptions.find((entry) => String(entry?.campaignId || '') === campaignId);
+        return selected?.campaignName || campaignId;
+    }, [campaignOptions, filters.campaignFilter]);
     const selectedWindowFilterLabel = React.useMemo(() => {
         if (filters.windowFilter === 'custom') {
             const totalMin = Number(filters.windowFilterCustomMinutes || 0);
@@ -420,6 +434,37 @@ const Sidebar = ({
             })
             .catch(() => {
                 if (!cancelled) setGlobalCommercialStatusOptions([{ value: 'all', label: 'Todos' }]);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [buildApiHeaders, currentTenantId]);
+
+    React.useEffect(() => {
+        if (typeof buildApiHeaders !== 'function') return undefined;
+        let cancelled = false;
+        const headers = { ...(buildApiHeaders() || {}) };
+        if (currentTenantId) headers['x-tenant-id'] = currentTenantId;
+
+        fetch(`${String(API_URL || '').replace(/\/$/, '')}/api/tenant/campaigns/filter-options`, {
+            method: 'GET',
+            headers
+        })
+            .then((response) => response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`)))
+            .then((payload) => {
+                if (cancelled) return;
+                const options = Array.isArray(payload?.options) ? payload.options : [];
+                setCampaignOptions(options
+                    .map((entry) => ({
+                        campaignId: String(entry?.campaignId || entry?.campaign_id || entry?.id || '').trim(),
+                        campaignName: String(entry?.campaignName || entry?.campaign_name || entry?.name || '').trim()
+                    }))
+                    .filter((entry) => entry.campaignId)
+                    .sort((a, b) => String(a.campaignName || a.campaignId).localeCompare(String(b.campaignName || b.campaignId), 'es', { sensitivity: 'base' })));
+            })
+            .catch(() => {
+                if (!cancelled) setCampaignOptions([]);
             });
 
         return () => {
@@ -509,6 +554,7 @@ const Sidebar = ({
                 setShowWindowFilterMenu(false);
                 setShowAssigneeFilterMenu(false);
                 setShowCommercialFilterMenu(false);
+                setShowCampaignMenu(false);
             }
             return next;
         });
@@ -869,6 +915,7 @@ const Sidebar = ({
                                     setShowWindowFilterMenu(false);
                                     setShowAssigneeFilterMenu(false);
                                     setShowCommercialFilterMenu(false);
+                                    setShowCampaignMenu(false);
                                 } else {
                                     const shouldClose = showAdvancedFilters && mobileFilterMode === 'advanced';
                                     setShowAdvancedFilters(!shouldClose);
@@ -877,6 +924,7 @@ const Sidebar = ({
                                     setShowWindowFilterMenu(false);
                                     setShowAssigneeFilterMenu(false);
                                     setShowCommercialFilterMenu(false);
+                                    setShowCampaignMenu(false);
                                 }
                             }}
                             title="Todos"
@@ -973,6 +1021,7 @@ const Sidebar = ({
                                 setShowWindowFilterMenu(false);
                                 setShowAssigneeFilterMenu(false);
                                 setShowCommercialFilterMenu(false);
+                                setShowCampaignMenu(false);
                             }}
                             title="Etiquetas"
                             data-label="Etiquetas"
@@ -992,6 +1041,7 @@ const Sidebar = ({
                                 });
                                 setShowAssigneeFilterMenu(false);
                                 setShowCommercialFilterMenu(false);
+                                setShowCampaignMenu(false);
                                 setShowLabelPanel(false);
                             }}
                             title="Ventana 24h"
@@ -1004,6 +1054,69 @@ const Sidebar = ({
                                 </span>
                             )}
                         </button>
+                        <div className="sidebar-ribbon-menu-wrap" ref={campaignMenuRef}>
+                            <button
+                                type="button"
+                                className={`sidebar-ribbon-btn ${filters.campaignFilter || showCampaignMenu ? 'active' : ''}`}
+                                onClick={() => {
+                                    setShowCampaignMenu((prev) => !prev);
+                                    setShowWindowFilterMenu(false);
+                                    setShowAssigneeFilterMenu(false);
+                                    setShowCommercialFilterMenu(false);
+                                    setShowLabelPanel(false);
+                                    setShowAdvancedFilters(false);
+                                    setMobileFilterMode(null);
+                                }}
+                                title={`Campanas: ${selectedCampaignLabel}`}
+                                data-label="Campanas"
+                            >
+                                <Megaphone size={18} />
+                                {filters.campaignFilter && (
+                                    <span className="sidebar-ribbon-badge sidebar-ribbon-badge--active">✓</span>
+                                )}
+                            </button>
+                            {showCampaignMenu && (
+                                <div
+                                    className="sidebar-filter-pill-menu sidebar-campaign-menu"
+                                    role="menu"
+                                    aria-label="Filtrar por campana"
+                                >
+                                    <div className="sidebar-campaign-menu__title">Campanas</div>
+                                    <button
+                                        type="button"
+                                        className={`sidebar-filter-pill-item ${!filters.campaignFilter ? 'active' : ''}`}
+                                        onClick={() => {
+                                            updateFilters({ campaignFilter: '' });
+                                            setShowCampaignMenu(false);
+                                        }}
+                                    >
+                                        Todas las campanas
+                                    </button>
+                                    {campaignOptions.length === 0 && (
+                                        <div className="sidebar-filter-pill-empty">
+                                            Sin campanas recientes
+                                        </div>
+                                    )}
+                                    {campaignOptions.map((entry) => {
+                                        const campaignId = String(entry?.campaignId || '').trim();
+                                        if (!campaignId) return null;
+                                        return (
+                                            <button
+                                                key={campaignId}
+                                                type="button"
+                                                className={`sidebar-filter-pill-item ${String(filters.campaignFilter || '') === campaignId ? 'active' : ''}`}
+                                                onClick={() => {
+                                                    updateFilters({ campaignFilter: campaignId });
+                                                    setShowCampaignMenu(false);
+                                                }}
+                                            >
+                                                {entry.campaignName || campaignId}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
                     </div>
                     <div className="sidebar-main-column">
                         {windowAlertBanner && (
@@ -1108,6 +1221,7 @@ const Sidebar = ({
                                                 setShowAssigneeFilterMenu((prev) => !prev);
                                                 setShowCommercialFilterMenu(false);
                                                 setShowWindowFilterMenu(false);
+                                                setShowCampaignMenu(false);
                                                 setShowLabelPanel(false);
                                             }}
                                             title="Filtrar por usuario"
@@ -1167,6 +1281,7 @@ const Sidebar = ({
                                                 setShowCommercialFilterMenu((prev) => !prev);
                                                 setShowAssigneeFilterMenu(false);
                                                 setShowWindowFilterMenu(false);
+                                                setShowCampaignMenu(false);
                                                 setShowLabelPanel(false);
                                             }}
                                             title="Filtrar por estado comercial"
@@ -1203,6 +1318,7 @@ const Sidebar = ({
                                             setShowWindowFilterMenu((prev) => !prev);
                                             setShowAssigneeFilterMenu(false);
                                             setShowCommercialFilterMenu(false);
+                                            setShowCampaignMenu(false);
                                             setShowLabelPanel(false);
                                         }}
                                         title="Filtrar por ventana 24h"
@@ -1345,7 +1461,7 @@ const Sidebar = ({
                         </button>
                     </div>
                     )}
-            <div className="chat-list" onClick={() => { if (showMenu) setShowMenu(false); if (showLabelPanel) setShowLabelPanel(false); if (showAssigneeFilterMenu) setShowAssigneeFilterMenu(false); if (showCommercialFilterMenu) setShowCommercialFilterMenu(false); if (showWindowFilterMenu) setShowWindowFilterMenu(false); if (showAdvancedFilters) setShowAdvancedFilters(false); if (mobileFilterMode) setMobileFilterMode(null); }} onScroll={handleChatListScroll}>
+            <div className="chat-list" onClick={() => { if (showMenu) setShowMenu(false); if (showLabelPanel) setShowLabelPanel(false); if (showAssigneeFilterMenu) setShowAssigneeFilterMenu(false); if (showCommercialFilterMenu) setShowCommercialFilterMenu(false); if (showWindowFilterMenu) setShowWindowFilterMenu(false); if (showCampaignMenu) setShowCampaignMenu(false); if (showAdvancedFilters) setShowAdvancedFilters(false); if (mobileFilterMode) setMobileFilterMode(null); }} onScroll={handleChatListScroll}>
                 {filteredChats.length === 0 && chats.length === 0 && !chatsLoaded ? (
                     [1, 2, 3, 4, 5].map((i) => (
                         <div key={i} className="chat-item chat-item-modern">

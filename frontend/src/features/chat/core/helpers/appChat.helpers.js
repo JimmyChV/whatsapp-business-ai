@@ -593,6 +593,7 @@ export const normalizeChatFilters = (filters = {}) => {
     ? String(filters?.windowFilter || 'all').trim().toLowerCase()
     : 'all';
   const windowFilterCustomMinutes = Math.max(0, Math.floor(Number(filters?.windowFilterCustomMinutes || 0) || 0));
+  const campaignFilter = String(filters?.campaignFilter || '').trim();
 
   return {
     labelTokens,
@@ -605,7 +606,8 @@ export const normalizeChatFilters = (filters = {}) => {
     archivedMode,
     pinnedMode,
     windowFilter,
-    windowFilterCustomMinutes
+    windowFilterCustomMinutes,
+    campaignFilter
   };
 };
 
