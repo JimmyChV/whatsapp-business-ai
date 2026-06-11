@@ -33,6 +33,8 @@ let cachedSnapshot = {
     users: []
 };
 let ensurePromise = null;
+let profileSchemaReady = false;
+let profileSchemaPromise = null;
 
 function parseTenantsFromEnv() {
     const raw = String(process.env.SAAS_TENANTS_JSON || '').trim();
@@ -141,12 +143,25 @@ function missingColumn(error) {
 }
 
 async function ensurePostgresProfileSchema() {
-    await queryPostgres('ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS logo_url TEXT');
-    await queryPostgres('ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS cover_image_url TEXT');
-    await queryPostgres("ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb");
+    if (profileSchemaReady) return;
+    if (profileSchemaPromise) return profileSchemaPromise;
 
-    await queryPostgres('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS avatar_url TEXT');
-    await queryPostgres("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb");
+    profileSchemaPromise = (async () => {
+        try {
+            await queryPostgres('ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS logo_url TEXT');
+            await queryPostgres('ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS cover_image_url TEXT');
+            await queryPostgres("ALTER TABLE IF EXISTS tenants ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb");
+
+            await queryPostgres('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS avatar_url TEXT');
+            await queryPostgres("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb");
+            profileSchemaReady = true;
+        } catch (error) {
+            profileSchemaPromise = null;
+            throw error;
+        }
+    })();
+
+    return profileSchemaPromise;
 }
 
 

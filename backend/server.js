@@ -652,14 +652,6 @@ const pattyHandoffJob = pattyHandoffJobService.createPattyHandoffJob({
 registerProcessHandlers();
 
 async function startServer() {
-    await preloadRuntimeServices({
-        saasControlService,
-        planLimitsStoreService,
-        accessPolicyService,
-        customerService,
-        logger
-    });
-
     server.listen(PORT, () => {
         logger.info(`Server running on port ${PORT}`);
         const runtime = typeof waClient.getRuntimeInfo === 'function'
@@ -671,6 +663,16 @@ async function startServer() {
         quoteExpiryJob.start();
         pattyHandoffJob.start();
         scheduleWaInitialize();
+    });
+
+    preloadRuntimeServices({
+        saasControlService,
+        planLimitsStoreService,
+        accessPolicyService,
+        customerService,
+        logger
+    }).catch((error) => {
+        logger.warn('[Startup] background preload failed: ' + String(error?.stack || error?.message || error));
     });
 }
 
