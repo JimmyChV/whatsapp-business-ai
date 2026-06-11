@@ -8,6 +8,7 @@ function createSocketChatListService({
     tenantScheduleService,
     customerService,
     customerAddressesService,
+    campaignsService,
     normalizeScopedModuleId,
     normalizePhoneDigits,
     normalizeFilterTokens,
@@ -801,9 +802,11 @@ function createSocketChatListService({
         const pinnedMode = ['all', 'pinned', 'unpinned'].includes(String(filters?.pinnedMode || 'all'))
             ? String(filters?.pinnedMode || 'all')
             : 'all';
+        const campaignFilterId = String(filters?.campaignFilter || '').trim();
 
         const needsLabelFiltering = unlabeledOnly || selectedTokens.length > 0;
-        if (!unreadOnly && !needsLabelFiltering && contactMode === 'all' && archivedMode === 'all' && pinnedMode === 'all') return chats;
+        const needsCampaignFiltering = Boolean(campaignFilterId);
+        if (!unreadOnly && !needsLabelFiltering && !needsCampaignFiltering && contactMode === 'all' && archivedMode === 'all' && pinnedMode === 'all') return chats;
 
         const safeTenantId = String(tenantId || 'default').trim() || 'default';
         const safeScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
@@ -825,6 +828,19 @@ function createSocketChatListService({
                 const labels = labelsMap?.[buildLabelMapKey(chatId, safeScopeModuleId)] || [];
                 labelTokenSetByChatId.set(chatId, toLabelTokenSet(labels));
             });
+        }
+        let campaignPhoneMap = new Map();
+        if (needsCampaignFiltering && typeof campaignsService?.getCampaignsByPhones === 'function') {
+            const phones = chats
+                .map((chat) => extractPhoneFromChat(chat))
+                .filter(Boolean);
+            if (phones.length > 0) {
+                try {
+                    campaignPhoneMap = await campaignsService.getCampaignsByPhones(safeTenantId, phones);
+                } catch (error) {
+                    campaignPhoneMap = new Map();
+                }
+            }
         }
 
         const included = new Array(chats.length).fill(false);
@@ -860,6 +876,12 @@ function createSocketChatListService({
                 if (!unlabeledOnly && selectedTokens.length > 0 && !matchesTokenSet(labelTokenSet, selectedTokens)) {
                     return;
                 }
+            }
+            if (needsCampaignFiltering) {
+                const digits = normalizePhoneDigits(extractPhoneFromChat(chat) || '');
+                const campaigns = campaignPhoneMap.get(digits) || [];
+                const hasThisCampaign = campaigns.some((campaign) => String(campaign?.campaignId || '') === campaignFilterId);
+                if (!hasThisCampaign) return;
             }
 
             included[idx] = true;
@@ -988,7 +1010,8 @@ function createSocketChatListService({
                         : 'all',
                     pinnedMode: ['all', 'pinned', 'unpinned'].includes(String(incomingFilters?.pinnedMode || 'all'))
                         ? String(incomingFilters?.pinnedMode || 'all')
-                        : 'all'
+                        : 'all',
+                    campaignFilter: String(incomingFilters?.campaignFilter || '').trim()
                 };
 
                 const selectedModuleContext = socket?.data?.waModule || null;
@@ -1021,7 +1044,7 @@ function createSocketChatListService({
                     return;
                 }
 
-                const hasActiveFilters = activeFilters.unreadOnly || activeFilters.unlabeledOnly || activeFilters.contactMode !== 'all' || activeFilters.archivedMode !== 'all' || activeFilters.pinnedMode !== 'all' || activeFilters.labelTokens.length > 0;
+                const hasActiveFilters = activeFilters.unreadOnly || activeFilters.unlabeledOnly || activeFilters.contactMode !== 'all' || activeFilters.archivedMode !== 'all' || activeFilters.pinnedMode !== 'all' || activeFilters.labelTokens.length > 0 || Boolean(activeFilters.campaignFilter);
                 let sortedChats = await getSortedVisibleChats({ forceRefresh: reset || Boolean(query) || hasActiveFilters });
                 if (!queryLower && !reset && offset >= sortedChats.length) {
                     sortedChats = await getSortedVisibleChats({ forceRefresh: true });

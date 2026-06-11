@@ -304,6 +304,7 @@ class SocketManager {
             tenantScheduleService,
             customerService,
             customerAddressesService,
+            campaignsService: this.campaignsService,
             normalizeScopedModuleId,
             normalizePhoneDigits,
             normalizeFilterTokens,
