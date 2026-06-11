@@ -2452,7 +2452,9 @@ function registerOperationsHttpRoutes({
                     campaignName: toText(campaign?.campaignName),
                     moduleId: toText(campaign?.moduleId),
                     scopeModuleId: toText(campaign?.scopeModuleId || campaign?.moduleId),
-                    status: toText(campaign?.status)
+                    status: toText(campaign?.status),
+                    lastSentAt: toText(campaign?.lastSentAt),
+                    sentCount: Number(campaign?.sentCount || 0) || 0
                 }))
                 .filter((campaign) => campaign.campaignId);
             return res.json({ ok: true, tenantId, ...options, options: campaignOptions });

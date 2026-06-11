@@ -883,20 +883,12 @@ function createSocketChatListService({
             if (needsCampaignFiltering) {
                 const digits = normalizePhoneDigits(extractPhoneFromChat(chat) || '');
                 const campaigns = campaignPhoneMap.get(digits) || [];
-                const chatScopeModuleId = normalizeScopedModuleId(
-                    safeScopeModuleId
-                    || chat?.scopeModuleId
-                    || chat?.lastMessageModuleId
-                    || chat?.moduleId
-                    || ''
-                );
                 const hasThisCampaign = campaigns.some((campaign) => {
                     const sameCampaign = String(campaign?.campaignId || '') === campaignFilterId;
                     if (!sameCampaign) return false;
                     if (!campaignFilterModuleId) return true;
                     const campaignModuleId = normalizeScopedModuleId(campaign?.scopeModuleId || campaign?.moduleId || '');
-                    return campaignModuleId === campaignFilterModuleId
-                        && (!chatScopeModuleId || chatScopeModuleId === campaignFilterModuleId);
+                    return campaignModuleId === campaignFilterModuleId;
                 });
                 if (!hasThisCampaign) return;
             }

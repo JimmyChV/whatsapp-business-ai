@@ -51,6 +51,16 @@ const normalizeSearchText = (value = '') => String(value || '')
     .trim()
     .toLowerCase();
 
+const formatCampaignSentDate = (value = '') => {
+    const date = value ? new Date(value) : null;
+    if (!date || !Number.isFinite(date.getTime())) return 'Sin fecha';
+    return date.toLocaleDateString('es-PE', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+    });
+};
+
 const normalizePattyMode = (value = '') => {
     const mode = String(value || '').trim().toLowerCase();
     return ['autonomous', 'review', 'off'].includes(mode) ? mode : '';
@@ -179,6 +189,8 @@ const Sidebar = ({
     const [showCommercialFilterMenu, setShowCommercialFilterMenu] = React.useState(false);
     const [showWindowFilterMenu, setShowWindowFilterMenu] = React.useState(false);
     const [showCampaignMenu, setShowCampaignMenu] = React.useState(false);
+    const [campaignModuleFilter, setCampaignModuleFilter] = React.useState('all');
+    const [campaignDateFilter, setCampaignDateFilter] = React.useState('all');
     const [customerSearchResults, setCustomerSearchResults] = React.useState([]);
     const [customerSearchLoading, setCustomerSearchLoading] = React.useState(false);
     const closeMobileAdvancedFilters = React.useCallback(() => {
@@ -471,11 +483,16 @@ const Sidebar = ({
                         const moduleId = String(entry?.scopeModuleId || entry?.scope_module_id || entry?.moduleId || entry?.module_id || '').trim().toLowerCase();
                         const campaignName = String(entry?.campaignName || entry?.campaign_name || entry?.name || campaignId).trim();
                         const moduleName = moduleLabelById.get(moduleId) || moduleId;
+                        const lastSentAt = String(entry?.lastSentAt || entry?.last_sent_at || '').trim();
+                        const sentDate = lastSentAt ? lastSentAt.slice(0, 10) : '';
                         return {
                             campaignId,
                             campaignName,
                             moduleId,
                             moduleName,
+                            lastSentAt,
+                            sentDate,
+                            sentCount: Number(entry?.sentCount ?? entry?.sent_count ?? 0) || 0,
                             campaignFilter: moduleId ? `${campaignId}::${moduleId}` : campaignId,
                             label: moduleName ? `${campaignName} - ${moduleName}` : campaignName
                         };
@@ -491,6 +508,38 @@ const Sidebar = ({
             cancelled = true;
         };
     }, [buildApiHeaders, currentTenantId, waModules]);
+
+    const campaignModuleOptions = React.useMemo(() => {
+        const map = new Map();
+        campaignOptions.forEach((entry) => {
+            const moduleId = String(entry?.moduleId || '').trim();
+            if (!moduleId || map.has(moduleId)) return;
+            map.set(moduleId, entry?.moduleName || moduleId);
+        });
+        return Array.from(map.entries())
+            .map(([value, label]) => ({ value, label }))
+            .sort((a, b) => String(a.label).localeCompare(String(b.label), 'es', { sensitivity: 'base' }));
+    }, [campaignOptions]);
+
+    const campaignDateOptions = React.useMemo(() => {
+        const map = new Map();
+        campaignOptions.forEach((entry) => {
+            const sentDate = String(entry?.sentDate || '').trim();
+            if (!sentDate || map.has(sentDate)) return;
+            map.set(sentDate, formatCampaignSentDate(entry?.lastSentAt || sentDate));
+        });
+        return Array.from(map.entries())
+            .map(([value, label]) => ({ value, label }))
+            .sort((a, b) => String(b.value).localeCompare(String(a.value)));
+    }, [campaignOptions]);
+
+    const visibleCampaignOptions = React.useMemo(() => (
+        campaignOptions.filter((entry) => {
+            if (campaignModuleFilter !== 'all' && String(entry?.moduleId || '') !== campaignModuleFilter) return false;
+            if (campaignDateFilter !== 'all' && String(entry?.sentDate || '') !== campaignDateFilter) return false;
+            return true;
+        })
+    ), [campaignDateFilter, campaignModuleFilter, campaignOptions]);
 
     React.useEffect(() => {
         const query = String(searchQuery || '').trim();
@@ -1074,7 +1123,7 @@ const Sidebar = ({
                                 </span>
                             )}
                         </button>
-                        <div className="sidebar-ribbon-menu-wrap" ref={campaignMenuRef}>
+                        <div className="sidebar-ribbon-menu-wrap">
                             <button
                                 type="button"
                                 className={`sidebar-ribbon-btn ${filters.campaignFilter || showCampaignMenu ? 'active' : ''}`}
@@ -1084,7 +1133,7 @@ const Sidebar = ({
                                     setShowAssigneeFilterMenu(false);
                                     setShowCommercialFilterMenu(false);
                                     setShowLabelPanel(false);
-                                    setShowAdvancedFilters(false);
+                                    setShowAdvancedFilters(true);
                                     setMobileFilterMode(null);
                                 }}
                                 title={`Campanas: ${selectedCampaignLabel}`}
@@ -1095,48 +1144,6 @@ const Sidebar = ({
                                     <span className="sidebar-ribbon-badge sidebar-ribbon-badge--active">✓</span>
                                 )}
                             </button>
-                            {showCampaignMenu && (
-                                <div
-                                    className="sidebar-filter-pill-menu sidebar-campaign-menu"
-                                    role="menu"
-                                    aria-label="Filtrar por campana"
-                                >
-                                    <div className="sidebar-campaign-menu__title">Campanas</div>
-                                    <button
-                                        type="button"
-                                        className={`sidebar-filter-pill-item ${!filters.campaignFilter ? 'active' : ''}`}
-                                        onClick={() => {
-                                            updateFilters({ campaignFilter: '' });
-                                            setShowCampaignMenu(false);
-                                        }}
-                                    >
-                                        Todas las campanas
-                                    </button>
-                                    {campaignOptions.length === 0 && (
-                                        <div className="sidebar-filter-pill-empty">
-                                            Sin campanas recientes
-                                        </div>
-                                    )}
-                                    {campaignOptions.map((entry) => {
-                                        const campaignId = String(entry?.campaignId || '').trim();
-                                        const campaignFilter = String(entry?.campaignFilter || campaignId).trim();
-                                        if (!campaignId) return null;
-                                        return (
-                                            <button
-                                                key={campaignFilter}
-                                                type="button"
-                                                className={`sidebar-filter-pill-item ${String(filters.campaignFilter || '') === campaignFilter ? 'active' : ''}`}
-                                                onClick={() => {
-                                                    updateFilters({ campaignFilter });
-                                                    setShowCampaignMenu(false);
-                                                }}
-                                            >
-                                                {entry.label || entry.campaignName || campaignId}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            )}
                         </div>
                     </div>
                     <div className="sidebar-main-column">
@@ -1406,6 +1413,100 @@ const Sidebar = ({
                                                     <span>min</span>
                                                 </div>
                                             )}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="sidebar-filter-pill-dropdown sidebar-filter-pill-dropdown--campaign" ref={campaignMenuRef}>
+                                    <button
+                                        type="button"
+                                        className={`sidebar-filter-pill-trigger ${filters.campaignFilter ? 'active' : ''}`}
+                                        onClick={() => {
+                                            setShowCampaignMenu((prev) => !prev);
+                                            setShowAssigneeFilterMenu(false);
+                                            setShowCommercialFilterMenu(false);
+                                            setShowWindowFilterMenu(false);
+                                            setShowLabelPanel(false);
+                                        }}
+                                        title="Filtrar por campaña"
+                                    >
+                                        <span className="sidebar-filter-pill-label">Campañas</span>
+                                        <span className="sidebar-filter-pill-value">{selectedCampaignLabel}</span>
+                                        <ChevronDown size={14} className={`sidebar-filter-pill-caret ${showCampaignMenu ? 'open' : ''}`} />
+                                    </button>
+                                    {showCampaignMenu && (
+                                        <div
+                                            className="sidebar-filter-pill-menu sidebar-campaign-menu"
+                                            role="menu"
+                                            aria-label="Filtrar por campaña"
+                                        >
+                                            <div className="sidebar-campaign-menu__filters">
+                                                <label className="sidebar-campaign-menu__field">
+                                                    <span>Módulo</span>
+                                                    <select
+                                                        value={campaignModuleFilter}
+                                                        onChange={(event) => setCampaignModuleFilter(event.target.value)}
+                                                    >
+                                                        <option value="all">Todos los módulos</option>
+                                                        {campaignModuleOptions.map((entry) => (
+                                                            <option key={entry.value} value={entry.value}>
+                                                                {entry.label}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </label>
+                                                <label className="sidebar-campaign-menu__field">
+                                                    <span>Fecha envío</span>
+                                                    <select
+                                                        value={campaignDateFilter}
+                                                        onChange={(event) => setCampaignDateFilter(event.target.value)}
+                                                    >
+                                                        <option value="all">Todas las fechas</option>
+                                                        {campaignDateOptions.map((entry) => (
+                                                            <option key={entry.value} value={entry.value}>
+                                                                {entry.label}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </label>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                className={`sidebar-filter-pill-item ${!filters.campaignFilter ? 'active' : ''}`}
+                                                onClick={() => {
+                                                    updateFilters({ campaignFilter: '' });
+                                                    setShowCampaignMenu(false);
+                                                    closeMobileAdvancedFilters();
+                                                }}
+                                            >
+                                                Todas las campañas
+                                            </button>
+                                            {visibleCampaignOptions.length === 0 && (
+                                                <div className="sidebar-filter-pill-empty">
+                                                    Sin campañas recientes
+                                                </div>
+                                            )}
+                                            {visibleCampaignOptions.map((entry) => {
+                                                const campaignId = String(entry?.campaignId || '').trim();
+                                                const campaignFilter = String(entry?.campaignFilter || campaignId).trim();
+                                                if (!campaignId) return null;
+                                                return (
+                                                    <button
+                                                        key={campaignFilter}
+                                                        type="button"
+                                                        className={`sidebar-filter-pill-item ${String(filters.campaignFilter || '') === campaignFilter ? 'active' : ''}`}
+                                                        onClick={() => {
+                                                            updateFilters({ campaignFilter });
+                                                            setShowCampaignMenu(false);
+                                                            closeMobileAdvancedFilters();
+                                                        }}
+                                                    >
+                                                        <span>{entry.label || entry.campaignName || campaignId}</span>
+                                                        {entry.lastSentAt && (
+                                                            <small>{formatCampaignSentDate(entry.lastSentAt)} - {entry.sentCount || 0} enviados</small>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
                                     )}
                                 </div>

@@ -1396,7 +1396,12 @@ async function listSentCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
                 campaignName: toText(campaign?.campaignName),
                 moduleId: normalizeModuleId(campaign?.moduleId || ''),
                 scopeModuleId: normalizeScopeModuleId(campaign?.scopeModuleId || campaign?.moduleId || ''),
-                status: normalizeCampaignStatus(campaign?.status)
+                status: normalizeCampaignStatus(campaign?.status),
+                lastSentAt: toIso(campaign?.lastSentAt || campaign?.updatedAt || ''),
+                sentCount: ensureArray(store.recipients)
+                    .filter((recipient) => normalizeRecipientStatus(recipient?.status) === 'sent')
+                    .filter((recipient) => toText(recipient?.campaignId) === toText(campaign?.campaignId))
+                    .length
             }))
             .filter((campaign) => campaign.campaignId);
     }
@@ -1432,6 +1437,7 @@ async function listSentCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
                 moduleId: normalizeModuleId(row?.module_id || ''),
                 scopeModuleId: normalizeScopeModuleId(row?.scope_module_id || row?.module_id || ''),
                 status: normalizeCampaignStatus(row?.status),
+                lastSentAt: toIso(row?.last_sent_at || row?.last_recipient_updated_at),
                 sentCount: toInt(row?.sent_count, 0, { min: 0 })
             }))
             .filter((campaign) => campaign.campaignId);

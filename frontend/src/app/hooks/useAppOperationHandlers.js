@@ -435,6 +435,7 @@ export default function useAppOperationHandlers({
     requestChatsPage,
     setChatSearchQuery,
     setChatFilters,
+    chatFiltersRef,
     normalizeChatFilters,
     canManageSaas,
     handleOpenSaasAdminWorkspace,

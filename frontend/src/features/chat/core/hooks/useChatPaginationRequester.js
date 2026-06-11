@@ -11,14 +11,14 @@ export default function useChatPaginationRequester({
   setChatsTotal,
   setIsLoadingMoreChats
 }) {
-  const requestChatsPage = useCallback(({ reset = false } = {}) => {
-    if (chatPagingRef.current.loading && reset && Number(chatPagingRef.current.offset || 0) === 0) return;
-    if (chatPagingRef.current.loading && !reset) return;
+  const requestChatsPage = useCallback(({ reset = false, filtersOverride = null, force = false } = {}) => {
+    if (!force && chatPagingRef.current.loading && reset && Number(chatPagingRef.current.offset || 0) === 0) return;
+    if (!force && chatPagingRef.current.loading && !reset) return;
     if (!reset && !chatPagingRef.current.hasMore) return;
 
     const offset = reset ? 0 : chatPagingRef.current.offset;
     const query = chatSearchRef.current;
-    const filters = chatFiltersRef.current;
+    const filters = filtersOverride || chatFiltersRef.current;
     chatPagingRef.current.loading = true;
     if (reset) {
       chatPagingRef.current.offset = 0;

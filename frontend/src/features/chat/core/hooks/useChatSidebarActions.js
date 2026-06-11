@@ -25,6 +25,7 @@ export default function useChatSidebarActions({
   requestChatsPage,
   setChatSearchQuery,
   setChatFilters,
+  chatFiltersRef,
   normalizeChatFilters,
   canManageSaas = false,
   handleOpenSaasAdminWorkspace,
@@ -179,7 +180,9 @@ export default function useChatSidebarActions({
     const normalized = typeof normalizeChatFilters === 'function'
       ? normalizeChatFilters(nextFilters)
       : nextFilters;
+    if (chatFiltersRef) chatFiltersRef.current = normalized;
     setChatFilters(normalized);
+    requestChatsPage?.({ reset: true, filtersOverride: normalized, force: true });
   };
 
   const handleLoadMoreChats = () => {
