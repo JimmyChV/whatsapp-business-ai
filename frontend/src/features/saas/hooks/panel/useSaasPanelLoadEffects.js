@@ -273,7 +273,7 @@ export default function useSaasPanelLoadEffects({
             if (firstError?.status === 'rejected') {
                 throw firstError.reason;
             }
-        })
+        }, { skipRefreshAfter: true })
             .catch((err) => {
                 if (typeof setErrorFn === 'function') {
                     setErrorFn(String(err?.message || err || 'No se pudo completar la carga inicial.'));

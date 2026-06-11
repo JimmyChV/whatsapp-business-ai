@@ -21,7 +21,7 @@ export default function useSaasPanelActions({
         refreshOverview
     };
 
-    const runAction = useCallback(async (_label, action) => {
+    const runAction = useCallback(async (_label, action, { skipRefreshAfter = false } = {}) => {
         const {
             refreshOverview: refreshOverviewFn
         } = loaderRef.current;
@@ -30,7 +30,7 @@ export default function useSaasPanelActions({
         setBusy(true);
         try {
             await action();
-            if (typeof refreshOverviewFn === 'function') {
+            if (!skipRefreshAfter && typeof refreshOverviewFn === 'function') {
                 await refreshOverviewFn();
             }
         } catch (err) {
