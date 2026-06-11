@@ -46,9 +46,18 @@ const normalizeCampaignOptions = (options = []) => (
   (Array.isArray(options) ? options : [])
     .map((entry) => ({
       campaignId: String(entry?.campaignId || entry?.campaign_id || entry?.id || '').trim(),
-      campaignName: String(entry?.campaignName || entry?.campaign_name || entry?.name || '').trim()
+      campaignName: String(entry?.campaignName || entry?.campaign_name || entry?.name || '').trim(),
+      moduleId: String(entry?.moduleId || entry?.module_id || entry?.scopeModuleId || entry?.scope_module_id || '').trim().toLowerCase(),
+      moduleName: String(entry?.moduleName || entry?.module_name || '').trim(),
+      campaignFilter: String(entry?.campaignFilter || '').trim(),
+      label: String(entry?.label || '').trim()
     }))
     .filter((entry) => entry.campaignId)
+    .map((entry) => ({
+      ...entry,
+      campaignFilter: entry.campaignFilter || (entry.moduleId ? `${entry.campaignId}::${entry.moduleId}` : entry.campaignId),
+      label: entry.label || (entry.moduleName ? `${entry.campaignName || entry.campaignId} - ${entry.moduleName}` : (entry.campaignName || entry.campaignId))
+    }))
 );
 
 const normalizeFilters = (filters = {}, commercialStatusOptions = DEFAULT_COMMERCIAL_STATUS_OPTIONS) => {
@@ -227,7 +236,8 @@ const useSidebarFiltersController = ({
   const safeCampaignOptions = useMemo(() => normalizeCampaignOptions(campaignOptions), [campaignOptions]);
   const campaignLabelById = useMemo(() => (
     safeCampaignOptions.reduce((acc, entry) => {
-      acc[entry.campaignId] = entry.campaignName || entry.campaignId;
+      acc[entry.campaignFilter] = entry.label || entry.campaignName || entry.campaignId;
+      acc[entry.campaignId] = entry.label || entry.campaignName || entry.campaignId;
       return acc;
     }, {})
   ), [safeCampaignOptions]);

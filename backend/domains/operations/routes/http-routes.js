@@ -2438,7 +2438,7 @@ function registerOperationsHttpRoutes({
             const [options, campaignsResult] = await Promise.all([
                 listCampaignFilterOptions(tenantId),
                 listCampaigns(tenantId, {
-                    status: ['completed', 'running'],
+                    status: ['completed', 'running', 'paused'],
                     limit: 100,
                     offset: 0
                 })
@@ -2447,6 +2447,8 @@ function registerOperationsHttpRoutes({
                 .map((campaign) => ({
                     campaignId: toText(campaign?.campaignId),
                     campaignName: toText(campaign?.campaignName),
+                    moduleId: toText(campaign?.moduleId),
+                    scopeModuleId: toText(campaign?.scopeModuleId || campaign?.moduleId),
                     status: toText(campaign?.status)
                 }))
                 .filter((campaign) => campaign.campaignId);

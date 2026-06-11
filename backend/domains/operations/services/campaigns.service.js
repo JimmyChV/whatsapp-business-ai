@@ -1315,7 +1315,7 @@ async function getCampaignsByPhones(tenantId = DEFAULT_TENANT_ID, phones = []) {
         const store = await readStore(cleanTenantId);
         const campaignsById = new Map(
             ensureArray(store.campaigns)
-                .filter((campaign) => ['completed', 'running'].includes(normalizeCampaignStatus(campaign?.status)))
+                .filter((campaign) => ['completed', 'running', 'paused'].includes(normalizeCampaignStatus(campaign?.status)))
                 .map((campaign) => [toText(campaign?.campaignId), campaign])
         );
         const map = new Map();
@@ -1329,7 +1329,9 @@ async function getCampaignsByPhones(tenantId = DEFAULT_TENANT_ID, phones = []) {
                 const current = map.get(digits) || [];
                 current.push({
                     campaignId: toText(campaign?.campaignId),
-                    campaignName: toText(campaign?.campaignName)
+                    campaignName: toText(campaign?.campaignName),
+                    moduleId: normalizeModuleId(campaign?.moduleId || ''),
+                    scopeModuleId: normalizeScopeModuleId(campaign?.scopeModuleId || campaign?.moduleId || '')
                 });
                 map.set(digits, current);
             });
@@ -1343,6 +1345,8 @@ async function getCampaignsByPhones(tenantId = DEFAULT_TENANT_ID, phones = []) {
                     cr.phone,
                     tc.campaign_id,
                     tc.campaign_name,
+                    tc.module_id,
+                    tc.scope_module_id,
                     tc.status AS campaign_status
                FROM tenant_campaign_recipients cr
                JOIN tenant_campaigns tc
@@ -1351,7 +1355,7 @@ async function getCampaignsByPhones(tenantId = DEFAULT_TENANT_ID, phones = []) {
               WHERE cr.tenant_id = $1
                 AND cr.phone = ANY($2::text[])
                 AND cr.status = 'sent'
-                AND tc.status IN ('completed', 'running')
+                AND tc.status IN ('completed', 'running', 'paused')
               ORDER BY tc.campaign_id`,
             [cleanTenantId, normalizedPhones]
         );
@@ -1363,7 +1367,9 @@ async function getCampaignsByPhones(tenantId = DEFAULT_TENANT_ID, phones = []) {
             const current = map.get(digits) || [];
             current.push({
                 campaignId: toText(row?.campaign_id),
-                campaignName: toText(row?.campaign_name)
+                campaignName: toText(row?.campaign_name),
+                moduleId: normalizeModuleId(row?.module_id || ''),
+                scopeModuleId: normalizeScopeModuleId(row?.scope_module_id || row?.module_id || '')
             });
             map.set(digits, current);
         }

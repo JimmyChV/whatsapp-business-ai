@@ -802,7 +802,10 @@ function createSocketChatListService({
         const pinnedMode = ['all', 'pinned', 'unpinned'].includes(String(filters?.pinnedMode || 'all'))
             ? String(filters?.pinnedMode || 'all')
             : 'all';
-        const campaignFilterId = String(filters?.campaignFilter || '').trim();
+        const rawCampaignFilter = String(filters?.campaignFilter || '').trim();
+        const campaignFilterParts = rawCampaignFilter.split('::');
+        const campaignFilterId = String(campaignFilterParts[0] || '').trim();
+        const campaignFilterModuleId = normalizeScopedModuleId(campaignFilterParts[1] || '');
 
         const needsLabelFiltering = unlabeledOnly || selectedTokens.length > 0;
         const needsCampaignFiltering = Boolean(campaignFilterId);
@@ -880,7 +883,21 @@ function createSocketChatListService({
             if (needsCampaignFiltering) {
                 const digits = normalizePhoneDigits(extractPhoneFromChat(chat) || '');
                 const campaigns = campaignPhoneMap.get(digits) || [];
-                const hasThisCampaign = campaigns.some((campaign) => String(campaign?.campaignId || '') === campaignFilterId);
+                const chatScopeModuleId = normalizeScopedModuleId(
+                    safeScopeModuleId
+                    || chat?.scopeModuleId
+                    || chat?.lastMessageModuleId
+                    || chat?.moduleId
+                    || ''
+                );
+                const hasThisCampaign = campaigns.some((campaign) => {
+                    const sameCampaign = String(campaign?.campaignId || '') === campaignFilterId;
+                    if (!sameCampaign) return false;
+                    if (!campaignFilterModuleId) return true;
+                    const campaignModuleId = normalizeScopedModuleId(campaign?.scopeModuleId || campaign?.moduleId || '');
+                    return campaignModuleId === campaignFilterModuleId
+                        && (!chatScopeModuleId || chatScopeModuleId === campaignFilterModuleId);
+                });
                 if (!hasThisCampaign) return;
             }
 

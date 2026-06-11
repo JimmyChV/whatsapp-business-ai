@@ -371,8 +371,11 @@ const Sidebar = ({
     const selectedCampaignLabel = React.useMemo(() => {
         const campaignId = String(filters.campaignFilter || '').trim();
         if (!campaignId) return 'Todas';
-        const selected = campaignOptions.find((entry) => String(entry?.campaignId || '') === campaignId);
-        return selected?.campaignName || campaignId;
+        const selected = campaignOptions.find((entry) => (
+            String(entry?.campaignFilter || '') === campaignId
+            || String(entry?.campaignId || '') === campaignId
+        ));
+        return selected?.label || selected?.campaignName || campaignId;
     }, [campaignOptions, filters.campaignFilter]);
     const selectedWindowFilterLabel = React.useMemo(() => {
         if (filters.windowFilter === 'custom') {
@@ -455,13 +458,30 @@ const Sidebar = ({
             .then((payload) => {
                 if (cancelled) return;
                 const options = Array.isArray(payload?.options) ? payload.options : [];
+                const moduleLabelById = new Map((Array.isArray(waModules) ? waModules : [])
+                    .map((module) => {
+                        const moduleId = String(module?.moduleId || module?.id || '').trim().toLowerCase();
+                        const moduleName = String(module?.name || module?.label || moduleId || '').trim();
+                        return moduleId ? [moduleId, moduleName] : null;
+                    })
+                    .filter(Boolean));
                 setCampaignOptions(options
-                    .map((entry) => ({
-                        campaignId: String(entry?.campaignId || entry?.campaign_id || entry?.id || '').trim(),
-                        campaignName: String(entry?.campaignName || entry?.campaign_name || entry?.name || '').trim()
-                    }))
+                    .map((entry) => {
+                        const campaignId = String(entry?.campaignId || entry?.campaign_id || entry?.id || '').trim();
+                        const moduleId = String(entry?.scopeModuleId || entry?.scope_module_id || entry?.moduleId || entry?.module_id || '').trim().toLowerCase();
+                        const campaignName = String(entry?.campaignName || entry?.campaign_name || entry?.name || campaignId).trim();
+                        const moduleName = moduleLabelById.get(moduleId) || moduleId;
+                        return {
+                            campaignId,
+                            campaignName,
+                            moduleId,
+                            moduleName,
+                            campaignFilter: moduleId ? `${campaignId}::${moduleId}` : campaignId,
+                            label: moduleName ? `${campaignName} - ${moduleName}` : campaignName
+                        };
+                    })
                     .filter((entry) => entry.campaignId)
-                    .sort((a, b) => String(a.campaignName || a.campaignId).localeCompare(String(b.campaignName || b.campaignId), 'es', { sensitivity: 'base' })));
+                    .sort((a, b) => String(a.label || a.campaignName || a.campaignId).localeCompare(String(b.label || b.campaignName || b.campaignId), 'es', { sensitivity: 'base' })));
             })
             .catch(() => {
                 if (!cancelled) setCampaignOptions([]);
@@ -470,7 +490,7 @@ const Sidebar = ({
         return () => {
             cancelled = true;
         };
-    }, [buildApiHeaders, currentTenantId]);
+    }, [buildApiHeaders, currentTenantId, waModules]);
 
     React.useEffect(() => {
         const query = String(searchQuery || '').trim();
@@ -1099,18 +1119,19 @@ const Sidebar = ({
                                     )}
                                     {campaignOptions.map((entry) => {
                                         const campaignId = String(entry?.campaignId || '').trim();
+                                        const campaignFilter = String(entry?.campaignFilter || campaignId).trim();
                                         if (!campaignId) return null;
                                         return (
                                             <button
-                                                key={campaignId}
+                                                key={campaignFilter}
                                                 type="button"
-                                                className={`sidebar-filter-pill-item ${String(filters.campaignFilter || '') === campaignId ? 'active' : ''}`}
+                                                className={`sidebar-filter-pill-item ${String(filters.campaignFilter || '') === campaignFilter ? 'active' : ''}`}
                                                 onClick={() => {
-                                                    updateFilters({ campaignFilter: campaignId });
+                                                    updateFilters({ campaignFilter });
                                                     setShowCampaignMenu(false);
                                                 }}
                                             >
-                                                {entry.campaignName || campaignId}
+                                                {entry.label || entry.campaignName || campaignId}
                                             </button>
                                         );
                                     })}
