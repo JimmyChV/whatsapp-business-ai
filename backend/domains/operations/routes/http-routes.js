@@ -2435,8 +2435,22 @@ function registerOperationsHttpRoutes({
             if (!canReadCampaigns(req, tenantId)) {
                 return res.status(403).json({ ok: false, error: 'No autorizado.' });
             }
-            const options = await listCampaignFilterOptions(tenantId);
-            return res.json({ ok: true, tenantId, ...options });
+            const [options, campaignsResult] = await Promise.all([
+                listCampaignFilterOptions(tenantId),
+                listCampaigns(tenantId, {
+                    status: ['completed', 'running'],
+                    limit: 100,
+                    offset: 0
+                })
+            ]);
+            const campaignOptions = ensureArray(campaignsResult?.items)
+                .map((campaign) => ({
+                    campaignId: toText(campaign?.campaignId),
+                    campaignName: toText(campaign?.campaignName),
+                    status: toText(campaign?.status)
+                }))
+                .filter((campaign) => campaign.campaignId);
+            return res.json({ ok: true, tenantId, ...options, options: campaignOptions });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron cargar opciones de filtros de campana.') });
         }

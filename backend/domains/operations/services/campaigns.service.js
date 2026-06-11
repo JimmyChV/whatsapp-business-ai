@@ -139,6 +139,14 @@ function normalizeCampaignStatus(value = '', fallback = 'draft') {
     return fallback;
 }
 
+function normalizeCampaignStatusFilters(value = '') {
+    return Array.from(new Set(
+        ensureArray(value)
+            .map((entry) => normalizeCampaignStatus(entry, ''))
+            .filter(Boolean)
+    ));
+}
+
 function normalizeRecipientStatus(value = '', fallback = 'pending') {
     const status = toLower(value || fallback);
     if (RECIPIENT_STATUSES.has(status)) return status;
@@ -1214,7 +1222,7 @@ async function listCampaigns(tenantId = DEFAULT_TENANT_ID, options = {}) {
     const cleanTenantId = normalizeTenant(tenantId);
     const scopeModuleId = normalizeScopeModuleId(options.scopeModuleId || '');
     const moduleId = toText(options.moduleId || '');
-    const status = toText(options.status || '');
+    const statusFilters = normalizeCampaignStatusFilters(options.status || '');
     const query = toLower(options.query || '');
     const limit = normalizeLimit(options.limit);
     const offset = normalizeOffset(options.offset);
@@ -1224,7 +1232,7 @@ async function listCampaigns(tenantId = DEFAULT_TENANT_ID, options = {}) {
         const filtered = store.campaigns
             .filter((item) => !scopeModuleId || normalizeScopeModuleId(item.scopeModuleId) === scopeModuleId)
             .filter((item) => !moduleId || toText(item.moduleId) === moduleId)
-            .filter((item) => !status || normalizeCampaignStatus(item.status) === normalizeCampaignStatus(status))
+            .filter((item) => statusFilters.length === 0 || statusFilters.includes(normalizeCampaignStatus(item.status)))
             .filter((item) => {
                 if (!query) return true;
                 const haystack = `${toLower(item.campaignName)} ${toLower(item.templateName)} ${toLower(item.campaignDescription || '')}`;
@@ -1252,9 +1260,12 @@ async function listCampaigns(tenantId = DEFAULT_TENANT_ID, options = {}) {
             params.push(moduleId);
             where.push(`module_id = $${params.length}`);
         }
-        if (status) {
-            params.push(normalizeCampaignStatus(status));
+        if (statusFilters.length === 1) {
+            params.push(statusFilters[0]);
             where.push(`status = $${params.length}`);
+        } else if (statusFilters.length > 1) {
+            params.push(statusFilters);
+            where.push(`status = ANY($${params.length}::text[])`);
         }
         if (query) {
             params.push(`%${query}%`);
