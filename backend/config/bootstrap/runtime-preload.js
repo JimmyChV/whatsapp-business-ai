@@ -5,7 +5,6 @@ async function preloadRuntimeServices({
     saasControlService,
     planLimitsStoreService,
     accessPolicyService,
-    customerService,
     logger
 }) {
     const tasks = [
@@ -23,33 +22,28 @@ async function preloadRuntimeServices({
             .then(() => accessPolicyService.initializeAccessPolicy())
             .catch((error) => {
                 logger.warn('[SaaS] no se pudo precargar catalogo de accesos: ' + String(error?.message || error));
+            })
+    ];
+
+    await Promise.all(tasks);
+}
+
+async function runHeavyWarmups({ logger } = {}) {
+    const tasks = [
+        Promise.resolve()
+            .then(() => catalogSyncService.warmupAllCatalogs())
+            .catch((error) => {
+                logger?.warn('[CatalogSync] warmup failed: ' + String(error?.message || error));
             }),
         Promise.resolve()
-            .then(() => {
-                catalogSyncService.warmupAllCatalogs().catch((error) => {
-                    logger.warn('[CatalogSync] no se pudo precargar catalogos WooCommerce: ' + String(error?.message || error));
-                });
-            })
+            .then(() => metaAdsSyncService.startDailySync())
             .catch((error) => {
-                logger.warn('[CatalogSync] no se pudo precargar catalogos WooCommerce: ' + String(error?.message || error));
+                logger?.warn('[MetaAdsSync] daily sync failed: ' + String(error?.message || error));
             }),
         Promise.resolve()
-            .then(() => {
-                metaAdsSyncService.startDailySync().catch((error) => {
-                    logger.warn('[MetaAdsSync] no se pudo programar sync diario: ' + String(error?.message || error));
-                });
-            })
+            .then(() => metaAdsSyncService.backfillConfiguredTenantsCurrentYear())
             .catch((error) => {
-                logger.warn('[MetaAdsSync] no se pudo programar sync diario: ' + String(error?.message || error));
-            }),
-        Promise.resolve()
-            .then(() => {
-                metaAdsSyncService.backfillConfiguredTenantsCurrentYear().catch((error) => {
-                    logger.warn('[MetaAdsSync] no se pudo iniciar backfill historico del año actual: ' + String(error?.message || error));
-                });
-            })
-            .catch((error) => {
-                logger.warn('[MetaAdsSync] no se pudo iniciar backfill historico del año actual: ' + String(error?.message || error));
+                logger?.warn('[MetaAdsSync] backfill failed: ' + String(error?.message || error));
             })
     ];
 
@@ -57,5 +51,6 @@ async function preloadRuntimeServices({
 }
 
 module.exports = {
-    preloadRuntimeServices
+    preloadRuntimeServices,
+    runHeavyWarmups
 };

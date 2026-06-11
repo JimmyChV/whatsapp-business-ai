@@ -10,7 +10,7 @@ require('dotenv').config({ quiet: true });
 const logger = require('./config/logger');
 const { createServerLifecycleHandlers } = require('./config/bootstrap/server-lifecycle');
 const { registerHttpRoutes } = require('./config/bootstrap/http-routes');
-const { preloadRuntimeServices } = require('./config/bootstrap/runtime-preload');
+const { preloadRuntimeServices, runHeavyWarmups } = require('./config/bootstrap/runtime-preload');
 const { getPostgresPool, getStorageDriver } = require('./config/persistence-runtime');
 const { runMigrations } = require('./db/migration-runner');
 const { parseCsvEnv, resolveAndValidatePublicHost } = require('./domains/security/helpers/security-utils');
@@ -653,6 +653,8 @@ const pattyHandoffJob = pattyHandoffJobService.createPattyHandoffJob({
 
 registerProcessHandlers();
 
+let heavyWarmupsScheduled = false;
+
 async function startServer() {
     if (getStorageDriver() === 'postgres') {
         try {
@@ -673,16 +675,24 @@ async function startServer() {
         quoteExpiryJob.start();
         pattyHandoffJob.start();
         scheduleWaInitialize();
+        if (!heavyWarmupsScheduled) {
+            heavyWarmupsScheduled = true;
+            const timer = setTimeout(() => {
+                runHeavyWarmups({ logger }).catch((error) => {
+                    logger.warn('[HeavyWarmup] failed: ' + String(error?.message || error));
+                });
+            }, 90_000);
+            if (typeof timer?.unref === 'function') timer.unref();
+        }
     });
 
     preloadRuntimeServices({
         saasControlService,
         planLimitsStoreService,
         accessPolicyService,
-        customerService,
         logger
     }).catch((error) => {
-        logger.warn('[Startup] background preload failed: ' + String(error?.stack || error?.message || error));
+        logger.warn('[Startup] preload failed: ' + String(error?.stack || error?.message || error));
     });
 }
 
