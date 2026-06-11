@@ -1044,7 +1044,7 @@ function createSocketChatListService({
                     return;
                 }
 
-                const hasActiveFilters = activeFilters.unreadOnly || activeFilters.unlabeledOnly || activeFilters.contactMode !== 'all' || activeFilters.archivedMode !== 'all' || activeFilters.pinnedMode !== 'all' || activeFilters.labelTokens.length > 0 || Boolean(activeFilters.campaignFilter);
+                const hasActiveFilters = activeFilters.unreadOnly || activeFilters.unlabeledOnly || activeFilters.contactMode !== 'all' || activeFilters.archivedMode !== 'all' || activeFilters.pinnedMode !== 'all' || activeFilters.labelTokens.length > 0;
                 let sortedChats = await getSortedVisibleChats({ forceRefresh: reset || Boolean(query) || hasActiveFilters });
                 if (!queryLower && !reset && offset >= sortedChats.length) {
                     sortedChats = await getSortedVisibleChats({ forceRefresh: true });
