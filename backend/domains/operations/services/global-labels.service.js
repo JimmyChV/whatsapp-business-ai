@@ -95,6 +95,7 @@ const DEFAULT_GLOBAL_LABEL_IDS = new Set(DEFAULT_GLOBAL_LABELS.map((entry) => en
 const DEFAULT_COMMERCIAL_STATUS_KEYS = new Set(DEFAULT_GLOBAL_LABELS.map((entry) => entry.commercialStatusKey));
 
 let schemaPromise = null;
+let defaultLabelsEnsured = false;
 
 function toText(value = '') {
     return String(value || '').trim();
@@ -190,6 +191,7 @@ async function seedFromExistingTenantLabelsIfEmpty() {
 }
 
 async function ensureDefaultGlobalLabels() {
+    if (defaultLabelsEnsured) return;
     if (getStorageDriver() !== 'postgres') {
         const store = await readStore();
         let changed = false;
@@ -204,6 +206,7 @@ async function ensureDefaultGlobalLabels() {
             changed = true;
         });
         if (changed) await writeStore(store);
+        defaultLabelsEnsured = true;
         return;
     }
 
@@ -228,6 +231,7 @@ async function ensureDefaultGlobalLabels() {
             entry.sortOrder
         ])
     );
+    defaultLabelsEnsured = true;
 }
 
 async function ensurePostgresSchema() {

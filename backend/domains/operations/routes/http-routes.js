@@ -233,6 +233,14 @@ function registerOperationsHttpRoutes({
     emitToTenant
 }) {
     if (!app) throw new Error('registerOperationsHttpRoutes requiere app.');
+
+    const globalLabelsCache = new Map();
+    const GLOBAL_LABELS_TTL_MS = 60_000;
+
+    function invalidateGlobalLabelsCache() {
+        globalLabelsCache.clear();
+    }
+
     function requireSuperAdmin(req, res) {
         if (!ensureAuthenticated(req, res, authService)) return false;
         if (!req?.authContext?.user?.isSuperAdmin) {
@@ -364,7 +372,17 @@ function registerOperationsHttpRoutes({
         try {
             if (!requireSuperAdmin(req, res)) return;
             const includeInactive = String(req.query?.includeInactive || '').trim().toLowerCase() === 'true';
+            const cacheKey = String(includeInactive);
+            const cached = globalLabelsCache.get(cacheKey);
+            if (cached && (Date.now() - cached.at) < GLOBAL_LABELS_TTL_MS) {
+                return res.json({ ok: true, items: cached.items });
+            }
+
             const items = await globalLabelsService.listLabels({ includeInactive });
+            globalLabelsCache.set(cacheKey, {
+                items,
+                at: Date.now()
+            });
             return res.json({ ok: true, items });
         } catch (error) {
             return res.status(500).json({ ok: false, error: String(error?.message || 'No se pudieron cargar etiquetas globales.') });
@@ -376,6 +394,7 @@ function registerOperationsHttpRoutes({
             if (!requireSuperAdmin(req, res)) return;
             const payload = req.body && typeof req.body === 'object' ? req.body : {};
             const item = await globalLabelsService.saveLabel(payload);
+            invalidateGlobalLabelsCache();
             return res.status(201).json({ ok: true, item });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo guardar etiqueta global.') });
@@ -388,6 +407,7 @@ function registerOperationsHttpRoutes({
             const id = String(req.params?.id || '').trim();
             const payload = req.body && typeof req.body === 'object' ? req.body : {};
             const item = await globalLabelsService.saveLabel({ ...payload, id });
+            invalidateGlobalLabelsCache();
             return res.json({ ok: true, item });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar etiqueta global.') });
@@ -399,6 +419,7 @@ function registerOperationsHttpRoutes({
             if (!requireSuperAdmin(req, res)) return;
             const id = String(req.params?.id || '').trim();
             const result = await globalLabelsService.deleteLabel(id);
+            invalidateGlobalLabelsCache();
             return res.json({ ok: true, ...result });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo eliminar etiqueta global.') });
