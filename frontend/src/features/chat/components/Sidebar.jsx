@@ -1212,7 +1212,11 @@ const Sidebar = ({
                                         <ChevronDown size={14} className={`sidebar-filter-pill-caret ${showWindowFilterMenu ? 'open' : ''}`} />
                                     </button>
                                     {showWindowFilterMenu && (
-                                        <div className="sidebar-filter-pill-menu" role="menu" aria-label="Filtrar por ventana 24h">
+                                        <div
+                                            className={`sidebar-filter-pill-menu sidebar-filter-pill-menu--window ${filters.windowFilter === 'custom' ? 'sidebar-filter-pill-menu--window-custom' : ''}`}
+                                            role="menu"
+                                            aria-label="Filtrar por ventana 24h"
+                                        >
                                             {WINDOW_FILTER_OPTIONS.map((entry) => (
                                                 <button
                                                     key={entry.value}

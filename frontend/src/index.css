@@ -5892,6 +5892,17 @@ body {
   z-index: 95;
 }
 
+.sidebar-filter-pill-menu--window {
+  left: 0;
+  right: auto;
+  width: min(292px, calc(100vw - 112px));
+  min-width: min(292px, calc(100vw - 112px));
+  max-width: min(292px, calc(100vw - 112px));
+  max-height: min(58vh, 480px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 .sidebar-filter-pill-item {
   border: 1px solid transparent;
   background: rgba(24, 42, 53, 0.76);
@@ -6600,20 +6611,23 @@ body {
 }
 
 .sidebar-window-custom-inputs {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 44px auto 44px auto;
   align-items: center;
   gap: 6px;
-  min-width: 210px;
+  width: 100%;
+  min-width: 0;
   white-space: nowrap;
-  padding: 6px 8px 8px;
+  padding: 8px 6px 4px;
+  box-sizing: border-box;
   font-size: 12px;
   color: var(--saas-text-secondary);
   border-top: 1px solid var(--saas-border-color);
-  flex-wrap: nowrap;
 }
 
 .sidebar-window-custom-input {
-  width: 40px;
+  width: 44px;
+  min-width: 0;
   padding: 3px 4px;
   border: 1px solid var(--saas-border-color);
   border-radius: 4px;
