@@ -20,21 +20,49 @@
     if (!planLimitsService) throw new Error('registerSecurityAccessControlHttpRoutes requiere planLimitsService.');
     if (!planLimitsStoreService) throw new Error('registerSecurityAccessControlHttpRoutes requiere planLimitsStoreService.');
 
+    let overviewCache = null;
+    let overviewCacheAt = 0;
+    const OVERVIEW_CACHE_TTL_MS = 30_000;
+    const invalidateOverviewCache = () => {
+        overviewCache = null;
+        overviewCacheAt = 0;
+    };
+    app.locals.invalidateSaasOverviewCache = invalidateOverviewCache;
+
+    const buildOverviewResponse = (req, overview = {}) => {
+        const scoped = filterAdminOverviewByScope(req, overview);
+        const scopedTenantIds = new Set(
+            (scoped.tenants || [])
+                .map((tenant) => String(tenant?.id || '').trim())
+                .filter(Boolean)
+        );
+        const aiUsage = (overview._aiUsage || [])
+            .filter((entry) => scopedTenantIds.has(String(entry?.tenantId || '').trim()));
+        return { ok: true, ...scoped, aiUsage };
+    };
+
     app.get('/api/admin/saas/overview', async (req, res) => {
         try {
             if (!hasSaasControlReadAccess(req)) {
                 return res.status(403).json({ ok: false, error: 'No tienes permisos para ver el panel SaaS.' });
             }
 
+            const now = Date.now();
+            if (overviewCache && (now - overviewCacheAt) < OVERVIEW_CACHE_TTL_MS) {
+                return res.json(buildOverviewResponse(req, overviewCache));
+            }
+
             const overview = await saasControlService.getAdminOverview();
-            const scoped = filterAdminOverviewByScope(req, overview);
-            const aiUsage = await Promise.all((scoped.tenants || []).map(async (tenant) => ({
+            const aiUsage = await Promise.all((overview.tenants || []).map(async (tenant) => ({
                 tenantId: tenant.id,
                 monthKey: aiUsageService.currentMonthKey(),
                 requests: await aiUsageService.getMonthlyUsage(tenant.id)
             })));
 
-            return res.json({ ok: true, ...scoped, aiUsage });
+            overviewCache = { ...overview, _aiUsage: aiUsage };
+            overviewCacheAt = now;
+
+            return res.json(buildOverviewResponse(req, overviewCache));
         } catch (error) {
             return res.status(500).json({ ok: false, error: 'No se pudo cargar el panel SaaS.' });
         }

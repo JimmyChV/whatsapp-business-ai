@@ -38,6 +38,11 @@
         tenantIds.forEach((tenantId) => authService.invalidatePermissionsCache({ userId, tenantId }));
     }
 
+    function invalidateOverviewCache() {
+        const fn = app?.locals?.invalidateSaasOverviewCache;
+        if (typeof fn === 'function') fn();
+    }
+
     app.get('/api/admin/saas/tenants', async (req, res) => {
         try {
             if (!hasSaasControlReadAccess(req)) return res.status(403).json({ ok: false, error: 'No autorizado.' });
@@ -70,6 +75,7 @@
                 resourceId: createdId || tenant?.id || null,
                 newValue: tenant ? saasControlService.sanitizeTenantPublic(tenant) : payload
             });
+            invalidateOverviewCache();
 
             return res.status(201).json({ ok: true, tenant: tenant ? saasControlService.sanitizeTenantPublic(tenant) : null });
         } catch (error) {
@@ -94,6 +100,7 @@
                 resourceId: tenantId,
                 newValue: tenant ? saasControlService.sanitizeTenantPublic(tenant) : payload
             });
+            invalidateOverviewCache();
             return res.json({ ok: true, tenant: tenant ? saasControlService.sanitizeTenantPublic(tenant) : null });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo actualizar empresa.') });
@@ -107,6 +114,7 @@
 
         try {
             await saasControlService.deleteTenant(tenantId);
+            invalidateOverviewCache();
             return res.json({ ok: true });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudo desactivar empresa.') });
