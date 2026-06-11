@@ -46,6 +46,10 @@ function toLower(value = '') {
     return toText(value).toLowerCase();
 }
 
+function ensureArray(value = []) {
+    return Array.isArray(value) ? value : [];
+}
+
 function isPlainObject(value = null) {
     return value && typeof value === 'object' && !Array.isArray(value);
 }
