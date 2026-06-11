@@ -699,9 +699,23 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
     const safeOffset = Math.max(0, Number(offset) || 0);
 
     if (getStorageDriver() === 'postgres') {
+        const perfId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const totalLabel = `[perf][messageHistory.listChats][${perfId}] total tenant=${cleanTenant} offset=${safeOffset} limit=${safeLimit}`;
+        console.time(totalLabel);
         try {
-            await ensurePostgresMessageColumns();
-            const { rows } = await queryPostgres(
+            const ensureLabel = `[perf][messageHistory.listChats][${perfId}] ensurePostgresMessageColumns`;
+            console.time(ensureLabel);
+            try {
+                await ensurePostgresMessageColumns();
+            } finally {
+                console.timeEnd(ensureLabel);
+            }
+
+            const queryLabel = `[perf][messageHistory.listChats][${perfId}] sql`;
+            console.time(queryLabel);
+            let rows = [];
+            try {
+                const result = await queryPostgres(
                 `WITH latest_by_scope AS (
                      SELECT DISTINCT ON (
                                 m.chat_id,
@@ -749,7 +763,12 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
                   ORDER BY COALESCE(l.timestamp_unix, 0) DESC, c.updated_at DESC NULLS LAST
                   LIMIT $2 OFFSET $3`,
                 [cleanTenant, safeLimit, safeOffset]
-            );
+                );
+                rows = Array.isArray(result?.rows) ? result.rows : [];
+            } finally {
+                console.timeEnd(queryLabel);
+            }
+            console.log(`[perf][messageHistory.listChats][${perfId}] rows=${rows.length}`);
 
             return rows.map((row) => {
                 const chatMetadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
@@ -786,6 +805,8 @@ async function listChats(tenantId = DEFAULT_TENANT_ID, { limit = 100, offset = 0
         } catch (error) {
             if (missingRelation(error) || missingColumn(error, 'wa_module_id')) return [];
             throw error;
+        } finally {
+            console.timeEnd(totalLabel);
         }
     }
 

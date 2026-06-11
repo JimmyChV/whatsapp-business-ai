@@ -369,16 +369,32 @@ function registerOperationsHttpRoutes({
     }
 
     app.get('/api/ops/global-labels', async (req, res) => {
+        const perfId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const totalLabel = `[perf][/api/ops/global-labels][${perfId}] total`;
+        console.time(totalLabel);
+        res.once('finish', () => {
+            console.timeEnd(totalLabel);
+        });
         try {
             if (!requireSuperAdmin(req, res)) return;
             const includeInactive = String(req.query?.includeInactive || '').trim().toLowerCase() === 'true';
             const cacheKey = String(includeInactive);
             const cached = globalLabelsCache.get(cacheKey);
             if (cached && (Date.now() - cached.at) < GLOBAL_LABELS_TTL_MS) {
+                console.log(`[perf][/api/ops/global-labels][${perfId}] cache=hit key=${cacheKey} items=${Array.isArray(cached.items) ? cached.items.length : 0}`);
                 return res.json({ ok: true, items: cached.items });
             }
+            console.log(`[perf][/api/ops/global-labels][${perfId}] cache=miss key=${cacheKey}`);
 
-            const items = await globalLabelsService.listLabels({ includeInactive });
+            const listLabel = `[perf][/api/ops/global-labels][${perfId}] globalLabelsService.listLabels`;
+            console.time(listLabel);
+            let items = [];
+            try {
+                items = await globalLabelsService.listLabels({ includeInactive });
+            } finally {
+                console.timeEnd(listLabel);
+            }
+            console.log(`[perf][/api/ops/global-labels][${perfId}] items=${Array.isArray(items) ? items.length : 0}`);
             globalLabelsCache.set(cacheKey, {
                 items,
                 at: Date.now()

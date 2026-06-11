@@ -25,11 +25,20 @@ function registerTenantRuntimePublicHttpRoutes({
     if (!app) throw new Error('registerTenantRuntimePublicHttpRoutes requiere app.');
 
     app.get('/api/saas/runtime', async (req, res) => {
+        const perfId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const totalLabel = `[perf][/api/saas/runtime][${perfId}] total`;
+        console.time(totalLabel);
+        res.once('finish', () => {
+            console.timeEnd(totalLabel);
+        });
         const authContext = req.authContext || { enabled: false, isAuthenticated: false, user: null };
         const authEnabled = authService.isAuthEnabled();
         const isAuthenticated = Boolean(authContext?.isAuthenticated && authContext?.user);
 
+        const tenantsLabel = `[perf][/api/saas/runtime][${perfId}] tenantService.getTenants`;
+        console.time(tenantsLabel);
         const allTenants = tenantService.getTenants();
+        console.timeEnd(tenantsLabel);
         const allowedTenants = isAuthenticated
             ? authService.getAllowedTenantsForUser(authContext?.user || {}, allTenants)
             : allTenants;
@@ -55,14 +64,34 @@ function registerTenantRuntimePublicHttpRoutes({
         let selectedWaModule = null;
 
         if (exposeTenantData && tenantId) {
-            tenantSettings = await tenantSettingsService.getTenantSettings(tenantId);
-            waModules = await waModuleService.listModules(tenantId, {
-                includeInactive: false,
-                userId: runtimeUserId
-            });
-            selectedWaModule = await waModuleService.getSelectedModule(tenantId, {
-                userId: runtimeUserId
-            });
+            const settingsLabel = `[perf][/api/saas/runtime][${perfId}] tenantSettingsService.getTenantSettings tenant=${tenantId}`;
+            console.time(settingsLabel);
+            try {
+                tenantSettings = await tenantSettingsService.getTenantSettings(tenantId);
+            } finally {
+                console.timeEnd(settingsLabel);
+            }
+
+            const modulesLabel = `[perf][/api/saas/runtime][${perfId}] waModuleService.listModules tenant=${tenantId}`;
+            console.time(modulesLabel);
+            try {
+                waModules = await waModuleService.listModules(tenantId, {
+                    includeInactive: false,
+                    userId: runtimeUserId
+                });
+            } finally {
+                console.timeEnd(modulesLabel);
+            }
+
+            const selectedModuleLabel = `[perf][/api/saas/runtime][${perfId}] waModuleService.getSelectedModule tenant=${tenantId}`;
+            console.time(selectedModuleLabel);
+            try {
+                selectedWaModule = await waModuleService.getSelectedModule(tenantId, {
+                    userId: runtimeUserId
+                });
+            } finally {
+                console.timeEnd(selectedModuleLabel);
+            }
         }
 
         return res.json({

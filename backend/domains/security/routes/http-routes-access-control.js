@@ -69,16 +69,25 @@
     });
 
     app.get('/api/admin/saas/access-profiles', (req, res) => {
+        const perfId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const totalLabel = `[perf][/api/admin/saas/access-profiles][${perfId}] total`;
+        console.time(totalLabel);
+        res.once('finish', () => {
+            console.timeEnd(totalLabel);
+        });
         if (!hasSaasControlReadAccess(req)) {
             return res.status(403).json({ ok: false, error: 'No autorizado.' });
         }
 
         const actorRole = getAuthRole(req);
         const isActorSuperAdmin = Boolean(req?.authContext?.user?.isSuperAdmin);
+        const catalogLabel = `[perf][/api/admin/saas/access-profiles][${perfId}] accessPolicyService.getAccessCatalog`;
+        console.time(catalogLabel);
         const catalog = accessPolicyService.getAccessCatalog({
             actorRole,
             isActorSuperAdmin
         });
+        console.timeEnd(catalogLabel);
 
         return res.json({ ok: true, ...catalog });
     });
@@ -235,15 +244,28 @@
     });
 
     app.get('/api/admin/saas/plans', (req, res) => {
+        const perfId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const totalLabel = `[perf][/api/admin/saas/plans][${perfId}] total`;
+        console.time(totalLabel);
+        res.once('finish', () => {
+            console.timeEnd(totalLabel);
+        });
         if (!hasSaasControlReadAccess(req, { requireSuperAdmin: true })) return res.status(403).json({ ok: false, error: 'No autorizado.' });
+        const matrixLabel = `[perf][/api/admin/saas/plans][${perfId}] planLimitsService.getPlanMatrix`;
+        console.time(matrixLabel);
         const matrix = planLimitsService.getPlanMatrix();
+        console.timeEnd(matrixLabel);
+        const overridesLabel = `[perf][/api/admin/saas/plans][${perfId}] planLimitsService.getPlanOverrides`;
+        console.time(overridesLabel);
+        const overrides = planLimitsService.getPlanOverrides();
+        console.timeEnd(overridesLabel);
         return res.json({
             ok: true,
             plans: Object.keys(matrix).map((plan) => ({
                 id: plan,
                 limits: matrix[plan]
             })),
-            overrides: planLimitsService.getPlanOverrides()
+            overrides
         });
     });
 

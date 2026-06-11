@@ -322,20 +322,39 @@ function createSocketChatListService({
 
         const resolvedTenantId = String(tenantId || 'default').trim() || 'default';
         const resolvedScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
+        const perfId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const totalLabel = `[perf][enrichItemsWithWindowData][${perfId}] total tenant=${resolvedTenantId} scope=${resolvedScopeModuleId || 'all'} items=${safeItems.length}`;
+        console.time(totalLabel);
         const baseChatIds = safeItems
             .map((item) => resolveBaseChatIdFromSummary(item))
             .filter(Boolean);
-        const lastCustomerMessageMap = await resolveLastCustomerMessageMap({
-            tenantId: resolvedTenantId,
-            chatIds: baseChatIds,
-            scopeModuleId: resolvedScopeModuleId
-        });
-        const activeSchedule = lastCustomerMessageMap.size > 0
-            ? await getActiveTenantSchedule(resolvedTenantId)
-            : null;
+        const lastMessageLabel = `[perf][enrichItemsWithWindowData][${perfId}] resolveLastCustomerMessageMap chatIds=${baseChatIds.length}`;
+        console.time(lastMessageLabel);
+        let lastCustomerMessageMap = new Map();
+        try {
+            lastCustomerMessageMap = await resolveLastCustomerMessageMap({
+                tenantId: resolvedTenantId,
+                chatIds: baseChatIds,
+                scopeModuleId: resolvedScopeModuleId
+            });
+        } finally {
+            console.timeEnd(lastMessageLabel);
+        }
+        const scheduleLabel = `[perf][enrichItemsWithWindowData][${perfId}] getActiveTenantSchedule`;
+        let activeSchedule = null;
+        if (lastCustomerMessageMap.size > 0) {
+            console.time(scheduleLabel);
+            try {
+                activeSchedule = await getActiveTenantSchedule(resolvedTenantId);
+            } finally {
+                console.timeEnd(scheduleLabel);
+            }
+        }
         const measuredAt = new Date().toISOString();
 
-        return safeItems.map((item) => {
+        const mapLabel = `[perf][enrichItemsWithWindowData][${perfId}] map items=${safeItems.length}`;
+        console.time(mapLabel);
+        const enrichedItems = safeItems.map((item) => {
             if (!item || typeof item !== 'object') return item;
             const itemScopeModuleId = normalizeScopedModuleId(
                 resolvedScopeModuleId
@@ -380,6 +399,10 @@ function createSocketChatListService({
                 laboralWindowMeasuredAt: hasValidLastCustomerDate ? measuredAt : null
             };
         });
+        console.timeEnd(mapLabel);
+        console.log(`[perf][enrichItemsWithWindowData][${perfId}] lastMessageMap=${lastCustomerMessageMap.size}`);
+        console.timeEnd(totalLabel);
+        return enrichedItems;
     };
 
     const loadPersistedChatStateMap = async (tenantId = 'default', chatIds = []) => {
@@ -529,7 +552,16 @@ function createSocketChatListService({
     const enrichChatPageWithWindowData = async (page = null, tenantId = 'default', scopeModuleId = '') => {
         const safePage = page && typeof page === 'object' ? page : {};
         const rawItems = Array.isArray(safePage.items) ? safePage.items : [];
-        const items = await enrichItemsWithChatListData(rawItems, tenantId, scopeModuleId);
+        const perfId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const timerLabel = `[perf][enrichChatPageWithWindowData][${perfId}] total tenant=${tenantId} scope=${scopeModuleId || 'all'} items=${rawItems.length}`;
+        console.time(timerLabel);
+        let items = [];
+        try {
+            items = await enrichItemsWithChatListData(rawItems, tenantId, scopeModuleId);
+        } finally {
+            console.timeEnd(timerLabel);
+        }
+        console.log(`[perf][enrichChatPageWithWindowData][${perfId}] items=${items.length}`);
         return {
             ...safePage,
             items
