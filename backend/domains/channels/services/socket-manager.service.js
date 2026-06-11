@@ -1296,7 +1296,29 @@ class SocketManager {
             }
         }
 
+        const campaignFilterRaw = String(filters?.campaignFilter || '').trim();
+        const campaignFilterParts = campaignFilterRaw.split('::');
+        const campaignFilterId = String(campaignFilterParts[0] || '').trim();
+        const campaignFilterModuleId = String(campaignFilterParts[1] || '').trim();
+        let campaignPhoneSet = new Set();
+        if (campaignFilterId && typeof this.campaignsService?.getPhonesByCampaign === 'function') {
+            try {
+                campaignPhoneSet = await this.campaignsService.getPhonesByCampaign(
+                    tenantId,
+                    campaignFilterId,
+                    campaignFilterModuleId
+                );
+            } catch (_) {
+                campaignPhoneSet = new Set();
+            }
+        }
+
         const normalized = summariesWithLabels
+            .filter((summary) => {
+                if (campaignPhoneSet.size <= 0) return true;
+                const digits = normalizePhoneDigits(summary?.phone || '');
+                return Boolean(digits) && campaignPhoneSet.has(digits);
+            })
             .filter((summary) => {
                 if (!normalizedScopeModuleId) return true;
                 const summaryScopeId = normalizeScopedModuleId(
