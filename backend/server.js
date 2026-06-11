@@ -654,25 +654,15 @@ const pattyHandoffJob = pattyHandoffJobService.createPattyHandoffJob({
 registerProcessHandlers();
 
 async function startServer() {
-    const listenReadyLabel = '[perf][startup] total-to-listen';
-    console.time(listenReadyLabel);
     if (getStorageDriver() === 'postgres') {
-        const migrationsLabel = '[perf][startup] runMigrations';
-        console.time(migrationsLabel);
         try {
             await runMigrations(getPostgresPool());
         } catch (error) {
             logger.warn('[migrations] failed: ' + String(error?.stack || error?.message || error));
-        } finally {
-            console.timeEnd(migrationsLabel);
         }
     }
 
-    const listenLabel = '[perf][startup] server.listen';
-    console.time(listenLabel);
     server.listen(PORT, () => {
-        console.timeEnd(listenLabel);
-        console.timeEnd(listenReadyLabel);
         logger.info(`Server running on port ${PORT}`);
         const runtime = typeof waClient.getRuntimeInfo === 'function'
             ? waClient.getRuntimeInfo()
@@ -685,18 +675,13 @@ async function startServer() {
         scheduleWaInitialize();
     });
 
-    const preloadLabel = '[perf][startup] preloadRuntimeServices';
-    console.time(preloadLabel);
     preloadRuntimeServices({
         saasControlService,
         planLimitsStoreService,
         accessPolicyService,
         customerService,
         logger
-    }).then(() => {
-        console.timeEnd(preloadLabel);
     }).catch((error) => {
-        console.timeEnd(preloadLabel);
         logger.warn('[Startup] background preload failed: ' + String(error?.stack || error?.message || error));
     });
 }

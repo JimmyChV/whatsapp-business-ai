@@ -1217,9 +1217,6 @@ class SocketManager {
         const queryLower = queryText.toLowerCase();
         const queryDigits = normalizePhoneDigits(queryText);
         const normalizedScopeModuleId = normalizeScopedModuleId(scopeModuleId || '');
-        const perfId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        const totalLabel = `[perf][getHistoryChatsPage][${perfId}] total tenant=${tenantId} scope=${normalizedScopeModuleId || 'all'} offset=${safeOffset} limit=${safeLimit}`;
-        console.time(totalLabel);
 
         const allRows = [];
         let cursor = 0;
@@ -1227,21 +1224,12 @@ class SocketManager {
         const maxRows = Math.max(1000, Number(process.env.HISTORY_FALLBACK_MAX_CHATS || 3000));
 
         while (allRows.length < maxRows) {
-            const batchLabel = `[perf][getHistoryChatsPage][${perfId}] listChats offset=${cursor} limit=${batchSize}`;
-            console.time(batchLabel);
-            let batch = [];
-            try {
-                batch = await messageHistoryService.listChats(tenantId, { limit: batchSize, offset: cursor });
-            } finally {
-                console.timeEnd(batchLabel);
-            }
-            console.log(`[perf][getHistoryChatsPage][${perfId}] listChats rows=${Array.isArray(batch) ? batch.length : 0} offset=${cursor}`);
+            const batch = await messageHistoryService.listChats(tenantId, { limit: batchSize, offset: cursor });
             if (!Array.isArray(batch) || batch.length === 0) break;
             allRows.push(...batch);
             cursor += batch.length;
             if (batch.length < batchSize) break;
         }
-        console.log(`[perf][getHistoryChatsPage][${perfId}] allRows=${allRows.length}`);
 
         const historySummaries = allRows
             .map((entry) => this.toHistoryChatSummary(entry))
@@ -1258,8 +1246,6 @@ class SocketManager {
 
             if (historyChatIds.length > 0) {
                 let labelsMap = {};
-                const labelsLabel = `[perf][getHistoryChatsPage][${perfId}] labels primary count=${historyChatIds.length}`;
-                console.time(labelsLabel);
                 try {
                     labelsMap = await tenantLabelService.listChatLabelsMap({
                         tenantId,
@@ -1268,8 +1254,6 @@ class SocketManager {
                     }) || {};
                 } catch (_) {
                     labelsMap = {};
-                } finally {
-                    console.timeEnd(labelsLabel);
                 }
 
                 if (normalizedScopeModuleId) {
@@ -1280,8 +1264,6 @@ class SocketManager {
                     });
 
                     if (missingChatIds.length > 0) {
-                        const fallbackLabelsLabel = `[perf][getHistoryChatsPage][${perfId}] labels fallback count=${missingChatIds.length}`;
-                        console.time(fallbackLabelsLabel);
                         try {
                             const fallbackMap = await tenantLabelService.listChatLabelsMap({
                                 tenantId,
@@ -1296,9 +1278,7 @@ class SocketManager {
                                     labelsMap[scopedKey] = fallbackMap[fallbackKey];
                                 }
                             }
-                        } catch (_) { } finally {
-                            console.timeEnd(fallbackLabelsLabel);
-                        }
+                        } catch (_) { }
                     }
                 }
 
@@ -1315,8 +1295,6 @@ class SocketManager {
             }
         }
 
-        const filterSortLabel = `[perf][getHistoryChatsPage][${perfId}] filter-sort`;
-        console.time(filterSortLabel);
         const normalized = summariesWithLabels
             .filter((summary) => {
                 if (!normalizedScopeModuleId) return true;
@@ -1334,27 +1312,17 @@ class SocketManager {
                 filters
             }))
             .sort((a, b) => (Number(b?.timestamp || 0) - Number(a?.timestamp || 0)));
-        console.timeEnd(filterSortLabel);
-        console.log(`[perf][getHistoryChatsPage][${perfId}] normalized=${normalized.length}`);
 
-        const enrichmentLabel = `[perf][getHistoryChatsPage][${perfId}] customer enrichment count=${Math.max(0, Math.min(safeLimit, normalized.length - safeOffset))}`;
-        console.time(enrichmentLabel);
-        let pageItems = [];
-        try {
-            pageItems = await Promise.all(
-                normalized
-                    .slice(safeOffset, safeOffset + safeLimit)
-                    .map((summary) => this.enrichHistoryChatSummary(tenantId, summary))
-            );
-        } finally {
-            console.timeEnd(enrichmentLabel);
-        }
+        const pageItems = await Promise.all(
+            normalized
+                .slice(safeOffset, safeOffset + safeLimit)
+                .map((summary) => this.enrichHistoryChatSummary(tenantId, summary))
+        );
         const nextOffset = safeOffset + pageItems.length;
         const total = normalized.length;
         const hasMore = nextOffset < total;
-        console.log(`[perf][getHistoryChatsPage][${perfId}] pageItems=${pageItems.length} total=${total}`);
 
-        const pageResult = {
+        return {
             items: pageItems,
             offset: safeOffset,
             limit: safeLimit,
@@ -1367,8 +1335,6 @@ class SocketManager {
             scopeModuleId: normalizedScopeModuleId || null,
             source: 'history_fallback'
         };
-        console.timeEnd(totalLabel);
-        return pageResult;
     }
 
     toHistoryMessagePayload(row = {}, chatId = '') {
