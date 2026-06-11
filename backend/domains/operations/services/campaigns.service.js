@@ -1378,6 +1378,62 @@ async function getCampaignsByPhones(tenantId = DEFAULT_TENANT_ID, phones = []) {
     }
 }
 
+async function getPhonesByCampaign(
+    tenantId = DEFAULT_TENANT_ID,
+    campaignId = '',
+    moduleId = ''
+) {
+    const cleanCampaignId = toText(campaignId);
+    if (!cleanCampaignId) return new Set();
+
+    const cleanTenantId = normalizeTenant(tenantId);
+    const cleanModuleId = normalizeModuleId(moduleId || '');
+
+    if (getStorageDriver() !== 'postgres') {
+        const store = await readStore(cleanTenantId);
+        return new Set(
+            ensureArray(store.recipients)
+                .filter((recipient) => toText(recipient?.campaignId) === cleanCampaignId)
+                .filter((recipient) => normalizeRecipientStatus(recipient?.status) === 'sent')
+                .filter((recipient) => {
+                    if (!cleanModuleId) return true;
+                    return normalizeModuleId(recipient?.moduleId || '') === cleanModuleId;
+                })
+                .map((recipient) => String(recipient?.phone || '').replace(/\D/g, ''))
+                .filter(Boolean)
+        );
+    }
+
+    try {
+        await ensurePostgresSchema();
+        const params = [cleanTenantId, cleanCampaignId];
+        let moduleSql = '';
+        if (cleanModuleId) {
+            params.push(cleanModuleId);
+            moduleSql = `AND LOWER(module_id) = LOWER($${params.length})`;
+        }
+
+        const result = await queryPostgres(
+            `SELECT DISTINCT phone
+               FROM tenant_campaign_recipients
+              WHERE tenant_id = $1
+                AND campaign_id = $2
+                AND status = 'sent'
+                ${moduleSql}`,
+            params
+        );
+
+        return new Set(
+            ensureArray(result?.rows)
+                .map((row) => String(row?.phone || '').replace(/\D/g, ''))
+                .filter(Boolean)
+        );
+    } catch (error) {
+        if (missingRelation(error)) return new Set();
+        throw error;
+    }
+}
+
 async function listSentCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
     const cleanTenantId = normalizeTenant(tenantId);
 
@@ -4646,6 +4702,7 @@ module.exports = {
     getCampaignById,
     listCampaigns,
     getCampaignsByPhones,
+    getPhonesByCampaign,
     listSentCampaignFilterOptions,
     startCampaign,
     sendCampaignBlock,

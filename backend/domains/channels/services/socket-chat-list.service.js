@@ -832,17 +832,16 @@ function createSocketChatListService({
                 labelTokenSetByChatId.set(chatId, toLabelTokenSet(labels));
             });
         }
-        let campaignPhoneMap = new Map();
-        if (needsCampaignFiltering && typeof campaignsService?.getCampaignsByPhones === 'function') {
-            const phones = chats
-                .map((chat) => extractPhoneFromChat(chat))
-                .filter(Boolean);
-            if (phones.length > 0) {
-                try {
-                    campaignPhoneMap = await campaignsService.getCampaignsByPhones(safeTenantId, phones);
-                } catch (error) {
-                    campaignPhoneMap = new Map();
-                }
+        let campaignPhoneSet = new Set();
+        if (needsCampaignFiltering && typeof campaignsService?.getPhonesByCampaign === 'function') {
+            try {
+                campaignPhoneSet = await campaignsService.getPhonesByCampaign(
+                    safeTenantId,
+                    campaignFilterId,
+                    campaignFilterModuleId
+                );
+            } catch (error) {
+                campaignPhoneSet = new Set();
             }
         }
 
@@ -882,15 +881,7 @@ function createSocketChatListService({
             }
             if (needsCampaignFiltering) {
                 const digits = normalizePhoneDigits(extractPhoneFromChat(chat) || '');
-                const campaigns = campaignPhoneMap.get(digits) || [];
-                const hasThisCampaign = campaigns.some((campaign) => {
-                    const sameCampaign = String(campaign?.campaignId || '') === campaignFilterId;
-                    if (!sameCampaign) return false;
-                    if (!campaignFilterModuleId) return true;
-                    const campaignModuleId = normalizeScopedModuleId(campaign?.scopeModuleId || campaign?.moduleId || '');
-                    return campaignModuleId === campaignFilterModuleId;
-                });
-                if (!hasThisCampaign) return;
+                if (!digits || !campaignPhoneSet.has(digits)) return;
             }
 
             included[idx] = true;
