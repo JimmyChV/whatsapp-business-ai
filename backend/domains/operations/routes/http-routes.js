@@ -626,6 +626,9 @@ function registerOperationsHttpRoutes({
             customer_types: [],
             assigned_users: []
         });
+    const listSentCampaignFilterOptions = typeof campaignsApi.listSentCampaignFilterOptions === 'function'
+        ? campaignsApi.listSentCampaignFilterOptions.bind(campaignsApi)
+        : async () => [];
     const listCampaignGeographyOptions = typeof campaignsApi.listCampaignGeographyOptions === 'function'
         ? campaignsApi.listCampaignGeographyOptions.bind(campaignsApi)
         : async () => ({
@@ -2435,15 +2438,11 @@ function registerOperationsHttpRoutes({
             if (!canReadCampaigns(req, tenantId)) {
                 return res.status(403).json({ ok: false, error: 'No autorizado.' });
             }
-            const [options, campaignsResult] = await Promise.all([
+            const [options, sentCampaigns] = await Promise.all([
                 listCampaignFilterOptions(tenantId),
-                listCampaigns(tenantId, {
-                    status: ['completed', 'running', 'paused'],
-                    limit: 100,
-                    offset: 0
-                })
+                listSentCampaignFilterOptions(tenantId)
             ]);
-            const campaignOptions = ensureArray(campaignsResult?.items)
+            const campaignOptions = ensureArray(sentCampaigns)
                 .map((campaign) => ({
                     campaignId: toText(campaign?.campaignId),
                     campaignName: toText(campaign?.campaignName),

@@ -1315,7 +1315,6 @@ async function getCampaignsByPhones(tenantId = DEFAULT_TENANT_ID, phones = []) {
         const store = await readStore(cleanTenantId);
         const campaignsById = new Map(
             ensureArray(store.campaigns)
-                .filter((campaign) => ['completed', 'running', 'paused'].includes(normalizeCampaignStatus(campaign?.status)))
                 .map((campaign) => [toText(campaign?.campaignId), campaign])
         );
         const map = new Map();
@@ -1355,7 +1354,6 @@ async function getCampaignsByPhones(tenantId = DEFAULT_TENANT_ID, phones = []) {
               WHERE cr.tenant_id = $1
                 AND cr.phone = ANY($2::text[])
                 AND cr.status = 'sent'
-                AND tc.status IN ('completed', 'running', 'paused')
               ORDER BY tc.campaign_id`,
             [cleanTenantId, normalizedPhones]
         );
@@ -1376,6 +1374,69 @@ async function getCampaignsByPhones(tenantId = DEFAULT_TENANT_ID, phones = []) {
         return map;
     } catch (error) {
         if (missingRelation(error)) return new Map();
+        throw error;
+    }
+}
+
+async function listSentCampaignFilterOptions(tenantId = DEFAULT_TENANT_ID) {
+    const cleanTenantId = normalizeTenant(tenantId);
+
+    if (getStorageDriver() !== 'postgres') {
+        const store = await readStore(cleanTenantId);
+        const sentCampaignIds = new Set(
+            ensureArray(store.recipients)
+                .filter((recipient) => normalizeRecipientStatus(recipient?.status) === 'sent')
+                .map((recipient) => toText(recipient?.campaignId))
+                .filter(Boolean)
+        );
+        return ensureArray(store.campaigns)
+            .filter((campaign) => sentCampaignIds.has(toText(campaign?.campaignId)))
+            .map((campaign) => ({
+                campaignId: toText(campaign?.campaignId),
+                campaignName: toText(campaign?.campaignName),
+                moduleId: normalizeModuleId(campaign?.moduleId || ''),
+                scopeModuleId: normalizeScopeModuleId(campaign?.scopeModuleId || campaign?.moduleId || ''),
+                status: normalizeCampaignStatus(campaign?.status)
+            }))
+            .filter((campaign) => campaign.campaignId);
+    }
+
+    try {
+        await ensurePostgresSchema();
+        const result = await queryPostgres(
+            `SELECT
+                    tc.campaign_id,
+                    tc.campaign_name,
+                    tc.module_id,
+                    tc.scope_module_id,
+                    tc.status,
+                    MAX(cr.sent_at) AS last_sent_at,
+                    MAX(cr.updated_at) AS last_recipient_updated_at,
+                    COUNT(*)::INT AS sent_count
+               FROM tenant_campaign_recipients cr
+               JOIN tenant_campaigns tc
+                 ON tc.tenant_id = cr.tenant_id
+                AND tc.campaign_id = cr.campaign_id
+              WHERE cr.tenant_id = $1
+                AND cr.status = 'sent'
+              GROUP BY tc.campaign_id, tc.campaign_name, tc.module_id, tc.scope_module_id, tc.status
+              ORDER BY COALESCE(MAX(cr.sent_at), MAX(cr.updated_at)) DESC, tc.campaign_name ASC
+              LIMIT 200`,
+            [cleanTenantId]
+        );
+
+        return ensureArray(result?.rows)
+            .map((row) => ({
+                campaignId: toText(row?.campaign_id),
+                campaignName: toText(row?.campaign_name),
+                moduleId: normalizeModuleId(row?.module_id || ''),
+                scopeModuleId: normalizeScopeModuleId(row?.scope_module_id || row?.module_id || ''),
+                status: normalizeCampaignStatus(row?.status),
+                sentCount: toInt(row?.sent_count, 0, { min: 0 })
+            }))
+            .filter((campaign) => campaign.campaignId);
+    } catch (error) {
+        if (missingRelation(error)) return [];
         throw error;
     }
 }
@@ -4579,6 +4640,7 @@ module.exports = {
     getCampaignById,
     listCampaigns,
     getCampaignsByPhones,
+    listSentCampaignFilterOptions,
     startCampaign,
     sendCampaignBlock,
     pauseCampaign,

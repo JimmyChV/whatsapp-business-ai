@@ -1556,7 +1556,8 @@ body {
 }
 
 .sidebar-campaign-menu {
-  top: 0;
+  top: auto;
+  bottom: 0;
   left: calc(100% + 10px);
   right: auto;
   width: min(280px, calc(100vw - 96px));
