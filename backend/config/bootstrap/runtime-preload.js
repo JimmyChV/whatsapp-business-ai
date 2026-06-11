@@ -53,16 +53,6 @@ async function preloadRuntimeServices({
             })
     ];
 
-    if (customerService && typeof customerService.ensurePostgresSchema === 'function') {
-        tasks.push(
-            Promise.resolve()
-                .then(() => customerService.ensurePostgresSchema())
-                .catch((error) => {
-                    logger.warn('[Customers] no se pudo precargar esquema Postgres: ' + String(error?.message || error));
-                })
-        );
-    }
-
     await Promise.all(tasks);
 }
 
