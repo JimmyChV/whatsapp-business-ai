@@ -11,6 +11,8 @@ const logger = require('./config/logger');
 const { createServerLifecycleHandlers } = require('./config/bootstrap/server-lifecycle');
 const { registerHttpRoutes } = require('./config/bootstrap/http-routes');
 const { preloadRuntimeServices } = require('./config/bootstrap/runtime-preload');
+const { getPostgresPool, getStorageDriver } = require('./config/persistence-runtime');
+const { runMigrations } = require('./db/migration-runner');
 const { parseCsvEnv, resolveAndValidatePublicHost } = require('./domains/security/helpers/security-utils');
 const RateLimiter = require('./config/rate-limiter');
 const { resolveRuntimeFlags, createCorsOriginChecker } = require('./config/runtime-flags');
@@ -652,6 +654,14 @@ const pattyHandoffJob = pattyHandoffJobService.createPattyHandoffJob({
 registerProcessHandlers();
 
 async function startServer() {
+    if (getStorageDriver() === 'postgres') {
+        try {
+            await runMigrations(getPostgresPool());
+        } catch (error) {
+            logger.warn('[migrations] failed: ' + String(error?.stack || error?.message || error));
+        }
+    }
+
     server.listen(PORT, () => {
         logger.info(`Server running on port ${PORT}`);
         const runtime = typeof waClient.getRuntimeInfo === 'function'
