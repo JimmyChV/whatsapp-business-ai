@@ -167,6 +167,20 @@ const SAAS_UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || DE
 const guardRateLimit = createGuardRateLimit(eventRateLimiter);
 const getSharpImageProcessor = createLazySharpLoader();
 const processedMediaCache = new Map();
+const HISTORY_PAGE_CACHE_TTL_MS = 5_000;
+const historyPageCache = new Map();
+const historyPageInFlight = new Map();
+
+function buildHistoryCacheKey(tenantId = '', options = {}) {
+    return [
+        String(tenantId || ''),
+        String(options?.scopeModuleId || ''),
+        String(options?.offset || 0),
+        String(options?.limit || 80),
+        String(options?.query || ''),
+        String(options?.filterKey || '')
+    ].join('::');
+}
 
 function toTitleCaseChatLabel(value = '') {
     return String(value || '')
@@ -1203,7 +1217,38 @@ class SocketManager {
         };
     }
 
-    async getHistoryChatsPage(tenantId, {
+    async getHistoryChatsPage(tenantId, options = {}) {
+        const key = buildHistoryCacheKey(tenantId, options);
+        const cached = historyPageCache.get(key);
+        if (cached && (Date.now() - cached.at) < HISTORY_PAGE_CACHE_TTL_MS) {
+            return cached.page;
+        }
+        if (cached) {
+            historyPageCache.delete(key);
+        }
+
+        if (historyPageInFlight.has(key)) {
+            return historyPageInFlight.get(key);
+        }
+
+        const promise = (async () => {
+            try {
+                const page = await this._getHistoryChatsPageImpl(tenantId, options);
+                historyPageCache.set(key, {
+                    page,
+                    at: Date.now()
+                });
+                return page;
+            } finally {
+                historyPageInFlight.delete(key);
+            }
+        })();
+
+        historyPageInFlight.set(key, promise);
+        return promise;
+    }
+
+    async _getHistoryChatsPageImpl(tenantId, {
         offset = 0,
         limit = 80,
         query = '',
