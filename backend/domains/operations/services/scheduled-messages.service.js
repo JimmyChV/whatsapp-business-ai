@@ -1,9 +1,15 @@
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const { URL } = require('url');
 const {
     getStorageDriver,
     queryPostgres
 } = require('../../../config/persistence-runtime');
+const { resolveAndValidatePublicHost } = require('../../security/helpers/security-utils');
 const { parseScopedChatId } = require('../../channels/helpers/chat-scope.helpers');
+const { createMessageMediaAssetsHelpers } = require('../../channels/helpers/message-media-assets.helpers');
+const { createLazySharpLoader } = require('../../channels/helpers/socket-runtime-bootstrap.helpers');
 
 const STATUS_PENDING = 'pending';
 const STATUS_SENT = 'sent';
@@ -12,6 +18,29 @@ const STATUS_FAILED = 'failed';
 const SCHEDULE_ABSOLUTE = 'absolute';
 const SCHEDULE_BEFORE_WINDOW = 'before_window_expiry';
 const CUSTOMER_WINDOW_MS = 24 * 60 * 60 * 1000;
+const QUICK_REPLY_MEDIA_MAX_BYTES = Math.max(
+    256 * 1024,
+    Number(process.env.QUICK_REPLY_MEDIA_MAX_BYTES || process.env.ADMIN_ASSET_QUICK_REPLY_MAX_BYTES || (50 * 1024 * 1024))
+);
+const QUICK_REPLY_MEDIA_TIMEOUT_MS = Math.max(
+    2000,
+    Number(process.env.QUICK_REPLY_MEDIA_TIMEOUT_MS || 15000)
+);
+const DEFAULT_SAAS_UPLOADS_ROOT = path.resolve(__dirname, '../../../uploads');
+const SAAS_UPLOADS_ROOT = path.resolve(String(process.env.SAAS_UPLOADS_DIR || DEFAULT_SAAS_UPLOADS_ROOT).trim() || DEFAULT_SAAS_UPLOADS_ROOT);
+
+const { fetchQuickReplyMedia } = createMessageMediaAssetsHelpers({
+    fs,
+    path,
+    URL,
+    Buffer,
+    resolveAndValidatePublicHost,
+    getSharpImageProcessor: createLazySharpLoader(),
+    SAAS_UPLOADS_ROOT,
+    QUICK_REPLY_MEDIA_MAX_BYTES,
+    QUICK_REPLY_MEDIA_TIMEOUT_MS,
+    processedMediaCache: new Map()
+});
 
 function assertPostgresScheduledMessages() {
     if (getStorageDriver() !== 'postgres') {
@@ -505,19 +534,33 @@ async function processOne(row = {}, { waClient, logger } = {}) {
         };
         let sent = null;
         if (mediaEntry?.url) {
-            if (!String(mediaEntry.url).startsWith('data:') || !waClient?.sendMedia) {
+            if (!waClient?.sendMedia) {
+                await markFailed(item.tenantId, item.messageId, 'media_unavailable');
+                return { status: STATUS_FAILED, reason: 'media_unavailable' };
+            }
+            const fetchedMedia = await fetchQuickReplyMedia(mediaEntry.url, {
+                tenantId: item.tenantId,
+                maxBytes: QUICK_REPLY_MEDIA_MAX_BYTES,
+                timeoutMs: QUICK_REPLY_MEDIA_TIMEOUT_MS,
+                mimeHint: mediaEntry.mimeType || item.mediaMimeType,
+                fileNameHint: mediaEntry.fileName || item.mediaFileName
+            });
+            if (!fetchedMedia?.mediaData) {
                 await markFailed(item.tenantId, item.messageId, 'media_unavailable');
                 return { status: STATUS_FAILED, reason: 'media_unavailable' };
             }
             sent = await waClient.sendMedia(
                 item.chatId,
-                mediaEntry.url,
-                mediaEntry.mimeType || 'application/octet-stream',
-                mediaEntry.fileName || 'adjunto',
+                fetchedMedia.mediaData,
+                fetchedMedia.mimetype || mediaEntry.mimeType || 'application/octet-stream',
+                fetchedMedia.filename || mediaEntry.fileName || 'adjunto',
                 body,
                 false,
                 null,
-                metadata
+                {
+                    ...metadata,
+                    mediaUrl: String(fetchedMedia.publicUrl || fetchedMedia.sourceUrl || mediaEntry.url || '').trim() || null
+                }
             );
         } else {
             sent = await waClient.sendMessage(item.chatId, body, { metadata });
@@ -562,7 +605,17 @@ async function processPendingMessages({ waClient, logger, limit = 25 } = {}) {
     );
     const results = [];
     for (const row of rows) {
-        results.push(await processOne(row, { waClient, logger }));
+        try {
+            results.push(await processOne(row, { waClient, logger }));
+        } catch (error) {
+            const reason = text(error?.message || error || 'process_failed').slice(0, 500);
+            logger?.warn?.('[ScheduledMessages] process failed: ' + reason);
+            await markFailed(row.tenant_id, row.message_id, reason || 'process_failed');
+            results.push({ status: STATUS_FAILED, reason });
+        }
+    }
+    if (results.length > 0) {
+        logger?.info?.('[ScheduledMessages] processed ' + String(results.length) + ' due message(s)');
     }
     return { processed: results.length, results };
 }

@@ -68,6 +68,22 @@ function formatBytes(value = 0) {
     return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function getStatusLabel(status = '') {
+    const value = text(status).toLowerCase();
+    if (value === 'sent') return 'enviado';
+    if (value === 'failed') return 'fallido';
+    if (value === 'cancelled') return 'cancelado';
+    return 'pendiente';
+}
+
+function getStatusColor(status = '') {
+    const value = text(status).toLowerCase();
+    if (value === 'sent') return '#16a34a';
+    if (value === 'failed') return '#dc2626';
+    if (value === 'cancelled') return '#6b7280';
+    return '#ca8a04';
+}
+
 const ScheduledMessageModal = ({
     isOpen,
     onClose,
@@ -103,6 +119,7 @@ const ScheduledMessageModal = ({
         telefono: text(activeChat?.phone)
     }), [activeChat]);
     const pendingItems = useMemo(() => items.filter((item) => String(item?.status || '') === 'pending'), [items]);
+    const historyItems = useMemo(() => items.slice(0, 10), [items]);
     const hasRequiredContent = Boolean(messageText.trim() || mediaAssets.length > 0 || text(form.mediaUrl));
 
     const loadItems = async () => {
@@ -428,30 +445,42 @@ const ScheduledMessageModal = ({
 
                     <aside style={{ border: '1px solid var(--chat-card-border, #e5e7eb)', borderRadius: '8px', padding: '12px', background: 'var(--chat-card-surface, #fff)', alignSelf: 'start' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', fontWeight: 800 }}>
-                            <Clock size={17} /> Pendientes ({pendingItems.length})
+                            <Clock size={17} /> Programados ({pendingItems.length})
                         </div>
                         {loading ? (
                             <small>Cargando...</small>
-                        ) : pendingItems.length === 0 ? (
-                            <small>No hay mensajes pendientes para este chat.</small>
+                        ) : historyItems.length === 0 ? (
+                            <small>No hay mensajes programados para este chat.</small>
                         ) : (
                             <div style={{ display: 'grid', gap: '8px' }}>
-                                {pendingItems.map((item) => (
+                                {historyItems.map((item) => (
                                     <div key={item.messageId} style={{ border: '1px solid var(--chat-card-border, #e5e7eb)', borderRadius: '8px', padding: '10px', display: 'grid', gap: '8px' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
                                             <strong style={{ fontSize: '0.82rem' }}>{formatSchedule(item.scheduledFor)}</strong>
-                                            <span style={{ color: '#16a34a', fontSize: '0.72rem', fontWeight: 800 }}>pendiente</span>
+                                            <span style={{ color: getStatusColor(item.status), fontSize: '0.72rem', fontWeight: 800 }}>
+                                                {getStatusLabel(item.status)}
+                                            </span>
                                         </div>
                                         <div style={{ fontSize: '0.78rem', lineHeight: 1.35, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>
                                             {item.messageText || (item.mediaUrl ? 'Adjunto programado' : 'Sin texto')}
                                         </div>
+                                        {item.status === 'failed' && item.failReason ? (
+                                            <small style={{ color: '#b91c1c' }}>Error: {item.failReason}</small>
+                                        ) : null}
+                                        {item.status === 'cancelled' && item.cancelReason ? (
+                                            <small style={{ color: '#6b7280' }}>Cancelado: {item.cancelReason}</small>
+                                        ) : null}
                                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
-                                            <button type="button" className="saas-btn-cancel" onClick={() => startEdit(item)} title="Reprogramar">
-                                                <Pencil size={14} />
-                                            </button>
-                                            <button type="button" className="saas-btn-cancel" onClick={() => cancelItem(item)} title="Cancelar programacion">
-                                                <Trash2 size={14} />
-                                            </button>
+                                            {item.status === 'pending' ? (
+                                                <>
+                                                    <button type="button" className="saas-btn-cancel" onClick={() => startEdit(item)} title="Reprogramar">
+                                                        <Pencil size={14} />
+                                                    </button>
+                                                    <button type="button" className="saas-btn-cancel" onClick={() => cancelItem(item)} title="Cancelar programacion">
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </>
+                                            ) : null}
                                         </div>
                                     </div>
                                 ))}

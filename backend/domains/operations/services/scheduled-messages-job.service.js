@@ -27,6 +27,7 @@ function createScheduledMessagesJob({
     return {
         start() {
             if (timer || initialTimer) return;
+            logger?.info?.('[ScheduledMessagesJob] first tick scheduled in ' + String(Math.max(0, Number(initialDelayMs) || 90_000)) + 'ms');
             const startInterval = () => {
                 initialTimer = null;
                 tick();
