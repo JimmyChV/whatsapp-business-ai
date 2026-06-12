@@ -105,6 +105,29 @@ function resolveUnreadState(incoming = {}, previous = {}) {
     };
 }
 
+function resolveNullableTextField(incoming = {}, previous = {}, key = '') {
+    const hasIncoming = hasPayloadField(incoming, key);
+    const incomingValue = hasIncoming ? String(incoming?.[key] || '').trim() : '';
+    if (incomingValue) return incomingValue;
+    return String(previous?.[key] || '').trim() || null;
+}
+
+function resolveNullableNumberField(incoming = {}, previous = {}, key = '') {
+    const hasIncoming = hasPayloadField(incoming, key);
+    const incomingValue = hasIncoming ? Number(incoming?.[key]) : Number.NaN;
+    if (Number.isFinite(incomingValue)) return incomingValue;
+    const previousValue = Number(previous?.[key]);
+    return Number.isFinite(previousValue) ? previousValue : null;
+}
+
+function resolveWindowOpenState(incoming = {}, previous = {}) {
+    const incomingExpiresAt = String(incoming?.windowExpiresAt || '').trim();
+    if (incomingExpiresAt && typeof incoming?.windowOpen === 'boolean') return incoming.windowOpen;
+    if (typeof previous?.windowOpen === 'boolean') return previous.windowOpen;
+    if (typeof incoming?.windowOpen === 'boolean' && !previous?.windowExpiresAt) return incoming.windowOpen;
+    return null;
+}
+
 function resolveBaseChatId(parseScopedChatId, value = '') {
     const raw = String(value || '').trim();
     if (!raw) return '';
@@ -658,6 +681,12 @@ export default function useSocketChatConversationEvents({
                         lastMessageModuleImageUrl: normalizeModuleImageUrl(chat?.lastMessageModuleImageUrl || chat?.sentViaModuleImageUrl || previous?.lastMessageModuleImageUrl || '') || null,
                         lastMessageTransport: String(chat?.lastMessageTransport || chat?.sentViaTransport || previous?.lastMessageTransport || '').trim().toLowerCase() || null,
                         lastMessageChannelType: String(chat?.lastMessageChannelType || chat?.sentViaChannelType || previous?.lastMessageChannelType || '').trim().toLowerCase() || null,
+                        lastCustomerMessageAt: resolveNullableTextField(chat, previous, 'lastCustomerMessageAt'),
+                        windowOpen: resolveWindowOpenState(chat, previous),
+                        windowExpiresAt: resolveNullableTextField(chat, previous, 'windowExpiresAt'),
+                        windowStatus: resolveNullableTextField(chat, previous, 'windowStatus'),
+                        laboralMinutesRemaining: resolveNullableNumberField(chat, previous, 'laboralMinutesRemaining'),
+                        laboralWindowMeasuredAt: resolveNullableTextField(chat, previous, 'laboralWindowMeasuredAt'),
                         ...unreadState
                     };
                     return hydratedChat;
@@ -684,15 +713,19 @@ export default function useSocketChatConversationEvents({
                 const hasFreshLaboralMinutes = Object.prototype.hasOwnProperty.call(freshChat || {}, 'laboralMinutesRemaining');
                 const hasFreshMeasuredAt = Object.prototype.hasOwnProperty.call(freshChat || {}, 'laboralWindowMeasuredAt');
                 const hasFreshLastCustomer = Object.prototype.hasOwnProperty.call(freshChat || {}, 'lastCustomerMessageAt');
+                const freshWindowExpiresAt = String(freshChat?.windowExpiresAt || '').trim();
+                const freshLastCustomerMessageAt = String(freshChat?.lastCustomerMessageAt || '').trim();
+                const freshWindowStatus = String(freshChat?.windowStatus || '').trim();
+                const freshLaboralWindowMeasuredAt = String(freshChat?.laboralWindowMeasuredAt || '').trim();
                 const unreadState = resolveUnreadState(freshChat, chat);
                 return {
                     ...chat,
-                    windowOpen: hasFreshWindowOpen ? Boolean(freshChat.windowOpen) : chat.windowOpen,
-                    windowExpiresAt: hasFreshWindowExpiresAt ? (String(freshChat.windowExpiresAt || '').trim() || null) : (chat.windowExpiresAt || null),
-                    windowStatus: hasFreshWindowStatus ? (String(freshChat.windowStatus || '').trim() || null) : (chat.windowStatus || null),
-                    laboralMinutesRemaining: hasFreshLaboralMinutes ? freshChat.laboralMinutesRemaining : chat.laboralMinutesRemaining,
-                    laboralWindowMeasuredAt: hasFreshMeasuredAt ? (freshChat.laboralWindowMeasuredAt || null) : (chat.laboralWindowMeasuredAt || null),
-                    lastCustomerMessageAt: hasFreshLastCustomer ? (freshChat.lastCustomerMessageAt || null) : (chat.lastCustomerMessageAt || null),
+                    windowOpen: freshWindowExpiresAt && hasFreshWindowOpen ? Boolean(freshChat.windowOpen) : chat.windowOpen,
+                    windowExpiresAt: hasFreshWindowExpiresAt && freshWindowExpiresAt ? freshWindowExpiresAt : (chat.windowExpiresAt || null),
+                    windowStatus: hasFreshWindowStatus && freshWindowStatus ? freshWindowStatus : (chat.windowStatus || null),
+                    laboralMinutesRemaining: hasFreshLaboralMinutes && Number.isFinite(Number(freshChat.laboralMinutesRemaining)) ? freshChat.laboralMinutesRemaining : chat.laboralMinutesRemaining,
+                    laboralWindowMeasuredAt: hasFreshMeasuredAt && freshLaboralWindowMeasuredAt ? freshLaboralWindowMeasuredAt : (chat.laboralWindowMeasuredAt || null),
+                    lastCustomerMessageAt: hasFreshLastCustomer && freshLastCustomerMessageAt ? freshLastCustomerMessageAt : (chat.lastCustomerMessageAt || null),
                     lastMessageAt: freshChat.lastMessageAt || chat.lastMessageAt || null,
                     ...unreadState
                 };

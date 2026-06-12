@@ -48,9 +48,11 @@ const formatClockTime = (date = new Date()) => {
       hour: 'numeric',
       minute: '2-digit',
       hour12: true
-    }).format(date);
+    }).format(date).replace(/\s+/g, '').toLowerCase();
   } catch (_) {
-    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+      .replace(/\s+/g, '')
+      .toLowerCase();
   }
 };
 
@@ -76,9 +78,9 @@ const formatWindowExpiryLabel = (expiresAt = null, nowMs = Date.now()) => {
   const expiryKey = getDateKey(expiresAt);
   const timeLabel = formatClockTime(expiresAt);
 
-  if (expiryKey === todayKey) return `Hoy ${timeLabel}`;
-  if (expiryKey === tomorrowKey) return `Mañana ${timeLabel}`;
-  return `${formatExpiryDate(expiresAt)} ${timeLabel}`;
+  if (expiryKey === todayKey) return `Vence hoy a las ${timeLabel}`;
+  if (expiryKey === tomorrowKey) return `Vence mañana a las ${timeLabel}`;
+  return `Vence ${formatExpiryDate(expiresAt)} a las ${timeLabel}`;
 };
 
 const resolveRealMinutesRemaining = (expiresAt = null, nowMs = Date.now()) => {
@@ -103,6 +105,17 @@ export function getWindowState(source = {}, nowMs = Date.now()) {
   const realMinutesRemaining = resolveRealMinutesRemaining(expiresAt, nowMs);
   const expiryLabel = formatWindowExpiryLabel(expiresAt, nowMs);
   const windowStatus = normalizeWindowStatus(source?.windowStatus);
+  if (!expiresAt) {
+    return {
+      status: 'unknown',
+      laborMinutesRemaining: null,
+      realMinutesRemaining: null,
+      active: false,
+      expiring: false,
+      expired: false,
+      label: ''
+    };
+  }
   const hasWindowOpen = typeof source?.windowOpen === 'boolean';
   const isExpired = windowStatus === 'expired' || (Boolean(expiresAt) && (
     hasWindowOpen

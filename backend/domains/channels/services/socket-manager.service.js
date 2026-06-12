@@ -1118,6 +1118,14 @@ class SocketManager {
             lastMessageModuleImageUrl,
             lastMessageTransport,
             lastMessageChannelType,
+            lastCustomerMessageAt: metadata?.lastCustomerMessageAt || null,
+            windowOpen: typeof metadata?.windowOpen === 'boolean' ? metadata.windowOpen : null,
+            windowExpiresAt: metadata?.windowExpiresAt || null,
+            laboralMinutesRemaining: Number.isFinite(Number(metadata?.laboralMinutesRemaining))
+                ? Math.max(0, Math.floor(Number(metadata.laboralMinutesRemaining)))
+                : null,
+            windowStatus: metadata?.windowStatus || null,
+            laboralWindowMeasuredAt: metadata?.laboralWindowMeasuredAt || null,
             archived: Boolean(entry?.archived),
             pinned: Boolean(entry?.pinned)
         };
