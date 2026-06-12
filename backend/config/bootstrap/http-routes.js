@@ -17,6 +17,7 @@ function registerHttpRoutes({
     registerTenantCustomerHttpRoutes,
     registerOperationsHttpRoutes,
     registerOperationsOrdersHttpRoutes,
+    registerOperationsScheduledMessagesHttpRoutes,
     registerOperationsReportsHttpRoutes,
     registerTenantRuntimeSettingsHttpRoutes,
     registerTenantLabelsQuickRepliesHttpRoutes,
@@ -121,6 +122,7 @@ function registerHttpRoutes({
     updateProduct,
     messageHistoryService,
     chatReadStateService,
+    scheduledMessagesService,
     parseCsvEnv,
     resolveAndValidatePublicHost,
     logger,
@@ -292,6 +294,14 @@ function registerHttpRoutes({
             chatAssignmentPolicyService,
             normalizeScopeModuleId,
             emitCommercialStatusUpdated: socketManager?.emitCommercialStatusUpdated?.bind(socketManager) || null
+        });
+    }
+
+    if (typeof registerOperationsScheduledMessagesHttpRoutes === 'function') {
+        registerOperationsScheduledMessagesHttpRoutes({
+            app,
+            authService,
+            scheduledMessagesService
         });
     }
 

@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Smile, Bot, Sparkles, X, Paperclip, Send, MapPin, LayoutTemplate, Store } from 'lucide-react';
+import { Smile, Sparkles, X, Paperclip, Send, MapPin, LayoutTemplate, Store, CalendarClock } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { EmojiStyle, SkinTonePickerLocation, SkinTones, SuggestionMode, Theme } from 'emoji-picker-react';
 import { isRealQuickReplyMediaAsset } from '../core/helpers/appChat.helpers';
+import ScheduledMessageModal from './ScheduledMessageModal';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const GLOBAL_SKIN_TONE_STORAGE_KEY = 'chat-emoji-skin-tone:global';
@@ -77,6 +78,7 @@ const ChatInput = ({
     onOpenSendTemplate,
     onSendNativeCatalog,
     buildApiHeaders,
+    activeChatDetails = null,
     windowOpen = true,
     focusChatKey = ''
 }) => {
@@ -87,6 +89,7 @@ const ChatInput = ({
     const [selectionState, setSelectionState] = useState(null);
     const [preferredSkinTone, setPreferredSkinTone] = useState(SkinTones.NEUTRAL);
     const [localText, setLocalText] = useState(() => String(inputText || ''));
+    const [scheduledModalOpen, setScheduledModalOpen] = useState(false);
     const inputRef = useRef(null);
     const chatInputRef = useRef(null);
     const lastExternalTextRef = useRef(String(inputText || ''));
@@ -494,6 +497,13 @@ const ChatInput = ({
 
     return (
         <div className="chat-input-area chat-input-area-pro" style={{ position: 'relative' }} ref={chatInputRef}>
+            <ScheduledMessageModal
+                isOpen={scheduledModalOpen}
+                onClose={() => setScheduledModalOpen(false)}
+                activeChat={activeChatDetails}
+                quickReplies={quickReplies}
+                buildApiHeaders={buildApiHeaders}
+            />
             {editingMessage?.id && (
                 <div style={{
                     position: 'absolute',
@@ -834,15 +844,14 @@ const ChatInput = ({
             </div>
 
             <div className="chat-input-right-actions">
-                {/* AI button */}
                 <button
                     className="btn-icon"
-                    style={{ color: isAiLoading ? '#8a2be2' : '#8696a0', animation: isAiLoading ? 'spin 2s linear infinite' : 'none' }}
-                    onClick={onRequestAiSuggestion}
-                    title="Sugerencia IA (/ayudar)"
-                    disabled={isTemplateOnlyMode}
+                    style={{ color: '#8696a0' }}
+                    onClick={() => setScheduledModalOpen(true)}
+                    title="Programar respuesta"
+                    disabled={Boolean(editingMessage?.id) || !activeChatDetails?.id}
                 >
-                    <Bot size={22} />
+                    <CalendarClock size={22} />
                 </button>
                 {/* Send button */}
                 <button

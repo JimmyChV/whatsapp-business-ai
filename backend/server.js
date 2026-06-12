@@ -80,12 +80,15 @@ const {
     chatAssignmentInactivityJobService,
     pattyHandoffJobService,
     quoteExpiryJobService,
+    scheduledMessagesService,
+    scheduledMessagesJobService,
     operationsKpiService,
     aiService,
     globalLabelsService,
     opsTelemetry,
     registerOperationsHttpRoutes,
     registerOperationsOrdersHttpRoutes,
+    registerOperationsScheduledMessagesHttpRoutes,
     registerOperationsReportsHttpRoutes,
     registerOperationsUtilityHttpRoutes,
     registerOperationsHealthHttpRoutes
@@ -492,6 +495,7 @@ registerHttpRoutes({
     registerTenantCustomerHttpRoutes,
     registerOperationsHttpRoutes,
     registerOperationsOrdersHttpRoutes,
+    registerOperationsScheduledMessagesHttpRoutes,
     registerOperationsReportsHttpRoutes,
     registerTenantRuntimeSettingsHttpRoutes,
     registerTenantLabelsQuickRepliesHttpRoutes,
@@ -595,6 +599,7 @@ registerHttpRoutes({
     updateProduct,
     messageHistoryService,
     chatReadStateService,
+    scheduledMessagesService,
     parseCsvEnv,
     resolveAndValidatePublicHost,
     logger,
@@ -650,6 +655,11 @@ const pattyHandoffJob = pattyHandoffJobService.createPattyHandoffJob({
     opsTelemetry,
     emitToTenant: (...args) => socketManager.emitToTenant(...args)
 });
+const scheduledMessagesJob = scheduledMessagesJobService.createScheduledMessagesJob({
+    scheduledMessagesService,
+    waClient,
+    logger
+});
 
 registerProcessHandlers();
 
@@ -674,6 +684,7 @@ async function startServer() {
         campaignDispatcherJob.start();
         quoteExpiryJob.start();
         pattyHandoffJob.start();
+        scheduledMessagesJob.start();
         scheduleWaInitialize();
         if (!heavyWarmupsScheduled) {
             heavyWarmupsScheduled = true;
