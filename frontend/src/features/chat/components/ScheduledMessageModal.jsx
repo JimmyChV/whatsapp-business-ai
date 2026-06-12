@@ -106,6 +106,8 @@ const ScheduledMessageModal = ({
     const [minutesBeforeWindow, setMinutesBeforeWindow] = useState(60);
     const [cancelOnCustomerReply, setCancelOnCustomerReply] = useState(true);
     const [form, setForm] = useState({ mediaUrl: '', mediaAssets: [] });
+    const [quickReplySearch, setQuickReplySearch] = useState('');
+    const [quickReplyPickerOpen, setQuickReplyPickerOpen] = useState(false);
 
     const mediaAssets = useMemo(() => normalizeQuickReplyMediaAssets(form.mediaAssets, {
         url: form.mediaUrl,
@@ -120,6 +122,21 @@ const ScheduledMessageModal = ({
     }), [activeChat]);
     const pendingItems = useMemo(() => items.filter((item) => String(item?.status || '') === 'pending'), [items]);
     const historyItems = useMemo(() => items.slice(0, 10), [items]);
+    const filteredQuickReplies = useMemo(() => {
+        const source = Array.isArray(quickReplies) ? quickReplies : [];
+        const query = text(quickReplySearch).toLowerCase();
+        if (!query) return source.slice(0, 8);
+        return source
+            .filter((item) => [
+                item?.label,
+                item?.name,
+                item?.title,
+                item?.text,
+                item?.shortcut,
+                item?.category
+            ].some((value) => text(value).toLowerCase().includes(query)))
+            .slice(0, 12);
+    }, [quickReplies, quickReplySearch]);
     const hasRequiredContent = Boolean(messageText.trim() || mediaAssets.length > 0 || text(form.mediaUrl));
 
     const loadItems = async () => {
@@ -144,6 +161,8 @@ const ScheduledMessageModal = ({
         setMinutesBeforeWindow(60);
         setCancelOnCustomerReply(true);
         setForm({ mediaUrl: '', mediaAssets: [] });
+        setQuickReplySearch('');
+        setQuickReplyPickerOpen(false);
     };
 
     useEffect(() => {
@@ -154,10 +173,7 @@ const ScheduledMessageModal = ({
 
     if (!isOpen) return null;
 
-    const handleQuickReplySelection = (event) => {
-        const id = text(event.target.value);
-        if (!id) return;
-        const item = quickReplies.find((entry) => String(entry?.id || entry?.label || '') === id);
+    const loadQuickReplyIntoForm = (item = null) => {
         if (item) {
             const assets = normalizeQuickReplyMediaAssets(item.mediaAssets, {
                 url: item.mediaUrl,
@@ -174,8 +190,9 @@ const ScheduledMessageModal = ({
                 mediaFileName: primaryMedia?.fileName || '',
                 mediaSizeBytes: primaryMedia?.sizeBytes || null
             });
+            setQuickReplySearch('');
+            setQuickReplyPickerOpen(false);
         }
-        event.target.value = '';
     };
 
     const handleUploadFiles = async (fileList) => {
@@ -350,14 +367,84 @@ const ScheduledMessageModal = ({
                 <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 280px', gap: '14px', padding: '0 18px 18px', overflow: 'auto' }}>
                     <div style={{ minWidth: 0 }}>
                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '10px' }}>
-                            <select onChange={handleQuickReplySelection} defaultValue="" className="saas-input" style={{ minHeight: '36px', minWidth: '300px' }}>
-                                <option value="">Cargar respuesta rapida para editar...</option>
-                                {quickReplies.map((item) => (
-                                    <option key={String(item?.id || item?.label)} value={String(item?.id || item?.label || '')}>
-                                        {String(item?.label || 'Respuesta')}
-                                    </option>
-                                ))}
-                            </select>
+                            <div style={{ position: 'relative', minWidth: '320px', flex: '1 1 420px' }}>
+                                <input
+                                    type="search"
+                                    className="saas-input"
+                                    value={quickReplySearch}
+                                    onChange={(event) => {
+                                        setQuickReplySearch(event.target.value);
+                                        setQuickReplyPickerOpen(true);
+                                    }}
+                                    onFocus={() => setQuickReplyPickerOpen(true)}
+                                    placeholder="Buscar respuesta rapida para editar..."
+                                    autoComplete="off"
+                                    style={{ minHeight: '36px', width: '100%' }}
+                                />
+                                {quickReplyPickerOpen ? (
+                                    <div
+                                        style={{
+                                            position: 'absolute',
+                                            left: 0,
+                                            right: 0,
+                                            top: 'calc(100% + 4px)',
+                                            zIndex: 2147483001,
+                                            maxHeight: '240px',
+                                            overflow: 'auto',
+                                            border: '1px solid var(--chat-card-border, #d9d3ca)',
+                                            borderRadius: '8px',
+                                            background: 'var(--chat-card-surface, #fff)',
+                                            boxShadow: '0 16px 36px rgba(15, 23, 42, 0.18)',
+                                            padding: '6px'
+                                        }}
+                                    >
+                                        {(Array.isArray(quickReplies) ? quickReplies : []).length === 0 ? (
+                                            <div style={{ padding: '10px', color: '#6b7280', fontSize: '0.82rem' }}>
+                                                No hay respuestas rapidas disponibles para este modulo.
+                                            </div>
+                                        ) : filteredQuickReplies.length === 0 ? (
+                                            <div style={{ padding: '10px', color: '#6b7280', fontSize: '0.82rem' }}>
+                                                No se encontraron respuestas con esa busqueda.
+                                            </div>
+                                        ) : (
+                                            filteredQuickReplies.map((item) => {
+                                                const label = text(item?.label || item?.name || item?.title || 'Respuesta');
+                                                const preview = text(item?.text || item?.body || '');
+                                                const assets = normalizeQuickReplyMediaAssets(item?.mediaAssets, {
+                                                    url: item?.mediaUrl,
+                                                    mimeType: item?.mediaMimeType,
+                                                    fileName: item?.mediaFileName,
+                                                    sizeBytes: item?.mediaSizeBytes
+                                                });
+                                                return (
+                                                    <button
+                                                        key={String(item?.id || item?.label || label)}
+                                                        type="button"
+                                                        onMouseDown={(event) => event.preventDefault()}
+                                                        onClick={() => loadQuickReplyIntoForm(item)}
+                                                        style={{
+                                                            width: '100%',
+                                                            display: 'grid',
+                                                            gap: '3px',
+                                                            padding: '9px 10px',
+                                                            border: 'none',
+                                                            borderRadius: '7px',
+                                                            background: 'transparent',
+                                                            textAlign: 'left',
+                                                            cursor: 'pointer'
+                                                        }}
+                                                    >
+                                                        <span style={{ fontWeight: 800, color: '#111827' }}>{label}</span>
+                                                        <span style={{ fontSize: '0.76rem', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                            {preview || (assets.length > 0 ? `${assets.length} adjunto(s)` : 'Sin texto')}
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                ) : null}
+                            </div>
                             <div style={{ display: 'inline-flex', gap: '6px', flexWrap: 'wrap' }}>
                                 <button type="button" className={scheduleType === 'absolute' ? '' : 'saas-btn-cancel'} onClick={() => setScheduleType('absolute')}>
                                     Hora exacta
