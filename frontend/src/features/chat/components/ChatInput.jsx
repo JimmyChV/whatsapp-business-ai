@@ -79,6 +79,7 @@ const ChatInput = ({
     onSendNativeCatalog,
     buildApiHeaders,
     activeChatDetails = null,
+    activeTenantId = '',
     windowOpen = true,
     focusChatKey = ''
 }) => {
@@ -503,6 +504,7 @@ const ChatInput = ({
                 activeChat={activeChatDetails}
                 quickReplies={quickReplies}
                 buildApiHeaders={buildApiHeaders}
+                activeTenantId={activeTenantId}
             />
             {editingMessage?.id && (
                 <div style={{

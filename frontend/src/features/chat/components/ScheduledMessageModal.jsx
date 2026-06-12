@@ -1,5 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CalendarClock, Clock, X, Sparkles, Trash2, Pencil } from 'lucide-react';
+import { CalendarClock, Clock, Trash2, Pencil } from 'lucide-react';
+import AutoMessageEditor from '../../saas/components/AutoMessageEditor';
+import {
+    QUICK_REPLY_ACCEPT_VALUE,
+    QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL,
+    QUICK_REPLY_ALLOWED_MIME_TYPES,
+    QUICK_REPLY_DEFAULT_MAX_UPLOAD_MB,
+    QUICK_REPLY_EXT_TO_MIME,
+    getQuickReplyAssetDisplayName,
+    isQuickReplyImageAsset,
+    normalizeQuickReplyMediaAssets,
+    resolveQuickReplyAssetPreviewUrl
+} from '../../saas/helpers/quickReplies.helpers';
+import {
+    buildDataUrlWithMime,
+    resolveQuickReplyMimeType
+} from '../../saas/helpers/assets.helpers';
 import {
     cancelScheduledMessage,
     createScheduledMessage,
@@ -14,11 +30,9 @@ const RELATIVE_PRESETS = [
     { label: '4 h antes', value: 240 }
 ];
 
-const VARIABLE_CHIPS = [
-    { label: 'Nombre', token: '{{cliente}}' },
-    { label: 'Modulo', token: '{{modulo}}' },
-    { label: 'Telefono', token: '{{telefono}}' }
-];
+function text(value = '') {
+    return String(value ?? '').trim();
+}
 
 function toDateTimeLocal(value = null) {
     const date = value ? new Date(value) : new Date(Date.now() + 60 * 60 * 1000);
@@ -45,11 +59,12 @@ function formatSchedule(value = '') {
     }).format(date);
 }
 
-function resolvePreview(text = '', variables = {}) {
-    return String(text || '').replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (match, key) => {
-        const value = variables[key];
-        return value === null || value === undefined || value === '' ? match : String(value);
-    });
+function formatBytes(value = 0) {
+    const size = Number(value || 0);
+    if (!Number.isFinite(size) || size <= 0) return '';
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 const ScheduledMessageModal = ({
@@ -57,10 +72,11 @@ const ScheduledMessageModal = ({
     onClose,
     activeChat,
     quickReplies = [],
-    buildApiHeaders
+    buildApiHeaders,
+    activeTenantId = ''
 }) => {
-    const chatId = String(activeChat?.id || '').trim();
-    const scopeModuleId = String(activeChat?.scopeModuleId || '').trim().toLowerCase();
+    const chatId = text(activeChat?.id);
+    const scopeModuleId = text(activeChat?.scopeModuleId).toLowerCase();
     const windowExpiresAt = activeChat?.windowExpiresAt || null;
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -72,14 +88,21 @@ const ScheduledMessageModal = ({
     const [scheduledFor, setScheduledFor] = useState(() => toDateTimeLocal());
     const [minutesBeforeWindow, setMinutesBeforeWindow] = useState(60);
     const [cancelOnCustomerReply, setCancelOnCustomerReply] = useState(true);
+    const [form, setForm] = useState({ mediaUrl: '', mediaAssets: [] });
 
+    const mediaAssets = useMemo(() => normalizeQuickReplyMediaAssets(form.mediaAssets, {
+        url: form.mediaUrl,
+        mimeType: form.mediaMimeType,
+        fileName: form.mediaFileName,
+        sizeBytes: form.mediaSizeBytes
+    }), [form.mediaAssets, form.mediaFileName, form.mediaMimeType, form.mediaSizeBytes, form.mediaUrl]);
     const variables = useMemo(() => ({
-        cliente: String(activeChat?.name || activeChat?.displayName || activeChat?.phone || '').trim(),
-        modulo: String(activeChat?.moduleName || '').trim(),
-        telefono: String(activeChat?.phone || '').trim()
+        cliente: text(activeChat?.name || activeChat?.displayName || activeChat?.phone),
+        modulo: text(activeChat?.moduleName),
+        telefono: text(activeChat?.phone)
     }), [activeChat]);
-    const preview = useMemo(() => resolvePreview(messageText, variables), [messageText, variables]);
     const pendingItems = useMemo(() => items.filter((item) => String(item?.status || '') === 'pending'), [items]);
+    const hasRequiredContent = Boolean(messageText.trim() || mediaAssets.length > 0 || text(form.mediaUrl));
 
     const loadItems = async () => {
         if (!chatId) return;
@@ -95,28 +118,6 @@ const ScheduledMessageModal = ({
         }
     };
 
-    useEffect(() => {
-        if (!isOpen) return;
-        setEditingId('');
-        setMessageText('');
-        setScheduleType('absolute');
-        setScheduledFor(toDateTimeLocal());
-        setMinutesBeforeWindow(60);
-        setCancelOnCustomerReply(true);
-        loadItems();
-    }, [isOpen, chatId, scopeModuleId]);
-
-    if (!isOpen) return null;
-
-    const insertToken = (token = '') => setMessageText((prev) => `${prev}${prev && !prev.endsWith(' ') ? ' ' : ''}${token}`);
-    const selectQuickReply = (event) => {
-        const id = String(event.target.value || '');
-        if (!id) return;
-        const item = quickReplies.find((entry) => String(entry?.id || entry?.label || '') === id);
-        if (item) setMessageText(String(item?.text || '').trim());
-        event.target.value = '';
-    };
-
     const resetForm = () => {
         setEditingId('');
         setMessageText('');
@@ -124,18 +125,126 @@ const ScheduledMessageModal = ({
         setScheduledFor(toDateTimeLocal());
         setMinutesBeforeWindow(60);
         setCancelOnCustomerReply(true);
+        setForm({ mediaUrl: '', mediaAssets: [] });
+    };
+
+    useEffect(() => {
+        if (!isOpen) return;
+        resetForm();
+        loadItems();
+    }, [isOpen, chatId, scopeModuleId]);
+
+    if (!isOpen) return null;
+
+    const handleQuickReplySelection = (event) => {
+        const id = text(event.target.value);
+        if (!id) return;
+        const item = quickReplies.find((entry) => String(entry?.id || entry?.label || '') === id);
+        if (item) {
+            const assets = normalizeQuickReplyMediaAssets(item.mediaAssets, {
+                url: item.mediaUrl,
+                mimeType: item.mediaMimeType,
+                fileName: item.mediaFileName,
+                sizeBytes: item.mediaSizeBytes
+            });
+            const primaryMedia = assets[0] || null;
+            setMessageText(String(item?.text || '').trim());
+            setForm({
+                mediaAssets: assets,
+                mediaUrl: primaryMedia?.url || '',
+                mediaMimeType: primaryMedia?.mimeType || '',
+                mediaFileName: primaryMedia?.fileName || '',
+                mediaSizeBytes: primaryMedia?.sizeBytes || null
+            });
+        }
+        event.target.value = '';
+    };
+
+    const handleUploadFiles = async (fileList) => {
+        const files = Array.from(fileList || []).filter(Boolean);
+        if (files.length === 0) return;
+        const maxBytes = QUICK_REPLY_DEFAULT_MAX_UPLOAD_MB * 1024 * 1024;
+        const uploadedAssets = [];
+        for (const file of files) {
+            const mimeType = resolveQuickReplyMimeType(file, {
+                allowedMimeTypes: QUICK_REPLY_ALLOWED_MIME_TYPES,
+                extToMime: QUICK_REPLY_EXT_TO_MIME
+            });
+            if (!QUICK_REPLY_ALLOWED_MIME_TYPES.includes(mimeType)) {
+                throw new Error(`Formato no permitido para ${String(file?.name || 'adjunto')}. Usa ${QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL}.`);
+            }
+            if (Number(file?.size || 0) > maxBytes) {
+                throw new Error(`El archivo ${String(file?.name || 'adjunto')} supera el maximo de ${QUICK_REPLY_DEFAULT_MAX_UPLOAD_MB} MB.`);
+            }
+            const dataUrl = await buildDataUrlWithMime(file, mimeType);
+            uploadedAssets.push({
+                url: dataUrl,
+                mimeType,
+                fileName: String(file?.name || 'adjunto').trim() || 'adjunto',
+                sizeBytes: Number(file?.size || 0) || null
+            });
+        }
+        setForm((prev) => {
+            const mergedAssets = normalizeQuickReplyMediaAssets([
+                ...(Array.isArray(prev?.mediaAssets) ? prev.mediaAssets : []),
+                ...uploadedAssets
+            ]);
+            const primaryMedia = mergedAssets[0] || null;
+            return {
+                ...prev,
+                mediaAssets: mergedAssets,
+                mediaUrl: primaryMedia?.url || '',
+                mediaMimeType: primaryMedia?.mimeType || '',
+                mediaFileName: primaryMedia?.fileName || '',
+                mediaSizeBytes: primaryMedia?.sizeBytes || null
+            };
+        });
+    };
+
+    const removeAssetAt = (index = -1) => {
+        const targetIndex = Number(index);
+        if (!Number.isInteger(targetIndex) || targetIndex < 0) return;
+        setForm((prev) => {
+            const nextAssets = normalizeQuickReplyMediaAssets(prev?.mediaAssets, {
+                url: prev?.mediaUrl,
+                mimeType: prev?.mediaMimeType,
+                fileName: prev?.mediaFileName,
+                sizeBytes: prev?.mediaSizeBytes
+            }).filter((_asset, assetIndex) => assetIndex !== targetIndex);
+            const primaryMedia = nextAssets[0] || null;
+            return {
+                ...prev,
+                mediaAssets: nextAssets,
+                mediaUrl: primaryMedia?.url || '',
+                mediaMimeType: primaryMedia?.mimeType || '',
+                mediaFileName: primaryMedia?.fileName || '',
+                mediaSizeBytes: primaryMedia?.sizeBytes || null
+            };
+        });
     };
 
     const submit = async () => {
-        if (!messageText.trim()) {
-            setError('Escribe el mensaje a programar.');
+        if (!hasRequiredContent) {
+            setError('Agrega texto o un adjunto para programar.');
             return;
         }
+        if (!cancelOnCustomerReply) {
+            const shouldContinue = globalThis.confirm(
+                'Este mensaje se enviara aunque el cliente responda antes. ' +
+                'Aceptar: programarlo para enviar siempre. Cancelar: volver y marcar "No enviar si responde".'
+            );
+            if (!shouldContinue) return;
+        }
+        const primaryMedia = mediaAssets[0] || null;
         const payload = {
             chatId,
             scopeModuleId,
             messageText,
             variables,
+            mediaAssets,
+            mediaUrl: primaryMedia?.url || '',
+            mediaMimeType: primaryMedia?.mimeType || '',
+            mediaFileName: primaryMedia?.fileName || '',
             scheduleType,
             scheduledFor: scheduleType === 'absolute' ? fromDateTimeLocal(scheduledFor) : undefined,
             minutesBeforeWindow: scheduleType === 'before_window_expiry' ? minutesBeforeWindow : undefined,
@@ -160,12 +269,25 @@ const ScheduledMessageModal = ({
     };
 
     const startEdit = (item) => {
+        const assets = normalizeQuickReplyMediaAssets(item?.mediaAssets, {
+            url: item?.mediaUrl,
+            mimeType: item?.mediaMimeType,
+            fileName: item?.mediaFileName
+        });
+        const primaryMedia = assets[0] || null;
         setEditingId(String(item?.messageId || ''));
         setMessageText(String(item?.messageText || ''));
         setScheduleType(String(item?.scheduleType || 'absolute'));
         setScheduledFor(toDateTimeLocal(item?.scheduledFor));
         setMinutesBeforeWindow(Number(item?.minutesBeforeWindow || 60));
         setCancelOnCustomerReply(item?.cancelOnCustomerReply !== false);
+        setForm({
+            mediaAssets: assets,
+            mediaUrl: primaryMedia?.url || '',
+            mediaMimeType: primaryMedia?.mimeType || '',
+            mediaFileName: primaryMedia?.fileName || '',
+            mediaSizeBytes: primaryMedia?.sizeBytes || null
+        });
     };
 
     const cancelItem = async (item) => {
@@ -185,171 +307,156 @@ const ScheduledMessageModal = ({
     };
 
     return (
-        <div className="chat-lightbox" onClick={onClose} style={{ zIndex: 90 }}>
+        <div
+            className="saas-quick-reply-builder-overlay"
+            onClick={onClose}
+            style={{ zIndex: 100, alignItems: 'flex-start', paddingTop: '34px' }}
+        >
             <div
-                className="chat-lightbox-content"
+                className="saas-quick-reply-builder-shell"
                 onClick={(event) => event.stopPropagation()}
-                style={{
-                    width: 'min(720px, calc(100vw - 28px))',
-                    maxHeight: 'min(760px, calc(100vh - 28px))',
-                    overflow: 'auto',
-                    padding: 0,
-                    background: '#fff',
-                    color: '#111827',
-                    borderRadius: '8px'
-                }}
+                style={{ width: 'min(1180px, calc(100vw - 32px))', maxHeight: 'calc(100vh - 64px)' }}
             >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px', borderBottom: '1px solid #e5e7eb' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <CalendarClock size={22} />
-                        <div>
-                            <div style={{ fontWeight: 800, fontSize: '1rem' }}>Programar respuesta</div>
-                            <div style={{ color: '#6b7280', fontSize: '0.82rem' }}>{variables.cliente || 'Chat activo'}</div>
-                        </div>
+                <div className="saas-quick-reply-builder-header">
+                    <div>
+                        <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <CalendarClock size={19} /> Programar respuesta
+                        </h4>
+                        <small>{variables.cliente || 'Chat activo'} · se cancela si el cliente responde antes, salvo que lo desactives.</small>
                     </div>
-                    <button type="button" className="btn-icon" onClick={onClose} title="Cerrar">
-                        <X size={20} />
-                    </button>
+                    <button type="button" className="saas-btn-cancel" disabled={saving} onClick={onClose}>Cerrar</button>
                 </div>
 
-                <div style={{ display: 'grid', gap: '14px', padding: '16px 18px' }}>
-                    {error && <div style={{ padding: '10px 12px', borderRadius: '8px', background: '#fef2f2', color: '#991b1b', fontSize: '0.84rem' }}>{error}</div>}
+                {error ? <div className="saas-meta-template-error" style={{ margin: '0 18px 10px' }}>{error}</div> : null}
 
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <select onChange={selectQuickReply} defaultValue="" style={{ minHeight: '36px', borderRadius: '8px', border: '1px solid #d1d5db', padding: '0 10px' }}>
-                            <option value="">Usar respuesta rapida...</option>
-                            {quickReplies.map((item) => (
-                                <option key={String(item?.id || item?.label)} value={String(item?.id || item?.label || '')}>
-                                    {String(item?.label || 'Respuesta')}
-                                </option>
-                            ))}
-                        </select>
-                        {VARIABLE_CHIPS.map((chip) => (
-                            <button
-                                key={chip.token}
-                                type="button"
-                                onClick={() => insertToken(chip.token)}
-                                style={{ border: '1px solid #d1d5db', background: '#f9fafb', borderRadius: '8px', padding: '8px 10px', cursor: 'pointer' }}
-                            >
-                                {chip.label}
-                            </button>
-                        ))}
-                    </div>
-
-                    <textarea
-                        value={messageText}
-                        onChange={(event) => setMessageText(event.target.value)}
-                        rows={5}
-                        placeholder="Escribe el mensaje que se enviara despues..."
-                        style={{ width: '100%', resize: 'vertical', borderRadius: '8px', border: '1px solid #d1d5db', padding: '12px', font: 'inherit' }}
-                    />
-
-                    <div style={{ padding: '10px 12px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', whiteSpace: 'pre-wrap', color: '#374151', fontSize: '0.88rem' }}>
-                        {preview || 'Vista previa'}
-                    </div>
-
-                    <div style={{ display: 'grid', gap: '10px' }}>
-                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                            <button
-                                type="button"
-                                onClick={() => setScheduleType('absolute')}
-                                style={{ border: '1px solid #d1d5db', background: scheduleType === 'absolute' ? '#dcfce7' : '#fff', borderRadius: '8px', padding: '9px 12px', cursor: 'pointer' }}
-                            >
-                                Hora exacta
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setScheduleType('before_window_expiry')}
-                                disabled={!windowExpiresAt}
-                                style={{ border: '1px solid #d1d5db', background: scheduleType === 'before_window_expiry' ? '#dcfce7' : '#fff', borderRadius: '8px', padding: '9px 12px', cursor: windowExpiresAt ? 'pointer' : 'not-allowed', opacity: windowExpiresAt ? 1 : 0.55 }}
-                            >
-                                Antes de vencer
-                            </button>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 280px', gap: '14px', padding: '0 18px 18px', overflow: 'auto' }}>
+                    <div style={{ minWidth: 0 }}>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '10px' }}>
+                            <select onChange={handleQuickReplySelection} defaultValue="" className="saas-input" style={{ minHeight: '36px', minWidth: '300px' }}>
+                                <option value="">Cargar respuesta rapida para editar...</option>
+                                {quickReplies.map((item) => (
+                                    <option key={String(item?.id || item?.label)} value={String(item?.id || item?.label || '')}>
+                                        {String(item?.label || 'Respuesta')}
+                                    </option>
+                                ))}
+                            </select>
+                            <div style={{ display: 'inline-flex', gap: '6px', flexWrap: 'wrap' }}>
+                                <button type="button" className={scheduleType === 'absolute' ? '' : 'saas-btn-cancel'} onClick={() => setScheduleType('absolute')}>
+                                    Hora exacta
+                                </button>
+                                <button type="button" className={scheduleType === 'before_window_expiry' ? '' : 'saas-btn-cancel'} onClick={() => setScheduleType('before_window_expiry')} disabled={!windowExpiresAt}>
+                                    Antes de vencer
+                                </button>
+                            </div>
                         </div>
 
-                        {scheduleType === 'absolute' ? (
-                            <input
-                                type="datetime-local"
-                                value={scheduledFor}
-                                onChange={(event) => setScheduledFor(event.target.value)}
-                                style={{ width: 'fit-content', minHeight: '38px', borderRadius: '8px', border: '1px solid #d1d5db', padding: '0 10px' }}
-                            />
-                        ) : (
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-                                {RELATIVE_PRESETS.map((preset) => (
-                                    <button
-                                        key={preset.value}
-                                        type="button"
-                                        onClick={() => setMinutesBeforeWindow(preset.value)}
-                                        style={{ border: '1px solid #d1d5db', background: minutesBeforeWindow === preset.value ? '#dcfce7' : '#fff', borderRadius: '8px', padding: '9px 12px', cursor: 'pointer' }}
-                                    >
-                                        {preset.label}
-                                    </button>
-                                ))}
-                                <span style={{ color: '#6b7280', fontSize: '0.82rem' }}>
-                                    Vence: {windowExpiresAt ? formatSchedule(windowExpiresAt) : 'sin dato'}
-                                </span>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '12px' }}>
+                            {scheduleType === 'absolute' ? (
+                                <input
+                                    type="datetime-local"
+                                    value={scheduledFor}
+                                    onChange={(event) => setScheduledFor(event.target.value)}
+                                    className="saas-input"
+                                    style={{ width: 'fit-content' }}
+                                />
+                            ) : (
+                                <>
+                                    {RELATIVE_PRESETS.map((preset) => (
+                                        <button
+                                            key={preset.value}
+                                            type="button"
+                                            className={minutesBeforeWindow === preset.value ? '' : 'saas-btn-cancel'}
+                                            onClick={() => setMinutesBeforeWindow(preset.value)}
+                                        >
+                                            {preset.label}
+                                        </button>
+                                    ))}
+                                    <small>Vence: {windowExpiresAt ? formatSchedule(windowExpiresAt) : 'sin dato'}</small>
+                                </>
+                            )}
+                            <label className="saas-admin-module-toggle" style={{ marginLeft: 'auto' }} title="Si lo desmarcas, se pedira confirmacion porque el mensaje saldra aunque el cliente responda antes.">
+                                <input
+                                    type="checkbox"
+                                    checked={cancelOnCustomerReply}
+                                    onChange={(event) => setCancelOnCustomerReply(event.target.checked)}
+                                />
+                                <span>No enviar si responde</span>
+                            </label>
+                        </div>
+                        {!cancelOnCustomerReply ? (
+                            <div className="saas-alert-warning" style={{ marginBottom: '10px' }}>
+                                Este mensaje se enviara aunque el cliente responda antes. Al programarlo te pedire confirmacion.
                             </div>
-                        )}
-                    </div>
+                        ) : null}
 
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.88rem' }}>
-                        <input
-                            type="checkbox"
-                            checked={cancelOnCustomerReply}
-                            onChange={(event) => setCancelOnCustomerReply(event.target.checked)}
+                        <AutoMessageEditor
+                            value={messageText}
+                            onChange={setMessageText}
+                            disabled={saving}
+                            placeholder="Escribe el mensaje programado. Puedes usar variables y adjuntos."
+                            showMediaUpload={true}
+                            showPreview={true}
+                            tenantId={activeTenantId}
+                            form={form}
+                            setForm={setForm}
+                            acceptValue={QUICK_REPLY_ACCEPT_VALUE}
+                            mediaAssets={mediaAssets}
+                            mediaUrl={form.mediaUrl}
+                            onMediaUrlChange={(url) => setForm((prev) => ({ ...prev, mediaUrl: url }))}
+                            onUploadFiles={handleUploadFiles}
+                            onUploadError={(err) => setError(String(err?.message || err || 'No se pudo adjuntar archivo.'))}
+                            showFlowNote={false}
+                            removeAssetAt={removeAssetAt}
+                            getAssetDisplayName={getQuickReplyAssetDisplayName}
+                            formatBytes={formatBytes}
+                            resolveAssetPreviewUrl={resolveQuickReplyAssetPreviewUrl}
+                            isImageAsset={isQuickReplyImageAsset}
+                            hasRequiredContent={hasRequiredContent}
+                            saveDisabled={saving || !hasRequiredContent}
+                            mode={editingId ? 'edit' : 'create'}
                         />
-                        Cancelar si el cliente responde antes
-                    </label>
-
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                        {editingId && (
-                            <button type="button" onClick={resetForm} style={{ border: '1px solid #d1d5db', background: '#fff', borderRadius: '8px', padding: '10px 14px', cursor: 'pointer' }}>
-                                Nuevo
+                        <div className="saas-admin-form-row saas-admin-form-row--actions saas-quick-reply-builder-actions" style={{ marginTop: '12px' }}>
+                            <button type="button" disabled={saving || !hasRequiredContent} onClick={submit}>
+                                {editingId ? 'Guardar programacion' : 'Programar respuesta'}
                             </button>
-                        )}
-                        <button
-                            type="button"
-                            onClick={submit}
-                            disabled={saving || !messageText.trim()}
-                            style={{ border: '1px solid #16a34a', background: '#16a34a', color: '#fff', borderRadius: '8px', padding: '10px 16px', cursor: saving ? 'wait' : 'pointer', opacity: saving || !messageText.trim() ? 0.65 : 1 }}
-                        >
-                            {editingId ? 'Guardar cambios' : 'Programar'}
-                        </button>
+                            <button type="button" className="saas-btn-cancel" disabled={saving} onClick={resetForm}>
+                                Limpiar
+                            </button>
+                        </div>
                     </div>
 
-                    <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '14px' }}>
+                    <aside style={{ border: '1px solid var(--chat-card-border, #e5e7eb)', borderRadius: '8px', padding: '12px', background: 'var(--chat-card-surface, #fff)', alignSelf: 'start' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', fontWeight: 800 }}>
                             <Clock size={17} /> Pendientes ({pendingItems.length})
                         </div>
                         {loading ? (
-                            <div style={{ color: '#6b7280', fontSize: '0.86rem' }}>Cargando...</div>
+                            <small>Cargando...</small>
                         ) : pendingItems.length === 0 ? (
-                            <div style={{ color: '#6b7280', fontSize: '0.86rem' }}>No hay mensajes pendientes para este chat.</div>
+                            <small>No hay mensajes pendientes para este chat.</small>
                         ) : (
                             <div style={{ display: 'grid', gap: '8px' }}>
                                 {pendingItems.map((item) => (
-                                    <div key={item.messageId} style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '10px', display: 'grid', gap: '8px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
-                                            <strong style={{ fontSize: '0.88rem' }}>{formatSchedule(item.scheduledFor)}</strong>
-                                            <span style={{ color: '#16a34a', fontSize: '0.78rem', fontWeight: 800 }}>pendiente</span>
+                                    <div key={item.messageId} style={{ border: '1px solid var(--chat-card-border, #e5e7eb)', borderRadius: '8px', padding: '10px', display: 'grid', gap: '8px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+                                            <strong style={{ fontSize: '0.82rem' }}>{formatSchedule(item.scheduledFor)}</strong>
+                                            <span style={{ color: '#16a34a', fontSize: '0.72rem', fontWeight: 800 }}>pendiente</span>
                                         </div>
-                                        <div style={{ color: '#374151', fontSize: '0.86rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                            {item.messageText}
+                                        <div style={{ fontSize: '0.78rem', lineHeight: 1.35, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>
+                                            {item.messageText || (item.mediaUrl ? 'Adjunto programado' : 'Sin texto')}
                                         </div>
-                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                                            <button type="button" onClick={() => startEdit(item)} title="Reprogramar" style={{ border: '1px solid #d1d5db', background: '#fff', borderRadius: '8px', padding: '7px 10px', cursor: 'pointer' }}>
-                                                <Pencil size={15} />
+                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
+                                            <button type="button" className="saas-btn-cancel" onClick={() => startEdit(item)} title="Reprogramar">
+                                                <Pencil size={14} />
                                             </button>
-                                            <button type="button" onClick={() => cancelItem(item)} title="Cancelar programacion" style={{ border: '1px solid #fecaca', background: '#fff', color: '#b91c1c', borderRadius: '8px', padding: '7px 10px', cursor: 'pointer' }}>
-                                                <Trash2 size={15} />
+                                            <button type="button" className="saas-btn-cancel" onClick={() => cancelItem(item)} title="Cancelar programacion">
+                                                <Trash2 size={14} />
                                             </button>
                                         </div>
                                     </div>
                                 ))}
                             </div>
                         )}
-                    </div>
+                    </aside>
                 </div>
             </div>
         </div>

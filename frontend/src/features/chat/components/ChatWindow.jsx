@@ -1155,6 +1155,7 @@ const ChatWindow = ({
                         onOpenMapPicker={() => openMapModal({ query: '' })}
                         buildApiHeaders={buildApiHeaders}
                         activeChatDetails={activeChatDetails}
+                        activeTenantId={activeTenantId}
                         windowOpen={conversationWindowOpen}
                         focusChatKey={activeChatScopedId}
                     />

@@ -43,6 +43,36 @@ function normalizeVariables(value = {}) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
+function normalizeMediaAssets(value = [], fallback = {}) {
+    const source = Array.isArray(value) ? value : [];
+    const items = source
+        .map((entry) => {
+            const asset = entry && typeof entry === 'object' ? entry : {};
+            const url = text(asset.url || asset.mediaUrl || asset.dataUrl || '');
+            if (!url) return null;
+            return {
+                url,
+                mimeType: lower(asset.mimeType || asset.mediaMimeType || ''),
+                fileName: text(asset.fileName || asset.mediaFileName || asset.filename || ''),
+                sizeBytes: Number.isFinite(Number(asset.sizeBytes || asset.mediaSizeBytes))
+                    ? Number(asset.sizeBytes || asset.mediaSizeBytes)
+                    : null
+            };
+        })
+        .filter(Boolean);
+    if (items.length > 0) return items;
+    const fallbackUrl = text(fallback.url || fallback.mediaUrl || '');
+    if (!fallbackUrl) return [];
+    return [{
+        url: fallbackUrl,
+        mimeType: lower(fallback.mimeType || fallback.mediaMimeType || ''),
+        fileName: text(fallback.fileName || fallback.mediaFileName || ''),
+        sizeBytes: Number.isFinite(Number(fallback.sizeBytes || fallback.mediaSizeBytes))
+            ? Number(fallback.sizeBytes || fallback.mediaSizeBytes)
+            : null
+    }];
+}
+
 function resolveChatScope(chatId = '', scopeModuleId = '') {
     const parsed = parseScopedChatId(chatId || '');
     return {
@@ -64,6 +94,10 @@ function normalizeRow(row = {}) {
         createdByUserId: row.created_by_user_id || '',
         messageText: row.message_text || '',
         variables: row.variables && typeof row.variables === 'object' ? row.variables : {},
+        mediaAssets: Array.isArray(row.media_assets) ? row.media_assets : [],
+        mediaUrl: row.media_url || null,
+        mediaMimeType: row.media_mime_type || null,
+        mediaFileName: row.media_file_name || null,
         scheduleType: row.schedule_type || SCHEDULE_ABSOLUTE,
         scheduledFor: row.scheduled_for || null,
         minutesBeforeWindow: Number.isFinite(Number(row.minutes_before_window)) ? Number(row.minutes_before_window) : null,
@@ -173,7 +207,6 @@ async function createScheduledMessage(tenantId, payload = {}) {
     if (!cleanTenantId) throw new Error('tenantId requerido.');
     if (!chatId) throw new Error('chatId requerido.');
     if (!createdByUserId) throw new Error('createdByUserId requerido.');
-    if (!messageText) throw new Error('messageText requerido.');
 
     const schedule = await resolveSchedule({
         tenantId: cleanTenantId,
@@ -191,18 +224,28 @@ async function createScheduledMessage(tenantId, payload = {}) {
     const lastInboundAt = toIsoDate(payload.lastCustomerMessageAtSchedule || payload.last_customer_message_at_schedule)
         || await getLatestInboundAt(cleanTenantId, chatId, scopeModuleId);
     const variables = normalizeVariables(payload.variables);
+    const mediaAssets = normalizeMediaAssets(payload.mediaAssets || payload.media_assets, {
+        mediaUrl: payload.mediaUrl || payload.media_url,
+        mediaMimeType: payload.mediaMimeType || payload.media_mime_type,
+        mediaFileName: payload.mediaFileName || payload.media_file_name,
+        mediaSizeBytes: payload.mediaSizeBytes || payload.media_size_bytes
+    });
+    const primaryMedia = mediaAssets[0] || null;
+    if (!messageText && mediaAssets.length === 0) throw new Error('messageText o adjunto requerido.');
     const messageId = makeMessageId();
     const { rows } = await queryPostgres(
         `INSERT INTO tenant_scheduled_messages (
             message_id, tenant_id, chat_id, scope_module_id, created_by_user_id,
-            message_text, variables, schedule_type, scheduled_for, minutes_before_window,
+            message_text, variables, media_assets, media_url, media_mime_type, media_file_name,
+            schedule_type, scheduled_for, minutes_before_window,
             window_expires_at_at_schedule, cancel_on_customer_reply,
             last_customer_message_at_schedule, created_at, updated_at
         ) VALUES (
             $1, $2, $3, $4, $5,
-            $6, $7::jsonb, $8, $9::timestamptz, $10,
-            $11::timestamptz, $12,
-            $13::timestamptz, NOW(), NOW()
+            $6, $7::jsonb, $8::jsonb, $9, $10, $11,
+            $12, $13::timestamptz, $14,
+            $15::timestamptz, $16,
+            $17::timestamptz, NOW(), NOW()
         )
         RETURNING *`,
         [
@@ -213,6 +256,10 @@ async function createScheduledMessage(tenantId, payload = {}) {
             createdByUserId,
             messageText,
             JSON.stringify(variables),
+            JSON.stringify(mediaAssets),
+            primaryMedia?.url || null,
+            primaryMedia?.mimeType || null,
+            primaryMedia?.fileName || null,
             scheduleType,
             schedule.scheduledFor,
             schedule.minutesBeforeWindow,
@@ -298,11 +345,27 @@ async function updateScheduledMessage(tenantId, messageId, patch = {}) {
     const messageText = Object.prototype.hasOwnProperty.call(patch, 'messageText') || Object.prototype.hasOwnProperty.call(patch, 'message_text')
         ? text(patch.messageText || patch.message_text || '')
         : current.message_text;
-    if (!messageText) throw new Error('messageText requerido.');
 
     const variables = Object.prototype.hasOwnProperty.call(patch, 'variables')
         ? normalizeVariables(patch.variables)
         : normalizeVariables(current.variables);
+    const mediaAssets = (Object.prototype.hasOwnProperty.call(patch, 'mediaAssets')
+        || Object.prototype.hasOwnProperty.call(patch, 'media_assets')
+        || Object.prototype.hasOwnProperty.call(patch, 'mediaUrl')
+        || Object.prototype.hasOwnProperty.call(patch, 'media_url'))
+        ? normalizeMediaAssets(patch.mediaAssets || patch.media_assets, {
+            mediaUrl: patch.mediaUrl || patch.media_url,
+            mediaMimeType: patch.mediaMimeType || patch.media_mime_type,
+            mediaFileName: patch.mediaFileName || patch.media_file_name,
+            mediaSizeBytes: patch.mediaSizeBytes || patch.media_size_bytes
+        })
+        : normalizeMediaAssets(current.media_assets, {
+            mediaUrl: current.media_url,
+            mediaMimeType: current.media_mime_type,
+            mediaFileName: current.media_file_name
+        });
+    const primaryMedia = mediaAssets[0] || null;
+    if (!messageText && mediaAssets.length === 0) throw new Error('messageText o adjunto requerido.');
     const cancelOnCustomerReply = Object.prototype.hasOwnProperty.call(patch, 'cancelOnCustomerReply')
         ? patch.cancelOnCustomerReply !== false
         : Object.prototype.hasOwnProperty.call(patch, 'cancel_on_customer_reply')
@@ -313,11 +376,15 @@ async function updateScheduledMessage(tenantId, messageId, patch = {}) {
         `UPDATE tenant_scheduled_messages
             SET message_text = $3,
                 variables = $4::jsonb,
-                schedule_type = $5,
-                scheduled_for = $6::timestamptz,
-                minutes_before_window = $7,
-                window_expires_at_at_schedule = $8::timestamptz,
-                cancel_on_customer_reply = $9,
+                media_assets = $5::jsonb,
+                media_url = $6,
+                media_mime_type = $7,
+                media_file_name = $8,
+                schedule_type = $9,
+                scheduled_for = $10::timestamptz,
+                minutes_before_window = $11,
+                window_expires_at_at_schedule = $12::timestamptz,
+                cancel_on_customer_reply = $13,
                 processing_started_at = NULL,
                 updated_at = NOW()
           WHERE tenant_id = $1
@@ -329,6 +396,10 @@ async function updateScheduledMessage(tenantId, messageId, patch = {}) {
             cleanMessageId,
             messageText,
             JSON.stringify(variables),
+            JSON.stringify(mediaAssets),
+            primaryMedia?.url || null,
+            primaryMedia?.mimeType || null,
+            primaryMedia?.fileName || null,
             scheduleType,
             schedule.scheduledFor,
             schedule.minutesBeforeWindow,
@@ -411,7 +482,12 @@ async function processOne(row = {}, { waClient, logger } = {}) {
     }
 
     const body = renderMessageText(item.messageText, item.variables);
-    if (!body.trim()) {
+    const mediaEntry = normalizeMediaAssets(item.mediaAssets, {
+        mediaUrl: item.mediaUrl,
+        mediaMimeType: item.mediaMimeType,
+        mediaFileName: item.mediaFileName
+    })[0] || null;
+    if (!body.trim() && !mediaEntry?.url) {
         await markFailed(item.tenantId, item.messageId, 'empty_message');
         return { status: STATUS_FAILED, reason: 'empty_message' };
     }
@@ -421,14 +497,31 @@ async function processOne(row = {}, { waClient, logger } = {}) {
     }
 
     try {
-        const sent = await waClient.sendMessage(item.chatId, body, {
-            metadata: {
-                tenantId: item.tenantId,
-                chatId: item.chatId,
-                scopeModuleId: item.scopeModuleId || '',
-                scheduledMessageId: item.messageId
+        const metadata = {
+            tenantId: item.tenantId,
+            chatId: item.chatId,
+            scopeModuleId: item.scopeModuleId || '',
+            scheduledMessageId: item.messageId
+        };
+        let sent = null;
+        if (mediaEntry?.url) {
+            if (!String(mediaEntry.url).startsWith('data:') || !waClient?.sendMedia) {
+                await markFailed(item.tenantId, item.messageId, 'media_unavailable');
+                return { status: STATUS_FAILED, reason: 'media_unavailable' };
             }
-        });
+            sent = await waClient.sendMedia(
+                item.chatId,
+                mediaEntry.url,
+                mediaEntry.mimeType || 'application/octet-stream',
+                mediaEntry.fileName || 'adjunto',
+                body,
+                false,
+                null,
+                metadata
+            );
+        } else {
+            sent = await waClient.sendMessage(item.chatId, body, { metadata });
+        }
         const sentId = text(sent?.id?._serialized || sent?.id || sent?.messageId || '');
         await markSent(item.tenantId, item.messageId, sentId);
         return { status: STATUS_SENT, sentMessageId: sentId || null };
