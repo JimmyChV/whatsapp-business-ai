@@ -10,6 +10,7 @@ const { resolveAndValidatePublicHost } = require('../../security/helpers/securit
 const { parseScopedChatId } = require('../../channels/helpers/chat-scope.helpers');
 const { createMessageMediaAssetsHelpers } = require('../../channels/helpers/message-media-assets.helpers');
 const { createLazySharpLoader } = require('../../channels/helpers/socket-runtime-bootstrap.helpers');
+const templateVariablesService = require('./template-variables.service');
 
 const STATUS_PENDING = 'pending';
 const STATUS_SENT = 'sent';
@@ -156,6 +157,44 @@ function renderMessageText(template = '', variables = {}) {
         if (value === null || value === undefined) return match;
         return String(value);
     });
+}
+
+async function resolveScheduledMessageText(item = {}) {
+    const source = String(item.messageText || '');
+    if (!source || !/\{\{\s*[a-zA-Z0-9_.-]+\s*\}\}/.test(source)) return source;
+
+    const fallbackVariables = normalizeVariables({
+        ...item.variables,
+        contacto_cliente: item.variables?.contacto_cliente || item.variables?.cliente || item.variables?.nombre_cliente || '',
+        nombre_cliente: item.variables?.nombre_cliente || item.variables?.contacto_cliente || item.variables?.cliente || '',
+        telefono_cliente: item.variables?.telefono_cliente || item.variables?.telefono || '',
+        telefono: item.variables?.telefono || item.variables?.telefono_cliente || '',
+        modulo: item.variables?.modulo || item.scopeModuleId || ''
+    });
+
+    try {
+        const previewPayload = await templateVariablesService.getPreview(item.tenantId, {
+            chatId: item.chatId,
+            scopeModuleId: item.scopeModuleId || ''
+        });
+        const previewVariables = (Array.isArray(previewPayload?.categories) ? previewPayload.categories : [])
+            .flatMap((category) => (Array.isArray(category?.variables) ? category.variables : []));
+        const previewMap = new Map(previewVariables.map((variable) => [
+            String(variable?.key || '').trim().toLowerCase(),
+            String(variable?.previewValue ?? '').trim()
+        ]));
+        return source.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (match, rawKey) => {
+            const key = String(rawKey || '').trim().toLowerCase();
+            const previewValue = previewMap.get(key);
+            if (previewValue) return previewValue;
+            const fallbackValue = key.split('.').reduce((acc, part) => (
+                acc && Object.prototype.hasOwnProperty.call(acc, part) ? acc[part] : undefined
+            ), fallbackVariables);
+            return fallbackValue === null || fallbackValue === undefined ? '' : String(fallbackValue);
+        });
+    } catch (error) {
+        return renderMessageText(source, fallbackVariables);
+    }
 }
 
 async function getLatestInboundAt(tenantId = '', chatId = '', scopeModuleId = '') {
@@ -510,7 +549,7 @@ async function processOne(row = {}, { waClient, logger } = {}) {
         return { status: STATUS_FAILED, reason: 'window_expired' };
     }
 
-    const body = renderMessageText(item.messageText, item.variables);
+    const body = await resolveScheduledMessageText(item);
     const mediaEntry = normalizeMediaAssets(item.mediaAssets, {
         mediaUrl: item.mediaUrl,
         mediaMimeType: item.mediaMimeType,
