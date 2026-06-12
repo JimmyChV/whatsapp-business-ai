@@ -91,9 +91,11 @@ const ChatInput = ({
     const [preferredSkinTone, setPreferredSkinTone] = useState(SkinTones.NEUTRAL);
     const [localText, setLocalText] = useState(() => String(inputText || ''));
     const [scheduledModalOpen, setScheduledModalOpen] = useState(false);
+    const [scheduledPendingCount, setScheduledPendingCount] = useState(0);
     const inputRef = useRef(null);
     const chatInputRef = useRef(null);
     const lastExternalTextRef = useRef(String(inputText || ''));
+    const scheduledCountRequestRef = useRef(0);
     const draftQuickReplyLabel = String(quickReplyDraft?.label || '').trim();
     const draftQuickReplyText = String(quickReplyDraft?.text || '').trim();
     const draftQuickReplyAssets = Array.isArray(quickReplyDraft?.mediaAssets)
@@ -113,6 +115,32 @@ const ChatInput = ({
     const isBlockedByEditState = Boolean(editingMessage?.id);
     const disableFreeformComposer = isTemplateOnlyMode || isBlockedByEditState;
     const canSendFreeform = !isTemplateOnlyMode && (Boolean(localText.trim()) || Boolean(attachment) || Boolean(hasDraftQuickReply));
+    const activeScheduledChatId = String(activeChatDetails?.id || '').trim();
+    const activeScheduledScopeModuleId = String(activeChatDetails?.scopeModuleId || '').trim().toLowerCase();
+
+    const refreshScheduledPendingCount = React.useCallback(async () => {
+        if (!activeScheduledChatId) {
+            setScheduledPendingCount(0);
+            return;
+        }
+        const requestId = scheduledCountRequestRef.current + 1;
+        scheduledCountRequestRef.current = requestId;
+        try {
+            const { listScheduledMessages } = await import('../core/services/scheduledMessages.service');
+            const items = await listScheduledMessages({
+                chatId: activeScheduledChatId,
+                scopeModuleId: activeScheduledScopeModuleId,
+                buildApiHeaders
+            });
+            if (scheduledCountRequestRef.current !== requestId) return;
+            const pending = (Array.isArray(items) ? items : [])
+                .filter((item) => String(item?.status || '') === 'pending')
+                .length;
+            setScheduledPendingCount(pending);
+        } catch (_) {
+            if (scheduledCountRequestRef.current === requestId) setScheduledPendingCount(0);
+        }
+    }, [activeScheduledChatId, activeScheduledScopeModuleId, buildApiHeaders]);
 
     const handleInputChange = (e) => {
         const val = e.target.value;
@@ -401,6 +429,15 @@ const ChatInput = ({
     }, [inputText]);
 
     useEffect(() => {
+        setScheduledPendingCount(0);
+        if (!activeScheduledChatId) return undefined;
+        const timer = setTimeout(() => {
+            refreshScheduledPendingCount();
+        }, 450);
+        return () => clearTimeout(timer);
+    }, [activeScheduledChatId, activeScheduledScopeModuleId, refreshScheduledPendingCount]);
+
+    useEffect(() => {
         const el = inputRef.current;
         if (!el) return;
         el.style.height = '24px';
@@ -502,7 +539,10 @@ const ChatInput = ({
                 <React.Suspense fallback={null}>
                     <LazyScheduledMessageModal
                         isOpen={scheduledModalOpen}
-                        onClose={() => setScheduledModalOpen(false)}
+                        onClose={() => {
+                            setScheduledModalOpen(false);
+                            refreshScheduledPendingCount();
+                        }}
                         activeChat={activeChatDetails}
                         quickReplies={quickReplies}
                         buildApiHeaders={buildApiHeaders}
@@ -852,12 +892,38 @@ const ChatInput = ({
             <div className="chat-input-right-actions">
                 <button
                     className="btn-icon"
-                    style={{ color: '#8696a0' }}
+                    style={{ color: '#8696a0', position: 'relative' }}
                     onClick={() => setScheduledModalOpen(true)}
                     title="Programar respuesta"
                     disabled={Boolean(editingMessage?.id) || !activeChatDetails?.id}
                 >
                     <CalendarClock size={22} />
+                    {scheduledPendingCount > 0 ? (
+                        <span
+                            aria-label={`${scheduledPendingCount} mensajes programados pendientes`}
+                            style={{
+                                position: 'absolute',
+                                top: '-4px',
+                                right: '-5px',
+                                minWidth: '16px',
+                                height: '16px',
+                                padding: '0 4px',
+                                borderRadius: '999px',
+                                background: '#16a34a',
+                                color: '#fff',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '0.65rem',
+                                fontWeight: 800,
+                                lineHeight: 1,
+                                boxShadow: '0 0 0 2px #f0f2f5',
+                                pointerEvents: 'none'
+                            }}
+                        >
+                            {scheduledPendingCount > 9 ? '9+' : scheduledPendingCount}
+                        </span>
+                    ) : null}
                 </button>
                 {/* AI button */}
                 <button
