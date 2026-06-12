@@ -712,26 +712,34 @@ const getChatTimestampValue = (chat = null) => {
   return Number.isFinite(timestamp) ? timestamp : 0;
 };
 
+export const compareChatsByOperationalPriority = (a = {}, b = {}) => {
+  const aUnread = isChatUnreadLike(a);
+  const bUnread = isChatUnreadLike(b);
+  if (aUnread !== bUnread) return aUnread ? -1 : 1;
+  return getChatTimestampValue(b) - getChatTimestampValue(a);
+};
+
+export const sortChatsByOperationalPriority = (chats = []) => (
+  (Array.isArray(chats) ? [...chats] : []).sort(compareChatsByOperationalPriority)
+);
+
 const insertChatSorted = (chats = [], nextChat = null) => {
   const safeChats = Array.isArray(chats) ? chats : [];
   const safeNextChat = nextChat && typeof nextChat === 'object' ? nextChat : null;
   if (!safeNextChat) return safeChats;
   if (safeChats.length === 0) return [safeNextChat];
 
-  const nextTimestamp = getChatTimestampValue(safeNextChat);
-  const firstTimestamp = getChatTimestampValue(safeChats[0]);
-  if (nextTimestamp >= firstTimestamp) {
+  if (compareChatsByOperationalPriority(safeNextChat, safeChats[0]) <= 0) {
     return [safeNextChat, ...safeChats];
   }
 
-  const lastTimestamp = getChatTimestampValue(safeChats[safeChats.length - 1]);
-  if (nextTimestamp <= lastTimestamp) {
+  if (compareChatsByOperationalPriority(safeNextChat, safeChats[safeChats.length - 1]) >= 0) {
     return [...safeChats, safeNextChat];
   }
 
   let insertAt = safeChats.length;
   for (let idx = 0; idx < safeChats.length; idx += 1) {
-    if (getChatTimestampValue(safeChats[idx]) < nextTimestamp) {
+    if (compareChatsByOperationalPriority(safeNextChat, safeChats[idx]) < 0) {
       insertAt = idx;
       break;
     }
@@ -772,14 +780,7 @@ export const upsertAndSortChat = (list = [], incoming = null) => {
       : null
   };
   next[existingIndex] = mergedChat;
-  const previousTimestamp = getChatTimestampValue(previousChat);
-  const nextTimestamp = getChatTimestampValue(mergedChat);
-  if (previousTimestamp === nextTimestamp) {
-    return dedupeChats(next);
-  }
-
-  const withoutCurrent = [...next.slice(0, existingIndex), ...next.slice(existingIndex + 1)];
-  return dedupeChats(insertChatSorted(withoutCurrent, mergedChat));
+  return sortChatsByOperationalPriority(dedupeChats(next));
 };
 
 export const CHAT_PAGE_SIZE = 80;

@@ -206,10 +206,13 @@ const Sidebar = ({
     const visibleChats = React.useMemo(() => {
         const items = Array.isArray(filteredChats) ? [...filteredChats] : [];
         return items.sort((a, b) => {
+            const aUnread = Number(a?.unreadCount || 0) > 0 || a?.manuallyMarkedUnread === true;
+            const bUnread = Number(b?.unreadCount || 0) > 0 || b?.manuallyMarkedUnread === true;
+            if (aUnread !== bUnread) return aUnread ? -1 : 1;
             const aNeedsAdvisor = Boolean(getCommercialStatus(a?.id)?.needsAdvisor);
             const bNeedsAdvisor = Boolean(getCommercialStatus(b?.id)?.needsAdvisor);
             if (aNeedsAdvisor !== bNeedsAdvisor) return aNeedsAdvisor ? -1 : 1;
-            return 0;
+            return Number(b?.timestamp || 0) - Number(a?.timestamp || 0);
         });
     }, [filteredChats, getCommercialStatus]);
     const visibleChatIds = React.useMemo(() => (

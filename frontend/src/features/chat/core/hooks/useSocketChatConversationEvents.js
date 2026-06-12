@@ -165,6 +165,7 @@ export default function useSocketChatConversationEvents({
     chatMatchesQuery,
     chatIdentityKey,
     upsertAndSortChat,
+    sortChatsByOperationalPriority,
     requestChatsPage,
     normalizeDigits,
     isLikelyPhoneDigits,
@@ -701,13 +702,15 @@ export default function useSocketChatConversationEvents({
                 if (pageOffset <= 0) {
                     const cachedVisibleChats = (Array.isArray(prev) ? prev : [])
                         .filter((chat) => chatMatchesQuery(chat, chatSearchRef.current) && chatMatchesFilters(chat, chatFiltersRef.current));
-                    return dedupeChats([...hydrated, ...cachedVisibleChats])
-                        .map(applyFreshWindowFields)
-                        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                    return sortChatsByOperationalPriority(
+                        dedupeChats([...hydrated, ...cachedVisibleChats])
+                            .map(applyFreshWindowFields)
+                    );
                 }
-                return dedupeChats([...prev, ...hydrated])
-                    .map(applyFreshWindowFields)
-                    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                return sortChatsByOperationalPriority(
+                    dedupeChats([...prev, ...hydrated])
+                        .map(applyFreshWindowFields)
+                );
             });
             if (pageOffset <= 0) {
                 setChatsLoaded(true);
