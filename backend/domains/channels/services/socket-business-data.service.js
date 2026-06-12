@@ -521,6 +521,13 @@ function createSocketBusinessDataService({
                     scope: resolvedScope
                 };
                 logCatalogDebugSnapshot({ catalog, catalogMeta });
+                console.log('[catalog-source]', JSON.stringify({
+                    tenantId,
+                    moduleId: resolvedScope?.moduleId || catalogScope?.moduleId || '',
+                    catalogId: resolvedScope?.catalogId || resolvedCatalogSelection?.primaryCatalogId || '',
+                    source: catalogMeta?.source || 'unknown',
+                    itemCount: Array.isArray(catalog) ? catalog.length : 0
+                }));
                 socket.emit('business_data', { profile, labels, catalog, catalogMeta, tenantSettings, integrations: tenantIntegrations, requestSeq });
             } catch (e) {
                 console.error('Error fetching business data:', e);
