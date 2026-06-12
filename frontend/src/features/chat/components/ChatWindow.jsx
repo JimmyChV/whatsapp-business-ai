@@ -203,6 +203,7 @@ const resolveModulePattyMode = (moduleConfig = null) => {
 // ============================================================
 const ChatWindow = ({
     activeChatDetails,
+    socket,
     messages,
     messagesEndRef,
     isCopilotMode,
@@ -1156,6 +1157,7 @@ const ChatWindow = ({
                         buildApiHeaders={buildApiHeaders}
                         activeChatDetails={activeChatDetails}
                         activeTenantId={activeTenantId}
+                        socket={socket}
                         windowOpen={conversationWindowOpen}
                         focusChatKey={activeChatScopedId}
                     />

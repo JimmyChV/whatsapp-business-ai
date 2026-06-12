@@ -73,7 +73,9 @@ const ScheduledMessageModal = ({
     activeChat,
     quickReplies = [],
     buildApiHeaders,
-    activeTenantId = ''
+    activeTenantId = '',
+    socket = null,
+    onPendingCountChange = null
 }) => {
     const chatId = text(activeChat?.id);
     const scopeModuleId = text(activeChat?.scopeModuleId).toLowerCase();
@@ -111,6 +113,12 @@ const ScheduledMessageModal = ({
         try {
             const next = await listScheduledMessages({ chatId, scopeModuleId, buildApiHeaders });
             setItems(next);
+            if (typeof onPendingCountChange === 'function') {
+                const pendingCount = (Array.isArray(next) ? next : [])
+                    .filter((item) => String(item?.status || '') === 'pending')
+                    .length;
+                onPendingCountChange(pendingCount);
+            }
         } catch (err) {
             setError(String(err?.message || err));
         } finally {
@@ -133,6 +141,14 @@ const ScheduledMessageModal = ({
         resetForm();
         loadItems();
     }, [isOpen, chatId, scopeModuleId]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        if (Array.isArray(quickReplies) && quickReplies.length > 0) return;
+        if (!socket?.connected) return;
+        const moduleId = String(activeChat?.scopeModuleId || activeChat?.lastMessageModuleId || '').trim().toLowerCase();
+        socket.emit('get_quick_replies', moduleId ? { moduleId } : {});
+    }, [isOpen, quickReplies, socket, activeChat?.scopeModuleId, activeChat?.lastMessageModuleId]);
 
     if (!isOpen) return null;
 
@@ -310,7 +326,7 @@ const ScheduledMessageModal = ({
         <div
             className="saas-quick-reply-builder-overlay"
             onClick={onClose}
-            style={{ zIndex: 100, alignItems: 'flex-start', paddingTop: '34px' }}
+            style={{ zIndex: 10050, alignItems: 'flex-start', paddingTop: '34px' }}
         >
             <div
                 className="saas-quick-reply-builder-shell"

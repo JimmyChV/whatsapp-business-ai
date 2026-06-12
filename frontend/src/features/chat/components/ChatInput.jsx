@@ -4,6 +4,7 @@ import EmojiPicker from 'emoji-picker-react';
 import { EmojiStyle, SkinTonePickerLocation, SkinTones, SuggestionMode, Theme } from 'emoji-picker-react';
 import { isRealQuickReplyMediaAsset } from '../core/helpers/appChat.helpers';
 import ScheduledMessageModal from './ScheduledMessageModal';
+import { listScheduledMessages } from '../core/services/scheduledMessages.service';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const GLOBAL_SKIN_TONE_STORAGE_KEY = 'chat-emoji-skin-tone:global';
@@ -80,6 +81,7 @@ const ChatInput = ({
     buildApiHeaders,
     activeChatDetails = null,
     activeTenantId = '',
+    socket = null,
     windowOpen = true,
     focusChatKey = ''
 }) => {
@@ -91,6 +93,7 @@ const ChatInput = ({
     const [preferredSkinTone, setPreferredSkinTone] = useState(SkinTones.NEUTRAL);
     const [localText, setLocalText] = useState(() => String(inputText || ''));
     const [scheduledModalOpen, setScheduledModalOpen] = useState(false);
+    const [pendingScheduledCount, setPendingScheduledCount] = useState(0);
     const inputRef = useRef(null);
     const chatInputRef = useRef(null);
     const lastExternalTextRef = useRef(String(inputText || ''));
@@ -113,6 +116,31 @@ const ChatInput = ({
     const isBlockedByEditState = Boolean(editingMessage?.id);
     const disableFreeformComposer = isTemplateOnlyMode || isBlockedByEditState;
     const canSendFreeform = !isTemplateOnlyMode && (Boolean(localText.trim()) || Boolean(attachment) || Boolean(hasDraftQuickReply));
+
+    const refreshScheduledCount = async () => {
+        const chatId = String(activeChatDetails?.id || '').trim();
+        if (!chatId || typeof buildApiHeaders !== 'function') {
+            setPendingScheduledCount(0);
+            return;
+        }
+        try {
+            const items = await listScheduledMessages({
+                chatId,
+                scopeModuleId: String(activeChatDetails?.scopeModuleId || '').trim().toLowerCase(),
+                buildApiHeaders
+            });
+            const count = (Array.isArray(items) ? items : [])
+                .filter((item) => String(item?.status || '') === 'pending')
+                .length;
+            setPendingScheduledCount(count);
+        } catch (_) {
+            setPendingScheduledCount(0);
+        }
+    };
+
+    useEffect(() => {
+        refreshScheduledCount();
+    }, [activeChatDetails?.id, activeChatDetails?.scopeModuleId, buildApiHeaders]);
 
     const handleInputChange = (e) => {
         const val = e.target.value;
@@ -505,6 +533,8 @@ const ChatInput = ({
                 quickReplies={quickReplies}
                 buildApiHeaders={buildApiHeaders}
                 activeTenantId={activeTenantId}
+                socket={socket}
+                onPendingCountChange={setPendingScheduledCount}
             />
             {editingMessage?.id && (
                 <div style={{
@@ -848,12 +878,33 @@ const ChatInput = ({
             <div className="chat-input-right-actions">
                 <button
                     className="btn-icon"
-                    style={{ color: '#8696a0' }}
+                    style={{ color: '#8696a0', position: 'relative' }}
                     onClick={() => setScheduledModalOpen(true)}
                     title="Programar respuesta"
                     disabled={Boolean(editingMessage?.id) || !activeChatDetails?.id}
                 >
                     <CalendarClock size={22} />
+                    {pendingScheduledCount > 0 ? (
+                        <span
+                            style={{
+                                position: 'absolute',
+                                top: '-5px',
+                                right: '-5px',
+                                minWidth: '16px',
+                                height: '16px',
+                                borderRadius: '999px',
+                                background: '#16a34a',
+                                color: '#fff',
+                                fontSize: '10px',
+                                fontWeight: 800,
+                                lineHeight: '16px',
+                                textAlign: 'center',
+                                boxShadow: '0 0 0 2px #fff'
+                            }}
+                        >
+                            {pendingScheduledCount > 9 ? '9+' : pendingScheduledCount}
+                        </span>
+                    ) : null}
                 </button>
                 {/* Send button */}
                 <button
