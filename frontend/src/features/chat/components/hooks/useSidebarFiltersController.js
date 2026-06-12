@@ -313,18 +313,20 @@ const useSidebarFiltersController = ({
     const archived = chats.filter((c) => Boolean(c?.archived)).length;
     const pinned = chats.filter((c) => Boolean(c?.pinned)).length;
     const windowWarning = chats.filter((c) => {
-      const min = Number(c?.laboralMinutesRemaining ?? -1);
-      return Boolean(c?.windowOpen) && min >= 0 && min <= 120;
+      const windowState = getWindowState(c, windowTick);
+      const min = Number(windowState?.realMinutesRemaining ?? -1);
+      return Boolean(windowState?.active) && min >= 0 && min <= 120;
     }).length;
     const windowCritical = chats.filter((c) => {
-      const min = Number(c?.laboralMinutesRemaining ?? -1);
-      return Boolean(c?.windowOpen) && min >= 0 && min <= 30;
+      const windowState = getWindowState(c, windowTick);
+      const min = Number(windowState?.realMinutesRemaining ?? -1);
+      return Boolean(windowState?.active) && min >= 0 && min <= 30;
     }).length;
     const assignedToMe = assignmentsLoaded
       ? chats.filter((chat) => isAssignedToMeResolver(chat?.id)).length
       : 0;
     return { unread, unlabeled, myContacts, unknown, archived, pinned, assignedToMe, windowWarning, windowCritical };
-  }, [assignmentsLoaded, chats, isAssignedToMeResolver]);
+  }, [assignmentsLoaded, chats, isAssignedToMeResolver, windowTick]);
 
   const activeFilterChips = useMemo(() => {
     const chips = [];
@@ -379,12 +381,7 @@ const useSidebarFiltersController = ({
     if (filters.windowFilter !== 'all') {
       const wf = filters.windowFilter;
       const windowState = getWindowState(chat, windowTick);
-      const labMin = Number(
-        windowState?.laboralMinutesRemaining
-        ?? windowState?.laborMinutesRemaining
-        ?? chat?.laboralMinutesRemaining
-        ?? -1
-      );
+      const realMin = Number(windowState?.realMinutesRemaining ?? -1);
       const wOpen = Boolean(windowState?.active);
       const wStatus = String(chat?.windowStatus || '');
       const expiresOutSchedule = wStatus === 'expires_out_schedule'
@@ -393,17 +390,17 @@ const useSidebarFiltersController = ({
         || windowState?.status === 'outside-hours';
 
       if (wf === 'active' && !wOpen) return false;
-      if (wf === 'critical' && !(wOpen && labMin >= 0 && labMin <= 30)) return false;
-      if (wf === 'urgent' && !(wOpen && labMin > 30 && labMin <= 120)) return false;
-      if (wf === 'normal' && !(wOpen && labMin > 120 && labMin <= 720)) return false;
-      if (wf === 'comfortable' && !(wOpen && labMin > 720)) return false;
+      if (wf === 'critical' && !(wOpen && realMin >= 0 && realMin <= 30)) return false;
+      if (wf === 'urgent' && !(wOpen && realMin > 30 && realMin <= 120)) return false;
+      if (wf === 'normal' && !(wOpen && realMin > 120 && realMin <= 720)) return false;
+      if (wf === 'comfortable' && !(wOpen && realMin > 720)) return false;
       if (wf === 'expires_in_schedule' && !(wOpen && !expiresOutSchedule && wStatus !== 'expired')) return false;
       if (wf === 'expires_out_schedule' && !expiresOutSchedule) return false;
       if (wf === 'expired' && !windowState.expired) return false;
       if (wf === 'custom') {
         const maxMin = Number(filters.windowFilterCustomMinutes ?? 0);
         if (maxMin <= 0) return true;
-        if (!wOpen || labMin < 0 || labMin > maxMin) return false;
+        if (!wOpen || realMin < 0 || realMin > maxMin) return false;
       }
     }
     if (filters.contactMode === 'my' && !isSavedCustomerChat(chat)) return false;
