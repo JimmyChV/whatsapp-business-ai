@@ -7,9 +7,26 @@ const perfNow = () => {
     return Date.now();
 };
 
+const shouldEmitTransportMode = (mode = '', runtime = {}, selectedModule = null) => {
+    const normalizedMode = String(mode || '').trim().toLowerCase();
+    if (!normalizedMode || normalizedMode === 'idle') return false;
+    const activeTransport = String(runtime?.activeTransport || '').trim().toLowerCase();
+    const requestedTransport = String(runtime?.requestedTransport || '').trim().toLowerCase();
+    if (activeTransport === normalizedMode || requestedTransport === normalizedMode) return false;
+    const moduleTransport = String(
+        selectedModule?.transportMode
+        || selectedModule?.transport
+        || selectedModule?.activeTransport
+        || ''
+    ).trim().toLowerCase();
+    if (moduleTransport === normalizedMode) return false;
+    return true;
+};
+
 export default function useSocketConnectionRuntimeEvents({
     socket,
     selectedTransportRef,
+    waRuntimeRef,
     setIsConnected,
     setIsSwitchingTransport,
     setIsLoadingMoreChats,
@@ -47,7 +64,7 @@ export default function useSocketConnectionRuntimeEvents({
             chatPagingRef.current.loading = false;
             setIsLoadingMoreChats(false);
             const mode = String(selectedTransportRef.current || '').trim().toLowerCase();
-            if (mode && mode !== 'idle') {
+            if (shouldEmitTransportMode(mode, waRuntimeRef?.current, selectedWaModuleRef?.current)) {
                 setIsSwitchingTransport(true);
                 socket.emit('set_transport_mode', { mode });
             } else {
@@ -153,7 +170,7 @@ export default function useSocketConnectionRuntimeEvents({
             });
             setIsConnected(true);
             const mode = String(selectedTransportRef.current || '').trim().toLowerCase();
-            if (mode && mode !== 'idle') {
+            if (shouldEmitTransportMode(mode, waRuntimeRef?.current, selectedWaModuleRef?.current)) {
                 setIsSwitchingTransport(true);
                 socket.emit('set_transport_mode', { mode });
             } else {

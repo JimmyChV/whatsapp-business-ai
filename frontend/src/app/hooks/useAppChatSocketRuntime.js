@@ -146,10 +146,15 @@ export default function useAppChatSocketRuntime({
   activeTenantId = ''
 }) {
   const isClientReadyRef = useRef(Boolean(isClientReady));
+  const waRuntimeRef = useRef(waRuntime || {});
 
   useEffect(() => {
     isClientReadyRef.current = Boolean(isClientReady);
   }, [isClientReady]);
+
+  useEffect(() => {
+    waRuntimeRef.current = waRuntime || {};
+  }, [waRuntime]);
 
   useMessagesAutoScroll({
     messages,
@@ -237,6 +242,7 @@ export default function useAppChatSocketRuntime({
   useSocketConnectionRuntimeEvents({
     socket,
     selectedTransportRef,
+    waRuntimeRef,
     setIsConnected,
     setIsSwitchingTransport,
     setIsLoadingMoreChats,
