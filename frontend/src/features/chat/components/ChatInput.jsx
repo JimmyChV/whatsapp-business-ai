@@ -96,6 +96,7 @@ const ChatInput = ({
     const [pendingScheduledCount, setPendingScheduledCount] = useState(0);
     const inputRef = useRef(null);
     const chatInputRef = useRef(null);
+    const buildApiHeadersRef = useRef(buildApiHeaders);
     const lastExternalTextRef = useRef(String(inputText || ''));
     const draftQuickReplyLabel = String(quickReplyDraft?.label || '').trim();
     const draftQuickReplyText = String(quickReplyDraft?.text || '').trim();
@@ -117,9 +118,14 @@ const ChatInput = ({
     const disableFreeformComposer = isTemplateOnlyMode || isBlockedByEditState;
     const canSendFreeform = !isTemplateOnlyMode && (Boolean(localText.trim()) || Boolean(attachment) || Boolean(hasDraftQuickReply));
 
+    useEffect(() => {
+        buildApiHeadersRef.current = buildApiHeaders;
+    }, [buildApiHeaders]);
+
     const refreshScheduledCount = async () => {
         const chatId = String(activeChatDetails?.id || '').trim();
-        if (!chatId || typeof buildApiHeaders !== 'function') {
+        const getHeaders = buildApiHeadersRef.current;
+        if (!chatId || typeof getHeaders !== 'function') {
             setPendingScheduledCount(0);
             return;
         }
@@ -127,7 +133,7 @@ const ChatInput = ({
             const items = await listScheduledMessages({
                 chatId,
                 scopeModuleId: String(activeChatDetails?.scopeModuleId || '').trim().toLowerCase(),
-                buildApiHeaders
+                buildApiHeaders: getHeaders
             });
             const count = (Array.isArray(items) ? items : [])
                 .filter((item) => String(item?.status || '') === 'pending')
@@ -140,7 +146,7 @@ const ChatInput = ({
 
     useEffect(() => {
         refreshScheduledCount();
-    }, [activeChatDetails?.id, activeChatDetails?.scopeModuleId, buildApiHeaders]);
+    }, [activeChatDetails?.id, activeChatDetails?.scopeModuleId]);
 
     const handleInputChange = (e) => {
         const val = e.target.value;
@@ -506,8 +512,9 @@ const ChatInput = ({
             try {
                 setIsLoadingPreview(true);
                 const encoded = encodeURIComponent(url);
+                const getHeaders = buildApiHeadersRef.current;
                 const resp = await fetch(`${API_URL}/api/link-preview?url=${encoded}`, {
-                    headers: typeof buildApiHeaders === 'function' ? buildApiHeaders() : undefined
+                    headers: typeof getHeaders === 'function' ? getHeaders() : undefined
                 });
                 const data = await resp.json();
                 if (!cancelled) setLinkPreview(data?.ok ? data : { ok: false, url });
@@ -522,7 +529,7 @@ const ChatInput = ({
             cancelled = true;
             clearTimeout(timer);
         };
-    }, [localText, buildApiHeaders]);
+    }, [localText]);
 
     return (
         <div className="chat-input-area chat-input-area-pro" style={{ position: 'relative' }} ref={chatInputRef}>

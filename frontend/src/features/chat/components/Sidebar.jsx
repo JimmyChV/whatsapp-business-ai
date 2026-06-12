@@ -127,6 +127,7 @@ const Sidebar = ({
     const [windowTick, setWindowTick] = React.useState(() => Date.now());
     const [globalCommercialStatusOptions, setGlobalCommercialStatusOptions] = React.useState([{ value: 'all', label: 'Todos' }]);
     const [scheduledCountsByChat, setScheduledCountsByChat] = React.useState({});
+    const buildApiHeadersRef = React.useRef(buildApiHeaders);
     const [showAdvancedFilters, setShowAdvancedFilters] = React.useState(false);
     const [mobileFilterMode, setMobileFilterMode] = React.useState(null);
     const {
@@ -405,14 +406,19 @@ const Sidebar = ({
     const activeTenantLabel = activeTenantOption?.name || activeTenantOption?.id || currentTenantId || 'default';
 
     React.useEffect(() => {
+        buildApiHeadersRef.current = buildApiHeaders;
+    }, [buildApiHeaders]);
+
+    React.useEffect(() => {
         let cancelled = false;
         const loadScheduledCounts = async () => {
-            if (typeof buildApiHeaders !== 'function') {
+            const getHeaders = buildApiHeadersRef.current;
+            if (typeof getHeaders !== 'function') {
                 if (!cancelled) setScheduledCountsByChat({});
                 return;
             }
             try {
-                const items = await listScheduledMessageCounts({ buildApiHeaders });
+                const items = await listScheduledMessageCounts({ buildApiHeaders: getHeaders });
                 if (!cancelled) setScheduledCountsByChat(buildScheduledCountsMap(items));
             } catch (_) {
                 if (!cancelled) setScheduledCountsByChat({});
@@ -424,7 +430,7 @@ const Sidebar = ({
             cancelled = true;
             window.clearInterval(timerId);
         };
-    }, [buildApiHeaders, currentTenantId]);
+    }, [currentTenantId]);
     const moduleConfigById = React.useMemo(() => new Map(
         (Array.isArray(waModules) ? waModules : []).map((module) => [
             String(module?.moduleId || module?.id || '').trim().toLowerCase(),
