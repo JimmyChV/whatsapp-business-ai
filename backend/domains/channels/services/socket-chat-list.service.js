@@ -1021,6 +1021,22 @@ function createSocketChatListService({
                     return;
                 }
 
+                const activeRuntime = getWaRuntime();
+                const activeTransportMode = String(activeRuntime?.activeTransport || 'idle').trim().toLowerCase();
+                if (activeTransportMode === 'cloud') {
+                    const historyPage = await getHistoryChatsPage(tenantId, {
+                        offset,
+                        limit,
+                        query,
+                        filters: activeFilters,
+                        filterKey,
+                        scopeModuleId: activeScopeModuleId || ''
+                    });
+                    const enrichedPage = await enrichChatPageWithWindowData(historyPage, tenantId, activeScopeModuleId || '');
+                    socket.emit('chats', enrichedPage);
+                    return;
+                }
+
                 const hasActiveFilters = activeFilters.unreadOnly || activeFilters.unlabeledOnly || activeFilters.contactMode !== 'all' || activeFilters.archivedMode !== 'all' || activeFilters.pinnedMode !== 'all' || activeFilters.labelTokens.length > 0;
                 let sortedChats = await getSortedVisibleChats({ forceRefresh: reset || Boolean(query) || hasActiveFilters });
                 if (!queryLower && !reset && offset >= sortedChats.length) {
@@ -1158,8 +1174,6 @@ function createSocketChatListService({
                 }
 
                 let historyTotalHint = 0;
-                const activeRuntime = getWaRuntime();
-                const activeTransportMode = String(activeRuntime?.activeTransport || 'idle').trim().toLowerCase();
                 if (activeTransportMode === 'cloud') {
                     try {
                         const cloudHistoryPage = await getHistoryChatsPage(tenantId, {
