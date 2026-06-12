@@ -5,7 +5,8 @@ const {
 } = require('../../../config/persistence-runtime');
 const {
     customerModuleContextsService: customerModuleContextsServiceFallback,
-    customerConsentService: customerConsentServiceFallback
+    customerConsentService: customerConsentServiceFallback,
+    scheduledMessagesService: scheduledMessagesServiceFallback
 } = require('../../operations/services');
 const catalogManagerService = require('../../tenant/services/catalog-manager.service');
 const quotesService = require('../../tenant/services/quotes.service');
@@ -62,6 +63,7 @@ function createSocketWaEventsBridgeService({
     pushNotificationService = pushNotificationServiceFallback,
     tenantScheduleService = tenantScheduleServiceFallback,
     auditLogService = auditLogServiceFallback,
+    scheduledMessagesService = scheduledMessagesServiceFallback,
     chatReadStateService = null,
     emitToTenant = null
 } = {}) {
@@ -1102,6 +1104,10 @@ function createSocketWaEventsBridgeService({
                     }
 
                     if (msg?.fromMe !== true && historyTenantId && relatedChatIdBase) {
+                        if (scheduledMessagesService?.cancelByChatInbound) {
+                            scheduledMessagesService.cancelByChatInbound(historyTenantId, relatedChatIdBase, cleanScopeModuleId)
+                                .catch((error) => console.warn('[ScheduledMessages] inbound cancel skipped:', String(error?.message || error)));
+                        }
                         await handleQuoteButtonReply({
                             msg,
                             tenantId: historyTenantId,
