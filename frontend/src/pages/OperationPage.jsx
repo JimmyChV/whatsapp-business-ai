@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Sidebar, BusinessSidebar, ClientProfilePanel, ChatWindow, NewChatModal } from '../features/chat/components';
 import { sanitizeDisplayText } from '../features/chat/core';
 import {
@@ -335,6 +335,18 @@ export default function OperationPage({
   const hasOperationalTenant = Boolean(activeOperationalTenantId && activeOperationalTenantId !== 'default');
   const visibleChats = hasOperationalTenant ? chats : [];
   const visibleWaModules = hasOperationalTenant ? availableWaModules : [];
+  const moduleProfile = useMemo(() => {
+    const moduleName = String(selectedWaModule?.name || businessData?.profile?.name || '').trim();
+    const baseProfile = myProfile || businessData?.profile || null;
+
+    if (!moduleName) return baseProfile;
+
+    return {
+      ...(baseProfile || {}),
+      name: moduleName,
+      pushname: moduleName
+    };
+  }, [businessData?.profile, myProfile, selectedWaModule?.name]);
 
   return (
     <div className={appContainerClassName} data-mobile-panel={effectiveMobilePanel}>
@@ -357,7 +369,7 @@ export default function OperationPage({
           chatsLoaded={chatsLoaded}
           activeChatId={activeChatId}
           onChatSelect={handleMobileChatSelect}
-          myProfile={myProfile || businessData?.profile}
+          myProfile={moduleProfile}
           onLogout={handleLogoutWhatsapp}
           onRefreshChats={handleRefreshChats}
           onStartNewChat={handleStartNewChat}

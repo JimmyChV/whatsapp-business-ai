@@ -246,6 +246,26 @@ function createSocketBusinessDataService({
                     ? (availableSocketModules.find((entry) => normalizeSocketModuleId(entry?.moduleId) === requestedModuleScopeId) || socket?.data?.waModule || null)
                     : (socket?.data?.waModule || null);
                 const resolvedCatalogSelection = await resolveCatalogSelection(catalogScope);
+                const earlyCatalogId = resolvedCatalogSelection?.primaryCatalogId || catalogScope?.catalogId || '';
+                const earlyLocalCatalog = await loadCatalog({
+                    tenantId,
+                    catalogId: earlyCatalogId,
+                    moduleId: requestedModuleScopeId || null
+                });
+
+                if (Array.isArray(earlyLocalCatalog) && earlyLocalCatalog.length > 0) {
+                    socket.emit('business_data_catalog', {
+                        scope: {
+                            ...catalogScope,
+                            catalogIds: resolvedCatalogSelection?.catalogIds || [],
+                            catalogId: earlyCatalogId,
+                            catalogs: resolvedCatalogSelection?.catalogs || []
+                        },
+                        source: 'woocommerce',
+                        requestSeq,
+                        items: earlyLocalCatalog
+                    });
+                }
 
                 if (!transportOrchestrator.ensureTransportReady(socket, { action: 'cargar datos del negocio', errorEvent: 'error' })) {
                     const scopedLocalFallback = await loadScopedLocalCatalog(catalogScope);
