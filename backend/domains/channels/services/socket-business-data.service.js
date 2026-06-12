@@ -452,27 +452,45 @@ function createSocketBusinessDataService({
                 }
 
                 if (!catalog.length && enableWoo) {
-                    const wooResult = await getWooCatalog({ config: wooConfig });
-                    if (wooResult.products.length > 0) {
-                        catalog = wooResult.products;
+                    const localWooCatalog = await loadCatalog({
+                        tenantId,
+                        catalogId: activeCatalogId || resolvedCatalogSelection?.primaryCatalogId || '',
+                        moduleId: requestedModuleScopeId || null
+                    });
+                    if (Array.isArray(localWooCatalog) && localWooCatalog.length > 0) {
+                        catalog = localWooCatalog;
                         catalogMeta = {
                             ...catalogMeta,
                             source: 'woocommerce',
                             nativeAvailable: false,
                             wooAvailable: true,
-                            wooSource: wooResult.source,
-                            wooStatus: wooResult.status,
-                            wooReason: wooResult.reason
+                            wooSource: 'catalog_items',
+                            wooStatus: 'cached',
+                            wooReason: null
                         };
                     } else {
-                        catalogMeta = {
-                            ...catalogMeta,
-                            wooConfigured,
-                            wooAvailable: false,
-                            wooSource: wooResult.source,
-                            wooStatus: wooResult.status,
-                            wooReason: wooResult.reason
-                        };
+                        const wooResult = await getWooCatalog({ config: wooConfig });
+                        if (wooResult.products.length > 0) {
+                            catalog = wooResult.products;
+                            catalogMeta = {
+                                ...catalogMeta,
+                                source: 'woocommerce',
+                                nativeAvailable: false,
+                                wooAvailable: true,
+                                wooSource: wooResult.source,
+                                wooStatus: wooResult.status,
+                                wooReason: wooResult.reason
+                            };
+                        } else {
+                            catalogMeta = {
+                                ...catalogMeta,
+                                wooConfigured,
+                                wooAvailable: false,
+                                wooSource: wooResult.source,
+                                wooStatus: wooResult.status,
+                                wooReason: wooResult.reason
+                            };
+                        }
                     }
                 }
 
@@ -521,13 +539,6 @@ function createSocketBusinessDataService({
                     scope: resolvedScope
                 };
                 logCatalogDebugSnapshot({ catalog, catalogMeta });
-                console.log('[catalog-source]', JSON.stringify({
-                    tenantId,
-                    moduleId: resolvedScope?.moduleId || catalogScope?.moduleId || '',
-                    catalogId: resolvedScope?.catalogId || resolvedCatalogSelection?.primaryCatalogId || '',
-                    source: catalogMeta?.source || 'unknown',
-                    itemCount: Array.isArray(catalog) ? catalog.length : 0
-                }));
                 socket.emit('business_data', { profile, labels, catalog, catalogMeta, tenantSettings, integrations: tenantIntegrations, requestSeq });
             } catch (e) {
                 console.error('Error fetching business data:', e);
