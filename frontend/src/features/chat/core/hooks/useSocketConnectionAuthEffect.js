@@ -32,11 +32,13 @@ export function useSocketConnectionAuthEffect({
   const unauthorizedRefreshRef = useRef(false);
 
   useEffect(() => {
-    if (!saasRuntime?.loaded) return;
-
-    const authRequired = Boolean(saasRuntime?.authEnabled);
     const accessToken = String(saasSession?.accessToken || '').trim();
     const tenantId = String(saasSession?.user?.tenantId || saasRuntime?.tenant?.id || '').trim();
+    const runtimeLoaded = Boolean(saasRuntime?.loaded);
+    const hasEarlyAuthContext = Boolean(accessToken || tenantId || socketAuthToken);
+    if (!runtimeLoaded && !hasEarlyAuthContext) return;
+
+    const authRequired = runtimeLoaded ? Boolean(saasRuntime?.authEnabled) : Boolean(accessToken);
 
     if (authRequired && !accessToken) {
       if (socket.connected) socket.disconnect();
@@ -45,7 +47,7 @@ export function useSocketConnectionAuthEffect({
       return;
     }
 
-    if (authRequired) {
+    if (authRequired || accessToken) {
       const expiresAt = readAccessExpiryUnix(saasSession);
       const now = Math.floor(Date.now() / 1000);
       if (!expiresAt || expiresAt - now <= 5) {
