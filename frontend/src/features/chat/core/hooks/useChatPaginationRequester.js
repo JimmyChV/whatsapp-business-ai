@@ -28,6 +28,10 @@ export default function useChatPaginationRequester({
       offset: Number(chatPagingRef.current.offset || 0),
       hasMore: Boolean(chatPagingRef.current.hasMore)
     });
+    if (!socket?.connected) {
+      console.log('[perf requestChatsPage skip]', { t: perfNow(), at: Date.now(), reason: 'socket_not_connected' });
+      return;
+    }
     if (chatPagingRef.current.loading && reset && Number(chatPagingRef.current.offset || 0) === 0) {
       console.log('[perf requestChatsPage skip]', { t: perfNow(), at: Date.now(), reason: 'loading_initial_reset' });
       return;
