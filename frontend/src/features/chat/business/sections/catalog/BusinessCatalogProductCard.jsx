@@ -49,7 +49,16 @@ export default function BusinessCatalogProductCard({
         <div style={{ background: tone.cardSurface, borderRadius: '11px', border: `1px solid ${tone.controlBorder}`, padding: '7px', display: 'grid', gridTemplateColumns: '66px 1fr', gap: '8px', alignItems: 'start' }}>
             <div style={{ width: '66px', height: '66px', borderRadius: '9px', background: tone.cardSurfaceAlt, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${tone.controlBorder}` }}>
                 {item.imageUrl
-                    ? <img src={item.imageUrl} alt={item.title || 'Producto'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ? (
+                        <img
+                            src={item.imageUrl}
+                            alt={item.title || 'Producto'}
+                            loading="lazy"
+                            decoding="async"
+                            fetchPriority={index < 4 ? 'high' : 'low'}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                    )
                     : <Package size={24} color="var(--chat-control-text-soft)" />}
             </div>
 
