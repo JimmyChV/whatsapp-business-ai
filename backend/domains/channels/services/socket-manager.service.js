@@ -1356,7 +1356,14 @@ class SocketManager {
                 queryDigits,
                 filters
             }))
-            .sort((a, b) => (Number(b?.timestamp || 0) - Number(a?.timestamp || 0)));
+            .sort((a, b) => {
+                const aUnread = Number(a?.unreadCount || 0) > 0
+                    || Boolean(a?.manuallyMarkedUnread);
+                const bUnread = Number(b?.unreadCount || 0) > 0
+                    || Boolean(b?.manuallyMarkedUnread);
+                if (aUnread !== bUnread) return aUnread ? -1 : 1;
+                return Number(b?.timestamp || 0) - Number(a?.timestamp || 0);
+            });
 
         const pageItems = await Promise.all(
             normalized
