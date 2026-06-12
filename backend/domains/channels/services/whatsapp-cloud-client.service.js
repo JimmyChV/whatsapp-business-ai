@@ -343,27 +343,6 @@ class WhatsAppCloudClient extends EventEmitter {
             return first.payload;
         }
 
-        const statusCode = Number(first.response.status || 0);
-        if (statusCode >= 500 && statusCode < 600) {
-            await new Promise((resolve) => setTimeout(resolve, 350));
-            const retry = await execute(false);
-            if (retry.response.ok) {
-                console.warn('[WA][Cloud] Graph 5xx recovered after retry.', {
-                    status: statusCode,
-                    retryStatus: retry.response.status
-                });
-                return retry.payload;
-            }
-            console.warn('[WA][Cloud] Graph 5xx retry failed.', {
-                status: statusCode,
-                retryStatus: retry.response.status,
-                errorCode: retry.payload?.error?.code || null,
-                errorSubcode: retry.payload?.error?.error_subcode || null,
-                errorType: retry.payload?.error?.type || null,
-                detail: retry.detail
-            });
-        }
-
         const needsProof = /appsecret_proof|requires appsecret|an appsecret proof/i.test(String(first.detail || ''));
         if (needsProof && this.appSecret) {
             console.warn('[WA][Cloud] Graph requires appsecret_proof; retrying with proof.');

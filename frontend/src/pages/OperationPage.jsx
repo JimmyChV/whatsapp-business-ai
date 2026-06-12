@@ -423,7 +423,6 @@ export default function OperationPage({
         ) : activeChatId ? (
           <div className="conversation-pane-shell">
             <ChatWindow
-              socket={socket}
               activeChatDetails={mergedActiveChatDetails}
               messages={messages}
               businessData={businessData}

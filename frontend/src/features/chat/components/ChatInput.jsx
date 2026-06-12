@@ -1,10 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Smile, Sparkles, X, Paperclip, Send, MapPin, LayoutTemplate, Store, CalendarClock } from 'lucide-react';
+import { Smile, Bot, Sparkles, X, Paperclip, Send, MapPin, LayoutTemplate, Store } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { EmojiStyle, SkinTonePickerLocation, SkinTones, SuggestionMode, Theme } from 'emoji-picker-react';
 import { isRealQuickReplyMediaAsset } from '../core/helpers/appChat.helpers';
-import ScheduledMessageModal from './ScheduledMessageModal';
-import { listScheduledMessages } from '../core/services/scheduledMessages.service';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const GLOBAL_SKIN_TONE_STORAGE_KEY = 'chat-emoji-skin-tone:global';
@@ -79,9 +77,6 @@ const ChatInput = ({
     onOpenSendTemplate,
     onSendNativeCatalog,
     buildApiHeaders,
-    activeChatDetails = null,
-    activeTenantId = '',
-    socket = null,
     windowOpen = true,
     focusChatKey = ''
 }) => {
@@ -92,11 +87,8 @@ const ChatInput = ({
     const [selectionState, setSelectionState] = useState(null);
     const [preferredSkinTone, setPreferredSkinTone] = useState(SkinTones.NEUTRAL);
     const [localText, setLocalText] = useState(() => String(inputText || ''));
-    const [scheduledModalOpen, setScheduledModalOpen] = useState(false);
-    const [pendingScheduledCount, setPendingScheduledCount] = useState(0);
     const inputRef = useRef(null);
     const chatInputRef = useRef(null);
-    const buildApiHeadersRef = useRef(buildApiHeaders);
     const lastExternalTextRef = useRef(String(inputText || ''));
     const draftQuickReplyLabel = String(quickReplyDraft?.label || '').trim();
     const draftQuickReplyText = String(quickReplyDraft?.text || '').trim();
@@ -117,36 +109,6 @@ const ChatInput = ({
     const isBlockedByEditState = Boolean(editingMessage?.id);
     const disableFreeformComposer = isTemplateOnlyMode || isBlockedByEditState;
     const canSendFreeform = !isTemplateOnlyMode && (Boolean(localText.trim()) || Boolean(attachment) || Boolean(hasDraftQuickReply));
-
-    useEffect(() => {
-        buildApiHeadersRef.current = buildApiHeaders;
-    }, [buildApiHeaders]);
-
-    const refreshScheduledCount = async () => {
-        const chatId = String(activeChatDetails?.id || '').trim();
-        const getHeaders = buildApiHeadersRef.current;
-        if (!chatId || typeof getHeaders !== 'function') {
-            setPendingScheduledCount(0);
-            return;
-        }
-        try {
-            const items = await listScheduledMessages({
-                chatId,
-                scopeModuleId: String(activeChatDetails?.scopeModuleId || '').trim().toLowerCase(),
-                buildApiHeaders: getHeaders
-            });
-            const count = (Array.isArray(items) ? items : [])
-                .filter((item) => String(item?.status || '') === 'pending')
-                .length;
-            setPendingScheduledCount(count);
-        } catch (_) {
-            setPendingScheduledCount(0);
-        }
-    };
-
-    useEffect(() => {
-        refreshScheduledCount();
-    }, [activeChatDetails?.id, activeChatDetails?.scopeModuleId]);
 
     const handleInputChange = (e) => {
         const val = e.target.value;
@@ -512,9 +474,8 @@ const ChatInput = ({
             try {
                 setIsLoadingPreview(true);
                 const encoded = encodeURIComponent(url);
-                const getHeaders = buildApiHeadersRef.current;
                 const resp = await fetch(`${API_URL}/api/link-preview?url=${encoded}`, {
-                    headers: typeof getHeaders === 'function' ? getHeaders() : undefined
+                    headers: typeof buildApiHeaders === 'function' ? buildApiHeaders() : undefined
                 });
                 const data = await resp.json();
                 if (!cancelled) setLinkPreview(data?.ok ? data : { ok: false, url });
@@ -529,20 +490,10 @@ const ChatInput = ({
             cancelled = true;
             clearTimeout(timer);
         };
-    }, [localText]);
+    }, [localText, buildApiHeaders]);
 
     return (
         <div className="chat-input-area chat-input-area-pro" style={{ position: 'relative' }} ref={chatInputRef}>
-            <ScheduledMessageModal
-                isOpen={scheduledModalOpen}
-                onClose={() => setScheduledModalOpen(false)}
-                activeChat={activeChatDetails}
-                quickReplies={quickReplies}
-                buildApiHeaders={buildApiHeaders}
-                activeTenantId={activeTenantId}
-                socket={socket}
-                onPendingCountChange={setPendingScheduledCount}
-            />
             {editingMessage?.id && (
                 <div style={{
                     position: 'absolute',
@@ -883,35 +834,15 @@ const ChatInput = ({
             </div>
 
             <div className="chat-input-right-actions">
+                {/* AI button */}
                 <button
                     className="btn-icon"
-                    style={{ color: '#8696a0', position: 'relative' }}
-                    onClick={() => setScheduledModalOpen(true)}
-                    title="Programar respuesta"
-                    disabled={Boolean(editingMessage?.id) || !activeChatDetails?.id}
+                    style={{ color: isAiLoading ? '#8a2be2' : '#8696a0', animation: isAiLoading ? 'spin 2s linear infinite' : 'none' }}
+                    onClick={onRequestAiSuggestion}
+                    title="Sugerencia IA (/ayudar)"
+                    disabled={isTemplateOnlyMode}
                 >
-                    <CalendarClock size={22} />
-                    {pendingScheduledCount > 0 ? (
-                        <span
-                            style={{
-                                position: 'absolute',
-                                top: '-5px',
-                                right: '-5px',
-                                minWidth: '16px',
-                                height: '16px',
-                                borderRadius: '999px',
-                                background: '#16a34a',
-                                color: '#fff',
-                                fontSize: '10px',
-                                fontWeight: 800,
-                                lineHeight: '16px',
-                                textAlign: 'center',
-                                boxShadow: '0 0 0 2px #fff'
-                            }}
-                        >
-                            {pendingScheduledCount > 9 ? '9+' : pendingScheduledCount}
-                        </span>
-                    ) : null}
+                    <Bot size={22} />
                 </button>
                 {/* Send button */}
                 <button

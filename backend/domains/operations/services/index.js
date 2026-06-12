@@ -15,8 +15,6 @@ module.exports = {
     chatAssignmentInactivityJobService: require('./chat-assignment-inactivity-job.service'),
     pattyHandoffJobService: require('./patty-handoff-job.service'),
     quoteExpiryJobService: require('./quote-expiry-job.service'),
-    scheduledMessagesService: require('./scheduled-messages.service'),
-    scheduledMessagesJobService: require('./scheduled-messages-job.service'),
     customerModuleContextsService: require('./customer-module-contexts.service'),
     metaTemplatesService: require('./meta-templates.service'),
     templateVariablesService: require('./template-variables.service'),

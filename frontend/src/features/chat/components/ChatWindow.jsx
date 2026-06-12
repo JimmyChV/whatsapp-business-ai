@@ -203,7 +203,6 @@ const resolveModulePattyMode = (moduleConfig = null) => {
 // ============================================================
 const ChatWindow = ({
     activeChatDetails,
-    socket,
     messages,
     messagesEndRef,
     isCopilotMode,
@@ -1155,9 +1154,6 @@ const ChatWindow = ({
                         onCancelReplyMessage={inputProps?.onCancelReplyMessage}
                         onOpenMapPicker={() => openMapModal({ query: '' })}
                         buildApiHeaders={buildApiHeaders}
-                        activeChatDetails={activeChatDetails}
-                        activeTenantId={activeTenantId}
-                        socket={socket}
                         windowOpen={conversationWindowOpen}
                         focusChatKey={activeChatScopedId}
                     />

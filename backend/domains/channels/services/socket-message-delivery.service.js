@@ -90,16 +90,6 @@ function createSocketMessageDeliveryService({
             }
         };
 
-        const maskChatIdForLog = (value = '') => {
-            const text = String(value || '').trim();
-            if (!text) return '';
-            const [user, suffix = ''] = text.split('@');
-            const digits = String(user || '').replace(/\D/g, '');
-            if (!digits) return text.slice(0, 24);
-            const masked = `${digits.slice(0, 3)}***${digits.slice(-4)}`;
-            return suffix ? `${masked}@${suffix}` : masked;
-        };
-
          const emitRealtimeOutgoingMessage = async ({
              sentMessage = null,
              fallbackChatId = '',
@@ -320,17 +310,14 @@ function createSocketMessageDeliveryService({
          socket.on('send_message', async ({ to, toPhone, body, quotedMessageId, quotedMessage, clientTempId }) => {
              if (!guardRateLimit(socket, 'send_message')) return;
              if (!transportOrchestrator.ensureTransportReady(socket, { action: 'enviar mensajes', errorEvent: 'error' })) return;
-             let target = null;
-             let text = '';
-             let quoted = '';
              try {
-                 text = String(body || '');
-                 quoted = String(quotedMessageId || '').trim();
+                 const text = String(body || '');
+                 const quoted = String(quotedMessageId || '').trim();
                  if (!text.trim()) {
                      socket.emit('error', 'Datos invalidos para enviar mensaje.');
                      return;
                  }
-                 target = await resolveScopedSendTarget({
+                   const target = await resolveScopedSendTarget({
                      rawChatId: to,
                      rawPhone: toPhone,
                      errorEvent: 'error',
@@ -412,20 +399,7 @@ function createSocketMessageDeliveryService({
                  });
              } catch (e) {
                  const detail = String(e?.message || e || 'Failed to send message.');
-                 console.warn('[WA][SendMessage] ' + detail, {
-                     tenantId,
-                     targetChatId: maskChatIdForLog(target?.targetChatId || to || ''),
-                     scopedChatId: maskChatIdForLog(target?.scopedChatId || ''),
-                     scopeModuleId: String(target?.scopeModuleId || socket?.data?.waModuleId || ''),
-                     activeTransport: String(target?.activeTransport || getWaRuntime()?.activeTransport || ''),
-                     hasQuote: Boolean(quoted),
-                     bodyLength: text.length,
-                     graphStatus: e?.status || null,
-                     graphErrorCode: e?.payload?.error?.code || null,
-                     graphErrorSubcode: e?.payload?.error?.error_subcode || null,
-                     graphErrorType: e?.payload?.error?.type || null,
-                     graphErrorMessage: e?.payload?.error?.message || null
-                 });
+                 console.warn('[WA][SendMessage] ' + detail);
                  socket.emit('error', detail);
              }
          });

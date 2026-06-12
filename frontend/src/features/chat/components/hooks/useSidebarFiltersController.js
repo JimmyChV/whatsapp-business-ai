@@ -27,7 +27,6 @@ const isUnreadChat = (chat = {}) => (
   || chat?.manuallyMarkedUnread === true
 );
 const normalizeFilterToken = (value = '') => String(value || '').trim().toLowerCase();
-const getBaseChatId = (chat = {}) => String(chat?.baseChatId || chat?.chatId || chat?.id || '').split('::mod::')[0].trim();
 const formatCommercialStatusLabel = (value = '') => {
   const clean = String(value || '').replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
   if (!clean) return '';
@@ -67,7 +66,6 @@ const normalizeFilters = (filters = {}, commercialStatusOptions = DEFAULT_COMMER
   return {
     labelTokens,
     unreadOnly: Boolean(filters?.unreadOnly),
-    scheduledOnly: Boolean(filters?.scheduledOnly),
     unlabeledOnly: Boolean(filters?.unlabeledOnly),
     onlyAssignedToMe: Boolean(filters?.onlyAssignedToMe),
     assigneeUserId: normalizeFilterToken(filters?.assigneeUserId || ''),
@@ -151,8 +149,7 @@ const useSidebarFiltersController = ({
   commercialStatusOptions = DEFAULT_COMMERCIAL_STATUS_OPTIONS,
   onFiltersChange = null,
   searchQuery = '',
-  windowTick = Date.now(),
-  scheduledCountsByChat = {}
+  windowTick = Date.now()
 } = {}) => {
   void waModules;
   const assignmentsLoaded = Boolean(chatAssignmentState?.assignmentsLoaded);
@@ -219,19 +216,6 @@ const useSidebarFiltersController = ({
 
   const filters = useMemo(() => normalizeFilters(activeFilters, safeCommercialStatusOptions), [activeFilters, safeCommercialStatusOptions]);
 
-  const getScheduledCountForChat = useCallback((chat = {}) => {
-    const scopedId = String(chat?.id || '').trim();
-    const baseId = getBaseChatId(chat);
-    const scopeModuleId = normalizeFilterToken(chat?.scopeModuleId || chat?.lastMessageModuleId || '');
-    const scopedFromParts = baseId && scopeModuleId ? `${baseId}::mod::${scopeModuleId}` : '';
-    return Number(
-      scheduledCountsByChat?.[scopedId]
-      || scheduledCountsByChat?.[scopedFromParts]
-      || scheduledCountsByChat?.[baseId]
-      || 0
-    ) || 0;
-  }, [scheduledCountsByChat]);
-
   const updateFilters = (patch = {}) => {
     const next = normalizeFilters({ ...filters, ...patch }, safeCommercialStatusOptions);
     onFiltersChange?.(next);
@@ -284,7 +268,6 @@ const useSidebarFiltersController = ({
 
   const selectedLabelCount = filters.labelTokens.length;
   const hasActiveQuickFilters = filters.unreadOnly
-    || filters.scheduledOnly
     || filters.unlabeledOnly
     || filters.onlyAssignedToMe
     || Boolean(filters.assigneeUserId)
@@ -324,7 +307,6 @@ const useSidebarFiltersController = ({
 
   const quickStats = useMemo(() => {
     const unread = chats.filter((c) => isUnreadChat(c)).length;
-    const scheduled = chats.filter((c) => getScheduledCountForChat(c) > 0).length;
     const unlabeled = chats.filter((c) => (Array.isArray(c?.labels) ? c.labels.length : 0) === 0).length;
     const myContacts = chats.filter((c) => isSavedCustomerChat(c)).length;
     const unknown = chats.filter((c) => !isSavedCustomerChat(c)).length;
@@ -343,14 +325,13 @@ const useSidebarFiltersController = ({
     const assignedToMe = assignmentsLoaded
       ? chats.filter((chat) => isAssignedToMeResolver(chat?.id)).length
       : 0;
-    return { unread, scheduled, unlabeled, myContacts, unknown, archived, pinned, assignedToMe, windowWarning, windowCritical };
-  }, [assignmentsLoaded, chats, getScheduledCountForChat, isAssignedToMeResolver, windowTick]);
+    return { unread, unlabeled, myContacts, unknown, archived, pinned, assignedToMe, windowWarning, windowCritical };
+  }, [assignmentsLoaded, chats, isAssignedToMeResolver, windowTick]);
 
   const activeFilterChips = useMemo(() => {
     const chips = [];
     if (!hasAnyFilter) return chips;
     if (filters.unreadOnly) chips.push('No leidos');
-    if (filters.scheduledOnly) chips.push('Programados');
     if (filters.unlabeledOnly) chips.push('Sin etiqueta');
     if (filters.onlyAssignedToMe) chips.push('Solo mis chats');
     if (filters.assigneeUserId === '__unassigned__') chips.push('Solo sin asignar');
@@ -382,7 +363,6 @@ const useSidebarFiltersController = ({
     const labelTokenSet = getChatLabelTokenSet(chat);
 
     if (filters.unreadOnly && !isUnreadChat(chat)) return false;
-    if (filters.scheduledOnly && getScheduledCountForChat(chat) <= 0) return false;
     if (filters.onlyAssignedToMe && assignmentsLoaded && !isAssignedToMeResolver(chat?.id)) return false;
     if (filters.assigneeUserId && assignmentsLoaded) {
       const assignment = resolveChatAssignment(chat);
@@ -450,13 +430,12 @@ const useSidebarFiltersController = ({
 
     // TODO(bug): filtro sin resultados queda en estado "cargando" indefinidamente — falta estado de "sin resultados"
     return textHaystack.includes(q);
-  }), [assignmentsLoaded, chats, filters, getScheduledCountForChat, localQuery, isAssignedToMeResolver, resolveChatAssignment, resolveChatCommercialStatus, statusesLoaded, windowTick]);
+  }), [assignmentsLoaded, chats, filters, localQuery, isAssignedToMeResolver, resolveChatAssignment, resolveChatCommercialStatus, statusesLoaded, windowTick]);
 
   const resetFilters = () => {
     onFiltersChange?.(normalizeFilters({
       labelTokens: [],
       unreadOnly: false,
-      scheduledOnly: false,
       unlabeledOnly: false,
       onlyAssignedToMe: false,
       assigneeUserId: '',

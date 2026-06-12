@@ -178,7 +178,6 @@ export default function AutoMessageEditor({
     onMediaMimeTypeChange = null,
     onUploadFiles = null,
     onUploadError = null,
-    showFlowNote = true,
     removeAssetAt = null,
     getAssetDisplayName = (asset, index) => asset?.fileName || asset?.filename || `Adjunto ${index + 1}`,
     formatBytes = (input) => input,
@@ -492,7 +491,7 @@ export default function AutoMessageEditor({
                         ) : null}
                     </div>
                 ) : null}
-                {showMediaUpload && showFlowNote ? (
+                {showMediaUpload ? (
                     <div className="saas-quick-reply-flow-note">
                         <strong>Botones y flujos</strong>
                         <span>Configuralos desde Automatizaciones para definir intencion, demora y siguiente respuesta sin mezclarlo con el contenido reutilizable.</span>
