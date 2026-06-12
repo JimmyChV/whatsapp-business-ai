@@ -624,6 +624,7 @@ export default function useSocketChatConversationEvents({
             const rawItems = Array.isArray(page.items) ? page.items : [];
             console.log('[perf chats]', {
                 t: perfNow(),
+                at: Date.now(),
                 pageOffset: Number.isFinite(Number(page.offset)) ? Number(page.offset) : 0,
                 count: rawItems.length,
                 unreadInPayload: countUnreadPerfChats(rawItems),
@@ -693,6 +694,7 @@ export default function useSocketChatConversationEvents({
                 .filter((chat) => chatMatchesFilters(chat, chatFiltersRef.current));
             console.log('[perf chats hydrated]', {
                 t: perfNow(),
+                at: Date.now(),
                 count: hydrated.length,
                 unreadHydrated: countUnreadPerfChats(hydrated),
                 first: hydrated.slice(0, 5).map(summarizePerfChat)
@@ -742,6 +744,7 @@ export default function useSocketChatConversationEvents({
                     );
                     console.log('[perf chats set]', {
                         t: perfNow(),
+                        at: Date.now(),
                         pageOffset,
                         count: nextChats.length,
                         unreadRendered: countUnreadPerfChats(nextChats),
@@ -755,6 +758,7 @@ export default function useSocketChatConversationEvents({
                 );
                 console.log('[perf chats set]', {
                     t: perfNow(),
+                    at: Date.now(),
                     pageOffset,
                     count: nextChats.length,
                     unreadRendered: countUnreadPerfChats(nextChats),
@@ -934,6 +938,7 @@ export default function useSocketChatConversationEvents({
         socket.on('chat_unread_state_updated', ({ items = [] } = {}) => {
             console.log('[perf unread update]', {
                 t: perfNow(),
+                at: Date.now(),
                 count: Array.isArray(items) ? items.length : 0,
                 unreadInPayload: countUnreadPerfChats(items),
                 first: (Array.isArray(items) ? items : []).slice(0, 5).map(summarizePerfChat)

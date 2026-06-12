@@ -1,5 +1,12 @@
 import { useEffect, useRef } from 'react';
 
+const perfNow = () => {
+    if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+        return Math.round(performance.now());
+    }
+    return Date.now();
+};
+
 export default function useSocketConnectionRuntimeEvents({
     socket,
     selectedTransportRef,
@@ -31,6 +38,11 @@ export default function useSocketConnectionRuntimeEvents({
         };
 
         socket.on('connect', () => {
+            console.log('[perf socket connected]', {
+                t: perfNow(),
+                at: Date.now(),
+                id: socket.id || null
+            });
             setIsConnected(true);
             const mode = String(selectedTransportRef.current || '').trim().toLowerCase();
             if (mode && mode !== 'idle') {
@@ -40,6 +52,7 @@ export default function useSocketConnectionRuntimeEvents({
                 setIsSwitchingTransport(false);
             }
             setTimeout(() => {
+                console.log('[perf connect requestChatsPage timeout]', { t: perfNow(), at: Date.now() });
                 requestChatsPage({ reset: true });
             }, 0);
             emitScopedBusinessDataRequest({
@@ -65,9 +78,15 @@ export default function useSocketConnectionRuntimeEvents({
         });
 
         socket.on('ready', () => {
+            console.log('[perf socket ready]', {
+                t: perfNow(),
+                at: Date.now(),
+                id: socket.id || null
+            });
             setIsClientReady(true);
             setIsSwitchingTransport(false);
             setTimeout(() => {
+                console.log('[perf ready requestChatsPage timeout]', { t: perfNow(), at: Date.now() });
                 requestChatsPage({ reset: true });
             }, 0);
             emitScopedBusinessDataRequest({
@@ -125,6 +144,11 @@ export default function useSocketConnectionRuntimeEvents({
         });
 
         if (socket.connected) {
+            console.log('[perf socket already connected effect]', {
+                t: perfNow(),
+                at: Date.now(),
+                id: socket.id || null
+            });
             setIsConnected(true);
             const mode = String(selectedTransportRef.current || '').trim().toLowerCase();
             if (mode && mode !== 'idle') {
@@ -134,6 +158,7 @@ export default function useSocketConnectionRuntimeEvents({
                 setIsSwitchingTransport(false);
             }
             setTimeout(() => {
+                console.log('[perf already-connected requestChatsPage timeout]', { t: perfNow(), at: Date.now() });
                 requestChatsPage({ reset: true });
             }, 0);
             emitScopedBusinessDataRequest({

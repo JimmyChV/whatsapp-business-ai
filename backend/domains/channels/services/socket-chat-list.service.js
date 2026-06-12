@@ -981,6 +981,11 @@ function createSocketChatListService({
         socket.on('get_chats', async (payload = {}) => {
             const perfStartedAt = Date.now();
             try {
+                console.log('[perf get_chats received]', JSON.stringify({
+                    at: perfStartedAt,
+                    tenantId,
+                    payload
+                }));
                 const rawOffset = Number(payload?.offset ?? 0);
                 const rawLimit = Number(payload?.limit ?? 80);
                 const reset = Boolean(payload?.reset);
@@ -1048,6 +1053,7 @@ function createSocketChatListService({
                     const enrichedPage = await enrichChatPageWithWindowData(historyPage, tenantId, activeScopeModuleId || '');
                     const items = Array.isArray(enrichedPage?.items) ? enrichedPage.items : [];
                     console.log('[perf get_chats cloud]', JSON.stringify({
+                        at: Date.now(),
                         tenantId,
                         elapsedMs: Date.now() - perfStartedAt,
                         count: items.length,
