@@ -114,27 +114,6 @@ function resolveBaseChatId(parseScopedChatId, value = '') {
     return String(parsed?.baseChatId || raw).trim();
 }
 
-const perfNow = () => {
-    if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
-        return Math.round(performance.now());
-    }
-    return Date.now();
-};
-
-const summarizePerfChat = (chat = {}) => ({
-    id: chat?.id || chat?.chatId || null,
-    name: chat?.name || chat?.displayName || null,
-    unreadCount: chat?.unreadCount,
-    manuallyMarkedUnread: chat?.manuallyMarkedUnread,
-    timestamp: chat?.timestamp || chat?.lastMessageAt || null
-});
-
-const countUnreadPerfChats = (items = []) => (
-    (Array.isArray(items) ? items : []).filter((chat) => (
-        Number(chat?.unreadCount || 0) > 0 || chat?.manuallyMarkedUnread === true
-    )).length
-);
-
 function mergeRealtimeSenderAttribution(existingMessage = null, incomingMessage = null) {
     const safeExisting = existingMessage && typeof existingMessage === 'object' ? existingMessage : {};
     const safeIncoming = incomingMessage && typeof incomingMessage === 'object' ? incomingMessage : {};
@@ -622,14 +601,6 @@ export default function useSocketChatConversationEvents({
             }
 
             const rawItems = Array.isArray(page.items) ? page.items : [];
-            console.log('[perf chats]', {
-                t: perfNow(),
-                at: Date.now(),
-                pageOffset: Number.isFinite(Number(page.offset)) ? Number(page.offset) : 0,
-                count: rawItems.length,
-                unreadInPayload: countUnreadPerfChats(rawItems),
-                first: rawItems.slice(0, 5).map(summarizePerfChat)
-            });
             const previousById = new Map(
                 (Array.isArray(chatsRef.current) ? chatsRef.current : [])
                     .filter((chat) => chat?.id)
@@ -692,13 +663,6 @@ export default function useSocketChatConversationEvents({
                     return hydratedChat;
                 })
                 .filter((chat) => chatMatchesFilters(chat, chatFiltersRef.current));
-            console.log('[perf chats hydrated]', {
-                t: perfNow(),
-                at: Date.now(),
-                count: hydrated.length,
-                unreadHydrated: countUnreadPerfChats(hydrated),
-                first: hydrated.slice(0, 5).map(summarizePerfChat)
-            });
 
             const pageOffset = Number.isFinite(Number(page.offset)) ? Number(page.offset) : 0;
             const total = Number.isFinite(Number(page.total)) ? Number(page.total) : hydrated.length;
@@ -742,28 +706,12 @@ export default function useSocketChatConversationEvents({
                         dedupeChats([...hydrated, ...cachedVisibleChats])
                             .map(applyFreshWindowFields)
                     );
-                    console.log('[perf chats set]', {
-                        t: perfNow(),
-                        at: Date.now(),
-                        pageOffset,
-                        count: nextChats.length,
-                        unreadRendered: countUnreadPerfChats(nextChats),
-                        first: nextChats.slice(0, 5).map(summarizePerfChat)
-                    });
                     return nextChats;
                 }
                 const nextChats = sortChatsByOperationalPriority(
                     dedupeChats([...prev, ...hydrated])
                         .map(applyFreshWindowFields)
                 );
-                console.log('[perf chats set]', {
-                    t: perfNow(),
-                    at: Date.now(),
-                    pageOffset,
-                    count: nextChats.length,
-                    unreadRendered: countUnreadPerfChats(nextChats),
-                    first: nextChats.slice(0, 5).map(summarizePerfChat)
-                });
                 return nextChats;
             });
             if (pageOffset <= 0) {
@@ -936,13 +884,6 @@ export default function useSocketChatConversationEvents({
         });
 
         socket.on('chat_unread_state_updated', ({ items = [] } = {}) => {
-            console.log('[perf unread update]', {
-                t: perfNow(),
-                at: Date.now(),
-                count: Array.isArray(items) ? items.length : 0,
-                unreadInPayload: countUnreadPerfChats(items),
-                first: (Array.isArray(items) ? items : []).slice(0, 5).map(summarizePerfChat)
-            });
             const normalizedItems = (Array.isArray(items) ? items : [])
                 .map((item) => {
                     const rawChatId = String(item?.chatId || item?.baseChatId || '').trim();

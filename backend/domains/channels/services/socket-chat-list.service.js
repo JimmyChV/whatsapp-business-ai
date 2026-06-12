@@ -28,18 +28,6 @@ function createSocketChatListService({
     getWaRuntime
 } = {}) {
     const DAY_WINDOW_MS = 24 * 60 * 60 * 1000;
-    const summarizePerfChat = (chat = {}) => ({
-        id: chat?.id || chat?.chatId || null,
-        name: chat?.name || chat?.displayName || null,
-        unreadCount: chat?.unreadCount,
-        manuallyMarkedUnread: chat?.manuallyMarkedUnread,
-        timestamp: chat?.timestamp || chat?.lastMessageAt || null
-    });
-    const countUnreadPerfChats = (items = []) => (
-        (Array.isArray(items) ? items : []).filter((chat) => (
-            Number(chat?.unreadCount || 0) > 0 || chat?.manuallyMarkedUnread === true
-        )).length
-    );
 
     const invalidateChatListCache = () => {
         runtimeStore.set('chatListCache', { items: [], updatedAt: 0 });
@@ -979,13 +967,7 @@ function createSocketChatListService({
         getHistoryChatsPage
     } = {}) => {
         socket.on('get_chats', async (payload = {}) => {
-            const perfStartedAt = Date.now();
             try {
-                console.log('[perf get_chats received]', JSON.stringify({
-                    at: perfStartedAt,
-                    tenantId,
-                    payload
-                }));
                 const rawOffset = Number(payload?.offset ?? 0);
                 const rawLimit = Number(payload?.limit ?? 80);
                 const reset = Boolean(payload?.reset);
@@ -1052,15 +1034,6 @@ function createSocketChatListService({
                     });
                     socket.emit('chats', historyPage);
                     const enrichedPage = await enrichChatPageWithWindowData(historyPage, tenantId, activeScopeModuleId || '');
-                    const items = Array.isArray(enrichedPage?.items) ? enrichedPage.items : [];
-                    console.log('[perf get_chats cloud]', JSON.stringify({
-                        at: Date.now(),
-                        tenantId,
-                        elapsedMs: Date.now() - perfStartedAt,
-                        count: items.length,
-                        unreadCount: countUnreadPerfChats(items),
-                        first: items.slice(0, 5).map(summarizePerfChat)
-                    }));
                     socket.emit('chats', enrichedPage);
                     return;
                 }

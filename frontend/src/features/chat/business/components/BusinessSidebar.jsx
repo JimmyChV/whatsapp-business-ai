@@ -678,9 +678,6 @@ const BusinessSidebar = ({ tenantScopeKey = 'default', setInputText, businessDat
         }
         openOrderDraft(draft);
     }, [activeChatId, notify, openOrderDraft, pendingCatalogOrderRequest]);
-    useEffect(() => {
-        console.log('[Patty debug] activeBusinessModule:', JSON.stringify(activeBusinessModule?.metadata?.aiConfig));
-    }, [activeBusinessModule]);
     const enablePatty = activeAiConfig.enablePatty !== false;
     const enableCopilot = activeAiConfig.enableCopilot !== false;
     const aiPanelAvailable = enablePatty || enableCopilot;
