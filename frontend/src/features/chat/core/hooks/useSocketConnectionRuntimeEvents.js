@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 export default function useSocketConnectionRuntimeEvents({
     socket,
@@ -20,7 +20,16 @@ export default function useSocketConnectionRuntimeEvents({
     setWaRuntime,
     setTransportError
 }) {
+    const modulesRequestedRef = useRef(false);
+
     useEffect(() => {
+        const requestRuntimeMetadata = () => {
+            if (modulesRequestedRef.current) return;
+            modulesRequestedRef.current = true;
+            socket.emit('get_wa_capabilities');
+            socket.emit('get_wa_modules');
+        };
+
         socket.on('connect', () => {
             setIsConnected(true);
             const mode = String(selectedTransportRef.current || '').trim().toLowerCase();
@@ -33,8 +42,11 @@ export default function useSocketConnectionRuntimeEvents({
             setTimeout(() => {
                 requestChatsPage({ reset: true });
             }, 0);
-            socket.emit('get_wa_capabilities');
-            socket.emit('get_wa_modules');
+            emitScopedBusinessDataRequest({
+                moduleId: selectedCatalogModuleIdRef.current || selectedWaModuleRef.current?.moduleId || '',
+                catalogId: selectedCatalogIdRef.current || ''
+            });
+            requestRuntimeMetadata();
         });
 
         socket.on('connect_error', (err) => {
@@ -45,6 +57,7 @@ export default function useSocketConnectionRuntimeEvents({
         });
 
         socket.on('disconnect', () => {
+            modulesRequestedRef.current = false;
             setIsConnected(false);
             setIsSwitchingTransport(false);
             chatPagingRef.current.loading = false;
@@ -62,8 +75,7 @@ export default function useSocketConnectionRuntimeEvents({
                 catalogId: selectedCatalogIdRef.current || ''
             });
             socket.emit('get_my_profile');
-            socket.emit('get_wa_capabilities');
-            socket.emit('get_wa_modules');
+            requestRuntimeMetadata();
         });
 
         socket.on('my_profile', (profile) => {
@@ -124,8 +136,11 @@ export default function useSocketConnectionRuntimeEvents({
             setTimeout(() => {
                 requestChatsPage({ reset: true });
             }, 0);
-            socket.emit('get_wa_capabilities');
-            socket.emit('get_wa_modules');
+            emitScopedBusinessDataRequest({
+                moduleId: selectedCatalogModuleIdRef.current || selectedWaModuleRef.current?.moduleId || '',
+                catalogId: selectedCatalogIdRef.current || ''
+            });
+            requestRuntimeMetadata();
         }
 
         return () => {

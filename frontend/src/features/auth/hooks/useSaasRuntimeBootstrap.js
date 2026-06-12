@@ -10,6 +10,7 @@ export default function useSaasRuntimeBootstrap({
   setSaasSession,
   setWaModules,
   setSelectedWaModule,
+  setSelectedCatalogModuleId,
   setWaModuleError,
   setSaasRuntime,
   setLoginEmail,
@@ -79,6 +80,9 @@ export default function useSaasRuntimeBootstrap({
       setSaasSession(nextSession);
       setWaModules(runtimeModules);
       setSelectedWaModule(runtimeSelectedModule);
+      if (runtimeSelectedModule?.moduleId && typeof setSelectedCatalogModuleId === 'function') {
+        setSelectedCatalogModuleId(runtimeSelectedModule.moduleId);
+      }
       setWaModuleError('');
       setSaasRuntime({
         loaded: true,
@@ -123,6 +127,7 @@ export default function useSaasRuntimeBootstrap({
     setSaasRuntime,
     setSaasSession,
     setSelectedWaModule,
+    setSelectedCatalogModuleId,
     setWaModuleError,
     setWaModules
   ]);

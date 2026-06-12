@@ -96,6 +96,7 @@ export default function useAppRuntimeSessionController({
     setSaasSession,
     setWaModules,
     setSelectedWaModule,
+    setSelectedCatalogModuleId,
     setWaModuleError,
     setSaasRuntime,
     setLoginEmail,
