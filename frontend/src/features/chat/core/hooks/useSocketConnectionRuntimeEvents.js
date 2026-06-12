@@ -44,6 +44,8 @@ export default function useSocketConnectionRuntimeEvents({
                 id: socket.id || null
             });
             setIsConnected(true);
+            chatPagingRef.current.loading = false;
+            setIsLoadingMoreChats(false);
             const mode = String(selectedTransportRef.current || '').trim().toLowerCase();
             if (mode && mode !== 'idle') {
                 setIsSwitchingTransport(true);

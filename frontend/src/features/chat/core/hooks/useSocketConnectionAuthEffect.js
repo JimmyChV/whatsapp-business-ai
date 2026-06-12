@@ -64,7 +64,7 @@ export function useSocketConnectionAuthEffect({
     if (selectedModuleId) auth.waModuleId = selectedModuleId;
     socket.auth = Object.keys(auth).length > 0 ? auth : undefined;
 
-    if (!socket.connected) socket.connect();
+    if (!socket.connected && !socket.active) socket.connect();
   }, [
     socket,
     saasRuntime?.loaded,

@@ -592,7 +592,7 @@ function App() {
           sessionForSocket = await apiSessionExports.refreshSaasSession?.() || saasSessionRef.current || {};
         }
 
-        if (socket && !socket.connected && typeof socket.connect === 'function') {
+        if (socket && !socket.connected && !socket.active && typeof socket.connect === 'function') {
           const auth = buildSocketAuthFromSession({
             session: sessionForSocket,
             runtime,
