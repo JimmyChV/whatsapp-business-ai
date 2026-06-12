@@ -1994,6 +1994,21 @@ class SocketManager {
                             });
                         } catch (_) { }
                     }
+                    try {
+                        const unreadItem = await chatReadStateService.clearUnread(tenantId, {
+                            chatId: baseChatId,
+                            scopeModuleId
+                        });
+                        if (unreadItem) {
+                            chatReadStateService.emitUnreadState({
+                                emitToTenant: (...args) => this.emitToTenant(...args),
+                                tenantId,
+                                items: [unreadItem]
+                            });
+                        }
+                    } catch (error) {
+                        console.warn('[ChatReadState] take_chat clear unread skipped:', error?.message || error);
+                    }
 
                     if (chatCommercialStatusService && typeof chatCommercialStatusService.setChatPattyMode === 'function') {
                         const pattyModeResult = await chatCommercialStatusService.setChatPattyMode(tenantId, {
