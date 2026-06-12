@@ -1,6 +1,8 @@
 ﻿const { URL } = require('url');
 
 const PROFILE_PHOTO_ALLOWED_HOST_SUFFIXES = ['whatsapp.net', 'fbcdn.net', 'fbsbx.com'];
+const LINK_PREVIEW_TTL_MS = 3_600_000;
+const linkPreviewCache = new Map();
 
 function hasTenantHistoryReadAccess(req = {}, authService) {
     if (!authService?.isAuthEnabled || !authService.isAuthEnabled()) return true;
@@ -323,6 +325,7 @@ function registerOperationsUtilityHttpRoutes({
         if (!url || !/^https?:\/\//i.test(url)) {
             return res.status(400).json({ error: 'URL invalida. Usa http(s).' });
         }
+        const cacheKey = url.toLowerCase();
 
         try {
             const parsed = new URL(url);
@@ -333,6 +336,11 @@ function registerOperationsUtilityHttpRoutes({
             const blockedHosts = new Set(parseCsvEnv(process.env.LINK_PREVIEW_BLOCKED_HOSTS));
             if (blockedHosts.has(parsed.hostname)) {
                 return res.status(403).json({ ok: false, url, error: 'Host bloqueado.' });
+            }
+
+            const cached = linkPreviewCache.get(cacheKey);
+            if (cached && (Date.now() - cached.at) < LINK_PREVIEW_TTL_MS) {
+                return res.json(cached.data);
             }
 
             await resolveAndValidatePublicHost(parsed.hostname);
@@ -353,12 +361,16 @@ function registerOperationsUtilityHttpRoutes({
 
             const contentType = String(response.headers.get('content-type') || '').toLowerCase();
             if (!contentType.includes('text/html')) {
-                return res.status(415).json({ ok: false, url, error: 'La URL no contiene HTML previsualizable.' });
+                const result = { ok: false, url, error: 'La URL no contiene HTML previsualizable.' };
+                linkPreviewCache.set(cacheKey, { data: result, at: Date.now() });
+                return res.status(415).json(result);
             }
 
             const contentLength = Number(response.headers.get('content-length') || 0);
             if (contentLength && contentLength > maxBytes) {
-                return res.status(413).json({ ok: false, url, error: 'El contenido excede el tamano permitido para preview.' });
+                const result = { ok: false, url, error: 'El contenido excede el tamano permitido para preview.' };
+                linkPreviewCache.set(cacheKey, { data: result, at: Date.now() });
+                return res.status(413).json(result);
             }
 
             const html = (await response.text()).slice(0, maxBytes);
@@ -367,20 +379,24 @@ function registerOperationsUtilityHttpRoutes({
             const image = extractMeta(html, 'og:image');
             const siteName = extractMeta(html, 'og:site_name');
 
-            return res.json({
+            const result = {
                 url,
                 ok: true,
                 title,
                 description,
                 image,
                 siteName
-            });
+            };
+            linkPreviewCache.set(cacheKey, { data: result, at: Date.now() });
+            return res.json(result);
         } catch (error) {
-            return res.status(500).json({
+            const result = {
                 ok: false,
                 url,
                 error: error.message || 'No se pudo generar vista previa del enlace.'
-            });
+            };
+            linkPreviewCache.set(cacheKey, { data: result, at: Date.now() });
+            return res.status(500).json(result);
         }
     });
 
