@@ -7,6 +7,8 @@ const { parseScopedChatId } = require('../../channels/helpers/chat-scope.helpers
 const VALID_SOURCE_TYPES = new Set(['quote', 'catalog', 'manual']);
 const VALID_ORDER_STATUSES = new Set(['aceptado', 'programado', 'atendido', 'vendido', 'perdido', 'cancelado']);
 const COMMERCIAL_ADVANCED_STATUSES = new Set(['aceptado', 'programado', 'atendido', 'vendido', 'perdido', 'cancelado', 'expirado']);
+const ORDERS_CACHE_TTL_MS = 5_000;
+const ordersCache = new Map();
 const COMMERCIAL_STATUS_RANK = {
     nuevo: 0,
     en_conversacion: 1,
@@ -156,6 +158,50 @@ function normalizeOrderRow(row = {}) {
         createdAt: row.created_at || null,
         updatedAt: row.updated_at || null
     };
+}
+
+function makeOrdersCacheKey(tenantId = '', chatId = '', scopeModuleId = '') {
+    return [
+        toLower(tenantId),
+        toLower(chatId),
+        toLower(scopeModuleId)
+    ].join('|');
+}
+
+function getCachedOrders(tenantId = '', chatId = '', scopeModuleId = '') {
+    const key = makeOrdersCacheKey(tenantId, chatId, scopeModuleId);
+    const cached = ordersCache.get(key);
+    if (!cached) return null;
+    if ((Date.now() - cached.at) >= ORDERS_CACHE_TTL_MS) {
+        ordersCache.delete(key);
+        return null;
+    }
+    return Array.isArray(cached.items) ? cached.items : [];
+}
+
+function setCachedOrders(tenantId = '', chatId = '', scopeModuleId = '', items = []) {
+    ordersCache.set(makeOrdersCacheKey(tenantId, chatId, scopeModuleId), {
+        at: Date.now(),
+        items: Array.isArray(items) ? items : []
+    });
+}
+
+function invalidateOrdersCache(tenantId = '', chatId = '', scopeModuleId = '') {
+    const cleanTenantId = toLower(tenantId);
+    const cleanChatId = toLower(chatId);
+    const cleanScopeModuleId = toLower(scopeModuleId);
+    if (!cleanTenantId || !cleanChatId) return;
+
+    if (cleanScopeModuleId) {
+        ordersCache.delete(makeOrdersCacheKey(cleanTenantId, cleanChatId, cleanScopeModuleId));
+        ordersCache.delete(makeOrdersCacheKey(cleanTenantId, cleanChatId, ''));
+        return;
+    }
+
+    const prefix = `${cleanTenantId}|${cleanChatId}|`;
+    for (const key of ordersCache.keys()) {
+        if (key.startsWith(prefix)) ordersCache.delete(key);
+    }
 }
 
 function assertPostgresOrders() {
@@ -394,6 +440,7 @@ function registerOperationsOrdersHttpRoutes({
                 ]
             );
             const order = normalizeOrderRow(insertResult.rows[0]);
+            invalidateOrdersCache(tenantId, baseChatId, scopeModuleId);
 
             const commercialStatusResult = await maybeMarkChatAccepted({
                 tenantId,
@@ -444,6 +491,17 @@ function registerOperationsOrdersHttpRoutes({
             );
             if (!baseChatId) return res.status(400).json({ ok: false, error: 'chatId requerido.' });
 
+            const cachedItems = getCachedOrders(tenantId, baseChatId, scopeModuleId);
+            if (cachedItems) {
+                return res.json({
+                    ok: true,
+                    tenantId,
+                    chatId: baseChatId,
+                    scopeModuleId,
+                    items: cachedItems
+                });
+            }
+
             const params = [tenantId, baseChatId];
             let scopeSql = '';
             if (scopeModuleId) {
@@ -459,13 +517,15 @@ function registerOperationsOrdersHttpRoutes({
                   ORDER BY created_at DESC`,
                 params
             );
+            const items = rows.map(normalizeOrderRow);
+            setCachedOrders(tenantId, baseChatId, scopeModuleId, items);
 
             return res.json({
                 ok: true,
                 tenantId,
                 chatId: baseChatId,
                 scopeModuleId,
-                items: rows.map(normalizeOrderRow)
+                items
             });
         } catch (error) {
             return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron cargar pedidos.') });
@@ -512,6 +572,7 @@ function registerOperationsOrdersHttpRoutes({
                 ]
             );
             const order = normalizeOrderRow(updateResult.rows[0]);
+            invalidateOrdersCache(tenantId, order.chatId, order.scopeModuleId);
 
             const commercialStatusResult = await maybeAdvanceCommercialStatus({
                 tenantId,
@@ -583,6 +644,7 @@ function registerOperationsOrdersHttpRoutes({
                   WHERE tenant_id = $1 AND order_id = $2`,
                 [tenantId, orderId]
             );
+            invalidateOrdersCache(tenantId, current.chat_id, current.scope_module_id || '');
 
             return res.json({ ok: true, tenantId, orderId });
         } catch (error) {
