@@ -1050,6 +1050,7 @@ function createSocketChatListService({
                         filterKey,
                         scopeModuleId: activeScopeModuleId || ''
                     });
+                    socket.emit('chats', historyPage);
                     const enrichedPage = await enrichChatPageWithWindowData(historyPage, tenantId, activeScopeModuleId || '');
                     const items = Array.isArray(enrichedPage?.items) ? enrichedPage.items : [];
                     console.log('[perf get_chats cloud]', JSON.stringify({
