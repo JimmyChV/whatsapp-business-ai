@@ -13,6 +13,7 @@ import {
 const DEFAULT_CHAT_FILTERS = {
   labelTokens: [],
   unreadOnly: false,
+  scheduledOnly: false,
   unlabeledOnly: false,
   onlyAssignedToMe: false,
   contactMode: 'all',

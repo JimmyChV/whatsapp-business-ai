@@ -12208,12 +12208,13 @@ textarea:focus {
 .saas-quick-reply-builder-overlay {
   position: fixed;
   inset: 0;
-  z-index: 10000;
+  z-index: 2147483000;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 22px;
-  background: var(--chat-overlay-backdrop, rgba(15, 23, 42, 0.48));
+  background: color-mix(in srgb, var(--chat-overlay-backdrop, rgba(15, 23, 42, 0.52)) 88%, transparent);
+  backdrop-filter: blur(3px);
 }
 
 .saas-quick-reply-builder-shell {
@@ -12222,11 +12223,11 @@ textarea:focus {
   max-height: calc(100vh - 32px);
   overflow: hidden;
   border: 1px solid var(--saas-border-color, var(--color-border, rgba(0, 0, 0, 0.12)));
-  border-radius: 22px;
+  border-radius: 16px;
   background: var(--saas-bg-elevated, var(--color-surface, #fff));
   color: var(--saas-text-primary, var(--color-text, #111));
-  box-shadow: var(--saas-panel-shadow, var(--chat-panel-shadow, 0 28px 80px rgba(15, 23, 42, 0.24)));
-  padding: 18px;
+  box-shadow: var(--saas-panel-shadow, var(--chat-panel-shadow, 0 30px 90px rgba(15, 23, 42, 0.28)));
+  padding: 20px;
   display: flex;
   flex-direction: column;
   font-family: var(--saas-font-family, inherit);
@@ -12240,6 +12241,24 @@ textarea:focus {
   padding-bottom: 14px;
   margin-bottom: 16px;
   border-bottom: 1px solid var(--saas-divider-soft, var(--color-border, rgba(0, 0, 0, 0.12)));
+}
+
+.saas-quick-reply-builder-shell .saas-input,
+.saas-quick-reply-builder-shell input[type="text"],
+.saas-quick-reply-builder-shell input[type="search"],
+.saas-quick-reply-builder-shell input[type="datetime-local"],
+.saas-quick-reply-builder-shell select,
+.saas-quick-reply-builder-shell textarea {
+  border-radius: 10px;
+  border: 1px solid var(--saas-border-color, rgba(15, 23, 42, 0.16));
+  background: var(--saas-bg-surface, #fff);
+}
+
+.saas-quick-reply-builder-shell .saas-btn-cancel,
+.saas-quick-reply-builder-shell .saas-admin-form-row--actions button,
+.saas-quick-reply-builder-shell .saas-quick-reply-builder-actions button {
+  border-radius: 10px;
+  font-weight: 800;
 }
 
 .saas-quick-reply-builder-header h4 {
@@ -12261,7 +12280,7 @@ textarea:focus {
   min-height: 0;
   overflow: auto;
   border: 1px solid var(--saas-border-color, var(--color-border, rgba(0, 0, 0, 0.12)));
-  border-radius: 18px;
+  border-radius: 14px;
   background: var(--saas-bg-surface, var(--color-surface, #fff));
   padding: 14px;
 }

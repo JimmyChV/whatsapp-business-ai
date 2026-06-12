@@ -271,6 +271,34 @@ async function createScheduledMessage(tenantId, payload = {}) {
     return normalizeRow(rows[0]);
 }
 
+async function listScheduledMessageCounts(tenantId) {
+    assertPostgresScheduledMessages();
+    const cleanTenantId = text(tenantId);
+    if (!cleanTenantId) throw new Error('tenantId requerido.');
+    const { rows } = await queryPostgres(
+        `SELECT
+            chat_id,
+            LOWER(COALESCE(scope_module_id, '')) AS scope_module_id,
+            COUNT(*)::int AS pending_count
+           FROM tenant_scheduled_messages
+          WHERE tenant_id = $1
+            AND status = $2
+          GROUP BY chat_id, LOWER(COALESCE(scope_module_id, ''))
+          ORDER BY pending_count DESC, chat_id ASC`,
+        [cleanTenantId, STATUS_PENDING]
+    );
+    return (Array.isArray(rows) ? rows : []).map((row) => {
+        const chatId = text(row.chat_id);
+        const scopeModuleId = lower(row.scope_module_id || '');
+        return {
+            chatId,
+            scopeModuleId,
+            scopedChatId: scopeModuleId ? `${chatId}::mod::${scopeModuleId}` : chatId,
+            pendingCount: Number(row.pending_count || 0) || 0
+        };
+    }).filter((row) => row.chatId && row.pendingCount > 0);
+}
+
 async function listScheduledMessages(tenantId, { chatId = '', scopeModuleId = '', limit = 50 } = {}) {
     assertPostgresScheduledMessages();
     const cleanTenantId = text(tenantId);
@@ -570,6 +598,7 @@ async function processPendingMessages({ waClient, logger, limit = 25 } = {}) {
 module.exports = {
     createScheduledMessage,
     listScheduledMessages,
+    listScheduledMessageCounts,
     cancelScheduledMessage,
     updateScheduledMessage,
     cancelByChatInbound,

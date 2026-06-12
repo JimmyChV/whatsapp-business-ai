@@ -40,6 +40,18 @@ function registerOperationsScheduledMessagesHttpRoutes({
         }
     });
 
+    app.get('/api/tenant/scheduled-messages/counts', async (req, res) => {
+        try {
+            if (!ensureAuthenticated(req, res, authService)) return;
+            const tenantId = resolveTenantIdFromContext(req);
+            if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId invalido.' });
+            const items = await scheduledMessagesService.listScheduledMessageCounts(tenantId);
+            return res.json({ ok: true, tenantId, items });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: String(error?.message || 'No se pudieron cargar conteos programados.') });
+        }
+    });
+
     app.post('/api/tenant/scheduled-messages', async (req, res) => {
         try {
             if (!ensureAuthenticated(req, res, authService)) return;

@@ -24,6 +24,14 @@ export async function listScheduledMessages({ chatId, scopeModuleId = '', buildA
     return Array.isArray(payload.items) ? payload.items : [];
 }
 
+export async function listScheduledMessageCounts({ buildApiHeaders } = {}) {
+    const resp = await fetch(`${API_URL}/api/tenant/scheduled-messages/counts`, {
+        headers: typeof buildApiHeaders === 'function' ? buildApiHeaders() : undefined
+    });
+    const payload = await parseJsonResponse(resp);
+    return Array.isArray(payload.items) ? payload.items : [];
+}
+
 export async function createScheduledMessage({ payload, buildApiHeaders } = {}) {
     const resp = await fetch(`${API_URL}/api/tenant/scheduled-messages`, {
         method: 'POST',

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { CalendarClock, Clock, Trash2, Pencil } from 'lucide-react';
 import AutoMessageEditor from '../../saas/components/AutoMessageEditor';
 import {
@@ -270,13 +271,21 @@ const ScheduledMessageModal = ({
         setSaving(true);
         setError('');
         try {
+            let savedItem = null;
             if (editingId) {
-                await updateScheduledMessage({ messageId: editingId, payload, buildApiHeaders });
+                savedItem = await updateScheduledMessage({ messageId: editingId, payload, buildApiHeaders });
             } else {
-                await createScheduledMessage({ payload, buildApiHeaders });
+                savedItem = await createScheduledMessage({ payload, buildApiHeaders });
+            }
+            if (typeof onPendingCountChange === 'function') {
+                const existingPending = pendingItems.filter((item) => String(item?.messageId || '') !== String(editingId || ''));
+                const nextCount = String(savedItem?.status || 'pending') === 'pending'
+                    ? existingPending.length + 1
+                    : existingPending.length;
+                onPendingCountChange(nextCount);
             }
             resetForm();
-            await loadItems();
+            onClose?.();
         } catch (err) {
             setError(String(err?.message || err));
         } finally {
@@ -322,30 +331,30 @@ const ScheduledMessageModal = ({
         }
     };
 
-    return (
+    const modal = (
         <div
             className="saas-quick-reply-builder-overlay"
             onClick={onClose}
-            style={{ zIndex: 10050, alignItems: 'flex-start', paddingTop: '34px' }}
+            style={{ zIndex: 2147483000, alignItems: 'flex-start', paddingTop: '34px' }}
         >
             <div
                 className="saas-quick-reply-builder-shell"
                 onClick={(event) => event.stopPropagation()}
-                style={{ width: 'min(1180px, calc(100vw - 32px))', maxHeight: 'calc(100vh - 64px)' }}
+                style={{ width: 'min(1480px, calc(100vw - 32px))', maxHeight: 'calc(100vh - 64px)' }}
             >
                 <div className="saas-quick-reply-builder-header">
                     <div>
                         <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <CalendarClock size={19} /> Programar respuesta
                         </h4>
-                        <small>{variables.cliente || 'Chat activo'} · se cancela si el cliente responde antes, salvo que lo desactives.</small>
+                        <small>{variables.cliente || 'Chat activo'} - se cancela si el cliente responde antes, salvo que lo desactives.</small>
                     </div>
                     <button type="button" className="saas-btn-cancel" disabled={saving} onClick={onClose}>Cerrar</button>
                 </div>
 
                 {error ? <div className="saas-meta-template-error" style={{ margin: '0 18px 10px' }}>{error}</div> : null}
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 280px', gap: '14px', padding: '0 18px 18px', overflow: 'auto' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: '16px', padding: '0 18px 18px', overflow: 'auto' }}>
                     <div style={{ minWidth: 0 }}>
                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '10px' }}>
                             <select onChange={handleQuickReplySelection} defaultValue="" className="saas-input" style={{ minHeight: '36px', minWidth: '300px' }}>
@@ -477,6 +486,8 @@ const ScheduledMessageModal = ({
             </div>
         </div>
     );
+
+    return typeof document !== 'undefined' ? createPortal(modal, document.body) : modal;
 };
 
 export default ScheduledMessageModal;

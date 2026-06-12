@@ -597,6 +597,7 @@ export const normalizeChatFilters = (filters = {}) => {
   return {
     labelTokens,
     unreadOnly: Boolean(filters?.unreadOnly),
+    scheduledOnly: Boolean(filters?.scheduledOnly),
     unlabeledOnly: Boolean(filters?.unlabeledOnly),
     onlyAssignedToMe: Boolean(filters?.onlyAssignedToMe),
     assigneeUserId: String(filters?.assigneeUserId || '').trim(),

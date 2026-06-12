@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck, UserCheck, ChevronDown, Moon, Sun, Clock3, CheckSquare, Square, Loader2 } from 'lucide-react';
+import { MoreVertical, Search, X, SlidersHorizontal, Tags, Tag, Users, UserRoundX, Archive, Pin, CheckCheck, UserCheck, ChevronDown, Moon, Sun, Clock3, CalendarClock, CheckSquare, Square, Loader2 } from 'lucide-react';
 import ChannelBrandIcon from './ChannelBrandIcon';
 import AssignmentBadge from './assignment/AssignmentBadge';
 import CommercialStatusBadge from './commercial/CommercialStatusBadge';
@@ -11,6 +11,7 @@ import useSidebarUiToggles from './hooks/useSidebarUiToggles';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import { API_URL } from '../../../config/runtime';
 import { searchTenantCustomersForChat } from '../core/services/customerSearch.service';
+import { listScheduledMessageCounts } from '../core/services/scheduledMessages.service';
 import { getWindowStatus, WINDOW_FILTER_OPTIONS } from '../core/helpers/windowTimer.helpers';
 
 
@@ -50,6 +51,20 @@ const normalizeSearchText = (value = '') => String(value || '')
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
     .toLowerCase();
+
+const buildScheduledCountsMap = (items = []) => {
+    const map = {};
+    (Array.isArray(items) ? items : []).forEach((item) => {
+        const chatId = String(item?.chatId || '').trim();
+        const scopeModuleId = String(item?.scopeModuleId || '').trim().toLowerCase();
+        const scopedChatId = String(item?.scopedChatId || (scopeModuleId ? `${chatId}::mod::${scopeModuleId}` : chatId)).trim();
+        const count = Number(item?.pendingCount || item?.count || 0) || 0;
+        if (!chatId || count <= 0) return;
+        map[chatId] = (Number(map[chatId] || 0) || 0) + count;
+        if (scopedChatId) map[scopedChatId] = count;
+    });
+    return map;
+};
 
 const normalizePattyMode = (value = '') => {
     const mode = String(value || '').trim().toLowerCase();
@@ -111,6 +126,7 @@ const Sidebar = ({
     } = useSidebarUiToggles();
     const [windowTick, setWindowTick] = React.useState(() => Date.now());
     const [globalCommercialStatusOptions, setGlobalCommercialStatusOptions] = React.useState([{ value: 'all', label: 'Todos' }]);
+    const [scheduledCountsByChat, setScheduledCountsByChat] = React.useState({});
     const [showAdvancedFilters, setShowAdvancedFilters] = React.useState(false);
     const [mobileFilterMode, setMobileFilterMode] = React.useState(null);
     const {
@@ -138,7 +154,8 @@ const Sidebar = ({
         commercialStatusOptions: globalCommercialStatusOptions,
         onFiltersChange,
         searchQuery,
-        windowTick
+        windowTick,
+        scheduledCountsByChat
     });
     const {
         formatTime,
@@ -386,6 +403,28 @@ const Sidebar = ({
         : [];
     const activeTenantOption = sortedTenantOptions.find((tenant) => String(tenant?.id || '').trim() === currentTenantId) || sortedTenantOptions[0] || null;
     const activeTenantLabel = activeTenantOption?.name || activeTenantOption?.id || currentTenantId || 'default';
+
+    React.useEffect(() => {
+        let cancelled = false;
+        const loadScheduledCounts = async () => {
+            if (typeof buildApiHeaders !== 'function') {
+                if (!cancelled) setScheduledCountsByChat({});
+                return;
+            }
+            try {
+                const items = await listScheduledMessageCounts({ buildApiHeaders });
+                if (!cancelled) setScheduledCountsByChat(buildScheduledCountsMap(items));
+            } catch (_) {
+                if (!cancelled) setScheduledCountsByChat({});
+            }
+        };
+        loadScheduledCounts();
+        const timerId = window.setInterval(loadScheduledCounts, 30_000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(timerId);
+        };
+    }, [buildApiHeaders, currentTenantId]);
     const moduleConfigById = React.useMemo(() => new Map(
         (Array.isArray(waModules) ? waModules : []).map((module) => [
             String(module?.moduleId || module?.id || '').trim().toLowerCase(),
@@ -896,6 +935,16 @@ const Sidebar = ({
                         >
                             <CheckCheck size={18} />
                             {quickStats.unread > 0 && <span className="sidebar-ribbon-badge">{quickStats.unread > 99 ? '99+' : quickStats.unread}</span>}
+                        </button>
+                        <button
+                            type="button"
+                            className={`sidebar-ribbon-btn ${filters.scheduledOnly ? 'active' : ''}`}
+                            onClick={() => updateFilters({ scheduledOnly: !filters.scheduledOnly })}
+                            title="Mensajes programados"
+                            data-label="Programados"
+                        >
+                            <CalendarClock size={18} />
+                            {quickStats.scheduled > 0 && <span className="sidebar-ribbon-badge">{quickStats.scheduled > 99 ? '99+' : quickStats.scheduled}</span>}
                         </button>
                         <button
                             type="button"
