@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Smile, Bot, Sparkles, X, Paperclip, Send, MapPin, LayoutTemplate, Store } from 'lucide-react';
+import { Smile, Bot, Sparkles, X, Paperclip, Send, MapPin, LayoutTemplate, Store, CalendarClock } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { EmojiStyle, SkinTonePickerLocation, SkinTones, SuggestionMode, Theme } from 'emoji-picker-react';
 import { isRealQuickReplyMediaAsset } from '../core/helpers/appChat.helpers';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const GLOBAL_SKIN_TONE_STORAGE_KEY = 'chat-emoji-skin-tone:global';
+const LazyScheduledMessageModal = React.lazy(() => import('./ScheduledMessageModal'));
 
 const normalizeQuickReplyAssetPreviewUrl = (rawUrl = '') => {
     const value = String(rawUrl || '').trim();
@@ -77,6 +78,8 @@ const ChatInput = ({
     onOpenSendTemplate,
     onSendNativeCatalog,
     buildApiHeaders,
+    activeChatDetails = null,
+    activeTenantId = '',
     windowOpen = true,
     focusChatKey = ''
 }) => {
@@ -87,6 +90,7 @@ const ChatInput = ({
     const [selectionState, setSelectionState] = useState(null);
     const [preferredSkinTone, setPreferredSkinTone] = useState(SkinTones.NEUTRAL);
     const [localText, setLocalText] = useState(() => String(inputText || ''));
+    const [scheduledModalOpen, setScheduledModalOpen] = useState(false);
     const inputRef = useRef(null);
     const chatInputRef = useRef(null);
     const lastExternalTextRef = useRef(String(inputText || ''));
@@ -494,6 +498,18 @@ const ChatInput = ({
 
     return (
         <div className="chat-input-area chat-input-area-pro" style={{ position: 'relative' }} ref={chatInputRef}>
+            {scheduledModalOpen ? (
+                <React.Suspense fallback={null}>
+                    <LazyScheduledMessageModal
+                        isOpen={scheduledModalOpen}
+                        onClose={() => setScheduledModalOpen(false)}
+                        activeChat={activeChatDetails}
+                        quickReplies={quickReplies}
+                        buildApiHeaders={buildApiHeaders}
+                        activeTenantId={activeTenantId}
+                    />
+                </React.Suspense>
+            ) : null}
             {editingMessage?.id && (
                 <div style={{
                     position: 'absolute',
@@ -834,6 +850,15 @@ const ChatInput = ({
             </div>
 
             <div className="chat-input-right-actions">
+                <button
+                    className="btn-icon"
+                    style={{ color: '#8696a0' }}
+                    onClick={() => setScheduledModalOpen(true)}
+                    title="Programar respuesta"
+                    disabled={Boolean(editingMessage?.id) || !activeChatDetails?.id}
+                >
+                    <CalendarClock size={22} />
+                </button>
                 {/* AI button */}
                 <button
                     className="btn-icon"

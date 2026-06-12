@@ -1154,6 +1154,8 @@ const ChatWindow = ({
                         onCancelReplyMessage={inputProps?.onCancelReplyMessage}
                         onOpenMapPicker={() => openMapModal({ query: '' })}
                         buildApiHeaders={buildApiHeaders}
+                        activeChatDetails={activeChatDetails}
+                        activeTenantId={activeTenantId}
                         windowOpen={conversationWindowOpen}
                         focusChatKey={activeChatScopedId}
                     />
