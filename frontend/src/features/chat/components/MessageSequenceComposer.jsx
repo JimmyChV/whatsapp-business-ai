@@ -240,50 +240,41 @@ export default function MessageSequenceComposer({
     };
 
     return (
-        <div style={{ display: 'grid', gap: '12px' }}>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {capabilities.message !== false ? <button type="button" className="saas-btn-cancel" disabled={disabled} onClick={() => addBlock('message')}><Plus size={14} /> Texto</button> : null}
-                {capabilities.media !== false ? <button type="button" className="saas-btn-cancel" disabled={disabled} onClick={() => addBlock('message')}><Image size={14} /> Adjunto</button> : null}
-                {capabilities.product !== false ? <button type="button" className="saas-btn-cancel" disabled={disabled} onClick={() => addBlock('product')}><Box size={14} /> Producto</button> : null}
-                {capabilities.catalog !== false ? <button type="button" className="saas-btn-cancel" disabled={disabled} onClick={() => addBlock('catalog')}><Archive size={14} /> Catalogo</button> : null}
-                {capabilities.delay !== false ? <button type="button" className="saas-btn-cancel" disabled={disabled} onClick={() => addBlock('delay')}><Clock3 size={14} /> Delay</button> : null}
+        <div className="message-sequence-composer">
+            <div className="message-sequence-composer__toolbar">
+                {capabilities.message !== false ? <button type="button" className="message-sequence-composer__tool" disabled={disabled} onClick={() => addBlock('message')}><Plus size={14} /> Texto</button> : null}
+                {capabilities.media !== false ? <button type="button" className="message-sequence-composer__tool" disabled={disabled} onClick={() => addBlock('message')}><Image size={14} /> Adjunto</button> : null}
+                {capabilities.product !== false ? <button type="button" className="message-sequence-composer__tool" disabled={disabled} onClick={() => addBlock('product')}><Box size={14} /> Producto</button> : null}
+                {capabilities.catalog !== false ? <button type="button" className="message-sequence-composer__tool" disabled={disabled} onClick={() => addBlock('catalog')}><Archive size={14} /> Catalogo</button> : null}
+                {capabilities.delay !== false ? <button type="button" className="message-sequence-composer__tool" disabled={disabled} onClick={() => addBlock('delay')}><Clock3 size={14} /> Delay</button> : null}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '260px minmax(0, 1fr)', gap: '12px' }}>
-                <div style={{ display: 'grid', gap: '8px', alignContent: 'start' }}>
+            <div className="message-sequence-composer__body">
+                <div className="message-sequence-composer__list">
                     {blocks.map((block, index) => (
                         <button
                             key={block.id}
                             type="button"
+                            className={`message-sequence-composer__block ${block.id === selectedBlock?.id ? 'is-selected' : ''}`}
                             onClick={() => setSelectedId(block.id)}
-                            style={{
-                                border: block.id === selectedBlock?.id ? '1px solid #16a34a' : '1px solid var(--chat-card-border, #e5e7eb)',
-                                background: block.id === selectedBlock?.id ? '#f0fdf4' : '#fff',
-                                borderRadius: '8px',
-                                padding: '9px',
-                                textAlign: 'left',
-                                display: 'grid',
-                                gap: '7px',
-                                cursor: 'pointer'
-                            }}
                         >
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 800 }}>
+                            <span className="message-sequence-composer__block-title">
                                 {blockIcon(block.type)} Bloque {index + 1}
                             </span>
-                            <small style={{ color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <small className="message-sequence-composer__block-summary">
                                 {summarizeBlock(block)}
                             </small>
-                            <span style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px' }}>
-                                <span role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); moveBlock(block.id, -1); }}><ChevronUp size={15} /></span>
-                                <span role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); moveBlock(block.id, 1); }}><ChevronDown size={15} /></span>
-                                <span role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); duplicateBlock(block.id); }}><Copy size={14} /></span>
-                                <span role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); removeBlock(block.id); }}><Trash2 size={14} /></span>
+                            <span className="message-sequence-composer__block-actions">
+                                <span role="button" tabIndex={0} aria-label="Subir bloque" onClick={(event) => { event.stopPropagation(); moveBlock(block.id, -1); }}><ChevronUp size={15} /></span>
+                                <span role="button" tabIndex={0} aria-label="Bajar bloque" onClick={(event) => { event.stopPropagation(); moveBlock(block.id, 1); }}><ChevronDown size={15} /></span>
+                                <span role="button" tabIndex={0} aria-label="Duplicar bloque" onClick={(event) => { event.stopPropagation(); duplicateBlock(block.id); }}><Copy size={14} /></span>
+                                <span role="button" tabIndex={0} aria-label="Eliminar bloque" onClick={(event) => { event.stopPropagation(); removeBlock(block.id); }}><Trash2 size={14} /></span>
                             </span>
                         </button>
                     ))}
                 </div>
 
-                <div style={{ minWidth: 0 }}>
+                <div className="message-sequence-composer__editor">
                     {selectedBlock?.type === 'message' ? (
                         <AutoMessageEditor
                             value={selectedBlock.text || ''}
@@ -313,9 +304,9 @@ export default function MessageSequenceComposer({
                     ) : null}
 
                     {selectedBlock?.type === 'delay' ? (
-                        <div style={{ border: '1px solid var(--chat-card-border, #e5e7eb)', borderRadius: '8px', padding: '16px', background: '#fff', display: 'grid', gap: '10px' }}>
+                        <div className="message-sequence-composer__simple-editor">
                             <strong>Delay entre bloques</strong>
-                            <small style={{ color: '#6b7280' }}>Pausa corta. Maximo 30 segundos.</small>
+                            <small>Pausa corta. Maximo 30 segundos.</small>
                             <input
                                 type="number"
                                 min="1"
@@ -325,18 +316,18 @@ export default function MessageSequenceComposer({
                                 className="saas-input"
                                 style={{ width: '140px' }}
                             />
-                            <div style={{ display: 'flex', gap: '6px' }}>
+                            <div className="message-sequence-composer__presets">
                                 {[3, 5, 10].map((seconds) => (
-                                    <button key={seconds} type="button" className="saas-btn-cancel" onClick={() => updateBlock(selectedBlock.id, { delaySeconds: seconds })}>{seconds}s</button>
+                                    <button key={seconds} type="button" className="message-sequence-composer__chip" onClick={() => updateBlock(selectedBlock.id, { delaySeconds: seconds })}>{seconds}s</button>
                                 ))}
                             </div>
                         </div>
                     ) : null}
 
                     {selectedBlock?.type === 'product' ? (
-                        <div style={{ border: '1px solid var(--chat-card-border, #e5e7eb)', borderRadius: '8px', padding: '16px', background: '#fff', display: 'grid', gap: '10px' }}>
+                        <div className="message-sequence-composer__simple-editor">
                             <strong>Producto nativo por SKU</strong>
-                            <small style={{ color: '#6b7280' }}>Se enviara como producto del catalogo WhatsApp.</small>
+                            <small>Se enviara como producto del catalogo WhatsApp.</small>
                             <input
                                 value={selectedBlock.sku || ''}
                                 onChange={(event) => updateBlock(selectedBlock.id, { sku: event.target.value })}
@@ -347,9 +338,9 @@ export default function MessageSequenceComposer({
                     ) : null}
 
                     {selectedBlock?.type === 'catalog' ? (
-                        <div style={{ border: '1px solid var(--chat-card-border, #e5e7eb)', borderRadius: '8px', padding: '16px', background: '#fff', display: 'grid', gap: '10px' }}>
+                        <div className="message-sequence-composer__simple-editor">
                             <strong>Catalogo nativo WhatsApp</strong>
-                            <small style={{ color: '#6b7280' }}>Este bloque abre el catalogo nativo asociado al modulo.</small>
+                            <small>Este bloque abre el catalogo nativo asociado al modulo.</small>
                             <input
                                 value={selectedBlock.text || ''}
                                 onChange={(event) => updateBlock(selectedBlock.id, { text: event.target.value })}

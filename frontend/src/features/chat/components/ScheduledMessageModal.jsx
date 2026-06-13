@@ -284,31 +284,29 @@ const ScheduledMessageModal = ({
 
     const modal = (
         <div
-            className="saas-quick-reply-builder-overlay"
+            className="saas-quick-reply-builder-overlay scheduled-message-modal__overlay"
             onClick={onClose}
-            style={{ zIndex: 2147483000, alignItems: 'flex-start', paddingTop: '34px' }}
         >
             <div
-                className="saas-quick-reply-builder-shell"
+                className="saas-quick-reply-builder-shell scheduled-message-modal__shell"
                 onClick={(event) => event.stopPropagation()}
-                style={{ width: 'min(1180px, calc(100vw - 32px))', maxHeight: 'calc(100vh - 64px)' }}
             >
                 <div className="saas-quick-reply-builder-header">
                     <div>
                         <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <CalendarClock size={19} /> Programar respuesta
                         </h4>
-                        <small>{variables.cliente || 'Chat activo'} · se cancela si el cliente responde antes, salvo que lo desactives.</small>
+                        <small>{variables.cliente || 'Chat activo'} - se cancela si el cliente responde antes, salvo que lo desactives.</small>
                     </div>
                     <button type="button" className="saas-btn-cancel" disabled={saving} onClick={onClose}>Cerrar</button>
                 </div>
 
                 {error ? <div className="saas-meta-template-error" style={{ margin: '0 18px 10px' }}>{error}</div> : null}
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 280px', gap: '14px', padding: '0 18px 18px', overflow: 'auto' }}>
+                <div className="scheduled-message-modal__content">
                     <div style={{ minWidth: 0 }}>
-                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '10px' }}>
-                            <div style={{ position: 'relative', minWidth: '320px', flex: '1 1 420px' }}>
+                        <div className="scheduled-message-modal__controls">
+                            <div className="scheduled-message-modal__quick-reply-search">
                                 <input
                                     type="search"
                                     className="saas-input"
@@ -386,17 +384,17 @@ const ScheduledMessageModal = ({
                                     </div>
                                 ) : null}
                             </div>
-                            <div style={{ display: 'inline-flex', gap: '6px', flexWrap: 'wrap' }}>
-                                <button type="button" className={scheduleType === 'absolute' ? '' : 'saas-btn-cancel'} onClick={() => setScheduleType('absolute')}>
+                            <div className="scheduled-message-modal__mode-switch">
+                                <button type="button" className={scheduleType === 'absolute' ? 'is-active' : ''} onClick={() => setScheduleType('absolute')}>
                                     Hora exacta
                                 </button>
-                                <button type="button" className={scheduleType === 'before_window_expiry' ? '' : 'saas-btn-cancel'} onClick={() => setScheduleType('before_window_expiry')} disabled={!windowExpiresAt}>
+                                <button type="button" className={scheduleType === 'before_window_expiry' ? 'is-active' : ''} onClick={() => setScheduleType('before_window_expiry')} disabled={!windowExpiresAt}>
                                     Antes de vencer
                                 </button>
                             </div>
                         </div>
 
-                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '12px' }}>
+                        <div className="scheduled-message-modal__schedule-row">
                             {scheduleType === 'absolute' ? (
                                 <input
                                     type="datetime-local"
@@ -411,7 +409,7 @@ const ScheduledMessageModal = ({
                                         <button
                                             key={preset.value}
                                             type="button"
-                                            className={minutesBeforeWindow === preset.value ? '' : 'saas-btn-cancel'}
+                                            className={minutesBeforeWindow === preset.value ? 'scheduled-message-modal__preset is-active' : 'scheduled-message-modal__preset'}
                                             onClick={() => setMinutesBeforeWindow(preset.value)}
                                         >
                                             {preset.label}
@@ -420,7 +418,7 @@ const ScheduledMessageModal = ({
                                     <small>Vence: {windowExpiresAt ? formatSchedule(windowExpiresAt) : 'sin dato'}</small>
                                 </>
                             )}
-                            <label className="saas-admin-module-toggle" style={{ marginLeft: 'auto' }} title="Si lo desmarcas, se pedira confirmacion porque el mensaje saldra aunque el cliente responda antes.">
+                            <label className="saas-admin-module-toggle scheduled-message-modal__cancel-toggle" title="Si lo desmarcas, se pedira confirmacion porque el mensaje saldra aunque el cliente responda antes.">
                                 <input
                                     type="checkbox"
                                     checked={cancelOnCustomerReply}
@@ -458,8 +456,8 @@ const ScheduledMessageModal = ({
                         </div>
                     </div>
 
-                    <aside style={{ border: '1px solid var(--chat-card-border, #e5e7eb)', borderRadius: '8px', padding: '12px', background: 'var(--chat-card-surface, #fff)', alignSelf: 'start' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', fontWeight: 800 }}>
+                    <aside className="scheduled-message-modal__history">
+                        <div className="scheduled-message-modal__history-title">
                             <Clock size={17} /> Programados ({pendingItems.length})
                         </div>
                         {loading ? (
