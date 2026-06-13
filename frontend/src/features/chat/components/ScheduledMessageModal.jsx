@@ -69,6 +69,7 @@ const ScheduledMessageModal = ({
     onClose,
     activeChat,
     quickReplies = [],
+    catalogProducts = [],
     buildApiHeaders,
     activeTenantId = ''
 }) => {
@@ -128,6 +129,15 @@ const ScheduledMessageModal = ({
         if (block.type === 'product') return Boolean(text(block.sku));
         return block.type === 'catalog';
     });
+    const hasDraftChanges = useMemo(() => (
+        Boolean(editingId)
+        || normalizedBlocks.some((block) => {
+            if (block.type === 'message') return Boolean(text(block.text) || block.attachments?.length);
+            if (block.type === 'product') return Boolean(text(block.sku));
+            if (block.type === 'catalog') return Boolean(text(block.text));
+            return block.type !== 'message';
+        })
+    ), [editingId, normalizedBlocks]);
 
     const loadItems = async () => {
         if (!chatId) return;
@@ -282,10 +292,21 @@ const ScheduledMessageModal = ({
         }
     };
 
+    const requestClose = () => {
+        if (saving) return;
+        if (hasDraftChanges) {
+            const shouldClose = globalThis.confirm(
+                'Tienes una programacion en edicion. Aceptar: salir y descartar cambios. Cancelar: seguir editando.'
+            );
+            if (!shouldClose) return;
+        }
+        onClose?.();
+    };
+
     const modal = (
         <div
             className="saas-quick-reply-builder-overlay scheduled-message-modal__overlay"
-            onClick={onClose}
+            onClick={requestClose}
         >
             <div
                 className="saas-quick-reply-builder-shell scheduled-message-modal__shell"
@@ -298,7 +319,7 @@ const ScheduledMessageModal = ({
                         </h4>
                         <small>{variables.cliente || 'Chat activo'} - se cancela si el cliente responde antes, salvo que lo desactives.</small>
                     </div>
-                    <button type="button" className="saas-btn-cancel" disabled={saving} onClick={onClose}>Cerrar</button>
+                    <button type="button" className="scheduled-message-modal__close" disabled={saving} onClick={requestClose}>Cerrar</button>
                 </div>
 
                 {error ? <div className="saas-meta-template-error" style={{ margin: '0 18px 10px' }}>{error}</div> : null}
@@ -445,12 +466,13 @@ const ScheduledMessageModal = ({
                                 catalog: true,
                                 product: true
                             }}
+                            catalogProducts={catalogProducts}
                         />
-                        <div className="saas-admin-form-row saas-admin-form-row--actions saas-quick-reply-builder-actions" style={{ marginTop: '12px' }}>
-                            <button type="button" disabled={saving || !hasRequiredContent} onClick={submit}>
+                        <div className="scheduled-message-modal__actions">
+                            <button type="button" className="scheduled-message-modal__primary" disabled={saving || !hasRequiredContent} onClick={submit}>
                                 {editingId ? 'Guardar programacion' : 'Programar respuesta'}
                             </button>
-                            <button type="button" className="saas-btn-cancel" disabled={saving} onClick={resetForm}>
+                            <button type="button" className="scheduled-message-modal__secondary" disabled={saving} onClick={resetForm}>
                                 Limpiar
                             </button>
                         </div>

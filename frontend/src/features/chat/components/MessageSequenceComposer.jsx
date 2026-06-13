@@ -58,7 +58,14 @@ function normalizeBlock(block = {}, index = 0) {
         return { id, type: 'catalog', text: text(source.text || '') };
     }
     if (type === 'product') {
-        return { id, type: 'product', sku: text(source.sku || source.productRetailerId || '') };
+        return {
+            id,
+            type: 'product',
+            sku: text(source.sku || source.productRetailerId || ''),
+            productTitle: text(source.productTitle || source.title || source.name || ''),
+            productImageUrl: text(source.productImageUrl || source.imageUrl || ''),
+            productPrice: text(source.productPrice || source.price || '')
+        };
     }
     return {
         id: id || `blk_${index + 1}`,
@@ -107,17 +114,48 @@ function blockIcon(type = '') {
 function summarizeBlock(block = {}) {
     if (block.type === 'delay') return `Esperar ${Number(block.delaySeconds || 3)}s`;
     if (block.type === 'catalog') return 'Catalogo nativo WhatsApp';
-    if (block.type === 'product') return block.sku ? `Producto ${block.sku}` : 'Producto por SKU';
+    if (block.type === 'product') return block.productTitle ? `${block.productTitle} (${block.sku || 'sin SKU'})` : block.sku ? `Producto ${block.sku}` : 'Producto por SKU';
     const body = text(block.text);
     if (body) return body;
     if (block.attachments?.length) return `${block.attachments.length} adjunto(s)`;
     return 'Mensaje vacio';
 }
 
+function normalizeCatalogProduct(item = {}, index = 0) {
+    const source = item && typeof item === 'object' ? item : {};
+    const sku = text(
+        source.productRetailerId
+        || source.product_retailer_id
+        || source.retailerId
+        || source.retailer_id
+        || source.itemId
+        || source.item_id
+        || source.sku
+        || source.productId
+        || source.product_id
+        || source.id
+    );
+    const title = text(source.title || source.name || source.productName || source.product_name || source.nombre || sku || `Producto ${index + 1}`);
+    const price = text(source.price || source.regularPrice || source.salePrice || source.priceLabel || '');
+    const imageUrl = text(source.imageUrl || source.image_url || source.thumbnailUrl || source.thumbnail || '');
+    const description = text(source.description || source.shortDescription || source.short_description || '');
+    if (!sku && !title) return null;
+    return {
+        id: text(source.id || source.productId || source.product_id || source.itemId || source.item_id || sku || `product_${index}`),
+        sku,
+        title,
+        price,
+        imageUrl,
+        description,
+        searchText: `${sku} ${title} ${description}`.toLowerCase()
+    };
+}
+
 export default function MessageSequenceComposer({
     value = [],
     onChange,
     tenantId = '',
+    catalogProducts = [],
     disabled = false,
     capabilities = {
         message: true,
@@ -129,7 +167,21 @@ export default function MessageSequenceComposer({
 }) {
     const blocks = useMemo(() => normalizeMessageBlocksForComposer(value), [value]);
     const [selectedId, setSelectedId] = useState(() => blocks[0]?.id || '');
+    const [editingId, setEditingId] = useState(() => blocks[0]?.id || '');
+    const [productSearch, setProductSearch] = useState('');
     const selectedBlock = blocks.find((block) => block.id === selectedId) || blocks[0] || null;
+    const editingBlock = blocks.find((block) => block.id === editingId) || null;
+    const productOptions = useMemo(() => (
+        (Array.isArray(catalogProducts) ? catalogProducts : [])
+            .map(normalizeCatalogProduct)
+            .filter(Boolean)
+    ), [catalogProducts]);
+    const filteredProductOptions = useMemo(() => {
+        const query = text(productSearch || editingBlock?.productTitle || editingBlock?.sku).toLowerCase();
+        const source = productOptions;
+        if (!query) return source.slice(0, 8);
+        return source.filter((item) => item.searchText.includes(query)).slice(0, 10);
+    }, [editingBlock?.productTitle, editingBlock?.sku, productOptions, productSearch]);
 
     const commit = (nextBlocks) => {
         const normalized = normalizeMessageBlocksForComposer(nextBlocks);
@@ -152,14 +204,17 @@ export default function MessageSequenceComposer({
         );
         commit([...blocks, nextBlock]);
         setSelectedId(nextBlock.id);
+        setEditingId(nextBlock.id);
     };
 
     const removeBlock = (blockId) => {
         if (blocks.length <= 1) {
             commit([normalizeBlock({ type: 'message', text: '', attachments: [] })]);
+            setEditingId('');
             return;
         }
         commit(blocks.filter((block) => block.id !== blockId));
+        if (editingId === blockId) setEditingId('');
     };
 
     const moveBlock = (blockId, direction) => {
@@ -183,7 +238,8 @@ export default function MessageSequenceComposer({
 
     const uploadFiles = async (fileList) => {
         const files = Array.from(fileList || []).filter(Boolean);
-        if (!selectedBlock || selectedBlock.type !== 'message' || files.length === 0) return;
+        const targetBlock = editingBlock || selectedBlock;
+        if (!targetBlock || targetBlock.type !== 'message' || files.length === 0) return;
         const maxBytes = QUICK_REPLY_DEFAULT_MAX_UPLOAD_MB * 1024 * 1024;
         const uploadedAssets = [];
         for (const file of files) {
@@ -205,30 +261,32 @@ export default function MessageSequenceComposer({
                 sizeBytes: Number(file?.size || 0) || null
             });
         }
-        updateBlock(selectedBlock.id, {
-            attachments: [...(selectedBlock.attachments || []), ...uploadedAssets]
+        updateBlock(targetBlock.id, {
+            attachments: [...(targetBlock.attachments || []), ...uploadedAssets]
         });
     };
 
     const removeAssetAt = (index = -1) => {
-        if (!selectedBlock || selectedBlock.type !== 'message') return;
-        updateBlock(selectedBlock.id, {
-            attachments: (selectedBlock.attachments || []).filter((_asset, assetIndex) => assetIndex !== index)
+        const targetBlock = editingBlock || selectedBlock;
+        if (!targetBlock || targetBlock.type !== 'message') return;
+        updateBlock(targetBlock.id, {
+            attachments: (targetBlock.attachments || []).filter((_asset, assetIndex) => assetIndex !== index)
         });
     };
 
-    const selectedForm = selectedBlock?.type === 'message'
+    const activeEditBlock = editingBlock || selectedBlock;
+    const selectedForm = activeEditBlock?.type === 'message'
         ? {
-            mediaAssets: selectedBlock.attachments || [],
-            mediaUrl: selectedBlock.attachments?.[0]?.url || '',
-            mediaMimeType: selectedBlock.attachments?.[0]?.mimeType || '',
-            mediaFileName: selectedBlock.attachments?.[0]?.fileName || '',
-            mediaSizeBytes: selectedBlock.attachments?.[0]?.sizeBytes || null
+            mediaAssets: activeEditBlock.attachments || [],
+            mediaUrl: activeEditBlock.attachments?.[0]?.url || '',
+            mediaMimeType: activeEditBlock.attachments?.[0]?.mimeType || '',
+            mediaFileName: activeEditBlock.attachments?.[0]?.fileName || '',
+            mediaSizeBytes: activeEditBlock.attachments?.[0]?.sizeBytes || null
         }
         : {};
 
     const setSelectedForm = (updater) => {
-        if (!selectedBlock || selectedBlock.type !== 'message') return;
+        if (!activeEditBlock || activeEditBlock.type !== 'message') return;
         const nextForm = typeof updater === 'function' ? updater(selectedForm) : updater;
         const nextAssets = normalizeQuickReplyMediaAssets(nextForm?.mediaAssets, {
             url: nextForm?.mediaUrl,
@@ -236,7 +294,7 @@ export default function MessageSequenceComposer({
             fileName: nextForm?.mediaFileName,
             sizeBytes: nextForm?.mediaSizeBytes
         }).map(normalizeAttachment).filter(Boolean);
-        updateBlock(selectedBlock.id, { attachments: nextAssets });
+        updateBlock(activeEditBlock.id, { attachments: nextAssets });
     };
 
     return (
@@ -256,7 +314,10 @@ export default function MessageSequenceComposer({
                             key={block.id}
                             type="button"
                             className={`message-sequence-composer__block ${block.id === selectedBlock?.id ? 'is-selected' : ''}`}
-                            onClick={() => setSelectedId(block.id)}
+                            onClick={() => {
+                                setSelectedId(block.id);
+                                setEditingId(block.id);
+                            }}
                         >
                             <span className="message-sequence-composer__block-title">
                                 {blockIcon(block.type)} Bloque {index + 1}
@@ -265,6 +326,7 @@ export default function MessageSequenceComposer({
                                 {summarizeBlock(block)}
                             </small>
                             <span className="message-sequence-composer__block-actions">
+                                <span role="button" tabIndex={0} aria-label="Editar bloque" onClick={(event) => { event.stopPropagation(); setSelectedId(block.id); setEditingId(block.id); }}>Editar</span>
                                 <span role="button" tabIndex={0} aria-label="Subir bloque" onClick={(event) => { event.stopPropagation(); moveBlock(block.id, -1); }}><ChevronUp size={15} /></span>
                                 <span role="button" tabIndex={0} aria-label="Bajar bloque" onClick={(event) => { event.stopPropagation(); moveBlock(block.id, 1); }}><ChevronDown size={15} /></span>
                                 <span role="button" tabIndex={0} aria-label="Duplicar bloque" onClick={(event) => { event.stopPropagation(); duplicateBlock(block.id); }}><Copy size={14} /></span>
@@ -275,19 +337,39 @@ export default function MessageSequenceComposer({
                 </div>
 
                 <div className="message-sequence-composer__editor">
-                    {selectedBlock?.type === 'message' ? (
+                    {!editingBlock ? (
+                        <div className="message-sequence-composer__empty-editor">
+                            <strong>Selecciona un bloque para editarlo</strong>
+                            <small>La secuencia queda compacta; cada bloque se abre solo cuando necesitas configurarlo.</small>
+                        </div>
+                    ) : null}
+
+                    {editingBlock ? (
+                        <div className="message-sequence-composer__editor-head">
+                            <div>
+                                <strong>{blockIcon(editingBlock.type)} Configurando {summarizeBlock(editingBlock)}</strong>
+                                <small>Al terminar, pulsa Listo para colapsar este bloque.</small>
+                            </div>
+                            <button type="button" className="message-sequence-composer__done" onClick={() => setEditingId('')} disabled={disabled}>
+                                Listo
+                            </button>
+                        </div>
+                    ) : null}
+
+                    {editingBlock?.type === 'message' ? (
                         <AutoMessageEditor
-                            value={selectedBlock.text || ''}
-                            onChange={(nextText) => updateBlock(selectedBlock.id, { text: nextText })}
+                            key={editingBlock.id}
+                            value={editingBlock.text || ''}
+                            onChange={(nextText) => updateBlock(editingBlock.id, { text: nextText })}
                             disabled={disabled}
                             placeholder="Escribe este bloque. Puedes usar variables y adjuntos."
                             showMediaUpload={capabilities.media !== false}
-                            showPreview={true}
+                            showPreview={false}
                             tenantId={tenantId}
                             form={selectedForm}
                             setForm={setSelectedForm}
                             acceptValue={QUICK_REPLY_ACCEPT_VALUE}
-                            mediaAssets={selectedBlock.attachments || []}
+                            mediaAssets={editingBlock.attachments || []}
                             mediaUrl={selectedForm.mediaUrl}
                             onMediaUrlChange={(url) => setSelectedForm((prev) => ({ ...prev, mediaUrl: url }))}
                             onUploadFiles={uploadFiles}
@@ -300,10 +382,11 @@ export default function MessageSequenceComposer({
                             isImageAsset={isQuickReplyImageAsset}
                             hasRequiredContent={true}
                             saveDisabled={false}
+                            initialShowVariablesPanel={false}
                         />
                     ) : null}
 
-                    {selectedBlock?.type === 'delay' ? (
+                    {editingBlock?.type === 'delay' ? (
                         <div className="message-sequence-composer__simple-editor">
                             <strong>Delay entre bloques</strong>
                             <small>Pausa corta. Maximo 30 segundos.</small>
@@ -311,39 +394,72 @@ export default function MessageSequenceComposer({
                                 type="number"
                                 min="1"
                                 max="30"
-                                value={selectedBlock.delaySeconds || 3}
-                                onChange={(event) => updateBlock(selectedBlock.id, { delaySeconds: event.target.value })}
+                                value={editingBlock.delaySeconds || 3}
+                                onChange={(event) => updateBlock(editingBlock.id, { delaySeconds: event.target.value })}
                                 className="saas-input"
                                 style={{ width: '140px' }}
                             />
                             <div className="message-sequence-composer__presets">
                                 {[3, 5, 10].map((seconds) => (
-                                    <button key={seconds} type="button" className="message-sequence-composer__chip" onClick={() => updateBlock(selectedBlock.id, { delaySeconds: seconds })}>{seconds}s</button>
+                                    <button key={seconds} type="button" className="message-sequence-composer__chip" onClick={() => updateBlock(editingBlock.id, { delaySeconds: seconds })}>{seconds}s</button>
                                 ))}
                             </div>
                         </div>
                     ) : null}
 
-                    {selectedBlock?.type === 'product' ? (
+                    {editingBlock?.type === 'product' ? (
                         <div className="message-sequence-composer__simple-editor">
                             <strong>Producto nativo por SKU</strong>
-                            <small>Se enviara como producto del catalogo WhatsApp.</small>
+                            <small>Busca por nombre o SKU y selecciona el producto correcto del catalogo.</small>
                             <input
-                                value={selectedBlock.sku || ''}
-                                onChange={(event) => updateBlock(selectedBlock.id, { sku: event.target.value })}
+                                value={productSearch || editingBlock.productTitle || editingBlock.sku || ''}
+                                onChange={(event) => setProductSearch(event.target.value)}
                                 className="saas-input"
-                                placeholder="SKU / product_retailer_id"
+                                placeholder="Buscar producto por nombre o SKU"
                             />
+                            {editingBlock.sku ? (
+                                <div className="message-sequence-composer__selected-product">
+                                    <span>Seleccionado</span>
+                                    <strong>{editingBlock.productTitle || editingBlock.sku}</strong>
+                                    <small>SKU: {editingBlock.sku}</small>
+                                </div>
+                            ) : null}
+                            <div className="message-sequence-composer__product-results">
+                                {filteredProductOptions.length === 0 ? (
+                                    <small>{productOptions.length === 0 ? 'El catalogo aun no esta disponible para seleccionar productos.' : 'Sin coincidencias.'}</small>
+                                ) : filteredProductOptions.map((product) => (
+                                    <button
+                                        key={`${product.id}_${product.sku}`}
+                                        type="button"
+                                        className={String(editingBlock.sku || '').trim() === product.sku ? 'is-selected' : ''}
+                                        onClick={() => {
+                                            updateBlock(editingBlock.id, {
+                                                sku: product.sku,
+                                                productTitle: product.title,
+                                                productImageUrl: product.imageUrl,
+                                                productPrice: product.price
+                                            });
+                                            setProductSearch('');
+                                        }}
+                                    >
+                                        {product.imageUrl ? <img src={product.imageUrl} alt={product.title} loading="lazy" decoding="async" /> : <span>{product.title.slice(0, 2).toUpperCase()}</span>}
+                                        <div>
+                                            <strong>{product.title}</strong>
+                                            <small>{product.sku}{product.price ? ` - ${product.price}` : ''}</small>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     ) : null}
 
-                    {selectedBlock?.type === 'catalog' ? (
+                    {editingBlock?.type === 'catalog' ? (
                         <div className="message-sequence-composer__simple-editor">
                             <strong>Catalogo nativo WhatsApp</strong>
                             <small>Este bloque abre el catalogo nativo asociado al modulo.</small>
                             <input
-                                value={selectedBlock.text || ''}
-                                onChange={(event) => updateBlock(selectedBlock.id, { text: event.target.value })}
+                                value={editingBlock.text || ''}
+                                onChange={(event) => updateBlock(editingBlock.id, { text: event.target.value })}
                                 className="saas-input"
                                 placeholder="Texto del catalogo (opcional)"
                             />

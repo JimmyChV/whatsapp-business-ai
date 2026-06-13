@@ -79,6 +79,7 @@ const ChatInput = ({
     onSendNativeCatalog,
     buildApiHeaders,
     activeChatDetails = null,
+    businessData = {},
     activeTenantId = '',
     windowOpen = true,
     focusChatKey = ''
@@ -545,6 +546,7 @@ const ChatInput = ({
                         }}
                         activeChat={activeChatDetails}
                         quickReplies={quickReplies}
+                        catalogProducts={businessData?.catalog || []}
                         buildApiHeaders={buildApiHeaders}
                         activeTenantId={activeTenantId}
                     />

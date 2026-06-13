@@ -186,7 +186,8 @@ export default function AutoMessageEditor({
     hasRequiredContent = true,
     saveDisabled = false,
     onSave = null,
-    onCancel = null
+    onCancel = null,
+    initialShowVariablesPanel = true
 }) {
     const textareaRef = React.useRef(null);
     const [showEmojiPicker, setShowEmojiPicker] = React.useState(false);
@@ -201,7 +202,7 @@ export default function AutoMessageEditor({
     });
     const [variableSearch, setVariableSearch] = React.useState('');
     const [expandedCategories, setExpandedCategories] = React.useState({});
-    const [showVariablesPanel, setShowVariablesPanel] = React.useState(true);
+    const [showVariablesPanel, setShowVariablesPanel] = React.useState(initialShowVariablesPanel !== false);
     const [variableCategories, setVariableCategories] = React.useState(() => collectVariableCategories({}));
     const [variableLoading, setVariableLoading] = React.useState(false);
     const [variableError, setVariableError] = React.useState('');
