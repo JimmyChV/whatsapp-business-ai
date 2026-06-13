@@ -14466,6 +14466,238 @@ textarea:focus {
   color: var(--saas-text-secondary);
 }
 
+.saas-quick-reply-builder-overlay,
+.scheduled-message-modal__overlay {
+  z-index: 2147483004;
+  align-items: center;
+  padding: 22px;
+  overflow: hidden;
+}
+
+.saas-quick-reply-builder-shell,
+.scheduled-message-modal__shell {
+  width: min(1540px, calc(100vw - 36px));
+  height: min(900px, calc(100vh - 36px));
+  max-height: calc(100vh - 36px);
+  background: #fff;
+  border-radius: 22px;
+  padding: 18px 22px;
+}
+
+.saas-quick-reply-builder-header {
+  flex-shrink: 0;
+  background: #fff;
+}
+
+.scheduled-message-modal__content {
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 360px);
+  padding: 0 0 0;
+  min-height: 0;
+}
+
+.scheduled-message-modal__builder,
+.saas-quick-reply-sequence-shell {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.scheduled-message-modal__builder > .message-sequence-composer,
+.saas-quick-reply-sequence-shell > .message-sequence-composer {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.scheduled-message-modal__builder .message-sequence-composer__list,
+.saas-quick-reply-sequence-shell .message-sequence-composer__list {
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+  padding: 2px 6px 12px 0;
+}
+
+.scheduled-message-modal__history {
+  position: static;
+  align-self: stretch;
+  height: 100%;
+  max-height: none;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.scheduled-message-modal__actions,
+.saas-quick-reply-sequence-actions {
+  position: static;
+  margin-top: 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--saas-divider-soft, rgba(0, 0, 0, 0.1));
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.scheduled-message-modal__primary,
+.message-sequence-composer__done,
+.saas-btn.saas-btn--primary {
+  background: var(--saas-success, #16a34a);
+  border-color: var(--saas-success, #16a34a);
+  color: #fff;
+}
+
+.scheduled-message-modal__primary:hover,
+.message-sequence-composer__done:hover,
+.saas-btn.saas-btn--primary:hover {
+  background: color-mix(in srgb, var(--saas-success, #16a34a) 88%, #000);
+  border-color: color-mix(in srgb, var(--saas-success, #16a34a) 88%, #000);
+  color: #fff;
+}
+
+.scheduled-message-modal__primary:disabled,
+.saas-btn.saas-btn--primary:disabled {
+  background: color-mix(in srgb, var(--saas-success, #16a34a) 26%, #fff);
+  border-color: color-mix(in srgb, var(--saas-success, #16a34a) 26%, #fff);
+  color: rgba(0, 0, 0, 0.38);
+}
+
+.scheduled-message-modal__close,
+.scheduled-message-modal__secondary,
+.saas-btn.saas-btn--secondary {
+  background: #fff;
+  border-color: var(--saas-border-color, rgba(0, 0, 0, 0.14));
+  color: var(--saas-text-primary, #111);
+}
+
+.saas-quick-reply-read-modal {
+  width: min(960px, calc(100vw - 42px));
+  height: min(760px, calc(100vh - 52px));
+  max-height: calc(100vh - 52px);
+  background: #fff;
+}
+
+.saas-quick-reply-read-modal__danger {
+  border-color: color-mix(in srgb, var(--saas-danger, #dc2626) 34%, var(--saas-border-color, rgba(0, 0, 0, 0.12))) !important;
+  color: var(--saas-danger, #dc2626) !important;
+}
+
+.saas-quick-reply-read-modal__danger:hover {
+  background: color-mix(in srgb, var(--saas-danger, #dc2626) 8%, #fff) !important;
+}
+
+.message-sequence-composer__editor-overlay {
+  z-index: 2147483010;
+  padding: 24px;
+}
+
+.message-sequence-composer__editor-modal {
+  width: min(1580px, calc(100vw - 48px));
+  height: min(890px, calc(100vh - 48px));
+  max-height: calc(100vh - 48px);
+  background: #fff;
+  border-radius: 20px;
+}
+
+.message-sequence-composer__editor-head {
+  background: #fff;
+}
+
+.message-sequence-composer__editor-modal .saas-quick-reply-editor-layout {
+  grid-template-columns: minmax(620px, 0.95fr) minmax(680px, 1.05fr);
+}
+
+.message-sequence-composer__editor-modal .saas-quick-reply-editor-main--form textarea {
+  min-height: 420px;
+}
+
+.chat-quick-reply-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483008;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.46);
+  backdrop-filter: blur(4px);
+}
+
+.chat-quick-reply-preview-modal {
+  width: min(760px, calc(100vw - 42px));
+  max-height: min(720px, calc(100vh - 48px));
+  border: 1px solid var(--saas-border-color, rgba(0, 0, 0, 0.12));
+  border-radius: 22px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.3);
+}
+
+.chat-quick-reply-preview-modal__header,
+.chat-quick-reply-preview-modal__actions {
+  padding: 18px 22px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--saas-divider-soft, rgba(0, 0, 0, 0.1));
+}
+
+.chat-quick-reply-preview-modal__header span {
+  color: var(--saas-text-secondary, rgba(0, 0, 0, 0.56));
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.chat-quick-reply-preview-modal__header h3 {
+  margin: 5px 0 4px;
+  color: var(--saas-text-primary, #111);
+  font-size: 1.2rem;
+}
+
+.chat-quick-reply-preview-modal__header p {
+  margin: 0;
+  color: var(--saas-text-secondary, rgba(0, 0, 0, 0.62));
+}
+
+.chat-quick-reply-preview-modal__body {
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 22px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.chat-quick-reply-preview-modal__body article {
+  border: 1px solid var(--saas-border-color, rgba(0, 0, 0, 0.12));
+  border-radius: 16px;
+  padding: 14px 16px;
+  display: grid;
+  gap: 7px;
+  background: #fff;
+}
+
+.chat-quick-reply-preview-modal__body strong {
+  color: var(--saas-text-primary, #111);
+}
+
+.chat-quick-reply-preview-modal__body p {
+  margin: 0;
+  color: var(--saas-text-secondary, rgba(0, 0, 0, 0.66));
+  white-space: pre-wrap;
+}
+
+.chat-quick-reply-preview-modal__actions {
+  align-items: center;
+  justify-content: flex-end;
+  border-top: 1px solid var(--saas-divider-soft, rgba(0, 0, 0, 0.1));
+  border-bottom: none;
+}
+
 @media (max-width: 1100px) {
   .scheduled-message-modal__content,
   .message-sequence-composer__body {

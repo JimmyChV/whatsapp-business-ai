@@ -474,7 +474,9 @@ export default function QuickRepliesSection(props = {}) {
                                 {selectedQuickReplyItem.availableForPatty ? 'Disponible para Patty' : 'No disponible para Patty'}
                             </p>
                         </div>
-                        <button type="button" className="saas-btn-close" onClick={closeQuickReplyItemReadModal} aria-label="Cerrar vista de respuesta rapida">×</button>
+                        <button type="button" className="saas-btn saas-btn--secondary" onClick={closeQuickReplyItemReadModal}>
+                            Cerrar
+                        </button>
                     </header>
                     <section className="saas-quick-reply-read-modal__stats">
                         <div><span>Bloques</span><strong>{blocks.length}</strong></div>
@@ -498,7 +500,7 @@ export default function QuickRepliesSection(props = {}) {
                         <button type="button" className="saas-btn saas-btn--secondary" onClick={closeQuickReplyItemReadModal}>Cancelar</button>
                         {canManageQuickReplies ? (
                             <>
-                                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={handleDeactivate}>Desactivar</button>
+                                <button type="button" className="saas-btn saas-btn--secondary saas-quick-reply-read-modal__danger" disabled={busy} onClick={handleDeactivate}>Desactivar</button>
                                 <button type="button" className="saas-btn saas-btn--primary" disabled={busy} onClick={handleEdit}>Editar</button>
                             </>
                         ) : null}

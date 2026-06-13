@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Smile, Bot, Sparkles, X, Paperclip, Send, MapPin, LayoutTemplate, Store, CalendarClock } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { EmojiStyle, SkinTonePickerLocation, SkinTones, SuggestionMode, Theme } from 'emoji-picker-react';
@@ -118,10 +119,12 @@ const ChatInput = ({
     const [localText, setLocalText] = useState(() => String(inputText || ''));
     const [scheduledModalOpen, setScheduledModalOpen] = useState(false);
     const [scheduledPendingCount, setScheduledPendingCount] = useState(0);
+    const [quickReplyPreviewItem, setQuickReplyPreviewItem] = useState(null);
     const inputRef = useRef(null);
     const chatInputRef = useRef(null);
     const lastExternalTextRef = useRef(String(inputText || ''));
     const scheduledCountRequestRef = useRef(0);
+    const pendingQuickReplySendRef = useRef(false);
     const draftQuickReplyLabel = String(quickReplyDraft?.label || '').trim();
     const draftQuickReplyText = String(quickReplyDraft?.text || '').trim();
     const draftQuickReplyBlocks = getQuickReplyBlocks(quickReplyDraft);
@@ -433,9 +436,21 @@ const ChatInput = ({
     const selectQuickReply = (item = {}) => {
         const entry = item && typeof item === 'object' ? item : null;
         if (!entry) return;
-        if (typeof onSendQuickReply === 'function') onSendQuickReply(entry);
-        else setLocalText(String(entry?.text || '').trim());
         setShowCommands(false);
+        setQuickReplyPreviewItem(entry);
+    };
+
+    const closeQuickReplyPreview = () => {
+        setQuickReplyPreviewItem(null);
+        setShowCommands(false);
+    };
+
+    const sendQuickReplyPreviewNow = () => {
+        const entry = quickReplyPreviewItem && typeof quickReplyPreviewItem === 'object' ? quickReplyPreviewItem : null;
+        if (!entry || typeof onSendQuickReply !== 'function') return;
+        pendingQuickReplySendRef.current = true;
+        onSendQuickReply(entry);
+        closeQuickReplyPreview();
     };
 
     const extractFirstUrl = (text) => {
@@ -471,6 +486,32 @@ const ChatInput = ({
         const next = Math.min(el.scrollHeight, 220);
         el.style.height = `${next}px`;
     }, [localText]);
+
+    useEffect(() => {
+        if (!pendingQuickReplySendRef.current || !quickReplyDraft) return undefined;
+        pendingQuickReplySendRef.current = false;
+        const timer = setTimeout(() => {
+            if (typeof onSendMessage !== 'function') return;
+            const handled = onSendMessage(String(quickReplyDraft?.text || '').trim());
+            if (handled) {
+                setLocalText('');
+                if (typeof setInputText === 'function') setInputText('');
+            }
+        }, 0);
+        return () => clearTimeout(timer);
+    }, [onSendMessage, quickReplyDraft, setInputText]);
+
+    useEffect(() => {
+        if (!quickReplyPreviewItem) return undefined;
+        const onEscape = (event) => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            event.stopPropagation();
+            closeQuickReplyPreview();
+        };
+        window.addEventListener('keydown', onEscape, true);
+        return () => window.removeEventListener('keydown', onEscape, true);
+    }, [quickReplyPreviewItem]);
 
     useEffect(() => {
         if (!editingMessage?.id) return;
@@ -578,6 +619,39 @@ const ChatInput = ({
                     />
                 </React.Suspense>
             ) : null}
+            {quickReplyPreviewItem ? createPortal((
+                <div className="chat-quick-reply-preview-overlay" onClick={closeQuickReplyPreview}>
+                    <div className="chat-quick-reply-preview-modal" onClick={(event) => event.stopPropagation()}>
+                        <header className="chat-quick-reply-preview-modal__header">
+                            <div>
+                                <span>Respuesta rapida</span>
+                                <h3>{String(quickReplyPreviewItem?.label || 'Respuesta rapida')}</h3>
+                                <p>{summarizeQuickReplyBlocks(getQuickReplyBlocks(quickReplyPreviewItem)) || 'Lista para enviar al chat actual.'}</p>
+                            </div>
+                            <button type="button" className="saas-btn saas-btn--secondary" onClick={closeQuickReplyPreview}>Cerrar</button>
+                        </header>
+                        <section className="chat-quick-reply-preview-modal__body">
+                            {getQuickReplyBlocks(quickReplyPreviewItem).length > 0 ? (
+                                getQuickReplyBlocks(quickReplyPreviewItem).map((block, index) => (
+                                    <article key={`chat_qr_preview_${block?.id || index}`}>
+                                        <strong>Bloque {index + 1}</strong>
+                                        <p>{String(block?.text || '').trim() || summarizeQuickReplyBlocks([block]) || 'Adjunto o accion'}</p>
+                                    </article>
+                                ))
+                            ) : (
+                                <article>
+                                    <strong>Mensaje</strong>
+                                    <p>{String(quickReplyPreviewItem?.text || '').trim() || 'Adjunto o respuesta sin texto.'}</p>
+                                </article>
+                            )}
+                        </section>
+                        <footer className="chat-quick-reply-preview-modal__actions">
+                            <button type="button" className="saas-btn saas-btn--secondary" onClick={closeQuickReplyPreview}>Cancelar</button>
+                            <button type="button" className="saas-btn saas-btn--primary" onClick={sendQuickReplyPreviewNow}>Enviar ahora</button>
+                        </footer>
+                    </div>
+                </div>
+            ), document.body) : null}
             {editingMessage?.id && (
                 <div style={{
                     position: 'absolute',

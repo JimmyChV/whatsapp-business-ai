@@ -372,7 +372,7 @@ const ScheduledMessageModal = ({
                 {error ? <div className="saas-meta-template-error" style={{ margin: '0 18px 10px' }}>{error}</div> : null}
 
                 <div className="scheduled-message-modal__content">
-                    <div style={{ minWidth: 0 }}>
+                    <div className="scheduled-message-modal__builder">
                         <div className="scheduled-message-modal__topbar">
                             <div className="scheduled-message-modal__quick-reply-search">
                                 <input
