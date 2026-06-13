@@ -1,22 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CalendarClock, Clock, Trash2, Pencil } from 'lucide-react';
-import AutoMessageEditor from '../../saas/components/AutoMessageEditor';
+import MessageSequenceComposer, { buildMessageBlocksFromLegacy, normalizeMessageBlocksForComposer } from './MessageSequenceComposer';
 import {
-    QUICK_REPLY_ACCEPT_VALUE,
-    QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL,
-    QUICK_REPLY_ALLOWED_MIME_TYPES,
-    QUICK_REPLY_DEFAULT_MAX_UPLOAD_MB,
-    QUICK_REPLY_EXT_TO_MIME,
-    getQuickReplyAssetDisplayName,
-    isQuickReplyImageAsset,
-    normalizeQuickReplyMediaAssets,
-    resolveQuickReplyAssetPreviewUrl
+    normalizeQuickReplyMediaAssets
 } from '../../saas/helpers/quickReplies.helpers';
-import {
-    buildDataUrlWithMime,
-    resolveQuickReplyMimeType
-} from '../../saas/helpers/assets.helpers';
 import {
     cancelScheduledMessage,
     createScheduledMessage,
@@ -60,14 +48,6 @@ function formatSchedule(value = '') {
     }).format(date);
 }
 
-function formatBytes(value = 0) {
-    const size = Number(value || 0);
-    if (!Number.isFinite(size) || size <= 0) return '';
-    if (size < 1024) return `${size} B`;
-    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 function getStatusLabel(status = '') {
     const value = text(status).toLowerCase();
     if (value === 'sent') return 'enviado';
@@ -106,15 +86,20 @@ const ScheduledMessageModal = ({
     const [minutesBeforeWindow, setMinutesBeforeWindow] = useState(60);
     const [cancelOnCustomerReply, setCancelOnCustomerReply] = useState(true);
     const [form, setForm] = useState({ mediaUrl: '', mediaAssets: [] });
+    const [messageBlocks, setMessageBlocks] = useState(() => buildMessageBlocksFromLegacy());
     const [quickReplySearch, setQuickReplySearch] = useState('');
     const [quickReplyPickerOpen, setQuickReplyPickerOpen] = useState(false);
 
-    const mediaAssets = useMemo(() => normalizeQuickReplyMediaAssets(form.mediaAssets, {
+    const normalizedBlocks = useMemo(() => normalizeMessageBlocksForComposer(messageBlocks), [messageBlocks]);
+    const firstMessageBlock = useMemo(() => (
+        normalizedBlocks.find((block) => block.type === 'message') || null
+    ), [normalizedBlocks]);
+    const mediaAssets = useMemo(() => normalizeQuickReplyMediaAssets(firstMessageBlock?.attachments || form.mediaAssets, {
         url: form.mediaUrl,
         mimeType: form.mediaMimeType,
         fileName: form.mediaFileName,
         sizeBytes: form.mediaSizeBytes
-    }), [form.mediaAssets, form.mediaFileName, form.mediaMimeType, form.mediaSizeBytes, form.mediaUrl]);
+    }), [firstMessageBlock, form.mediaAssets, form.mediaFileName, form.mediaMimeType, form.mediaSizeBytes, form.mediaUrl]);
     const variables = useMemo(() => ({
         cliente: text(activeChat?.name || activeChat?.displayName || activeChat?.phone),
         modulo: text(activeChat?.moduleName),
@@ -137,7 +122,12 @@ const ScheduledMessageModal = ({
             ].some((value) => text(value).toLowerCase().includes(query)))
             .slice(0, 12);
     }, [quickReplies, quickReplySearch]);
-    const hasRequiredContent = Boolean(messageText.trim() || mediaAssets.length > 0 || text(form.mediaUrl));
+    const hasRequiredContent = normalizedBlocks.some((block) => {
+        if (block.type === 'message') return Boolean(text(block.text) || block.attachments?.length);
+        if (block.type === 'delay') return false;
+        if (block.type === 'product') return Boolean(text(block.sku));
+        return block.type === 'catalog';
+    });
 
     const loadItems = async () => {
         if (!chatId) return;
@@ -161,6 +151,7 @@ const ScheduledMessageModal = ({
         setMinutesBeforeWindow(60);
         setCancelOnCustomerReply(true);
         setForm({ mediaUrl: '', mediaAssets: [] });
+        setMessageBlocks(buildMessageBlocksFromLegacy());
         setQuickReplySearch('');
         setQuickReplyPickerOpen(false);
     };
@@ -183,6 +174,10 @@ const ScheduledMessageModal = ({
             });
             const primaryMedia = assets[0] || null;
             setMessageText(String(item?.text || '').trim());
+            setMessageBlocks(buildMessageBlocksFromLegacy({
+                messageText: String(item?.text || '').trim(),
+                mediaAssets: assets
+            }));
             setForm({
                 mediaAssets: assets,
                 mediaUrl: primaryMedia?.url || '',
@@ -193,69 +188,6 @@ const ScheduledMessageModal = ({
             setQuickReplySearch('');
             setQuickReplyPickerOpen(false);
         }
-    };
-
-    const handleUploadFiles = async (fileList) => {
-        const files = Array.from(fileList || []).filter(Boolean);
-        if (files.length === 0) return;
-        const maxBytes = QUICK_REPLY_DEFAULT_MAX_UPLOAD_MB * 1024 * 1024;
-        const uploadedAssets = [];
-        for (const file of files) {
-            const mimeType = resolveQuickReplyMimeType(file, {
-                allowedMimeTypes: QUICK_REPLY_ALLOWED_MIME_TYPES,
-                extToMime: QUICK_REPLY_EXT_TO_MIME
-            });
-            if (!QUICK_REPLY_ALLOWED_MIME_TYPES.includes(mimeType)) {
-                throw new Error(`Formato no permitido para ${String(file?.name || 'adjunto')}. Usa ${QUICK_REPLY_ALLOWED_EXTENSIONS_LABEL}.`);
-            }
-            if (Number(file?.size || 0) > maxBytes) {
-                throw new Error(`El archivo ${String(file?.name || 'adjunto')} supera el maximo de ${QUICK_REPLY_DEFAULT_MAX_UPLOAD_MB} MB.`);
-            }
-            const dataUrl = await buildDataUrlWithMime(file, mimeType);
-            uploadedAssets.push({
-                url: dataUrl,
-                mimeType,
-                fileName: String(file?.name || 'adjunto').trim() || 'adjunto',
-                sizeBytes: Number(file?.size || 0) || null
-            });
-        }
-        setForm((prev) => {
-            const mergedAssets = normalizeQuickReplyMediaAssets([
-                ...(Array.isArray(prev?.mediaAssets) ? prev.mediaAssets : []),
-                ...uploadedAssets
-            ]);
-            const primaryMedia = mergedAssets[0] || null;
-            return {
-                ...prev,
-                mediaAssets: mergedAssets,
-                mediaUrl: primaryMedia?.url || '',
-                mediaMimeType: primaryMedia?.mimeType || '',
-                mediaFileName: primaryMedia?.fileName || '',
-                mediaSizeBytes: primaryMedia?.sizeBytes || null
-            };
-        });
-    };
-
-    const removeAssetAt = (index = -1) => {
-        const targetIndex = Number(index);
-        if (!Number.isInteger(targetIndex) || targetIndex < 0) return;
-        setForm((prev) => {
-            const nextAssets = normalizeQuickReplyMediaAssets(prev?.mediaAssets, {
-                url: prev?.mediaUrl,
-                mimeType: prev?.mediaMimeType,
-                fileName: prev?.mediaFileName,
-                sizeBytes: prev?.mediaSizeBytes
-            }).filter((_asset, assetIndex) => assetIndex !== targetIndex);
-            const primaryMedia = nextAssets[0] || null;
-            return {
-                ...prev,
-                mediaAssets: nextAssets,
-                mediaUrl: primaryMedia?.url || '',
-                mediaMimeType: primaryMedia?.mimeType || '',
-                mediaFileName: primaryMedia?.fileName || '',
-                mediaSizeBytes: primaryMedia?.sizeBytes || null
-            };
-        });
     };
 
     const submit = async () => {
@@ -271,11 +203,13 @@ const ScheduledMessageModal = ({
             if (!shouldContinue) return;
         }
         const primaryMedia = mediaAssets[0] || null;
+        const legacyText = String(firstMessageBlock?.text || messageText || '').trim();
         const payload = {
             chatId,
             scopeModuleId,
-            messageText,
+            messageText: legacyText,
             variables,
+            messageBlocks: normalizedBlocks,
             mediaAssets,
             mediaUrl: primaryMedia?.url || '',
             mediaMimeType: primaryMedia?.mimeType || '',
@@ -312,6 +246,13 @@ const ScheduledMessageModal = ({
         const primaryMedia = assets[0] || null;
         setEditingId(String(item?.messageId || ''));
         setMessageText(String(item?.messageText || ''));
+        setMessageBlocks(normalizeMessageBlocksForComposer(item?.messageBlocks, {
+            messageText: String(item?.messageText || ''),
+            mediaAssets: assets,
+            mediaUrl: item?.mediaUrl,
+            mediaMimeType: item?.mediaMimeType,
+            mediaFileName: item?.mediaFileName
+        }));
         setScheduleType(String(item?.scheduleType || 'absolute'));
         setScheduledFor(toDateTimeLocal(item?.scheduledFor));
         setMinutesBeforeWindow(Number(item?.minutesBeforeWindow || 60));
@@ -494,31 +435,18 @@ const ScheduledMessageModal = ({
                             </div>
                         ) : null}
 
-                        <AutoMessageEditor
-                            value={messageText}
-                            onChange={setMessageText}
-                            disabled={saving}
-                            placeholder="Escribe el mensaje programado. Puedes usar variables y adjuntos."
-                            showMediaUpload={true}
-                            showPreview={true}
+                        <MessageSequenceComposer
+                            value={normalizedBlocks}
+                            onChange={setMessageBlocks}
                             tenantId={activeTenantId}
-                            form={form}
-                            setForm={setForm}
-                            acceptValue={QUICK_REPLY_ACCEPT_VALUE}
-                            mediaAssets={mediaAssets}
-                            mediaUrl={form.mediaUrl}
-                            onMediaUrlChange={(url) => setForm((prev) => ({ ...prev, mediaUrl: url }))}
-                            onUploadFiles={handleUploadFiles}
-                            onUploadError={(err) => setError(String(err?.message || err || 'No se pudo adjuntar archivo.'))}
-                            showFlowNote={false}
-                            removeAssetAt={removeAssetAt}
-                            getAssetDisplayName={getQuickReplyAssetDisplayName}
-                            formatBytes={formatBytes}
-                            resolveAssetPreviewUrl={resolveQuickReplyAssetPreviewUrl}
-                            isImageAsset={isQuickReplyImageAsset}
-                            hasRequiredContent={hasRequiredContent}
-                            saveDisabled={saving || !hasRequiredContent}
-                            mode={editingId ? 'edit' : 'create'}
+                            disabled={saving}
+                            capabilities={{
+                                message: true,
+                                media: true,
+                                delay: true,
+                                catalog: true,
+                                product: true
+                            }}
                         />
                         <div className="saas-admin-form-row saas-admin-form-row--actions saas-quick-reply-builder-actions" style={{ marginTop: '12px' }}>
                             <button type="button" disabled={saving || !hasRequiredContent} onClick={submit}>

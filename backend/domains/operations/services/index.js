@@ -17,6 +17,7 @@ module.exports = {
     quoteExpiryJobService: require('./quote-expiry-job.service'),
     scheduledMessagesService: require('./scheduled-messages.service'),
     scheduledMessagesJobService: require('./scheduled-messages-job.service'),
+    messageSequenceService: require('./message-sequence.service'),
     customerModuleContextsService: require('./customer-module-contexts.service'),
     metaTemplatesService: require('./meta-templates.service'),
     templateVariablesService: require('./template-variables.service'),
