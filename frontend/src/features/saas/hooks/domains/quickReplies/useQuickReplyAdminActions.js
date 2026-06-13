@@ -197,6 +197,7 @@ export default function useQuickReplyAdminActions({
             category: 'general',
             availableForPatty: false,
             buttons: [],
+            messageBlocks: [],
             sortOrder: '100'
         });
         setQuickReplyItemPanelMode('create');
@@ -218,6 +219,7 @@ export default function useQuickReplyAdminActions({
             mediaUrl: selectedQuickReplyItem.mediaUrl || '',
             mediaMimeType: selectedQuickReplyItem.mediaMimeType || '',
             mediaFileName: selectedQuickReplyItem.mediaFileName || '',
+            messageBlocks: Array.isArray(selectedQuickReplyItem.messageBlocks) ? selectedQuickReplyItem.messageBlocks : [],
             buttons: Array.isArray(selectedQuickReplyItem.buttons) ? selectedQuickReplyItem.buttons : [],
             category: selectedQuickReplyItem.category || 'general',
             availableForPatty: selectedQuickReplyItem.availableForPatty === true,
@@ -243,6 +245,7 @@ export default function useQuickReplyAdminActions({
                 mediaUrl: selectedQuickReplyItem.mediaUrl || '',
                 mediaMimeType: selectedQuickReplyItem.mediaMimeType || '',
                 mediaFileName: selectedQuickReplyItem.mediaFileName || '',
+                messageBlocks: Array.isArray(selectedQuickReplyItem.messageBlocks) ? selectedQuickReplyItem.messageBlocks : [],
                 buttons: Array.isArray(selectedQuickReplyItem.buttons) ? selectedQuickReplyItem.buttons : [],
                 category: selectedQuickReplyItem.category || 'general',
                 availableForPatty: selectedQuickReplyItem.availableForPatty === true,

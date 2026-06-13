@@ -70,6 +70,7 @@ export const EMPTY_QUICK_REPLY_ITEM_FORM = {
     mediaMimeType: '',
     mediaFileName: '',
     mediaAssets: [],
+    messageBlocks: [],
     buttons: [],
     category: 'general',
     availableForPatty: false,
@@ -120,6 +121,13 @@ export function normalizeQuickReplyItem(item = {}) {
     });
     const primaryMedia = mediaAssets[0] || null;
     const buttons = normalizeQuickReplyButtons(source.buttons || metadata.buttons);
+    const messageBlocks = Array.isArray(source.messageBlocks)
+        ? source.messageBlocks
+        : (Array.isArray(source.message_blocks)
+            ? source.message_blocks
+            : (Array.isArray(metadata.messageBlocks)
+                ? metadata.messageBlocks
+                : (Array.isArray(metadata.message_blocks) ? metadata.message_blocks : [])));
     const category = normalizeQuickReplyCategory(source.category || metadata.category);
     const availableForPatty = category === 'general'
         ? false
@@ -134,6 +142,7 @@ export function normalizeQuickReplyItem(item = {}) {
         mediaMimeType: String(primaryMedia?.mimeType || source.mediaMimeType || '').trim().toLowerCase(),
         mediaFileName: String(primaryMedia?.fileName || source.mediaFileName || '').trim(),
         mediaSizeBytes: Number.isFinite(Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes)) ? Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes) : null,
+        messageBlocks,
         buttons,
         category,
         availableForPatty,
@@ -255,6 +264,9 @@ export function buildQuickReplyItemPayload(form = {}, { libraryId = '' } = {}) {
     });
     const primaryMedia = mediaAssets[0] || null;
     const buttons = normalizeQuickReplyButtons(source.buttons);
+    const messageBlocks = Array.isArray(source.messageBlocks)
+        ? source.messageBlocks
+        : (Array.isArray(source.message_blocks) ? source.message_blocks : []);
     const category = normalizeQuickReplyCategory(source.category);
     const availableForPatty = category === 'general' ? false : source.availableForPatty === true;
     return {
@@ -267,6 +279,7 @@ export function buildQuickReplyItemPayload(form = {}, { libraryId = '' } = {}) {
         mediaMimeType: String(primaryMedia?.mimeType || source.mediaMimeType || '').trim().toLowerCase() || null,
         mediaFileName: String(primaryMedia?.fileName || source.mediaFileName || '').trim() || null,
         mediaSizeBytes: Number.isFinite(Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes)) ? Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes) : null,
+        messageBlocks,
         buttons,
         category,
         availableForPatty,

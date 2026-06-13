@@ -1,6 +1,8 @@
 import React from 'react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
-import AutoMessageEditor from '../components/AutoMessageEditor';
+import MessageSequenceComposer, {
+    normalizeMessageBlocksForComposer
+} from '../../chat/components/MessageSequenceComposer';
 import { SaasEntityPage } from '../components/layout';
 
 const text = (value) => String(value ?? '').trim();
@@ -20,6 +22,89 @@ function normalizeQuickReplyCategory(value = 'general') {
 function getQuickReplyCategoryLabel(value = 'general') {
     const clean = normalizeQuickReplyCategory(value);
     return QUICK_REPLY_CATEGORIES.find((entry) => entry.value === clean)?.label || 'General';
+}
+
+function getQuickReplyFormBlocks(form = {}) {
+    return normalizeMessageBlocksForComposer(form.messageBlocks, {
+        messageText: form.text || '',
+        mediaAssets: form.mediaAssets || [],
+        mediaUrl: form.mediaUrl || '',
+        mediaMimeType: form.mediaMimeType || '',
+        mediaFileName: form.mediaFileName || '',
+        mediaSizeBytes: form.mediaSizeBytes
+    });
+}
+
+function serializeMessageBlocksForSignature(blocks = []) {
+    return (Array.isArray(blocks) ? blocks : [])
+        .map((block) => {
+            const type = text(block?.type || 'message').toLowerCase();
+            if (type === 'delay') {
+                return {
+                    type,
+                    delaySeconds: Math.max(1, Math.min(30, Number(block?.delaySeconds || 3) || 3))
+                };
+            }
+            if (type === 'product') {
+                return {
+                    type,
+                    sku: text(block?.sku),
+                    productTitle: text(block?.productTitle)
+                };
+            }
+            if (type === 'catalog') {
+                return {
+                    type,
+                    text: text(block?.text)
+                };
+            }
+            return {
+                type: 'message',
+                text: String(block?.text || ''),
+                attachments: (Array.isArray(block?.attachments) ? block.attachments : [])
+                    .map((asset) => ({
+                        url: text(asset?.url || asset?.mediaUrl),
+                        mimeType: text(asset?.mimeType || asset?.mediaMimeType).toLowerCase(),
+                        fileName: text(asset?.fileName || asset?.mediaFileName || asset?.filename),
+                        sizeBytes: Number.isFinite(Number(asset?.sizeBytes ?? asset?.mediaSizeBytes)) ? Number(asset?.sizeBytes ?? asset?.mediaSizeBytes) : null
+                    }))
+                    .filter((asset) => asset.url)
+            };
+        });
+}
+
+function deriveLegacyFieldsFromBlocks(blocks = []) {
+    const source = Array.isArray(blocks) ? blocks : [];
+    const firstMessage = source.find((block) => text(block?.type || 'message').toLowerCase() === 'message') || null;
+    const assets = (Array.isArray(firstMessage?.attachments) ? firstMessage.attachments : [])
+        .map((asset) => ({
+            url: text(asset?.url || asset?.mediaUrl),
+            mimeType: text(asset?.mimeType || asset?.mediaMimeType).toLowerCase(),
+            fileName: text(asset?.fileName || asset?.mediaFileName || asset?.filename),
+            sizeBytes: Number.isFinite(Number(asset?.sizeBytes ?? asset?.mediaSizeBytes)) ? Number(asset?.sizeBytes ?? asset?.mediaSizeBytes) : null
+        }))
+        .filter((asset) => asset.url);
+    const primary = assets[0] || null;
+    return {
+        text: String(firstMessage?.text || ''),
+        mediaAssets: assets,
+        mediaUrl: primary?.url || '',
+        mediaMimeType: primary?.mimeType || '',
+        mediaFileName: primary?.fileName || '',
+        mediaSizeBytes: primary?.sizeBytes || null
+    };
+}
+
+function hasUsableMessageBlocks(blocks = []) {
+    return (Array.isArray(blocks) ? blocks : []).some((block) => {
+        const type = text(block?.type || 'message').toLowerCase();
+        if (type === 'message') {
+            return Boolean(text(block?.text) || (Array.isArray(block?.attachments) && block.attachments.some((asset) => text(asset?.url || asset?.mediaUrl))));
+        }
+        if (type === 'product') return Boolean(text(block?.sku));
+        if (type === 'catalog') return true;
+        return false;
+    });
 }
 
 export default function QuickRepliesSection(props = {}) {
@@ -70,6 +155,7 @@ export default function QuickRepliesSection(props = {}) {
         isQuickReplyImageAsset = () => false,
         getQuickReplyAssetTypeLabel = () => 'file',
         formatBytes = (value) => value,
+        tenantCatalogProducts = [],
         quickReplyItemForm = {},
         setQuickReplyItemForm,
         uploadingQuickReplyAssets,
@@ -124,6 +210,7 @@ export default function QuickRepliesSection(props = {}) {
                 text: '',
                 mediaUrl: '',
                 buttons: [],
+                messageBlocks: [],
                 category: 'general',
                 availableForPatty: false,
                 isActive: true,
@@ -136,6 +223,7 @@ export default function QuickRepliesSection(props = {}) {
             label: text(item.label),
             text: String(item.text || ''),
             mediaUrl: text(item.mediaUrl),
+            messageBlocks: serializeMessageBlocksForSignature(Array.isArray(item.messageBlocks) ? item.messageBlocks : []),
             buttons: (Array.isArray(item.buttons) ? item.buttons : [])
                 .map((button, index) => ({
                     id: text(button?.id) || `btn_${index + 1}`,
@@ -153,6 +241,7 @@ export default function QuickRepliesSection(props = {}) {
         label: text(quickReplyItemForm.label),
         text: String(quickReplyItemForm.text || ''),
         mediaUrl: text(quickReplyItemForm.mediaUrl),
+        messageBlocks: serializeMessageBlocksForSignature(Array.isArray(quickReplyItemForm.messageBlocks) ? quickReplyItemForm.messageBlocks : []),
         buttons: (Array.isArray(quickReplyItemForm.buttons) ? quickReplyItemForm.buttons : [])
             .map((button, index) => ({
                 id: text(button?.id) || `btn_${index + 1}`,
@@ -313,9 +402,27 @@ export default function QuickRepliesSection(props = {}) {
     }, [confirm, quickReplyItemHasChanges]);
 
     const renderItemForm = React.useCallback(({ close: requestClose } = {}) => {
-        const hasRequiredContent = Boolean(text(quickReplyItemForm.text) || quickReplyItemFormAssets.length > 0 || text(quickReplyItemForm.mediaUrl));
+        const messageBlocks = getQuickReplyFormBlocks(quickReplyItemForm);
+        const hasRequiredContent = hasUsableMessageBlocks(messageBlocks)
+            || Boolean(text(quickReplyItemForm.text) || quickReplyItemFormAssets.length > 0 || text(quickReplyItemForm.mediaUrl));
         const saveDisabled = busy || uploadingQuickReplyAssets || !canManageQuickReplies || !text(quickReplyItemForm.label) || !hasRequiredContent;
         const handleClose = () => { void requestCloseQuickReplyItemBuilder(requestClose); };
+        const handleBlocksChange = (nextBlocks) => {
+            const normalized = normalizeMessageBlocksForComposer(nextBlocks);
+            const legacyFields = deriveLegacyFieldsFromBlocks(normalized);
+            setQuickReplyItemForm?.((prev) => ({
+                ...prev,
+                ...legacyFields,
+                messageBlocks: normalized
+            }));
+        };
+        const handleSave = () => runQuickReplyAction(
+            'save_qr',
+            quickReplyItemPanelMode === 'create'
+                ? 'Respuesta rapida creada'
+                : 'Respuesta rapida actualizada',
+            async () => saveQuickReplyItem?.()
+        );
 
         return (
             <div className="saas-quick-reply-builder-overlay" onClick={handleClose}>
@@ -327,62 +434,103 @@ export default function QuickRepliesSection(props = {}) {
                         </div>
                         <button type="button" className="saas-btn-cancel" disabled={busy || uploadingQuickReplyAssets} onClick={handleClose}>Cerrar</button>
                     </div>
-                    <AutoMessageEditor
-                        value={quickReplyItemForm.text || ''}
-                        onChange={(newText) => setQuickReplyItemForm?.((prev) => ({ ...prev, text: newText }))}
-                        disabled={busy || uploadingQuickReplyAssets}
-                        showMediaUpload={true}
-                        showPreview={true}
-                        tenantId={settingsTenantId}
-                        form={quickReplyItemForm}
-                        setForm={setQuickReplyItemForm}
-                        mode={quickReplyItemPanelMode}
-                        categoryOptions={QUICK_REPLY_CATEGORIES}
-                        normalizeCategory={normalizeQuickReplyCategory}
-                        acceptValue={QUICK_REPLY_ACCEPT_VALUE}
-                        mediaAssets={quickReplyItemFormAssets}
-                        mediaUrl={quickReplyItemForm.mediaUrl}
-                        onMediaUrlChange={(url) => setQuickReplyItemForm?.((prev) => ({ ...prev, mediaUrl: url }))}
-                        onUploadFiles={handleQuickReplyAssetSelection}
-                        onUploadError={(err) => setError?.(String(err?.message || err || 'No se pudo subir adjunto de respuesta rapida.'))}
-                        removeAssetAt={removeQuickReplyAssetAt}
-                        getAssetDisplayName={getQuickReplyAssetDisplayName}
-                        formatBytes={formatBytes}
-                        resolveAssetPreviewUrl={resolveQuickReplyAssetPreviewUrl}
-                        isImageAsset={isQuickReplyImageAsset}
-                        hasRequiredContent={hasRequiredContent}
-                        saveDisabled={saveDisabled}
-                        onSave={() => runQuickReplyAction(
-                            'save_qr',
-                            quickReplyItemPanelMode === 'create'
-                                ? 'Respuesta rapida creada'
-                                : 'Respuesta rapida actualizada',
-                            async () => saveQuickReplyItem?.()
-                        )}
-                        onCancel={handleClose}
-                    />
+                    <div className="saas-quick-reply-sequence-shell">
+                        <div className="saas-quick-reply-sequence-meta">
+                            <label>
+                                <span>Etiqueta</span>
+                                <input
+                                    value={quickReplyItemForm.label || ''}
+                                    onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, label: event.target.value }))}
+                                    placeholder="Ej: Saludo inicial"
+                                    disabled={busy || uploadingQuickReplyAssets}
+                                />
+                            </label>
+                            <label>
+                                <span>Categoria</span>
+                                <select
+                                    value={normalizeQuickReplyCategory(quickReplyItemForm.category)}
+                                    onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, category: normalizeQuickReplyCategory(event.target.value) }))}
+                                    disabled={busy || uploadingQuickReplyAssets}
+                                >
+                                    {QUICK_REPLY_CATEGORIES.map((entry) => (
+                                        <option key={entry.value} value={entry.value}>{entry.label}</option>
+                                    ))}
+                                </select>
+                            </label>
+                            <label className="saas-admin-module-toggle">
+                                <input
+                                    type="checkbox"
+                                    checked={quickReplyItemForm.availableForPatty === true}
+                                    onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, availableForPatty: event.target.checked }))}
+                                    disabled={busy || uploadingQuickReplyAssets || normalizeQuickReplyCategory(quickReplyItemForm.category) === 'general'}
+                                />
+                                <span>Disponible para Patty</span>
+                            </label>
+                            <label className="saas-admin-module-toggle">
+                                <input
+                                    type="checkbox"
+                                    checked={quickReplyItemForm.isActive !== false}
+                                    onChange={(event) => setQuickReplyItemForm?.((prev) => ({ ...prev, isActive: event.target.checked }))}
+                                    disabled={busy || uploadingQuickReplyAssets}
+                                />
+                                <span>Respuesta activa</span>
+                            </label>
+                        </div>
+                        <MessageSequenceComposer
+                            value={messageBlocks}
+                            onChange={handleBlocksChange}
+                            tenantId={settingsTenantId}
+                            catalogProducts={tenantCatalogProducts}
+                            disabled={busy || uploadingQuickReplyAssets}
+                            capabilities={{
+                                message: true,
+                                media: true,
+                                delay: true,
+                                catalog: true,
+                                product: true
+                            }}
+                        />
+                        <div className="saas-quick-reply-sequence-actions">
+                            <span className={!hasRequiredContent || !text(quickReplyItemForm.label) ? 'is-warning' : ''}>
+                                {!text(quickReplyItemForm.label)
+                                    ? 'Agrega una etiqueta para guardar la respuesta.'
+                                    : !hasRequiredContent
+                                        ? 'Agrega al menos un mensaje, adjunto, producto o catalogo.'
+                                        : 'Lista para guardar como respuesta rapida reutilizable.'}
+                            </span>
+                            <button
+                                type="button"
+                                className="saas-btn saas-btn--secondary"
+                                disabled={busy || uploadingQuickReplyAssets}
+                                onClick={handleClose}
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="button"
+                                className="saas-btn saas-btn--primary"
+                                disabled={saveDisabled}
+                                onClick={handleSave}
+                            >
+                                {quickReplyItemPanelMode === 'create' ? 'Guardar respuesta' : 'Actualizar respuesta'}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         );
     }, [
-        QUICK_REPLY_ACCEPT_VALUE,
         busy,
         canManageQuickReplies,
-        formatBytes,
-        getQuickReplyAssetDisplayName,
-        handleQuickReplyAssetSelection,
         quickReplyItemForm,
         quickReplyItemFormAssets,
         quickReplyItemPanelMode,
         settingsTenantId,
-        resolveQuickReplyAssetPreviewUrl,
-        isQuickReplyImageAsset,
-        removeQuickReplyAssetAt,
         requestCloseQuickReplyItemBuilder,
         runQuickReplyAction,
         saveQuickReplyItem,
-        setError,
         setQuickReplyItemForm,
+        tenantCatalogProducts,
         uploadingQuickReplyAssets
     ]);
 

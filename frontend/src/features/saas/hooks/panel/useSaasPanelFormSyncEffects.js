@@ -281,6 +281,7 @@ export default function useSaasPanelFormSyncEffects({
             mediaUrl: selectedItemValue.mediaUrl || '',
             mediaMimeType: selectedItemValue.mediaMimeType || '',
             mediaFileName: selectedItemValue.mediaFileName || '',
+            messageBlocks: Array.isArray(selectedItemValue.messageBlocks) ? selectedItemValue.messageBlocks : [],
             category: selectedItemValue.category || 'general',
             availableForPatty: selectedItemValue.availableForPatty === true,
             isActive: selectedItemValue.isActive !== false,

@@ -12257,6 +12257,84 @@ textarea:focus {
   color: var(--saas-text-secondary, var(--color-text-muted, rgba(0, 0, 0, 0.55)));
 }
 
+.saas-quick-reply-sequence-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.saas-quick-reply-sequence-meta {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(190px, 0.36fr) auto auto;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.saas-quick-reply-sequence-meta label:not(.saas-admin-module-toggle) {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.saas-quick-reply-sequence-meta label > span {
+  color: var(--saas-text-secondary, var(--color-text-muted, rgba(0, 0, 0, 0.55)));
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.saas-quick-reply-sequence-meta input,
+.saas-quick-reply-sequence-meta select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--saas-border-color, var(--color-border, rgba(0, 0, 0, 0.12)));
+  border-radius: 14px;
+  background: var(--saas-bg-surface, var(--color-surface, #fff));
+  color: var(--saas-text-primary, var(--color-text, #111));
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.saas-quick-reply-sequence-meta .saas-admin-module-toggle {
+  min-height: 44px;
+  align-self: end;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.saas-quick-reply-sequence-shell > .message-sequence-composer {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.saas-quick-reply-sequence-shell .message-sequence-composer__list {
+  max-height: none;
+  min-height: 220px;
+  padding: 2px 4px 8px 0;
+}
+
+.saas-quick-reply-sequence-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--saas-divider-soft, var(--color-border, rgba(0, 0, 0, 0.12)));
+}
+
+.saas-quick-reply-sequence-actions > span {
+  min-width: 0;
+  margin-right: auto;
+  color: var(--saas-text-secondary, var(--color-text-muted, rgba(0, 0, 0, 0.55)));
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.saas-quick-reply-sequence-actions > span.is-warning {
+  color: var(--saas-warning, #b7791f);
+}
+
 .saas-quick-reply-editor-main {
   display: flex;
   flex-direction: column;
@@ -12658,6 +12736,19 @@ textarea:focus {
     width: 100%;
     height: calc(100vh - 20px);
     max-height: calc(100vh - 20px);
+  }
+
+  .saas-quick-reply-sequence-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .saas-quick-reply-sequence-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .saas-quick-reply-sequence-actions > span {
+    margin-right: 0;
   }
 }
 
