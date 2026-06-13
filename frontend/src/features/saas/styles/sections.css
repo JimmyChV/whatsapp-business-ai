@@ -12406,6 +12406,91 @@ textarea:focus {
   gap: 6px;
 }
 
+.saas-quick-reply-variable-browser {
+  display: grid;
+  grid-template-columns: minmax(128px, 0.42fr) minmax(0, 1fr);
+  gap: 10px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.saas-quick-reply-variable-groups {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.saas-quick-reply-variable-group-button {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--saas-border-color, var(--color-border, rgba(0, 0, 0, 0.12)));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--saas-bg-surface, #fff) 84%, var(--saas-bg-elevated, #f8fafc));
+  color: var(--saas-text-primary, var(--color-text, #111));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  text-align: left;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.saas-quick-reply-variable-group-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saas-quick-reply-variable-group-button small {
+  min-width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid var(--saas-border-color, var(--color-border, rgba(0, 0, 0, 0.12)));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--saas-bg-surface, #fff);
+  color: var(--saas-text-secondary, var(--color-text-muted, rgba(0, 0, 0, 0.55)));
+  font-size: 0.68rem;
+}
+
+.saas-quick-reply-variable-group-button:hover,
+.saas-quick-reply-variable-group-button.is-active {
+  border-color: color-mix(in srgb, var(--saas-accent-primary, #16a34a) 42%, var(--saas-border-color, #d6d3d1));
+  background: color-mix(in srgb, var(--saas-accent-primary, #16a34a) 9%, var(--saas-bg-surface, #fff));
+}
+
+.saas-quick-reply-variable-results {
+  border: 1px solid var(--saas-border-color, var(--color-border, rgba(0, 0, 0, 0.12)));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--saas-bg-surface, #fff) 88%, var(--saas-bg-elevated, #f8fafc));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px;
+}
+
+.saas-quick-reply-variable-results__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--saas-text-primary, var(--color-text, #111));
+}
+
+.saas-quick-reply-variable-results__head small {
+  color: var(--saas-text-secondary, var(--color-text-muted, rgba(0, 0, 0, 0.55)));
+  white-space: nowrap;
+}
+
 .saas-quick-reply-buttons-header {
   display: flex;
   justify-content: space-between;
@@ -13970,16 +14055,6 @@ textarea:focus {
   align-self: start;
 }
 
-.message-sequence-composer .saas-quick-reply-variable-list {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-content: start;
-  gap: 10px;
-}
-
-.message-sequence-composer .saas-quick-reply-variable-group {
-  min-width: 0;
-}
-
 .message-sequence-composer .saas-meta-template-var-list {
   max-height: 240px;
 }
@@ -14153,7 +14228,7 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 
-  .message-sequence-composer .saas-quick-reply-variable-list {
+  .saas-quick-reply-variable-browser {
     grid-template-columns: 1fr;
   }
 }

@@ -202,7 +202,7 @@ export default function AutoMessageEditor({
         }
     });
     const [variableSearch, setVariableSearch] = React.useState('');
-    const [expandedCategories, setExpandedCategories] = React.useState({});
+    const [selectedVariableCategory, setSelectedVariableCategory] = React.useState('');
     const [showVariablesPanel, setShowVariablesPanel] = React.useState(initialShowVariablesPanel !== false);
     const [variableCategories, setVariableCategories] = React.useState(() => collectVariableCategories({}));
     const [variableLoading, setVariableLoading] = React.useState(false);
@@ -259,8 +259,6 @@ export default function AutoMessageEditor({
             cancelled = true;
         };
     }, [tenantId]);
-
-    const defaultVariableGroupExpanded = initialVariableGroupsExpanded !== false;
 
     const focusAndSelect = React.useCallback((start, end = start) => {
         window.requestAnimationFrame?.(() => {
@@ -332,11 +330,12 @@ export default function AutoMessageEditor({
             .filter((category) => Array.isArray(category.variables) && category.variables.length > 0);
     }, [variableCategories, variableSearch]);
 
-    const toggleVariableCategory = React.useCallback((categoryKey = '') => {
-        const key = text(categoryKey).toLowerCase();
-        if (!key) return;
-        setExpandedCategories((prev) => ({ ...(prev || {}), [key]: !prev?.[key] }));
-    }, []);
+    const activeVariableCategory = React.useMemo(() => {
+        const categories = Array.isArray(filteredVariableCategories) ? filteredVariableCategories : [];
+        if (categories.length === 0) return null;
+        const selectedKey = text(selectedVariableCategory).toLowerCase();
+        return categories.find((category) => text(category?.id || category?.label).toLowerCase() === selectedKey) || categories[0];
+    }, [filteredVariableCategories, selectedVariableCategory]);
 
     return (
         <div className="saas-quick-reply-editor-layout">
@@ -538,57 +537,59 @@ export default function AutoMessageEditor({
                         {variableLoading ? <small className="saas-quick-reply-preview-muted">Cargando variables...</small> : null}
                         {variableError ? <small className="saas-meta-template-error">{variableError}</small> : null}
                         {!variableLoading && !variableError ? (
-                            <div className="saas-quick-reply-variable-list">
-                                {filteredVariableCategories.map((category) => {
-                                    const categoryKey = text(category?.id || category?.label).toLowerCase();
-                                    const variables = Array.isArray(category?.variables) ? category.variables : [];
-                                    const hasExplicitExpandedState = Object.prototype.hasOwnProperty.call(expandedCategories || {}, categoryKey);
-                                    const hasVariableSearch = text(variableSearch).length > 0;
-                                    const isExpanded = hasVariableSearch
-                                        || (hasExplicitExpandedState
-                                            ? expandedCategories?.[categoryKey] !== false
-                                            : defaultVariableGroupExpanded);
-                                    return (
-                                        <div key={`auto_msg_var_group_${category?.id}`} className="saas-quick-reply-variable-group">
-                                            <button
-                                                type="button"
-                                                className="saas-meta-template-accordion-trigger"
-                                                onClick={() => toggleVariableCategory(categoryKey)}
-                                            >
-                                                <span className="saas-meta-template-accordion-title">
-                                                    {category?.label || category?.id}
-                                                    <small>{variables.length}</small>
-                                                </span>
-                                                <span className="saas-meta-template-accordion-caret">{isExpanded ? '▾' : '▸'}</span>
-                                            </button>
-                                            {isExpanded ? (
-                                                <div className="saas-meta-template-var-list">
-                                                    {variables.map((variable) => (
-                                                        <button
-                                                            type="button"
-                                                            className="saas-meta-template-var-item saas-meta-template-var-item--interactive"
-                                                            key={`auto_msg_var_${category?.id}_${variable?.key}`}
-                                                            disabled={disabled}
-                                                            onClick={() => insertVariable(variable?.key)}
-                                                        >
-                                                            <span className="saas-meta-template-var-token">{`{{${variable?.key}}}`}</span>
-                                                            <div className="saas-meta-template-var-item-main">
-                                                                <strong>{variable?.label || variable?.key}</strong>
-                                                                <small>
-                                                                    {text(variable?.description).toLowerCase() !== text(variable?.label).toLowerCase()
-                                                                        ? text(variable?.description)
-                                                                        : text(variable?.exampleValue || variable?.description || variable?.key)}
-                                                                </small>
-                                                            </div>
-                                                            <span className="saas-meta-template-var-insert-label" aria-hidden="true">+</span>
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            ) : null}
+                            <div className="saas-quick-reply-variable-browser">
+                                {filteredVariableCategories.length > 0 ? (
+                                    <>
+                                        <div className="saas-quick-reply-variable-groups" aria-label="Grupos de variables">
+                                            {filteredVariableCategories.map((category) => {
+                                                const categoryKey = text(category?.id || category?.label).toLowerCase();
+                                                const variables = Array.isArray(category?.variables) ? category.variables : [];
+                                                const activeCategoryKey = text(activeVariableCategory?.id || activeVariableCategory?.label).toLowerCase();
+                                                return (
+                                                    <button
+                                                        key={`auto_msg_var_group_${category?.id}`}
+                                                        type="button"
+                                                        className={`saas-quick-reply-variable-group-button ${categoryKey === activeCategoryKey ? 'is-active' : ''}`.trim()}
+                                                        onClick={() => setSelectedVariableCategory(categoryKey)}
+                                                    >
+                                                        <span>{category?.label || category?.id}</span>
+                                                        <small>{variables.length}</small>
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
-                                    );
-                                })}
-                                {filteredVariableCategories.length === 0 ? <small className="saas-quick-reply-preview-muted">Sin variables para mostrar.</small> : null}
+                                        <div className="saas-quick-reply-variable-results" aria-label="Variables del grupo seleccionado">
+                                            <div className="saas-quick-reply-variable-results__head">
+                                                <strong>{activeVariableCategory?.label || activeVariableCategory?.id}</strong>
+                                                <small>{(Array.isArray(activeVariableCategory?.variables) ? activeVariableCategory.variables.length : 0)} variables</small>
+                                            </div>
+                                            <div className="saas-meta-template-var-list">
+                                                {(Array.isArray(activeVariableCategory?.variables) ? activeVariableCategory.variables : []).map((variable) => (
+                                                    <button
+                                                        type="button"
+                                                        className="saas-meta-template-var-item saas-meta-template-var-item--interactive"
+                                                        key={`auto_msg_var_${activeVariableCategory?.id}_${variable?.key}`}
+                                                        disabled={disabled}
+                                                        onClick={() => insertVariable(variable?.key)}
+                                                    >
+                                                        <span className="saas-meta-template-var-token">{`{{${variable?.key}}}`}</span>
+                                                        <div className="saas-meta-template-var-item-main">
+                                                            <strong>{variable?.label || variable?.key}</strong>
+                                                            <small>
+                                                                {text(variable?.description).toLowerCase() !== text(variable?.label).toLowerCase()
+                                                                    ? text(variable?.description)
+                                                                    : text(variable?.exampleValue || variable?.description || variable?.key)}
+                                                            </small>
+                                                        </div>
+                                                        <span className="saas-meta-template-var-insert-label" aria-hidden="true">+</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <small className="saas-quick-reply-preview-muted">Sin variables para mostrar.</small>
+                                )}
                             </div>
                         ) : null}
                     </>
