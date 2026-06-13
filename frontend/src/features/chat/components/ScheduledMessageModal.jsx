@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CalendarClock, ChevronDown, Clock, Trash2, Pencil } from 'lucide-react';
+import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import MessageSequenceComposer, { buildMessageBlocksFromLegacy, normalizeMessageBlocksForComposer } from './MessageSequenceComposer';
 import {
     normalizeQuickReplyMediaAssets
@@ -82,6 +83,7 @@ const ScheduledMessageModal = ({
     buildApiHeaders,
     activeTenantId = ''
 }) => {
+    const { confirm } = useUiFeedback();
     const chatId = text(activeChat?.id);
     const scopeModuleId = text(activeChat?.scopeModuleId).toLowerCase();
     const windowExpiresAt = activeChat?.windowExpiresAt || null;
@@ -222,10 +224,13 @@ const ScheduledMessageModal = ({
             return;
         }
         if (!cancelOnCustomerReply) {
-            const shouldContinue = globalThis.confirm(
-                'Este mensaje se enviara aunque el cliente responda antes. ' +
-                'Aceptar: programarlo para enviar siempre. Cancelar: volver y marcar "No enviar si responde".'
-            );
+            const shouldContinue = await confirm({
+                title: 'Enviar aunque responda',
+                message: 'Este mensaje se enviara aunque el cliente responda antes. Usalo solo si debe salir si o si.',
+                confirmText: 'Programar igual',
+                cancelText: 'Volver a editar',
+                tone: 'warn'
+            });
             if (!shouldContinue) return;
         }
         const primaryMedia = mediaAssets[0] || null;
@@ -308,12 +313,16 @@ const ScheduledMessageModal = ({
         }
     };
 
-    const requestClose = () => {
+    const requestClose = async () => {
         if (saving) return;
         if (hasDraftChanges) {
-            const shouldClose = globalThis.confirm(
-                'Tienes una programacion en edicion. Aceptar: salir y descartar cambios. Cancelar: seguir editando.'
-            );
+            const shouldClose = await confirm({
+                title: 'Descartar programacion',
+                message: 'Tienes una programacion en edicion. Si cierras ahora se descartaran los cambios no programados.',
+                confirmText: 'Descartar',
+                cancelText: 'Seguir editando',
+                tone: 'warn'
+            });
             if (!shouldClose) return;
         }
         onClose?.();
@@ -322,7 +331,7 @@ const ScheduledMessageModal = ({
     const modal = (
         <div
             className="saas-quick-reply-builder-overlay scheduled-message-modal__overlay"
-            onClick={requestClose}
+            onClick={() => { void requestClose(); }}
         >
             <div
                 className="saas-quick-reply-builder-shell scheduled-message-modal__shell"
@@ -335,7 +344,7 @@ const ScheduledMessageModal = ({
                         </h4>
                         <small>{variables.cliente || 'Chat activo'} - se cancela si el cliente responde antes, salvo que lo desactives.</small>
                     </div>
-                    <button type="button" className="scheduled-message-modal__close" disabled={saving} onClick={requestClose}>Cerrar</button>
+                    <button type="button" className="saas-btn saas-btn--secondary scheduled-message-modal__close" disabled={saving} onClick={() => { void requestClose(); }}>Cerrar</button>
                 </div>
 
                 {error ? <div className="saas-meta-template-error" style={{ margin: '0 18px 10px' }}>{error}</div> : null}
@@ -473,7 +482,7 @@ const ScheduledMessageModal = ({
                                             )}
                                         </div>
                                         <div className="scheduled-message-modal__schedule-popover-actions">
-                                            <button type="button" className="scheduled-message-modal__primary" onClick={() => setSchedulePopoverOpen(false)}>
+                                            <button type="button" className="saas-btn saas-btn--primary scheduled-message-modal__primary" onClick={() => setSchedulePopoverOpen(false)}>
                                                 Aplicar
                                             </button>
                                         </div>
@@ -510,10 +519,10 @@ const ScheduledMessageModal = ({
                             catalogProducts={catalogProducts}
                         />
                         <div className="scheduled-message-modal__actions">
-                            <button type="button" className="scheduled-message-modal__primary" disabled={saving || !hasRequiredContent} onClick={submit}>
+                            <button type="button" className="saas-btn saas-btn--primary scheduled-message-modal__primary" disabled={saving || !hasRequiredContent} onClick={submit}>
                                 {editingId ? 'Guardar programacion' : 'Programar respuesta'}
                             </button>
-                            <button type="button" className="scheduled-message-modal__secondary" disabled={saving} onClick={resetForm}>
+                            <button type="button" className="saas-btn saas-btn--secondary scheduled-message-modal__secondary" disabled={saving} onClick={resetForm}>
                                 Limpiar
                             </button>
                         </div>

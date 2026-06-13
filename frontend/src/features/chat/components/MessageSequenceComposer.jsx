@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Archive, Box, Check, Clock3, Copy, FileText, Image, Plus, Trash2, ChevronUp, ChevronDown, X } from 'lucide-react';
+import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import AutoMessageEditor from '../../saas/components/AutoMessageEditor';
 import {
     QUICK_REPLY_ACCEPT_VALUE,
@@ -166,6 +167,7 @@ export default function MessageSequenceComposer({
         product: true
     }
 }) {
+    const { confirm } = useUiFeedback();
     const blocks = useMemo(() => normalizeMessageBlocksForComposer(value), [value]);
     const [selectedId, setSelectedId] = useState(() => blocks[0]?.id || '');
     const [editingId, setEditingId] = useState(() => blocks[0]?.id || '');
@@ -298,30 +300,34 @@ export default function MessageSequenceComposer({
         updateBlock(activeEditBlock.id, { attachments: nextAssets });
     };
 
-    const closeEditor = useCallback(({ confirmClose = true } = {}) => {
+    const closeEditor = useCallback(async ({ confirmClose = true } = {}) => {
         if (!editingBlock) return;
         if (confirmClose) {
-            const shouldClose = globalThis.confirm(
-                'Estas saliendo del editor del bloque. Aceptar: volver a la secuencia. Cancelar: seguir editando.'
-            );
+            const shouldClose = await confirm({
+                title: 'Salir del editor',
+                message: 'Estas saliendo del editor del bloque. Si vuelves a la secuencia, los cambios ya escritos quedan en el bloque, pero seguiras editando desde la lista.',
+                confirmText: 'Volver a la secuencia',
+                cancelText: 'Seguir editando',
+                tone: 'warn'
+            });
             if (!shouldClose) return;
         }
         setEditingId('');
-    }, [editingBlock]);
+    }, [confirm, editingBlock]);
 
     useEffect(() => {
         if (!editingBlock) return undefined;
         const handleKeyDown = (event) => {
             if (event.key !== 'Escape') return;
             event.preventDefault();
-            closeEditor({ confirmClose: true });
+            void closeEditor({ confirmClose: true });
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [closeEditor, editingBlock]);
 
     const editorModal = editingBlock ? createPortal((
-        <div className="message-sequence-composer__editor-overlay" onClick={() => closeEditor({ confirmClose: true })}>
+        <div className="message-sequence-composer__editor-overlay" onClick={() => { void closeEditor({ confirmClose: true }); }}>
             <div className="message-sequence-composer__editor-modal" onClick={(event) => event.stopPropagation()}>
                 <div className="message-sequence-composer__editor-head">
                     <div>
@@ -329,10 +335,10 @@ export default function MessageSequenceComposer({
                         <small>Guarda el bloque para volver a la secuencia.</small>
                     </div>
                     <div className="message-sequence-composer__editor-actions">
-                        <button type="button" className="message-sequence-composer__done" onClick={() => closeEditor({ confirmClose: false })} disabled={disabled}>
+                        <button type="button" className="saas-btn saas-btn--primary message-sequence-composer__done" onClick={() => { void closeEditor({ confirmClose: false }); }} disabled={disabled}>
                             <Check size={15} /> Guardar bloque
                         </button>
-                        <button type="button" className="message-sequence-composer__close-editor" onClick={() => closeEditor({ confirmClose: true })} disabled={disabled} aria-label="Cerrar editor de bloque">
+                        <button type="button" className="saas-btn saas-btn--secondary message-sequence-composer__close-editor" onClick={() => { void closeEditor({ confirmClose: true }); }} disabled={disabled} aria-label="Cerrar editor de bloque">
                             <X size={17} />
                         </button>
                     </div>
