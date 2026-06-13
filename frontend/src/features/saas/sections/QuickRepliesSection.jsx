@@ -256,7 +256,7 @@ export default function QuickRepliesSection(props = {}) {
             label: text(item.label),
             text: String(item.text || ''),
             mediaUrl: text(item.mediaUrl),
-            messageBlocks: serializeMessageBlocksForSignature(Array.isArray(item.messageBlocks) ? item.messageBlocks : []),
+            messageBlocks: serializeMessageBlocksForSignature(getQuickReplyItemBlocks(item, assets)),
             buttons: (Array.isArray(item.buttons) ? item.buttons : [])
                 .map((button, index) => ({
                     id: text(button?.id) || `btn_${index + 1}`,

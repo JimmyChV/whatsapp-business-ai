@@ -6,6 +6,9 @@ import {
     normalizeQuickReplyMediaAssets
 } from '../../../helpers';
 import {
+    normalizeMessageBlocksForComposer
+} from '../../../../chat/components/MessageSequenceComposer';
+import {
     createQuickReplyItem,
     createQuickReplyLibrary,
     deactivateQuickReplyItem as deactivateQuickReplyItemRequest,
@@ -94,6 +97,48 @@ export default function useQuickReplyAdminActions({
         } finally {
             setLoadingQuickReplies(false);
         }
+    };
+
+    const buildQuickReplyItemBlocks = (item = {}) => {
+        const normalizedAssets = normalizeQuickReplyMediaAssets(item?.mediaAssets, {
+            url: item?.mediaUrl || '',
+            mimeType: item?.mediaMimeType || '',
+            fileName: item?.mediaFileName || '',
+            sizeBytes: item?.mediaSizeBytes
+        });
+        return normalizeMessageBlocksForComposer(item?.messageBlocks, {
+            messageText: item?.text || '',
+            mediaAssets: normalizedAssets,
+            mediaUrl: item?.mediaUrl || '',
+            mediaMimeType: item?.mediaMimeType || '',
+            mediaFileName: item?.mediaFileName || '',
+            mediaSizeBytes: item?.mediaSizeBytes
+        });
+    };
+
+    const buildQuickReplyItemForm = (item = {}) => {
+        const mediaAssets = normalizeQuickReplyMediaAssets(item?.mediaAssets, {
+            url: item?.mediaUrl || '',
+            mimeType: item?.mediaMimeType || '',
+            fileName: item?.mediaFileName || '',
+            sizeBytes: item?.mediaSizeBytes
+        });
+        return {
+            itemId: item?.itemId,
+            libraryId: item?.libraryId,
+            label: item?.label || '',
+            text: item?.text || '',
+            mediaAssets,
+            mediaUrl: item?.mediaUrl || '',
+            mediaMimeType: item?.mediaMimeType || '',
+            mediaFileName: item?.mediaFileName || '',
+            messageBlocks: buildQuickReplyItemBlocks(item),
+            buttons: Array.isArray(item?.buttons) ? item.buttons : [],
+            category: item?.category || 'general',
+            availableForPatty: item?.availableForPatty === true,
+            isActive: item?.isActive !== false,
+            sortOrder: String(item?.sortOrder || 100)
+        };
     };
 
     const openQuickReplyLibraryCreate = () => {
@@ -205,53 +250,13 @@ export default function useQuickReplyAdminActions({
 
     const openQuickReplyItemEdit = () => {
         if (!selectedQuickReplyItem) return;
-        setQuickReplyItemForm({
-            itemId: selectedQuickReplyItem.itemId,
-            libraryId: selectedQuickReplyItem.libraryId,
-            label: selectedQuickReplyItem.label || '',
-            text: selectedQuickReplyItem.text || '',
-            mediaAssets: normalizeQuickReplyMediaAssets(selectedQuickReplyItem.mediaAssets, {
-                url: selectedQuickReplyItem.mediaUrl || '',
-                mimeType: selectedQuickReplyItem.mediaMimeType || '',
-                fileName: selectedQuickReplyItem.mediaFileName || '',
-                sizeBytes: selectedQuickReplyItem.mediaSizeBytes
-            }),
-            mediaUrl: selectedQuickReplyItem.mediaUrl || '',
-            mediaMimeType: selectedQuickReplyItem.mediaMimeType || '',
-            mediaFileName: selectedQuickReplyItem.mediaFileName || '',
-            messageBlocks: Array.isArray(selectedQuickReplyItem.messageBlocks) ? selectedQuickReplyItem.messageBlocks : [],
-            buttons: Array.isArray(selectedQuickReplyItem.buttons) ? selectedQuickReplyItem.buttons : [],
-            category: selectedQuickReplyItem.category || 'general',
-            availableForPatty: selectedQuickReplyItem.availableForPatty === true,
-            isActive: selectedQuickReplyItem.isActive !== false,
-            sortOrder: String(selectedQuickReplyItem.sortOrder || 100)
-        });
+        setQuickReplyItemForm(buildQuickReplyItemForm(selectedQuickReplyItem));
         setQuickReplyItemPanelMode('edit');
     };
 
     const cancelQuickReplyItemEdit = () => {
         if (selectedQuickReplyItem) {
-            setQuickReplyItemForm({
-                itemId: selectedQuickReplyItem.itemId,
-                libraryId: selectedQuickReplyItem.libraryId,
-                label: selectedQuickReplyItem.label || '',
-                text: selectedQuickReplyItem.text || '',
-                mediaAssets: normalizeQuickReplyMediaAssets(selectedQuickReplyItem.mediaAssets, {
-                    url: selectedQuickReplyItem.mediaUrl || '',
-                    mimeType: selectedQuickReplyItem.mediaMimeType || '',
-                    fileName: selectedQuickReplyItem.mediaFileName || '',
-                    sizeBytes: selectedQuickReplyItem.mediaSizeBytes
-                }),
-                mediaUrl: selectedQuickReplyItem.mediaUrl || '',
-                mediaMimeType: selectedQuickReplyItem.mediaMimeType || '',
-                mediaFileName: selectedQuickReplyItem.mediaFileName || '',
-                messageBlocks: Array.isArray(selectedQuickReplyItem.messageBlocks) ? selectedQuickReplyItem.messageBlocks : [],
-                buttons: Array.isArray(selectedQuickReplyItem.buttons) ? selectedQuickReplyItem.buttons : [],
-                category: selectedQuickReplyItem.category || 'general',
-                availableForPatty: selectedQuickReplyItem.availableForPatty === true,
-                isActive: selectedQuickReplyItem.isActive !== false,
-                sortOrder: String(selectedQuickReplyItem.sortOrder || 100)
-            });
+            setQuickReplyItemForm(buildQuickReplyItemForm(selectedQuickReplyItem));
         } else {
             setQuickReplyItemForm({
                 ...emptyQuickReplyItemForm,

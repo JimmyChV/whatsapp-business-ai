@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { isDeepEqual, setIfChanged } from '../../helpers/formSync.helpers';
+import { normalizeMessageBlocksForComposer } from '../../../chat/components/MessageSequenceComposer';
 
 
 export default function useSaasPanelFormSyncEffects({
@@ -62,6 +63,25 @@ export default function useSaasPanelFormSyncEffects({
     const selectedWaModuleId = String(selectedWaModule?.moduleId || '').trim().toLowerCase();
     const selectedQuickReplyLibraryId = String(selectedQuickReplyLibrary?.libraryId || '').trim().toUpperCase();
     const selectedQuickReplyItemId = String(selectedQuickReplyItem?.itemId || '').trim().toUpperCase();
+
+    const buildQuickReplyItemMessageBlocks = (item = {}, normalizeQuickReplyMedia = normalizeQuickReplyMediaAssets) => {
+        const mediaAssets = typeof normalizeQuickReplyMedia === 'function'
+            ? normalizeQuickReplyMedia(item?.mediaAssets, {
+                url: item?.mediaUrl || '',
+                mimeType: item?.mediaMimeType || '',
+                fileName: item?.mediaFileName || '',
+                sizeBytes: item?.mediaSizeBytes
+            })
+            : [];
+        return normalizeMessageBlocksForComposer(item?.messageBlocks, {
+            messageText: item?.text || '',
+            mediaAssets,
+            mediaUrl: item?.mediaUrl || '',
+            mediaMimeType: item?.mediaMimeType || '',
+            mediaFileName: item?.mediaFileName || '',
+            mediaSizeBytes: item?.mediaSizeBytes
+        });
+    };
 
     const refs = useRef({});
     refs.current = {
@@ -281,7 +301,7 @@ export default function useSaasPanelFormSyncEffects({
             mediaUrl: selectedItemValue.mediaUrl || '',
             mediaMimeType: selectedItemValue.mediaMimeType || '',
             mediaFileName: selectedItemValue.mediaFileName || '',
-            messageBlocks: Array.isArray(selectedItemValue.messageBlocks) ? selectedItemValue.messageBlocks : [],
+            messageBlocks: buildQuickReplyItemMessageBlocks(selectedItemValue, normalizeQuickReplyMedia),
             category: selectedItemValue.category || 'general',
             availableForPatty: selectedItemValue.availableForPatty === true,
             isActive: selectedItemValue.isActive !== false,
