@@ -17,11 +17,13 @@ function createSocketQuickRepliesService({
     const resolveQuickReplyVariableMap = async ({
         tenantId,
         chatId,
+        scopeModuleId = '',
         customerId = ''
     } = {}) => {
         try {
             const previewPayload = await templateVariablesService.getPreview(tenantId, {
                 chatId,
+                scopeModuleId,
                 customerId
             });
             const variables = (Array.isArray(previewPayload?.categories) ? previewPayload.categories : [])
@@ -215,6 +217,7 @@ function createSocketQuickRepliesService({
                     const variables = await resolveQuickReplyVariableMap({
                         tenantId,
                         chatId: target.scopedChatId || target.targetChatId,
+                        scopeModuleId: moduleId,
                         customerId: payload?.customerId || payload?.customer_id || ''
                     });
                     const result = await executeMessageSequence({

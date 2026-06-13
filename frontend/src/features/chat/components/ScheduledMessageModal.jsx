@@ -209,7 +209,6 @@ const ScheduledMessageModal = ({
         if (!isOpen) return undefined;
         const handleKeyDown = (event) => {
             if (event.key !== 'Escape') return;
-            if (document.querySelector('.message-sequence-composer__editor-overlay')) return;
             event.preventDefault();
             event.stopPropagation();
             event.stopImmediatePropagation?.();
@@ -239,7 +238,7 @@ const ScheduledMessageModal = ({
             });
             const primaryMedia = assets[0] || null;
             setMessageText(String(item?.text || '').trim());
-            setMessageBlocks(buildMessageBlocksFromLegacy({
+            setMessageBlocks(normalizeMessageBlocksForComposer(item?.messageBlocks, {
                 messageText: String(item?.text || '').trim(),
                 mediaAssets: assets
             }));
