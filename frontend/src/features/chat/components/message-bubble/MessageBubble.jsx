@@ -1781,4 +1781,47 @@ const MessageBubble = ({
     );
 };
 
-export default MessageBubble;
+const getMessageRenderSignature = (message = null) => {
+    if (!message || typeof message !== 'object') return '';
+    const deliveryError = message?.deliveryError && typeof message.deliveryError === 'object'
+        ? `${message.deliveryError.code || ''}:${message.deliveryError.message || ''}`
+        : '';
+    const reactions = Array.isArray(message?.reactions)
+        ? message.reactions.map((reaction) => `${reaction?.emoji || ''}:${reaction?.count || ''}:${reaction?.from || ''}`).join(',')
+        : '';
+    return [
+        message?.id,
+        message?.clientTempId,
+        message?.body,
+        message?.text,
+        message?.caption,
+        message?.ack,
+        message?.status,
+        message?.timestamp,
+        message?.edited,
+        message?.fromMe,
+        message?.hasMedia,
+        message?.mediaUrl || message?.media_url,
+        message?.mediaData ? String(message.mediaData).length : '',
+        message?.mimetype || message?.mimeType,
+        message?.type || message?.messageType || message?.message_type,
+        message?.quotedMessage?.id,
+        deliveryError,
+        reactions
+    ].map((value) => String(value ?? '')).join('|');
+};
+
+const areMessageBubblePropsEqual = (prev = {}, next = {}) => (
+    (prev.msg === next.msg || getMessageRenderSignature(prev.msg) === getMessageRenderSignature(next.msg))
+    && prev.isHighlighted === next.isHighlighted
+    && prev.isCurrentHighlighted === next.isCurrentHighlighted
+    && prev.activeChatId === next.activeChatId
+    && prev.forwardMode === next.forwardMode
+    && prev.isForwardSelected === next.isForwardSelected
+    && prev.canEditMessages === next.canEditMessages
+    && prev.showSenderName === next.showSenderName
+    && prev.senderDisplayName === next.senderDisplayName
+    && prev.catalog === next.catalog
+);
+
+export default React.memo(MessageBubble, areMessageBubblePropsEqual);

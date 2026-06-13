@@ -1,5 +1,37 @@
+import { startTransition } from 'react';
 import { getCachedMessages, writeCachedMessages } from '../helpers/messageCache.helpers';
 import { getMessages as getStoredMessages } from '../services/chatLocalCache.service';
+
+const getMessageIdentity = (message = null) => String(
+  message?.id
+  || message?.clientTempId
+  || message?.messageId
+  || message?.message_id
+  || ''
+).trim();
+
+const areMessageListsEquivalent = (left = [], right = []) => {
+  if (!Array.isArray(left) || !Array.isArray(right)) return false;
+  if (left.length !== right.length) return false;
+  if (left.length === 0) return true;
+  const checkpoints = new Set([0, left.length - 1, Math.floor((left.length - 1) / 2)]);
+  for (const index of checkpoints) {
+    const leftMessage = left[index] || {};
+    const rightMessage = right[index] || {};
+    if (getMessageIdentity(leftMessage) !== getMessageIdentity(rightMessage)) return false;
+    if (String(leftMessage?.body || '') !== String(rightMessage?.body || '')) return false;
+    if (String(leftMessage?.status || '') !== String(rightMessage?.status || '')) return false;
+    if (String(leftMessage?.ack ?? '') !== String(rightMessage?.ack ?? '')) return false;
+  }
+  return true;
+};
+
+const setMessagesIfChanged = (setMessages, nextMessages = []) => {
+  const safeMessages = Array.isArray(nextMessages) ? nextMessages : [];
+  setMessages((prevMessages) => (
+    areMessageListsEquivalent(prevMessages, safeMessages) ? prevMessages : safeMessages
+  ));
+};
 
 export default function useChatSelectionAction({
   chatsRef,
@@ -116,12 +148,14 @@ export default function useChatSelectionAction({
     suppressSmoothScrollUntilRef.current = Date.now() + 2200;
     prevMessagesMetaRef.current = { count: 0, lastId: '' };
     const cachedMessages = getCachedMessages(messagesCacheRef, resolvedChatId);
-    setMessages(Array.isArray(cachedMessages) ? cachedMessages : []);
+    setMessagesIfChanged(setMessages, cachedMessages);
     getStoredMessages(resolvedChatId).then((storedMessages) => {
       if (!Array.isArray(storedMessages) || storedMessages.length === 0) return;
       if (String(activeChatIdRef.current || '') !== resolvedChatId) return;
       writeCachedMessages(messagesCacheRef, resolvedChatId, storedMessages);
-      setMessages(storedMessages);
+      startTransition(() => {
+        setMessagesIfChanged(setMessages, storedMessages);
+      });
     });
     setEditingMessage(null);
     setReplyingMessage(null);

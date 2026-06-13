@@ -173,14 +173,14 @@ const ChatInput = ({
     const [preferredSkinTone, setPreferredSkinTone] = useState(SkinTones.NEUTRAL);
     const [localText, setLocalText] = useState(() => String(inputText || ''));
     const [scheduledModalOpen, setScheduledModalOpen] = useState(false);
-    const [scheduledPendingCount, setScheduledPendingCount] = useState(0);
     const [quickReplyPreviewItem, setQuickReplyPreviewItem] = useState(null);
     const [quickReplyEditorItem, setQuickReplyEditorItem] = useState(null);
     const [quickReplyEditorBlocks, setQuickReplyEditorBlocks] = useState([]);
     const inputRef = useRef(null);
     const chatInputRef = useRef(null);
     const lastExternalTextRef = useRef(String(inputText || ''));
-    const scheduledCountRequestRef = useRef(0);
+    const inputAutosizeFrameRef = useRef(null);
+    const inputAutosizeSignatureRef = useRef('');
     const pendingQuickReplySendRef = useRef(false);
     const draftQuickReplyLabel = String(quickReplyDraft?.label || '').trim();
     const draftQuickReplyText = String(quickReplyDraft?.text || '').trim();
@@ -203,32 +203,6 @@ const ChatInput = ({
     const isBlockedByEditState = Boolean(editingMessage?.id);
     const disableFreeformComposer = isTemplateOnlyMode || isBlockedByEditState;
     const canSendFreeform = !isTemplateOnlyMode && (Boolean(localText.trim()) || Boolean(attachment) || Boolean(hasDraftQuickReply));
-    const activeScheduledChatId = String(activeChatDetails?.id || '').trim();
-    const activeScheduledScopeModuleId = String(activeChatDetails?.scopeModuleId || '').trim().toLowerCase();
-
-    const refreshScheduledPendingCount = React.useCallback(async () => {
-        if (!activeScheduledChatId) {
-            setScheduledPendingCount(0);
-            return;
-        }
-        const requestId = scheduledCountRequestRef.current + 1;
-        scheduledCountRequestRef.current = requestId;
-        try {
-            const { listScheduledMessages } = await import('../core/services/scheduledMessages.service');
-            const items = await listScheduledMessages({
-                chatId: activeScheduledChatId,
-                scopeModuleId: activeScheduledScopeModuleId,
-                buildApiHeaders
-            });
-            if (scheduledCountRequestRef.current !== requestId) return;
-            const pending = (Array.isArray(items) ? items : [])
-                .filter((item) => String(item?.status || '') === 'pending')
-                .length;
-            setScheduledPendingCount(pending);
-        } catch (_) {
-            if (scheduledCountRequestRef.current === requestId) setScheduledPendingCount(0);
-        }
-    }, [activeScheduledChatId, activeScheduledScopeModuleId, buildApiHeaders]);
 
     const handleInputChange = (e) => {
         const val = e.target.value;
@@ -562,20 +536,27 @@ const ChatInput = ({
     }, [inputText]);
 
     useEffect(() => {
-        setScheduledPendingCount(0);
-        if (!activeScheduledChatId) return undefined;
-        const timer = setTimeout(() => {
-            refreshScheduledPendingCount();
-        }, 450);
-        return () => clearTimeout(timer);
-    }, [activeScheduledChatId, activeScheduledScopeModuleId, refreshScheduledPendingCount]);
-
-    useEffect(() => {
         const el = inputRef.current;
         if (!el) return;
-        el.style.height = '24px';
-        const next = Math.min(el.scrollHeight, 220);
-        el.style.height = `${next}px`;
+        const nextSignature = `${String(localText || '').length}:${String(localText || '').split('\n').length}`;
+        if (inputAutosizeSignatureRef.current === nextSignature) return;
+        inputAutosizeSignatureRef.current = nextSignature;
+        if (inputAutosizeFrameRef.current) {
+            cancelAnimationFrame(inputAutosizeFrameRef.current);
+        }
+        inputAutosizeFrameRef.current = requestAnimationFrame(() => {
+            inputAutosizeFrameRef.current = null;
+            if (!inputRef.current) return;
+            inputRef.current.style.height = 'auto';
+            const next = Math.min(inputRef.current.scrollHeight, 220);
+            inputRef.current.style.height = `${next}px`;
+        });
+        return () => {
+            if (inputAutosizeFrameRef.current) {
+                cancelAnimationFrame(inputAutosizeFrameRef.current);
+                inputAutosizeFrameRef.current = null;
+            }
+        };
     }, [localText]);
 
     useEffect(() => {
@@ -711,10 +692,7 @@ const ChatInput = ({
                 <React.Suspense fallback={null}>
                     <LazyScheduledMessageModal
                         isOpen={scheduledModalOpen}
-                        onClose={() => {
-                            setScheduledModalOpen(false);
-                            refreshScheduledPendingCount();
-                        }}
+                        onClose={() => setScheduledModalOpen(false)}
                         activeChat={activeChatDetails}
                         quickReplies={quickReplies}
                         catalogProducts={businessData?.catalog || []}
@@ -1140,32 +1118,6 @@ const ChatInput = ({
                     disabled={Boolean(editingMessage?.id) || !activeChatDetails?.id}
                 >
                     <CalendarClock size={22} />
-                    {scheduledPendingCount > 0 ? (
-                        <span
-                            aria-label={`${scheduledPendingCount} mensajes programados pendientes`}
-                            style={{
-                                position: 'absolute',
-                                top: '-4px',
-                                right: '-5px',
-                                minWidth: '16px',
-                                height: '16px',
-                                padding: '0 4px',
-                                borderRadius: '999px',
-                                background: '#16a34a',
-                                color: '#fff',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '0.65rem',
-                                fontWeight: 800,
-                                lineHeight: 1,
-                                boxShadow: '0 0 0 2px #f0f2f5',
-                                pointerEvents: 'none'
-                            }}
-                        >
-                            {scheduledPendingCount > 9 ? '9+' : scheduledPendingCount}
-                        </span>
-                    ) : null}
                 </button>
                 {/* AI button */}
                 <button

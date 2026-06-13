@@ -44,14 +44,14 @@ const toChatOriginTimestampMs = (value = null) => {
     return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const shouldFetchOriginForChat = (chat = null, messages = []) => {
+const shouldFetchOriginForChat = (chat = null, firstMessageTimestamp = null) => {
     if (!chat) return false;
     if (chat?.adOrigin && typeof chat.adOrigin === 'object') return true;
     const timestamps = [
         chat?.createdAt,
         chat?.created_at,
         chat?.timestamp,
-        Array.isArray(messages) && messages[0]?.timestamp
+        firstMessageTimestamp
     ].map(toChatOriginTimestampMs).filter((value) => value > 0);
     if (timestamps.length === 0) return false;
     return (Date.now() - Math.max(...timestamps)) <= CHAT_ORIGIN_RECENT_WINDOW_MS;
@@ -433,6 +433,10 @@ const ChatWindow = ({
     const chatOriginCacheRef = useRef({});
     const metaGreetingText = getMetaOriginGreetingText(chatOrigin);
     const metaGreetingButtons = normalizeOriginButtons(chatOrigin?.buttonsJson || chatOrigin?.buttons_json || chatOrigin?.buttons);
+    const messageBubbleCatalog = React.useMemo(
+        () => (Array.isArray(businessData?.catalog) ? businessData.catalog : []),
+        [businessData?.catalog]
+    );
     const mobileHeaderSubtitle = [headerLocation, headerPhone]
         .map((value) => String(value || '').trim())
         .filter(Boolean)
@@ -441,6 +445,34 @@ const ChatWindow = ({
     const pendingJumpMessageIdRef = useRef('');
     const chatHeaderRef = useRef(null);
     const chatHeaderToolbarRef = useRef(null);
+    const firstMessageTimestamp = Array.isArray(messages) && messages.length > 0
+        ? messages[0]?.timestamp
+        : null;
+    const shouldFetchChatOrigin = React.useMemo(
+        () => shouldFetchOriginForChat(activeChatDetails, firstMessageTimestamp),
+        [activeChatDetails, firstMessageTimestamp]
+    );
+    const messageRenderMeta = React.useMemo(() => {
+        const list = Array.isArray(messages) ? messages : [];
+        let firstInboundIndex = -1;
+        return list.map((msg, idx) => {
+            if (firstInboundIndex === -1 && msg?.fromMe === false) {
+                firstInboundIndex = idx;
+            }
+            const currentDay = moment.unix(msg?.timestamp || 0).format('YYYY-MM-DD');
+            const previousDay = idx > 0
+                ? moment.unix(list[idx - 1]?.timestamp || 0).format('YYYY-MM-DD')
+                : null;
+            const messageKey = msg?.id || `idx_${idx}`;
+            return {
+                currentDay,
+                showDay: idx === 0 || currentDay !== previousDay,
+                messageKey,
+                messageRenderKey: msg?.clientTempId || msg?.id || `idx_${idx}`,
+                isFirstInbound: idx === firstInboundIndex
+            };
+        });
+    }, [messages]);
 
     const handleJumpToMessage = (targetMessageId, attempt = 0) => {
         const safeTargetMessageId = String(targetMessageId || '').trim();
@@ -482,7 +514,7 @@ const ChatWindow = ({
             setChatOrigin(chatOriginCacheRef.current[cacheKey] || null);
             return undefined;
         }
-        if (!baseChatId || !shouldFetchOriginForChat(activeChatDetails, messages)) {
+        if (!baseChatId || !shouldFetchChatOrigin) {
             setChatOrigin(null);
             return undefined;
         }
@@ -514,7 +546,7 @@ const ChatWindow = ({
             });
 
         return () => controller.abort();
-    }, [activeChatDetails, activeScopeModuleId, buildApiHeaders, messages]);
+    }, [activeChatDetails, activeScopeModuleId, buildApiHeaders, shouldFetchChatOrigin]);
 
     useEffect(() => {
         const handlePointerDown = (event) => {
@@ -870,17 +902,15 @@ const ChatWindow = ({
                 )}
                 <ConversationOriginBlock origin={chatOrigin} />
                 {messages.map((msg, idx) => {
-                    const currentDay = moment.unix(msg.timestamp || 0).format('YYYY-MM-DD');
-                    const prevDay = idx > 0 ? moment.unix(messages[idx - 1].timestamp || 0).format('YYYY-MM-DD') : null;
-                    const showDay = idx === 0 || currentDay !== prevDay;
+                    const meta = messageRenderMeta[idx] || {};
+                    const showDay = Boolean(meta.showDay);
                     const matchIdx = matchIndexes.indexOf(idx);
                     const isHighlighted = matchIdx !== -1;
                     const isCurrentHighlighted = isHighlighted && matchIdx === activeMatchIdx;
-                    const messageKey = msg.id || `idx_${idx}`;
-                    const messageRenderKey = msg.clientTempId || msg.id || `idx_${idx}`;
+                    const messageKey = meta.messageKey || msg.id || `idx_${idx}`;
+                    const messageRenderKey = meta.messageRenderKey || msg.clientTempId || msg.id || `idx_${idx}`;
                     const senderDisplayName = resolveGroupSenderName(msg);
-                    const previousMessages = messages.slice(0, idx);
-                    const isFirstInbound = msg?.fromMe === false && previousMessages.every((entry) => entry?.fromMe !== false);
+                    const isFirstInbound = Boolean(meta.isFirstInbound);
                     return (
                         <React.Fragment key={messageRenderKey}>
                             {showDay && (
@@ -921,7 +951,7 @@ const ChatWindow = ({
                                     activeChatId={activeChatDetails?.id}
                                     forwardMode={forwardMode}
                                     isForwardSelected={forwardSelectedMessageSet.has(String(msg?.id || '').trim())}
-                                    catalog={businessData?.catalog || []}
+                                    catalog={messageBubbleCatalog}
                                     showSenderName={Boolean(activeChatDetails?.isGroup && !msg?.fromMe)}
                                     senderDisplayName={senderDisplayName}
                                     canEditMessages={canEditMessages}
