@@ -8,6 +8,7 @@ import { isRealQuickReplyMediaAsset } from '../core/helpers/appChat.helpers';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const GLOBAL_SKIN_TONE_STORAGE_KEY = 'chat-emoji-skin-tone:global';
 const LazyScheduledMessageModal = React.lazy(() => import('./ScheduledMessageModal'));
+const LazyMessageSequenceComposer = React.lazy(() => import('./MessageSequenceComposer'));
 
 const normalizeQuickReplyAssetPreviewUrl = (rawUrl = '') => {
     const value = String(rawUrl || '').trim();
@@ -57,6 +58,60 @@ const summarizeQuickReplyBlocks = (blocks = []) => {
     if (delayCount) parts.push(`${delayCount} pausas`);
     return parts.join(' · ');
 };
+
+const getQuickReplyMediaAssets = (entry = {}) => {
+    const source = entry && typeof entry === 'object' ? entry : {};
+    const assets = Array.isArray(source.mediaAssets) ? source.mediaAssets : [];
+    const normalizedAssets = assets
+        .filter((asset) => asset && typeof asset === 'object')
+        .map((asset) => ({
+            type: String(asset.type || asset.kind || '').trim() || undefined,
+            url: String(asset.url || asset.mediaUrl || asset.dataUrl || '').trim(),
+            mimeType: String(asset.mimeType || asset.mediaMimeType || '').trim(),
+            fileName: String(asset.fileName || asset.mediaFileName || asset.filename || '').trim(),
+            sizeBytes: Number.isFinite(Number(asset.sizeBytes || asset.mediaSizeBytes))
+                ? Number(asset.sizeBytes || asset.mediaSizeBytes)
+                : null
+        }))
+        .filter((asset) => asset.url);
+    const legacyUrl = String(source.mediaUrl || '').trim();
+    if (legacyUrl && !normalizedAssets.some((asset) => asset.url === legacyUrl)) {
+        normalizedAssets.push({
+            type: undefined,
+            url: legacyUrl,
+            mimeType: String(source.mediaMimeType || '').trim(),
+            fileName: String(source.mediaFileName || '').trim(),
+            sizeBytes: Number.isFinite(Number(source.mediaSizeBytes)) ? Number(source.mediaSizeBytes) : null
+        });
+    }
+    return normalizedAssets;
+};
+
+const buildEditableQuickReplyBlocks = (entry = {}) => {
+    const existingBlocks = getQuickReplyBlocks(entry);
+    if (existingBlocks.length > 0) {
+        return existingBlocks.map((block, index) => ({
+            ...block,
+            id: String(block?.id || '').trim() || `qr_block_${Date.now()}_${index}`
+        }));
+    }
+    return [{
+        id: `qr_block_${Date.now()}`,
+        type: 'message',
+        text: String(entry?.text || '').trim(),
+        attachments: getQuickReplyMediaAssets(entry)
+    }];
+};
+
+const collectQuickReplyBlockAssets = (blocks = []) => (
+    (Array.isArray(blocks) ? blocks : [])
+        .flatMap((block) => Array.isArray(block?.attachments) ? block.attachments : [])
+        .filter((asset) => asset && typeof asset === 'object' && String(asset.url || '').trim())
+);
+
+const getFirstQuickReplyBlockText = (blocks = []) => (
+    String((Array.isArray(blocks) ? blocks : []).find((block) => String(block?.text || '').trim())?.text || '').trim()
+);
 
 const decodeHtmlEntities = (value = '') => String(value || '')
     .replace(/&nbsp;/gi, ' ')
@@ -120,6 +175,8 @@ const ChatInput = ({
     const [scheduledModalOpen, setScheduledModalOpen] = useState(false);
     const [scheduledPendingCount, setScheduledPendingCount] = useState(0);
     const [quickReplyPreviewItem, setQuickReplyPreviewItem] = useState(null);
+    const [quickReplyEditorItem, setQuickReplyEditorItem] = useState(null);
+    const [quickReplyEditorBlocks, setQuickReplyEditorBlocks] = useState([]);
     const inputRef = useRef(null);
     const chatInputRef = useRef(null);
     const lastExternalTextRef = useRef(String(inputText || ''));
@@ -453,6 +510,40 @@ const ChatInput = ({
         closeQuickReplyPreview();
     };
 
+    const openQuickReplyBlockEditor = () => {
+        const entry = quickReplyPreviewItem && typeof quickReplyPreviewItem === 'object' ? quickReplyPreviewItem : null;
+        if (!entry) return;
+        setQuickReplyEditorItem(entry);
+        setQuickReplyEditorBlocks(buildEditableQuickReplyBlocks(entry));
+        setQuickReplyPreviewItem(null);
+        setShowCommands(false);
+    };
+
+    const closeQuickReplyBlockEditor = () => {
+        setQuickReplyEditorItem(null);
+        setQuickReplyEditorBlocks([]);
+        setShowCommands(false);
+    };
+
+    const sendEditedQuickReplyNow = () => {
+        const entry = quickReplyEditorItem && typeof quickReplyEditorItem === 'object' ? quickReplyEditorItem : null;
+        if (!entry || typeof onSendQuickReply !== 'function') return;
+        const assets = collectQuickReplyBlockAssets(quickReplyEditorBlocks);
+        const firstAsset = assets[0] || null;
+        const text = getFirstQuickReplyBlockText(quickReplyEditorBlocks) || String(entry.text || '').trim();
+        pendingQuickReplySendRef.current = true;
+        onSendQuickReply({
+            ...entry,
+            text,
+            messageBlocks: quickReplyEditorBlocks,
+            mediaAssets: assets,
+            mediaUrl: String(firstAsset?.url || entry.mediaUrl || '').trim(),
+            mediaMimeType: String(firstAsset?.mimeType || entry.mediaMimeType || '').trim(),
+            mediaFileName: String(firstAsset?.fileName || entry.mediaFileName || '').trim()
+        });
+        closeQuickReplyBlockEditor();
+    };
+
     const extractFirstUrl = (text) => {
         const match = String(text || '').match(/https?:\/\/[^\s]+/i);
         return match ? match[0] : null;
@@ -512,6 +603,19 @@ const ChatInput = ({
         window.addEventListener('keydown', onEscape, true);
         return () => window.removeEventListener('keydown', onEscape, true);
     }, [quickReplyPreviewItem]);
+
+    useEffect(() => {
+        if (!quickReplyEditorItem) return undefined;
+        const onEscape = (event) => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation?.();
+            closeQuickReplyBlockEditor();
+        };
+        window.addEventListener('keydown', onEscape, true);
+        return () => window.removeEventListener('keydown', onEscape, true);
+    }, [quickReplyEditorItem]);
 
     useEffect(() => {
         if (!editingMessage?.id) return;
@@ -647,7 +751,43 @@ const ChatInput = ({
                         </section>
                         <footer className="chat-quick-reply-preview-modal__actions">
                             <button type="button" className="saas-btn saas-btn--secondary" onClick={closeQuickReplyPreview}>Cancelar</button>
+                            <button type="button" className="saas-btn saas-btn--secondary" onClick={openQuickReplyBlockEditor}>Editar bloques</button>
                             <button type="button" className="saas-btn saas-btn--primary" onClick={sendQuickReplyPreviewNow}>Enviar ahora</button>
+                        </footer>
+                    </div>
+                </div>
+            ), document.body) : null}
+            {quickReplyEditorItem ? createPortal((
+                <div className="chat-quick-reply-preview-overlay chat-quick-reply-editor-overlay">
+                    <div className="chat-quick-reply-editor-modal" onClick={(event) => event.stopPropagation()}>
+                        <header className="chat-quick-reply-preview-modal__header">
+                            <div>
+                                <span>Respuesta rápida</span>
+                                <h3>Editar {String(quickReplyEditorItem?.label || 'respuesta rápida')}</h3>
+                                <p>Ajusta bloques, variables o adjuntos antes de enviarla a este chat.</p>
+                            </div>
+                            <button type="button" className="saas-btn saas-btn--secondary" onClick={closeQuickReplyBlockEditor}>Cerrar</button>
+                        </header>
+                        <div className="chat-quick-reply-editor-modal__body">
+                            <React.Suspense fallback={null}>
+                                <LazyMessageSequenceComposer
+                                    value={quickReplyEditorBlocks}
+                                    onChange={setQuickReplyEditorBlocks}
+                                    tenantId={activeTenantId}
+                                    catalogProducts={businessData?.catalog || []}
+                                    capabilities={{
+                                        message: true,
+                                        media: true,
+                                        product: true,
+                                        catalog: true,
+                                        delay: true
+                                    }}
+                                />
+                            </React.Suspense>
+                        </div>
+                        <footer className="chat-quick-reply-preview-modal__actions">
+                            <button type="button" className="saas-btn saas-btn--secondary" onClick={closeQuickReplyBlockEditor}>Cancelar</button>
+                            <button type="button" className="saas-btn saas-btn--primary" onClick={sendEditedQuickReplyNow}>Enviar editado</button>
                         </footer>
                     </div>
                 </div>

@@ -14867,3 +14867,229 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 }
+
+/* Final shared composer polish: scheduled messages, quick replies and slash-send previews. */
+.saas-quick-reply-builder-overlay,
+.scheduled-message-modal__overlay,
+.chat-quick-reply-preview-overlay,
+.message-sequence-composer__editor-overlay {
+  z-index: 2147483600 !important;
+  background: rgba(17, 24, 39, 0.46) !important;
+  backdrop-filter: blur(3px) !important;
+}
+
+.message-sequence-composer__editor-overlay {
+  z-index: 2147483610 !important;
+}
+
+body:has(.saas-quick-reply-builder-overlay) .saas-admin-shell__nav-toggle,
+body:has(.scheduled-message-modal__overlay) .saas-admin-shell__nav-toggle,
+body:has(.chat-quick-reply-preview-overlay) .saas-admin-shell__nav-toggle,
+body:has(.message-sequence-composer__editor-overlay) .saas-admin-shell__nav-toggle {
+  display: none !important;
+}
+
+.saas-quick-reply-builder-shell,
+.scheduled-message-modal__shell,
+.chat-quick-reply-editor-modal,
+.chat-quick-reply-preview-modal {
+  background: #f3efe7 !important;
+  color: var(--saas-text-primary, #111827) !important;
+  border: 1px solid rgba(17, 24, 39, 0.12) !important;
+  box-shadow: 0 32px 90px rgba(15, 23, 42, 0.28) !important;
+}
+
+.saas-quick-reply-builder-shell,
+.scheduled-message-modal__shell,
+.chat-quick-reply-editor-modal {
+  width: min(1540px, calc(100vw - 48px)) !important;
+  height: min(880px, calc(100vh - 44px)) !important;
+  max-height: calc(100vh - 44px) !important;
+  border-radius: 24px !important;
+}
+
+.chat-quick-reply-preview-modal {
+  width: min(900px, calc(100vw - 48px)) !important;
+  border-radius: 24px !important;
+}
+
+.saas-quick-reply-builder-header,
+.scheduled-message-modal__header,
+.chat-quick-reply-preview-modal__header {
+  background: transparent !important;
+  border-bottom-color: rgba(17, 24, 39, 0.1) !important;
+}
+
+.scheduled-message-modal__content,
+.scheduled-message-modal__builder,
+.saas-quick-reply-sequence-shell,
+.chat-quick-reply-editor-modal__body {
+  background: #fff !important;
+  border: 1px solid rgba(17, 24, 39, 0.08) !important;
+  border-radius: 18px !important;
+}
+
+.scheduled-message-modal__content {
+  min-height: 0 !important;
+}
+
+.scheduled-message-modal__builder,
+.saas-quick-reply-sequence-shell,
+.chat-quick-reply-editor-modal__body {
+  padding: 16px !important;
+}
+
+.chat-quick-reply-editor-modal {
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  gap: 14px !important;
+  padding: 20px !important;
+  overflow: hidden !important;
+}
+
+.chat-quick-reply-editor-modal__body {
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.chat-quick-reply-editor-modal__body > .message-sequence-composer {
+  height: 100% !important;
+}
+
+.scheduled-message-modal__builder > .message-sequence-composer,
+.saas-quick-reply-sequence-shell > .message-sequence-composer,
+.chat-quick-reply-editor-modal__body > .message-sequence-composer {
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  gap: 14px !important;
+  overflow: hidden !important;
+}
+
+.message-sequence-composer__toolbar {
+  align-self: start !important;
+  justify-content: flex-start !important;
+  min-height: 42px !important;
+  padding: 0 !important;
+}
+
+.message-sequence-composer__body {
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  background: #fff !important;
+}
+
+.message-sequence-composer__list {
+  height: 100% !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, 330px) !important;
+  grid-auto-rows: 140px !important;
+  justify-content: start !important;
+  align-content: start !important;
+  align-items: start !important;
+  gap: 14px !important;
+  overflow: auto !important;
+  padding: 2px 8px 14px 0 !important;
+  background: #fff !important;
+}
+
+.message-sequence-composer__block {
+  box-sizing: border-box !important;
+  width: 330px !important;
+  height: 140px !important;
+  min-height: 140px !important;
+  padding: 14px 16px !important;
+  border-radius: 16px !important;
+  border: 1px solid rgba(17, 24, 39, 0.14) !important;
+  background: #fbfaf7 !important;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04) !important;
+  transform: none !important;
+  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease !important;
+}
+
+.message-sequence-composer__block:hover {
+  border-color: rgba(17, 24, 39, 0.22) !important;
+  background: #fff !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06) !important;
+  transform: none !important;
+}
+
+.message-sequence-composer__block.is-selected {
+  border-color: color-mix(in srgb, var(--saas-success, #16a34a) 44%, rgba(17, 24, 39, 0.12)) !important;
+  background: color-mix(in srgb, var(--saas-success, #16a34a) 6%, #fff) !important;
+  box-shadow: 0 12px 28px rgba(22, 163, 74, 0.12) !important;
+}
+
+.message-sequence-composer__block-summary {
+  -webkit-line-clamp: 2 !important;
+  line-height: 1.35 !important;
+}
+
+.scheduled-message-modal__actions,
+.saas-quick-reply-sequence-actions,
+.chat-quick-reply-preview-modal__actions {
+  min-height: 68px !important;
+  align-items: center !important;
+  padding: 12px 0 0 !important;
+  border-top: 1px solid rgba(17, 24, 39, 0.1) !important;
+  background: linear-gradient(to bottom, rgba(243, 239, 231, 0), #f3efe7 32%) !important;
+}
+
+.scheduled-message-modal__primary,
+.scheduled-message-modal__secondary,
+.scheduled-message-modal__close,
+.saas-quick-reply-sequence-actions .saas-btn,
+.scheduled-message-modal__actions .saas-btn,
+.chat-quick-reply-preview-modal__actions .saas-btn,
+.chat-quick-reply-preview-modal__header .saas-btn {
+  min-width: 118px !important;
+  min-height: 42px !important;
+  border-radius: 999px !important;
+  text-align: center !important;
+  font-weight: 900 !important;
+}
+
+.scheduled-message-modal__primary:disabled,
+.saas-btn.saas-btn--primary:disabled {
+  background: #eef0f3 !important;
+  border-color: #d9dde3 !important;
+  color: #9aa3af !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+}
+
+.message-sequence-composer__tool {
+  background: #fff !important;
+  border-color: rgba(17, 24, 39, 0.14) !important;
+  box-shadow: none !important;
+}
+
+.message-sequence-composer__tool:hover {
+  background: color-mix(in srgb, var(--saas-success, #16a34a) 8%, #fff) !important;
+  transform: none !important;
+}
+
+.message-sequence-composer__editor-modal {
+  background: #fff !important;
+  border-radius: 20px !important;
+  width: min(1480px, calc(100vw - 56px)) !important;
+  height: min(820px, calc(100vh - 56px)) !important;
+  box-shadow: 0 32px 90px rgba(15, 23, 42, 0.32) !important;
+}
+
+.message-sequence-composer__editor-content {
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.message-sequence-composer__editor-modal .saas-quick-reply-editor-layout {
+  grid-template-columns: minmax(560px, 1.25fr) minmax(520px, 0.95fr) !important;
+}
+
+.message-sequence-composer__editor-modal .saas-quick-reply-editor-main--form textarea {
+  min-height: 220px !important;
+}
