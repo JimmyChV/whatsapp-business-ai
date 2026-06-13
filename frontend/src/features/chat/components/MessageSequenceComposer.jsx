@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Archive, Box, Check, Clock3, Copy, FileText, Image, Plus, Trash2, ChevronUp, ChevronDown, X } from 'lucide-react';
 import AutoMessageEditor from '../../saas/components/AutoMessageEditor';
@@ -298,8 +298,30 @@ export default function MessageSequenceComposer({
         updateBlock(activeEditBlock.id, { attachments: nextAssets });
     };
 
+    const closeEditor = useCallback(({ confirmClose = true } = {}) => {
+        if (!editingBlock) return;
+        if (confirmClose) {
+            const shouldClose = globalThis.confirm(
+                'Estas saliendo del editor del bloque. Aceptar: volver a la secuencia. Cancelar: seguir editando.'
+            );
+            if (!shouldClose) return;
+        }
+        setEditingId('');
+    }, [editingBlock]);
+
+    useEffect(() => {
+        if (!editingBlock) return undefined;
+        const handleKeyDown = (event) => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            closeEditor({ confirmClose: true });
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [closeEditor, editingBlock]);
+
     const editorModal = editingBlock ? createPortal((
-        <div className="message-sequence-composer__editor-overlay" onClick={() => setEditingId('')}>
+        <div className="message-sequence-composer__editor-overlay" onClick={() => closeEditor({ confirmClose: true })}>
             <div className="message-sequence-composer__editor-modal" onClick={(event) => event.stopPropagation()}>
                 <div className="message-sequence-composer__editor-head">
                     <div>
@@ -307,10 +329,10 @@ export default function MessageSequenceComposer({
                         <small>Guarda el bloque para volver a la secuencia.</small>
                     </div>
                     <div className="message-sequence-composer__editor-actions">
-                        <button type="button" className="message-sequence-composer__done" onClick={() => setEditingId('')} disabled={disabled}>
+                        <button type="button" className="message-sequence-composer__done" onClick={() => closeEditor({ confirmClose: false })} disabled={disabled}>
                             <Check size={15} /> Guardar bloque
                         </button>
-                        <button type="button" className="message-sequence-composer__close-editor" onClick={() => setEditingId('')} disabled={disabled} aria-label="Cerrar editor de bloque">
+                        <button type="button" className="message-sequence-composer__close-editor" onClick={() => closeEditor({ confirmClose: true })} disabled={disabled} aria-label="Cerrar editor de bloque">
                             <X size={17} />
                         </button>
                     </div>
