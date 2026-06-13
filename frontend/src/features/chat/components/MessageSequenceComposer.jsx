@@ -320,10 +320,12 @@ export default function MessageSequenceComposer({
         const handleKeyDown = (event) => {
             if (event.key !== 'Escape') return;
             event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation?.();
             void closeEditor({ confirmClose: true });
         };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
+        window.addEventListener('keydown', handleKeyDown, true);
+        return () => window.removeEventListener('keydown', handleKeyDown, true);
     }, [closeEditor, editingBlock]);
 
     const editorModal = editingBlock ? createPortal((

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CalendarClock, ChevronDown, Clock, Trash2, Pencil } from 'lucide-react';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
@@ -146,16 +146,6 @@ const ScheduledMessageModal = ({
         if (block.type === 'product') return Boolean(text(block.sku));
         return block.type === 'catalog';
     });
-    const hasDraftChanges = useMemo(() => (
-        Boolean(editingId)
-        || normalizedBlocks.some((block) => {
-            if (block.type === 'message') return Boolean(text(block.text) || block.attachments?.length);
-            if (block.type === 'product') return Boolean(text(block.sku));
-            if (block.type === 'catalog') return Boolean(text(block.text));
-            return block.type !== 'message';
-        })
-    ), [editingId, normalizedBlocks]);
-
     const loadItems = async () => {
         if (!chatId) return;
         setLoading(true);
@@ -184,11 +174,58 @@ const ScheduledMessageModal = ({
         setSchedulePopoverOpen(false);
     };
 
+    const requestClose = useCallback(async () => {
+        if (saving) return;
+        const shouldClose = await confirm({
+            title: 'Descartar programacion',
+            message: 'Estas saliendo de la programacion. Si cierras ahora se descartaran los cambios no programados y volveras al chat actual.',
+            confirmText: 'Descartar',
+            cancelText: 'Seguir editando',
+            tone: 'warn'
+        });
+        if (!shouldClose) return;
+        setQuickReplyPickerOpen(false);
+        setSchedulePopoverOpen(false);
+        onClose?.();
+    }, [confirm, onClose, saving]);
+
     useEffect(() => {
         if (!isOpen) return;
         resetForm();
         loadItems();
     }, [isOpen, chatId, scopeModuleId]);
+
+    useEffect(() => {
+        if (!isOpen || !quickReplyPickerOpen) return undefined;
+        const handlePointerDown = (event) => {
+            if (event.target?.closest?.('.scheduled-message-modal__quick-reply-search')) return;
+            setQuickReplyPickerOpen(false);
+        };
+        document.addEventListener('mousedown', handlePointerDown, true);
+        return () => document.removeEventListener('mousedown', handlePointerDown, true);
+    }, [isOpen, quickReplyPickerOpen]);
+
+    useEffect(() => {
+        if (!isOpen) return undefined;
+        const handleKeyDown = (event) => {
+            if (event.key !== 'Escape') return;
+            if (document.querySelector('.message-sequence-composer__editor-overlay')) return;
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation?.();
+            if (quickReplyPickerOpen) {
+                setQuickReplyPickerOpen(false);
+                return;
+            }
+            if (schedulePopoverOpen) {
+                setSchedulePopoverOpen(false);
+                return;
+            }
+            void requestClose();
+        };
+        window.addEventListener('keydown', handleKeyDown, true);
+        return () => window.removeEventListener('keydown', handleKeyDown, true);
+    }, [isOpen, quickReplyPickerOpen, requestClose, schedulePopoverOpen]);
 
     if (!isOpen) return null;
 
@@ -311,21 +348,6 @@ const ScheduledMessageModal = ({
         } finally {
             setSaving(false);
         }
-    };
-
-    const requestClose = async () => {
-        if (saving) return;
-        if (hasDraftChanges) {
-            const shouldClose = await confirm({
-                title: 'Descartar programacion',
-                message: 'Tienes una programacion en edicion. Si cierras ahora se descartaran los cambios no programados.',
-                confirmText: 'Descartar',
-                cancelText: 'Seguir editando',
-                tone: 'warn'
-            });
-            if (!shouldClose) return;
-        }
-        onClose?.();
     };
 
     const modal = (
