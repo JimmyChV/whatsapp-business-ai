@@ -14027,19 +14027,22 @@ textarea:focus {
   justify-content: center;
 }
 
-.message-sequence-composer .saas-quick-reply-editor-layout {
+.message-sequence-composer .saas-quick-reply-editor-layout,
+.message-sequence-composer__editor-modal .saas-quick-reply-editor-layout {
   width: 100%;
   grid-template-columns: minmax(520px, 0.95fr) minmax(620px, 1.05fr);
   gap: 18px;
   align-items: start;
 }
 
-.message-sequence-composer .saas-quick-reply-editor-main--form .saas-admin-form-row {
+.message-sequence-composer .saas-quick-reply-editor-main--form .saas-admin-form-row,
+.message-sequence-composer__editor-modal .saas-quick-reply-editor-main--form .saas-admin-form-row {
   grid-template-columns: 82px minmax(0, 1fr);
   align-items: start;
 }
 
-.message-sequence-composer .saas-quick-reply-editor-main--form textarea {
+.message-sequence-composer .saas-quick-reply-editor-main--form textarea,
+.message-sequence-composer__editor-modal .saas-quick-reply-editor-main--form textarea {
   width: 100%;
   min-height: 300px;
   resize: vertical;
@@ -14048,36 +14051,44 @@ textarea:focus {
 }
 
 .message-sequence-composer .saas-quick-reply-editor-main,
-.message-sequence-composer .saas-quick-reply-variable-panel {
+.message-sequence-composer .saas-quick-reply-variable-panel,
+.message-sequence-composer__editor-modal .saas-quick-reply-editor-main,
+.message-sequence-composer__editor-modal .saas-quick-reply-variable-panel {
   max-height: calc(100vh - 212px);
   overflow: auto;
 }
 
-.message-sequence-composer .saas-quick-reply-variable-panel {
+.message-sequence-composer .saas-quick-reply-variable-panel,
+.message-sequence-composer__editor-modal .saas-quick-reply-variable-panel {
   align-self: start;
   width: 100%;
 }
 
-.message-sequence-composer .saas-quick-reply-variable-browser {
+.message-sequence-composer .saas-quick-reply-variable-browser,
+.message-sequence-composer__editor-modal .saas-quick-reply-variable-browser {
   grid-template-columns: minmax(150px, 0.34fr) minmax(0, 1fr);
 }
 
-.message-sequence-composer .saas-meta-template-var-list {
+.message-sequence-composer .saas-meta-template-var-list,
+.message-sequence-composer__editor-modal .saas-meta-template-var-list {
   max-height: 240px;
 }
 
-.message-sequence-composer .saas-meta-template-var-item {
+.message-sequence-composer .saas-meta-template-var-item,
+.message-sequence-composer__editor-modal .saas-meta-template-var-item {
   grid-template-columns: minmax(150px, 0.72fr) minmax(0, 1fr) 32px;
   gap: 10px;
   padding: 8px 10px;
 }
 
-.message-sequence-composer .saas-meta-template-var-token {
+.message-sequence-composer .saas-meta-template-var-token,
+.message-sequence-composer__editor-modal .saas-meta-template-var-token {
   max-width: none;
   font-size: 0.68rem;
 }
 
-.message-sequence-composer .saas-meta-template-var-insert-label {
+.message-sequence-composer .saas-meta-template-var-insert-label,
+.message-sequence-composer__editor-modal .saas-meta-template-var-insert-label {
   width: 28px;
   height: 28px;
 }
@@ -14231,7 +14242,8 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 
-  .message-sequence-composer .saas-quick-reply-editor-layout {
+  .message-sequence-composer .saas-quick-reply-editor-layout,
+  .message-sequence-composer__editor-modal .saas-quick-reply-editor-layout {
     grid-template-columns: 1fr;
   }
 
