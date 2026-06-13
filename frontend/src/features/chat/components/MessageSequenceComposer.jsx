@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Archive, Box, Clock3, Copy, FileText, Image, Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Archive, Box, Check, Clock3, Copy, FileText, Image, Plus, Trash2, ChevronUp, ChevronDown, X } from 'lucide-react';
 import AutoMessageEditor from '../../saas/components/AutoMessageEditor';
 import {
     QUICK_REPLY_ACCEPT_VALUE,
@@ -297,66 +298,26 @@ export default function MessageSequenceComposer({
         updateBlock(activeEditBlock.id, { attachments: nextAssets });
     };
 
-    return (
-        <div className="message-sequence-composer">
-            <div className="message-sequence-composer__toolbar">
-                {capabilities.message !== false ? <button type="button" className="message-sequence-composer__tool" disabled={disabled} onClick={() => addBlock('message')}><Plus size={14} /> Texto</button> : null}
-                {capabilities.media !== false ? <button type="button" className="message-sequence-composer__tool" disabled={disabled} onClick={() => addBlock('message')}><Image size={14} /> Adjunto</button> : null}
-                {capabilities.product !== false ? <button type="button" className="message-sequence-composer__tool" disabled={disabled} onClick={() => addBlock('product')}><Box size={14} /> Producto</button> : null}
-                {capabilities.catalog !== false ? <button type="button" className="message-sequence-composer__tool" disabled={disabled} onClick={() => addBlock('catalog')}><Archive size={14} /> Catalogo</button> : null}
-                {capabilities.delay !== false ? <button type="button" className="message-sequence-composer__tool" disabled={disabled} onClick={() => addBlock('delay')}><Clock3 size={14} /> Delay</button> : null}
-            </div>
-
-            <div className="message-sequence-composer__body">
-                <div className="message-sequence-composer__list">
-                    {blocks.map((block, index) => (
-                        <button
-                            key={block.id}
-                            type="button"
-                            className={`message-sequence-composer__block ${block.id === selectedBlock?.id ? 'is-selected' : ''}`}
-                            onClick={() => {
-                                setSelectedId(block.id);
-                                setEditingId(block.id);
-                            }}
-                        >
-                            <span className="message-sequence-composer__block-title">
-                                {blockIcon(block.type)} Bloque {index + 1}
-                            </span>
-                            <small className="message-sequence-composer__block-summary">
-                                {summarizeBlock(block)}
-                            </small>
-                            <span className="message-sequence-composer__block-actions">
-                                <span role="button" tabIndex={0} aria-label="Editar bloque" onClick={(event) => { event.stopPropagation(); setSelectedId(block.id); setEditingId(block.id); }}>Editar</span>
-                                <span role="button" tabIndex={0} aria-label="Subir bloque" onClick={(event) => { event.stopPropagation(); moveBlock(block.id, -1); }}><ChevronUp size={15} /></span>
-                                <span role="button" tabIndex={0} aria-label="Bajar bloque" onClick={(event) => { event.stopPropagation(); moveBlock(block.id, 1); }}><ChevronDown size={15} /></span>
-                                <span role="button" tabIndex={0} aria-label="Duplicar bloque" onClick={(event) => { event.stopPropagation(); duplicateBlock(block.id); }}><Copy size={14} /></span>
-                                <span role="button" tabIndex={0} aria-label="Eliminar bloque" onClick={(event) => { event.stopPropagation(); removeBlock(block.id); }}><Trash2 size={14} /></span>
-                            </span>
+    const editorModal = editingBlock ? createPortal((
+        <div className="message-sequence-composer__editor-overlay" onClick={() => setEditingId('')}>
+            <div className="message-sequence-composer__editor-modal" onClick={(event) => event.stopPropagation()}>
+                <div className="message-sequence-composer__editor-head">
+                    <div>
+                        <strong>{blockIcon(editingBlock.type)} Configurando {summarizeBlock(editingBlock)}</strong>
+                        <small>Guarda el bloque para volver a la secuencia.</small>
+                    </div>
+                    <div className="message-sequence-composer__editor-actions">
+                        <button type="button" className="message-sequence-composer__done" onClick={() => setEditingId('')} disabled={disabled}>
+                            <Check size={15} /> Guardar bloque
                         </button>
-                    ))}
+                        <button type="button" className="message-sequence-composer__close-editor" onClick={() => setEditingId('')} disabled={disabled} aria-label="Cerrar editor de bloque">
+                            <X size={17} />
+                        </button>
+                    </div>
                 </div>
 
-                <div className="message-sequence-composer__editor">
-                    {!editingBlock ? (
-                        <div className="message-sequence-composer__empty-editor">
-                            <strong>Selecciona un bloque para editarlo</strong>
-                            <small>La secuencia queda compacta; cada bloque se abre solo cuando necesitas configurarlo.</small>
-                        </div>
-                    ) : null}
-
-                    {editingBlock ? (
-                        <div className="message-sequence-composer__editor-head">
-                            <div>
-                                <strong>{blockIcon(editingBlock.type)} Configurando {summarizeBlock(editingBlock)}</strong>
-                                <small>Al terminar, pulsa Listo para colapsar este bloque.</small>
-                            </div>
-                            <button type="button" className="message-sequence-composer__done" onClick={() => setEditingId('')} disabled={disabled}>
-                                Listo
-                            </button>
-                        </div>
-                    ) : null}
-
-                    {editingBlock?.type === 'message' ? (
+                <div className="message-sequence-composer__editor-content">
+                    {editingBlock.type === 'message' ? (
                         <AutoMessageEditor
                             key={editingBlock.id}
                             value={editingBlock.text || ''}
@@ -387,7 +348,7 @@ export default function MessageSequenceComposer({
                         />
                     ) : null}
 
-                    {editingBlock?.type === 'delay' ? (
+                    {editingBlock.type === 'delay' ? (
                         <div className="message-sequence-composer__simple-editor">
                             <strong>Delay entre bloques</strong>
                             <small>Pausa corta. Maximo 30 segundos.</small>
@@ -408,7 +369,7 @@ export default function MessageSequenceComposer({
                         </div>
                     ) : null}
 
-                    {editingBlock?.type === 'product' ? (
+                    {editingBlock.type === 'product' ? (
                         <div className="message-sequence-composer__simple-editor">
                             <strong>Producto nativo por SKU</strong>
                             <small>Busca por nombre o SKU y selecciona el producto correcto del catalogo.</small>
@@ -454,7 +415,7 @@ export default function MessageSequenceComposer({
                         </div>
                     ) : null}
 
-                    {editingBlock?.type === 'catalog' ? (
+                    {editingBlock.type === 'catalog' ? (
                         <div className="message-sequence-composer__simple-editor">
                             <strong>Catalogo nativo WhatsApp</strong>
                             <small>Este bloque abre el catalogo nativo asociado al modulo.</small>
@@ -468,6 +429,50 @@ export default function MessageSequenceComposer({
                     ) : null}
                 </div>
             </div>
+        </div>
+    ), document.body) : null;
+
+    return (
+        <div className="message-sequence-composer">
+            <div className="message-sequence-composer__toolbar">
+                {capabilities.message !== false ? <button type="button" className="message-sequence-composer__tool" disabled={disabled} onClick={() => addBlock('message')}><Plus size={14} /> Texto</button> : null}
+                {capabilities.media !== false ? <button type="button" className="message-sequence-composer__tool" disabled={disabled} onClick={() => addBlock('message')}><Image size={14} /> Adjunto</button> : null}
+                {capabilities.product !== false ? <button type="button" className="message-sequence-composer__tool" disabled={disabled} onClick={() => addBlock('product')}><Box size={14} /> Producto</button> : null}
+                {capabilities.catalog !== false ? <button type="button" className="message-sequence-composer__tool" disabled={disabled} onClick={() => addBlock('catalog')}><Archive size={14} /> Catalogo</button> : null}
+                {capabilities.delay !== false ? <button type="button" className="message-sequence-composer__tool" disabled={disabled} onClick={() => addBlock('delay')}><Clock3 size={14} /> Delay</button> : null}
+            </div>
+
+            <div className="message-sequence-composer__body">
+                <div className="message-sequence-composer__list">
+                    {blocks.map((block, index) => (
+                        <button
+                            key={block.id}
+                            type="button"
+                            className={`message-sequence-composer__block ${block.id === selectedBlock?.id ? 'is-selected' : ''}`}
+                            onClick={() => {
+                                setSelectedId(block.id);
+                                setEditingId(block.id);
+                            }}
+                        >
+                            <span className="message-sequence-composer__block-title">
+                                {blockIcon(block.type)} Bloque {index + 1}
+                            </span>
+                            <small className="message-sequence-composer__block-summary">
+                                {summarizeBlock(block)}
+                            </small>
+                            <span className="message-sequence-composer__block-actions">
+                                <span role="button" tabIndex={0} aria-label="Editar bloque" onClick={(event) => { event.stopPropagation(); setSelectedId(block.id); setEditingId(block.id); }}>Editar</span>
+                                <span role="button" tabIndex={0} aria-label="Subir bloque" onClick={(event) => { event.stopPropagation(); moveBlock(block.id, -1); }}><ChevronUp size={15} /></span>
+                                <span role="button" tabIndex={0} aria-label="Bajar bloque" onClick={(event) => { event.stopPropagation(); moveBlock(block.id, 1); }}><ChevronDown size={15} /></span>
+                                <span role="button" tabIndex={0} aria-label="Duplicar bloque" onClick={(event) => { event.stopPropagation(); duplicateBlock(block.id); }}><Copy size={14} /></span>
+                                <span role="button" tabIndex={0} aria-label="Eliminar bloque" onClick={(event) => { event.stopPropagation(); removeBlock(block.id); }}><Trash2 size={14} /></span>
+                            </span>
+                        </button>
+                    ))}
+                </div>
+
+            </div>
+            {editorModal}
         </div>
     );
 }
