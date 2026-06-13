@@ -268,7 +268,8 @@ export default function useQuickReplyAdminActions({
 
         const payload = buildQuickReplyItemPayload(quickReplyItemForm, { libraryId });
         if (!payload.label) throw new Error('Etiqueta requerida.');
-        if (!payload.text && (!Array.isArray(payload.mediaAssets) || payload.mediaAssets.length === 0) && !payload.mediaUrl) {
+        const hasMessageBlocks = Array.isArray(payload.messageBlocks) && payload.messageBlocks.length > 0;
+        if (!payload.text && (!Array.isArray(payload.mediaAssets) || payload.mediaAssets.length === 0) && !payload.mediaUrl && !hasMessageBlocks) {
             throw new Error('Debes registrar texto o adjunto.');
         }
 

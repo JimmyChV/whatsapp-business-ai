@@ -15093,3 +15093,147 @@ body:has(.message-sequence-composer__editor-overlay) .saas-admin-shell__nav-togg
 .message-sequence-composer__editor-modal .saas-quick-reply-editor-main--form textarea {
   min-height: 220px !important;
 }
+
+/* Composer definitive cascade: keep all response builders stable and shared. */
+body:has(.saas-quick-reply-builder-overlay) .saas-admin-shell__nav-toggle,
+body:has(.scheduled-message-modal__overlay) .saas-admin-shell__nav-toggle,
+body:has(.chat-quick-reply-preview-overlay) .saas-admin-shell__nav-toggle,
+body:has(.message-sequence-composer__editor-overlay) .saas-admin-shell__nav-toggle {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+.saas-quick-reply-builder-overlay,
+.scheduled-message-modal__overlay,
+.chat-quick-reply-preview-overlay,
+.message-sequence-composer__editor-overlay {
+  z-index: 2147483640 !important;
+}
+
+.message-sequence-composer__editor-overlay {
+  z-index: 2147483646 !important;
+}
+
+.saas-quick-reply-builder-shell,
+.scheduled-message-modal__shell,
+.chat-quick-reply-editor-modal,
+.chat-quick-reply-preview-modal {
+  background: #f7f4ee !important;
+}
+
+.scheduled-message-modal__content,
+.scheduled-message-modal__builder,
+.saas-quick-reply-sequence-shell,
+.chat-quick-reply-editor-modal__body,
+.message-sequence-composer,
+.message-sequence-composer__body,
+.message-sequence-composer__list {
+  background: #fff !important;
+}
+
+.saas-quick-reply-builder-shell,
+.scheduled-message-modal__shell {
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) !important;
+  overflow: hidden !important;
+}
+
+.scheduled-message-modal__builder,
+.saas-quick-reply-sequence-shell {
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.scheduled-message-modal__content {
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.scheduled-message-modal__builder > .message-sequence-composer,
+.saas-quick-reply-sequence-shell > .message-sequence-composer,
+.chat-quick-reply-editor-modal__body > .message-sequence-composer {
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.message-sequence-composer__toolbar {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 2 !important;
+  align-self: start !important;
+  justify-content: flex-start !important;
+  min-height: 42px !important;
+  padding: 0 0 10px !important;
+  background: #fff !important;
+}
+
+.message-sequence-composer__body {
+  display: block !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.message-sequence-composer__list {
+  height: 100% !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 360px)) !important;
+  grid-auto-rows: 138px !important;
+  justify-content: start !important;
+  align-content: start !important;
+  align-items: start !important;
+  gap: 14px !important;
+  overflow: auto !important;
+  padding: 2px 10px 16px 2px !important;
+}
+
+.message-sequence-composer__block {
+  box-sizing: border-box !important;
+  width: auto !important;
+  height: 138px !important;
+  min-height: 138px !important;
+  padding: 14px 16px !important;
+  border: 1px solid rgba(17, 24, 39, 0.16) !important;
+  border-radius: 16px !important;
+  background: #fff !important;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.045) !important;
+  transform: none !important;
+  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease !important;
+}
+
+.message-sequence-composer__block:hover,
+.message-sequence-composer__block.is-selected {
+  transform: none !important;
+}
+
+.message-sequence-composer__block:hover {
+  border-color: rgba(17, 24, 39, 0.24) !important;
+  background: #fff !important;
+}
+
+.message-sequence-composer__block.is-selected {
+  border-color: color-mix(in srgb, var(--saas-success, #16a34a) 50%, rgba(17, 24, 39, 0.16)) !important;
+  background: color-mix(in srgb, var(--saas-success, #16a34a) 5%, #fff) !important;
+}
+
+.scheduled-message-modal__actions,
+.saas-quick-reply-sequence-actions {
+  min-height: 68px !important;
+  align-items: center !important;
+  padding: 12px 0 0 !important;
+  border-top: 1px solid rgba(17, 24, 39, 0.1) !important;
+  background: #fff !important;
+}
+
+.message-sequence-composer__editor-modal {
+  background: #fff !important;
+  overflow: hidden !important;
+}

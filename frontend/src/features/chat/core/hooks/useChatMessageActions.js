@@ -933,7 +933,7 @@ export default function useChatMessageActions({
         || String(draftQuickReply.mediaUrl || primaryAsset?.url || '').trim()
       );
 
-      if (hasQuickReplyMedia) {
+      if (hasQuickReplyMedia && draftMessageBlocks.length === 0) {
         const quickReplyRetryPayload = {
           eventName: 'send_quick_reply',
           payload: {

@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Archive, Box, Check, Clock3, Copy, FileText, Image, Plus, Trash2, ChevronUp, ChevronDown, X } from 'lucide-react';
-import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import AutoMessageEditor from '../../saas/components/AutoMessageEditor';
 import {
     QUICK_REPLY_ACCEPT_VALUE,
@@ -167,10 +166,9 @@ export default function MessageSequenceComposer({
         product: true
     }
 }) {
-    const { confirm } = useUiFeedback();
     const blocks = useMemo(() => normalizeMessageBlocksForComposer(value), [value]);
     const [selectedId, setSelectedId] = useState(() => blocks[0]?.id || '');
-    const [editingId, setEditingId] = useState(() => blocks[0]?.id || '');
+    const [editingId, setEditingId] = useState('');
     const [productSearch, setProductSearch] = useState('');
     const selectedBlock = blocks.find((block) => block.id === selectedId) || blocks[0] || null;
     const editingBlock = blocks.find((block) => block.id === editingId) || null;
@@ -207,7 +205,6 @@ export default function MessageSequenceComposer({
         );
         commit([...blocks, nextBlock]);
         setSelectedId(nextBlock.id);
-        setEditingId(nextBlock.id);
     };
 
     const removeBlock = (blockId) => {
@@ -300,20 +297,10 @@ export default function MessageSequenceComposer({
         updateBlock(activeEditBlock.id, { attachments: nextAssets });
     };
 
-    const closeEditor = useCallback(async ({ confirmClose = true } = {}) => {
+    const closeEditor = useCallback(() => {
         if (!editingBlock) return;
-        if (confirmClose) {
-            const shouldClose = await confirm({
-                title: 'Salir del editor',
-                message: 'Estas saliendo del editor del bloque. Si vuelves a la secuencia, los cambios ya escritos quedan en el bloque, pero seguiras editando desde la lista.',
-                confirmText: 'Volver a la secuencia',
-                cancelText: 'Seguir editando',
-                tone: 'warn'
-            });
-            if (!shouldClose) return;
-        }
         setEditingId('');
-    }, [confirm, editingBlock]);
+    }, [editingBlock]);
 
     useEffect(() => {
         if (!editingBlock) return undefined;
@@ -322,14 +309,14 @@ export default function MessageSequenceComposer({
             event.preventDefault();
             event.stopPropagation();
             event.stopImmediatePropagation?.();
-            void closeEditor({ confirmClose: true });
+            closeEditor();
         };
         window.addEventListener('keydown', handleKeyDown, true);
         return () => window.removeEventListener('keydown', handleKeyDown, true);
     }, [closeEditor, editingBlock]);
 
     const editorModal = editingBlock ? createPortal((
-        <div className="message-sequence-composer__editor-overlay" onClick={() => { void closeEditor({ confirmClose: true }); }}>
+        <div className="message-sequence-composer__editor-overlay" onClick={closeEditor}>
             <div className="message-sequence-composer__editor-modal" onClick={(event) => event.stopPropagation()}>
                 <div className="message-sequence-composer__editor-head">
                     <div>
@@ -337,10 +324,10 @@ export default function MessageSequenceComposer({
                         <small>Guarda el bloque para volver a la secuencia.</small>
                     </div>
                     <div className="message-sequence-composer__editor-actions">
-                        <button type="button" className="saas-btn saas-btn--primary message-sequence-composer__done" onClick={() => { void closeEditor({ confirmClose: false }); }} disabled={disabled}>
+                        <button type="button" className="saas-btn saas-btn--primary message-sequence-composer__done" onClick={closeEditor} disabled={disabled}>
                             <Check size={15} /> Guardar bloque
                         </button>
-                        <button type="button" className="saas-btn saas-btn--secondary message-sequence-composer__close-editor" onClick={() => { void closeEditor({ confirmClose: true }); }} disabled={disabled} aria-label="Cerrar editor de bloque">
+                        <button type="button" className="saas-btn saas-btn--secondary message-sequence-composer__close-editor" onClick={closeEditor} disabled={disabled} aria-label="Cerrar editor de bloque">
                             <X size={17} />
                         </button>
                     </div>
@@ -481,7 +468,6 @@ export default function MessageSequenceComposer({
                             className={`message-sequence-composer__block ${block.id === selectedBlock?.id ? 'is-selected' : ''}`}
                             onClick={() => {
                                 setSelectedId(block.id);
-                                setEditingId(block.id);
                             }}
                         >
                             <span className="message-sequence-composer__block-title">
