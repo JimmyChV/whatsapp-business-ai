@@ -136,7 +136,10 @@ function normalizeMessageBlock(block = {}, index = 0) {
         return {
             id,
             type: 'product',
-            sku: text(source.sku || source.productRetailerId || source.product_retailer_id || source.itemId || source.item_id || '')
+            sku: text(source.sku || source.productRetailerId || source.product_retailer_id || source.itemId || source.item_id || ''),
+            productTitle: text(source.productTitle || source.title || source.name || ''),
+            productImageUrl: text(source.productImageUrl || source.imageUrl || ''),
+            productPrice: text(source.productPrice || source.price || '')
         };
     }
 
@@ -192,6 +195,65 @@ function normalizeMessageBlocks(blocks = [], fallback = {}) {
             return false;
         });
     return normalized.length > 0 ? normalized : buildFallbackBlocksFromLegacy(fallback);
+}
+
+function normalizeSequencePayload(payload = {}, fallback = {}) {
+    const source = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+    const metadata = source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
+        ? source.metadata
+        : {};
+    const legacyText = text(
+        source.messageText
+        ?? source.message_text
+        ?? source.text
+        ?? source.bodyText
+        ?? source.body
+        ?? fallback.text
+        ?? fallback.messageText
+        ?? ''
+    );
+    const mediaAssets = normalizeAttachments(
+        source.mediaAssets
+        || source.media_assets
+        || metadata.mediaAssets
+        || fallback.mediaAssets
+        || [],
+        {
+            url: source.mediaUrl || source.media_url || fallback.mediaUrl || fallback.media_url || '',
+            mimeType: source.mediaMimeType || source.media_mime_type || fallback.mediaMimeType || fallback.media_mime_type || '',
+            fileName: source.mediaFileName || source.media_file_name || fallback.mediaFileName || fallback.media_file_name || '',
+            sizeBytes: source.mediaSizeBytes ?? source.media_size_bytes ?? fallback.mediaSizeBytes ?? fallback.media_size_bytes
+        }
+    );
+    const rawBlocks = source.messageBlocks
+        || source.message_blocks
+        || metadata.messageBlocks
+        || metadata.message_blocks
+        || fallback.messageBlocks
+        || fallback.message_blocks
+        || [];
+    const messageBlocks = normalizeMessageBlocks(rawBlocks, {
+        text: legacyText,
+        mediaAssets,
+        mediaUrl: source.mediaUrl || source.media_url || fallback.mediaUrl || fallback.media_url || '',
+        mediaMimeType: source.mediaMimeType || source.media_mime_type || fallback.mediaMimeType || fallback.media_mime_type || '',
+        mediaFileName: source.mediaFileName || source.media_file_name || fallback.mediaFileName || fallback.media_file_name || '',
+        mediaSizeBytes: source.mediaSizeBytes ?? source.media_size_bytes ?? fallback.mediaSizeBytes ?? fallback.media_size_bytes
+    });
+    const primaryMedia = mediaAssets[0] || null;
+    return {
+        text: legacyText,
+        messageText: legacyText,
+        mediaAssets,
+        messageBlocks,
+        mediaUrl: text(primaryMedia?.url || source.mediaUrl || source.media_url || fallback.mediaUrl || fallback.media_url || '') || null,
+        mediaMimeType: lower(primaryMedia?.mimeType || source.mediaMimeType || source.media_mime_type || fallback.mediaMimeType || fallback.media_mime_type || '') || null,
+        mediaFileName: text(primaryMedia?.fileName || source.mediaFileName || source.media_file_name || fallback.mediaFileName || fallback.media_file_name || '') || null,
+        mediaSizeBytes: Number.isFinite(Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes ?? source.media_size_bytes ?? fallback.mediaSizeBytes ?? fallback.media_size_bytes))
+            ? Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes ?? source.media_size_bytes ?? fallback.mediaSizeBytes ?? fallback.media_size_bytes)
+            : null,
+        hasContent: Boolean(legacyText || mediaAssets.length > 0 || messageBlocks.length > 0)
+    };
 }
 
 function resolveVariables(source = '', variables = {}) {
@@ -414,6 +476,7 @@ async function executeMessageSequence({
 module.exports = {
     MessageSequenceBlockError,
     normalizeMessageBlocks,
+    normalizeSequencePayload,
     buildFallbackBlocksFromLegacy,
     executeMessageSequence,
     resolveVariables,

@@ -312,7 +312,8 @@
         try {
             const payload = sanitizeQuickReplyItemPayload(req.body, { allowItemId: true });
             if (!payload.label) return res.status(400).json({ ok: false, error: 'Etiqueta requerida.' });
-            if (!payload.text && (!Array.isArray(payload.mediaAssets) || payload.mediaAssets.length === 0) && !payload.mediaUrl) return res.status(400).json({ ok: false, error: 'Debes registrar texto o adjunto.' });
+            const hasMessageBlocks = Array.isArray(payload.messageBlocks) && payload.messageBlocks.length > 0;
+            if (!payload.text && (!Array.isArray(payload.mediaAssets) || payload.mediaAssets.length === 0) && !payload.mediaUrl && !hasMessageBlocks) return res.status(400).json({ ok: false, error: 'Debes registrar texto, adjunto o bloques.' });
             const item = await quickReplyLibrariesService.saveQuickReplyItem(payload, { tenantId });
             await auditLogService.writeRequestAuditLog(req, {
                 tenantId,
@@ -338,7 +339,8 @@
         try {
             const payload = sanitizeQuickReplyItemPayload(req.body, { allowItemId: false });
             if (!payload.label) return res.status(400).json({ ok: false, error: 'Etiqueta requerida.' });
-            if (!payload.text && (!Array.isArray(payload.mediaAssets) || payload.mediaAssets.length === 0) && !payload.mediaUrl) return res.status(400).json({ ok: false, error: 'Debes registrar texto o adjunto.' });
+            const hasMessageBlocks = Array.isArray(payload.messageBlocks) && payload.messageBlocks.length > 0;
+            if (!payload.text && (!Array.isArray(payload.mediaAssets) || payload.mediaAssets.length === 0) && !payload.mediaUrl && !hasMessageBlocks) return res.status(400).json({ ok: false, error: 'Debes registrar texto, adjunto o bloques.' });
             const item = await quickReplyLibrariesService.saveQuickReplyItem({ ...payload, itemId }, { tenantId });
             await auditLogService.writeRequestAuditLog(req, {
                 tenantId,

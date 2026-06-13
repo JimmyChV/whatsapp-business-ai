@@ -1,93 +1,19 @@
 const templateVariablesService = require('../../operations/services/template-variables.service');
-const { isRealQuickReplyMediaAsset } = require('../helpers/quick-reply-media-url.helpers');
-const { getStorageDriver, queryPostgres } = require('../../../config/persistence-runtime');
-const { resolveMessageSegments } = require('../../../src/services/message-variables.service');
-const {
-    buildNativeProductInteractive,
-    buildNativeCatalogInteractive,
-    resolveMetaCatalogId
-} = require('./socket-catalog-delivery.service');
 const {
     executeMessageSequence,
-    normalizeMessageBlocks
+    normalizeSequencePayload
 } = require('../../operations/services/message-sequence.service');
 
 function createSocketQuickRepliesService({
     waClient,
     listQuickReplies,
-    fetchQuickReplyMedia,
     normalizeScopedModuleId,
     resolveSocketModuleContext,
-    pathModule,
     getSerializedMessageId,
     sanitizeAgentMeta,
     buildSocketAgentMeta,
     rememberOutgoingAgentMeta
 } = {}) {
-    const normalizeQuickReplyAssetEntry = (entry = {}) => ({
-        url: String(entry?.url || entry?.mediaUrl || '').trim(),
-        mimeType: String(entry?.mimeType || entry?.mediaMimeType || '').trim().toLowerCase() || '',
-        fileName: String(entry?.fileName || entry?.mediaFileName || entry?.filename || '').trim() || '',
-        sizeBytes: Number(entry?.sizeBytes ?? entry?.mediaSizeBytes) || null
-    });
-
-    const normalizeQuickReplyButtons = (buttons = []) => {
-        const source = Array.isArray(buttons) ? buttons : [];
-        return source
-            .map((entry, index) => {
-                const button = entry && typeof entry === 'object' ? entry : {};
-                const title = String(button.title || button.label || button.text || '').trim().slice(0, 20);
-                if (!title) return null;
-                const id = String(button.id || button.buttonId || `btn_${index + 1}`).trim() || `btn_${index + 1}`;
-                return { id, title };
-            })
-            .filter(Boolean)
-            .slice(0, 3);
-    };
-
-    const buildQuickReplyInteractive = (bodyText, buttons = []) => ({
-        type: 'button',
-        body: { text: String(bodyText || '').trim() },
-        action: {
-            buttons: normalizeQuickReplyButtons(buttons).map((button) => ({
-                type: 'reply',
-                reply: {
-                    id: button.id,
-                    title: button.title
-                }
-            }))
-        }
-    });
-
-    const resolveQuickReplyVariables = async ({
-        tenantId,
-        bodyText,
-        chatId,
-        customerId = ''
-    } = {}) => {
-        const source = String(bodyText || '');
-        if (!source || !/\{\{\s*[a-zA-Z0-9_]+\s*\}\}/.test(source)) return source;
-        try {
-            const previewPayload = await templateVariablesService.getPreview(tenantId, {
-                chatId,
-                customerId
-            });
-            const variables = (Array.isArray(previewPayload?.categories) ? previewPayload.categories : [])
-                .flatMap((category) => (Array.isArray(category?.variables) ? category.variables : []));
-            const valueMap = new Map(variables.map((variable) => [
-                String(variable?.key || '').trim().toLowerCase(),
-                String(variable?.previewValue ?? '').trim()
-            ]));
-            return source.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (match, rawKey) => {
-                const value = valueMap.get(String(rawKey || '').trim().toLowerCase());
-                return value || '';
-            });
-        } catch (error) {
-            console.warn('[quick-replies] could not resolve variables:', error?.message);
-            return source;
-        }
-    };
-
     const resolveQuickReplyVariableMap = async ({
         tenantId,
         chatId,
@@ -164,23 +90,6 @@ function createSocketQuickRepliesService({
         };
     };
 
-    const loadNativeCatalogIdFromDb = async (tenantId = 'default') => {
-        if (getStorageDriver() !== 'postgres') return '';
-        try {
-            const result = await queryPostgres(
-                `SELECT config_json->'metaAds'->>'catalogId' as catalog_id
-                   FROM tenant_integrations
-                  WHERE tenant_id = $1
-                  LIMIT 1`,
-                [tenantId]
-            );
-            return String(result?.rows?.[0]?.catalog_id || '').trim();
-        } catch (error) {
-            console.warn('[quick-replies] could not resolve native catalogId:', error?.message);
-            return '';
-        }
-    };
-
     const resolveSentInteractiveId = (sentInteractive) => (
         getSerializedMessageId(sentInteractive)
         || String(sentInteractive?.messages?.[0]?.id || sentInteractive?.message_id || (typeof sentInteractive === 'string' ? sentInteractive : '')).trim()
@@ -194,9 +103,7 @@ function createSocketQuickRepliesService({
         transportOrchestrator,
         isFeatureEnabledForTenant,
         resolveScopedSendTarget,
-        emitRealtimeOutgoingMessage,
-        quickReplyMediaMaxBytes,
-        quickReplyMediaTimeoutMs
+        emitRealtimeOutgoingMessage
     } = {}) => {
         const ensurePayloadModuleTransport = async (payload = {}, errorEvent = 'error', action = 'enviar respuestas rapidas') => {
             const requestedModuleId = String(payload?.moduleId || '').trim().toLowerCase();
@@ -259,6 +166,9 @@ function createSocketQuickRepliesService({
 
                 const moduleId = normalizeScopedModuleId(target.scopeModuleId || socket?.data?.waModule?.moduleId || socket?.data?.waModuleId || '');
                 const quickReplyId = String(payload?.quickReplyId || payload?.id || '').trim();
+                const inlineQuickReply = payload?.quickReply && typeof payload.quickReply === 'object'
+                    ? payload.quickReply
+                    : null;
 
                 let replyPayload = null;
                 if (quickReplyId) {
@@ -267,8 +177,24 @@ function createSocketQuickRepliesService({
                         .find((entry) => String(entry?.id || '').trim() === quickReplyId) || null;
                 }
 
-                if (!replyPayload && payload?.quickReply && typeof payload.quickReply === 'object') {
-                    replyPayload = payload.quickReply;
+                if (replyPayload && inlineQuickReply) {
+                    replyPayload = {
+                        ...replyPayload,
+                        ...inlineQuickReply,
+                        id: replyPayload.id || inlineQuickReply.id,
+                        itemId: replyPayload.itemId || inlineQuickReply.itemId,
+                        label: inlineQuickReply.label || replyPayload.label,
+                        metadata: {
+                            ...(replyPayload.metadata && typeof replyPayload.metadata === 'object' && !Array.isArray(replyPayload.metadata)
+                                ? replyPayload.metadata
+                                : {}),
+                            ...(inlineQuickReply.metadata && typeof inlineQuickReply.metadata === 'object' && !Array.isArray(inlineQuickReply.metadata)
+                                ? inlineQuickReply.metadata
+                                : {})
+                        }
+                    };
+                } else if (!replyPayload && inlineQuickReply) {
+                    replyPayload = inlineQuickReply;
                 }
 
                 if (!replyPayload) {
@@ -282,20 +208,9 @@ function createSocketQuickRepliesService({
                     tenantId,
                     chatId: target.targetChatId
                 };
-                const rawSequenceBlocks = replyPayload?.messageBlocks
-                    || replyPayload?.message_blocks
-                    || replyPayload?.metadata?.messageBlocks
-                    || replyPayload?.metadata?.message_blocks
-                    || [];
-                const sequenceBlocks = normalizeMessageBlocks(rawSequenceBlocks, {
-                    text: replyPayload?.text || replyPayload?.bodyText || replyPayload?.body || '',
-                    mediaAssets: replyPayload?.mediaAssets || [],
-                    mediaUrl: replyPayload?.mediaUrl || '',
-                    mediaMimeType: replyPayload?.mediaMimeType || '',
-                    mediaFileName: replyPayload?.mediaFileName || ''
-                });
-                const hasExplicitSequence = Array.isArray(rawSequenceBlocks) && rawSequenceBlocks.length > 0 && sequenceBlocks.length > 0;
-                if (hasExplicitSequence) {
+                const sequencePayload = normalizeSequencePayload(replyPayload);
+                const sequenceBlocks = sequencePayload.messageBlocks;
+                if (sequencePayload.hasContent && sequenceBlocks.length > 0) {
                     let firstRealtimeEmitted = false;
                     const variables = await resolveQuickReplyVariableMap({
                         tenantId,
@@ -372,338 +287,8 @@ function createSocketQuickRepliesService({
                     return;
                 }
 
-                const bodyTextRaw = String(replyPayload?.text || replyPayload?.bodyText || replyPayload?.body || '').trim();
-                const bodyText = await resolveQuickReplyVariables({
-                    tenantId,
-                    bodyText: bodyTextRaw,
-                    chatId: target.scopedChatId || target.targetChatId,
-                    customerId: payload?.customerId || payload?.customer_id || ''
-                });
-                const quickReplyButtons = normalizeQuickReplyButtons(replyPayload?.buttons || replyPayload?.metadata?.buttons);
-                const rawMediaAssets = Array.isArray(replyPayload?.mediaAssets) ? replyPayload.mediaAssets : [];
-                const mediaAssets = rawMediaAssets
-                    .map(normalizeQuickReplyAssetEntry)
-                    .filter(isRealQuickReplyMediaAsset);
-
-                const legacyMediaUrl = String(replyPayload?.mediaUrl || '').trim();
-                const legacyMediaMimeType = String(replyPayload?.mediaMimeType || '').trim().toLowerCase();
-                const legacyMediaFileName = String(replyPayload?.mediaFileName || replyPayload?.filename || '').trim();
-                if (
-                    legacyMediaUrl
-                    && !mediaAssets.some((entry) => entry.url === legacyMediaUrl)
-                    && isRealQuickReplyMediaAsset({
-                        url: legacyMediaUrl,
-                        mimeType: legacyMediaMimeType,
-                        fileName: legacyMediaFileName
-                    })
-                ) {
-                    mediaAssets.push({
-                        url: legacyMediaUrl,
-                        mimeType: legacyMediaMimeType,
-                        fileName: legacyMediaFileName,
-                        sizeBytes: null
-                    });
-                }
-
-                if (quickReplyButtons.length > 0 && !bodyText) {
-                    socket.emit('error', 'La respuesta rapida necesita texto para enviar botones.');
-                    return;
-                }
-
-                if (!bodyText && mediaAssets.length === 0) {
-                    socket.emit('error', 'La respuesta rapida no tiene contenido para enviar.');
-                    return;
-                }
-
-                let sentMessage = null;
-                let mediaPayload = null;
-
-                if (mediaAssets.length > 0) {
-                    const sentMediaPayloads = [];
-                    for (let index = 0; index < mediaAssets.length; index += 1) {
-                        const mediaEntry = mediaAssets[index] || null;
-                        if (!mediaEntry?.url) continue;
-
-                        const fetchedMedia = await fetchQuickReplyMedia(mediaEntry.url, {
-                            tenantId,
-                            maxBytes: quickReplyMediaMaxBytes,
-                            timeoutMs: quickReplyMediaTimeoutMs,
-                            mimeHint: mediaEntry.mimeType || legacyMediaMimeType,
-                            fileNameHint: mediaEntry.fileName || legacyMediaFileName
-                        });
-
-                        if (!fetchedMedia || !fetchedMedia.mediaData) {
-                            socket.emit('error', 'No se pudo procesar el adjunto de la respuesta rapida.');
-                            return;
-                        }
-
-                        const fileNameBase = mediaEntry.fileName || legacyMediaFileName || pathModule.basename(String(fetchedMedia.filename || '').trim() || '') || ('adjunto-' + Date.now());
-                        const safeFileName = String(fileNameBase || '').trim() || ('adjunto-' + Date.now());
-                        const captionText = quickReplyButtons.length > 0 ? '' : (index === 0 ? bodyText : '');
-                        const quotedMessageId = quickReplyButtons.length > 0 ? null : (index === 0 ? (quoted || null) : null);
-                        const sentAssetMessage = await waClient.sendMedia(
-                            target.targetChatId,
-                            fetchedMedia.mediaData,
-                            fetchedMedia.mimetype || mediaEntry.mimeType || legacyMediaMimeType || 'application/octet-stream',
-                            safeFileName,
-                            captionText,
-                            false,
-                            quotedMessageId,
-                            {
-                                ...baseSendMetadata,
-                                mediaUrl: String(fetchedMedia?.publicUrl || fetchedMedia?.sourceUrl || mediaEntry.url || '').trim() || null
-                            }
-                        );
-                        if (!sentAssetMessage) return;
-                        if (index === 0 && clientTempId && sentAssetMessage && typeof sentAssetMessage === 'object') {
-                            sentAssetMessage.clientTempId = clientTempId;
-                        }
-
-                        if (!sentMessage) sentMessage = sentAssetMessage;
-                        const currentMediaPayload = {
-                            mimetype: fetchedMedia.mimetype || mediaEntry.mimeType || legacyMediaMimeType || null,
-                            filename: safeFileName,
-                            fileSizeBytes: Number(fetchedMedia?.fileSizeBytes || mediaEntry?.sizeBytes || 0) || null,
-                            mediaUrl: String(fetchedMedia?.publicUrl || fetchedMedia?.sourceUrl || mediaEntry.url || '').trim() || null,
-                            mediaPath: String(fetchedMedia?.relativePath || '').trim() || null
-                        };
-                        sentMediaPayloads.push(currentMediaPayload);
-
-                        const sentAssetMessageId = getSerializedMessageId(sentAssetMessage);
-                        if (sentAssetMessageId && agentMeta) rememberOutgoingAgentMeta(sentAssetMessageId, agentMeta);
-
-                        await emitRealtimeOutgoingMessage({
-                            sentMessage: sentAssetMessage,
-                            fallbackChatId: target.targetChatId,
-                            fallbackBody: captionText,
-                            quotedMessageId: quotedMessageId || '',
-                            quotedMessage: quotedMessageId ? quotedMessage : null,
-                            moduleContext,
-                            agentMeta,
-                            mediaPayload: currentMediaPayload
-                        });
-                    }
-                    if (sentMediaPayloads.length > 0) {
-                        mediaPayload = {
-                            ...sentMediaPayloads[0],
-                            mediaAssets: sentMediaPayloads
-                        };
-                    }
-                }
-
-                if (quickReplyButtons.length > 0) {
-                    if (typeof waClient?.sendInteractiveMessage !== 'function') {
-                        socket.emit('error', 'El canal no soporta botones interactivos para respuestas rapidas.');
-                        return;
-                    }
-                    const interactive = buildQuickReplyInteractive(bodyText, quickReplyButtons);
-                    const interactiveSendOptions = {
-                        quotedMessageId: mediaAssets.length > 0 ? '' : quoted,
-                        metadata: {
-                            ...baseSendMetadata
-                        }
-                    };
-                    const interactiveMessageId = await waClient.sendInteractiveMessage(target.targetChatId, interactive, interactiveSendOptions);
-                    if (!interactiveMessageId) return;
-                    sentMessage = buildSyntheticInteractiveSentMessage({
-                        messageId: interactiveMessageId,
-                        chatId: target.targetChatId,
-                        body: bodyText,
-                        interactive,
-                        quotedMessageId: mediaAssets.length > 0 ? '' : quoted,
-                        metadata: interactiveSendOptions.metadata
-                    });
-                    if (clientTempId && mediaAssets.length === 0 && sentMessage && typeof sentMessage === 'object') {
-                        sentMessage.clientTempId = clientTempId;
-                    }
-                    const sentInteractiveMessageId = getSerializedMessageId(sentMessage);
-                    if (sentInteractiveMessageId && agentMeta) rememberOutgoingAgentMeta(sentInteractiveMessageId, agentMeta);
-
-                    await emitRealtimeOutgoingMessage({
-                        sentMessage,
-                        fallbackChatId: target.targetChatId,
-                        fallbackBody: bodyText,
-                        quotedMessageId: mediaAssets.length > 0 ? '' : quoted,
-                        quotedMessage: mediaAssets.length > 0 ? null : quotedMessage,
-                        moduleContext,
-                        agentMeta,
-                        mediaPayload: null
-                    });
-                } else if (mediaAssets.length === 0) {
-                    const messageSegments = resolveMessageSegments(bodyText);
-                    const isSingleTextSegment = messageSegments.length === 1 && messageSegments[0]?.type === 'text';
-                    if (isSingleTextSegment) {
-                        if (quoted) {
-                            sentMessage = await waClient.sendMessage(target.targetChatId, bodyText, {
-                                quotedMessageId: quoted,
-                                metadata: {
-                                    ...baseSendMetadata
-                                }
-                            });
-                        } else {
-                            sentMessage = await waClient.sendMessage(target.targetChatId, bodyText, {
-                                metadata: {
-                                    ...baseSendMetadata
-                                }
-                            });
-                        }
-                        if (!sentMessage) return;
-                        const sentMessageId = getSerializedMessageId(sentMessage);
-                        if (clientTempId && sentMessage && typeof sentMessage === 'object') {
-                            sentMessage.clientTempId = clientTempId;
-                        }
-                        if (sentMessageId && agentMeta) rememberOutgoingAgentMeta(sentMessageId, agentMeta);
-
-                        await emitRealtimeOutgoingMessage({
-                            sentMessage,
-                            fallbackChatId: target.targetChatId,
-                            fallbackBody: bodyText,
-                            quotedMessageId: quoted,
-                            quotedMessage,
-                            moduleContext,
-                            agentMeta,
-                            mediaPayload
-                        });
-                    } else {
-                        const metaCatalogId = resolveMetaCatalogId({ moduleContext }) || await loadNativeCatalogIdFromDb(tenantId);
-                        let hasSentSegment = false;
-                        for (const segment of messageSegments) {
-                            if (!segment || !segment.type) continue;
-
-                            if (segment.type === 'text') {
-                                const textOptions = {
-                                    metadata: {
-                                        ...baseSendMetadata
-                                    }
-                                };
-                                if (!hasSentSegment && quoted) {
-                                    textOptions.quotedMessageId = quoted;
-                                }
-                                const sentTextMessage = await waClient.sendMessage(target.targetChatId, segment.content, textOptions);
-                                if (!sentTextMessage) return;
-                                if (!sentMessage) sentMessage = sentTextMessage;
-                                if (clientTempId && !hasSentSegment && sentTextMessage && typeof sentTextMessage === 'object') {
-                                    sentTextMessage.clientTempId = clientTempId;
-                                }
-                                const sentTextMessageId = getSerializedMessageId(sentTextMessage);
-                                if (sentTextMessageId && agentMeta) rememberOutgoingAgentMeta(sentTextMessageId, agentMeta);
-                                await emitRealtimeOutgoingMessage({
-                                    sentMessage: sentTextMessage,
-                                    fallbackChatId: target.targetChatId,
-                                    fallbackBody: segment.content,
-                                    quotedMessageId: !hasSentSegment ? quoted : '',
-                                    quotedMessage: !hasSentSegment && quoted ? quotedMessage : null,
-                                    moduleContext,
-                                    agentMeta,
-                                    mediaPayload: null
-                                });
-                                hasSentSegment = true;
-                                continue;
-                            }
-
-                            if (typeof waClient?.sendInteractiveMessage !== 'function') {
-                                console.warn('[quick-replies] interactive segment skipped: channel does not support interactive messages.');
-                                continue;
-                            }
-
-                            try {
-                                if (!metaCatalogId) {
-                                    console.warn('[quick-replies] native catalog segment skipped: missing catalogId.');
-                                    continue;
-                                }
-
-                                if (segment.type === 'catalog') {
-                                    const sendMetadata = {
-                                        ...baseSendMetadata,
-                                        deliveryMode: 'native_catalog_message',
-                                        metaCatalogId
-                                    };
-                                    const interactive = buildNativeCatalogInteractive();
-                                    const sentInteractive = await waClient.sendInteractiveMessage(target.targetChatId, interactive, {
-                                        quotedMessageId: !hasSentSegment ? quoted : '',
-                                        metadata: sendMetadata
-                                    });
-                                    if (!sentInteractive) continue;
-                                    const sentInteractiveId = resolveSentInteractiveId(sentInteractive);
-                                    if (sentInteractiveId && agentMeta) rememberOutgoingAgentMeta(sentInteractiveId, agentMeta);
-                                    const syntheticMessage = buildSyntheticInteractiveSentMessage({
-                                        messageId: sentInteractiveId,
-                                        chatId: target.targetChatId,
-                                        body: '',
-                                        interactive,
-                                        quotedMessageId: !hasSentSegment ? quoted : '',
-                                        metadata: sendMetadata
-                                    });
-                                    await emitRealtimeOutgoingMessage({
-                                        sentMessage: sentInteractive && typeof sentInteractive === 'object' ? sentInteractive : syntheticMessage,
-                                        fallbackChatId: target.targetChatId,
-                                        fallbackBody: '',
-                                        quotedMessageId: !hasSentSegment ? quoted : '',
-                                        quotedMessage: !hasSentSegment && quoted ? quotedMessage : null,
-                                        moduleContext,
-                                        agentMeta,
-                                        mediaPayload: null
-                                    });
-                                    if (!sentMessage) sentMessage = sentInteractive && typeof sentInteractive === 'object' ? sentInteractive : syntheticMessage;
-                                    hasSentSegment = true;
-                                    continue;
-                                }
-
-                                if (segment.type === 'product') {
-                                    const productRetailerId = String(segment.sku || '').trim();
-                                    if (!productRetailerId) {
-                                        console.warn('[quick-replies] product segment skipped: missing product sku.');
-                                        continue;
-                                    }
-                                    const sendMetadata = {
-                                        ...baseSendMetadata,
-                                        deliveryMode: 'native_catalog_product',
-                                        metaCatalogId,
-                                        productRetailerId
-                                    };
-                                    const interactive = buildNativeProductInteractive({}, metaCatalogId, productRetailerId);
-                                    const sentInteractive = await waClient.sendInteractiveMessage(target.targetChatId, interactive, {
-                                        quotedMessageId: !hasSentSegment ? quoted : '',
-                                        metadata: sendMetadata
-                                    });
-                                    if (!sentInteractive) continue;
-                                    const sentInteractiveId = resolveSentInteractiveId(sentInteractive);
-                                    if (sentInteractiveId && agentMeta) rememberOutgoingAgentMeta(sentInteractiveId, agentMeta);
-                                    const syntheticMessage = buildSyntheticInteractiveSentMessage({
-                                        messageId: sentInteractiveId,
-                                        chatId: target.targetChatId,
-                                        body: '',
-                                        interactive,
-                                        quotedMessageId: !hasSentSegment ? quoted : '',
-                                        metadata: sendMetadata
-                                    });
-                                    await emitRealtimeOutgoingMessage({
-                                        sentMessage: sentInteractive && typeof sentInteractive === 'object' ? sentInteractive : syntheticMessage,
-                                        fallbackChatId: target.targetChatId,
-                                        fallbackBody: '',
-                                        quotedMessageId: !hasSentSegment ? quoted : '',
-                                        quotedMessage: !hasSentSegment && quoted ? quotedMessage : null,
-                                        moduleContext,
-                                        agentMeta,
-                                        mediaPayload: null
-                                    });
-                                    if (!sentMessage) sentMessage = sentInteractive && typeof sentInteractive === 'object' ? sentInteractive : syntheticMessage;
-                                    hasSentSegment = true;
-                                }
-                            } catch (interactiveError) {
-                                console.warn('[quick-replies] native catalog segment skipped:', interactiveError?.message || interactiveError);
-                            }
-                        }
-
-                        if (!sentMessage) return;
-                    }
-                }
-
-                socket.emit('quick_reply_sent', buildQuickReplySentPayload({
-                    replyPayload,
-                    quickReplyId,
-                    target
-                }));
+                socket.emit('error', 'La respuesta rapida no tiene contenido para enviar.');
+                return;
             } catch (error) {
                 socket.emit('error', String(error?.message || 'No se pudo enviar la respuesta rapida.'));
             }

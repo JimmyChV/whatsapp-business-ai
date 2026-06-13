@@ -7,6 +7,9 @@ const {
     readTenantJsonFile,
     writeTenantJsonFile
 } = require('../../../config/persistence-runtime');
+const {
+    normalizeSequencePayload
+} = require('../../operations/services/message-sequence.service');
 
 const QUICK_REPLIES_FILE = 'quick_replies.json';
 const DEFAULT_LIBRARY_ID = 'QRL-SHARED';
@@ -145,43 +148,6 @@ function sanitizeLibrary(input = {}) {
     };
 }
 
-function normalizeMediaAsset(input = {}) {
-    const source = input && typeof input === 'object' ? input : {};
-    const url = String(source.url || source.mediaUrl || source.media_url || '').trim();
-    if (!url) return null;
-    const mimeType = String(source.mimeType || source.mediaMimeType || source.media_mime_type || '').trim().toLowerCase() || null;
-    const fileName = String(source.fileName || source.mediaFileName || source.media_file_name || source.filename || '').trim() || null;
-    const sizeBytesRaw = Number(source.sizeBytes ?? source.mediaSizeBytes ?? source.media_size_bytes);
-    const sizeBytes = Number.isFinite(sizeBytesRaw) && sizeBytesRaw > 0 ? Math.floor(sizeBytesRaw) : null;
-    const kind = String(source.kind || '').trim().toLowerCase() || null;
-    return {
-        url,
-        mimeType,
-        fileName,
-        sizeBytes,
-        kind
-    };
-}
-
-function normalizeMediaAssets(value = [], fallback = null) {
-    const source = Array.isArray(value) ? value : [];
-    const seen = new Set();
-    const assets = source
-        .map((entry) => normalizeMediaAsset(entry))
-        .filter(Boolean)
-        .filter((entry) => {
-            const key = `${String(entry.url || '').trim()}|${String(entry.fileName || '').trim()}|${String(entry.mimeType || '').trim()}`;
-            if (!key) return false;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
-
-    if (assets.length > 0) return assets;
-    const fallbackAsset = normalizeMediaAsset(fallback);
-    return fallbackAsset ? [fallbackAsset] : [];
-}
-
 function normalizeCategory(value = 'general') {
     const clean = String(value || '').trim().toLowerCase();
     return QUICK_REPLY_CATEGORIES.has(clean) ? clean : 'general';
@@ -204,88 +170,27 @@ function normalizeQuickReplyButtons(value = []) {
         .slice(0, 3);
 }
 
-function normalizeMessageBlock(input = {}, index = 0) {
-    const source = input && typeof input === 'object' ? input : {};
-    const type = String(source.type || 'message').trim().toLowerCase();
-    const id = String(source.id || source.blockId || `blk_${index + 1}`).trim() || `blk_${index + 1}`;
-
-    if (type === 'delay') {
-        const delaySeconds = Math.min(30, Math.max(1, Number(source.delaySeconds ?? source.delay_seconds ?? 3) || 3));
-        return { id, type: 'delay', delaySeconds };
-    }
-
-    if (type === 'catalog') {
-        return {
-            id,
-            type: 'catalog',
-            text: String(source.text || source.bodyText || source.body || '').trim()
-        };
-    }
-
-    if (type === 'product') {
-        const sku = String(source.sku || source.productRetailerId || source.product_retailer_id || '').trim();
-        if (!sku) return null;
-        return {
-            id,
-            type: 'product',
-            sku,
-            productTitle: String(source.productTitle || source.title || source.name || '').trim(),
-            productImageUrl: String(source.productImageUrl || source.imageUrl || '').trim(),
-            productPrice: String(source.productPrice || source.price || '').trim()
-        };
-    }
-
-    const attachments = normalizeMediaAssets(source.attachments || source.mediaAssets);
-    const text = String(source.text ?? source.bodyText ?? source.body ?? '');
-    if (!text.trim() && attachments.length === 0) return null;
-    return {
-        id,
-        type: 'message',
-        text,
-        attachments
-    };
-}
-
-function normalizeMessageBlocks(value = []) {
-    const source = Array.isArray(value) ? value : [];
-    return source
-        .map((entry, index) => normalizeMessageBlock(entry, index))
-        .filter(Boolean);
-}
-
 function sanitizeItem(input = {}) {
     const source = input && typeof input === 'object' ? input : {};
     const itemId = normalizeItemId(source.itemId || source.id || '');
     const libraryId = normalizeLibraryId(source.libraryId || source.library || DEFAULT_LIBRARY_ID);
     const label = String(source.label || '').trim();
-    const text = String(source.text || source.bodyText || source.body || '').trim();
     const sourceMetadata = source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
         ? { ...source.metadata }
         : {};
-    const mediaAssets = normalizeMediaAssets(
-        source.mediaAssets || sourceMetadata.mediaAssets,
-        {
-            url: source.mediaUrl || source.media_url || '',
-            mimeType: source.mediaMimeType || source.media_mime_type || '',
-            fileName: source.mediaFileName || source.media_file_name || '',
-            sizeBytes: source.mediaSizeBytes ?? source.media_size_bytes
-        }
-    );
+    const sequencePayload = normalizeSequencePayload(source);
+    const text = sequencePayload.text;
+    const mediaAssets = sequencePayload.mediaAssets;
     const primaryMedia = mediaAssets[0] || null;
-    const mediaUrl = String(primaryMedia?.url || source.mediaUrl || source.media_url || '').trim() || null;
-    const mediaMimeType = String(primaryMedia?.mimeType || source.mediaMimeType || source.media_mime_type || '').trim().toLowerCase() || null;
-    const mediaFileName = String(primaryMedia?.fileName || source.mediaFileName || source.media_file_name || '').trim() || null;
-    const mediaSizeRaw = Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes ?? source.media_size_bytes);
+    const mediaUrl = sequencePayload.mediaUrl;
+    const mediaMimeType = sequencePayload.mediaMimeType;
+    const mediaFileName = sequencePayload.mediaFileName;
+    const mediaSizeRaw = Number(primaryMedia?.sizeBytes ?? sequencePayload.mediaSizeBytes);
     const mediaSizeBytes = Number.isFinite(mediaSizeRaw) && mediaSizeRaw > 0 ? Math.floor(mediaSizeRaw) : null;
     const isActive = normalizeBool(source.isActive, true);
     const sortOrder = normalizeSortOrder(source.sortOrder, 1000);
     const buttons = normalizeQuickReplyButtons(source.buttons || sourceMetadata.buttons);
-    const messageBlocks = normalizeMessageBlocks(
-        source.messageBlocks
-        || source.message_blocks
-        || sourceMetadata.messageBlocks
-        || sourceMetadata.message_blocks
-    );
+    const messageBlocks = sequencePayload.messageBlocks;
     const category = normalizeCategory(source.category || sourceMetadata.category);
     const availableForPatty = category === 'general'
         ? false
@@ -643,15 +548,17 @@ async function listQuickReplyItems(options = {}) {
             const metadata = row?.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
                 ? row.metadata
                 : {};
-            const mediaAssets = normalizeMediaAssets(metadata.mediaAssets, {
-                url: row.media_url,
-                mimeType: row.media_mime_type,
-                fileName: row.media_file_name,
-                sizeBytes: row.media_size_bytes
+            const sequencePayload = normalizeSequencePayload({
+                text: row.body_text,
+                mediaAssets: metadata.mediaAssets,
+                mediaUrl: row.media_url,
+                mediaMimeType: row.media_mime_type,
+                mediaFileName: row.media_file_name,
+                mediaSizeBytes: row.media_size_bytes,
+                messageBlocks: Array.isArray(row.message_blocks) ? row.message_blocks : (metadata.messageBlocks || metadata.message_blocks)
             });
-            const messageBlocks = normalizeMessageBlocks(
-                Array.isArray(row.message_blocks) ? row.message_blocks : (metadata.messageBlocks || metadata.message_blocks)
-            );
+            const mediaAssets = sequencePayload.mediaAssets;
+            const messageBlocks = sequencePayload.messageBlocks;
             const primaryMedia = mediaAssets[0] || null;
             return {
                 id: normalizeItemId(row.item_id),
@@ -662,10 +569,10 @@ async function listQuickReplyItems(options = {}) {
                 text: String(row.body_text || '').trim(),
                 bodyText: String(row.body_text || '').trim(),
                 mediaAssets,
-                mediaUrl: String(primaryMedia?.url || row.media_url || '').trim() || null,
-                mediaMimeType: String(primaryMedia?.mimeType || row.media_mime_type || '').trim().toLowerCase() || null,
-                mediaFileName: String(primaryMedia?.fileName || row.media_file_name || '').trim() || null,
-                mediaSizeBytes: Number.isFinite(Number(primaryMedia?.sizeBytes ?? row.media_size_bytes)) ? Number(primaryMedia?.sizeBytes ?? row.media_size_bytes) : null,
+                mediaUrl: sequencePayload.mediaUrl,
+                mediaMimeType: sequencePayload.mediaMimeType,
+                mediaFileName: sequencePayload.mediaFileName,
+                mediaSizeBytes: Number.isFinite(Number(primaryMedia?.sizeBytes ?? sequencePayload.mediaSizeBytes)) ? Number(primaryMedia?.sizeBytes ?? sequencePayload.mediaSizeBytes) : null,
                 messageBlocks,
                 sortOrder: normalizeSortOrder(row.sort_order, 1000),
                 category: normalizeCategory(row.category || metadata.category),

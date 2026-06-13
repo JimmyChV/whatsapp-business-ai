@@ -8,6 +8,7 @@ const templateVariablesService = require('./template-variables.service');
 const {
     MessageSequenceBlockError,
     normalizeMessageBlocks,
+    normalizeSequencePayload,
     executeMessageSequence
 } = require('./message-sequence.service');
 
@@ -47,36 +48,6 @@ function parseDateOrThrow(value, fieldName = 'fecha') {
 
 function normalizeVariables(value = {}) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-}
-
-function normalizeMediaAssets(value = [], fallback = {}) {
-    const source = Array.isArray(value) ? value : [];
-    const items = source
-        .map((entry) => {
-            const asset = entry && typeof entry === 'object' ? entry : {};
-            const url = text(asset.url || asset.mediaUrl || asset.dataUrl || '');
-            if (!url) return null;
-            return {
-                url,
-                mimeType: lower(asset.mimeType || asset.mediaMimeType || ''),
-                fileName: text(asset.fileName || asset.mediaFileName || asset.filename || ''),
-                sizeBytes: Number.isFinite(Number(asset.sizeBytes || asset.mediaSizeBytes))
-                    ? Number(asset.sizeBytes || asset.mediaSizeBytes)
-                    : null
-            };
-        })
-        .filter(Boolean);
-    if (items.length > 0) return items;
-    const fallbackUrl = text(fallback.url || fallback.mediaUrl || '');
-    if (!fallbackUrl) return [];
-    return [{
-        url: fallbackUrl,
-        mimeType: lower(fallback.mimeType || fallback.mediaMimeType || ''),
-        fileName: text(fallback.fileName || fallback.mediaFileName || ''),
-        sizeBytes: Number.isFinite(Number(fallback.sizeBytes || fallback.mediaSizeBytes))
-            ? Number(fallback.sizeBytes || fallback.mediaSizeBytes)
-            : null
-    }];
 }
 
 function resolveChatScope(chatId = '', scopeModuleId = '') {
@@ -298,22 +269,17 @@ async function createScheduledMessage(tenantId, payload = {}) {
     const lastInboundAt = toIsoDate(payload.lastCustomerMessageAtSchedule || payload.last_customer_message_at_schedule)
         || await getLatestInboundAt(cleanTenantId, chatId, scopeModuleId);
     const variables = normalizeVariables(payload.variables);
-    const mediaAssets = normalizeMediaAssets(payload.mediaAssets || payload.media_assets, {
-        mediaUrl: payload.mediaUrl || payload.media_url,
-        mediaMimeType: payload.mediaMimeType || payload.media_mime_type,
-        mediaFileName: payload.mediaFileName || payload.media_file_name,
-        mediaSizeBytes: payload.mediaSizeBytes || payload.media_size_bytes
-    });
-    const messageBlocks = normalizeMessageBlocks(payload.messageBlocks || payload.message_blocks, {
+    const sequencePayload = normalizeSequencePayload(payload, {
         text: messageText,
-        mediaAssets,
         mediaUrl: payload.mediaUrl || payload.media_url,
         mediaMimeType: payload.mediaMimeType || payload.media_mime_type,
         mediaFileName: payload.mediaFileName || payload.media_file_name,
         mediaSizeBytes: payload.mediaSizeBytes || payload.media_size_bytes
     });
+    const mediaAssets = sequencePayload.mediaAssets;
+    const messageBlocks = sequencePayload.messageBlocks;
     const primaryMedia = mediaAssets[0] || null;
-    if (!messageText && mediaAssets.length === 0 && messageBlocks.length === 0) throw new Error('messageText, adjunto o bloques requerido.');
+    if (!sequencePayload.hasContent) throw new Error('messageText, adjunto o bloques requerido.');
     const messageId = makeMessageId();
     const { rows } = await queryPostgres(
         `INSERT INTO tenant_scheduled_messages (
@@ -432,40 +398,25 @@ async function updateScheduledMessage(tenantId, messageId, patch = {}) {
     const variables = Object.prototype.hasOwnProperty.call(patch, 'variables')
         ? normalizeVariables(patch.variables)
         : normalizeVariables(current.variables);
-    const mediaAssets = (Object.prototype.hasOwnProperty.call(patch, 'mediaAssets')
+    const hasMediaPatch = Object.prototype.hasOwnProperty.call(patch, 'mediaAssets')
         || Object.prototype.hasOwnProperty.call(patch, 'media_assets')
         || Object.prototype.hasOwnProperty.call(patch, 'mediaUrl')
-        || Object.prototype.hasOwnProperty.call(patch, 'media_url'))
-        ? normalizeMediaAssets(patch.mediaAssets || patch.media_assets, {
-            mediaUrl: patch.mediaUrl || patch.media_url,
-            mediaMimeType: patch.mediaMimeType || patch.media_mime_type,
-            mediaFileName: patch.mediaFileName || patch.media_file_name,
-            mediaSizeBytes: patch.mediaSizeBytes || patch.media_size_bytes
-        })
-        : normalizeMediaAssets(current.media_assets, {
-            mediaUrl: current.media_url,
-            mediaMimeType: current.media_mime_type,
-            mediaFileName: current.media_file_name
-        });
-    const messageBlocks = (Object.prototype.hasOwnProperty.call(patch, 'messageBlocks')
-        || Object.prototype.hasOwnProperty.call(patch, 'message_blocks'))
-        ? normalizeMessageBlocks(patch.messageBlocks || patch.message_blocks, {
-            text: messageText,
-            mediaAssets,
-            mediaUrl: patch.mediaUrl || patch.media_url,
-            mediaMimeType: patch.mediaMimeType || patch.media_mime_type,
-            mediaFileName: patch.mediaFileName || patch.media_file_name,
-            mediaSizeBytes: patch.mediaSizeBytes || patch.media_size_bytes
-        })
-        : normalizeMessageBlocks(current.message_blocks, {
-            text: messageText,
-            mediaAssets,
-            mediaUrl: current.media_url,
-            mediaMimeType: current.media_mime_type,
-            mediaFileName: current.media_file_name
-        });
+        || Object.prototype.hasOwnProperty.call(patch, 'media_url');
+    const hasBlocksPatch = Object.prototype.hasOwnProperty.call(patch, 'messageBlocks')
+        || Object.prototype.hasOwnProperty.call(patch, 'message_blocks');
+    const sequencePayload = normalizeSequencePayload({
+        messageText,
+        mediaAssets: hasMediaPatch ? (patch.mediaAssets || patch.media_assets) : current.media_assets,
+        mediaUrl: hasMediaPatch ? (patch.mediaUrl || patch.media_url) : current.media_url,
+        mediaMimeType: hasMediaPatch ? (patch.mediaMimeType || patch.media_mime_type) : current.media_mime_type,
+        mediaFileName: hasMediaPatch ? (patch.mediaFileName || patch.media_file_name) : current.media_file_name,
+        mediaSizeBytes: hasMediaPatch ? (patch.mediaSizeBytes || patch.media_size_bytes) : current.media_size_bytes,
+        messageBlocks: hasBlocksPatch ? (patch.messageBlocks || patch.message_blocks) : current.message_blocks
+    });
+    const mediaAssets = sequencePayload.mediaAssets;
+    const messageBlocks = sequencePayload.messageBlocks;
     const primaryMedia = mediaAssets[0] || null;
-    if (!messageText && mediaAssets.length === 0 && messageBlocks.length === 0) throw new Error('messageText, adjunto o bloques requerido.');
+    if (!sequencePayload.hasContent) throw new Error('messageText, adjunto o bloques requerido.');
     const cancelOnCustomerReply = Object.prototype.hasOwnProperty.call(patch, 'cancelOnCustomerReply')
         ? patch.cancelOnCustomerReply !== false
         : Object.prototype.hasOwnProperty.call(patch, 'cancel_on_customer_reply')

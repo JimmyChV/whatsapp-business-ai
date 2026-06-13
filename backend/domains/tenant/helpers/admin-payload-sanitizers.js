@@ -1,3 +1,7 @@
+const {
+    normalizeSequencePayload
+} = require('../../operations/services/message-sequence.service');
+
 function createTenantAdminPayloadSanitizers({
     accessPolicyService,
     quickReplyLibrariesService,
@@ -255,39 +259,6 @@ function createTenantAdminPayloadSanitizers({
         return base;
     }
 
-    function normalizeQuickReplyMediaAsset(input = {}) {
-        const source = input && typeof input === 'object' ? input : {};
-        const url = String(source.url || source.mediaUrl || source.media_url || '').trim();
-        if (!url) return null;
-        const mimeType = String(source.mimeType || source.mediaMimeType || source.media_mime_type || '').trim().toLowerCase() || null;
-        const fileName = String(source.fileName || source.mediaFileName || source.media_file_name || source.filename || '').trim() || null;
-        const sizeRaw = Number(source.sizeBytes ?? source.mediaSizeBytes ?? source.media_size_bytes);
-        const sizeBytes = Number.isFinite(sizeRaw) && sizeRaw > 0 ? Math.floor(sizeRaw) : null;
-        return {
-            url,
-            mimeType,
-            fileName,
-            sizeBytes
-        };
-    }
-
-    function normalizeQuickReplyMediaAssets(value = [], fallback = null) {
-        const source = Array.isArray(value) ? value : [];
-        const seen = new Set();
-        const assets = source
-            .map((entry) => normalizeQuickReplyMediaAsset(entry))
-            .filter(Boolean)
-            .filter((entry) => {
-                const dedupeKey = `${String(entry.url || '').trim()}|${String(entry.fileName || '').trim()}|${String(entry.mimeType || '').trim()}`;
-                if (!dedupeKey || seen.has(dedupeKey)) return false;
-                seen.add(dedupeKey);
-                return true;
-            });
-        if (assets.length > 0) return assets;
-        const fallbackAsset = normalizeQuickReplyMediaAsset(fallback);
-        return fallbackAsset ? [fallbackAsset] : [];
-    }
-
     function sanitizeQuickReplyItemPayload(payload = {}, { allowItemId = true } = {}) {
         const source = sanitizeObjectPayload(payload);
         const cleanItemId = quickReplyLibrariesService.normalizeItemId(source.itemId || source.id || '');
@@ -297,23 +268,40 @@ function createTenantAdminPayloadSanitizers({
         const metadata = source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
             ? source.metadata
             : {};
-        const mediaAssets = normalizeQuickReplyMediaAssets(source.mediaAssets || metadata.mediaAssets, {
-            url: source.mediaUrl || source.media_url || '',
-            mimeType: source.mediaMimeType || source.media_mime_type || '',
-            fileName: source.mediaFileName || source.media_file_name || '',
-            sizeBytes: source.mediaSizeBytes
-        });
-        const primaryMedia = mediaAssets[0] || null;
+        const buttons = Array.isArray(source.buttons)
+            ? source.buttons
+            : (Array.isArray(metadata.buttons) ? metadata.buttons : []);
+        const category = String(source.category || metadata.category || 'general').trim().toLowerCase() || 'general';
+        const availableForPatty = source.availableForPatty === true
+            || source.available_for_patty === true
+            || metadata.availableForPatty === true
+            || metadata.available_for_patty === true;
+        const sequencePayload = normalizeSequencePayload(source);
+        const mediaAssets = sequencePayload.mediaAssets;
+        const messageBlocks = sequencePayload.messageBlocks;
+        const nextMetadata = {
+            ...metadata,
+            mediaAssets,
+            messageBlocks,
+            buttons,
+            category,
+            availableForPatty
+        };
 
         const base = {
             libraryId: cleanLibraryId,
             label: String(source.label || '').trim(),
-            text: String(source.text || source.bodyText || source.body || '').trim(),
+            text: sequencePayload.text,
             mediaAssets,
-            mediaUrl: String(primaryMedia?.url || source.mediaUrl || source.media_url || '').trim() || null,
-            mediaMimeType: String(primaryMedia?.mimeType || source.mediaMimeType || source.media_mime_type || '').trim().toLowerCase() || null,
-            mediaFileName: String(primaryMedia?.fileName || source.mediaFileName || source.media_file_name || '').trim() || null,
-            mediaSizeBytes: Number.isFinite(Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes)) ? Number(primaryMedia?.sizeBytes ?? source.mediaSizeBytes) : null,
+            messageBlocks,
+            buttons,
+            category,
+            availableForPatty,
+            metadata: nextMetadata,
+            mediaUrl: sequencePayload.mediaUrl,
+            mediaMimeType: sequencePayload.mediaMimeType,
+            mediaFileName: sequencePayload.mediaFileName,
+            mediaSizeBytes: sequencePayload.mediaSizeBytes,
             isActive: source.isActive !== false,
             sortOrder
         };
@@ -356,8 +344,6 @@ function createTenantAdminPayloadSanitizers({
         sanitizeWaModulePayload,
         sanitizeAiAssistantPayload,
         sanitizeQuickReplyLibraryPayload,
-        normalizeQuickReplyMediaAsset,
-        normalizeQuickReplyMediaAssets,
         sanitizeQuickReplyItemPayload,
         sanitizeTenantLabelPayload
     };

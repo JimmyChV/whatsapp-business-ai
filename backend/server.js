@@ -430,8 +430,6 @@ const {
     sanitizeWaModulePayload,
     sanitizeAiAssistantPayload,
     sanitizeQuickReplyLibraryPayload,
-    normalizeQuickReplyMediaAsset,
-    normalizeQuickReplyMediaAssets,
     sanitizeQuickReplyItemPayload,
     sanitizeTenantLabelPayload
 } = createTenantAdminPayloadSanitizers({
