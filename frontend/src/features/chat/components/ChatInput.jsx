@@ -1151,4 +1151,38 @@ const ChatInput = ({
     );
 };
 
-export default ChatInput;
+const getChatInputChatSignature = (chat = null) => [
+    chat?.id,
+    chat?.scopeModuleId,
+    chat?.windowOpen,
+    chat?.windowExpiresAt,
+    chat?.assignment?.assigneeUserId,
+    chat?.commercialStatus?.status
+].map((value) => String(value ?? '')).join('|');
+
+const getChatInputMessageSignature = (message = null) => [
+    message?.id,
+    message?.body,
+    message?.text,
+    message?.caption,
+    message?.timestamp
+].map((value) => String(value ?? '')).join('|');
+
+const areChatInputPropsEqual = (prev = {}, next = {}) => (
+    prev.inputText === next.inputText
+    && getChatInputChatSignature(prev.activeChatDetails) === getChatInputChatSignature(next.activeChatDetails)
+    && prev.attachment === next.attachment
+    && prev.attachmentPreview === next.attachmentPreview
+    && prev.isAiLoading === next.isAiLoading
+    && prev.aiPrompt === next.aiPrompt
+    && prev.isCopilotMode === next.isCopilotMode
+    && prev.windowOpen === next.windowOpen
+    && prev.focusChatKey === next.focusChatKey
+    && prev.quickReplies === next.quickReplies
+    && prev.businessData === next.businessData
+    && prev.quickReplyDraft === next.quickReplyDraft
+    && getChatInputMessageSignature(prev.editingMessage) === getChatInputMessageSignature(next.editingMessage)
+    && getChatInputMessageSignature(prev.replyingMessage) === getChatInputMessageSignature(next.replyingMessage)
+);
+
+export default React.memo(ChatInput, areChatInputPropsEqual);

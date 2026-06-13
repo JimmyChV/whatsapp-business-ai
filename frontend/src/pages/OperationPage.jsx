@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Sidebar, BusinessSidebar, ClientProfilePanel, ChatWindow, NewChatModal } from '../features/chat/components';
 import { sanitizeDisplayText } from '../features/chat/core';
 import {
@@ -135,6 +135,7 @@ export default function OperationPage({
   const [pendingCatalogOrderRequest, setPendingCatalogOrderRequest] = useState(null);
   const [mobilePanel, setMobilePanel] = useState('list');
   const [mobileToolRequest, setMobileToolRequest] = useState(null);
+  const deferredBusinessMessages = useDeferredValue(messages);
   const mobilePanelRef = useRef('list');
   const pendingMobilePanelRef = useRef(null);
   const restoredLastChatRef = useRef(false);
@@ -572,7 +573,7 @@ export default function OperationPage({
             tenantScopeKey={tenantScopeId}
             setInputText={setInputText}
             businessData={businessData}
-            messages={messages}
+            messages={deferredBusinessMessages}
             activeChatId={activeChatId}
             activeChatPhone={activeChatDetails?.phone || clientContact?.phone || ''}
             activeChatDetails={mergedActiveChatDetails}

@@ -1237,4 +1237,59 @@ const ChatWindow = ({
 };
 
 export { ChatInput };
-export default ChatWindow;
+const getChatWindowChatSignature = (chat = null) => {
+    if (!chat || typeof chat !== 'object') return '';
+    const labels = Array.isArray(chat?.labels)
+        ? chat.labels.map((entry) => String(entry?.id || entry?.labelId || entry || '').trim()).join(',')
+        : '';
+    return [
+        chat?.id,
+        chat?.name,
+        chat?.phone,
+        chat?.subtitle,
+        chat?.scopeModuleId,
+        chat?.moduleName,
+        chat?.windowOpen,
+        chat?.windowExpiresAt,
+        chat?.unreadCount,
+        chat?.manuallyMarkedUnread,
+        chat?.assignment?.assigneeUserId,
+        chat?.commercialStatus?.status,
+        labels
+    ].map((value) => String(value ?? '')).join('|');
+};
+
+const getChatWindowInputSignature = (props = {}) => [
+    props?.inputText,
+    props?.attachment?.name || props?.attachment?.url || props?.attachmentPreview || '',
+    props?.isAiLoading,
+    props?.aiPrompt,
+    props?.isCopilotMode,
+    props?.sendTemplateOpen,
+    props?.sendTemplateOptionsLoading,
+    props?.selectedSendTemplate?.id || props?.selectedSendTemplate?.name || '',
+    props?.selectedSendTemplatePreviewLoading,
+    props?.sendTemplateSubmitting,
+    props?.quickReplyDraft?.id || props?.quickReplyDraft?.label || '',
+    props?.editingMessage?.id || '',
+    props?.replyingMessage?.id || '',
+    props?.activeTenantId,
+    props?.currentUserRole,
+    props?.canEditMessages
+].map((value) => String(value ?? '')).join('|');
+
+const areChatWindowPropsEqual = (prev = {}, next = {}) => (
+    getChatWindowChatSignature(prev.activeChatDetails) === getChatWindowChatSignature(next.activeChatDetails)
+    && prev.messages === next.messages
+    && prev.businessData === next.businessData
+    && prev.waModules === next.waModules
+    && prev.labelDefinitions === next.labelDefinitions
+    && prev.forwardChatOptions === next.forwardChatOptions
+    && prev.chatAssignmentState === next.chatAssignmentState
+    && prev.chatCommercialStatusState === next.chatCommercialStatusState
+    && prev.isDragOver === next.isDragOver
+    && prev.showClientProfile === next.showClientProfile
+    && getChatWindowInputSignature(prev) === getChatWindowInputSignature(next)
+);
+
+export default React.memo(ChatWindow, areChatWindowPropsEqual);
