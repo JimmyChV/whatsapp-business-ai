@@ -13525,19 +13525,109 @@ textarea:focus {
   min-height: 0;
 }
 
-.scheduled-message-modal__controls,
+.scheduled-message-modal__topbar {
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) auto auto;
+  gap: 10px;
+  align-items: start;
+  margin-bottom: 12px;
+}
+
 .scheduled-message-modal__schedule-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  margin-bottom: 12px;
+}
+
+.scheduled-message-modal__schedule-row--popover {
+  display: grid;
+  margin: 10px 0 0;
 }
 
 .scheduled-message-modal__quick-reply-search {
   position: relative;
-  min-width: 320px;
-  flex: 1 1 460px;
+  min-width: 0;
+}
+
+.scheduled-message-modal__schedule-popover-wrap {
+  position: relative;
+}
+
+.scheduled-message-modal__schedule-trigger {
+  min-height: 40px;
+  max-width: 260px;
+  border: 1px solid var(--saas-border-color);
+  border-radius: 999px;
+  padding: 8px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--saas-text-primary);
+  background: var(--saas-bg-surface);
+  font-size: 0.86rem;
+  font-weight: 900;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.scheduled-message-modal__schedule-trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scheduled-message-modal__schedule-trigger:hover {
+  color: var(--saas-success);
+  border-color: color-mix(in srgb, var(--saas-success) 34%, var(--saas-border-color));
+  background: color-mix(in srgb, var(--saas-success) 8%, #fff);
+}
+
+.scheduled-message-modal__schedule-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 2147483002;
+  width: min(360px, calc(100vw - 48px));
+  border: 1px solid var(--saas-border-color);
+  border-radius: 14px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  background: var(--saas-bg-surface);
+  box-shadow: 0 22px 48px rgba(15, 23, 42, 0.18);
+}
+
+.scheduled-message-modal__schedule-popover-head,
+.scheduled-message-modal__schedule-popover-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.scheduled-message-modal__schedule-popover-head strong {
+  color: var(--saas-text-primary);
+  font-size: 0.92rem;
+}
+
+.scheduled-message-modal__schedule-popover-head button {
+  border: none;
+  color: var(--saas-text-secondary);
+  background: transparent;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.scheduled-message-modal__schedule-popover-head button:hover {
+  color: var(--saas-success);
+}
+
+.scheduled-message-modal__preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .scheduled-message-modal__mode-switch {
@@ -13581,7 +13671,9 @@ textarea:focus {
 }
 
 .scheduled-message-modal__cancel-toggle {
-  margin-left: auto;
+  min-height: 40px;
+  margin: 0;
+  white-space: nowrap;
 }
 
 .scheduled-message-modal__history {
@@ -13941,6 +14033,21 @@ textarea:focus {
   .scheduled-message-modal__content,
   .message-sequence-composer__body {
     grid-template-columns: 1fr;
+  }
+
+  .scheduled-message-modal__topbar {
+    grid-template-columns: 1fr;
+  }
+
+  .scheduled-message-modal__schedule-trigger {
+    width: 100%;
+    max-width: none;
+  }
+
+  .scheduled-message-modal__schedule-popover {
+    left: 0;
+    right: auto;
+    width: min(420px, 100%);
   }
 
   .scheduled-message-modal__history {

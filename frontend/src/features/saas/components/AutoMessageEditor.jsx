@@ -187,7 +187,8 @@ export default function AutoMessageEditor({
     saveDisabled = false,
     onSave = null,
     onCancel = null,
-    initialShowVariablesPanel = true
+    initialShowVariablesPanel = true,
+    initialVariableGroupsExpanded = true
 }) {
     const textareaRef = React.useRef(null);
     const [showEmojiPicker, setShowEmojiPicker] = React.useState(false);
@@ -259,16 +260,7 @@ export default function AutoMessageEditor({
         };
     }, [tenantId]);
 
-    React.useEffect(() => {
-        setExpandedCategories((prev) => {
-            const next = { ...(prev || {}) };
-            (Array.isArray(variableCategories) ? variableCategories : []).forEach((category) => {
-                const key = text(category?.id || category?.label).toLowerCase();
-                if (key && next[key] === undefined) next[key] = true;
-            });
-            return next;
-        });
-    }, [variableCategories]);
+    const defaultVariableGroupExpanded = initialVariableGroupsExpanded !== false;
 
     const focusAndSelect = React.useCallback((start, end = start) => {
         window.requestAnimationFrame?.(() => {
@@ -550,7 +542,12 @@ export default function AutoMessageEditor({
                                 {filteredVariableCategories.map((category) => {
                                     const categoryKey = text(category?.id || category?.label).toLowerCase();
                                     const variables = Array.isArray(category?.variables) ? category.variables : [];
-                                    const isExpanded = expandedCategories?.[categoryKey] !== false;
+                                    const hasExplicitExpandedState = Object.prototype.hasOwnProperty.call(expandedCategories || {}, categoryKey);
+                                    const hasVariableSearch = text(variableSearch).length > 0;
+                                    const isExpanded = hasVariableSearch
+                                        || (hasExplicitExpandedState
+                                            ? expandedCategories?.[categoryKey] !== false
+                                            : defaultVariableGroupExpanded);
                                     return (
                                         <div key={`auto_msg_var_group_${category?.id}`} className="saas-quick-reply-variable-group">
                                             <button

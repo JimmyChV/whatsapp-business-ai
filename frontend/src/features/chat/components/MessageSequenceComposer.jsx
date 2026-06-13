@@ -382,7 +382,8 @@ export default function MessageSequenceComposer({
                             isImageAsset={isQuickReplyImageAsset}
                             hasRequiredContent={true}
                             saveDisabled={false}
-                            initialShowVariablesPanel={false}
+                            initialShowVariablesPanel={true}
+                            initialVariableGroupsExpanded={false}
                         />
                     ) : null}
 

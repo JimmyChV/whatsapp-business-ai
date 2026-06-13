@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CalendarClock, Clock, Trash2, Pencil } from 'lucide-react';
+import { CalendarClock, ChevronDown, Clock, Trash2, Pencil } from 'lucide-react';
 import MessageSequenceComposer, { buildMessageBlocksFromLegacy, normalizeMessageBlocksForComposer } from './MessageSequenceComposer';
 import {
     normalizeQuickReplyMediaAssets
@@ -56,6 +56,15 @@ function getStatusLabel(status = '') {
     return 'pendiente';
 }
 
+function formatScheduleButtonLabel({ scheduleType = 'absolute', scheduledFor = '', minutesBeforeWindow = 60, windowExpiresAt = null } = {}) {
+    if (scheduleType === 'before_window_expiry') {
+        if (!windowExpiresAt) return 'Sin ventana';
+        return `${Number(minutesBeforeWindow || 0)} min antes de vencer`;
+    }
+    const isoDate = fromDateTimeLocal(scheduledFor);
+    return isoDate ? formatSchedule(isoDate) : 'Elegir hora';
+}
+
 function getStatusColor(status = '') {
     const value = text(status).toLowerCase();
     if (value === 'sent') return '#16a34a';
@@ -90,6 +99,7 @@ const ScheduledMessageModal = ({
     const [messageBlocks, setMessageBlocks] = useState(() => buildMessageBlocksFromLegacy());
     const [quickReplySearch, setQuickReplySearch] = useState('');
     const [quickReplyPickerOpen, setQuickReplyPickerOpen] = useState(false);
+    const [schedulePopoverOpen, setSchedulePopoverOpen] = useState(false);
 
     const normalizedBlocks = useMemo(() => normalizeMessageBlocksForComposer(messageBlocks), [messageBlocks]);
     const firstMessageBlock = useMemo(() => (
@@ -111,7 +121,7 @@ const ScheduledMessageModal = ({
     const filteredQuickReplies = useMemo(() => {
         const source = Array.isArray(quickReplies) ? quickReplies : [];
         const query = text(quickReplySearch).toLowerCase();
-        if (!query) return source.slice(0, 8);
+        if (!query) return source;
         return source
             .filter((item) => [
                 item?.label,
@@ -120,9 +130,14 @@ const ScheduledMessageModal = ({
                 item?.text,
                 item?.shortcut,
                 item?.category
-            ].some((value) => text(value).toLowerCase().includes(query)))
-            .slice(0, 12);
+            ].some((value) => text(value).toLowerCase().includes(query)));
     }, [quickReplies, quickReplySearch]);
+    const scheduleButtonLabel = useMemo(() => formatScheduleButtonLabel({
+        scheduleType,
+        scheduledFor,
+        minutesBeforeWindow,
+        windowExpiresAt
+    }), [scheduleType, scheduledFor, minutesBeforeWindow, windowExpiresAt]);
     const hasRequiredContent = normalizedBlocks.some((block) => {
         if (block.type === 'message') return Boolean(text(block.text) || block.attachments?.length);
         if (block.type === 'delay') return false;
@@ -164,6 +179,7 @@ const ScheduledMessageModal = ({
         setMessageBlocks(buildMessageBlocksFromLegacy());
         setQuickReplySearch('');
         setQuickReplyPickerOpen(false);
+        setSchedulePopoverOpen(false);
     };
 
     useEffect(() => {
@@ -326,7 +342,7 @@ const ScheduledMessageModal = ({
 
                 <div className="scheduled-message-modal__content">
                     <div style={{ minWidth: 0 }}>
-                        <div className="scheduled-message-modal__controls">
+                        <div className="scheduled-message-modal__topbar">
                             <div className="scheduled-message-modal__quick-reply-search">
                                 <input
                                     type="search"
@@ -349,7 +365,7 @@ const ScheduledMessageModal = ({
                                             right: 0,
                                             top: 'calc(100% + 4px)',
                                             zIndex: 2147483001,
-                                            maxHeight: '240px',
+                                            maxHeight: '320px',
                                             overflow: 'auto',
                                             border: '1px solid var(--chat-card-border, #d9d3ca)',
                                             borderRadius: '8px',
@@ -405,40 +421,65 @@ const ScheduledMessageModal = ({
                                     </div>
                                 ) : null}
                             </div>
-                            <div className="scheduled-message-modal__mode-switch">
-                                <button type="button" className={scheduleType === 'absolute' ? 'is-active' : ''} onClick={() => setScheduleType('absolute')}>
-                                    Hora exacta
+                            <div className="scheduled-message-modal__schedule-popover-wrap">
+                                <button
+                                    type="button"
+                                    className="scheduled-message-modal__schedule-trigger"
+                                    onClick={() => setSchedulePopoverOpen((prev) => !prev)}
+                                    disabled={saving}
+                                >
+                                    <Clock size={16} />
+                                    <span>{scheduleButtonLabel}</span>
+                                    <ChevronDown size={15} />
                                 </button>
-                                <button type="button" className={scheduleType === 'before_window_expiry' ? 'is-active' : ''} onClick={() => setScheduleType('before_window_expiry')} disabled={!windowExpiresAt}>
-                                    Antes de vencer
-                                </button>
+                                {schedulePopoverOpen ? (
+                                    <div className="scheduled-message-modal__schedule-popover">
+                                        <div className="scheduled-message-modal__schedule-popover-head">
+                                            <strong>Programacion</strong>
+                                            <button type="button" onClick={() => setSchedulePopoverOpen(false)}>Cerrar</button>
+                                        </div>
+                                        <div className="scheduled-message-modal__mode-switch">
+                                            <button type="button" className={scheduleType === 'absolute' ? 'is-active' : ''} onClick={() => setScheduleType('absolute')}>
+                                                Hora exacta
+                                            </button>
+                                            <button type="button" className={scheduleType === 'before_window_expiry' ? 'is-active' : ''} onClick={() => setScheduleType('before_window_expiry')} disabled={!windowExpiresAt}>
+                                                Antes de vencer
+                                            </button>
+                                        </div>
+                                        <div className="scheduled-message-modal__schedule-row scheduled-message-modal__schedule-row--popover">
+                                            {scheduleType === 'absolute' ? (
+                                                <input
+                                                    type="datetime-local"
+                                                    value={scheduledFor}
+                                                    onChange={(event) => setScheduledFor(event.target.value)}
+                                                    className="saas-input"
+                                                />
+                                            ) : (
+                                                <>
+                                                    <div className="scheduled-message-modal__preset-grid">
+                                                        {RELATIVE_PRESETS.map((preset) => (
+                                                            <button
+                                                                key={preset.value}
+                                                                type="button"
+                                                                className={minutesBeforeWindow === preset.value ? 'scheduled-message-modal__preset is-active' : 'scheduled-message-modal__preset'}
+                                                                onClick={() => setMinutesBeforeWindow(preset.value)}
+                                                            >
+                                                                {preset.label}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                    <small>Vence: {windowExpiresAt ? formatSchedule(windowExpiresAt) : 'sin dato'}</small>
+                                                </>
+                                            )}
+                                        </div>
+                                        <div className="scheduled-message-modal__schedule-popover-actions">
+                                            <button type="button" className="scheduled-message-modal__primary" onClick={() => setSchedulePopoverOpen(false)}>
+                                                Aplicar
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : null}
                             </div>
-                        </div>
-
-                        <div className="scheduled-message-modal__schedule-row">
-                            {scheduleType === 'absolute' ? (
-                                <input
-                                    type="datetime-local"
-                                    value={scheduledFor}
-                                    onChange={(event) => setScheduledFor(event.target.value)}
-                                    className="saas-input"
-                                    style={{ width: 'fit-content' }}
-                                />
-                            ) : (
-                                <>
-                                    {RELATIVE_PRESETS.map((preset) => (
-                                        <button
-                                            key={preset.value}
-                                            type="button"
-                                            className={minutesBeforeWindow === preset.value ? 'scheduled-message-modal__preset is-active' : 'scheduled-message-modal__preset'}
-                                            onClick={() => setMinutesBeforeWindow(preset.value)}
-                                        >
-                                            {preset.label}
-                                        </button>
-                                    ))}
-                                    <small>Vence: {windowExpiresAt ? formatSchedule(windowExpiresAt) : 'sin dato'}</small>
-                                </>
-                            )}
                             <label className="saas-admin-module-toggle scheduled-message-modal__cancel-toggle" title="Si lo desmarcas, se pedira confirmacion porque el mensaje saldra aunque el cliente responda antes.">
                                 <input
                                     type="checkbox"
