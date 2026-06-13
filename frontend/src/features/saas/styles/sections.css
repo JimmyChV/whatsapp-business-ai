@@ -14698,6 +14698,132 @@ textarea:focus {
   border-bottom: none;
 }
 
+/* Shared sequence-composer shell. Keep scheduled, quick replies and future auto messages identical. */
+.saas-quick-reply-builder-overlay,
+.scheduled-message-modal__overlay {
+  background: rgba(15, 23, 42, 0.42) !important;
+}
+
+.saas-quick-reply-builder-shell,
+.scheduled-message-modal__shell {
+  background: #fff !important;
+  color: var(--saas-text-primary, #111) !important;
+}
+
+.saas-quick-reply-builder-header,
+.scheduled-message-modal__content,
+.scheduled-message-modal__builder,
+.saas-quick-reply-sequence-shell,
+.message-sequence-composer,
+.message-sequence-composer__body,
+.message-sequence-composer__list,
+.scheduled-message-modal__actions,
+.saas-quick-reply-sequence-actions {
+  background: #fff !important;
+}
+
+.scheduled-message-modal__builder,
+.saas-quick-reply-sequence-shell {
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  gap: 14px !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.scheduled-message-modal__topbar {
+  margin-bottom: 0 !important;
+}
+
+.scheduled-message-modal__builder > .message-sequence-composer,
+.saas-quick-reply-sequence-shell > .message-sequence-composer {
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) !important;
+  align-content: start !important;
+  gap: 14px !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.message-sequence-composer__toolbar {
+  align-self: start !important;
+  justify-content: flex-start !important;
+  min-height: 42px !important;
+}
+
+.message-sequence-composer__body {
+  display: block !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.message-sequence-composer__list {
+  height: 100% !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, 320px) !important;
+  grid-auto-rows: 136px !important;
+  justify-content: start !important;
+  align-content: start !important;
+  align-items: start !important;
+  gap: 12px !important;
+  overflow: auto !important;
+  padding: 0 8px 12px 0 !important;
+}
+
+.message-sequence-composer__block {
+  width: 320px !important;
+  height: 136px !important;
+  min-height: 136px !important;
+  padding: 14px 16px !important;
+  border-radius: 16px !important;
+  background: #fff !important;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.045) !important;
+}
+
+.message-sequence-composer__block-summary {
+  -webkit-line-clamp: 2 !important;
+  line-height: 1.35 !important;
+}
+
+.scheduled-message-modal__actions,
+.saas-quick-reply-sequence-actions {
+  min-height: 66px !important;
+  align-items: center !important;
+  padding: 12px 0 0 !important;
+  border-top: 1px solid var(--saas-divider-soft, rgba(0, 0, 0, 0.1)) !important;
+}
+
+.scheduled-message-modal__primary:disabled,
+.saas-btn.saas-btn--primary:disabled {
+  background: #f3f4f6 !important;
+  border-color: #e5e7eb !important;
+  color: #9ca3af !important;
+  box-shadow: none !important;
+}
+
+.scheduled-message-modal__primary,
+.scheduled-message-modal__secondary,
+.scheduled-message-modal__close,
+.saas-quick-reply-sequence-actions .saas-btn,
+.scheduled-message-modal__actions .saas-btn {
+  min-width: 112px !important;
+  text-align: center !important;
+}
+
+.message-sequence-composer__tool {
+  background: #fff !important;
+  border-color: var(--saas-border-color, rgba(0, 0, 0, 0.14)) !important;
+  box-shadow: none !important;
+}
+
+.message-sequence-composer__tool:hover {
+  background: color-mix(in srgb, var(--saas-success, #16a34a) 8%, #fff) !important;
+}
+
 @media (max-width: 1100px) {
   .scheduled-message-modal__content,
   .message-sequence-composer__body {
