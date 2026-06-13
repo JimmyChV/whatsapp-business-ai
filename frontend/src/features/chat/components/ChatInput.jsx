@@ -32,6 +32,31 @@ const formatAssetBytes = (value) => {
     return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+const getQuickReplyBlocks = (entry = {}) => {
+    const source = entry && typeof entry === 'object' ? entry : {};
+    const blocks = Array.isArray(source.messageBlocks)
+        ? source.messageBlocks
+        : (Array.isArray(source.message_blocks)
+            ? source.message_blocks
+            : (Array.isArray(source.metadata?.messageBlocks)
+                ? source.metadata.messageBlocks
+                : (Array.isArray(source.metadata?.message_blocks) ? source.metadata.message_blocks : [])));
+    return blocks.filter((block) => block && typeof block === 'object');
+};
+
+const summarizeQuickReplyBlocks = (blocks = []) => {
+    const safeBlocks = Array.isArray(blocks) ? blocks : [];
+    if (safeBlocks.length === 0) return '';
+    const mediaCount = safeBlocks.reduce((total, block) => total + (Array.isArray(block?.attachments) ? block.attachments.length : 0), 0);
+    const delayCount = safeBlocks.filter((block) => String(block?.type || '').toLowerCase() === 'delay').length;
+    const productCount = safeBlocks.filter((block) => String(block?.type || '').toLowerCase() === 'product').length;
+    const parts = [`${safeBlocks.length} bloques`];
+    if (mediaCount) parts.push(`${mediaCount} adjuntos`);
+    if (productCount) parts.push(`${productCount} productos`);
+    if (delayCount) parts.push(`${delayCount} pausas`);
+    return parts.join(' · ');
+};
+
 const decodeHtmlEntities = (value = '') => String(value || '')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
@@ -99,6 +124,8 @@ const ChatInput = ({
     const scheduledCountRequestRef = useRef(0);
     const draftQuickReplyLabel = String(quickReplyDraft?.label || '').trim();
     const draftQuickReplyText = String(quickReplyDraft?.text || '').trim();
+    const draftQuickReplyBlocks = getQuickReplyBlocks(quickReplyDraft);
+    const draftQuickReplyBlocksSummary = summarizeQuickReplyBlocks(draftQuickReplyBlocks);
     const draftQuickReplyAssets = Array.isArray(quickReplyDraft?.mediaAssets)
         ? quickReplyDraft.mediaAssets.filter((asset) => asset && typeof asset === 'object' && isRealQuickReplyMediaAsset(asset))
         : [];
@@ -111,7 +138,7 @@ const ChatInput = ({
             name: String(asset?.fileName || `adjunto_${index + 1}`).trim() || `adjunto_${index + 1}`
         };
     });
-    const hasDraftQuickReply = Boolean(quickReplyDraft && (draftQuickReplyText || draftQuickReplyAssets.length > 0 || draftQuickReplyLabel));
+    const hasDraftQuickReply = Boolean(quickReplyDraft && (draftQuickReplyText || draftQuickReplyAssets.length > 0 || draftQuickReplyBlocks.length > 0 || draftQuickReplyLabel));
     const isTemplateOnlyMode = windowOpen === false;
     const isBlockedByEditState = Boolean(editingMessage?.id);
     const disableFreeformComposer = isTemplateOnlyMode || isBlockedByEditState;
@@ -400,7 +427,6 @@ const ChatInput = ({
                 const rightLabel = String(right?.item?.label || '').trim();
                 return leftLabel.localeCompare(rightLabel, 'es', { sensitivity: 'base' });
             })
-            .slice(0, 10)
             .map((entry) => entry.item);
     }, [localText, quickReplies]);
 
@@ -627,7 +653,7 @@ const ChatInput = ({
                             Respuesta rápida preparada{draftQuickReplyLabel ? ` · ${draftQuickReplyLabel}` : ''}
                         </div>
                         <div className="chat-draft-banner__text" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {draftQuickReplyText || `Adjuntos: ${draftQuickReplyAssets.length}`}
+                            {draftQuickReplyBlocksSummary || draftQuickReplyText || `Adjuntos: ${draftQuickReplyAssets.length}`}
                         </div>
                         {draftQuickReplyPreviewAssets.length > 0 && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
@@ -693,7 +719,7 @@ const ChatInput = ({
                                     {String(item?.label || 'Respuesta rapida')}
                                 </div>
                                 <div style={{ fontSize: '0.75rem', color: '#8696a0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {String(item?.text || item?.mediaFileName || 'Adjunto').split('\n')[0]}
+                                    {summarizeQuickReplyBlocks(getQuickReplyBlocks(item)) || String(item?.text || item?.mediaFileName || 'Adjunto').split('\n')[0]}
                                 </div>
                             </div>
                         </div>

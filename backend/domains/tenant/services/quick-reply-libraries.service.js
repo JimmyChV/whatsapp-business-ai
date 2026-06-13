@@ -204,6 +204,55 @@ function normalizeQuickReplyButtons(value = []) {
         .slice(0, 3);
 }
 
+function normalizeMessageBlock(input = {}, index = 0) {
+    const source = input && typeof input === 'object' ? input : {};
+    const type = String(source.type || 'message').trim().toLowerCase();
+    const id = String(source.id || source.blockId || `blk_${index + 1}`).trim() || `blk_${index + 1}`;
+
+    if (type === 'delay') {
+        const delaySeconds = Math.min(30, Math.max(1, Number(source.delaySeconds ?? source.delay_seconds ?? 3) || 3));
+        return { id, type: 'delay', delaySeconds };
+    }
+
+    if (type === 'catalog') {
+        return {
+            id,
+            type: 'catalog',
+            text: String(source.text || source.bodyText || source.body || '').trim()
+        };
+    }
+
+    if (type === 'product') {
+        const sku = String(source.sku || source.productRetailerId || source.product_retailer_id || '').trim();
+        if (!sku) return null;
+        return {
+            id,
+            type: 'product',
+            sku,
+            productTitle: String(source.productTitle || source.title || source.name || '').trim(),
+            productImageUrl: String(source.productImageUrl || source.imageUrl || '').trim(),
+            productPrice: String(source.productPrice || source.price || '').trim()
+        };
+    }
+
+    const attachments = normalizeMediaAssets(source.attachments || source.mediaAssets);
+    const text = String(source.text ?? source.bodyText ?? source.body ?? '');
+    if (!text.trim() && attachments.length === 0) return null;
+    return {
+        id,
+        type: 'message',
+        text,
+        attachments
+    };
+}
+
+function normalizeMessageBlocks(value = []) {
+    const source = Array.isArray(value) ? value : [];
+    return source
+        .map((entry, index) => normalizeMessageBlock(entry, index))
+        .filter(Boolean);
+}
+
 function sanitizeItem(input = {}) {
     const source = input && typeof input === 'object' ? input : {};
     const itemId = normalizeItemId(source.itemId || source.id || '');
@@ -231,6 +280,12 @@ function sanitizeItem(input = {}) {
     const isActive = normalizeBool(source.isActive, true);
     const sortOrder = normalizeSortOrder(source.sortOrder, 1000);
     const buttons = normalizeQuickReplyButtons(source.buttons || sourceMetadata.buttons);
+    const messageBlocks = normalizeMessageBlocks(
+        source.messageBlocks
+        || source.message_blocks
+        || sourceMetadata.messageBlocks
+        || sourceMetadata.message_blocks
+    );
     const category = normalizeCategory(source.category || sourceMetadata.category);
     const availableForPatty = category === 'general'
         ? false
@@ -238,6 +293,7 @@ function sanitizeItem(input = {}) {
     const metadata = {
         ...sourceMetadata,
         mediaAssets,
+        messageBlocks,
         buttons,
         category,
         availableForPatty
@@ -256,6 +312,7 @@ function sanitizeItem(input = {}) {
         isActive,
         sortOrder,
         buttons,
+        messageBlocks,
         category,
         availableForPatty,
         metadata
@@ -282,7 +339,7 @@ function normalizeFileStore(parsed = null) {
     const items = Array.isArray(source.items)
         ? source.items
             .map((entry) => sanitizeItem(entry))
-            .filter((entry) => entry.itemId && entry.libraryId && (entry.text || entry.mediaUrl || (Array.isArray(entry.mediaAssets) && entry.mediaAssets.length > 0)))
+            .filter((entry) => entry.itemId && entry.libraryId && (entry.text || entry.mediaUrl || (Array.isArray(entry.mediaAssets) && entry.mediaAssets.length > 0) || (Array.isArray(entry.messageBlocks) && entry.messageBlocks.length > 0)))
         : [];
 
     return { libraries, items };
@@ -346,6 +403,7 @@ async function ensurePostgresSchema() {
         await queryPostgres(`CREATE INDEX IF NOT EXISTS idx_quick_reply_library_modules_tenant_module ON quick_reply_library_modules(tenant_id, module_id, library_id)`);
         await queryPostgres(`ALTER TABLE quick_reply_items ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'general'`);
         await queryPostgres(`ALTER TABLE quick_reply_items ADD COLUMN IF NOT EXISTS available_for_patty BOOLEAN NOT NULL DEFAULT FALSE`);
+        await queryPostgres(`ALTER TABLE quick_reply_items ADD COLUMN IF NOT EXISTS message_blocks JSONB NOT NULL DEFAULT '[]'::jsonb`);
 
         schemaReady = true;
         schemaReadyPromise = null;
@@ -572,7 +630,7 @@ async function listQuickReplyItems(options = {}) {
         if (!includeInactive) where += ' AND is_active = TRUE';
 
         const { rows } = await queryPostgres(
-            `SELECT item_id, library_id, label, body_text, media_url, media_mime_type, media_file_name, media_size_bytes, sort_order, category, available_for_patty, is_active, metadata, created_at, updated_at
+            `SELECT item_id, library_id, label, body_text, media_url, media_mime_type, media_file_name, media_size_bytes, sort_order, category, available_for_patty, message_blocks, is_active, metadata, created_at, updated_at
                FROM quick_reply_items
                ${where}
               ORDER BY sort_order ASC, created_at DESC`,
@@ -591,6 +649,9 @@ async function listQuickReplyItems(options = {}) {
                 fileName: row.media_file_name,
                 sizeBytes: row.media_size_bytes
             });
+            const messageBlocks = normalizeMessageBlocks(
+                Array.isArray(row.message_blocks) ? row.message_blocks : (metadata.messageBlocks || metadata.message_blocks)
+            );
             const primaryMedia = mediaAssets[0] || null;
             return {
                 id: normalizeItemId(row.item_id),
@@ -605,6 +666,7 @@ async function listQuickReplyItems(options = {}) {
                 mediaMimeType: String(primaryMedia?.mimeType || row.media_mime_type || '').trim().toLowerCase() || null,
                 mediaFileName: String(primaryMedia?.fileName || row.media_file_name || '').trim() || null,
                 mediaSizeBytes: Number.isFinite(Number(primaryMedia?.sizeBytes ?? row.media_size_bytes)) ? Number(primaryMedia?.sizeBytes ?? row.media_size_bytes) : null,
+                messageBlocks,
                 sortOrder: normalizeSortOrder(row.sort_order, 1000),
                 category: normalizeCategory(row.category || metadata.category),
                 availableForPatty: row.available_for_patty === true || metadata.availableForPatty === true,
@@ -616,6 +678,7 @@ async function listQuickReplyItems(options = {}) {
                 metadata: {
                     ...metadata,
                     mediaAssets,
+                    messageBlocks,
                     buttons: normalizeQuickReplyButtons(metadata.buttons),
                     category: normalizeCategory(row.category || metadata.category),
                     availableForPatty: row.available_for_patty === true || metadata.availableForPatty === true
@@ -644,7 +707,9 @@ async function saveQuickReplyItem(payload = {}, options = {}) {
     const clean = sanitizeItem(payload);
     if (!clean.libraryId) clean.libraryId = DEFAULT_LIBRARY_ID;
     if (!clean.label) throw new Error('Etiqueta de respuesta requerida.');
-    if (!clean.text && (!Array.isArray(clean.mediaAssets) || clean.mediaAssets.length === 0) && !clean.mediaUrl) throw new Error('La respuesta requiere texto o adjunto.');
+    if (!clean.text && (!Array.isArray(clean.mediaAssets) || clean.mediaAssets.length === 0) && !clean.mediaUrl && (!Array.isArray(clean.messageBlocks) || clean.messageBlocks.length === 0)) {
+        throw new Error('La respuesta requiere texto, adjunto o bloques.');
+    }
 
     if (getStorageDriver() !== 'postgres') {
         const store = normalizeFileStore(await readTenantJsonFile(QUICK_REPLIES_FILE, { tenantId, defaultValue: {} }));
@@ -659,6 +724,7 @@ async function saveQuickReplyItem(payload = {}, options = {}) {
             mediaMimeType: clean.mediaMimeType || null,
             mediaFileName: clean.mediaFileName || null,
             mediaSizeBytes: clean.mediaSizeBytes,
+            messageBlocks: Array.isArray(clean.messageBlocks) ? clean.messageBlocks : [],
             sortOrder: clean.sortOrder,
             category: clean.category,
             availableForPatty: clean.availableForPatty,
@@ -679,9 +745,9 @@ async function saveQuickReplyItem(payload = {}, options = {}) {
     await queryPostgres(
         `INSERT INTO quick_reply_items (
             tenant_id, item_id, library_id, label, body_text, media_url, media_mime_type,
-            media_file_name, media_size_bytes, sort_order, category, available_for_patty, is_active, metadata, created_at, updated_at
+            media_file_name, media_size_bytes, sort_order, category, available_for_patty, message_blocks, is_active, metadata, created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, NOW(), NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15::jsonb, NOW(), NOW())
         ON CONFLICT (tenant_id, item_id)
         DO UPDATE SET
             library_id = EXCLUDED.library_id,
@@ -694,6 +760,7 @@ async function saveQuickReplyItem(payload = {}, options = {}) {
             sort_order = EXCLUDED.sort_order,
             category = EXCLUDED.category,
             available_for_patty = EXCLUDED.available_for_patty,
+            message_blocks = EXCLUDED.message_blocks,
             is_active = EXCLUDED.is_active,
             metadata = EXCLUDED.metadata,
             updated_at = NOW()`,
@@ -710,6 +777,7 @@ async function saveQuickReplyItem(payload = {}, options = {}) {
             clean.sortOrder,
             clean.category,
             clean.availableForPatty,
+            JSON.stringify(Array.isArray(clean.messageBlocks) ? clean.messageBlocks : []),
             clean.isActive,
             JSON.stringify(clean.metadata && typeof clean.metadata === 'object' ? clean.metadata : {})
         ]

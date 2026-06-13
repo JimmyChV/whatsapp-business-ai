@@ -236,6 +236,9 @@ async function executeMessageSequence({
     waClient,
     variables = {},
     metadata = {},
+    quotedMessageId = '',
+    quotedMessage = null,
+    onSentMessage = null,
     minDelayBetweenSendBlocksSeconds = DEFAULT_MIN_DELAY_SECONDS,
     maxDelaySeconds = DEFAULT_MAX_DELAY_SECONDS,
     logger = null
@@ -276,6 +279,7 @@ async function executeMessageSequence({
                 sequenceBlockIndex: index,
                 sequenceBlockType: blockType
             };
+            const effectiveQuotedMessageId = sentBlocks === 0 ? text(quotedMessageId) : '';
 
             if (blockType === 'message') {
                 const body = resolveVariables(block.text || '', variables);
@@ -303,7 +307,7 @@ async function executeMessageSequence({
                             fetched.filename || asset.fileName || 'adjunto',
                             assetIndex === 0 ? body : '',
                             false,
-                            null,
+                            assetIndex === 0 ? (effectiveQuotedMessageId || null) : null,
                             {
                                 ...sendMetadata,
                                 mediaUrl: text(fetched.publicUrl || fetched.sourceUrl || asset.url) || null,
@@ -312,11 +316,42 @@ async function executeMessageSequence({
                         );
                         const sentId = resolveSentId(sent);
                         if (sentId) sentMessageIds.push(sentId);
+                        if (typeof onSentMessage === 'function') {
+                            await onSentMessage({
+                                sentMessage: sent,
+                                fallbackBody: assetIndex === 0 ? body : '',
+                                quotedMessageId: assetIndex === 0 ? effectiveQuotedMessageId : '',
+                                quotedMessage: assetIndex === 0 && effectiveQuotedMessageId ? quotedMessage : null,
+                                mediaPayload: {
+                                    mimetype: fetched.mimetype || asset.mimeType || 'application/octet-stream',
+                                    filename: fetched.filename || asset.fileName || 'adjunto',
+                                    fileSizeBytes: Number(fetched?.fileSizeBytes || asset?.sizeBytes || 0) || null,
+                                    mediaUrl: text(fetched.publicUrl || fetched.sourceUrl || asset.url) || null,
+                                    mediaPath: text(fetched.relativePath || '') || null
+                                },
+                                block,
+                                blockIndex: index,
+                                attachmentIndex: assetIndex
+                            });
+                        }
                     }
                 } else {
-                    const sent = await waClient.sendMessage(chatId, body, { metadata: sendMetadata });
+                    const sendOptions = { metadata: sendMetadata };
+                    if (effectiveQuotedMessageId) sendOptions.quotedMessageId = effectiveQuotedMessageId;
+                    const sent = await waClient.sendMessage(chatId, body, sendOptions);
                     const sentId = resolveSentId(sent);
                     if (sentId) sentMessageIds.push(sentId);
+                    if (typeof onSentMessage === 'function') {
+                        await onSentMessage({
+                            sentMessage: sent,
+                            fallbackBody: body,
+                            quotedMessageId: effectiveQuotedMessageId,
+                            quotedMessage: effectiveQuotedMessageId ? quotedMessage : null,
+                            mediaPayload: null,
+                            block,
+                            blockIndex: index
+                        });
+                    }
                 }
                 sentBlocks += 1;
                 continue;
@@ -331,6 +366,7 @@ async function executeMessageSequence({
                     ? buildNativeCatalogInteractive({ bodyText: resolveVariables(block.text || '', variables) })
                     : buildNativeProductInteractive({}, metaCatalogId, block.sku);
                 const sent = await waClient.sendInteractiveMessage(chatId, interactive, {
+                    quotedMessageId: effectiveQuotedMessageId || '',
                     metadata: {
                         ...sendMetadata,
                         deliveryMode: blockType === 'catalog' ? 'native_catalog_message' : 'native_catalog_product',
@@ -340,6 +376,18 @@ async function executeMessageSequence({
                 });
                 const sentId = resolveSentId(sent);
                 if (sentId) sentMessageIds.push(sentId);
+                if (typeof onSentMessage === 'function') {
+                    await onSentMessage({
+                        sentMessage: sent,
+                        fallbackBody: blockType === 'catalog' ? '' : block.sku,
+                        quotedMessageId: effectiveQuotedMessageId,
+                        quotedMessage: effectiveQuotedMessageId ? quotedMessage : null,
+                        mediaPayload: null,
+                        block,
+                        blockIndex: index,
+                        interactive
+                    });
+                }
                 sentBlocks += 1;
                 continue;
             }
@@ -371,4 +419,3 @@ module.exports = {
     resolveVariables,
     sleep
 };
-

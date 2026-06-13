@@ -30,11 +30,26 @@ export function normalizeQuickRepliesSocketPayload(payload = {}) {
             const mediaSizeBytes = Number.isFinite(Number(item?.mediaSizeBytes))
                 ? Number(item.mediaSizeBytes)
                 : (Number.isFinite(Number(mediaAssets[0]?.sizeBytes)) ? Number(mediaAssets[0].sizeBytes) : null);
+            const rawMessageBlocks = Array.isArray(item?.messageBlocks)
+                ? item.messageBlocks
+                : (Array.isArray(item?.message_blocks)
+                    ? item.message_blocks
+                    : (Array.isArray(item?.metadata?.messageBlocks)
+                        ? item.metadata.messageBlocks
+                        : (Array.isArray(item?.metadata?.message_blocks) ? item.metadata.message_blocks : [])));
+            const messageBlocks = rawMessageBlocks
+                .filter((block) => block && typeof block === 'object')
+                .map((block, blockIndex) => ({
+                    ...block,
+                    id: String(block?.id || block?.blockId || `blk_${blockIndex + 1}`).trim() || `blk_${blockIndex + 1}`,
+                    type: String(block?.type || 'message').trim().toLowerCase() || 'message'
+                }));
 
             return {
                 id: String(item?.id || (`qr_${idx + 1}`)),
                 label: sanitizeDisplayText(item?.label || 'Respuesta rapida'),
                 text: repairMojibake(item?.text || ''),
+                messageBlocks,
                 mediaAssets,
                 mediaUrl,
                 mediaMimeType,
@@ -45,7 +60,7 @@ export function normalizeQuickRepliesSocketPayload(payload = {}) {
                 isShared: item?.isShared !== false
             };
         })
-        .filter((item) => item.id && (item.text || item.mediaUrl || (Array.isArray(item.mediaAssets) && item.mediaAssets.length > 0)));
+        .filter((item) => item.id && (item.text || item.mediaUrl || (Array.isArray(item.mediaAssets) && item.mediaAssets.length > 0) || (Array.isArray(item.messageBlocks) && item.messageBlocks.length > 0)));
 
     return {
         enabled,

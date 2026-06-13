@@ -7,6 +7,10 @@ const {
     buildNativeCatalogInteractive,
     resolveMetaCatalogId
 } = require('./socket-catalog-delivery.service');
+const {
+    executeMessageSequence,
+    normalizeMessageBlocks
+} = require('../../operations/services/message-sequence.service');
 
 function createSocketQuickRepliesService({
     waClient,
@@ -81,6 +85,31 @@ function createSocketQuickRepliesService({
         } catch (error) {
             console.warn('[quick-replies] could not resolve variables:', error?.message);
             return source;
+        }
+    };
+
+    const resolveQuickReplyVariableMap = async ({
+        tenantId,
+        chatId,
+        customerId = ''
+    } = {}) => {
+        try {
+            const previewPayload = await templateVariablesService.getPreview(tenantId, {
+                chatId,
+                customerId
+            });
+            const variables = (Array.isArray(previewPayload?.categories) ? previewPayload.categories : [])
+                .flatMap((category) => (Array.isArray(category?.variables) ? category.variables : []));
+            return variables.reduce((acc, variable) => {
+                const key = String(variable?.key || '').trim();
+                if (!key) return acc;
+                acc[key] = variable?.previewValue ?? '';
+                acc[key.toLowerCase()] = variable?.previewValue ?? '';
+                return acc;
+            }, {});
+        } catch (error) {
+            console.warn('[quick-replies] could not resolve variables map:', error?.message);
+            return {};
         }
     };
 
@@ -247,6 +276,102 @@ function createSocketQuickRepliesService({
                     return;
                 }
 
+                const moduleContext = target.moduleContext || socket?.data?.waModule || null;
+                const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
+                const baseSendMetadata = {
+                    tenantId,
+                    chatId: target.targetChatId
+                };
+                const rawSequenceBlocks = replyPayload?.messageBlocks
+                    || replyPayload?.message_blocks
+                    || replyPayload?.metadata?.messageBlocks
+                    || replyPayload?.metadata?.message_blocks
+                    || [];
+                const sequenceBlocks = normalizeMessageBlocks(rawSequenceBlocks, {
+                    text: replyPayload?.text || replyPayload?.bodyText || replyPayload?.body || '',
+                    mediaAssets: replyPayload?.mediaAssets || [],
+                    mediaUrl: replyPayload?.mediaUrl || '',
+                    mediaMimeType: replyPayload?.mediaMimeType || '',
+                    mediaFileName: replyPayload?.mediaFileName || ''
+                });
+                const hasExplicitSequence = Array.isArray(rawSequenceBlocks) && rawSequenceBlocks.length > 0 && sequenceBlocks.length > 0;
+                if (hasExplicitSequence) {
+                    let firstRealtimeEmitted = false;
+                    const variables = await resolveQuickReplyVariableMap({
+                        tenantId,
+                        chatId: target.scopedChatId || target.targetChatId,
+                        customerId: payload?.customerId || payload?.customer_id || ''
+                    });
+                    const result = await executeMessageSequence({
+                        tenantId,
+                        chatId: target.targetChatId,
+                        scopeModuleId: moduleId,
+                        blocks: sequenceBlocks,
+                        waClient,
+                        variables,
+                        metadata: {
+                            ...baseSendMetadata,
+                            quickReplyId: quickReplyId || replyPayload?.id || null,
+                            quickReplyLabel: replyPayload?.label || null
+                        },
+                        quotedMessageId: quoted,
+                        quotedMessage,
+                        minDelayBetweenSendBlocksSeconds: 1,
+                        maxDelaySeconds: 30,
+                        logger: console,
+                        onSentMessage: async ({
+                            sentMessage,
+                            fallbackBody = '',
+                            quotedMessageId = '',
+                            quotedMessage: sentQuotedMessage = null,
+                            mediaPayload = null,
+                            interactive = null
+                        } = {}) => {
+                            let realtimeSentMessage = sentMessage;
+                            if (clientTempId && !firstRealtimeEmitted && realtimeSentMessage && typeof realtimeSentMessage === 'object') {
+                                realtimeSentMessage.clientTempId = clientTempId;
+                            }
+                            if (interactive && (!realtimeSentMessage || typeof realtimeSentMessage !== 'object')) {
+                                realtimeSentMessage = buildSyntheticInteractiveSentMessage({
+                                    messageId: resolveSentInteractiveId(sentMessage),
+                                    chatId: target.targetChatId,
+                                    body: fallbackBody,
+                                    interactive,
+                                    quotedMessageId,
+                                    metadata: baseSendMetadata
+                                });
+                                if (clientTempId && !firstRealtimeEmitted && realtimeSentMessage && typeof realtimeSentMessage === 'object') {
+                                    realtimeSentMessage.clientTempId = clientTempId;
+                                }
+                            }
+                            const sentMessageId = getSerializedMessageId(realtimeSentMessage) || resolveSentInteractiveId(realtimeSentMessage);
+                            if (sentMessageId && agentMeta) rememberOutgoingAgentMeta(sentMessageId, agentMeta);
+                            await emitRealtimeOutgoingMessage({
+                                sentMessage: realtimeSentMessage,
+                                fallbackChatId: target.targetChatId,
+                                fallbackBody,
+                                quotedMessageId,
+                                quotedMessage: sentQuotedMessage,
+                                moduleContext,
+                                agentMeta,
+                                mediaPayload
+                            });
+                            firstRealtimeEmitted = true;
+                        }
+                    });
+
+                    socket.emit('quick_reply_sent', {
+                        ...buildQuickReplySentPayload({
+                            replyPayload,
+                            quickReplyId,
+                            target
+                        }),
+                        sentBlocks: result.sentBlocks,
+                        sentMessageIds: result.sentMessageIds
+                    });
+                    return;
+                }
+
                 const bodyTextRaw = String(replyPayload?.text || replyPayload?.bodyText || replyPayload?.body || '').trim();
                 const bodyText = await resolveQuickReplyVariables({
                     tenantId,
@@ -289,13 +414,6 @@ function createSocketQuickRepliesService({
                     socket.emit('error', 'La respuesta rapida no tiene contenido para enviar.');
                     return;
                 }
-
-                const moduleContext = target.moduleContext || socket?.data?.waModule || null;
-                const agentMeta = sanitizeAgentMeta(buildSocketAgentMeta(authContext, moduleContext));
-                const baseSendMetadata = {
-                    tenantId,
-                    chatId: target.targetChatId
-                };
 
                 let sentMessage = null;
                 let mediaPayload = null;

@@ -672,6 +672,20 @@ export const normalizeQuickReplyDraft = (value = null) => {
   const id = String(value?.id || '').trim();
   const label = sanitizeDisplayText(value?.label || '');
   const textBody = repairMojibake(value?.text || '').trim();
+  const rawMessageBlocks = Array.isArray(value?.messageBlocks)
+    ? value.messageBlocks
+    : (Array.isArray(value?.message_blocks)
+      ? value.message_blocks
+      : (Array.isArray(value?.metadata?.messageBlocks)
+        ? value.metadata.messageBlocks
+        : (Array.isArray(value?.metadata?.message_blocks) ? value.metadata.message_blocks : [])));
+  const messageBlocks = rawMessageBlocks
+    .filter((block) => block && typeof block === 'object')
+    .map((block, index) => ({
+      ...block,
+      id: String(block?.id || block?.blockId || `blk_${index + 1}`).trim() || `blk_${index + 1}`,
+      type: String(block?.type || 'message').trim().toLowerCase() || 'message'
+    }));
   const mediaAssets = Array.isArray(value?.mediaAssets)
     ? value.mediaAssets
       .map((asset) => ({
@@ -686,12 +700,13 @@ export const normalizeQuickReplyDraft = (value = null) => {
   const mediaUrl = isRealQuickReplyMediaUrl(rawMediaUrl) ? rawMediaUrl : (mediaAssets[0]?.url || null);
   const mediaMimeType = mediaUrl ? (String(value?.mediaMimeType || mediaAssets[0]?.mimeType || '').trim().toLowerCase() || null) : null;
   const mediaFileName = mediaUrl ? (String(value?.mediaFileName || mediaAssets[0]?.fileName || '').trim() || null) : null;
-  const hasPayload = Boolean(textBody || mediaUrl || mediaAssets.length > 0 || id);
+  const hasPayload = Boolean(textBody || mediaUrl || mediaAssets.length > 0 || messageBlocks.length > 0 || id);
   if (!hasPayload) return null;
   return {
     id: id || null,
     label: label || null,
     text: textBody,
+    messageBlocks,
     mediaAssets,
     mediaUrl,
     mediaMimeType,
