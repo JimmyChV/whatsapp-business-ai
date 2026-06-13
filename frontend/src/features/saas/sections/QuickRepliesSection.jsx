@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import useUiFeedback from '../../../app/ui-feedback/useUiFeedback';
 import MessageSequenceComposer, {
     normalizeMessageBlocksForComposer
@@ -105,6 +106,38 @@ function hasUsableMessageBlocks(blocks = []) {
         if (type === 'catalog') return true;
         return false;
     });
+}
+
+function getQuickReplyItemBlocks(item = {}, mediaAssets = []) {
+    return normalizeMessageBlocksForComposer(item.messageBlocks, {
+        messageText: item.text || '',
+        mediaAssets: Array.isArray(mediaAssets) && mediaAssets.length > 0 ? mediaAssets : item.mediaAssets || [],
+        mediaUrl: item.mediaUrl || '',
+        mediaMimeType: item.mediaMimeType || '',
+        mediaFileName: item.mediaFileName || '',
+        mediaSizeBytes: item.mediaSizeBytes
+    });
+}
+
+function summarizeQuickReplyBlock(block = {}) {
+    const type = text(block.type || 'message').toLowerCase();
+    if (type === 'delay') return `Pausa de ${Math.max(1, Number(block.delaySeconds || 3) || 3)} segundos`;
+    if (type === 'catalog') return text(block.text) || 'Catalogo nativo WhatsApp';
+    if (type === 'product') return text(block.productTitle || block.sku) || 'Producto sin seleccionar';
+    const assets = Array.isArray(block.attachments) ? block.attachments : [];
+    const body = text(block.text);
+    if (body && assets.length > 0) return `${body} + ${assets.length} adjunto${assets.length === 1 ? '' : 's'}`;
+    if (body) return body;
+    if (assets.length > 0) return `${assets.length} adjunto${assets.length === 1 ? '' : 's'}`;
+    return 'Mensaje vacio';
+}
+
+function getQuickReplyBlockTypeLabel(block = {}) {
+    const type = text(block.type || 'message').toLowerCase();
+    if (type === 'delay') return 'Delay';
+    if (type === 'catalog') return 'Catalogo';
+    if (type === 'product') return 'Producto';
+    return 'Mensaje';
 }
 
 export default function QuickRepliesSection(props = {}) {
@@ -401,6 +434,92 @@ export default function QuickRepliesSection(props = {}) {
         await requestClose?.();
     }, [confirm, quickReplyItemHasChanges]);
 
+    const closeQuickReplyItemReadModal = React.useCallback(() => {
+        setSelectedQuickReplyItemId?.('');
+        setQuickReplyItemPanelMode?.('view');
+    }, [setQuickReplyItemPanelMode, setSelectedQuickReplyItemId]);
+
+    const renderItemReadModal = React.useCallback(() => {
+        if (!selectedQuickReplyItem || quickReplyItemPanelMode !== 'view') return null;
+        const blocks = getQuickReplyItemBlocks(selectedQuickReplyItem, selectedQuickReplyItemMediaAssets);
+        const assetsCount = blocks.reduce((total, block) => total + (Array.isArray(block.attachments) ? block.attachments.length : 0), 0);
+        const handleEdit = () => {
+            openQuickReplyItemEdit?.();
+        };
+        const handleDeactivate = async () => {
+            const ok = await confirm({
+                title: 'Desactivar respuesta rapida',
+                message: `La respuesta "${selectedQuickReplyItem.label || selectedQuickReplyItem.itemId}" dejara de estar disponible. Puedes volver a activarla editandola mas adelante.`,
+                confirmText: 'Desactivar',
+                cancelText: 'Cancelar',
+                tone: 'danger'
+            });
+            if (!ok) return;
+            await runQuickReplyAction('delete_qr_item', 'Respuesta rapida desactivada', async () => deactivateQuickReplyItem?.(selectedQuickReplyItem?.itemId));
+            closeQuickReplyItemReadModal();
+        };
+
+        return createPortal((
+            <div className="saas-quick-reply-read-overlay" onClick={closeQuickReplyItemReadModal}>
+                <div className="saas-quick-reply-read-modal" onClick={(event) => event.stopPropagation()}>
+                    <header className="saas-quick-reply-read-modal__header">
+                        <div>
+                            <span className="saas-quick-reply-read-modal__eyebrow">Respuesta rapida</span>
+                            <h3>{selectedQuickReplyItem.label || selectedQuickReplyItem.itemId}</h3>
+                            <p>
+                                {getQuickReplyCategoryLabel(selectedQuickReplyItem.category)}
+                                {' · '}
+                                {selectedQuickReplyItem.isActive === false ? 'Inactiva' : 'Activa'}
+                                {' · '}
+                                {selectedQuickReplyItem.availableForPatty ? 'Disponible para Patty' : 'No disponible para Patty'}
+                            </p>
+                        </div>
+                        <button type="button" className="saas-btn-close" onClick={closeQuickReplyItemReadModal} aria-label="Cerrar vista de respuesta rapida">×</button>
+                    </header>
+                    <section className="saas-quick-reply-read-modal__stats">
+                        <div><span>Bloques</span><strong>{blocks.length}</strong></div>
+                        <div><span>Adjuntos</span><strong>{assetsCount}</strong></div>
+                        <div><span>Actualizado</span><strong>{formatDateTimeLabel(selectedQuickReplyItem.updatedAt)}</strong></div>
+                    </section>
+                    <section className="saas-quick-reply-read-modal__blocks">
+                        {blocks.length === 0 ? (
+                            <div className="saas-admin-empty-inline">Sin contenido registrado.</div>
+                        ) : blocks.map((block, index) => (
+                            <article key={`qr_read_block_${block.id || index}`} className="saas-quick-reply-read-block">
+                                <div>
+                                    <strong>Bloque {index + 1}</strong>
+                                    <span>{getQuickReplyBlockTypeLabel(block)}</span>
+                                </div>
+                                <p>{summarizeQuickReplyBlock(block)}</p>
+                            </article>
+                        ))}
+                    </section>
+                    <footer className="saas-quick-reply-read-modal__actions">
+                        <button type="button" className="saas-btn saas-btn--secondary" onClick={closeQuickReplyItemReadModal}>Cancelar</button>
+                        {canManageQuickReplies ? (
+                            <>
+                                <button type="button" className="saas-btn-cancel" disabled={busy} onClick={handleDeactivate}>Desactivar</button>
+                                <button type="button" className="saas-btn saas-btn--primary" disabled={busy} onClick={handleEdit}>Editar</button>
+                            </>
+                        ) : null}
+                    </footer>
+                </div>
+            </div>
+        ), document.body);
+    }, [
+        busy,
+        canManageQuickReplies,
+        closeQuickReplyItemReadModal,
+        confirm,
+        deactivateQuickReplyItem,
+        formatDateTimeLabel,
+        openQuickReplyItemEdit,
+        quickReplyItemPanelMode,
+        runQuickReplyAction,
+        selectedQuickReplyItem,
+        selectedQuickReplyItemMediaAssets
+    ]);
+
     const renderItemForm = React.useCallback(({ close: requestClose } = {}) => {
         const messageBlocks = getQuickReplyFormBlocks(quickReplyItemForm);
         const hasRequiredContent = hasUsableMessageBlocks(messageBlocks)
@@ -580,7 +699,8 @@ export default function QuickRepliesSection(props = {}) {
                         ))}
                     </div>
                 </div>
-                {selectedQuickReplyItem && quickReplyItemPanelMode === 'view' ? (
+                {renderItemReadModal()}
+                {false ? (
                     <div className="saas-admin-related-block">
                         {canManageQuickReplies ? (
                         <div className="saas-admin-list-actions saas-admin-list-actions--row">
@@ -639,6 +759,7 @@ export default function QuickRepliesSection(props = {}) {
         openQuickReplyLibraryEdit,
         quickReplyItemPanelMode,
         renderItemForm,
+        renderItemReadModal,
         renderLibraryForm,
         resolveQuickReplyAssetPreviewUrl,
         runQuickReplyAction,

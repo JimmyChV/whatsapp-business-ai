@@ -12335,6 +12335,142 @@ textarea:focus {
   color: var(--saas-warning, #b7791f);
 }
 
+.saas-quick-reply-read-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483002;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: var(--chat-overlay-backdrop, rgba(15, 23, 42, 0.48));
+  backdrop-filter: blur(4px);
+}
+
+.saas-quick-reply-read-modal {
+  width: min(920px, calc(100vw - 36px));
+  max-height: min(780px, calc(100vh - 44px));
+  border: 1px solid var(--saas-border-color, rgba(0, 0, 0, 0.12));
+  border-radius: 22px;
+  background: var(--saas-bg-elevated, #fff);
+  box-shadow: var(--saas-panel-shadow, 0 30px 80px rgba(15, 23, 42, 0.28));
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.saas-quick-reply-read-modal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px 24px 16px;
+  border-bottom: 1px solid var(--saas-divider-soft, rgba(0, 0, 0, 0.1));
+}
+
+.saas-quick-reply-read-modal__header h3 {
+  margin: 4px 0 6px;
+  color: var(--saas-text-primary, #111);
+  font-size: 1.28rem;
+  line-height: 1.15;
+}
+
+.saas-quick-reply-read-modal__header p {
+  margin: 0;
+  color: var(--saas-text-secondary, rgba(0, 0, 0, 0.62));
+  font-size: 0.88rem;
+}
+
+.saas-quick-reply-read-modal__eyebrow {
+  color: var(--saas-text-secondary, rgba(0, 0, 0, 0.56));
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.saas-quick-reply-read-modal__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 16px 24px;
+  background: color-mix(in srgb, var(--saas-bg-surface, #fff) 78%, var(--saas-success, #16a34a) 4%);
+}
+
+.saas-quick-reply-read-modal__stats div {
+  border: 1px solid var(--saas-border-color, rgba(0, 0, 0, 0.12));
+  border-radius: 14px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 3px;
+  background: var(--saas-bg-surface, #fff);
+}
+
+.saas-quick-reply-read-modal__stats span {
+  color: var(--saas-text-secondary, rgba(0, 0, 0, 0.56));
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.saas-quick-reply-read-modal__stats strong {
+  color: var(--saas-text-primary, #111);
+  font-size: 0.92rem;
+}
+
+.saas-quick-reply-read-modal__blocks {
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 24px 20px;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.saas-quick-reply-read-block {
+  border: 1px solid var(--saas-border-color, rgba(0, 0, 0, 0.12));
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: var(--saas-bg-surface, #fff);
+  display: grid;
+  gap: 8px;
+}
+
+.saas-quick-reply-read-block div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.saas-quick-reply-read-block strong {
+  color: var(--saas-text-primary, #111);
+}
+
+.saas-quick-reply-read-block span {
+  border: 1px solid color-mix(in srgb, var(--saas-success, #16a34a) 28%, var(--saas-border-color, rgba(0, 0, 0, 0.12)));
+  border-radius: 999px;
+  padding: 3px 9px;
+  color: var(--saas-success, #16a34a);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.saas-quick-reply-read-block p {
+  margin: 0;
+  color: var(--saas-text-secondary, rgba(0, 0, 0, 0.64));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.saas-quick-reply-read-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--saas-divider-soft, rgba(0, 0, 0, 0.1));
+  background: color-mix(in srgb, var(--saas-bg-elevated, #fff) 92%, var(--saas-bg-surface, #fff));
+}
+
 .saas-quick-reply-editor-main {
   display: flex;
   flex-direction: column;
@@ -13927,17 +14063,27 @@ textarea:focus {
 .message-sequence-composer {
   display: grid;
   gap: 12px;
+  min-height: 0;
 }
 
 .message-sequence-composer__toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
 }
 
 .message-sequence-composer__tool {
+  min-height: 38px;
   border-color: var(--saas-border-color);
+  border-radius: 999px;
   background: var(--saas-bg-surface);
+  color: var(--saas-text-primary);
+  padding: 8px 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 900;
 }
 
 .message-sequence-composer__tool:hover,
@@ -13952,34 +14098,45 @@ textarea:focus {
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
   min-height: 0;
+  height: 100%;
 }
 
 .message-sequence-composer__list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
   align-content: start;
   max-height: calc(100vh - 344px);
   overflow: auto;
-  padding-right: 4px;
+  padding: 2px 6px 10px 0;
 }
 
 .message-sequence-composer__block {
   min-width: 0;
   border: 1px solid var(--saas-border-color);
-  border-radius: 12px;
-  padding: 10px;
+  border-radius: 16px;
+  padding: 14px;
   display: grid;
-  gap: 7px;
+  grid-template-rows: auto minmax(38px, 1fr) auto;
+  gap: 10px;
   text-align: left;
   background: var(--saas-bg-surface);
   cursor: pointer;
+  min-height: 118px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+.message-sequence-composer__block:hover {
+  border-color: color-mix(in srgb, var(--saas-success) 24%, var(--saas-border-color));
+  transform: translateY(-1px);
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.08);
 }
 
 .message-sequence-composer__block.is-selected {
   border-color: var(--saas-success);
   background: color-mix(in srgb, var(--saas-success) 9%, #fff);
-  box-shadow: 0 8px 22px rgba(22, 163, 74, 0.12);
+  box-shadow: 0 16px 34px rgba(22, 163, 74, 0.16);
 }
 
 .message-sequence-composer__block-title {
@@ -13988,20 +14145,27 @@ textarea:focus {
   gap: 7px;
   color: var(--saas-text-primary);
   font-weight: 900;
+  font-size: 0.94rem;
 }
 
 .message-sequence-composer__block-summary {
   min-width: 0;
   color: var(--saas-text-secondary);
+  line-height: 1.35;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .message-sequence-composer__block-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 4px;
+  border-top: 1px solid color-mix(in srgb, var(--saas-border-color) 68%, transparent);
+  padding-top: 7px;
 }
 
 .message-sequence-composer__block-actions span {
@@ -14035,6 +14199,7 @@ textarea:focus {
 
 .message-sequence-composer__editor-modal {
   width: min(1640px, calc(100vw - 36px));
+  height: min(900px, calc(100vh - 64px));
   max-height: calc(100vh - 64px);
   border: 1px solid color-mix(in srgb, var(--saas-border-color) 78%, transparent);
   border-radius: 18px;
@@ -14049,21 +14214,21 @@ textarea:focus {
 
 .message-sequence-composer__editor-content {
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   width: 100%;
 }
 
 .message-sequence-composer__editor-head,
 .message-sequence-composer__empty-editor {
   border: 1px solid var(--saas-border-color);
-  border-radius: 12px;
-  padding: 12px;
+  border-radius: 16px;
+  padding: 14px 16px;
   margin-bottom: 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  background: var(--saas-bg-surface);
+  background: color-mix(in srgb, var(--saas-bg-surface) 88%, var(--saas-success) 3%);
 }
 
 .message-sequence-composer__editor-modal .message-sequence-composer__editor-head {
@@ -14121,9 +14286,10 @@ textarea:focus {
 .message-sequence-composer .saas-quick-reply-editor-layout,
 .message-sequence-composer__editor-modal .saas-quick-reply-editor-layout {
   width: 100%;
-  grid-template-columns: minmax(520px, 0.95fr) minmax(620px, 1.05fr);
+  height: 100%;
+  grid-template-columns: minmax(620px, 1.15fr) minmax(620px, 1fr);
   gap: 18px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .message-sequence-composer .saas-quick-reply-editor-main--form .saas-admin-form-row,
@@ -14135,7 +14301,7 @@ textarea:focus {
 .message-sequence-composer .saas-quick-reply-editor-main--form textarea,
 .message-sequence-composer__editor-modal .saas-quick-reply-editor-main--form textarea {
   width: 100%;
-  min-height: 300px;
+  min-height: 360px;
   resize: vertical;
   line-height: 1.45;
   font-size: 0.96rem;
@@ -14145,7 +14311,8 @@ textarea:focus {
 .message-sequence-composer .saas-quick-reply-variable-panel,
 .message-sequence-composer__editor-modal .saas-quick-reply-editor-main,
 .message-sequence-composer__editor-modal .saas-quick-reply-variable-panel {
-  max-height: calc(100vh - 212px);
+  max-height: none;
+  height: 100%;
   overflow: auto;
 }
 
